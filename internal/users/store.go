@@ -419,8 +419,9 @@ func (s *Store) listUsers(ctx context.Context, search, status, groupSlug, sortKe
 // and optionally by profile_type. Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 //
 //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
-func (s *Store) listPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32) ([]gen.ListPublicUsersRow, error) {
+func (s *Store) listPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32, viewerID pgtype.UUID) ([]gen.ListPublicUsersRow, error) {
 	rows, err := s.read.ListPublicUsers(ctx, gen.ListPublicUsersParams{
+		ViewerID:    viewerID,
 		Search:      search,
 		ProfileType: profileType,
 		SortKey:     sortKey,
@@ -437,8 +438,9 @@ func (s *Store) listPublicUsers(ctx context.Context, search, profileType, sortKe
 // countPublicUsers returns the total count of active, search-indexable users
 // matching the search term and profile_type filter, for pagination of the
 // public directory.
-func (s *Store) countPublicUsers(ctx context.Context, search, profileType string) (int32, error) {
+func (s *Store) countPublicUsers(ctx context.Context, search, profileType string, viewerID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountPublicUsers(ctx, gen.CountPublicUsersParams{
+		ViewerID:    viewerID,
 		Search:      search,
 		ProfileType: profileType,
 	})

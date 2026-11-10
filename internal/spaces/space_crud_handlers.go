@@ -513,7 +513,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 
 // ListByMemberUser handles GET /users/{id}/spaces — the public profile Spaces
 // tab. Public-safe: only public+active spaces of the {id} user. Non-active
-// users are already 404'd by the requireActiveProfileUser gate on the route.
+// users are already 404'd by the requireVisibleProfileUser gate on the route.
 func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {

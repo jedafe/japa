@@ -3502,6 +3502,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	videoHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in video responses
 	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
 	videoHandlers.SetPermissionChecker(rbacResolver)
+	// §19/§50: /u/{username}/videos mirrors the owner's profile visibility.
+	videoHandlers.SetProfileChecker(usersService.CheckProfileAccessByUsername)
 	videoAdminHandlers := video.NewAdminHandlers(videoService, auth.RequireAuth(kr, vkClient.Redis()), rbacResolver)
 
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
@@ -3704,7 +3706,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/feed.xml", rssHandlers.HandleFeed)
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
-		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
+		r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileByUsername(usersService)).Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
 		// Legacy forum feed URL — 301 to the canonical /thread/feed.xml so
 		// existing subscriptions follow to one URL instead of the feed
 		// being served under two indexable paths.
@@ -4616,10 +4618,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
 				// Follower/following lists are public per Section 31 — the
 				// handlers degrade is_following to false for anonymous callers.
+				// §19/§50 amendment: when the owner restricts profile_visibility,
+				// these lists are profile surfaces and follow the same gate —
+				// §31's "public" holds only while the profile itself is public.
 				// follow-status and mutual remain RequireAuth: both are
 				// caller-scoped and meaningless for guests.
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "user_id")).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "user_id")).Get("/users/{user_id}/following", followHandlers.GetFollowing)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
@@ -4693,7 +4698,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// gated so a banned/suspended/deleted user's timeline 404s like the rest
 			// of their profile (governing decision: "the whole profile 404s for
 			// non-active users"). The feed route's param is {user_id}, not {id}.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "user_id"), feedScope).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "user_id"), feedScope).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
 
 			// Trending & Discovery routes (Phase 28)
 			// Public trending endpoints (no auth required)
@@ -5676,7 +5681,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/buymeacoffee", tipsHandlers.DisconnectOrgBMC)
 				})
 
-				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileByUsername(usersService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)
 				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
 
@@ -6423,20 +6428,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public per Section 32:12 (profile timeline audience = "Anyone").
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 			// Public profile Media tab (Task A3) — same audience rule as above.
-			// Gated by requireActiveProfileUser: 404s for banned/suspended/deleted users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/media", mediaHandlers.ListByUser)
+			// Gated by requireVisibleProfileUser: 404s for banned/suspended/deleted users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "id")).Get("/users/{id}/media", mediaHandlers.ListByUser)
 			// Public profile Spaces tab — public+active spaces only; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "id")).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
 			// Public profile Certificates tab — earned-certificate badges; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/certificates", academyHandlers.ListCertificatesByUser)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "id")).Get("/users/{id}/certificates", academyHandlers.ListCertificatesByUser)
 			// Public profile Likes tab — published+public content the user reacted to; gated to 404 non-active users.
 			// §42: ScopeMiddleware attaches the caller scope so gated content
 			// types are pruned per-caller.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireVisibleProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
 			// Public profile Replies tab — user's comments on published+public content; gated to 404 non-active users.
 			// §42: ScopeMiddleware attaches the caller scope so replies on
 			// gated content types are pruned per-caller.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireVisibleProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
 			// Admin user routes (catalog: /admin/users)
 			// BUG-017 through BUG-021: config endpoint surfacing valid user
 			// statuses, profile types, violation types, restriction operations,
@@ -7942,16 +7947,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 34: Users public extras
 			// Profile Analytics dashboard — owner-only per JEOS §342 [auth, self].
 			// RequireAuth blocks guests; the handler blocks non-owner users with
-			// 403 analytics_forbidden. requireActiveProfileUser still 404s for
+			// 403 analytics_forbidden. requireVisibleProfileUser still 404s for
 			// banned/suspended/deleted users.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "id")).
 				Get("/users/{id}/analytics", usersHandlers.GetUserAnalytics)
 			// Public profile Posts tab — author-scoped published+public content (was
 			// wired to ListContent, which ignored {id} and returned all platform content).
 			// Public per Section 32; gated to 404 non-active users.
 			// §42: ScopeMiddleware attaches the caller scope so gated content
 			// types are pruned from the public profile Posts tab per-caller.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireVisibleProfileUser(usersService, "id")).
 				Get("/users/{id}/content", contentHandlers.ListByAuthor)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
@@ -8024,7 +8029,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.view")).
 					Get("/me/badge-collection", gamificationHandlers.HandleMyBadgeCollection)
-				r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
+				r.With(requireVisibleProfileByUsername(usersService)).Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
 			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
 				Get("/admin/gamification/badges", gamificationHandlers.HandleAdminListBadges)
@@ -8563,7 +8568,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/japa-stage/stages", japaStageHandlers.HandleStages)
 				r.Get("/japa-stage/intents", japaStageHandlers.HandleIntents)
 				r.Get("/japa-stage/stats", japaStageHandlers.HandleStats)
-				r.Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
+				r.With(requireVisibleProfileByUsername(usersService)).Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
 				r.Get("/members/by-stage", japaStageHandlers.HandleListByStage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
 					Get("/me/japa-stage", japaStageHandlers.HandleGetOwn)

@@ -35,26 +35,33 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%'
+ AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+      OR ($1::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+      OR ($1::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+          AND (u.id = $1 OR EXISTS (
+               SELECT 1 FROM follows vf
+               WHERE vf.follower_id = $1 AND vf.entity_type = 'user' AND vf.entity_id = u.id))))
+ AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.public_username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%'
  -- §50 former-username amendment: a renamed user's former handles still
  -- match — the row emits the live handle, and the per-row guard suppresses
  -- any former handle another live user now claims.
  OR EXISTS (SELECT 1 FROM username_redirects ur
             WHERE ur.user_id = u.id
-              AND ur.username ILIKE '%' || $1 || '%'
+              AND ur.username ILIKE '%' || $2 || '%'
               AND NOT EXISTS (SELECT 1 FROM users ux
                                WHERE ux.username = ur.username
                                   OR lower(ux.public_username) = lower(ur.username))))
- AND ($2::text = '' OR u.profile_type = $2)
+ AND ($3::text = '' OR u.profile_type = $3)
 `
 
 type CountPublicUsersParams struct {
-	Search      string `json:"search"`
-	ProfileType string `json:"profile_type"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	Search      string      `json:"search"`
+	ProfileType string      `json:"profile_type"`
 }
 
 func (q *Queries) CountPublicUsers(ctx context.Context, arg CountPublicUsersParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countPublicUsers, arg.Search, arg.ProfileType)
+	row := q.db.QueryRow(ctx, countPublicUsers, arg.ViewerID, arg.Search, arg.ProfileType)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -454,6 +461,23 @@ func (q *Queries) GetContentByIDForEditor(ctx context.Context, id pgtype.UUID) (
 	return i, err
 }
 
+const getProfileVisibilityByUserID = `-- name: GetProfileVisibilityByUserID :one
+SELECT COALESCE(ups.profile_visibility, 'public') AS profile_visibility
+FROM users u
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.id = $1 AND u.status = 'active'
+`
+
+// §19/§50 profile-access gate: the owner's profile_visibility for an ACTIVE
+// user. ErrNoRows = banned/suspended/deleted/missing → the profile gate
+// maps it to 404. The service applies the viewer rules on top.
+func (q *Queries) GetProfileVisibilityByUserID(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getProfileVisibilityByUserID, userID)
+	var profile_visibility string
+	err := row.Scan(&profile_visibility)
+	return profile_visibility, err
+}
+
 const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
 SELECT
  u.id AS user_id,
@@ -603,6 +627,9 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.id = $1
  AND u.status = 'active'
  AND COALESCE(ups.search_indexable, true) = true
+ -- §19/§50: API-key consumers are not "members" — only fully public
+ -- profiles are served through the public API.
+ AND COALESCE(ups.profile_visibility, 'public') = 'public'
 `
 
 type GetPublicUserByIDRow struct {
@@ -2325,33 +2352,43 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%'
+ -- §19/§50 profile_visibility: guests see 'public' only; an authenticated
+ -- viewer additionally sees 'members' profiles, their own, and 'followers'
+ -- profiles they already follow.
+ AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+      OR ($1::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+      OR ($1::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+          AND (u.id = $1 OR EXISTS (
+               SELECT 1 FROM follows vf
+               WHERE vf.follower_id = $1 AND vf.entity_type = 'user' AND vf.entity_id = u.id))))
+ AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.public_username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%'
  -- §50 former-username amendment: a renamed user's former handles still
  -- match — the row emits the live handle, and the per-row guard suppresses
  -- any former handle another live user now claims.
  OR EXISTS (SELECT 1 FROM username_redirects ur
             WHERE ur.user_id = u.id
-              AND ur.username ILIKE '%' || $1 || '%'
+              AND ur.username ILIKE '%' || $2 || '%'
               AND NOT EXISTS (SELECT 1 FROM users ux
                                WHERE ux.username = ur.username
                                   OR lower(ux.public_username) = lower(ur.username))))
- AND ($2::text = '' OR u.profile_type = $2)
+ AND ($3::text = '' OR u.profile_type = $3)
 ORDER BY
- CASE WHEN $3::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
- CASE WHEN $3::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
- CASE WHEN $3::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
- CASE WHEN $3::text = 'name' THEN lower(COALESCE(up.display_name, u.public_username, u.username, '')) END ASC NULLS LAST,
- CASE WHEN $3::text = 'name' THEN u.username END ASC,
+ CASE WHEN $4::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
+ CASE WHEN $4::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
+ CASE WHEN $4::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
+ CASE WHEN $4::text = 'name' THEN lower(COALESCE(up.display_name, u.public_username, u.username, '')) END ASC NULLS LAST,
+ CASE WHEN $4::text = 'name' THEN u.username END ASC,
  u.follower_count DESC NULLS LAST, u.created_at DESC, u.id
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListPublicUsersParams struct {
-	Search      string `json:"search"`
-	ProfileType string `json:"profile_type"`
-	SortKey     string `json:"sort_key"`
-	PageOffset  int32  `json:"page_offset"`
-	PageLimit   int32  `json:"page_limit"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	Search      string      `json:"search"`
+	ProfileType string      `json:"profile_type"`
+	SortKey     string      `json:"sort_key"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListPublicUsersRow struct {
@@ -2383,6 +2420,7 @@ type ListPublicUsersRow struct {
 // japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams) ([]ListPublicUsersRow, error) {
 	rows, err := q.db.Query(ctx, listPublicUsers,
+		arg.ViewerID,
 		arg.Search,
 		arg.ProfileType,
 		arg.SortKey,

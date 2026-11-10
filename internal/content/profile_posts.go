@@ -38,7 +38,7 @@ func (s *Service) ListPublishedByAuthor(ctx context.Context, authorID pgtype.UUI
 // ListByAuthor handles GET /users/{id}/content — the public profile Posts tab.
 // Author-scoped: fixes the prior wiring to ListContent, which ignored {id} and
 // returned all platform content. Public-safe: only published+public content;
-// non-active users are already 404'd by the requireActiveProfileUser gate.
+// non-active users are already 404'd by the requireVisibleProfileUser gate.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {

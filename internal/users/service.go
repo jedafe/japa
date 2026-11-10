@@ -505,7 +505,14 @@ func (s *Service) publicProfileIndexable(ctx context.Context, userID pgtype.UUID
 var ErrProfilePrivate = errors.New("profile visibility restricts this profile")
 
 // enforceProfileVisibility applies the owner's profile_visibility setting
-// (§19/§50) to a fetched public-profile row:
+// (§19/§50) to an already-fetched public-profile row.
+func (s *Service) enforceProfileVisibility(ctx context.Context, p gen.GetPublicProfileByUsernameRow) error {
+	return s.checkProfileAccess(ctx, p.ProfileVisibility, p.UserID)
+}
+
+// checkProfileAccess is the shared §19/§50 rule: the viewer rules below are
+// applied identically whether the row was fetched by username (profile
+// endpoint) or by user id (sub-resource gate).
 //
 //	public    → any viewer, including guests
 //	members   → authenticated viewers only
@@ -513,8 +520,8 @@ var ErrProfilePrivate = errors.New("profile visibility restricts this profile")
 //
 // Missing/null rows default to 'public' (the column default), matching
 // UpsertUserPrivacySettings' COALESCE semantics.
-func (s *Service) enforceProfileVisibility(ctx context.Context, p gen.GetPublicProfileByUsernameRow) error {
-	switch p.ProfileVisibility {
+func (s *Service) checkProfileAccess(ctx context.Context, visibility string, ownerID pgtype.UUID) error {
+	switch visibility {
 	case "", "public":
 		return nil
 	case "members":
@@ -527,13 +534,13 @@ func (s *Service) enforceProfileVisibility(ctx context.Context, p gen.GetPublicP
 		if viewer == nil {
 			return ErrProfilePrivate
 		}
-		if viewer.UserID == p.UserID {
+		if viewer.UserID == ownerID {
 			return nil
 		}
 		following, err := s.store.read.IsFollowing(ctx, gen.IsFollowingParams{
 			FollowerID: viewer.UserID,
 			EntityType: "user",
-			EntityID:   p.UserID,
+			EntityID:   ownerID,
 		})
 		if err != nil {
 			return fmt.Errorf("users: profile visibility follow check: %w", err)
@@ -545,6 +552,31 @@ func (s *Service) enforceProfileVisibility(ctx context.Context, p gen.GetPublicP
 	default:
 		return ErrProfilePrivate
 	}
+}
+
+// CheckProfileAccessByID reports whether the current viewer may read the
+// profile of the ACTIVE user with this id — the id-keyed access check for
+// profile sub-resources (followers, media, content, certificates…).
+// pgx.ErrNoRows = no active user → gate maps to 404; ErrProfilePrivate = the
+// owner restricts visibility → gate maps to 403 profile_private.
+func (s *Service) CheckProfileAccessByID(ctx context.Context, userID pgtype.UUID) error {
+	vis, err := s.store.read.GetProfileVisibilityByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return s.checkProfileAccess(ctx, vis, userID)
+}
+
+// CheckProfileAccessByUsername is the username-keyed twin — resolves
+// public_username aliases and former handles through the same query the
+// profile endpoint uses, so gated username routes can't be reached via a
+// rename bypass.
+func (s *Service) CheckProfileAccessByUsername(ctx context.Context, username string) error {
+	p, err := s.store.getPublicProfileByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	return s.checkProfileAccess(ctx, p.ProfileVisibility, p.UserID)
 }
 
 // UpdateProfile updates the user profile fields. Only non-nil fields are
@@ -1255,7 +1287,15 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sort
 		sortKey = ""
 	}
 
-	rows, err := s.store.listPublicUsers(ctx, search, profileType, sortKey, limit, offset)
+	// §19/§50: the directory is viewer-aware — guests see 'public' profiles
+	// only; authenticated viewers additionally see 'members' and profiles
+	// they already follow.
+	var viewerID pgtype.UUID
+	if viewer := auth.FromContext(ctx); viewer != nil {
+		viewerID = viewer.UserID
+	}
+
+	rows, err := s.store.listPublicUsers(ctx, search, profileType, sortKey, limit, offset, viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("listing public users: %w", err)
 	}
@@ -1280,7 +1320,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sort
 		}
 	}
 
-	total, err := s.store.countPublicUsers(ctx, search, profileType)
+	total, err := s.store.countPublicUsers(ctx, search, profileType, viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("counting public users: %w", err)
 	}

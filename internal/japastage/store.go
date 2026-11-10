@@ -393,11 +393,16 @@ func (s *Store) ListByStage(ctx context.Context, stage, intent, q, sort string, 
 		offset = 0
 	}
 
+	// §19/§50: the directory is anonymous — members/followers profiles are
+	// excluded regardless of japa_stage_is_public (that flag governs the
+	// stage payload; profile_visibility governs profile presence).
 	listPredicates := []string{
 		"up.japa_stage_is_public = true",
+		"NOT EXISTS (SELECT 1 FROM user_privacy_settings pv WHERE pv.user_id = u.id AND pv.profile_visibility <> 'public')",
 	}
 	countPredicates := []string{
 		"up.japa_stage_is_public = true",
+		"NOT EXISTS (SELECT 1 FROM user_privacy_settings pv WHERE pv.user_id = u.id AND pv.profile_visibility <> 'public')",
 	}
 	listArgs := []any{}
 	countArgs := []any{}

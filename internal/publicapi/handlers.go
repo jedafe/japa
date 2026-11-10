@@ -1122,6 +1122,8 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
+	// ViewerID stays zero — API-key consumers are not "members", so the
+	// §19/§50 directory predicate serves them 'public' profiles only.
 	users, err := h.Queries.ListPublicUsers(r.Context(), gen.ListPublicUsersParams{
 		Search:      search,
 		ProfileType: profileType,

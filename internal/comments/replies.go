@@ -47,7 +47,7 @@ func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit,
 
 // ListByAuthor handles GET /users/{id}/replies — the public profile Replies tab.
 // Public-safe: only replies on published+public content; non-active users are
-// already 404'd by the requireActiveProfileUser gate on the route.
+// already 404'd by the requireVisibleProfileUser gate on the route.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {

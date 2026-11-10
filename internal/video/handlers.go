@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -17,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/users"
 )
 
 const (
@@ -46,6 +48,9 @@ type Handlers struct {
 	// mutating endpoints. nil keeps the routes auth-only (tests, dev wiring).
 	perms permissionChecker
 	lit   literalResolver // nil disables literal resolution (§14)
+	// profileCheck gates /u/{username}/videos on the channel owner's
+	// profile_visibility (§19/§50). nil disables the check (tests).
+	profileCheck func(ctx context.Context, username string) error
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -100,6 +105,14 @@ func (h *Handlers) requirePerm(w http.ResponseWriter, r *http.Request, userID pg
 // an authenticated user.
 func (h *Handlers) SetAuthMiddleware(mw func(http.Handler) http.Handler) {
 	h.authMW = mw
+}
+
+// SetProfileChecker injects the §19/§50 profile-visibility gate used by
+// /u/{username}/videos — wired to users.Service.CheckProfileAccessByUsername
+// in production so a 'members'/'followers' channel page 403s the same way
+// the profile does.
+func (h *Handlers) SetProfileChecker(fn func(ctx context.Context, username string) error) {
+	h.profileCheck = fn
 }
 
 // attachScope stamps the §42 caller scope on the request context so
@@ -356,6 +369,23 @@ func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
+	}
+
+	// §19/§50: the channel page mirrors the owner's profile visibility —
+	// 'members'/'followers' profiles don't serve their video list to
+	// unauthorized viewers.
+	if h.profileCheck != nil {
+		if err := h.profileCheck(r.Context(), username); err != nil {
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			case errors.Is(err, users.ErrProfilePrivate):
+				errpkg.WriteError(w, http.StatusForbidden, "profile_private", "This profile is private")
+			default:
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve channel")
+			}
+			return
+		}
 	}
 
 	limit, offset := parsePage(r, "limit", "offset")

@@ -683,6 +683,15 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
+ -- §19/§50 profile_visibility: guests see 'public' only; an authenticated
+ -- viewer additionally sees 'members' profiles, their own, and 'followers'
+ -- profiles they already follow.
+ AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+      OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+      OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+          AND (u.id = @viewer_id OR EXISTS (
+               SELECT 1 FROM follows vf
+               WHERE vf.follower_id = @viewer_id AND vf.entity_type = 'user' AND vf.entity_id = u.id))))
  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%'
  -- §50 former-username amendment: a renamed user's former handles still
  -- match — the row emits the live handle, and the per-row guard suppresses
@@ -711,6 +720,12 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
+ AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+      OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+      OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+          AND (u.id = @viewer_id OR EXISTS (
+               SELECT 1 FROM follows vf
+               WHERE vf.follower_id = @viewer_id AND vf.entity_type = 'user' AND vf.entity_id = u.id))))
  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%'
  -- §50 former-username amendment: a renamed user's former handles still
  -- match — the row emits the live handle, and the per-row guard suppresses
@@ -753,7 +768,10 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.id = @user_id
  AND u.status = 'active'
- AND COALESCE(ups.search_indexable, true) = true;
+ AND COALESCE(ups.search_indexable, true) = true
+ -- §19/§50: API-key consumers are not "members" — only fully public
+ -- profiles are served through the public API.
+ AND COALESCE(ups.profile_visibility, 'public') = 'public';
 
 -- name: ActiveUserExistsByID :one
 -- Existence check for the public profile gate: is there an ACTIVE user with
@@ -762,6 +780,15 @@ SELECT EXISTS (
  SELECT 1 FROM users
  WHERE id = @id AND status = 'active'
 ) AS exists;
+
+-- name: GetProfileVisibilityByUserID :one
+-- §19/§50 profile-access gate: the owner's profile_visibility for an ACTIVE
+-- user. ErrNoRows = banned/suspended/deleted/missing → the profile gate
+-- maps it to 404. The service applies the viewer rules on top.
+SELECT COALESCE(ups.profile_visibility, 'public') AS profile_visibility
+FROM users u
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.id = @user_id AND u.status = 'active';
 
 -- name: GetUserContentAnalytics :many
 -- Per-content analytics breakdown for the authenticated user (Section 40).

@@ -805,6 +805,8 @@ WHERE wl.ledger_type = 'points'
  -- DEFAULT true), so users who disabled it are excluded from ranking;
  -- a missing privacy-settings row counts as consenting.
  AND COALESCE(ups.show_points_publicly, true) = true
+ -- §19/§50: the leaderboard is anonymous — only fully public profiles rank.
+ AND COALESCE(ups.profile_visibility, 'public') = 'public'
  AND ($1::uuid IS NULL OR EXISTS (
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $1::uuid
@@ -883,6 +885,7 @@ WHERE wl.ledger_type = 'points'
  AND u.is_synthetic = false
  AND u.status = 'active'
  AND COALESCE(ups.show_points_publicly, true) = true
+ AND COALESCE(ups.profile_visibility, 'public') = 'public'
  AND ($2::uuid IS NULL OR EXISTS (
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $2::uuid

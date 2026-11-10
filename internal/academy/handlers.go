@@ -544,7 +544,7 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 
 // ListCertificatesByUser handles GET /users/{id}/certificates — public earned-
 // certificate badges (social proof). All issued certs are public; non-active
-// users are already 404'd by the requireActiveProfileUser gate on the route.
+// users are already 404'd by the requireVisibleProfileUser gate on the route.
 func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {

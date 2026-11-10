@@ -1080,7 +1080,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 // GetUserAnalytics handles GET /users/{id}/analytics — the profile Analytics
 // dashboard. Owner-only per JEOS api-routes-catalog §342: [auth, self] — the
 // caller must be the profile owner (viewer id == {id}). Guests and other users
-// receive 403 analytics_forbidden. Gated by requireActiveProfileUser on the
+// receive 403 analytics_forbidden. Gated by requireVisibleProfileUser on the
 // route (404 for banned/suspended/deleted). Returns aggregate stats for the
 // {id} user's published+public content plus follower/following counts.
 // // Ref: japaconnect-engineering/sections/33-professional-profiles.md
