@@ -4,6 +4,7 @@
 	import AppShell from '#lib/components/shell/AppShell.svelte';
 	import GuestHeader from '#lib/components/shell/GuestHeader.svelte';
 	import GuestFooter from '#lib/components/shell/GuestFooter.svelte';
+	import { GuestBlockStyles, GuestFooterBlock, containsBlock, type Block } from '@japaconnect/landing-blocks';
 	import MobileBottomTabBar from '#lib/components/shell/MobileBottomTabBar.svelte';
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
@@ -71,6 +72,18 @@
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
 	// The new default guest homepage (guestHome) also uses GuestHeader and a custom footer.
 	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestHome);
+
+	// Published Page Builder pages (data.page from loadPublishedPage) share
+	// the guest-home footer block. It renders BELOW AppShell so the left nav
+	// never indents the band — pages that ship their own guest_footer block
+	// keep it and don't double-render.
+	const isPublishedPage = $derived(!!page.data.page);
+	const publishedHasOwnFooter = $derived(
+		containsBlock(
+			((page.data.page as { blocks?: unknown } | undefined)?.blocks ?? []) as Block[],
+			(b) => b.type === 'guest_footer'
+		)
+	);
 
 	// ADR-127: "Back to JapaConnect" targets the apex domain — derived from the
 	// request host by stripping the leading `roadmap.` label (port preserved for
@@ -329,6 +342,14 @@
 		<NextActionBar />
 		{@render children()}
 	</AppShell>
+	{#if isPublishedPage && !publishedHasOwnFooter}
+		<!-- inline-size container matches LandingRenderer so the footer
+		     block's @container queries resolve against the page width. -->
+		<div style="container-type: inline-size">
+			<GuestBlockStyles />
+			<GuestFooterBlock props={{}} />
+		</div>
+	{/if}
 	<NextActionPopup />
 	{#if !exception}
 		<!-- §25: dismissible sticky anchor ad — suppressed on exception

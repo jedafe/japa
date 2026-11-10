@@ -33,7 +33,8 @@
     }
   );
 
-  const logoSrc = $derived(resolveAssetUrl(logo.dark ?? logo.light ?? ''));
+  const logoLightSrc = $derived(resolveAssetUrl(logo.light ?? logo.dark ?? ''));
+  const logoDarkSrc = $derived(resolveAssetUrl(logo.dark ?? logo.light ?? ''));
 
   // Emit intrinsic dims only when they're actually known — the bundled default
   // (794x384) or explicit width/height on a custom logo. Emitting the
@@ -136,7 +137,8 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logoSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-dark" />
+      <img src={logoLightSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-light" />
+      <img src={logoDarkSrc} alt="" aria-hidden="true" {...logoDims} class="footer-logo footer-logo-dark" />
       <p class="footer-tagline">{tagline}</p>
       {#if socialChildren.length > 0}
         <div class="footer-socials">
