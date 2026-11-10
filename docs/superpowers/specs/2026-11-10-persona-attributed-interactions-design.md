@@ -7,10 +7,11 @@ Date: 2026-11-10 · Status: approved (user Q&A resolved)
 Operators holding `content.assign_author` can already attribute a content
 row to a bot persona (`POST /content` `author_id`, bot-only, §68/SEC-002).
 This spec extends the same delegated-authorship pattern to **comments,
-thread replies, votes, reactions, and follows**, and lets the persona's
-**geo identity** flow into the authored entity. It also adds **persona
-profile editing** (avatar, cover, profession, etc.) to the admin panel now
-and the public profile page as a follow-up.
+thread replies, votes, reactions, and follows**, lets the persona's **geo
+identity** flow into the authored entity, and switches on the **persona
+economy** (receive tips, accumulate points). It also adds **persona
+profile editing** (avatar, cover, profession, etc.) to the admin panel
+now and the public profile page as a follow-up.
 
 No session/profile switching: the operator keeps their own identity; each
 write carries an explicit delegate field (`author_id`/`actor_id`).
@@ -29,6 +30,8 @@ Decisions locked with the user:
   `geo_space_id` to the persona's `current_geo_space_id`; comment geo is
   byline-derived.
 - Scope: comments + thread replies + votes + reactions + follows in v1.
+- Economy: personas can receive tips (settles to their own wallet) and
+  accumulate points; bots stay off leaderboards.
 - Profile editing surface: admin panel modal first, main-app `/u/[username]`
   affordance as a follow-up phase.
 
@@ -180,7 +183,37 @@ change. This section covers the operator following *as* a persona:
 - Applies to all followable `entity_type` values (user, space, tag) —
   the persona follows spaces/tags the same way.
 
-#### 1.7 Geo default on content
+#### 1.7 Persona economy — tips & points
+
+A persona is a full `users` row, so both economies work on the backing
+account — this section covers what's needed to switch them on:
+
+- **Receiving tips** — `PATCH /admin/personas/{id}` gains `tips_enabled`
+  (bool). When set, the personas service upserts `tip_settings` for the
+  backing user **directly** (the `ensureWritable` self-write rule is
+  bypassed — the gate is `persona.manage`, same as the rest of the PATCH).
+  Minimum amount/methods take the platform defaults on first upsert.
+  Requires `tips.receive` to resolve for the backing user (default member
+  group — verify at implementation; no new node).
+- **Settlement** — unchanged: `SettleFiatTip` → `walletOwnerFor` →
+  `recipient_user_id` = backing user → the persona's own wallet credits.
+  Persona wallets **accumulate**; bots have no payout/withdrawal path
+  (out of scope). Refunds/clawbacks work unchanged.
+- **Display** — `PublicUserTipConfig` and the `/u/[username]` tip button
+  need no changes; once `tip_settings.tips_enabled` is set the persona's
+  profile shows the tip CTA like any user.
+- **Points** — no code change: human-driven persona actions already emit
+  normal activity events → `EnqueuePointsAward` credits the persona's
+  `wallet_ledger` (`ledger_type='points'`); the balance displays on the
+  persona's profile. AI-orchestrated (`is_synthetic`) events keep their
+  existing award behavior.
+- **Leaderboards** — `LeaderboardAllTime`/`LeaderboardByPeriod` keep
+  `u.is_bot = false`: personas accumulate points but do not rank.
+  Intentional — a bot topping the human leaderboard undermines the board.
+- `GetPersona` detail gains read-only `tips_enabled` and `points_balance`
+  so admins can see the persona's economy state at a glance.
+
+#### 1.8 Geo default on content
 
 When `author_id` resolves to a persona on `POST /content` or
 `PATCH /content/{id}` and `geo_space_id` is not supplied in the same
@@ -191,7 +224,7 @@ read). An explicit `geo_space_id` always wins.
 Comments carry no geo column — a persona comment's byline geo comes from
 the backing user's `current_geo_space_id` automatically.
 
-#### 1.8 `GET /api/v1/me/personas` (new, non-admin)
+#### 1.9 `GET /api/v1/me/personas` (new, non-admin)
 
 `content.assign_author`-gated; returns active personas only
 (`ai_personas.status = 'active'`):
@@ -205,7 +238,7 @@ Feeds every "interact as" picker on non-admin surfaces. The studio
 composer may migrate off `GET /admin/personas` to this endpoint (optional,
 not required for v1).
 
-#### 1.9 Audit trail
+#### 1.10 Audit trail
 
 Every persona-attributed mutation writes an `audit_logs` row (same helper
 pattern as `impersonation.auditLog`):
@@ -217,7 +250,7 @@ pattern as `impersonation.auditLog`):
   (needed for management rights; the audit row is the compliance trail
   for votes/reactions/follows which have no `created_by` column).
 
-#### 1.10 Error codes (standard envelope)
+#### 1.11 Error codes (standard envelope)
 
 | Code | Status | When |
 |---|---|---|
@@ -273,6 +306,7 @@ backing `users`/`user_profiles` rows (same write path `name`/`tagline`/
 | `education` | `users.education` |
 | `interests` | `users.interests` |
 | `disclosure_mode` | `ai_personas.disclosure_mode` (exists — "show as AI") |
+| `tips_enabled` | `tip_settings` upsert for backing user (new — §1.7) |
 | `geo_space` | geo chain + `current_geo_space_id` (exists) |
 | `name` / `tagline` / `username` | (exists) |
 
@@ -291,7 +325,8 @@ Extend the existing edit modal:
   the tags migration uses); preview thumbnails in the form.
 - Text fields: `profession`, `location`, `website_url`, `education`,
   `interests` (chips input), `name`, `tagline`, `username` (existing).
-- Disclosure toggle (existing select), geo cascade (existing).
+- Disclosure toggle (existing select), geo cascade (existing), and a
+  "Can receive tips" toggle bound to `tips_enabled`.
 - Save → `PATCH /admin/personas/{id}` with the union of the new fields.
 
 ### Phase B — main app (follow-up)
@@ -308,6 +343,8 @@ Extend the existing edit modal:
 
 - Persona session/profile switching (dropped per user direction).
 - Bookmarks, DMs, poll votes, org posting changes.
+- Tipping *as* a persona (spending the persona's wallet), persona
+  payouts/withdrawals, leaderboard inclusion for bots.
 - AI orchestration holds (no human sessions exist to pause — dropped with
   the session model).
 - New RBAC node — `content.assign_author` is reused.
@@ -320,7 +357,7 @@ Extend the existing edit modal:
 - Migration + up/down pair; `comments.created_by_user_id` in §49 notes,
   `forum_replies.created_by_user_id` in §08 notes.
 - §68 personas — delegated-authorship note + profile-field list; §31
-  follows — `actor_id` note.
+  follows — `actor_id` note; §125 tips — persona `tips_enabled` note.
 - `persona_attrib.*` audit action types.
 - No new permission node, no new Valkey keys, no new Asynq tasks.
 
