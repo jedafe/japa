@@ -14,10 +14,25 @@ class ActAsPersonaStore {
 	items = $state<AssignablePersona[]>([]);
 	selected = $state<AssignablePersona | null>(null);
 	private loaded = false;
+	/** Session user the cached list belongs to — `undefined` until the
+	 *  first load binds it. A different id (logout, account switch without
+	 *  a full reload) invalidates the store + persisted cookie so one
+	 *  operator's persona state never leaks into another session. */
+	private ownerId: string | null | undefined = undefined;
 
 	/** Lazy fetch — callers without content.assign_author get a 403 from
-	 *  /me/personas, which degrades to an empty list (picker stays hidden). */
-	async load() {
+	 *  /me/personas, which degrades to an empty list (picker stays hidden).
+	 *  Pass the current session user id so an account switch resets state. */
+	async load(userId: string | null = null) {
+		if (this.ownerId === undefined) {
+			this.ownerId = userId; // first bind — the persisted cookie may restore
+		} else if (userId !== this.ownerId) {
+			this.ownerId = userId;
+			this.items = [];
+			this.selected = null;
+			this.loaded = false;
+			if (isBrowser()) document.cookie = `${COOKIE}=; path=/; max-age=0`;
+		}
 		if (this.loaded || !isBrowser()) return;
 		this.loaded = true;
 		try {

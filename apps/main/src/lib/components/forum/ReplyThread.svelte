@@ -53,9 +53,10 @@
 	const convApi = $derived(backend ?? forumApi(threadId));
 
 	// Delegated authorship (spec §1.8): lazy-load the operator's drivable
-	// personas — the picker self-hides when the list is empty.
+	// personas — the picker self-hides when the list is empty. The session
+	// user id binds the cache so an account switch resets stale state.
 	$effect(() => {
-		void actAsPersona.load();
+		void actAsPersona.load(currentUserId ?? null);
 	});
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
