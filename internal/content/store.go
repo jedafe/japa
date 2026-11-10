@@ -830,6 +830,10 @@ func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, erro
 	return s.read.GetUserIsBot(ctx, userID)
 }
 
+// DB exposes the database pools for fire-and-forget audit writes
+// (personas.AuditAttribution) — same accessor pattern as personas.Store.DB.
+func (s *Service) DB() *db.DB { return s.db }
+
 // WriteContentAudit records an admin audit_logs entry for a moderation
 // action on content — feeds the §22 audit trail and surfaces in the
 // moderation-history projection (target_type 'content'). Callers treat the

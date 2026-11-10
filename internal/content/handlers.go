@@ -3066,7 +3066,8 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		ReactionKey string `json:"reaction_key"`
+		ReactionKey string  `json:"reaction_key"`
+		ActorID     *string `json:"actor_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -3079,9 +3080,27 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delegated authorship (spec §1.5): actor_id records the reaction under
+	// a bot persona backing user. The operator's block check above already
+	// ran; the delegate's own blocked status is checked here too.
+	effectiveActor := user.UserID
+	if input.ActorID != nil && *input.ActorID != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.ActorID)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveActor = aid
+
+		if blocked, bErr := h.Service.IsContentAuthorBlocked(r.Context(), effectiveActor, contentID); bErr == nil && blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot react to this content")
+			return
+		}
+	}
+
 	// E-002: reactions only exist where the viewer can see the content —
 	// draft/deleted/members-space/private/nonexistent content is 404.
-	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, effectiveActor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3122,11 +3141,19 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reaction, err := h.Service.AddReaction(r.Context(), EntityContent, contentID, user.UserID, input.ReactionKey)
+	reaction, err := h.Service.AddReaction(r.Context(), EntityContent, contentID, effectiveActor, input.ReactionKey)
 	if err != nil {
 		handleServiceError(w, err)
 
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.reaction.
+	if effectiveActor.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveActor, "reaction", "content", contentID); err != nil {
+			slog.Warn("content: persona_attrib reaction audit failed", "error", err)
+		}
 	}
 
 	switch {
@@ -3138,7 +3165,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 
 		// §35: notify the author (content.reaction — default-enabled type).
 		// Fire-and-forget; self-reactions never notify.
-		h.dispatchReactionNotification(r.Context(), existing, user.UserID)
+		h.dispatchReactionNotification(r.Context(), existing, effectiveActor)
 
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 	case *reaction.PreviousKey == input.ReactionKey:
@@ -3146,7 +3173,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"entity_type":     EntityContent,
 			"entity_id":       contentID,
-			"user_id":         user.UserID,
+			"user_id":         effectiveActor,
 			"reaction_key":    input.ReactionKey,
 			"already_reacted": true,
 		}})
@@ -3154,7 +3181,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		// One reaction per user (migration 001023): the row switched keys —
 		// the reactor count is unchanged but the author should still hear
 		// about the new reaction.
-		h.dispatchReactionNotification(r.Context(), existing, user.UserID)
+		h.dispatchReactionNotification(r.Context(), existing, effectiveActor)
 
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 	}
@@ -3244,9 +3271,21 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delegated authorship (spec §1.5): ?actor_id= removes the persona's
+	// reaction instead of the operator's.
+	effectiveActor := user.UserID
+	if raw := r.URL.Query().Get("actor_id"); raw != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, raw)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveActor = aid
+	}
+
 	// E-002: same visibility guard as AddReaction — no mutating reactions
 	// on content the caller cannot see.
-	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, effectiveActor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3263,10 +3302,18 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	removed, err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey)
+	removed, err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, effectiveActor, reactionKey)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.reaction.
+	if effectiveActor.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveActor, "reaction", "content", contentID); err != nil {
+			slog.Warn("content: persona_attrib reaction audit failed", "error", err)
+		}
 	}
 
 	// E-003: only a real delete decrements — repeated removes of a reaction
@@ -3447,9 +3494,21 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delegated authorship (spec §1.5): ?actor_id= reports the persona's
+	// reaction state instead of the operator's.
+	effectiveActor := user.UserID
+	if raw := r.URL.Query().Get("actor_id"); raw != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, raw)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveActor = aid
+	}
+
 	// E-002: same visibility guard — no probing reaction state on
 	// invisible content.
-	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, effectiveActor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3466,7 +3525,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reactions, err := h.Service.GetUserReactions(r.Context(), EntityContent, contentID, user.UserID)
+	reactions, err := h.Service.GetUserReactions(r.Context(), EntityContent, contentID, effectiveActor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
