@@ -75,6 +75,10 @@ type CreateContentInput struct {
 	// Source provenance for promoted/ingested content (v1 sources directory).
 	IntelSourceID pgtype.UUID
 	IntelRecordID pgtype.UUID
+	// CreatedByUserID records the authenticated operator when the visible
+	// author is a delegated persona (§68). Internal ownership only — never
+	// serialized; grants the operator author-equivalent manage rights.
+	CreatedByUserID pgtype.UUID
 }
 
 // resolveSpaceCountryCode walks a space's parent_id chain until it reaches
@@ -676,16 +680,17 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			Time:  time.Now(),
 			Valid: input.Status == StatusPublished,
 		},
-		GuideCategory: input.GuideCategory,
-		JourneyStage:  input.JourneyStage,
-		VisaRoute:     input.VisaRoute,
-		SourceCountry: input.SourceCountry,
-		TargetCountry: input.TargetCountry,
-		AiGenerated:   input.AIGenerated,
-		AiModel:       input.AIModel,
-		AiGeneratedAt: aiGeneratedAt,
-		IntelSourceID: input.IntelSourceID,
-		IntelRecordID: input.IntelRecordID,
+		GuideCategory:   input.GuideCategory,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
+		AiGenerated:     input.AIGenerated,
+		AiModel:         input.AIModel,
+		AiGeneratedAt:   aiGeneratedAt,
+		IntelSourceID:   input.IntelSourceID,
+		IntelRecordID:   input.IntelRecordID,
+		CreatedByUserID: input.CreatedByUserID,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -1289,7 +1294,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// scheduled content are in-progress work and must stay editable.
 	if !bypassEditWindow && existing.Status == StatusPublished &&
 		existing.AuthorID.Valid && existing.CreatedAt.Valid &&
-		existing.AuthorID.Bytes == editedBy.Bytes {
+		(existing.AuthorID.Bytes == editedBy.Bytes || existing.CreatedByUserID.Bytes == editedBy.Bytes) {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
 			windowMinutes = s.settings.GetIntOr(ctx, "content.edit_window_minutes", defaultEditWindowMinutes)

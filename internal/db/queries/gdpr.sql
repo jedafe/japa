@@ -1630,6 +1630,16 @@ FROM (SELECT * FROM badge_award_events WHERE user_id = @user_id) t;
 UPDATE comments SET created_by_user_id = NULL
 WHERE created_by_user_id = @user_id;
 
+-- name: ClearContentsCreatedBy :exec
+-- Delegated-authorship operator attribution (§68). Internal ownership only —
+-- nulling severs the link without touching the persona's authored content.
+UPDATE contents SET created_by_user_id = NULL
+WHERE created_by_user_id = @user_id;
+
+-- name: ClearForumThreadsCreatedBy :exec
+UPDATE forum_threads SET created_by_user_id = NULL
+WHERE created_by_user_id = @user_id;
+
 -- name: ClearForumRepliesCreatedBy :exec
 -- Delegated-authorship spec: same operator-linkage erasure for forum replies.
 UPDATE forum_replies SET created_by_user_id = NULL

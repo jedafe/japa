@@ -213,7 +213,7 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 }
 
 const createForumThread = `-- name: CreateForumThread :one
-INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
@@ -230,6 +230,7 @@ type CreateForumThreadParams struct {
 	Body              []byte      `json:"body"`
 	IsAnonymous       bool        `json:"is_anonymous"`
 	EditWindowMinutes int32       `json:"edit_window_minutes"`
+	CreatedByUserID   pgtype.UUID `json:"created_by_user_id"`
 }
 
 type CreateForumThreadRow struct {
@@ -267,6 +268,7 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 		arg.Body,
 		arg.IsAnonymous,
 		arg.EditWindowMinutes,
+		arg.CreatedByUserID,
 	)
 	var i CreateForumThreadRow
 	err := row.Scan(
@@ -666,7 +668,7 @@ const getForumThreadByID = `-- name: GetForumThreadByID :one
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
- is_edited, created_at, updated_at, deleted_at
+ is_edited, created_at, updated_at, deleted_at, created_by_user_id
 FROM forum_threads
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -693,6 +695,7 @@ type GetForumThreadByIDRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
 }
 
 func (q *Queries) GetForumThreadByID(ctx context.Context, id pgtype.UUID) (GetForumThreadByIDRow, error) {
@@ -720,6 +723,7 @@ func (q *Queries) GetForumThreadByID(ctx context.Context, id pgtype.UUID) (GetFo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -728,7 +732,7 @@ const getForumThreadBySlug = `-- name: GetForumThreadBySlug :one
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
- is_edited, created_at, updated_at, deleted_at
+ is_edited, created_at, updated_at, deleted_at, created_by_user_id
 FROM forum_threads
 WHERE slug = $1 AND deleted_at IS NULL
 `
@@ -755,6 +759,7 @@ type GetForumThreadBySlugRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
 }
 
 func (q *Queries) GetForumThreadBySlug(ctx context.Context, slug string) (GetForumThreadBySlugRow, error) {
@@ -782,6 +787,7 @@ func (q *Queries) GetForumThreadBySlug(ctx context.Context, slug string) (GetFor
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -803,7 +809,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  s.level AS space_level,
  c.status AS content_status,
  c.visibility AS content_visibility,
- c.seo_indexable
+ c.seo_indexable,
+ ft.created_by_user_id
 FROM forum_threads ft
 LEFT JOIN contents c ON c.id = ft.content_id AND c.deleted_at IS NULL
 LEFT JOIN users u ON u.id = ft.author_user_id
@@ -849,6 +856,7 @@ type GetForumThreadBySlugWithDetailsRow struct {
 	ContentStatus       *string            `json:"content_status"`
 	ContentVisibility   *string            `json:"content_visibility"`
 	SeoIndexable        *bool              `json:"seo_indexable"`
+	CreatedByUserID     pgtype.UUID        `json:"created_by_user_id"`
 }
 
 // =====================
@@ -898,6 +906,7 @@ func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug stri
 		&i.ContentStatus,
 		&i.ContentVisibility,
 		&i.SeoIndexable,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }

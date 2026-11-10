@@ -320,8 +320,9 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 // corresponding _any node (content.edit_any / content.delete_any) may modify
 // any content. This is the ownership enforcement for the _own/_any RBAC split
 // (BUG-001 / BUG-002 / BUG-003).
-func canModifyContent(r *http.Request, userID, authorID pgtype.UUID, anyPerm string) bool {
-	if userID.Valid && authorID.Valid && userID.Bytes == authorID.Bytes {
+func canModifyContent(r *http.Request, userID, authorID, createdByID pgtype.UUID, anyPerm string) bool {
+	// The visible author OR the recorded operator of a delegated post (§68).
+	if userID.Valid && (userID.Bytes == authorID.Bytes || userID.Bytes == createdByID.Bytes) {
 		return true
 	}
 
@@ -1179,6 +1180,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 		authorAssigned = true
 		createInput.AuthorID = authorID
+		// §68: the operator retains author-equivalent manage rights on the
+		// delegated post; the linkage is internal-only and cleared on erasure.
+		createInput.CreatedByUserID = user.UserID
 	}
 	if input.SeoIndexable != nil {
 		createInput.SeoIndexable = *input.SeoIndexable
@@ -1433,7 +1437,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// only visible to the author or a user holding content.edit_any.
 	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
-		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
@@ -1447,7 +1451,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case VisibilityPrivate:
-			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
@@ -1578,6 +1582,14 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		dto["field_values"] = json.RawMessage(content.FieldValues)
 	} else {
 		dto["field_values"] = map[string]any{}
+	}
+
+	// §68: the author OR the recorded operator of a delegated post manages it —
+	// mirrors the comments/replies `viewer_can_manage` contract for edit/delete
+	// affordances. The operator id itself is never exposed.
+	if user != nil && user.UserID.Valid &&
+		(user.UserID.Bytes == content.AuthorID.Bytes || user.UserID.Bytes == content.CreatedByUserID.Bytes) {
+		dto["viewer_can_manage"] = true
 	}
 
 	// Image URLs resolved from storage refs (same rule as the feed mapper).
@@ -2275,7 +2287,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// BUG-001: enforce author-or-admin before allowing edits. Type-specific
 	// moderator nodes (story.edit_any for §79, comparison.edit_any for §30)
 	// are also honoured so those moderators can use the unified composer.
-	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, prevContent.CreatedByUserID, "content.edit_any") {
 		letCanEdit := false
 
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
@@ -2520,7 +2532,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, content.AuthorID, "content.delete_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.delete_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only delete your own content")
 		return
 	}
@@ -2584,7 +2596,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-003: only the author, super-admins, or content.edit_any holders
 	// may publish this content.
-	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, prevContent.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only publish your own content")
 		return
 	}
@@ -2688,7 +2700,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, prevContent.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only archive your own content")
 		return
 	}
@@ -2760,7 +2772,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, prevContent.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
 		return
 	}
@@ -3860,7 +3872,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only tag your own content")
 		return
 	}
@@ -3970,7 +3982,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only remove tags from your own content")
 		return
 	}
@@ -4277,7 +4289,7 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, existing.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, existing.AuthorID, existing.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can view space assignments")
 		return
@@ -4359,7 +4371,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, existing.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, existing.AuthorID, existing.CreatedByUserID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
 		return

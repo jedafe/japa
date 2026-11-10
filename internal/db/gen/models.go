@@ -1233,6 +1233,7 @@ type Content struct {
 	VoteScore       int32              `json:"vote_score"`
 	UpvoteCount     int32              `json:"upvote_count"`
 	DownvoteCount   int32              `json:"downvote_count"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -2219,6 +2220,7 @@ type ForumThread struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AmaConfig         []byte             `json:"ama_config"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
 }
 
 type ForumThreadTag struct {

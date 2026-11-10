@@ -68,7 +68,7 @@ func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContents
 }
 
 const adminGetContent = `-- name: AdminGetContent :one
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes, c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at, c.auto_hidden, c.auto_hidden_at, c.deleted_at, c.organization_id, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.guide_category, c.ai_exempt, c.ai_generated, c.ai_model, c.ai_generated_at, c.hitl_reviewed_by, c.hitl_reviewed_at, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id, c.intel_source_id, c.intel_record_id, c.vote_score, c.upvote_count, c.downvote_count,
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes, c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at, c.auto_hidden, c.auto_hidden_at, c.deleted_at, c.organization_id, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.guide_category, c.ai_exempt, c.ai_generated, c.ai_model, c.ai_generated_at, c.hitl_reviewed_by, c.hitl_reviewed_at, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id, c.intel_source_id, c.intel_record_id, c.vote_score, c.upvote_count, c.downvote_count, c.created_by_user_id,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
@@ -136,6 +136,7 @@ type AdminGetContentRow struct {
 	VoteScore         int32              `json:"vote_score"`
 	UpvoteCount       int32              `json:"upvote_count"`
 	DownvoteCount     int32              `json:"downvote_count"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
 	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
@@ -203,6 +204,7 @@ func (q *Queries) AdminGetContent(ctx context.Context, id pgtype.UUID) (AdminGet
 		&i.VoteScore,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.CreatedByUserID,
 		&i.IsFeatured,
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,

@@ -422,6 +422,18 @@ func (q *Queries) ClearCommentsCreatedBy(ctx context.Context, userID pgtype.UUID
 	return err
 }
 
+const clearContentsCreatedBy = `-- name: ClearContentsCreatedBy :exec
+UPDATE contents SET created_by_user_id = NULL
+WHERE created_by_user_id = $1
+`
+
+// Delegated-authorship operator attribution (§68). Internal ownership only —
+// nulling severs the link without touching the persona's authored content.
+func (q *Queries) ClearContentsCreatedBy(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearContentsCreatedBy, userID)
+	return err
+}
+
 const clearForumRepliesCreatedBy = `-- name: ClearForumRepliesCreatedBy :exec
 UPDATE forum_replies SET created_by_user_id = NULL
 WHERE created_by_user_id = $1
@@ -430,6 +442,16 @@ WHERE created_by_user_id = $1
 // Delegated-authorship spec: same operator-linkage erasure for forum replies.
 func (q *Queries) ClearForumRepliesCreatedBy(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, clearForumRepliesCreatedBy, userID)
+	return err
+}
+
+const clearForumThreadsCreatedBy = `-- name: ClearForumThreadsCreatedBy :exec
+UPDATE forum_threads SET created_by_user_id = NULL
+WHERE created_by_user_id = $1
+`
+
+func (q *Queries) ClearForumThreadsCreatedBy(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearForumThreadsCreatedBy, userID)
 	return err
 }
 
@@ -2130,7 +2152,7 @@ func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, userID pgty
 
 const gdprExportUserForumThreads = `-- name: GdprExportUserForumThreads :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id, ama_config FROM forum_threads WHERE author_user_id = $1) t
+FROM (SELECT id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id, ama_config, created_by_user_id FROM forum_threads WHERE author_user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserForumThreads(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

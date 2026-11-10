@@ -239,7 +239,10 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	// content.delete_any holders) can edit/delete the thread inline, and
 	// author/comments.pin holders moderate replies — same affordances as
 	// loadContentArticle. One best-effort /me/permissions call.
-	const isOwner = !!article.author_id && currentUserId === article.author_id;
+	// §68: viewer_can_manage also covers the operator behind a delegated post.
+	const isOwner =
+		(!!article.author_id && currentUserId === article.author_id) ||
+		article.viewer_can_manage === true;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 	let canModerate = isOwner || isSuperAdmin;
 	let canEdit = isOwner || isSuperAdmin;

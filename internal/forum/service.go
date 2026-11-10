@@ -29,6 +29,10 @@ type CreateThreadInput struct {
 	Body              []byte
 	IsAnonymous       bool
 	EditWindowMinutes int32
+	// CreatedByUserID records the authenticated operator when the visible
+	// author is a delegated persona (§68). Internal ownership only — never
+	// serialized; grants the operator author-equivalent manage rights.
+	CreatedByUserID pgtype.UUID
 	// Poll, when provided, is created in the same transaction as the thread.
 	Poll *PollInput
 }
@@ -110,6 +114,7 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 			Body:              input.Body,
 			IsAnonymous:       input.IsAnonymous,
 			EditWindowMinutes: editWindow,
+			CreatedByUserID:   input.CreatedByUserID,
 		})
 		if err != nil {
 			return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
@@ -218,7 +223,8 @@ func (s *Service) UpdateThread(ctx context.Context, id, userID pgtype.UUID, titl
 		return gen.ForumThread{}, errors.New("only the author or a moderator can edit this thread")
 	}
 
-	if !s.canModerateAny(ctx, thread.SpaceID, userID, "forum.thread.edit_any") && thread.AuthorUserID == userID {
+	if !s.canModerateAny(ctx, thread.SpaceID, userID, "forum.thread.edit_any") &&
+		(thread.AuthorUserID == userID || thread.CreatedByUserID == userID) {
 		if expired := editWindowExpired(thread.EditWindowMinutes, thread.CreatedAt); expired {
 			return gen.ForumThread{}, fmt.Errorf("%w: thread edit window has expired", ErrEditWindowExpired)
 		}
@@ -328,7 +334,8 @@ func (s *Service) UnsolveThread(ctx context.Context, id, userID pgtype.UUID) err
 // the author, a space moderator of the thread's space, or a holder of the
 // given _any node (super-admin satisfies this via the wildcard). Ref: §26.
 func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread, userID pgtype.UUID, anyNode string) bool {
-	if thread.AuthorUserID == userID {
+	// The visible author OR the recorded operator of a delegated thread.
+	if thread.AuthorUserID == userID || thread.CreatedByUserID == userID {
 		return true
 	}
 
@@ -359,10 +366,11 @@ func (s *Service) canModerateAny(ctx context.Context, spaceID, userID pgtype.UUI
 }
 
 // canSolveThread reports whether the user may solve/unsolve the thread:
-// the OP, a space moderator, or a holder of forum.thread.solve (super-admin
-// via wildcard). Ref: Section 08 "OP or moderator".
+// the OP (including the recorded operator of a delegated thread), a space
+// moderator, or a holder of forum.thread.solve (super-admin via wildcard).
+// Ref: Section 08 "OP or moderator".
 func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, userID pgtype.UUID) bool {
-	if thread.AuthorUserID == userID {
+	if thread.AuthorUserID == userID || thread.CreatedByUserID == userID {
 		return true
 	}
 

@@ -58,6 +58,8 @@ func forumThreadFromByIDRow(r gen.GetForumThreadByIDRow) gen.ForumThread {
 	return gen.ForumThread{
 		ID: r.ID,
 
+		CreatedByUserID: r.CreatedByUserID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -84,6 +86,8 @@ func forumThreadFromByIDRow(r gen.GetForumThreadByIDRow) gen.ForumThread {
 func forumThreadFromBySlugRow(r gen.GetForumThreadBySlugRow) gen.ForumThread {
 	return gen.ForumThread{
 		ID: r.ID,
+
+		CreatedByUserID: r.CreatedByUserID,
 
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,

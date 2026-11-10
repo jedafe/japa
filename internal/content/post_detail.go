@@ -58,7 +58,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// Visibility/status gate — same rules as GET /content/{slug}.
 	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
-		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
@@ -72,7 +72,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case VisibilityPrivate:
-			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
+			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, content.CreatedByUserID, "content.edit_any") {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
@@ -226,6 +226,14 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	// §68: the author OR the recorded operator of a delegated post manages it —
+	// mirrors the comments/replies `viewer_can_manage` contract for edit/delete
+	// affordances. The operator id itself is never exposed.
+	if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid &&
+		(u.UserID.Bytes == content.AuthorID.Bytes || u.UserID.Bytes == content.CreatedByUserID.Bytes) {
+		dto["viewer_can_manage"] = true
 	}
 
 	resp := map[string]any{"data": dto}

@@ -1,5 +1,5 @@
 -- name: CreateContent :one
-INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id) VALUES (@author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html, @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(header_image_id), sqlc.narg(featured_image_id), sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description), sqlc.narg(og_image_url), @seo_indexable, @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at), sqlc.narg(guide_category), COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at), sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at), sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country), sqlc.narg(video_source_id), sqlc.narg(intel_source_id), sqlc.narg(intel_record_id))
+INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id) VALUES (@author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html, @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(header_image_id), sqlc.narg(featured_image_id), sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description), sqlc.narg(og_image_url), @seo_indexable, @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at), sqlc.narg(guide_category), COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at), sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at), sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country), sqlc.narg(video_source_id), sqlc.narg(intel_source_id), sqlc.narg(intel_record_id), sqlc.narg(created_by_user_id))
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
  canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
@@ -19,7 +19,7 @@ SELECT id, author_id, organization_id, space_id, content_type, title, slug, body
  created_at, updated_at, guide_category,
  ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
  journey_stage, visa_route, source_country, target_country, video_source_id,
- intel_source_id, intel_record_id, auto_hidden
+ intel_source_id, intel_record_id, auto_hidden, created_by_user_id
 FROM contents
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -113,7 +113,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
  -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
  COALESCE((SELECT ri.slug FROM roadmap_items ri
-  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug,
+ c.created_by_user_id
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -206,7 +207,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
  -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
  COALESCE((SELECT ri.slug FROM roadmap_items ri
-  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug,
+ c.created_by_user_id
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id

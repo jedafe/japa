@@ -214,7 +214,7 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 }
 
 const createContent = `-- name: CreateContent :one
-INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, COALESCE($25, false), $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, COALESCE($25, false), $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
  canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
@@ -263,6 +263,7 @@ type CreateContentParams struct {
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 type CreateContentRow struct {
@@ -351,6 +352,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.VideoSourceID,
 		arg.IntelSourceID,
 		arg.IntelRecordID,
+		arg.CreatedByUserID,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -760,7 +762,7 @@ SELECT id, author_id, organization_id, space_id, content_type, title, slug, body
  created_at, updated_at, guide_category,
  ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
  journey_stage, visa_route, source_country, target_country, video_source_id,
- intel_source_id, intel_record_id, auto_hidden
+ intel_source_id, intel_record_id, auto_hidden, created_by_user_id
 FROM contents
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -812,6 +814,7 @@ type GetContentByIDRow struct {
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 	AutoHidden      bool               `json:"auto_hidden"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetContentByIDRow, error) {
@@ -864,6 +867,7 @@ func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetConten
 		&i.IntelSourceID,
 		&i.IntelRecordID,
 		&i.AutoHidden,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -1078,7 +1082,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
  -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
  COALESCE((SELECT ri.slug FROM roadmap_items ri
-  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug,
+ c.created_by_user_id
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -1197,6 +1202,7 @@ type GetContentDetailBySlugRow struct {
 	SeriesPrevSlug                string             `json:"series_prev_slug"`
 	SeriesNextSlug                string             `json:"series_next_slug"`
 	RoadmapItemSlug               string             `json:"roadmap_item_slug"`
+	CreatedByUserID               pgtype.UUID        `json:"created_by_user_id"`
 }
 
 // Enriched single-content row for the public /content/[slug] reading page.
@@ -1283,6 +1289,7 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.SeriesPrevSlug,
 		&i.SeriesNextSlug,
 		&i.RoadmapItemSlug,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -1335,7 +1342,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
  -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
  COALESCE((SELECT ri.slug FROM roadmap_items ri
-  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug,
+ c.created_by_user_id
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -1453,6 +1461,7 @@ type GetContentDetailBySlugAndTypeRow struct {
 	SeriesPrevSlug                string             `json:"series_prev_slug"`
 	SeriesNextSlug                string             `json:"series_next_slug"`
 	RoadmapItemSlug               string             `json:"roadmap_item_slug"`
+	CreatedByUserID               pgtype.UUID        `json:"created_by_user_id"`
 }
 
 // Enriched single-content row for the public /post/{content_type}/{slug} social
@@ -1530,6 +1539,7 @@ func (q *Queries) GetContentDetailBySlugAndType(ctx context.Context, arg GetCont
 		&i.SeriesPrevSlug,
 		&i.SeriesNextSlug,
 		&i.RoadmapItemSlug,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }

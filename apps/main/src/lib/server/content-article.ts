@@ -52,7 +52,11 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	// Edit button on every post to every signed-in member. Ownership is
 	// already covered by isOwner. The backend enforces the actual
 	// permission on PATCH /content/{id}; this flag only gates the UI button.
-	const isOwner = !!article.author_id && currentUserId === article.author_id;
+	// §68: viewer_can_manage also covers the operator behind a delegated
+	// (persona-authored) post — same owner affordances, no operator id.
+	const isOwner =
+		(!!article.author_id && currentUserId === article.author_id) ||
+		article.viewer_can_manage === true;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 
 	let hasContentEditPermission = false;

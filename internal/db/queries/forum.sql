@@ -1,5 +1,5 @@
 -- name: CreateForumThread :one
-INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes) VALUES (sqlc.narg(content_id), sqlc.narg(space_id), @author_user_id, sqlc.narg(parent_reply_id), @title, @slug, @body, @is_anonymous, @edit_window_minutes)
+INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes, created_by_user_id) VALUES (sqlc.narg(content_id), sqlc.narg(space_id), @author_user_id, sqlc.narg(parent_reply_id), @title, @slug, @body, @is_anonymous, @edit_window_minutes, sqlc.narg(created_by_user_id))
 RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
@@ -9,7 +9,7 @@ RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
- is_edited, created_at, updated_at, deleted_at
+ is_edited, created_at, updated_at, deleted_at, created_by_user_id
 FROM forum_threads
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -17,7 +17,7 @@ WHERE id = @id AND deleted_at IS NULL;
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
  vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
- is_edited, created_at, updated_at, deleted_at
+ is_edited, created_at, updated_at, deleted_at, created_by_user_id
 FROM forum_threads
 WHERE slug = @slug AND deleted_at IS NULL;
 
@@ -100,7 +100,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  s.level AS space_level,
  c.status AS content_status,
  c.visibility AS content_visibility,
- c.seo_indexable
+ c.seo_indexable,
+ ft.created_by_user_id
 FROM forum_threads ft
 LEFT JOIN contents c ON c.id = ft.content_id AND c.deleted_at IS NULL
 LEFT JOIN users u ON u.id = ft.author_user_id

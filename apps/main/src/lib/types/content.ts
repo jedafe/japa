@@ -41,6 +41,10 @@ export interface ContentArticle {
 	author_avatar_url?: string | null;
 	/** §68 — true when the author is an AI persona with disclosure_mode = 'disclosed'. */
 	author_ai_disclosed?: boolean;
+	/** §68 — true when the viewer is the author or the recorded operator of a
+	 *  delegated (persona-authored) post. Grants author-equivalent manage
+	 *  affordances without exposing the operator id. */
+	viewer_can_manage?: boolean;
 	space_id?: string | null;
 	space_name?: string | null;
 	space_slug?: string | null;

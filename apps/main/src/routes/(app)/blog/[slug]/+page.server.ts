@@ -63,7 +63,11 @@ export const load: PageServerLoad = async (event) => {
 	// gates the UI Edit button. Ref: §03 RBAC — the legacy `content.edit_any`
 	// node was renamed to `content.edit_own`; `content.edit_any` is the
 	// admin/editor non-owner edit node.
-	const isOwner = authed && !!article.author_id && currentUserId === article.author_id;
+	// §68: viewer_can_manage also covers the operator behind a delegated post.
+	const isOwner =
+		authed &&
+		((!!article.author_id && currentUserId === article.author_id) ||
+			article.viewer_can_manage === true);
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 
 	const isOwnArticle = !!currentUserId && article.author_id === currentUserId;

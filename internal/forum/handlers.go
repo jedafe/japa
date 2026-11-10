@@ -643,6 +643,14 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		effectiveID = aid
 	}
 
+	// §68: on delegated threads the operator is recorded as the internal
+	// creator on both the thread and its backing contents row — author-
+	// equivalent manage rights, never serialized, cleared on erasure.
+	var createdBy pgtype.UUID
+	if effectiveID.Bytes != user.UserID.Bytes {
+		createdBy = user.UserID
+	}
+
 	// Pass 0 when the client does not specify an edit window so the service
 	// applies the hot-reloadable default (forum.edit_window_minutes).
 	editWindow := int32(0)
@@ -692,17 +700,18 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 
 		contentRow, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
-			AuthorID:     effectiveID,
-			ContentType:  "forum_thread",
-			Title:        content.SanitizeText(input.Title),
-			Slug:         content.SanitizeText(input.Slug),
-			Body:         string(input.Body),
-			BodyHtml:     forumBodyHTML(input.Body),
-			FieldValues:  []byte("{}"),
-			SeoIndexable: true,
-			Status:       status,
-			Visibility:   content.VisibilityPublic,
-			SpaceID:      spaceID,
+			AuthorID:        effectiveID,
+			ContentType:     "forum_thread",
+			Title:           content.SanitizeText(input.Title),
+			Slug:            content.SanitizeText(input.Slug),
+			Body:            string(input.Body),
+			BodyHtml:        forumBodyHTML(input.Body),
+			FieldValues:     []byte("{}"),
+			SeoIndexable:    true,
+			Status:          status,
+			Visibility:      content.VisibilityPublic,
+			SpaceID:         spaceID,
+			CreatedByUserID: createdBy,
 		})
 		if err != nil {
 			handleServiceError(w, err)
@@ -729,6 +738,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		Body:              input.Body,
 		IsAnonymous:       input.IsAnonymous,
 		EditWindowMinutes: editWindow,
+		CreatedByUserID:   createdBy,
 		Poll:              pollInput,
 	})
 	if err != nil {
@@ -1202,8 +1212,9 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	if user := auth.FromContext(r.Context()); user != nil {
 		threadModel := gen.ForumThread{
-			AuthorUserID: thread.AuthorUserID,
-			SpaceID:      thread.SpaceID,
+			AuthorUserID:    thread.AuthorUserID,
+			CreatedByUserID: thread.CreatedByUserID,
+			SpaceID:         thread.SpaceID,
 		}
 		canSolve = h.Service.canSolveThread(r.Context(), threadModel, user.UserID)
 		// The author, a space moderator, or a holder of forum.thread.edit_any
@@ -1256,6 +1267,10 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			thread.AuthorUserID = pgtype.UUID{}
 		}
 	}
+
+	// §68: created_by_user_id is internal operator attribution — the manage
+	// checks above already consumed it; it must not serialize.
+	thread.CreatedByUserID = pgtype.UUID{}
 
 	// GDPR / ADR-029: expose deleted_user_ids so the frontend can render
 	// @[deleted user] for mentions of erased users in the thread body

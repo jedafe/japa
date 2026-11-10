@@ -1364,6 +1364,12 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		if err := q.ClearForumRepliesCreatedBy(ctx, userID); err != nil {
 			return fmt.Errorf("clearing forum replies created_by: %w", err)
 		}
+		if err := q.ClearContentsCreatedBy(ctx, userID); err != nil {
+			return fmt.Errorf("clearing contents created_by: %w", err)
+		}
+		if err := q.ClearForumThreadsCreatedBy(ctx, userID); err != nil {
+			return fmt.Errorf("clearing forum threads created_by: %w", err)
+		}
 
 		// BUG-024: DM erasure — anonymize DM content and reassign participant
 		// references to the placeholder so the conversation survives for the
@@ -2432,10 +2438,10 @@ type UserDataExport struct {
 	SpaceRules                  []map[string]interface{} `json:"space_rules"`         // BUG-004
 	TagModerators               []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
-	UserBadges                  []map[string]interface{} `json:"user_badges"`                  // §64
-	UserChallengeProgress       []map[string]interface{} `json:"user_challenge_progress"`      // §64
-	BadgeProgress               []map[string]interface{} `json:"badge_progress"`               // §64 v2
-	BadgeAwardEvents            []map[string]interface{} `json:"badge_award_events"`           // §64 v2
+	UserBadges                  []map[string]interface{} `json:"user_badges"`             // §64
+	UserChallengeProgress       []map[string]interface{} `json:"user_challenge_progress"` // §64
+	BadgeProgress               []map[string]interface{} `json:"badge_progress"`          // §64 v2
+	BadgeAwardEvents            []map[string]interface{} `json:"badge_award_events"`      // §64 v2
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
 	TipsSent                    []map[string]interface{} `json:"tips_sent"`
 	TipsReceived                []map[string]interface{} `json:"tips_received"`
