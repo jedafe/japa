@@ -465,6 +465,13 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 			return results, fmt.Errorf("personas: input %d: create user: %w", i, err)
 		}
 
+		// §50 former-username amendment: release any redirect left on the
+		// claimed handle — live name wins at read regardless (hygiene).
+		if err := q.DeleteUsernameRedirectByName(ctx, in.Slug); err != nil {
+			results[i] = ProvisionResult{Input: in, Error: err.Error()}
+			return results, fmt.Errorf("personas: input %d: release username redirect: %w", i, err)
+		}
+
 		// 2. Create the user profile byline (display_name + bio) for the bot.
 		// Professional profiles were removed; the persona byline now comes
 		// from the bot's user profile (§33 removal, §68 update).
@@ -966,6 +973,15 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		if taken > 0 {
 			return PersonaDetail{}, fmt.Errorf("personas: username %q is taken: %w", newUsername, errpkg.ErrDuplicate)
 		}
+		// Row-lock the backing user before renaming — the lock serializes
+		// concurrent renames of the same account and yields the authoritative
+		// current handle for the redirect record (detail was fetched pre-tx).
+		locked, err := q.GetUserAccountForUpdate(ctx, detail.UserID)
+		if err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: lock backing user: %w", err)
+		}
+		oldUsername := locked.Username
+
 		if err := q.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{ID: detail.UserID, Username: newUsername}); err != nil {
 			// The UsernameExists check above is advisory — the UNIQUE index is
 			// the real guard. Map a raced/case-collided 23505 to the same 409
@@ -983,8 +999,8 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		if err := q.DeleteUsernameRedirectByName(ctx, newUsername); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: release username redirect: %w", err)
 		}
-		if detail.BackingUsername != "" && detail.BackingUsername != newUsername {
-			if err := q.RecordUsernameRedirect(ctx, gen.RecordUsernameRedirectParams{Username: detail.BackingUsername, UserID: detail.UserID}); err != nil {
+		if oldUsername != "" && oldUsername != newUsername {
+			if err := q.RecordUsernameRedirect(ctx, gen.RecordUsernameRedirectParams{Username: oldUsername, UserID: detail.UserID}); err != nil {
 				return PersonaDetail{}, fmt.Errorf("personas: record username redirect: %w", err)
 			}
 		}

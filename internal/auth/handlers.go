@@ -371,6 +371,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Username:     req.Username,
 		PasswordHash: &passwordHash,
 	})
+	// §50 former-username amendment: claiming the handle releases any
+	// redirect a previous owner left behind. Best-effort hygiene — the
+	// live username already wins at read time.
+	if err == nil {
+		_ = h.Queries.DeleteUsernameRedirectByName(r.Context(), req.Username)
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 

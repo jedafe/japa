@@ -580,6 +580,9 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 
 			return pgtype.UUID{}, fmt.Errorf("create user: %w", err)
 		}
+		// §50 former-username amendment: release any redirect left on the
+		// claimed handle (live name wins at read regardless — hygiene only).
+		_ = h.Queries.DeleteUsernameRedirectByName(ctx, candidate)
 
 		// §unified-tiers: new users start on the regular tier.
 		if h.TierManager != nil {

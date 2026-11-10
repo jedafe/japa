@@ -2421,6 +2421,12 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserIn
 			return fmt.Errorf("creating synthetic user: %w", err)
 		}
 
+		// §50 former-username amendment: release any redirect left on the
+		// claimed handle — live name wins at read regardless (hygiene).
+		if err := q.DeleteUsernameRedirectByName(ctx, input.Username); err != nil {
+			return fmt.Errorf("releasing username redirect: %w", err)
+		}
+
 		displayName := stringOrNil(input.DisplayName)
 		bio := stringOrNil(input.Bio)
 		avatarURL := stringOrNil(input.AvatarURL)
