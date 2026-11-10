@@ -67,7 +67,7 @@ type PersonaInput struct {
 	DisclosureMode string         `json:"disclosure_mode"`
 	AutonomyMode   string         `json:"autonomy_mode"`
 	ActivityPolicy ActivityPolicy `json:"activity_policy"`
-	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
+	TypeID         string         `json:"type_id"`   // optional; defaults to "contributor"/"columnist" lookup
 	GeoSpace       string         `json:"geo_space"` // optional space UUID or slug (§68 Geo Space Assignment)
 }
 
@@ -598,6 +598,42 @@ func (s *Service) ListPersonas(ctx context.Context, status, q, sort, dir string,
 	}
 
 	return items, total, nil
+}
+
+// DrivablePersona is the slim /me/personas payload — the fields the
+// frontend "Interact as" picker needs (spec §1.8).
+type DrivablePersona struct {
+	ID           pgtype.UUID `json:"id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	Name         string      `json:"name"`
+	Username     string      `json:"username"`
+	AvatarURL    *string     `json:"avatar_url,omitempty"`
+	GeoSpaceID   pgtype.UUID `json:"geo_space_id"`
+	GeoSpaceName *string     `json:"geo_space_name,omitempty"`
+}
+
+// ListDrivablePersonas returns the active personas an operator may drive
+// via author_id/actor_id delegation.
+func (s *Service) ListDrivablePersonas(ctx context.Context) ([]DrivablePersona, error) {
+	rows, err := s.store.ListActivePersonas(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]DrivablePersona, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, DrivablePersona{
+			ID:           r.ID,
+			UserID:       r.UserID,
+			Name:         r.Name,
+			Username:     r.Username,
+			AvatarURL:    r.AvatarUrl,
+			GeoSpaceID:   r.GeoSpaceID,
+			GeoSpaceName: r.GeoSpaceName,
+		})
+	}
+
+	return items, nil
 }
 
 // UpdatePersonaInput holds the optional fields for a persona update.

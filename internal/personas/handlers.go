@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // Handlers exposes the admin persona management endpoints.
@@ -59,6 +60,39 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	}
 
 	return id, true
+}
+
+// ListMyPersonas handles GET /api/v1/me/personas — the slim active-persona
+// list an operator may drive via author_id/actor_id delegation (spec §1.8).
+// Gated on content.assign_author (or super_admin), the same permission the
+// delegated-actor resolver enforces, so the picker only surfaces personas
+// the caller could actually attribute actions to.
+func (h *Handlers) ListMyPersonas(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	res := rbac.FromContext(r.Context())
+	if res == nil {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Permission check unavailable")
+		return
+	}
+
+	if !res.IsSuperAdmin(r.Context(), user.UserID) &&
+		!res.HasPermission(r.Context(), user.UserID, "content.assign_author") {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to drive personas")
+		return
+	}
+
+	items, err := h.service.ListDrivablePersonas(r.Context())
+	if err != nil {
+		slog.Error("personas: list drivable personas failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list personas")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // parsePaginationWithMax extracts page_size and page_offset from the query

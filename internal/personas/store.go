@@ -97,6 +97,12 @@ func (s *Store) ListAIPersonas(ctx context.Context, status, q, sort, dir string,
 	})
 }
 
+// ListActivePersonas returns the slim active-persona list for GET
+// /me/personas — feeds the frontend "Interact as" picker (spec §1.8).
+func (s *Store) ListActivePersonas(ctx context.Context) ([]gen.ListActivePersonasRow, error) {
+	return s.read.ListActivePersonas(ctx)
+}
+
 // CountAIPersonas counts personas for a platform with the same status and search
 // filters applied to ListAIPersonas.
 func (s *Store) CountAIPersonas(ctx context.Context, status, q string) (int64, error) {

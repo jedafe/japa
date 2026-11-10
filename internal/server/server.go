@@ -6366,6 +6366,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.bookmarks"), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/me/bookmarks", usersHandlers.CreateMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/organizations", orgHandlers.ListMyOrganizations)
+			// Delegated-authorship spec §1.8: slim active-persona list for the
+			// "Interact as" picker; gated inside on content.assign_author.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/personas", personasHandlers.ListMyPersonas)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
 			// BUG-008: reorder route registered before the {id} route so chi

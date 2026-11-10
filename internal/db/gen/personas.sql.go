@@ -584,6 +584,66 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 	return items, nil
 }
 
+const listActivePersonas = `-- name: ListActivePersonas :many
+SELECT
+ ap.id,
+ ap.user_id,
+ COALESCE(up.display_name, u.username) AS name,
+ u.username,
+ up.avatar_url,
+ gs.id AS geo_space_id,
+ gs.name AS geo_space_name
+FROM ai_personas ap
+JOIN users u ON u.id = ap.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
+WHERE ap.status = 'active'
+ORDER BY COALESCE(up.display_name, u.username) ASC
+`
+
+type ListActivePersonasRow struct {
+	ID           pgtype.UUID `json:"id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	Name         string      `json:"name"`
+	Username     string      `json:"username"`
+	AvatarUrl    *string     `json:"avatar_url"`
+	GeoSpaceID   pgtype.UUID `json:"geo_space_id"`
+	GeoSpaceName *string     `json:"geo_space_name"`
+}
+
+// =====================================================================
+// GET /me/personas (delegated-authorship spec §1.8): slim list of active
+// personas an operator may drive via author_id/actor_id overrides. No
+// stats join — feeds the frontend "Interact as" picker.
+// =====================================================================
+func (q *Queries) ListActivePersonas(ctx context.Context) ([]ListActivePersonasRow, error) {
+	rows, err := q.db.Query(ctx, listActivePersonas)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActivePersonasRow
+	for rows.Next() {
+		var i ListActivePersonasRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Username,
+			&i.AvatarUrl,
+			&i.GeoSpaceID,
+			&i.GeoSpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPersonaActivity = `-- name: ListPersonaActivity :many
 
 SELECT

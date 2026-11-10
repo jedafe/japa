@@ -304,3 +304,24 @@ WHERE sm.space_id = s.id
   AND sm.user_id = @user_id
   AND s.level IN ('country','state','city')
   AND s.id <> ALL(@keep_ids::uuid[]);
+
+-- =====================================================================
+-- GET /me/personas (delegated-authorship spec §1.8): slim list of active
+-- personas an operator may drive via author_id/actor_id overrides. No
+-- stats join — feeds the frontend "Interact as" picker.
+-- =====================================================================
+-- name: ListActivePersonas :many
+SELECT
+ ap.id,
+ ap.user_id,
+ COALESCE(up.display_name, u.username) AS name,
+ u.username,
+ up.avatar_url,
+ gs.id AS geo_space_id,
+ gs.name AS geo_space_name
+FROM ai_personas ap
+JOIN users u ON u.id = ap.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
+WHERE ap.status = 'active'
+ORDER BY COALESCE(up.display_name, u.username) ASC;
