@@ -529,7 +529,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comment, err := h.Service.GetComment(r.Context(), commentID)
+	comment, err := h.Service.GetComment(r.Context(), commentID, viewerIDFromRequest(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -569,6 +569,11 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		comment.DisplayName = ""
 		comment.AvatarUrl = ""
 	}
+
+	// Delegated-authorship spec: created_by_user_id is internal-only — it would
+	// dox the operator behind a persona-attributed comment. viewer_can_manage
+	// already carries the only signal the client needs.
+	comment.CreatedByUserID = pgtype.UUID{}
 
 	h.resolveLiterals(r, &comment)
 
@@ -751,12 +756,13 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// frontend renders the new comment correctly without a refetch — the
 	// raw insert row carries no author display fields. C-015 applies: an
 	// anonymous author keeps author_user_id so they can manage the comment.
-	if row, getErr := h.Service.GetComment(r.Context(), comment.ID); getErr == nil {
+	if row, getErr := h.Service.GetComment(r.Context(), comment.ID, user.UserID); getErr == nil {
 		if row.IsAnonymous {
 			row.Username = ""
 			row.DisplayName = ""
 			row.AvatarUrl = ""
 		}
+		row.CreatedByUserID = pgtype.UUID{}
 		h.resolveLiterals(r, &row)
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": row})
 		return
@@ -764,6 +770,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &comment)
 
+	comment.CreatedByUserID = pgtype.UUID{}
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -827,20 +834,23 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	// RequireAuth only; the own-vs-any decision is made here at request time
 	// so a moderator holding only comments.edit_any is not blocked by an
 	// edit_own middleware gate — mirrors DeleteComment.
-	existing, err := h.Service.GetComment(r.Context(), commentID)
+	existing, err := h.Service.GetComment(r.Context(), commentID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
+	// Delegated authorship: the operator recorded in created_by_user_id keeps
+	// the author path (edit_own) on persona-attributed comments.
 	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
+	isCreator := existing.CreatedByUserID.Valid && existing.CreatedByUserID.Bytes == user.UserID.Bytes
 
 	canEditOwn := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_own")
 	canEditAny := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_any")
 
 	var comment gen.Comment
 	switch {
-	case isAuthor && canEditOwn:
+	case (isAuthor || isCreator) && canEditOwn:
 		comment, err = h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)
 	case canEditAny:
 		comment, err = h.Service.UpdateCommentModerate(r.Context(), commentID, user.UserID, input.Body)
@@ -866,6 +876,9 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.resolveLiterals(r, &comment)
+
+	// Delegated-authorship spec: created_by_user_id is internal-only.
+	comment.CreatedByUserID = pgtype.UUID{}
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
 	resp := map[string]any{"data": comment}
@@ -895,19 +908,22 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch the comment to determine authorship. GetComment returns a joined
-	// row; we only need AuthorUserID.
-	existing, err := h.Service.GetComment(r.Context(), commentID)
+	// row; we only need AuthorUserID / CreatedByUserID.
+	existing, err := h.Service.GetComment(r.Context(), commentID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
+	// Delegated authorship: the operator in created_by_user_id keeps the
+	// author path (delete_own) on persona-attributed comments.
 	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
+	isCreator := existing.CreatedByUserID.Valid && existing.CreatedByUserID.Bytes == user.UserID.Bytes
 
 	canDeleteOwn := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_own")
 	canDeleteAny := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.delete_any")
 
-	if isAuthor && canDeleteOwn {
+	if (isAuthor || isCreator) && canDeleteOwn {
 		// Author path — comments.delete_own. The sqlc query enforces
 		// author_user_id atomically, so even if the row changed hands between
 		// the GetComment and the delete, a non-author cannot delete.
@@ -1247,7 +1263,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the comment to get the content_id and current status for the
 	// engagement count update (Section 32).
-	existing, err := h.Service.GetComment(r.Context(), commentID)
+	existing, err := h.Service.GetComment(r.Context(), commentID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

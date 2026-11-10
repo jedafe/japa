@@ -404,7 +404,7 @@ WHERE id = @id AND deleted_at IS NULL;
 -- viewer_can_manage flags author-or-creator ownership for the given viewer
 -- (NULL viewer → false); created_by_user_id stays internal-only.
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- COALESCE((fr.author_user_id = sqlc.narg(viewer_id)::uuid OR fr.created_by_user_id = sqlc.narg(viewer_id)::uuid), false) AS viewer_can_manage,
+ COALESCE((fr.author_user_id = sqlc.narg(viewer_id)::uuid OR fr.created_by_user_id = sqlc.narg(viewer_id)::uuid), false)::bool AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -435,7 +435,7 @@ ORDER BY fr.created_at ASC;
 -- viewer_can_manage flags author-or-creator ownership for @viewer_id
 -- (NULL viewer → false); created_by_user_id stays internal-only.
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- COALESCE((fr.author_user_id = @viewer_id OR fr.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((fr.author_user_id = @viewer_id OR fr.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,

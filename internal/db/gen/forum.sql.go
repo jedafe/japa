@@ -584,7 +584,7 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (ForumR
 
 const getForumReplyByIDWithAuthor = `-- name: GetForumReplyByIDWithAuthor :one
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- COALESCE((fr.author_user_id = $1::uuid OR fr.created_by_user_id = $1::uuid), false) AS viewer_can_manage,
+ COALESCE((fr.author_user_id = $1::uuid OR fr.created_by_user_id = $1::uuid), false)::bool AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -607,7 +607,7 @@ type GetForumReplyByIDWithAuthorRow struct {
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ViewerCanManage   interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage   bool               `json:"viewer_can_manage"`
 	Body              []byte             `json:"body"`
 	VoteScore         int32              `json:"vote_score"`
 	ViewCount         int32              `json:"view_count"`
@@ -1330,7 +1330,7 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.
 
 const listForumRepliesByThreadWithAuthor = `-- name: ListForumRepliesByThreadWithAuthor :many
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- COALESCE((fr.author_user_id = $1 OR fr.created_by_user_id = $1), false) AS viewer_can_manage,
+ COALESCE((fr.author_user_id = $1 OR fr.created_by_user_id = $1), false)::bool AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -1358,7 +1358,7 @@ type ListForumRepliesByThreadWithAuthorRow struct {
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ViewerCanManage   interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage   bool               `json:"viewer_can_manage"`
 	Body              []byte             `json:"body"`
 	VoteScore         int32              `json:"vote_score"`
 	ViewCount         int32              `json:"view_count"`

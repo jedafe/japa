@@ -4,7 +4,11 @@ INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_ano
 RETURNING *;
 
 -- name: GetComment :one
+-- created_by_user_id feeds delegated-ownership checks only — it must be
+-- scrubbed before the row serializes (it would dox the operator). viewer_id
+-- scopes viewer_can_manage (author-or-creator); internal callers pass NULL.
 SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, c.body, c.depth,
+ COALESCE((c.author_user_id = sqlc.narg(viewer_id)::uuid OR c.created_by_user_id = sqlc.narg(viewer_id)::uuid), false)::bool AS viewer_can_manage,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
@@ -30,7 +34,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -68,7 +72,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -124,7 +128,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -158,7 +162,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -191,7 +195,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,

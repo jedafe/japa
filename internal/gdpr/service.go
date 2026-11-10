@@ -1355,6 +1355,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("anonymizing comments: %w", err)
 		}
 
+		// Delegated-authorship spec: drop the operator linkage on
+		// persona-attributed comments/replies — created_by_user_id is PII of
+		// the erased operator, not of the persona author.
+		if err := q.ClearCommentsCreatedBy(ctx, userID); err != nil {
+			return fmt.Errorf("clearing comments created_by: %w", err)
+		}
+		if err := q.ClearForumRepliesCreatedBy(ctx, userID); err != nil {
+			return fmt.Errorf("clearing forum replies created_by: %w", err)
+		}
+
 		// BUG-024: DM erasure — anonymize DM content and reassign participant
 		// references to the placeholder so the conversation survives for the
 		// other participant. Without these steps, the CASCADE on users(id)

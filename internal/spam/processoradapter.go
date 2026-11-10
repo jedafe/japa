@@ -184,7 +184,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 				}
 			case "comment":
 				if row, err := queries.GetComment(ctx,
-					eid,
+					gen.GetCommentParams{ID: eid, ViewerID: pgtype.UUID{}},
 				); err == nil {
 					body = string(row.Body)
 					authorID = row.AuthorUserID

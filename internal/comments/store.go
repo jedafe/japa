@@ -109,7 +109,7 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 
 	if input.ParentID.Valid {
 		parent, err := s.read.GetComment(ctx,
-			input.ParentID,
+			gen.GetCommentParams{ID: input.ParentID, ViewerID: pgtype.UUID{}},
 		)
 		if err != nil {
 			return gen.Comment{}, fmt.Errorf("getting parent comment for depth: %w", err)
@@ -287,7 +287,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 	// 2. Notify parent comment author (for replies).
 	if comment.ParentID.Valid {
 		parent, err := s.read.GetComment(ctx,
-			comment.ParentID,
+			gen.GetCommentParams{ID: comment.ParentID, ViewerID: pgtype.UUID{}},
 		)
 		if err != nil {
 			slog.Warn("comments: failed to fetch parent for reply notification", "parent_id", comment.ParentID.String(), "error", err)
@@ -485,7 +485,7 @@ func (s *Service) GetContentSpaceID(ctx context.Context, contentID pgtype.UUID) 
 // pin comments on their own content (Section 49, BL-003).
 func (s *Service) GetCommentContentAuthorID(ctx context.Context, commentID pgtype.UUID) (pgtype.UUID, error) {
 	comment, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting comment for content author check: %w", err)
@@ -501,10 +501,12 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, commentID pgtyp
 	return content.AuthorID, nil
 }
 
-// GetComment is an exported method.
-func (s *Service) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
+// GetComment is an exported method. viewerID scopes viewer_can_manage —
+// author-or-creator per the delegated-authorship spec; internal callers and
+// agent adapters pass a zero UUID.
+func (s *Service) GetComment(ctx context.Context, commentID, viewerID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: viewerID},
 	)
 	if err != nil {
 		return gen.GetCommentRow{}, fmt.Errorf("getting comment: %w", err)
@@ -678,7 +680,7 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 	// to read created_at. GetComment joins users/user_profiles, so it returns
 	// a GetCommentRow; we only need the CreatedAt field.
 	existing, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return gen.Comment{}, fmt.Errorf("getting comment for edit-window check: %w", err)
@@ -771,7 +773,7 @@ func (s *Service) UpdateCommentModerate(ctx context.Context, commentID, userID p
 // SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
 func (s *Service) SoftDeleteComment(ctx context.Context, commentID pgtype.UUID) error {
 	comment, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return fmt.Errorf("getting comment for delete: %w", err)
@@ -808,7 +810,7 @@ func (s *Service) SoftDeleteComment(ctx context.Context, commentID pgtype.UUID) 
 // user is not the author.
 func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, commentID, userID pgtype.UUID) error {
 	comment, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return fmt.Errorf("getting comment for delete: %w", err)
@@ -846,7 +848,7 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, commentID, user
 // admin moderation surface (BUG-010).
 func (s *Service) RemoveComment(ctx context.Context, commentID, moderatorID pgtype.UUID, reason string) error {
 	comment, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return fmt.Errorf("getting comment for remove: %w", err)
@@ -951,7 +953,7 @@ func (s *Service) UnpinComment(ctx context.Context, commentID, userID pgtype.UUI
 // caller can see it — shared by pin/unpin/update-moderate guards. Returns
 // the comment row so callers can reuse ContentID without a second read.
 func (s *Service) checkCommentVisible(ctx context.Context, commentID, userID pgtype.UUID) (gen.GetCommentRow, error) {
-	comment, err := s.read.GetComment(ctx, commentID)
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}})
 	if err != nil {
 		return comment, fmt.Errorf("getting comment: %w", err)
 	}
@@ -983,7 +985,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 	}
 
 	target, err := s.read.GetComment(ctx,
-		commentID,
+		gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}},
 	)
 	if err != nil {
 		return pgtype.UUID{}, 0, fmt.Errorf("getting comment for vote: %w", err)
@@ -1114,7 +1116,7 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 // existed) for the engagement counter (E-006). Idempotent: a missing
 // comment is a no-op success, matching prior behavior.
 func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) (pgtype.UUID, int16, error) {
-	target, err := s.read.GetComment(ctx, commentID)
+	target, err := s.read.GetComment(ctx, gen.GetCommentParams{ID: commentID, ViewerID: pgtype.UUID{}})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, 0, nil

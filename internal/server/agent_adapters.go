@@ -2997,7 +2997,7 @@ func (a *agentCommentsAdapter) CreateComment(ctx context.Context, userID pgtype.
 }
 
 func (a *agentCommentsAdapter) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
-	return a.svc.GetComment(ctx, commentID)
+	return a.svc.GetComment(ctx, commentID, pgtype.UUID{})
 }
 
 func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
@@ -3007,7 +3007,7 @@ func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, conten
 func (a *agentCommentsAdapter) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
 	// The service scopes replies to their parent content — resolve it here so
 	// the agent interface stays content-agnostic.
-	parent, err := a.svc.GetComment(ctx, parentID)
+	parent, err := a.svc.GetComment(ctx, parentID, pgtype.UUID{})
 	if err != nil {
 		return nil, fmt.Errorf("resolving parent comment: %w", err)
 	}

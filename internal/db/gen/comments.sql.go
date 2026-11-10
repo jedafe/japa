@@ -346,6 +346,7 @@ func (q *Queries) EnsureContentThreadLink(ctx context.Context, arg EnsureContent
 
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, c.body, c.depth,
+ COALESCE((c.author_user_id = $1::uuid OR c.created_by_user_id = $1::uuid), false)::bool AS viewer_can_manage,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
@@ -355,8 +356,13 @@ SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, 
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.id = $1
+WHERE c.id = $2
 `
+
+type GetCommentParams struct {
+	ViewerID pgtype.UUID `json:"viewer_id"`
+	ID       pgtype.UUID `json:"id"`
+}
 
 type GetCommentRow struct {
 	ID              pgtype.UUID        `json:"id"`
@@ -366,6 +372,7 @@ type GetCommentRow struct {
 	ParentID        pgtype.UUID        `json:"parent_id"`
 	Body            []byte             `json:"body"`
 	Depth           int32              `json:"depth"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	VoteScore       int32              `json:"vote_score"`
 	UpvoteCount     int32              `json:"upvote_count"`
 	DownvoteCount   int32              `json:"downvote_count"`
@@ -383,8 +390,11 @@ type GetCommentRow struct {
 	AvatarUrl       string             `json:"avatar_url"`
 }
 
-func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow, error) {
-	row := q.db.QueryRow(ctx, getComment, id)
+// created_by_user_id feeds delegated-ownership checks only — it must be
+// scrubbed before the row serializes (it would dox the operator). viewer_id
+// scopes viewer_can_manage (author-or-creator); internal callers pass NULL.
+func (q *Queries) GetComment(ctx context.Context, arg GetCommentParams) (GetCommentRow, error) {
+	row := q.db.QueryRow(ctx, getComment, arg.ViewerID, arg.ID)
 	var i GetCommentRow
 	err := row.Scan(
 		&i.ID,
@@ -394,6 +404,7 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow
 		&i.ParentID,
 		&i.Body,
 		&i.Depth,
+		&i.ViewerCanManage,
 		&i.VoteScore,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
@@ -821,7 +832,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -871,7 +882,7 @@ type ListCommentsByContentRow struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	ReplyCount      int32              `json:"reply_count"`
 	UserVote        int16              `json:"user_vote"`
-	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	IsAnonymous     bool               `json:"is_anonymous"`
 	Username        string             `json:"username"`
 	DisplayName     string             `json:"display_name"`
@@ -942,7 +953,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -992,7 +1003,7 @@ type ListCommentsByContentNewRow struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	ReplyCount      int32              `json:"reply_count"`
 	UserVote        int16              `json:"user_vote"`
-	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	IsAnonymous     bool               `json:"is_anonymous"`
 	Username        string             `json:"username"`
 	DisplayName     string             `json:"display_name"`
@@ -1061,7 +1072,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1111,7 +1122,7 @@ type ListCommentsByContentOldestRow struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	ReplyCount      int32              `json:"reply_count"`
 	UserVote        int16              `json:"user_vote"`
-	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	IsAnonymous     bool               `json:"is_anonymous"`
 	Username        string             `json:"username"`
 	DisplayName     string             `json:"display_name"`
@@ -1310,7 +1321,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1357,7 +1368,7 @@ type ListPublicCommentsByContentRow struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	ReplyCount      int32              `json:"reply_count"`
 	UserVote        int16              `json:"user_vote"`
-	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	IsAnonymous     bool               `json:"is_anonymous"`
 	Username        string             `json:"username"`
 	DisplayName     string             `json:"display_name"`
@@ -1538,7 +1549,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
- COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1588,7 +1599,7 @@ type ListRepliesByParentRow struct {
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	ReplyCount      int32              `json:"reply_count"`
 	UserVote        int16              `json:"user_vote"`
-	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
 	IsAnonymous     bool               `json:"is_anonymous"`
 	Username        string             `json:"username"`
 	DisplayName     string             `json:"display_name"`
