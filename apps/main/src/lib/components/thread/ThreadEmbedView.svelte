@@ -30,6 +30,7 @@
 	import type { Comment, WikiPage } from '#lib/types/index.js';
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
+import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	export interface ThreadEmbed {
 		kind: 'entity' | 'parent' | 'self';
 		title: string;
@@ -363,9 +364,15 @@
 		shared = true;
 		setTimeout(() => (shared = false), 2000);
 	}
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, article?.featured_image_url) ||
+		ogCardUrl(page.url.origin, article?.id ?? 'thread')
+	);
 </script>
 
 <SeoHead
+	ogImage={seoOgImage}
 	title={article.title}
 	{description}
 	ogTitle={article.title}

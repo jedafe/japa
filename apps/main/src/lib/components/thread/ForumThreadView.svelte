@@ -8,7 +8,7 @@
 	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import { relativeTime } from '#lib/feed/time.js';
-	import { encodeTiptapDoc, tiptapBodyToHtml, tiptapExcerpt, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { encodeTiptapDoc, tiptapBodyToHtml, tiptapExcerpt, tiptapDocFirstImageSrc, tiptapJsonFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { api } from '#lib/api/client.js';
 	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
@@ -26,6 +26,7 @@
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 import { contentHref } from '#lib/utils/contentLink.js';
 
+import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// /thread/{slug} forum-kind payload — identical to the former
 	// (app)/forum/[slug] page data (thread-rename spec: forum render
 	// unchanged).
@@ -461,6 +462,18 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		}
 		await goto('/thread');
 	}
+
+	const threadFirstImg = $derived.by(() => {
+		const b = thread?.body;
+		if (!b) return undefined;
+		return typeof b === 'object'
+			? tiptapDocFirstImageSrc(b as TipTapDoc)
+			: tiptapJsonFirstImageSrc(String(b));
+	});
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, threadFirstImg) ||
+		ogCardUrl(page.url.origin, thread.content_id ?? thread.id)
+	);
 </script>
 
 <svelte:head>
@@ -471,6 +484,11 @@ import { contentHref } from '#lib/utils/contentLink.js';
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={thread.title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
 	{#if data.indexable === false || data.seoIndexable === false || thread?.seo_indexable === false || thread?.indexable === false}

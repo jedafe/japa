@@ -26,6 +26,7 @@
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
+import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// Mirrors the loadContentArticle() return shape ($lib/server/content-article.ts).
 	// Type-only imports from $lib/server are avoided so the component stays
 	// outside SvelteKit's server-module boundary.
@@ -193,6 +194,11 @@
 		if (!article.id) return;
 		api.post(`/content/${article.id}/view`, {}, { 'x-silent-error': '1' });
 	});
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, article.featured_image_url) ||
+		ogCardUrl(page.url.origin, article.id)
+	);
 </script>
 
 <svelte:head>
@@ -206,7 +212,8 @@
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 	<meta property="og:url" content={canonical} />
-	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={article.title} />
 	<meta name="twitter:description" content={description} />

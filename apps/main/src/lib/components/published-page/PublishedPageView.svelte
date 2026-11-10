@@ -13,6 +13,7 @@
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	import type { PageBuilderPage } from '#lib/types/index.js';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	interface Props {
 		page: PageBuilderPage;
 		guestHome?: GuestHomeData;
@@ -51,6 +52,8 @@
 	const normalizedBlocks = $derived(
 		hasBlocks ? normalizeLegacyBlocks(pageData.blocks ?? []) as Block[] : []
 	);
+
+	const seoOgImage = $derived(ogCardUrl(page.url.origin, pageData?.id ?? 'page'));
 </script>
 
 <svelte:head>
@@ -59,8 +62,11 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}

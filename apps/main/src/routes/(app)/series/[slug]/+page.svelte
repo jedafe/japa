@@ -7,6 +7,7 @@
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const series = $derived(data.series);
@@ -26,7 +27,7 @@
 	);
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} />
+<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} ogImage={ogMediaUrl(page.url.origin, series?.cover_image_url) || ogCardUrl(page.url.origin, series?.id ?? 'series')} />
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Series header -->
