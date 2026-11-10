@@ -227,21 +227,15 @@ export const toggleFollow = (
 ) => {
 	const target = type === 'space' || type === 'tag' || type === 'source' ? (slug || id) : id;
 	// Delegated authorship (spec §1.6): a selected persona follows/unfollows
-	// as the actor. Only the generic /follows endpoint accepts actor_id for
-	// every entity_type — the space/tag/org slug routes don't — so the
-	// delegated path goes through it with the UUID entity_id. The
-	// /users/{id}/follow route also accepts ?actor_id=; either works.
-	if (actAsPersona.actorId) {
-		const body = { entity_type: type, entity_id: id, actor_id: actAsPersona.actorId };
-		return currently
-			? api.delete<FollowToggleResponse>('/follows', body)
-			: api.post<FollowToggleResponse>('/follows', body);
-	}
+	// as the actor — ?actor_id= is supported on the /users/{id}/follow routes.
+	const actorQs = actAsPersona.actorId
+		? `?actor_id=${encodeURIComponent(actAsPersona.actorId)}`
+		: '';
 	switch (type) {
 		case 'user':
 			return currently
-			? api.delete<FollowToggleResponse>(`/users/${target}/follow`)
-				: api.post<FollowToggleResponse>(`/users/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/users/${target}/follow${actorQs}`)
+				: api.post<FollowToggleResponse>(`/users/${target}/follow${actorQs}`);
 		case 'organization':
 			return currently
 			? api.delete<FollowToggleResponse>(`/organizations/${target}/follow`)
