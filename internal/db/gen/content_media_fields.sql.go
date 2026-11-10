@@ -116,6 +116,34 @@ func (q *Queries) ListContentsByMedia(ctx context.Context, mediaID pgtype.UUID) 
 	return items, nil
 }
 
+const listExistingMediaIDs = `-- name: ListExistingMediaIDs :many
+SELECT id FROM media WHERE id = ANY($1::uuid[])
+`
+
+// Existence check for content_media_fields tracking — soft-deleted rows
+// count as existing: the cmf FK still holds, soft-deleted media keeps
+// serving, and dropping the ref would let the cleanup sweep purge an
+// object the content still renders. Only truly-missing rows are absent.
+func (q *Queries) ListExistingMediaIDs(ctx context.Context, ids []pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listExistingMediaIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMediaFieldKeysByEntityClasses = `-- name: ListMediaFieldKeysByEntityClasses :many
 SELECT DISTINCT f.key
 FROM custom_fields f
@@ -169,9 +197,9 @@ type ListMediaIDsByStoragePathsRow struct {
 }
 
 // Resolves /media/serve/{bucket}/{path} URL pairs extracted from body text
-// back to media rows. No deleted_at filter here — resolution is a lookup
-// only; the caller's GetMediaByIDs liveness check filters soft-deleted
-// rows out of the tracked set.
+// back to media rows. No deleted_at filter — soft-deleted media still
+// serves (ServeMedia bypasses the row check), so its refs stay tracked
+// and keep blocking the purge sweep.
 func (q *Queries) ListMediaIDsByStoragePaths(ctx context.Context, arg ListMediaIDsByStoragePathsParams) ([]ListMediaIDsByStoragePathsRow, error) {
 	rows, err := q.db.Query(ctx, listMediaIDsByStoragePaths, arg.Buckets, arg.Paths)
 	if err != nil {

@@ -36,9 +36,9 @@ LIMIT 50;
 
 -- name: ListMediaIDsByStoragePaths :many
 -- Resolves /media/serve/{bucket}/{path} URL pairs extracted from body text
--- back to media rows. No deleted_at filter here — resolution is a lookup
--- only; the caller's GetMediaByIDs liveness check filters soft-deleted
--- rows out of the tracked set.
+-- back to media rows. No deleted_at filter — soft-deleted media still
+-- serves (ServeMedia bypasses the row check), so its refs stay tracked
+-- and keep blocking the purge sweep.
 SELECT id, storage_bucket, storage_path
 FROM media
 WHERE (storage_bucket, storage_path) IN (
@@ -46,6 +46,13 @@ WHERE (storage_bucket, storage_path) IN (
     FROM (SELECT unnest(@buckets::text[]) AS b,
                  unnest(@paths::text[]) AS p) v
 );
+
+-- name: ListExistingMediaIDs :many
+-- Existence check for content_media_fields tracking — soft-deleted rows
+-- count as existing: the cmf FK still holds, soft-deleted media keeps
+-- serving, and dropping the ref would let the cleanup sweep purge an
+-- object the content still renders. Only truly-missing rows are absent.
+SELECT id FROM media WHERE id = ANY(@ids::uuid[]);
 
 -- name: ListMediaFieldKeysByEntityClasses :many
 -- Keys of media-typed custom fields (image_single/image_multi/media) whose

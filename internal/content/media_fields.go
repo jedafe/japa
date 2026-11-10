@@ -181,7 +181,9 @@ func collectMediaRefs(ctx context.Context, read, write *gen.Queries, src MediaRe
 	refs = append(refs, cfRefs...)
 
 	// Validate the referenced rows exist — a ref pointing at a missing
-	// media row would violate the FK on insert.
+	// media row would violate the FK on insert. Soft-deleted rows count:
+	// the FK still holds, the object keeps serving, and dropping the ref
+	// would let the cleanup sweep purge media the content still renders.
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -191,14 +193,14 @@ func collectMediaRefs(ctx context.Context, read, write *gen.Queries, src MediaRe
 		ids = append(ids, r.MediaID)
 	}
 
-	rows, err := read.GetMediaByIDs(ctx, ids)
+	existing, err := read.ListExistingMediaIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("resolving media references: %w", err)
 	}
 
-	live := make(map[pgtype.UUID]bool, len(rows))
-	for _, m := range rows {
-		live[m.ID] = true
+	live := make(map[pgtype.UUID]bool, len(existing))
+	for _, id := range existing {
+		live[id] = true
 	}
 
 	out := refs[:0]

@@ -28,8 +28,22 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    IF NEW.guide_category IS NULL OR btrim(NEW.guide_category) = '' THEN
+    -- Normalize empty/whitespace to NULL — a '' slug reads as "no
+    -- category" and would otherwise pass through as a non-null value.
+    IF NEW.guide_category IS NOT NULL AND btrim(NEW.guide_category) = '' THEN
+        NEW.guide_category := NULL;
+    END IF;
+
+    IF NEW.guide_category IS NULL THEN
         RETURN NEW;
+    END IF;
+
+    -- Guide-category values only belong on guide rows — a blog_post or
+    -- other type carrying one pollutes idx_contents_guide_category
+    -- consumers (checklist, scholarship sync).
+    IF NEW.content_type <> 'guide' THEN
+        RAISE EXCEPTION 'guide_category % on non-guide content_type %', NEW.guide_category, NEW.content_type
+            USING ERRCODE = '23514';
     END IF;
 
     IF NOT EXISTS (
