@@ -1,6 +1,6 @@
 import { api } from '#lib/api/client.js';
 import { classifyError } from '#lib/api/create.js';
-import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
+
 import type { MeProfile, PrivacySettings } from '#lib/types/index.js';
 
 export { classifyError };
@@ -226,16 +226,14 @@ export const toggleFollow = (
 	currently: boolean
 ) => {
 	const target = type === 'space' || type === 'tag' || type === 'source' ? (slug || id) : id;
-	// Delegated authorship (spec §1.6): a selected persona follows/unfollows
-	// as the actor — ?actor_id= is supported on the /users/{id}/follow routes.
-	const actorQs = actAsPersona.actorId
-		? `?actor_id=${encodeURIComponent(actAsPersona.actorId)}`
-		: '';
+	// Follows always act as the operator: buttons show the operator's state
+	// regardless of the "Interact as" selection, so toggles never forward
+	// actor_id (spec §31 follow-system amendment).
 	switch (type) {
 		case 'user':
 			return currently
-			? api.delete<FollowToggleResponse>(`/users/${target}/follow${actorQs}`)
-				: api.post<FollowToggleResponse>(`/users/${target}/follow${actorQs}`);
+			? api.delete<FollowToggleResponse>(`/users/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/users/${target}/follow`);
 		case 'organization':
 			return currently
 			? api.delete<FollowToggleResponse>(`/organizations/${target}/follow`)
