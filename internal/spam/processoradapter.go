@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -140,30 +141,10 @@ func (a *WorkerAdapter) queueReport(ctx context.Context, entityType, entityID st
 	}
 }
 
-// contentRoutePrefix mirrors the frontend contentHref map (ADR-058) so
-// notification deep-links land on the right per-type detail route.
-var contentRoutePrefix = map[string]string{
-	"blog_post":       "/blog",
-	"guide":           "/guide",
-	"discussion":      "/thread", // §49 linked discussion renders at /thread/{slug}
-	"forum_thread":    "/thread",
-	"comparison":      "/comparisons",
-	"story":           "/story",
-	"achievement":     "/achievements",
-	"page":            "/pages",
-	"job_listing":     "/jobs",
-	"service_listing": "/services",
-	"video":           "/video",
-	"list":            "/list",
-}
-
-// contentPath returns the canonical detail URL for a content item.
+// contentPath returns the canonical detail URL for a content item, via
+// the shared rss/model route-prefix map (contentHref mirror, ADR-058).
 func contentPath(contentType, slug string) string {
-	prefix := contentRoutePrefix[contentType]
-	if prefix == "" {
-		prefix = "/content"
-	}
-	return prefix + "/" + slug
+	return model.LinkPathFor(contentType) + slug
 }
 
 // ScanContent runs the moderation pipeline on the given entity.

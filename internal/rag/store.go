@@ -19,6 +19,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // EntityType constants — the set of indexable on-platform content types.
@@ -109,26 +110,11 @@ type RetrievedChunk struct {
 	URL   string
 }
 
-// contentRoutePrefix mirrors the canonical frontend route families in
-// apps/main/src/lib/utils/contentLink.ts (ADR-058) — keyed by content_type
-// for entity_type='content'. Keep the two maps in sync.
-var contentRoutePrefix = map[string]string{
-	"blog_post":       "/blog",
-	"guide":           "/guide",
-	"discussion":      "/thread", // §49 discussion — /thread/{slug}
-	"forum_thread":    "/thread", // §08 thread — /thread/{slug}
-	"comparison":      "/comparisons",
-	"story":           "/story",
-	"achievement":     "/achievements",
-	"page":            "/pages",
-	"job_listing":     "/jobs",
-	"service_listing": "/services",
-	"video":           "/video",
-}
-
 // SourceURL returns the canonical frontend-relative path for a retrieved
 // entity, per the §69 Citation Source Contract. Empty slug or unknown type
-// yields "" — callers render a non-linking fallback.
+// yields "" — callers render a non-linking fallback. Route prefixes come
+// from rss/model.LinkPathFor (the single Go map mirrored by
+// contentLink.ts, ADR-058).
 func SourceURL(entityType, contentType, slug string) string {
 	if slug == "" {
 		return ""
@@ -136,12 +122,7 @@ func SourceURL(entityType, contentType, slug string) string {
 
 	switch entityType {
 	case EntityTypeContent:
-		prefix, ok := contentRoutePrefix[contentType]
-		if !ok {
-			prefix = "/content"
-		}
-
-		return prefix + "/" + slug
+		return model.LinkPathFor(contentType) + slug
 	case EntityTypeForumThread:
 		return "/thread/" + slug
 	case EntityTypeSpace:
