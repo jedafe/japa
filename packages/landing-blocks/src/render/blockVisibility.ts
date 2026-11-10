@@ -120,17 +120,21 @@ function nestedBlocks(b: Block): Block[] {
   return out;
 }
 
+/** Whether a block tree contains a block matching `predicate` at any
+ *  depth — children, items/tabs content slots, and carousel slides. */
+export function containsBlock(blocks: Block[], predicate: (b: Block) => boolean): boolean {
+  return blocks.some(
+    (b) => predicate(b) || containsBlock(nestedBlocks(b), predicate)
+  );
+}
+
 /**
  * Whether a block tree contains any `guest_*` block at any depth. Used to
  * decide whether guest styles and guest-home context data need to load —
  * standalone guest blocks (not wrapped in `guest_home`) still consume them.
  */
 export function containsGuestBlocks(blocks: Block[]): boolean {
-  return blocks.some(
-    (b) =>
-      b.type.startsWith('guest_') ||
-      containsGuestBlocks(nestedBlocks(b))
-  );
+  return containsBlock(blocks, (b) => b.type.startsWith('guest_'));
 }
 
 /** Determine whether the current geo context passes the rule. */

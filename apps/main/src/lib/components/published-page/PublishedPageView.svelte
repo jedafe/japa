@@ -9,22 +9,17 @@
 	import { t } from '#lib/i18n/index.js';
 	import { FileText } from 'lucide-svelte';
 	import { EmptyState } from '#lib/components/ui/index.js';
-	import { LandingRenderer, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
+	import { LandingRenderer, GuestFooterBlock, GuestBlockStyles, containsBlock, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
-	import GuestFooter from '#lib/components/shell/GuestFooter.svelte';
-	import type { Menu, PageBuilderPage } from '#lib/types/index.js';
+	import type { PageBuilderPage } from '#lib/types/index.js';
 
 import { ogCardUrl } from '#lib/seo/og.js';
 	interface Props {
 		page: PageBuilderPage;
 		guestHome?: GuestHomeData;
-		/** main_footer menu + feature flags from the root layout — drives the
-		 *  shared guest footer rendered below every published page. */
-		menu?: Menu | null;
-		features?: Record<string, boolean>;
 	}
 
-	let { page: pageData, guestHome, menu = null, features = {} }: Props = $props();
+	let { page: pageData, guestHome }: Props = $props();
 
 	const title = $derived(
 		pageData.meta && typeof pageData.meta === 'object' && 'title' in pageData.meta
@@ -59,6 +54,12 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	);
 
 	const seoOgImage = $derived(ogCardUrl(page.url.origin, pageData?.id ?? 'page'));
+
+	// Pages that already end with their own guest_footer block (e.g. a
+	// builder-managed homepage variant) keep it — don't double-render.
+	const hasFooterBlock = $derived(
+		containsBlock(normalizedBlocks, (b) => b.type === 'guest_footer')
+	);
 </script>
 
 <svelte:head>
@@ -89,6 +90,13 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	</div>
 {/if}
 
-<!-- Published pages drop the right rail, which carried the footer menu —
-     so the shared guest footer renders at the bottom of the page body. -->
-<GuestFooter {menu} {features} />
+<!-- The guest-homepage footer block on every published page. Rendered
+     outside the max-w-3xl column so it keeps its full-bleed band; the
+     inline-size container matches LandingRenderer so its @container
+     queries resolve against the page width. -->
+{#if !hasFooterBlock}
+	<div style="container-type: inline-size">
+		<GuestBlockStyles />
+		<GuestFooterBlock props={{}} />
+	</div>
+{/if}
