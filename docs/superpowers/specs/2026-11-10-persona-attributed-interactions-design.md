@@ -7,10 +7,10 @@ Date: 2026-11-10 · Status: approved (user Q&A resolved)
 Operators holding `content.assign_author` can already attribute a content
 row to a bot persona (`POST /content` `author_id`, bot-only, §68/SEC-002).
 This spec extends the same delegated-authorship pattern to **comments,
-replies, votes, and reactions**, and lets the persona's **geo identity**
-flow into the authored entity. It also adds **persona profile editing**
-(avatar, cover, profession, etc.) to the admin panel now and the public
-profile page as a follow-up.
+thread replies, votes, reactions, and follows**, and lets the persona's
+**geo identity** flow into the authored entity. It also adds **persona
+profile editing** (avatar, cover, profession, etc.) to the admin panel now
+and the public profile page as a follow-up.
 
 No session/profile switching: the operator keeps their own identity; each
 write carries an explicit delegate field (`author_id`/`actor_id`).
@@ -23,12 +23,12 @@ Decisions locked with the user:
   `is_synthetic` tagging on human-driven writes).
 - Disclosure: operators may drive both `disclosed` and `undisclosed`
   personas.
-- Comment management: `comments.created_by_user_id` preserves operator
-  edit/delete rights on persona-authored comments.
+- Comment/reply management: `created_by_user_id` on `comments` and
+  `forum_replies` preserves operator edit/delete rights.
 - Geo: auto-inherit the persona's geo — content defaults
   `geo_space_id` to the persona's `current_geo_space_id`; comment geo is
   byline-derived.
-- Scope: comments + replies **and** reactions/votes in v1.
+- Scope: comments + thread replies + votes + reactions + follows in v1.
 - Profile editing surface: admin panel modal first, main-app `/u/[username]`
   affordance as a follow-up phase.
 
@@ -68,13 +68,19 @@ other adapters (`PermissionChecker` interface + `SetBotChecker`).
 - Resolved via 1.1; `author_user_id` = persona backing user;
   `created_by_user_id` = operator.
 
-Migration (up + down):
+Migration (up + down — covers both reply tables):
 
 ```sql
 ALTER TABLE comments
   ADD COLUMN created_by_user_id uuid NULL
     REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX idx_comments_created_by ON comments(created_by_user_id)
+  WHERE deleted_at IS NULL;
+
+ALTER TABLE forum_replies
+  ADD COLUMN created_by_user_id uuid NULL
+    REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX idx_forum_replies_created_by ON forum_replies(created_by_user_id)
   WHERE deleted_at IS NULL;
 ```
 
@@ -103,20 +109,48 @@ Permission split on create:
 - Notifications (`DispatchCommentNotifications`) and fan-out use the
   comment author = persona automatically.
 
-#### 1.3 Votes — `actor_id`
+#### 1.3 Thread replies (§08 forum engine)
+
+"Thread replies" and "forum replies" are the same subsystem —
+`forum_replies` served under `/api/v1/thread/*` in `internal/forum`. Same
+pattern as 1.2, applied to the forum engine's own tables:
+
+- `POST /api/v1/thread` body gains optional `author_id` — thread creation
+  attributed to the persona (parity with `POST /content`).
+- `POST /api/v1/thread/{id}/replies` body gains optional `author_id` —
+  `forum_replies.author_user_id` = persona backing user.
+- `author_id` + `is_anonymous` → `400 mutually_exclusive` (F-002/C-003
+  parity: anonymous replies never attribute an actor).
+- Same migration adds `forum_replies.created_by_user_id uuid NULL
+  REFERENCES users(id) ON DELETE SET NULL`; `CreateReply` sets it to the
+  operator; `UpdateReply`/`DeleteReply` allow
+  `author_user_id = caller OR created_by_user_id = caller OR forum.moderate`.
+- `ListForumRepliesByThreadWithAuthor` + `GetReplyByIDWithAuthor` gain the
+  `viewer_can_manage` computed flag; `created_by_user_id` never leaks.
+- GDPR erasure clears `created_by_user_id` on `forum_replies` too (the
+  table already has a `SET NULL author` precedent from migration 000467).
+- Space `replying_perm` evaluates the effective author; rate-limiting
+  (BL-012/`forum.max_replies_per_minute`-style settings) evaluates the
+  operator. `dispatchMentionNotifications` names the effective author —
+  for `author_id` replies the persona is the actor of record.
+
+#### 1.4 Votes — `actor_id`
 
 - `POST /api/v1/comments/{id}/vote` and `POST /api/v1/content/{id}/vote`
   bodies gain optional `actor_id`.
-- `DELETE` on both gains `?actor_id=` query param (remove whose vote).
+- `POST /api/v1/thread/{id}/vote` body gains `actor_id` — the single
+  `VoteOnThread` handler already takes `entity_type: thread|reply`, so
+  one field covers both thread and reply votes.
+- `DELETE` on all three gains `?actor_id=` query param.
 - Resolved via 1.1 with the same error contract (`actor_id` naming —
   nothing is "authored" by a vote).
-- `GET /api/v1/content/{id}/comments` gains `?actor_id=` — when present,
-  `user_vote` on returned rows is computed for that actor instead of the
-  viewer (bot-validated the same way; invalid → same error codes). The
-  viewer's own vote state is not mixed in — the UI shows exactly one
-  identity's state at a time.
+- `GET /api/v1/content/{id}/comments`, `GET /api/v1/thread/{id}` (and its
+  reply list) gain `?actor_id=` — when present, `user_vote` on returned
+  rows is computed for that actor instead of the viewer (bot-validated
+  the same way; invalid → same error codes). The viewer's own vote state
+  is not mixed in — the UI shows exactly one identity's state at a time.
 
-#### 1.4 Reactions — `actor_id`
+#### 1.5 Reactions — `actor_id`
 
 - `POST /api/v1/content/{id}/reactions` (+ legacy `/react` alias) body
   gains optional `actor_id`; `DELETE .../reactions/{key}` and
@@ -128,7 +162,25 @@ Permission split on create:
 - Visibility (`CanReactToContent`) and notification actor both evaluate
   the effective actor — the persona is the reactor of record.
 
-#### 1.5 Geo default on content
+#### 1.6 Follows — `actor_id`
+
+A persona's backing user is a normal `users` row, so **following a
+persona already works** — `POST /users/{persona_user_id}/follow` needs no
+change. This section covers the operator following *as* a persona:
+
+- `POST /api/v1/follows` body gains optional `actor_id`
+  (`{entity_type, entity_id, actor_id}`).
+- `POST /api/v1/users/{id}/follow` accepts `actor_id` in an optional JSON
+  body (the existing path-param resolution stays — empty body still
+  works); `DELETE` on both gains `?actor_id=`.
+- `GET /api/v1/users/{id}/follow-status?actor_id=` reports the persona's
+  follow state for the UI.
+- `ErrUserBlocked` check applies to the effective actor; the
+  follow-notification recipient sees the persona as follower.
+- Applies to all followable `entity_type` values (user, space, tag) —
+  the persona follows spaces/tags the same way.
+
+#### 1.7 Geo default on content
 
 When `author_id` resolves to a persona on `POST /content` or
 `PATCH /content/{id}` and `geo_space_id` is not supplied in the same
@@ -139,7 +191,7 @@ read). An explicit `geo_space_id` always wins.
 Comments carry no geo column — a persona comment's byline geo comes from
 the backing user's `current_geo_space_id` automatically.
 
-#### 1.6 `GET /api/v1/me/personas` (new, non-admin)
+#### 1.8 `GET /api/v1/me/personas` (new, non-admin)
 
 `content.assign_author`-gated; returns active personas only
 (`ai_personas.status = 'active'`):
@@ -153,19 +205,19 @@ Feeds every "interact as" picker on non-admin surfaces. The studio
 composer may migrate off `GET /admin/personas` to this endpoint (optional,
 not required for v1).
 
-#### 1.7 Audit trail
+#### 1.9 Audit trail
 
 Every persona-attributed mutation writes an `audit_logs` row (same helper
 pattern as `impersonation.auditLog`):
 
 - `actor_user_id` = operator, `impersonated_user_id` = bot user,
-  `action_type` = `persona_attrib.{comment|vote|reaction|content}`,
-  `metadata` = `{entity_type, entity_id, persona_id?}`.
-- The comment path additionally persists `created_by_user_id` (needed for
-  management rights; the audit row is the compliance trail for
-  votes/reactions which have no `created_by` column).
+  `action_type` = `persona_attrib.{comment|thread_reply|vote|reaction|
+  follow|content}`, `metadata` = `{entity_type, entity_id, persona_id?}`.
+- The comment/reply paths additionally persist `created_by_user_id`
+  (needed for management rights; the audit row is the compliance trail
+  for votes/reactions/follows which have no `created_by` column).
 
-#### 1.8 Error codes (standard envelope)
+#### 1.10 Error codes (standard envelope)
 
 | Code | Status | When |
 |---|---|---|
@@ -182,17 +234,19 @@ pattern as `impersonation.auditLog`):
   Exposes picker items `{id: user_id, label: name, sublabel: '@username · geo_space_name'}`.
 - **`actAsPersona` page-scoped store** — selected persona or `null` (self);
   reset on navigation.
-- **"Interact as" chip** — small `Autocomplete`-style picker rendered by
-  `ReplyThread` next to the top-level composer when personas exist:
-  "Interact as: You ▾" → persona list with geo sublabels. Selection
-  governs comments, comment votes, and content reactions/votes on that
-  page.
-- **Plumbing** — `commentsApi.postReply(parentId, body, {author_id})`,
-  vote calls gain `{actor_id}` body / `?actor_id=` delete param,
-  `fetchCommentPage`/`listAllComments` forward `?actor_id=` for persona
-  `user_vote` state; `ForumReply` gains `can_manage` (from
+- **"Interact as" chip** — small `Autocomplete`-style picker rendered
+  next to the top-level composer when personas exist: "Interact as: You ▾"
+  → persona list with geo sublabels. Rendered on `/thread/{slug}` (§08
+  replies + thread/reply votes) and on comment surfaces (`ReplyThread`).
+  Selection governs all persona-eligible actions on that page.
+- **Plumbing** — `commentsApi.postReply`/`threadApi.postReply` gain
+  `{author_id}`; vote calls gain `{actor_id}` body / `?actor_id=` delete
+  param; comment/reply/thread fetches forward `?actor_id=` for persona
+  `user_vote` state; reply rows gain `can_manage` (from
   `viewer_can_manage`) and `ReplyItem` shows edit/delete when
   `canModerate || author==me || can_manage`.
+- **Follows** — `FollowButton` passes `actor_id` when a persona is
+  selected; `follow-status` fetched with `?actor_id=`.
 - **Reactions** — the reaction bar passes `actor_id` when a persona is
   selected; `/reactions/me` fetched with `?actor_id=`.
 - **Studio composer** — `SaveBar` persona picker sublabel gains the geo
@@ -253,9 +307,7 @@ Extend the existing edit modal:
 ## Non-goals (v1)
 
 - Persona session/profile switching (dropped per user direction).
-- Forum replies (§08 `forum_replies`) as-persona — separate subsystem; the
-  same resolver pattern can follow.
-- Bookmarks, follows, DMs, org posting changes.
+- Bookmarks, DMs, poll votes, org posting changes.
 - AI orchestration holds (no human sessions exist to pause — dropped with
   the session model).
 - New RBAC node — `content.assign_author` is reused.
@@ -263,9 +315,12 @@ Extend the existing edit modal:
 ## JEOS updates (before/with code — repo rules)
 
 - `conventions/api-routes-catalog.md` — `GET /me/personas`; `author_id` /
-  `actor_id` fields on comment/vote/reaction routes; PATCH additions.
-- Migration + up/down pair; `comments.created_by_user_id` in §49 notes.
-- §68 personas — delegated-authorship note + profile-field list.
+  `actor_id` fields on comment/thread/vote/reaction/follow routes; PATCH
+  additions.
+- Migration + up/down pair; `comments.created_by_user_id` in §49 notes,
+  `forum_replies.created_by_user_id` in §08 notes.
+- §68 personas — delegated-authorship note + profile-field list; §31
+  follows — `actor_id` note.
 - `persona_attrib.*` audit action types.
 - No new permission node, no new Valkey keys, no new Asynq tasks.
 
