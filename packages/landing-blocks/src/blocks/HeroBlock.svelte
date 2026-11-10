@@ -73,19 +73,19 @@
 <!-- Moderate hero panel — same visual family as the /tools/{slug} hero:
      accent-tinted rounded panel holding a big bold title, subtitle, CTA row
      and a right-side artwork region (stacked above the copy on mobile). -->
-<section class="px-6 py-5 sm:py-6">
+<section class="px-6 py-4">
   <div class="pb-hero relative mx-auto overflow-hidden rounded-[var(--radius-card)] border {layout === 'split' ? 'max-w-6xl' : 'max-w-4xl'}">
     {#if layout === 'split'}
-      <div class="relative grid items-center gap-6 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+      <div class="relative grid items-center gap-5 px-5 py-4 sm:px-7 sm:py-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
         <div class="min-w-0">
           {#if props.eyebrow}
-            <p class="pb-hero-eyebrow text-xs font-semibold uppercase tracking-wide sm:text-sm">
+            <p class="pb-hero-eyebrow text-xs font-semibold uppercase tracking-wide">
               {props.eyebrow}
             </p>
           {/if}
 
           <h1
-            class="mt-2 text-balance text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl"
+            class="mt-1.5 text-balance text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl"
             style="font-family: var(--block-heading-family, var(--font-heading, var(--font-sans))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
           >
             {#if splitHeadline}
@@ -96,14 +96,14 @@
           </h1>
 
           {#if props.tagline}
-            <p class="mt-3 text-balance text-base font-semibold text-[var(--color-text)] sm:text-lg">
+            <p class="mt-2 text-balance text-sm font-semibold text-[var(--color-text)] sm:text-base">
               {props.tagline}
             </p>
           {/if}
 
           {#if props.subhead}
             <p
-              class="mt-3 max-w-xl text-balance text-base text-[var(--color-text-subtle)]"
+              class="mt-2 max-w-lg text-balance text-sm text-[var(--color-text-subtle)]"
               style="font-family: var(--block-body-family); font-size: var(--block-body-size); font-weight: var(--block-body-weight);"
             >
               {props.subhead}
@@ -111,7 +111,7 @@
           {/if}
 
           {#if props.ctas && props.ctas.length > 0}
-            <div class="mt-6 flex flex-wrap items-center gap-3">
+            <div class="mt-4 flex flex-wrap items-center gap-3">
               {#each props.ctas as cta (cta.href + cta.label)}
                 <a href={cta.href} class={ctaClass(cta.variant)}>
                   {cta.label}
@@ -121,25 +121,14 @@
           {/if}
 
           {#if props.trust_text}
-            <p class="mt-4 text-sm text-[var(--color-muted)]">{props.trust_text}</p>
-          {/if}
-
-          {#if props.stats && props.stats.length > 0}
-            <div class="mt-6 flex flex-wrap items-center gap-x-7 gap-y-3">
-              {#each props.stats as stat}
-                <div>
-                  <p class="text-xl font-bold leading-tight text-[var(--color-text)]">{stat.value}</p>
-                  <p class="mt-0.5 text-xs text-[var(--color-muted)]">{stat.label}</p>
-                </div>
-              {/each}
-            </div>
+            <p class="mt-3 text-xs text-[var(--color-muted)]">{props.trust_text}</p>
           {/if}
         </div>
 
         <!-- Artwork — right column on lg+, stacked above the copy below that.
              pointer-events-none on the wrapper keeps the decorative media from
              swallowing clicks; slider controls re-enable their own events. -->
-        <div class="relative order-first h-44 sm:h-48 lg:order-none lg:h-56" aria-hidden={!props.media && !props.slides?.length ? 'true' : undefined}>
+        <div class="relative order-first h-32 sm:h-36 lg:order-none lg:h-40" aria-hidden={!props.media && !props.slides?.length ? 'true' : undefined}>
           {#if hasSlider}
             <div class="pointer-events-none h-full w-full overflow-hidden">
               <div
@@ -206,17 +195,30 @@
             </div>
           {/if}
         </div>
+
+        <!-- Stats — compact strip spanning the full panel width so they
+             don't stretch the copy column vertically. -->
+        {#if props.stats && props.stats.length > 0}
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--color-border)]/60 pt-3 lg:col-span-2">
+            {#each props.stats as stat}
+              <div>
+                <p class="text-base font-bold leading-tight text-[var(--color-text)]">{stat.value}</p>
+                <p class="mt-0.5 text-xs text-[var(--color-muted)]">{stat.label}</p>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {:else}
-      <div class="relative mx-auto max-w-2xl px-5 py-6 text-center sm:px-8 sm:py-8">
+      <div class="relative mx-auto max-w-2xl px-5 py-4 text-center sm:px-7 sm:py-5">
         {#if props.eyebrow}
-          <p class="pb-hero-eyebrow text-xs font-semibold uppercase tracking-wide sm:text-sm">
+          <p class="pb-hero-eyebrow text-xs font-semibold uppercase tracking-wide">
             {props.eyebrow}
           </p>
         {/if}
         {#if props.headline}
           <h1
-            class="mt-2 text-balance text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl"
+            class="mt-1.5 text-balance text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl"
             style="font-family: var(--block-heading-family, var(--font-heading, var(--font-sans))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
           >
             {#if splitHeadline}
@@ -227,20 +229,20 @@
           </h1>
         {/if}
         {#if props.tagline}
-          <p class="mt-3 text-balance text-base font-semibold text-[var(--color-text)] sm:text-lg">
+          <p class="mt-2 text-balance text-sm font-semibold text-[var(--color-text)] sm:text-base">
             {props.tagline}
           </p>
         {/if}
         {#if props.subhead}
           <p
-            class="mx-auto mt-3 max-w-xl text-balance text-base text-[var(--color-text-subtle)]"
+            class="mx-auto mt-2 max-w-lg text-balance text-sm text-[var(--color-text-subtle)]"
             style="font-family: var(--block-body-family); font-size: var(--block-body-size); font-weight: var(--block-body-weight);"
           >
             {props.subhead}
           </p>
         {/if}
         {#if props.ctas && props.ctas.length > 0}
-          <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-3">
             {#each props.ctas as cta (cta.href + cta.label)}
               <a href={cta.href} class={ctaClass(cta.variant)}>
                 {cta.label}
@@ -249,13 +251,13 @@
           </div>
         {/if}
         {#if props.trust_text}
-          <p class="mt-4 text-sm text-[var(--color-muted)]">{props.trust_text}</p>
+          <p class="mt-3 text-xs text-[var(--color-muted)]">{props.trust_text}</p>
         {/if}
         {#if props.stats && props.stats.length > 0}
-          <div class="mt-6 flex flex-wrap items-center justify-center gap-x-7 gap-y-3">
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             {#each props.stats as stat}
               <div>
-                <p class="text-xl font-bold leading-tight text-[var(--color-text)]">{stat.value}</p>
+                <p class="text-base font-bold leading-tight text-[var(--color-text)]">{stat.value}</p>
                 <p class="mt-0.5 text-xs text-[var(--color-muted)]">{stat.label}</p>
               </div>
             {/each}
