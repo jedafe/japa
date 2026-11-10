@@ -119,9 +119,11 @@
 		mobileNavOpen = false;
 	});
 	const effectiveCollapsed = $derived(collapsed && !navHoverExpand);
-	const navWidth = $derived(
-		effectiveCollapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width-expanded)'
-	);
+
+	// The nav column is always rail width — expanding the sidenav (pin or
+	// hover) renders it as an overlay over the center column instead of
+	// reflowing the page, so content never shifts sitewide.
+	const columnNavWidth = 'var(--nav-width-collapsed)';
 
 	// Left rail (Section 59, ADR-066): an ad-only 160px column between the
 	// collapsed nav and the content. It opens only while the nav is collapsed
@@ -182,7 +184,7 @@
 	});
 </script>
 
-<div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={effectiveCollapsed}>
+<div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {columnNavWidth}" data-nav-collapsed={effectiveCollapsed}>
 	<div
 		class="shell-nav"
 		role="presentation"
@@ -329,8 +331,15 @@
 		top: 0;
 		bottom: 0;
 		inset-inline-start: 0;
-		width: var(--current-nav-width);
+		width: var(--nav-width-collapsed);
 		z-index: 30;
+	}
+
+	/* The fixed nav's width tracks the expanded state, not the column —
+	   the column is always rail width, so the expanded nav overlays the
+	   center column instead of pushing it. */
+	.shell[data-nav-collapsed='false'] .shell-nav-fixed {
+		width: var(--nav-width-expanded);
 	}
 
 	.shell-center {
