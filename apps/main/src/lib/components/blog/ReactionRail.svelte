@@ -158,8 +158,26 @@
 
 	// Caller's active reactions + bookmark status — batched across all cards on
 	// the page into one GET /me/content-states request (see $lib/api/viewerState).
+	// A selected persona reads its own reaction set via /reactions/me?actor_id=
+	// — bookmarks stay operator-scoped regardless (spec §1.5).
 	$effect(() => {
 		if (!authed || !contentId) return;
+		const actor = actAsPersona.actorId;
+		if (actor) {
+			if (reactionsEnabled) {
+				api.get<{ reaction_key: string }[]>(
+					`/content/${contentId}/reactions/me?actor_id=${encodeURIComponent(actor)}`
+				).then((res) => {
+					activeReactions = new Set((res.data ?? []).map((r) => r.reaction_key));
+				});
+			}
+			if (bookmarksEnabled) {
+				getViewerState(contentId).then((state) => {
+					isBookmarked = state.bookmarked;
+				});
+			}
+			return;
+		}
 		getViewerState(contentId).then((state) => {
 			if (reactionsEnabled) activeReactions = new Set(state.reactionKeys);
 			if (bookmarksEnabled) isBookmarked = state.bookmarked;
@@ -239,12 +257,14 @@
 			reactionCounts[k] = (reactionCounts[k] || 0) - 1;
 			if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) - 1;
 		}
-		updateViewerState(contentId, { reactionKeys: [...next] });
+		// Delegated authorship: a selected persona holds the reaction —
+		// actor_id on POST bodies, ?actor_id= on DELETEs (spec §1.5). The
+		// viewer-state cache is operator-scoped — persona reactions must not
+		// be written into it.
+		const actor = actAsPersona.actorId;
+		if (!actor) updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
-			// Delegated authorship: a selected persona holds the reaction —
-			// actor_id on POST bodies, ?actor_id= on DELETEs (spec §1.5).
-			const actor = actAsPersona.actorId;
 			if (wasActive) {
 				const res = await api.delete(
 					`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}${actor ? `&actor_id=${encodeURIComponent(actor)}` : ''}`
@@ -274,7 +294,7 @@
 				reactionCounts[k] = (reactionCounts[k] || 0) + 1;
 				if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) + 1;
 			}
-			updateViewerState(contentId, { reactionKeys: [...rollback] });
+			if (!actor) updateViewerState(contentId, { reactionKeys: [...rollback] });
 			reactionPending = null;
 			return;
 		}

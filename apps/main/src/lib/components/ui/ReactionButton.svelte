@@ -95,8 +95,19 @@
 
 	// Caller's active reactions — batched across all cards on the page into a
 	// single GET /me/content-states request (see $lib/api/viewerState).
+	// A selected persona reads its own set via /reactions/me?actor_id= —
+	// the batched viewer cache is operator-scoped (spec §1.5).
 	$effect(() => {
 		if (!authed || !reactionsEnabled || !contentId) return;
+		const actor = actAsPersona.actorId;
+		if (actor) {
+			api.get<{ reaction_key: string }[]>(
+				`/content/${contentId}/reactions/me?actor_id=${encodeURIComponent(actor)}`
+			).then((res) => {
+				activeReactions = new Set((res.data ?? []).map((r) => r.reaction_key));
+			});
+			return;
+		}
 		getViewerState(contentId).then((state) => {
 			activeReactions = new Set(state.reactionKeys);
 		});
@@ -164,19 +175,19 @@
 			// Aggregate delta: a switch replaces one reaction with another (net 0).
 			countDelta += delta - replacedKeys.length;
 		}
-		updateViewerState(contentId, { reactionKeys: [...next] });
+		// Delegated authorship: actor_id records the reaction under the
+		// selected persona (spec §1.5). The viewer-state cache is
+		// operator-scoped — persona reactions must not be written into it.
+		const actor = actAsPersona.actorId;
+		if (!actor) updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
 			if (wasActive) {
-				// Delegated authorship: actor_id records the reaction under the
-				// selected persona (spec §1.5).
-				const actor = actAsPersona.actorId;
 				const res = await api.delete(
 					`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}${actor ? `&actor_id=${encodeURIComponent(actor)}` : ''}`
 				);
 				if (res.error) throw new Error(res.error.message);
 			} else {
-				const actor = actAsPersona.actorId;
 				const res = await api.post(`/content/${contentId}/react`, {
 					reaction_key: reactionKey,
 					...(actor ? { actor_id: actor } : {})
@@ -203,7 +214,7 @@
 			} else {
 				countDelta += rollbackDelta + replacedKeys.length;
 			}
-			updateViewerState(contentId, { reactionKeys: [...rollback] });
+			if (!actor) updateViewerState(contentId, { reactionKeys: [...rollback] });
 		} finally {
 			reactionPending = null;
 		}

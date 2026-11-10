@@ -151,9 +151,12 @@
 			// Rollback on failure.
 			optimisticVote = prevVote === initialVote ? null : prevVote;
 			optimisticDelta = prevDelta;
-		} else if (backend === 'content') {
+		} else if (backend === 'content' && !actor) {
 			// Persist into the batched viewer-state cache so other mounts of
 			// this content (feed cards, thread page) reflect the vote.
+			// Skipped for delegated votes — the recorded vote belongs to the
+			// persona, not the viewer, so caching it would corrupt the
+			// operator's own vote state on every other mount.
 			updateViewerState(id, { vote: next });
 		}
 	}

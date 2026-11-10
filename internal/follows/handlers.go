@@ -204,11 +204,6 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if errors.Is(err, ErrUserBlocked) {
-			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot follow this user")
-			return
-		}
-
 		errpkg.WriteError(w, http.StatusBadRequest, "follow_error", err.Error())
 
 		return

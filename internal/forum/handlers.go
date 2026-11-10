@@ -1177,6 +1177,19 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	response["json_ld"] = jsonLd
 
+	// ?actor_id= swaps the user_votes subject to the persona (spec §1.4) —
+	// resolved unconditionally so the delegated error contract applies to
+	// guests too (parity with GET /content/{id}/comments: unauthenticated
+	// viewers may not delegate).
+	voteActorViewer := pgtype.UUID{}
+	if u := auth.FromContext(r.Context()); u != nil {
+		voteActorViewer = u.UserID
+	}
+	voteActor, ok := h.resolveActor(w, r, voteActorViewer, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
+	}
+
 	// Add can_solve flag for the frontend so it can show the solve/unsolve
 	// affordance to the OP or moderators (BUG-014).
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md ("OP or moderator")
@@ -1217,11 +1230,6 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 		// BUG-006: return the current user's vote state for the thread and
 		// its replies so VoteRail can render the selected direction.
-		// ?actor_id= swaps the state to the persona's (spec §1.4).
-		voteActor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
-		if !ok {
-			return
-		}
 		if votes, err := h.Service.GetUserVotesForThread(r.Context(), thread.ID, voteActor); err == nil {
 			response["user_votes"] = userVoteMap(votes)
 		}
@@ -1792,12 +1800,18 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-006: include the current user's reply votes so the frontend can
 	// render each VoteRail in the selected state.
-	// ?actor_id= swaps the state to the persona's (spec §1.4).
-	if user := auth.FromContext(r.Context()); user != nil {
-		voteActor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
-		if !ok {
-			return
-		}
+	// ?actor_id= swaps the state to the persona's (spec §1.4) — resolved
+	// unconditionally so the delegated error contract applies to guests too
+	// (parity with GET /content/{id}/comments).
+	voteActorViewer := pgtype.UUID{}
+	if u := auth.FromContext(r.Context()); u != nil {
+		voteActorViewer = u.UserID
+	}
+	voteActor, ok := h.resolveActor(w, r, voteActorViewer, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
+	}
+	if auth.FromContext(r.Context()) != nil {
 		if votes, err := h.Service.GetUserVotesForThread(r.Context(), threadID, voteActor); err == nil {
 			resp["user_votes"] = userVoteMap(votes)
 		}
