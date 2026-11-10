@@ -4,6 +4,7 @@
   import { blockRegistry } from './blockRegistry';
   import BlockShell from '../shell/BlockShell.svelte';
   import { isBlockVisible, isBlockEmpty, containsGuestBlocks } from './blockVisibility';
+  import { applyPageHeader } from './pageHeader';
   import { setGuestHomeData } from '../data/guestHomeContext';
   import GuestBlockStyles from '../blocks/guest/GuestBlockStyles.svelte';
   import { cssIdent, cssTagSafe } from '../shell/styleToCss';
@@ -16,6 +17,10 @@
   }
   let { blocks, fetchCtx, geoCountry, guestHome }: Props = $props();
 
+  // Page-header convention: a leading `heading` (+ optional `media`) block
+  // renders as the shared hero panel so every page gets the same header.
+  const renderBlocks = $derived(applyPageHeader(blocks));
+
   // svelte-ignore state_referenced_locally
   const guestHomeStore = setGuestHomeData(guestHome);
   $effect(() => {
@@ -25,7 +30,7 @@
   // Load the shared guest-block stylesheet only when at least one guest_*
   // block is on the page, so the split guest blocks render with the same
   // visual styling as the legacy monolithic block.
-  const hasGuestBlocks = $derived(containsGuestBlocks(blocks));
+  const hasGuestBlocks = $derived(containsGuestBlocks(renderBlocks));
 
   // Generate per-device visibility CSS for top-level blocks.
   // Uses @container queries so they respond to the preview container width
@@ -33,7 +38,7 @@
   // Container children handle their own visibility in ContainerBlock.svelte.
   const responsiveVisibilityCss = $derived.by(() => {
     const parts: string[] = [];
-    for (const block of blocks) {
+    for (const block of renderBlocks) {
       if (!isBlockVisible(block, geoCountry) || !block.responsive_visibility) continue;
       const scope = `[data-rv="${cssIdent(block.id)}"]`;
       // Desktop: hide when container is wider than 1024px
@@ -62,7 +67,7 @@
 {/if}
 
 <div class="landing-page min-h-screen bg-[var(--color-bg)]" style="container-type: inline-size">
-  {#each blocks as block (block.id)}
+  {#each renderBlocks as block (block.id)}
     {#if isBlockVisible(block, geoCountry)}
       {@const meta = blockRegistry[block.type]}
       {#if meta}

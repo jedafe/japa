@@ -64,7 +64,11 @@ export function isExceptionRoute(routeId: string | null): boolean {
 const NO_RIGHT_SIDEBAR_ROUTES = new Set([
 	'/(app)/tools/readiness',
 	'/(app)/japa-stage',
-	'/(app)/tools/travel'
+	'/(app)/tools/travel',
+	// Published Page Builder pages (root /{slug} catch-all) — the blocks
+	// self-center via their max-w containers, so dropping the right rail
+	// keeps the content in the middle of the widened column.
+	'/(app)/[slug]'
 ]);
 
 export function isNoRightSidebarRoute(routeId: string | null): boolean {
