@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // Provider identifiers for integrations.cdn.provider.
@@ -143,34 +145,12 @@ func SetCacheTags(w http.ResponseWriter, tags ...string) {
 	w.Header().Set(header, strings.Join(tags, ","))
 }
 
-// contentRoutePrefix maps content_type to its canonical public detail
-// route — the mirror of apps/main/src/lib/utils/contentLink.ts (§14,
-// ADR-058). Lives here (not internal/content) so the scheduled-publish
-// worker — which cannot import content without an import cycle — can
-// build the same URLs.
-var contentRoutePrefix = map[string]string{
-	"blog_post":       "/blog",
-	"guide":           "/guide",
-	"discussion":      "/thread", // §49 linked discussion renders at /thread/{slug}
-	"forum_thread":    "/thread", // legacy alias for 'discussion'
-	"comparison":      "/comparisons",
-	"story":           "/story",
-	"achievement":     "/achievements",
-	"page":            "/pages",
-	"job_listing":     "/jobs",
-	"service_listing": "/services",
-	"video":           "/video",
-	"list":            "/list",
-}
-
-// contentDetailURL builds the canonical public detail URL for a content item.
+// contentDetailURL builds the canonical public detail URL for a content
+// item. The route-prefix map lives in internal/rss/model (LinkPathFor) —
+// the single Go source mirrored by contentLink.ts (§14, ADR-058) — so the
+// scheduled-publish worker (which cannot import content) shares it too.
 func contentDetailURL(siteBase, contentType, slug string) string {
-	prefix, ok := contentRoutePrefix[contentType]
-	if !ok {
-		prefix = "/content"
-	}
-
-	return siteBase + prefix + "/" + slug
+	return siteBase + model.LinkPathFor(contentType) + slug
 }
 
 // siteURLWarned latches so the "no SiteURL" misconfiguration logs once per

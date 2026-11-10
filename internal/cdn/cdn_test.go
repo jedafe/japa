@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 func TestProviderHeaders(t *testing.T) {
@@ -176,33 +178,32 @@ func TestPurgeMissingCredentials(t *testing.T) {
 	}
 }
 
-// TestContentRoutePrefixParity pins the route-prefix map so accidental edits
-// are caught — the map mirrors apps/main/src/lib/utils/contentLink.ts (§14,
-// ADR-058); a drifted entry purges the wrong URL.
+// TestContentRoutePrefixParity pins the canonical route-prefix map so
+// accidental edits are caught — it mirrors apps/main/src/lib/utils/
+// contentLink.ts (§14, ADR-058); a drifted entry purges the wrong URL.
+// The single source is rss/model.LinkPathFor (values carry trailing
+// slashes) — contentDetailURL delegates to it.
 func TestContentRoutePrefixParity(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		"blog_post":       "/blog",
-		"guide":           "/guide",
-		"discussion":      "/thread",
-		"forum_thread":    "/thread",
-		"comparison":      "/comparisons",
-		"story":           "/story",
-		"achievement":     "/achievements",
-		"page":            "/pages",
-		"job_listing":     "/jobs",
-		"service_listing": "/services",
-		"video":           "/video",
-		"list":            "/list",
+		"blog_post":       "/blog/",
+		"guide":           "/guide/",
+		"discussion":      "/thread/",
+		"forum_thread":    "/thread/",
+		"comparison":      "/comparisons/",
+		"story":           "/story/",
+		"achievement":     "/achievements/",
+		"page":            "/pages/",
+		"job_listing":     "/jobs/",
+		"service_listing": "/services/",
+		"video":           "/video/",
+		"list":            "/list/",
 	}
 	for k, v := range want {
-		if got := contentRoutePrefix[k]; got != v {
-			t.Errorf("contentRoutePrefix[%q] = %q, want %q", k, got, v)
+		if got := model.LinkPathFor(k); got != v {
+			t.Errorf("LinkPathFor(%q) = %q, want %q", k, got, v)
 		}
-	}
-	if len(contentRoutePrefix) != len(want) {
-		t.Errorf("contentRoutePrefix has %d entries, want %d", len(contentRoutePrefix), len(want))
 	}
 	if got := contentDetailURL("https://japa.to", "unknown_type", "x"); got != "https://japa.to/content/x" {
 		t.Errorf("fallback = %q, want /content/x", got)

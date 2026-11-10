@@ -409,7 +409,7 @@ function buildThreadEmbed(article: ContentArticle): ThreadEmbed | null {
 		return {
 			kind: 'parent',
 			title: p.title,
-			href: contentHref({ slug: p.slug, content_type: p.content_type }),
+			href: p.url ?? contentHref({ slug: p.slug, content_type: p.content_type }),
 			excerpt: p.excerpt ?? null,
 			imageUrl: p.cover_image_url ?? null,
 			badge: p.content_type

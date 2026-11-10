@@ -1690,6 +1690,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 				"title":        parent.Title,
 				"content_type": parent.ContentType,
 				"excerpt":      parent.Excerpt,
+				"url":          parent.URL,
 			}
 			if parent.FeaturedStorageBucket != nil && parent.FeaturedStoragePath != nil {
 				dto["thread_parent"].(map[string]any)["cover_image_url"] = media.MediaURL(*parent.FeaturedStorageBucket, *parent.FeaturedStoragePath, media.ImageProxyOpts{})

@@ -522,6 +522,16 @@ SELECT id, content_id, thread_id, link_count, created_at
 FROM content_thread_links
 WHERE content_id = @content_id AND thread_id = @thread_id;
 
+-- name: ListLinkedParentContents :many
+-- Parent content rows linked to a thread — the reverse lookup of
+-- ListContentThreadLinks. Comments on the thread bubble their count into
+-- the parent's denormalized counter, so a comment write also purges the
+-- parent's edge-cached page.
+SELECT c.id, c.content_type, c.slug
+FROM content_thread_links l
+JOIN contents c ON c.id = l.content_id AND c.deleted_at IS NULL
+WHERE l.thread_id = @thread_id;
+
 -- name: ListContentThreadLinks :many
 -- Linked discussion threads for a blog/content, most recently linked first.
 -- Threads are only as visible as their own row: drafts, removed, and

@@ -9,12 +9,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/notifications"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/wallet"
 )
 
@@ -202,7 +204,28 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 		"content_id": input.ContentID.String(),
 	})
 
+	s.purgeCommentThread(ctx, input.ContentID)
+
 	return comment, nil
+}
+
+// purgeCommentThread refreshes the edge-cached pages a comment write
+// touches: the thread/content row itself (the SSR embeds the first
+// comments page, and a discussion thread's indexable/canonical headers
+// flip at seo.sitemap.discussion_min_comments) plus any linked parents
+// whose denormalized comment_count just changed. Best-effort — a miss
+// lets the TTL expire.
+func (s *Service) purgeCommentThread(ctx context.Context, contentID pgtype.UUID) {
+	if row, err := s.read.GetContentByID(ctx, contentID); err == nil {
+		cdn.PurgeContentDetail(ctx, row.ID.String(), row.ContentType, row.Slug)
+	}
+	parents, err := s.read.ListLinkedParentContents(ctx, contentID)
+	if err != nil {
+		return
+	}
+	for _, p := range parents {
+		cdn.PurgeContentDetail(ctx, p.ID.String(), p.ContentType, p.Slug)
+	}
 }
 
 // DispatchCommentNotifications fires notifications for a newly created comment
@@ -335,22 +358,15 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 }
 
 // commentContentURL builds the frontend deep link for a comment's parent
-// content — blog posts use /blog/{slug}, discussion/forum threads
-// /thread/{slug}, everything else /content/{slug} (mirrors
-// OverviewView.contentUrl).
+// content via the shared route-prefix map (mirrors OverviewView.contentUrl).
 func commentContentURL(contentType, slug string) string {
 	if slug == "" {
 		return ""
 	}
 
-	switch contentType {
-	case "blog_post":
-		return "/blog/" + slug
-	case "forum_thread", "discussion":
-		return "/thread/" + slug
-	default:
-		return "/content/" + slug
-	}
+	// LinkPathFor carries the full route-family map — the old local switch
+	// dropped guide/jobs/etc. onto the /content redirect shim.
+	return rssmodel.LinkPathFor(contentType) + slug
 }
 
 // DispatchMentionNotifications fires only @mention notifications for a comment
@@ -693,6 +709,8 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 			return gen.Comment{}, fmt.Errorf("updating comment: %w", err)
 		}
 
+		s.purgeCommentThread(ctx, existing.ContentID)
+
 		return comment, nil
 	}
 
@@ -706,6 +724,8 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 		return gen.Comment{}, fmt.Errorf("updating comment: %w", err)
 	}
 
+	s.purgeCommentThread(ctx, existing.ContentID)
+
 	return comment, nil
 }
 
@@ -713,7 +733,7 @@ func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UU
 // comment regardless of author, no edit window. The comment must still be on
 // content the moderator can see (C-018).
 func (s *Service) UpdateCommentModerate(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
-	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+	if _, err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
 		return gen.Comment{}, err
 	}
 
@@ -724,6 +744,8 @@ func (s *Service) UpdateCommentModerate(ctx context.Context, commentID, userID p
 	if err != nil {
 		return gen.Comment{}, fmt.Errorf("moderator updating comment: %w", err)
 	}
+
+	s.purgeCommentThread(ctx, comment.ContentID)
 
 	return comment, nil
 }
@@ -757,6 +779,8 @@ func (s *Service) SoftDeleteComment(ctx context.Context, commentID pgtype.UUID) 
 	}); err != nil {
 		return err
 	}
+
+	s.purgeCommentThread(ctx, comment.ContentID)
 
 	return nil
 }
@@ -793,6 +817,8 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, commentID, user
 	}); err != nil {
 		return err
 	}
+
+	s.purgeCommentThread(ctx, comment.ContentID)
 
 	return nil
 }
@@ -835,6 +861,8 @@ func (s *Service) RemoveComment(ctx context.Context, commentID, moderatorID pgty
 		return err
 	}
 
+	s.purgeCommentThread(ctx, comment.ContentID)
+
 	return nil
 }
 
@@ -869,7 +897,8 @@ func decrementCommentCountersTx(ctx context.Context, q *gen.Queries, comment gen
 // PinComment pins a comment (only content author or moderator). The pin must
 // only be possible on comments the pinner can actually see (C-018).
 func (s *Service) PinComment(ctx context.Context, commentID, userID pgtype.UUID) error {
-	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+	comment, err := s.checkCommentVisible(ctx, commentID, userID)
+	if err != nil {
 		return err
 	}
 
@@ -879,12 +908,15 @@ func (s *Service) PinComment(ctx context.Context, commentID, userID pgtype.UUID)
 		return fmt.Errorf("pinning comment: %w", err)
 	}
 
+	s.purgeCommentThread(ctx, comment.ContentID)
+
 	return nil
 }
 
 // UnpinComment unpins a comment.
 func (s *Service) UnpinComment(ctx context.Context, commentID, userID pgtype.UUID) error {
-	if err := s.checkCommentVisible(ctx, commentID, userID); err != nil {
+	comment, err := s.checkCommentVisible(ctx, commentID, userID)
+	if err != nil {
 		return err
 	}
 
@@ -894,27 +926,30 @@ func (s *Service) UnpinComment(ctx context.Context, commentID, userID pgtype.UUI
 		return fmt.Errorf("unpinning comment: %w", err)
 	}
 
+	s.purgeCommentThread(ctx, comment.ContentID)
+
 	return nil
 }
 
 // checkCommentVisible resolves a comment's parent content and verifies the
-// caller can see it — shared by pin/unpin/update-moderate guards.
-func (s *Service) checkCommentVisible(ctx context.Context, commentID, userID pgtype.UUID) error {
+// caller can see it — shared by pin/unpin/update-moderate guards. Returns
+// the comment row so callers can reuse ContentID without a second read.
+func (s *Service) checkCommentVisible(ctx context.Context, commentID, userID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx, commentID)
 	if err != nil {
-		return fmt.Errorf("getting comment: %w", err)
+		return comment, fmt.Errorf("getting comment: %w", err)
 	}
 
 	visible, err := s.CanViewComments(ctx, comment.ContentID, userID, true)
 	if err != nil {
-		return err
+		return comment, err
 	}
 
 	if !visible {
-		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+		return comment, fmt.Errorf("%w: comment", errpkg.ErrNotFound)
 	}
 
-	return nil
+	return comment, nil
 }
 
 // ---------------------------------------------------------------------------

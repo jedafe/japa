@@ -119,6 +119,12 @@ RETURNING *;
 -- name: SetRoadmapItemContent :exec
 UPDATE roadmap_items SET content_id = @content_id, updated_at = now() WHERE id = @id;
 
+-- name: GetRoadmapItemSlugByContentID :one
+-- Reverse lookup — a shadow content row's public entity page is
+-- /roadmap/{item.slug}; its own slug is "roadmap-{item.slug}" and can't
+-- reconstruct the item route.
+SELECT slug FROM roadmap_items WHERE content_id = @content_id AND deleted_at IS NULL;
+
 -- name: SoftDeleteRoadmapItem :exec
 UPDATE roadmap_items SET deleted_at = now(), updated_at = now() WHERE id = @id AND deleted_at IS NULL;
 

@@ -629,6 +629,20 @@ func (q *Queries) GetRoadmapItemIDBySlug(ctx context.Context, slug string) (pgty
 	return id, err
 }
 
+const getRoadmapItemSlugByContentID = `-- name: GetRoadmapItemSlugByContentID :one
+SELECT slug FROM roadmap_items WHERE content_id = $1 AND deleted_at IS NULL
+`
+
+// Reverse lookup — a shadow content row's public entity page is
+// /roadmap/{item.slug}; its own slug is "roadmap-{item.slug}" and can't
+// reconstruct the item route.
+func (q *Queries) GetRoadmapItemSlugByContentID(ctx context.Context, contentID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getRoadmapItemSlugByContentID, contentID)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
 const getRoadmapReleaseByID = `-- name: GetRoadmapReleaseByID :one
 SELECT id, surface, version, slug, title, summary, body, status, is_esr, released_at, eol_at, sort_order, created_at, updated_at, deleted_at FROM roadmap_releases WHERE id = $1
 `

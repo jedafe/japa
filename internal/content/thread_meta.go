@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 )
 
 // Thread-context lookups backing the /thread/{slug} embed card (thread-
@@ -32,12 +33,15 @@ type ThreadAnchorMeta struct {
 
 // ThreadParentMeta is the parent content a linked-discussion thread was
 // started about — enough for the thread page's embed card to render title,
-// excerpt, and cover without a second fetch.
+// excerpt, and cover without a second fetch. URL is the parent's canonical
+// public detail URL — resolved server-side because some routes (roadmap
+// shadow rows) can't be reconstructed from the content slug alone.
 type ThreadParentMeta struct {
 	Slug                  string  `json:"slug"`
 	Title                 string  `json:"title"`
 	ContentType           string  `json:"content_type"`
 	Excerpt               string  `json:"excerpt"`
+	URL                   string  `json:"url"`
 	FeaturedStorageBucket *string `json:"-"`
 	FeaturedStoragePath   *string `json:"-"`
 }
@@ -83,11 +87,20 @@ func (s *Service) ThreadParentFor(ctx context.Context, contentID pgtype.UUID) (*
 		excerpt = ExcerptFromBody(row.Body, "", 160)
 	}
 
+	// A roadmap shadow row's public page is /roadmap/{item.slug} — its own
+	// slug is "roadmap-{item.slug}", so LinkPathFor's /content fallback
+	// would point the embed card (and shell canonicals) at a stub page.
+	url := rssmodel.LinkPathFor(row.ContentType) + row.Slug
+	if row.RoadmapItemSlug != nil && *row.RoadmapItemSlug != "" {
+		url = "/roadmap/" + *row.RoadmapItemSlug
+	}
+
 	return &ThreadParentMeta{
 		Slug:                  row.Slug,
 		Title:                 row.Title,
 		ContentType:           row.ContentType,
 		Excerpt:               excerpt,
+		URL:                   url,
 		FeaturedStorageBucket: row.FeaturedStorageBucket,
 		FeaturedStoragePath:   row.FeaturedStoragePath,
 	}, nil

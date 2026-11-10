@@ -172,29 +172,12 @@ func (s *Service) anchorSpaceForContent(ctx context.Context, row gen.GetContentB
 	return platform, err == nil
 }
 
-// contentEntityURL mirrors the frontend CONTENT_ROUTE_PREFIX map
-// (contentLink.ts) so thread_anchors.entity_url points at the article's
-// canonical detail route — the embed card and any URL consumers land on
-// the real content page, not a discussion stub.
+// contentEntityURL resolves the article's canonical detail route via the
+// shared rss/model map (LinkPathFor — single Go source, mirrored by
+// contentLink.ts) so thread_anchors.entity_url lands on the real content
+// page, not a discussion stub or the /content redirect shim.
 func contentEntityURL(contentType, slug string) string {
-	prefix := map[string]string{
-		"blog_post":       "/blog",
-		"guide":           "/guide",
-		"discussion":      "/thread",
-		"forum_thread":    "/thread",
-		"comparison":      "/comparisons",
-		"story":           "/story",
-		"achievement":     "/achievements",
-		"page":            "/pages",
-		"job_listing":     "/jobs",
-		"service_listing": "/services",
-		"video":           "/video",
-		"list":            "/list",
-	}[contentType]
-	if prefix == "" {
-		prefix = "/content"
-	}
-	return prefix + "/" + slug
+	return rssmodel.LinkPathFor(contentType) + slug
 }
 
 // ResolveAnchor returns the thread anchor bound to an entity, or ErrNotFound.
@@ -379,8 +362,19 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 				summary = content.ExcerptFromBody(row.Body, "", 160)
 			}
 
+			entityURL := contentEntityURL(row.ContentType, row.Slug)
+			if row.ContentType == "roadmap" {
+				// Shadow-row slugs are "roadmap-{item.slug}" — the public
+				// entity page is the item route, which the content slug
+				// can't reconstruct. Unresolved items keep the generic
+				// /content fallback rather than fail the describe.
+				if itemSlug, err := s.read.GetRoadmapItemSlugByContentID(ctx, row.ID); err == nil {
+					entityURL = "/roadmap/" + itemSlug
+				}
+			}
+
 			return entityDescriptor{
-				URL:        contentEntityURL(row.ContentType, row.Slug),
+				URL:        entityURL,
 				Title:      row.Title,
 				Summary:    &summary,
 				SpaceID:    spaceID,

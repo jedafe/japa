@@ -1242,6 +1242,43 @@ func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThr
 	return items, nil
 }
 
+const listLinkedParentContents = `-- name: ListLinkedParentContents :many
+SELECT c.id, c.content_type, c.slug
+FROM content_thread_links l
+JOIN contents c ON c.id = l.content_id AND c.deleted_at IS NULL
+WHERE l.thread_id = $1
+`
+
+type ListLinkedParentContentsRow struct {
+	ID          pgtype.UUID `json:"id"`
+	ContentType string      `json:"content_type"`
+	Slug        string      `json:"slug"`
+}
+
+// Parent content rows linked to a thread — the reverse lookup of
+// ListContentThreadLinks. Comments on the thread bubble their count into
+// the parent's denormalized counter, so a comment write also purges the
+// parent's edge-cached page.
+func (q *Queries) ListLinkedParentContents(ctx context.Context, threadID pgtype.UUID) ([]ListLinkedParentContentsRow, error) {
+	rows, err := q.db.Query(ctx, listLinkedParentContents, threadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLinkedParentContentsRow
+	for rows.Next() {
+		var i ListLinkedParentContentsRow
+		if err := rows.Scan(&i.ID, &i.ContentType, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicCommentsByContent = `-- name: ListPublicCommentsByContent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,

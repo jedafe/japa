@@ -89,6 +89,9 @@ export interface ContentArticle {
 		content_type: string;
 		excerpt?: string | null;
 		cover_image_url?: string | null;
+		/** Canonical public URL resolved server-side (roadmap parents
+		 *  can't be rebuilt from the content slug client-side). */
+		url?: string;
 	} | null;
 }
 

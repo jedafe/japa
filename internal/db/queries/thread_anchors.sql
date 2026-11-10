@@ -124,11 +124,13 @@ WHERE id = @id AND title = @old_title AND deleted_at IS NULL;
 -- The content a §49 linked-discussion row was started about — used by
 -- /thread/{slug} to render the parent embed on discussion threads.
 SELECT c.id, c.slug, c.title, c.content_type, c.meta_description, c.body,
- m.storage_bucket AS featured_storage_bucket, m.storage_path AS featured_storage_path
+ m.storage_bucket AS featured_storage_bucket, m.storage_path AS featured_storage_path,
+ ri.slug AS roadmap_item_slug
 FROM content_thread_links l
 JOIN contents c ON c.id = l.content_id AND c.deleted_at IS NULL AND c.status = 'published'
  AND c.visibility = 'public' AND c.auto_hidden = false
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+LEFT JOIN roadmap_items ri ON ri.content_id = c.id AND ri.deleted_at IS NULL
 WHERE l.thread_id = @thread_id
 ORDER BY l.created_at DESC
 LIMIT 1;
