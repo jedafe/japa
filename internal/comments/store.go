@@ -519,7 +519,10 @@ func (s *Service) GetComment(ctx context.Context, commentID, viewerID pgtype.UUI
 // honoring the Section 49 ?sort=top|new|oldest query parameter. "top" (the
 // default) orders by pin then vote score then recency; "new" by recency;
 // "oldest" by ascending creation time. Pinned comments always surface first.
-func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
+// actorID is the vote-state subject — when a persona delegate is selected on
+// the client, user_vote reflects THEIR vote while viewerID stays the operator
+// for block filtering and viewer_can_manage (delegated-authorship spec §1.4).
+func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID, actorID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -527,8 +530,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID
 	switch sort {
 	case "new":
 		rows, err := s.read.ListCommentsByContentNew(ctx, gen.ListCommentsByContentNewParams{
-			ViewerID:  viewerID,
-			ContentID: contentID,
+			ViewerID:    viewerID,
+			VoteActorID: actorID,
+			ContentID:   contentID,
 
 			PageLimit:  limit,
 			PageOffset: offset,
@@ -541,8 +545,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID
 
 	case "oldest":
 		rows, err := s.read.ListCommentsByContentOldest(ctx, gen.ListCommentsByContentOldestParams{
-			ViewerID:  viewerID,
-			ContentID: contentID,
+			ViewerID:    viewerID,
+			VoteActorID: actorID,
+			ContentID:   contentID,
 
 			PageLimit:  limit,
 			PageOffset: offset,
@@ -555,8 +560,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID
 
 	default: // "top" and any unrecognized value
 		comments, err := s.read.ListCommentsByContent(ctx, gen.ListCommentsByContentParams{
-			ViewerID:  viewerID,
-			ContentID: contentID,
+			ViewerID:    viewerID,
+			VoteActorID: actorID,
+			ContentID:   contentID,
 
 			PageLimit:  limit,
 			PageOffset: offset,
@@ -599,6 +605,8 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 			Username:      rows[i].Username,
 			DisplayName:   rows[i].DisplayName,
 			AvatarUrl:     rows[i].AvatarUrl,
+
+			ViewerCanManage: rows[i].ViewerCanManage,
 		}
 	}
 
@@ -632,6 +640,8 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 			Username:      rows[i].Username,
 			DisplayName:   rows[i].DisplayName,
 			AvatarUrl:     rows[i].AvatarUrl,
+
+			ViewerCanManage: rows[i].ViewerCanManage,
 		}
 	}
 
@@ -642,15 +652,18 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 // the parent content (C-005 hardening — a parent_id from another content item
 // returns an empty page rather than a foreign thread). Also returns the total
 // for pagination meta.
-func (s *Service) ListRepliesByParent(ctx context.Context, contentID, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, int32, error) {
+// actorID is the vote-state subject (delegated-authorship spec §1.4) —
+// viewerID stays the operator for block filtering and viewer_can_manage.
+func (s *Service) ListRepliesByParent(ctx context.Context, contentID, parentID, viewerID, actorID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, int32, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	replies, err := s.read.ListRepliesByParent(ctx, gen.ListRepliesByParentParams{
-		ViewerID:  viewerID,
-		ParentID:  parentID,
-		ContentID: contentID,
+		ViewerID:    viewerID,
+		VoteActorID: actorID,
+		ParentID:    parentID,
+		ContentID:   contentID,
 
 		PageLimit:  limit,
 		PageOffset: offset,

@@ -196,6 +196,34 @@ func (h *Handlers) computeErasedMentionIDs(ctx context.Context, body []byte) []s
 	return erased
 }
 
+// resolveActor resolves an optional actor_id delegate to the effective actor.
+// Empty raw → the operator. Otherwise personas.ResolveDelegatedActor validates
+// it (bot persona + content.assign_author) and writes the error on failure.
+func (h *Handlers) resolveActor(w http.ResponseWriter, r *http.Request, operator pgtype.UUID, raw string) (pgtype.UUID, bool) {
+	if raw == "" {
+		return operator, true
+	}
+	id, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), operator, raw)
+	if err != nil {
+		personas.WriteDelegatedError(w, err, "actor_id")
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+// auditDelegatedVote writes the persona_attrib.vote audit row when the vote
+// actor is a delegate persona (spec §1.9). Synchronous, warn-on-failure.
+func (h *Handlers) auditDelegatedVote(r *http.Request, operator, actor pgtype.UUID, entityType string, entityID pgtype.UUID) {
+	if actor.Bytes == operator.Bytes {
+		return
+	}
+	if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+		operator, actor, "vote", entityType, entityID); err != nil {
+		slog.Warn("comments: persona_attrib vote audit failed",
+			"error", err, "entity_id", entityID.String())
+	}
+}
+
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -369,6 +397,15 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 
+	// Delegated-authorship spec §1.4: ?actor_id= swaps the vote-state subject
+	// (user_vote) to the persona while viewer scoping (blocks, manage flags)
+	// stays with the caller. Unauthenticated viewers may not delegate.
+	viewerID := viewerIDFromRequest(r)
+	actorID, ok := h.resolveActor(w, r, viewerID, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
+	}
+
 	var offset int32
 
 	if os := r.URL.Query().Get("page_offset"); os != "" {
@@ -390,7 +427,6 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	// C-001: comments are only as visible as their parent content. Invisible
 	// or absent content is 404 — never 403 — so the endpoint cannot be used
 	// to probe restricted content.
-	viewerID := viewerIDFromRequest(r)
 	authed := auth.FromContext(r.Context()) != nil
 	visible, err := h.Service.CanViewComments(r.Context(), contentID, viewerID, authed)
 	if err != nil {
@@ -412,7 +448,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		replies, repliesTotal, err := h.Service.ListRepliesByParent(r.Context(), contentID, parentID, viewerID, limit, offset)
+		replies, repliesTotal, err := h.Service.ListRepliesByParent(r.Context(), contentID, parentID, viewerID, actorID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -465,7 +501,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comments, err := h.Service.ListCommentsByContent(r.Context(), contentID, viewerID, sort, limit, offset)
+	comments, err := h.Service.ListCommentsByContent(r.Context(), contentID, viewerID, actorID, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -977,7 +1013,8 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Value int16 `json:"value"`
+		Value   int16   `json:"value"`
+		ActorID *string `json:"actor_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -985,11 +1022,22 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, delta, err := h.Service.VoteComment(r.Context(), commentID, user.UserID, input.Value)
+	actorRaw := ""
+	if input.ActorID != nil {
+		actorRaw = *input.ActorID
+	}
+	actor, ok := h.resolveActor(w, r, user.UserID, actorRaw)
+	if !ok {
+		return
+	}
+
+	contentID, delta, err := h.Service.VoteComment(r.Context(), commentID, actor, input.Value)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.auditDelegatedVote(r, user.UserID, actor, "comment", commentID)
 
 	// E-006: feed the net score change into content_scores.vote_score so
 	// engagement velocity reflects comment votes (§32). Fire-and-forget.
@@ -1013,11 +1061,18 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, delta, err := h.Service.RemoveCommentVote(r.Context(), commentID, user.UserID)
+	actor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
+	}
+
+	contentID, delta, err := h.Service.RemoveCommentVote(r.Context(), commentID, actor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.auditDelegatedVote(r, user.UserID, actor, "comment", commentID)
 
 	if delta != 0 {
 		h.EnqueueEngagementUpdate("content", contentID, "vote", int(delta))
@@ -1043,7 +1098,8 @@ func (h *Handlers) VoteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Value int16 `json:"value"`
+		Value   int16   `json:"value"`
+		ActorID *string `json:"actor_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1051,11 +1107,22 @@ func (h *Handlers) VoteContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	score, err := h.Service.VoteContent(r.Context(), contentID, user.UserID, input.Value)
+	actorRaw := ""
+	if input.ActorID != nil {
+		actorRaw = *input.ActorID
+	}
+	actor, ok := h.resolveActor(w, r, user.UserID, actorRaw)
+	if !ok {
+		return
+	}
+
+	score, err := h.Service.VoteContent(r.Context(), contentID, actor, input.Value)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.auditDelegatedVote(r, user.UserID, actor, "content", contentID)
 
 	// E-006: keep content_scores.vote_score in sync. The "vote" increment
 	// recomputes from the live vote tables, so the delta is ignored by the
@@ -1079,11 +1146,18 @@ func (h *Handlers) RemoveContentVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	score, err := h.Service.RemoveContentVote(r.Context(), contentID, user.UserID)
+	actor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
+	}
+
+	score, err := h.Service.RemoveContentVote(r.Context(), contentID, actor)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.auditDelegatedVote(r, user.UserID, actor, "content", contentID)
 
 	h.EnqueueEngagementUpdate("content", contentID, "vote", 0)
 

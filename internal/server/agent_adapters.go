@@ -3001,7 +3001,7 @@ func (a *agentCommentsAdapter) GetComment(ctx context.Context, commentID pgtype.
 }
 
 func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
-	return a.svc.ListCommentsByContent(ctx, contentID, viewerID, sort, limit, offset)
+	return a.svc.ListCommentsByContent(ctx, contentID, viewerID, pgtype.UUID{}, sort, limit, offset)
 }
 
 func (a *agentCommentsAdapter) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
@@ -3012,7 +3012,7 @@ func (a *agentCommentsAdapter) ListRepliesByParent(ctx context.Context, parentID
 		return nil, fmt.Errorf("resolving parent comment: %w", err)
 	}
 
-	replies, _, err := a.svc.ListRepliesByParent(ctx, parent.ContentID, parentID, viewerID, limit, offset)
+	replies, _, err := a.svc.ListRepliesByParent(ctx, parent.ContentID, parentID, viewerID, pgtype.UUID{}, limit, offset)
 	if err != nil {
 		return nil, err
 	}
