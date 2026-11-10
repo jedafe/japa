@@ -5,12 +5,13 @@
 	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { EntityPage, type EntityPageConfig, type FieldDef, type EntityPageController } from '#lib/components/entity/index.js';
 	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
-	import { Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
+	import { Plus, Trash2, Activity, Pencil, Pause, Play, Eye, Image as ImageIcon } from 'lucide-svelte';
 	import { api, apiRaw } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import type { BulkAction } from '#lib/components/ui/data-table/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import GeoSpaceCascade from '#lib/components/ui/GeoSpaceCascade.svelte';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.
@@ -35,6 +36,17 @@
 		geo_space_name?: string | null;
 		geo_space_slug?: string | null;
 		geo_space_level?: string | null;
+		avatar_url?: string | null;
+		cover_url?: string | null;
+		avatar_media_id?: string;
+		header_media_id?: string;
+		profession?: string | null;
+		location?: string | null;
+		website_url?: string | null;
+		education?: string | null;
+		interests?: string[];
+		tips_enabled?: boolean;
+		points_balance?: number;
 		total_actions?: number;
 	};
 
@@ -97,6 +109,14 @@
 		tagline?: string;
 		username?: string;
 		geo_space?: string;
+		avatar_media_id?: string;
+		header_media_id?: string;
+		profession?: string;
+		location?: string;
+		website_url?: string;
+		education?: string;
+		interests?: string[];
+		tips_enabled?: boolean;
 	};
 
 	const canManage = $derived(hasPermission('persona.manage'));
@@ -167,6 +187,14 @@
 	// geo_space on save (mirrors the name/tagline/username pattern).
 	let editGeoSpace = $state('');
 	let editGeoCleared = $state(false);
+	// Profile editing (Plan B): media pickers + interests text input. The
+	// pickers set editForm.*_media_id; *_url fields on the form are preview-
+	// only — the backend resolves the canonical URL from the media id.
+	let avatarPickerOpen = $state(false);
+	let coverPickerOpen = $state(false);
+	let editInterestsText = $state('');
+	let editAvatarUrl = $state('');
+	let editCoverUrl = $state('');
 
 	async function loadPersonaVoices() {
 		voicesLoading = true;
@@ -267,11 +295,14 @@
 		newPersonas = newPersonas.filter((_, i) => i !== idx);
 	}
 
-	function openView(persona: Persona) {
+	function seedEditForm(persona: Persona, viewOnly: boolean) {
 		editingPersona = persona;
-		editViewOnly = true;
+		editViewOnly = viewOnly;
 		editGeoSpace = '';
 		editGeoCleared = false;
+		editInterestsText = (persona.interests ?? []).join(', ');
+		editAvatarUrl = persona.avatar_url ?? '';
+		editCoverUrl = persona.cover_url ?? '';
 		// Merge a partial backend policy over the canonical default so the edit
 		// form always has the required fields (e.g. active_hours_utc[0]).
 		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
@@ -289,33 +320,26 @@
 			// updates (ADR-114 resolution order).
 			voice_prompt: persona.voice_prompt_override ?? '',
 			status: persona.status,
-			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
+			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy(),
+			avatar_media_id: persona.avatar_media_id ?? '',
+			header_media_id: persona.header_media_id ?? '',
+			profession: persona.profession ?? '',
+			location: persona.location ?? '',
+			website_url: persona.website_url ?? '',
+			education: persona.education ?? '',
+			tips_enabled: persona.tips_enabled ?? false
 		};
 		editModalOpen = true;
 	}
 
+	function openView(persona: Persona) {
+		seedEditForm(persona, true);
+	}
+
 	function openEdit(persona: Persona) {
-		editingPersona = persona;
-		editViewOnly = false;
-		editGeoSpace = '';
-		editGeoCleared = false;
 		// BUG-005: include activity_policy in the edit form so it is editable
 		// after creation (spec §68 PATCH updates activity_policy).
-		// Merge a partial backend policy over the canonical default so the form
-		// always has the required fields (e.g. active_hours_utc[0]).
-		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
-		editForm = {
-			name: persona.profile_name ?? '',
-			username: persona.backing_username ?? '',
-			tagline: persona.profile_tagline ?? '',
-			disclosure_mode: persona.disclosure_mode,
-			autonomy_mode: persona.autonomy_mode,
-			voice_id: persona.voice_id ?? '',
-			voice_prompt: persona.voice_prompt_override ?? '',
-			status: persona.status,
-			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
-		};
-		editModalOpen = true;
+		seedEditForm(persona, false);
 	}
 
 	let statusUpdating = $state(false);
@@ -430,6 +454,18 @@
 			if (body.name === (editingPersona.profile_name ?? '')) delete body.name;
 			if (body.tagline === (editingPersona.profile_tagline ?? '')) delete body.tagline;
 			if (body.username === (editingPersona.backing_username ?? '')) delete body.username;
+			// Profile fields (Plan B): same diff-only-send pattern. Media ids
+			// send '' to clear; interests is converted from the comma input —
+			// send [] to clear, omit when unchanged.
+			if (body.avatar_media_id === (editingPersona.avatar_media_id ?? '')) delete body.avatar_media_id;
+			if (body.header_media_id === (editingPersona.header_media_id ?? '')) delete body.header_media_id;
+			if (body.profession === (editingPersona.profession ?? '')) delete body.profession;
+			if (body.location === (editingPersona.location ?? '')) delete body.location;
+			if (body.website_url === (editingPersona.website_url ?? '')) delete body.website_url;
+			if (body.education === (editingPersona.education ?? '')) delete body.education;
+			const interests = editInterestsText.split(',').map((s) => s.trim()).filter(Boolean);
+			if (interests.join(',') !== (editingPersona.interests ?? []).join(',')) body.interests = interests;
+			if (body.tips_enabled === (editingPersona.tips_enabled ?? false)) delete body.tips_enabled;
 			// Send geo_space only when the admin picked a new chain or hit
 			// Clear — the cascade can't pre-seed ancestors, so untouched
 			// stays omitted. "" clears the geo assignment (§68).
@@ -959,9 +995,15 @@
 			</div>
 		{/if}
 		<fieldset class="space-y-4 border-0 p-0 m-0" disabled={editViewOnly}>
-			<div>
-				<label for="edit-persona-id" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">ID</label>
-				<p class="font-mono text-xs" style="color: var(--color-foreground)">{editingPersona?.id}</p>
+			<div class="flex items-center justify-between gap-3">
+				<div>
+					<label for="edit-persona-id" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">ID</label>
+					<p class="font-mono text-xs" style="color: var(--color-foreground)">{editingPersona?.id}</p>
+				</div>
+				<div class="text-right">
+					<p class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.points_balance', 'Points')}</p>
+					<p class="text-sm font-semibold" style="color: var(--color-foreground)">{(editingPersona?.points_balance ?? 0).toLocaleString()}</p>
+				</div>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
@@ -998,6 +1040,130 @@
 					bind:value={editForm.tagline}
 					placeholder={t('personas.tagline_placeholder', 'Short bio / expertise summary')}
 				/>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div>
+					<p class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avatar', 'Avatar')}</p>
+					<div class="flex items-center gap-2">
+						{#if editAvatarUrl}
+							<img src={editAvatarUrl} alt="" class="h-12 w-12 rounded-full border object-cover" style="border-color: var(--color-border)" />
+						{:else}
+							<div class="grid h-12 w-12 place-items-center rounded-full border" style="border-color: var(--color-border); background: var(--color-surface)">
+								<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
+							</div>
+						{/if}
+						<div class="flex flex-col gap-1">
+							<Button type="button" variant="outline" size="sm" onclick={() => (avatarPickerOpen = true)}>
+								<ImageIcon class="me-1 h-4 w-4" />
+								{t('personas.choose_avatar', 'Choose Avatar')}
+							</Button>
+							{#if editForm.avatar_media_id || editAvatarUrl}
+								<button
+									type="button"
+									class="text-left text-[10px] underline"
+									style="color: var(--color-danger)"
+									onclick={() => { editForm.avatar_media_id = ''; editAvatarUrl = ''; }}
+								>
+									{t('personas.remove_avatar', 'Remove')}
+								</button>
+							{/if}
+						</div>
+					</div>
+				</div>
+				<div>
+					<p class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.cover_photo', 'Cover Photo')}</p>
+					<div class="flex items-center gap-2">
+						{#if editCoverUrl}
+							<img src={editCoverUrl} alt="" class="h-12 w-20 rounded-lg border object-cover" style="border-color: var(--color-border)" />
+						{:else}
+							<div class="grid h-12 w-20 place-items-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+								<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
+							</div>
+						{/if}
+						<div class="flex flex-col gap-1">
+							<Button type="button" variant="outline" size="sm" onclick={() => (coverPickerOpen = true)}>
+								<ImageIcon class="me-1 h-4 w-4" />
+								{t('personas.choose_cover', 'Choose Cover')}
+							</Button>
+							{#if editForm.header_media_id || editCoverUrl}
+								<button
+									type="button"
+									class="text-left text-[10px] underline"
+									style="color: var(--color-danger)"
+									onclick={() => { editForm.header_media_id = ''; editCoverUrl = ''; }}
+								>
+									{t('personas.remove_cover', 'Remove')}
+								</button>
+							{/if}
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div>
+					<label for="edit-persona-profession" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.profession', 'Profession')}</label>
+					<input
+						id="edit-persona-profession"
+						type="text"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.profession}
+						placeholder={t('personas.profession_placeholder', 'e.g. Immigration Consultant')}
+					/>
+				</div>
+				<div>
+					<label for="edit-persona-location" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.location', 'Location')}</label>
+					<input
+						id="edit-persona-location"
+						type="text"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.location}
+						placeholder={t('personas.location_placeholder', 'e.g. London, UK')}
+					/>
+				</div>
+				<div>
+					<label for="edit-persona-website" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.website_url', 'Website')}</label>
+					<input
+						id="edit-persona-website"
+						type="url"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.website_url}
+						placeholder="https://"
+					/>
+				</div>
+				<div>
+					<label for="edit-persona-education" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.education', 'Education')}</label>
+					<input
+						id="edit-persona-education"
+						type="text"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.education}
+						placeholder={t('personas.education_placeholder', 'e.g. MSc, University of Lagos')}
+					/>
+				</div>
+			</div>
+			<div>
+				<label for="edit-persona-interests" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.interests', 'Interests (comma-separated)')}</label>
+				<input
+					id="edit-persona-interests"
+					type="text"
+					class="w-full rounded-md border px-3 py-1.5 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={editInterestsText}
+					placeholder={t('personas.interests_placeholder', 'e.g. visas, fintech, community')}
+				/>
+			</div>
+			<div class="flex items-center gap-2">
+				<input
+					id="edit-persona-tips"
+					type="checkbox"
+					class="rounded"
+					bind:checked={editForm.tips_enabled}
+				/>
+				<label for="edit-persona-tips" class="text-xs" style="color: var(--color-muted)">{t('personas.tips_enabled', 'Accept tips on this persona\'s profile')}</label>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
@@ -1205,3 +1371,18 @@
 		{/snippet}
 	</Modal>
 {/if}
+
+<MediaPickerModal
+	bind:open={avatarPickerOpen}
+	onselect={(media: { id: string; url: string }) => {
+		editForm.avatar_media_id = media.id;
+		editAvatarUrl = media.url;
+	}}
+/>
+<MediaPickerModal
+	bind:open={coverPickerOpen}
+	onselect={(media: { id: string; url: string }) => {
+		editForm.header_media_id = media.id;
+		editCoverUrl = media.url;
+	}}
+/>
