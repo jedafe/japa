@@ -81,11 +81,21 @@ type Service struct {
 	hitlReader   HITLReviewReader
 	toolTablePub ToolTablePublisher
 	regenMerger  RegenDraftMerger
+	// guideCatLister resolves the admin-configured guide category slugs
+	// (custom_field_entity_types 'guide_category:*') — injected at server
+	// wiring so studio generation targets the live category set (§14).
+	guideCatLister func(ctx context.Context) ([]string, error)
 }
 
 // NewService creates a Service backed by the given store and settings.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
+}
+
+// SetGuideCategoryLister injects the category resolver used by
+// ListContentTypes. Nil falls back to the built-in category list.
+func (s *Service) SetGuideCategoryLister(fn func(ctx context.Context) ([]string, error)) {
+	s.guideCatLister = fn
 }
 
 // SetEnqueuer injects the task enqueuer (called at server wiring time).
@@ -122,7 +132,6 @@ var ErrDisabled = errors.New("studio: feature is disabled")
 // configurable.
 var highStakesCategories = map[string]bool{
 	"visa":             true,
-	"remittance":       true, // financial (aligned with intel gate ADR-088)
 	"banking":          true,
 	"grants":           true,
 	"health_insurance": true,
@@ -391,6 +400,26 @@ func (s *Service) DefaultPersonaID(ctx context.Context) (pgtype.UUID, error) {
 	return id, nil
 }
 
+// defaultGuideCategories mirrors the seeded guide categories — used only
+// when no category lister is wired (tests, minimal contexts).
+var defaultGuideCategories = []string{"visa", "travel_routes", "scholarship", "grants", "admission", "accommodation", "banking", "work_career", "health_insurance", "culture_lifestyle"}
+
+// guideCategories resolves the admin-configured guide category slugs via
+// the injected lister, falling back to the seeded set when unwired or when
+// the lookup fails — a settings read must never take the type list down.
+func (s *Service) guideCategories(ctx context.Context) []string {
+	if s.guideCatLister == nil {
+		return defaultGuideCategories
+	}
+
+	cats, err := s.guideCatLister(ctx)
+	if err != nil || len(cats) == 0 {
+		return defaultGuideCategories
+	}
+
+	return cats
+}
+
 // ListContentTypes returns the content types available for studio generation
 // along with the studio.default_persona_id setting so the frontend can
 // pre-select a persona in the new-job form (§75 system_settings, ADR-076 §6).
@@ -399,7 +428,7 @@ func (s *Service) ListContentTypes(ctx context.Context) ContentTypeResponse {
 		{Type: "discussion", Label: "Discussion", CanAutoPublish: true},
 		{Type: "page", Label: "Page", CanAutoPublish: true},
 		{Type: "blog_post", Label: "Blog Post", CanAutoPublish: false},
-		{Type: "guide", Label: "Guide", GuideCategories: []string{"visa", "travel_routes", "scholarship", "grants", "admission", "accommodation", "banking", "work_career", "health_insurance", "culture_lifestyle"}, CanAutoPublish: false},
+		{Type: "guide", Label: "Guide", GuideCategories: s.guideCategories(ctx), CanAutoPublish: false},
 		{Type: "comparison", Label: "Comparison", CanAutoPublish: false},
 		{Type: "event", Label: "Event", CanAutoPublish: false},
 		{Type: "job_listing", Label: "Job Listing", CanAutoPublish: false},

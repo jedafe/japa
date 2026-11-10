@@ -403,6 +403,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 			"One or more space IDs do not belong to this platform")
 	case errors.Is(err, ErrMissingRequiredFields):
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_required_fields", err.Error())
+	case errors.Is(err, ErrInvalidGuideCategory):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_guide_category", err.Error())
+	case errors.Is(err, ErrInvalidMediaReference):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_media", err.Error())
 	case errors.Is(err, ErrBodyTooShort):
 		errpkg.WriteError(w, http.StatusBadRequest, "body_too_short", "Content body is below the minimum length")
 	default:
@@ -1045,6 +1049,17 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if !IsValidContentType(input.ContentType) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_type",
 			fmt.Sprintf("Invalid content_type: %q", input.ContentType))
+		return
+	}
+
+	// §14: the 'article' content type is retired for author-facing writes —
+	// the constant survives because the intelligence pipeline promotes
+	// curated records to it internally (server.go promoter wiring), but
+	// POST /content must not mint user-authored articles; blog_post is the
+	// type for articles.
+	if input.ContentType == TypeArticle {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_type",
+			"The 'article' content type is retired — use 'blog_post'")
 		return
 	}
 

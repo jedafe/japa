@@ -79,6 +79,18 @@ var ErrMissingRequiredFields = errors.New("missing required custom fields")
 // live content may not.
 var ErrBodyTooShort = errors.New("content body below minimum length")
 
+// ErrInvalidGuideCategory is returned when a create or update carries a
+// guide_category that either does not exist in the admin-configured set
+// (custom_field_entity_types 'guide_category:*') or is applied to a
+// non-guide content_type. An unknown slug would otherwise silently bypass
+// the category's required-field gate at publish time (§14).
+var ErrInvalidGuideCategory = errors.New("invalid guide category")
+
+// ErrInvalidMediaReference is returned when content references a media ID
+// that does not exist, is soft-deleted/quarantined, or is not an image —
+// e.g. a listicle item's media_id (§14 list amendment).
+var ErrInvalidMediaReference = errors.New("invalid media reference")
+
 // defaultEditWindowMinutes is the fallback for content.edit_window_minutes
 // when the setting is unset or no settings reader is wired (BL-008).
 // 0 disables the author edit window — members may edit their own published
@@ -296,6 +308,21 @@ type Service struct {
 	activity       wallet.ActivityEmitter
 	anchorMinter   threadAnchorMinter
 	anchorDeleter  threadAnchorDeleter
+	guideCatCheck  GuideCategoryChecker
+}
+
+// GuideCategoryChecker reports whether a slug is a registered guide
+// category. Implemented by an adapter over customfields.Service in
+// server.go (customfields cannot import content). Nil disables
+// membership validation — matching the other injected-dependency guards.
+type GuideCategoryChecker interface {
+	GuideCategoryExists(ctx context.Context, slug string) (bool, error)
+}
+
+// SetGuideCategoryChecker injects the category existence checker used by
+// create/update validation (§14 — categories are admin-configured).
+func (s *Service) SetGuideCategoryChecker(c GuideCategoryChecker) {
+	s.guideCatCheck = c
 }
 
 // SetActivityEmitter injects the wallet activity emitter used to record

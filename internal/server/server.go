@@ -707,6 +707,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	contentHandlers.SetTagResolver(tagSlugResolverAdapter{svc: tagsService})
 	// Wire the guide category lister so ListContentTypes returns admin-configured categories.
 	contentHandlers.SetGuideCategoryLister(guideCategoryListerAdapter{svc: cfService})
+	// Wire the category existence checker so create/update rejects unknown
+	// guide_category slugs — an unvalidated value would silently bypass the
+	// category's required-field gate at publish time (§14).
+	contentService.SetGuideCategoryChecker(guideCategoryCheckerAdapter{svc: cfService})
 
 	// Notification System subsystem (Section 35 — Notification System).
 	// Rule 3: VAPID keys come from the centralized config.Config (JC_VAPID_*)
@@ -2177,6 +2181,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	studioService := studio.NewService(studioStore, settingsService)
 	studioService.SetFeatureChecker(featureChecker) // studio.enabled reads feature_flags
 	studioService.SetEnqueuer(taskEnqueuer)
+	// §14: studio guide generation targets the live admin-configured
+	// category set, not the seeded list.
+	studioService.SetGuideCategoryLister(func(ctx context.Context) ([]string, error) {
+		cats, err := cfService.ListGuideCategories(ctx)
+		if err != nil {
+			return nil, err
+		}
+		slugs := make([]string, 0, len(cats))
+		for _, c := range cats {
+			slugs = append(slugs, c.Slug)
+		}
+		return slugs, nil
+	})
 	studioHandlers := studio.NewHandlers(studioService)
 	studioHandlers.SetPersonaService(personasService)
 	// The full §75 generation pipeline adapter (persona voice → AI gateway →
@@ -10148,6 +10165,17 @@ func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context) ([]
 	}
 
 	return out, nil
+}
+
+// guideCategoryCheckerAdapter adapts customfields.Service.GuideCategoryExists
+// to the content.GuideCategoryChecker interface used by create/update
+// validation (§14).
+type guideCategoryCheckerAdapter struct {
+	svc *customfields.Service
+}
+
+func (a guideCategoryCheckerAdapter) GuideCategoryExists(ctx context.Context, slug string) (bool, error) {
+	return a.svc.GuideCategoryExists(ctx, slug)
 }
 
 // followNotificationAdapter adapts notifications.Service.DispatchNotification

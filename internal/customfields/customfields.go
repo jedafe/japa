@@ -20,12 +20,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // GuideCategory is a evergreen guide category (Visa, Travel, Scholarship, etc.).
@@ -671,10 +673,9 @@ func (s *Service) GetCustomFieldByKey(ctx context.Context, key string) (gen.GetC
 // each category with its field group ID so the admin panel can link to the
 // field editor.
 func (s *Service) ListGuideCategories(ctx context.Context) ([]GuideCategory, error) {
-	rows, err := s.read.ListCustomFieldEntityTypesByPrefix(ctx,
-
-		"guide_category:%",
-	)
+	// Single JOIN — the per-category GetCustomFieldGroupBySlug loop was an
+	// N+1 on the public GET /content-types path.
+	rows, err := s.read.ListGuideCategoriesWithGroups(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing guide categories: %w", err)
 	}
@@ -682,19 +683,17 @@ func (s *Service) ListGuideCategories(ctx context.Context) ([]GuideCategory, err
 	cats := make([]GuideCategory, 0, len(rows))
 
 	for _, row := range rows {
-		slug := strings.TrimPrefix(row.Value, "guide_category:")
-		cat := GuideCategory{Slug: slug, Label: row.Label, IsSystem: row.IsSystem}
+		cat := GuideCategory{
+			Slug:     strings.TrimPrefix(row.Value, "guide_category:"),
+			Label:    row.Label,
+			IsSystem: row.IsSystem,
+		}
 
-		// Try to find the associated field group (slug = "guide_{slug}_fields").
-		groupSlug := "guide_" + slug + "_fields"
-
-		group, err := s.read.GetCustomFieldGroupBySlug(ctx,
-
-			groupSlug,
-		)
-		if err == nil {
-			cat.GroupID = group.ID.String()
-			cat.GroupSlug = group.Slug
+		if row.GroupID.Valid {
+			cat.GroupID = row.GroupID.String()
+		}
+		if row.GroupSlug != nil {
+			cat.GroupSlug = *row.GroupSlug
 		}
 
 		cats = append(cats, cat)
@@ -703,11 +702,35 @@ func (s *Service) ListGuideCategories(ctx context.Context) ([]GuideCategory, err
 	return cats, nil
 }
 
+// GuideCategoryExists reports whether slug is a registered guide category
+// (custom_field_entity_types 'guide_category:*'). Used by the content
+// service's write validation via the server.go adapter (§14).
+func (s *Service) GuideCategoryExists(ctx context.Context, slug string) (bool, error) {
+	_, err := s.read.GetCustomFieldEntityTypeByValue(ctx,
+		"guide_category:"+slug,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
 // CreateGuideCategoryInput holds parameters for creating a guide category.
 type CreateGuideCategoryInput struct {
 	Slug  string // e.g. "visa", "scholarship"
 	Label string // e.g. "Visa Guide"
 }
+
+// guideCategorySlugRe enforces the snake_case token format used by
+// 'guide_category:{slug}' entity types, 'guide_{slug}_fields' groups, and
+// 'content_type:guide:{slug}' entity classes — spaces or separators in a
+// slug would produce malformed entity_class tokens (§14).
+var guideCategorySlugRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // CreateGuideCategory creates a new guide category: inserts a
 // custom_field_entity_types row (value = "guide_category:{slug}"), creates a
@@ -715,6 +738,10 @@ type CreateGuideCategoryInput struct {
 // the "content_type:guide:{slug}" entity_class so the composer can load
 // category-specific fields. All three inserts run in a single transaction.
 func (s *Service) CreateGuideCategory(ctx context.Context, input CreateGuideCategoryInput) (GuideCategory, error) {
+	if !guideCategorySlugRe.MatchString(input.Slug) {
+		return GuideCategory{}, fmt.Errorf("%w: slug must be snake_case (a-z, 0-9, underscore)", errpkg.ErrInvalid)
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return GuideCategory{}, fmt.Errorf("beginning tx: %w", err)
@@ -780,6 +807,23 @@ func (s *Service) DeleteGuideCategory(ctx context.Context, slug string) error {
 
 	if et.IsSystem {
 		return errors.New("cannot delete system guide category")
+	}
+
+	// Orphan guard: deleting a category that published guides still use
+	// would leave dangling contents.guide_category values — the category
+	// disappears from /content-types and the required-field gate for that
+	// category starts passing vacuously (§14).
+	var inUse int64
+	if err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM contents
+		 WHERE guide_category = $1 AND deleted_at IS NULL`,
+		slug,
+	).Scan(&inUse); err != nil {
+		return fmt.Errorf("counting guides in category: %w", err)
+	}
+
+	if inUse > 0 {
+		return fmt.Errorf("%w: %d guide(s) still use this category", errpkg.ErrInUse, inUse)
 	}
 
 	tx, err := s.pool.Begin(ctx)

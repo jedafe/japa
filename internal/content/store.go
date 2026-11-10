@@ -574,6 +574,21 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		return gen.CreateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidVisibility, input.Visibility)
 	}
 
+	// §14: guide_category applies to guide rows only and must reference an
+	// admin-configured category. An unknown slug would silently bypass the
+	// category's required-field gate at publish time.
+	if err := s.applyGuideCategoryInput(ctx, &input.GuideCategory, input.ContentType); err != nil {
+		return gen.CreateContentRow{}, err
+	}
+
+	// §14 list amendment: item media references must resolve to live image
+	// assets — a missing row otherwise renders a broken image slot.
+	if input.ContentType == TypeList && len(fieldValues) > 0 {
+		if err := s.validateListMediaRefs(ctx, fieldValues); err != nil {
+			return gen.CreateContentRow{}, err
+		}
+	}
+
 	// Render markdown body to HTML when no HTML form is supplied.
 	// The frontend detail pages render body_html, so a missing value
 	// would show unformatted plain text (Section 14 / §15).
@@ -1199,6 +1214,9 @@ type UpdateContentInput struct {
 	ClearMetaDescription bool
 	ClearOgImageUrl      bool
 	GuideCategory        *string
+	// ClearGuideCategory writes NULL to guide_category — restores the
+	// "uncategorized" state a JSON null or empty string requests (§14).
+	ClearGuideCategory   bool
 	AIGeneratedAt        pgtype.Timestamptz
 	AIModel              *string
 	// BypassSpaceCheck lets admins update the primary space without the
@@ -1361,6 +1379,30 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		return gen.UpdateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidVisibility, input.Visibility)
 	}
 
+	// §14: guide_category applies to guide rows only and must reference an
+	// admin-configured category. An empty string is an explicit clear, same
+	// as a JSON null (ClearGuideCategory).
+	if input.GuideCategory != nil && strings.TrimSpace(*input.GuideCategory) == "" {
+		input.GuideCategory = nil
+		input.ClearGuideCategory = true
+	}
+
+	if input.ClearGuideCategory {
+		input.GuideCategory = nil
+	}
+
+	if err := s.applyGuideCategoryInput(ctx, &input.GuideCategory, existing.ContentType); err != nil {
+		return gen.UpdateContentRow{}, err
+	}
+
+	// §14 list amendment: item media references must resolve to live image
+	// assets — only re-checked when the caller resubmits field_values.
+	if existing.ContentType == TypeList && len(input.FieldValues) > 0 {
+		if err := s.validateListMediaRefs(ctx, input.FieldValues); err != nil {
+			return gen.UpdateContentRow{}, err
+		}
+	}
+
 	newSlug := input.Slug
 	if newSlug == "" {
 		newSlug = existing.Slug
@@ -1507,7 +1549,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 			effectiveFields = existing.FieldValues
 		}
 		effectiveGuideCategory := input.GuideCategory
-		if effectiveGuideCategory == nil {
+		if effectiveGuideCategory == nil && !input.ClearGuideCategory {
 			effectiveGuideCategory = existing.GuideCategory
 		}
 		if err := s.validateRequiredFields(ctx, existing.ContentType, effectiveGuideCategory, effectiveFields); err != nil {
@@ -1682,6 +1724,7 @@ func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing
 		Visibility:      input.Visibility,
 		ReadTimeMinutes: ComputeReadTime(input.Body),
 		GuideCategory:   input.GuideCategory,
+		ClearGuideCategory: input.ClearGuideCategory,
 		AiGeneratedAt:   input.AIGeneratedAt,
 		AiModel:         input.AIModel,
 		JourneyStage:    input.JourneyStage,
@@ -1829,6 +1872,10 @@ func ApplyExplicitNullClears(raw map[string]json.RawMessage, input *UpdateConten
 	if isExplicitNull(raw, "og_image_url") {
 		input.ClearOgImageUrl = true
 	}
+
+	if isExplicitNull(raw, "guide_category") {
+		input.ClearGuideCategory = true
+	}
 }
 
 // isExplicitNull reports whether key is present in the raw JSON object with
@@ -1962,6 +2009,45 @@ func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt
 	worker.EnqueueSearchIndexSync(ctx, "content", id)
 
 	return content, nil
+}
+
+// applyGuideCategoryInput normalizes and validates an incoming
+// guide_category: empty strings mean "uncategorized" (normalized to nil),
+// the category applies only when contentType == 'guide', and the slug must
+// exist in the admin-configured set. Validation is skipped when no checker
+// is wired (tests).
+func (s *Service) applyGuideCategoryInput(ctx context.Context, category **string, contentType string) error {
+	if *category == nil {
+		return nil
+	}
+
+	cat := strings.TrimSpace(**category)
+	if cat == "" {
+		*category = nil
+		return nil
+	}
+
+	if contentType != TypeGuide {
+		return fmt.Errorf("%w %q applies only to guide content", ErrInvalidGuideCategory, cat)
+	}
+
+	if s.guideCatCheck == nil {
+		*category = &cat
+		return nil
+	}
+
+	exists, err := s.guideCatCheck.GuideCategoryExists(ctx, cat)
+	if err != nil {
+		return fmt.Errorf("checking guide category: %w", err)
+	}
+
+	if !exists {
+		return fmt.Errorf("%w %q is not a registered category", ErrInvalidGuideCategory, cat)
+	}
+
+	*category = &cat
+
+	return nil
 }
 
 // validateRequiredFields enforces is_required custom fields on publish and

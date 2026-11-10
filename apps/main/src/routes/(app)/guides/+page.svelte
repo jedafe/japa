@@ -35,7 +35,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 			comment_count: g.comment_count,
 			reaction_count: g.reaction_count,
 			bookmark_count: g.bookmark_count,
-			vote_score: g.reaction_count ?? g.share_count ?? 0,
+			vote_score: g.vote_score ?? g.reaction_count ?? 0,
 			reading_time_minutes: g.read_time_minutes,
 			cover_image_url: g.featured_image_url ?? g.header_image_url ?? null,
 			guide_category: g.guide_category,
@@ -343,6 +343,11 @@ import { ogCardUrl } from '#lib/seo/og.js';
 			{:else if roadmapGroups.length === 0}
 				<EmptyState icon={BookOpen} title={t('guides.empty', 'No guides yet. Check back soon.')} />
 			{:else}
+				{#if data.roadmapTruncated}
+					<p class="mb-3 text-center text-xs text-[var(--color-muted)]">
+						{t('guides.roadmap_truncated', 'Showing the first {n} guides — use the category filter to narrow down.', { n: String(data.items.length) })}
+					</p>
+				{/if}
 				<!-- Stage filter chips — same pill pattern as /notifications -->
 				<div
 					class="mb-4 flex items-center gap-1 overflow-x-auto"
@@ -405,6 +410,11 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				{/each}
 			</div>
 
+			{#if moreError}
+				<p class="mt-4 text-center text-sm text-[var(--color-text-subtle)]">
+					{t('guides.load_error', 'Failed to load guides. Please try again later.')}
+				</p>
+			{/if}
 			{#if nextCursor}
 				<div class="mt-4 flex justify-center">
 					<button
@@ -417,10 +427,6 @@ import { ogCardUrl } from '#lib/seo/og.js';
 						<ChevronDown size={14} />
 					</button>
 				</div>
-			{:else if moreError}
-				<p class="mt-4 text-center text-sm text-[var(--color-text-subtle)]">
-					{t('guides.load_error', 'Failed to load guides. Please try again later.')}
-				</p>
 			{/if}
 		{/if}
 	</div>

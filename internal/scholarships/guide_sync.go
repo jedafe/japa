@@ -441,19 +441,36 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 // resolveCountrySpaceID resolves a country-level space by geo_code. The user
 // may supply either a 3-letter ISO code or a country name; best-effort only.
 func (s *Store) resolveCountrySpaceID(ctx context.Context, countryCode string) (pgtype.UUID, error) {
-	if countryCode == "" {
-		return pgtype.UUID{}, nil
-	}
-
 	code := strings.ToUpper(strings.TrimSpace(countryCode))
-	if len(code) != 3 {
+	if code == "" {
 		return pgtype.UUID{}, nil
 	}
 
-	row, err := s.queries.GetSpaceByGeoCode(ctx,
-		&code,
-	)
-	if err != nil {
+	// 3-letter geo_code lookup first — the canonical path.
+	if len(code) == 3 {
+		row, err := s.queries.GetSpaceByGeoCode(ctx,
+			&code,
+		)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pgtype.UUID{}, nil
+			}
+
+			return pgtype.UUID{}, err
+		}
+
+		return row.ID, nil
+	}
+
+	// Name fallback: guide fields often carry the country's display name
+	// ("Canada", "United Kingdom") rather than an ISO code.
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx,
+		`SELECT id FROM spaces
+		 WHERE level = 'country' AND deleted_at IS NULL AND lower(name) = lower($1)
+		 LIMIT 1`,
+		strings.TrimSpace(countryCode),
+	).Scan(&id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, nil
 		}
@@ -461,7 +478,7 @@ func (s *Store) resolveCountrySpaceID(ctx context.Context, countryCode string) (
 		return pgtype.UUID{}, err
 	}
 
-	return row.ID, nil
+	return id, nil
 }
 
 // firstFromList returns the first non-empty element in a comma-separated list.

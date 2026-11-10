@@ -111,6 +111,9 @@ export const load: PageServerLoad = async (event) => {
 		authed,
 		pageSize: PAGE_SIZE,
 		nextCursor,
-		loadError
+		loadError,
+		// Roadmap groups client-side from a single fetch — past the API
+		// max the tail is silently dropped, so the UI needs to disclose it.
+		roadmapTruncated: tab === 'roadmap' && items.length >= ROADMAP_PAGE_SIZE
 	};
 };

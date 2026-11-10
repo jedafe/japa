@@ -1,11 +1,14 @@
 package content
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Ref: docs/superpowers/specs/2026-09-28-list-content-type-design.md
@@ -261,4 +264,74 @@ func injectListItemListElements(jsonLd []byte, fv json.RawMessage) []byte {
 	}
 
 	return out
+}
+
+// extractListMediaIDs returns the deduplicated media_id values referenced
+// by field_values.items[] — a parse failure yields nil (the structural
+// validator already rejected malformed payloads upstream).
+func extractListMediaIDs(fieldValues []byte) []pgtype.UUID {
+	var parsed struct {
+		Items []listItem `json:"items"`
+	}
+
+	if err := json.Unmarshal(fieldValues, &parsed); err != nil {
+		return nil
+	}
+
+	seen := map[pgtype.UUID]struct{}{}
+	var ids []pgtype.UUID
+
+	for _, it := range parsed.Items {
+		if it.MediaID == "" {
+			continue
+		}
+
+		var id pgtype.UUID
+		if err := id.Scan(it.MediaID); err != nil {
+			continue
+		}
+
+		if _, dup := seen[id]; !dup {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+
+	return ids
+}
+
+// validateListMediaRefs verifies every media_id referenced by list items
+// resolves to a live, non-quarantined image asset (§14 list amendment).
+// Without this a stale or foreign media ID silently renders a broken image
+// slot in the listicle.
+func (s *Service) validateListMediaRefs(ctx context.Context, fieldValues []byte) error {
+	ids := extractListMediaIDs(fieldValues)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	rows, err := s.read.GetMediaByIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("checking list media references: %w", err)
+	}
+
+	byID := make(map[pgtype.UUID]string, len(rows))
+	quarantined := map[pgtype.UUID]bool{}
+	for _, m := range rows {
+		byID[m.ID] = m.MimeType
+		quarantined[m.ID] = m.QuarantineReason != nil || m.QuarantinedAt.Valid
+	}
+
+	for _, id := range ids {
+		mime, ok := byID[id]
+		if !ok || quarantined[id] {
+			return fmt.Errorf("%w: %s", ErrInvalidMediaReference, id.String())
+		}
+
+		if !strings.HasPrefix(mime, "image/") {
+			return fmt.Errorf("%w: %s is not an image", ErrInvalidMediaReference, id.String())
+		}
+	}
+
+	return nil
 }

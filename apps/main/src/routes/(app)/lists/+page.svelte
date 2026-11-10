@@ -38,7 +38,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 			comment_count: g.comment_count,
 			reaction_count: g.reaction_count,
 			bookmark_count: g.bookmark_count,
-			vote_score: g.reaction_count ?? g.share_count ?? 0,
+			vote_score: g.vote_score ?? g.reaction_count ?? 0,
 			reading_time_minutes: g.read_time_minutes,
 			cover_image_url: g.featured_image_url ?? g.header_image_url ?? null,
 			tags: g.tags

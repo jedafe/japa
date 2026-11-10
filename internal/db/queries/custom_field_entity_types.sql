@@ -32,3 +32,14 @@ RETURNING id, value, label, is_system, sort_order, created_at, updated_at;
 -- System entity types cannot be deleted (is_system = true).
 DELETE FROM custom_field_entity_types
 WHERE id = @id AND is_system = false;
+
+-- name: ListGuideCategoriesWithGroups :many
+-- Guide categories with their field groups resolved in a single query —
+-- group slug follows the 'guide_{category}_fields' convention (§14).
+SELECT t.value, t.label, t.is_system, t.sort_order,
+       g.id AS group_id, g.slug AS group_slug
+FROM custom_field_entity_types t
+LEFT JOIN custom_field_groups g
+  ON g.slug = 'guide_' || substr(t.value, length('guide_category:') + 1) || '_fields'
+WHERE t.value LIKE 'guide_category:%'
+ORDER BY t.sort_order ASC, t.label ASC;

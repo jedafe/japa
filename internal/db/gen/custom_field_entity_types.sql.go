@@ -143,6 +143,54 @@ func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, prefix
 	return items, nil
 }
 
+const listGuideCategoriesWithGroups = `-- name: ListGuideCategoriesWithGroups :many
+SELECT t.value, t.label, t.is_system, t.sort_order,
+       g.id AS group_id, g.slug AS group_slug
+FROM custom_field_entity_types t
+LEFT JOIN custom_field_groups g
+  ON g.slug = 'guide_' || substr(t.value, length('guide_category:') + 1) || '_fields'
+WHERE t.value LIKE 'guide_category:%'
+ORDER BY t.sort_order ASC, t.label ASC
+`
+
+type ListGuideCategoriesWithGroupsRow struct {
+	Value     string      `json:"value"`
+	Label     string      `json:"label"`
+	IsSystem  bool        `json:"is_system"`
+	SortOrder int32       `json:"sort_order"`
+	GroupID   pgtype.UUID `json:"group_id"`
+	GroupSlug *string     `json:"group_slug"`
+}
+
+// Guide categories with their field groups resolved in a single query —
+// group slug follows the 'guide_{category}_fields' convention (§14).
+func (q *Queries) ListGuideCategoriesWithGroups(ctx context.Context) ([]ListGuideCategoriesWithGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listGuideCategoriesWithGroups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGuideCategoriesWithGroupsRow
+	for rows.Next() {
+		var i ListGuideCategoriesWithGroupsRow
+		if err := rows.Scan(
+			&i.Value,
+			&i.Label,
+			&i.IsSystem,
+			&i.SortOrder,
+			&i.GroupID,
+			&i.GroupSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCustomFieldEntityType = `-- name: UpdateCustomFieldEntityType :one
 UPDATE custom_field_entity_types
 SET label = $1,

@@ -629,7 +629,9 @@ SET author_id = @author_id, title = @title, slug = @slug, body = @body, body_htm
  status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
  publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
  is_locked = @is_locked, is_pinned = @is_pinned,
- organization_id = sqlc.narg(organization_id), guide_category = COALESCE(sqlc.narg(guide_category), guide_category),
+ organization_id = sqlc.narg(organization_id),
+ guide_category = CASE WHEN @clear_guide_category::bool THEN NULL
+                   ELSE COALESCE(sqlc.narg(guide_category), guide_category) END,
  ai_generated_at = COALESCE(sqlc.narg(ai_generated_at), ai_generated_at),
  ai_model = COALESCE(sqlc.narg(ai_model), ai_model),
  journey_stage = COALESCE(sqlc.narg(journey_stage), journey_stage),

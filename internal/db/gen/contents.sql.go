@@ -5451,18 +5451,20 @@ SET author_id = $1, title = $2, slug = $3, body = $4, body_html = $5,
  status = $16, visibility = $17, read_time_minutes = $18,
  publish_at = $19, published_at = $20,
  is_locked = $21, is_pinned = $22,
- organization_id = $23, guide_category = COALESCE($24, guide_category),
- ai_generated_at = COALESCE($25, ai_generated_at),
- ai_model = COALESCE($26, ai_model),
- journey_stage = COALESCE($27, journey_stage),
- visa_route = COALESCE($28, visa_route),
- source_country = COALESCE($29, source_country),
- target_country = COALESCE($30, target_country),
- video_source_id = COALESCE($31, video_source_id),
- intel_source_id = COALESCE($32, intel_source_id),
- intel_record_id = COALESCE($33, intel_record_id),
+ organization_id = $23,
+ guide_category = CASE WHEN $24::bool THEN NULL
+                   ELSE COALESCE($25, guide_category) END,
+ ai_generated_at = COALESCE($26, ai_generated_at),
+ ai_model = COALESCE($27, ai_model),
+ journey_stage = COALESCE($28, journey_stage),
+ visa_route = COALESCE($29, visa_route),
+ source_country = COALESCE($30, source_country),
+ target_country = COALESCE($31, target_country),
+ video_source_id = COALESCE($32, video_source_id),
+ intel_source_id = COALESCE($33, intel_source_id),
+ intel_record_id = COALESCE($34, intel_record_id),
  updated_at = now()
-WHERE id = $34 AND deleted_at IS NULL
+WHERE id = $35 AND deleted_at IS NULL
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
  canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
@@ -5474,40 +5476,41 @@ RETURNING id, author_id, organization_id, space_id, content_type, title, slug, b
 `
 
 type UpdateContentParams struct {
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    *bool              `json:"seo_indexable"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	OrganizationID  pgtype.UUID        `json:"organization_id"`
-	GuideCategory   *string            `json:"guide_category"`
-	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
-	AiModel         *string            `json:"ai_model"`
-	JourneyStage    *string            `json:"journey_stage"`
-	VisaRoute       *string            `json:"visa_route"`
-	SourceCountry   *string            `json:"source_country"`
-	TargetCountry   *string            `json:"target_country"`
-	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
-	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
-	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
-	ID              pgtype.UUID        `json:"id"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Body               string             `json:"body"`
+	BodyHtml           string             `json:"body_html"`
+	FieldValues        []byte             `json:"field_values"`
+	ContentHash        *string            `json:"content_hash"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	CanonicalUrl       *string            `json:"canonical_url"`
+	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
+	MetaTitle          *string            `json:"meta_title"`
+	MetaDescription    *string            `json:"meta_description"`
+	OgImageUrl         *string            `json:"og_image_url"`
+	SeoIndexable       *bool              `json:"seo_indexable"`
+	Status             string             `json:"status"`
+	Visibility         string             `json:"visibility"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	PublishAt          pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt        pgtype.Timestamptz `json:"published_at"`
+	IsLocked           bool               `json:"is_locked"`
+	IsPinned           bool               `json:"is_pinned"`
+	OrganizationID     pgtype.UUID        `json:"organization_id"`
+	ClearGuideCategory bool               `json:"clear_guide_category"`
+	GuideCategory      *string            `json:"guide_category"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	AiModel            *string            `json:"ai_model"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	VideoSourceID      pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID      pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	ID                 pgtype.UUID        `json:"id"`
 }
 
 type UpdateContentRow struct {
@@ -5578,6 +5581,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.IsLocked,
 		arg.IsPinned,
 		arg.OrganizationID,
+		arg.ClearGuideCategory,
 		arg.GuideCategory,
 		arg.AiGeneratedAt,
 		arg.AiModel,

@@ -16,15 +16,26 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
+	// System categories can't be deleted — the row action hides Delete for
+	// them but the bulk checkbox doesn't, so the handler filters them out
+	// before calling the API (server would 500 on each).
+	let systemSlugs = new Set<string>();
 
 	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
+		const idArr = Array.from(ids).filter((id) => !systemSlugs.has(id));
+		const skipped = ids.size - idArr.length;
+		if (idArr.length === 0) {
+			pageError = skipped > 0 ? t('guide_categories.system_skip', 'System categories cannot be deleted') : '';
+			return;
+		}
 		if (bulkDeleting) return; // in-flight guard
 		bulkDeleting = true;
 		pageError = '';
 		try {
 			await Promise.all(idArr.map((id) => guideCategoriesAdminApi.delete(id)));
+			if (skipped > 0) {
+				pageError = t('guide_categories.system_skip', 'System categories cannot be deleted');
+			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete guide categories');
 		} finally {
@@ -95,6 +106,7 @@
 			const result = await api<GuideCategory[]>('/admin/guide-categories?page_size=1000');
 			if (result.ok) {
 				const data = (result.data as GuideCategory[]) ?? [];
+				systemSlugs = new Set(data.filter((c) => c.is_system).map((c) => c.Slug));
 				const mapped = data.map(mapCategory);
 				const query = (q ?? '').toLowerCase();
 				let filtered = mapped;
@@ -126,6 +138,9 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
+			if (systemSlugs.has(id)) {
+				return { ok: false, error: t('guide_categories.system_skip', 'System categories cannot be deleted') };
+			}
 			const res = await guideCategoriesAdminApi.delete(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
