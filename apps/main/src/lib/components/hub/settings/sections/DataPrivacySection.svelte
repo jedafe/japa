@@ -55,13 +55,13 @@
 	const payload = $derived(data as DataPrivacyData | null);
 
 	/** Build a map of consent_type → granted from the API response.
-	 *  All consent types default to true (opt-out model) — the user
-	 *  must explicitly revoke a consent to turn it off. Existing API
-	 *  records override the default. */
+	 *  All consent types default to false (opt-in model) — GDPR/NDPR
+	 *  requires an affirmative grant; only an explicit API record can
+	 *  turn a toggle on. */
 	function buildConsentMap(types: string[], records: ConsentRecord[]): Map<string, boolean> {
 		const map = new Map<string, boolean>();
-		// Pre-seed all consent types as granted by default.
-		for (const type of types) map.set(type, true);
+		// Pre-seed all consent types as revoked by default.
+		for (const type of types) map.set(type, false);
 		const seen = new Set<string>();
 		for (const r of records) {
 			// Only the latest record per type matters; backend returns newest-first.

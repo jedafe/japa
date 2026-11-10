@@ -127,12 +127,14 @@ const maxDeletionReasonLen = 2000
 // User-facing endpoints
 // ---------------------------------------------------------------------------
 
-// RecordConsent handles POST /api/v1/consent.
+// RecordConsent handles POST /api/v1/consent. Public (OptionalAuth): the
+// cookie banner posts for anonymous visitors too — consent must be capturable
+// before signup, so a missing session stores the record with user_id NULL
+// (consent_records.user_id is nullable for exactly this case, §19) and the
+// audit trail still gets IP + user agent. Authenticated callers get a
+// user-bound row.
 func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
+	user := auth.FromContext(r.Context())
 
 	var input struct {
 		ConsentType   string `json:"consent_type"`
@@ -145,7 +147,12 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.Service.RecordConsent(r.Context(), user.UserID, RecordConsentInput{
+	var userID pgtype.UUID
+	if user != nil {
+		userID = user.UserID
+	}
+
+	record, err := h.Service.RecordConsent(r.Context(), userID, RecordConsentInput{
 		ConsentType:   input.ConsentType,
 		Granted:       input.Granted,
 		PolicyVersion: input.PolicyVersion,

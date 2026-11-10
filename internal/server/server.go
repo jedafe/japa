@@ -5979,7 +5979,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// User-facing endpoints. Consent + data-export + deletion are
 			// sensitive identity operations: tight on POST/DELETE (10/min),
 			// form_submission on the self-service account-erasure DELETE.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).
+			// POST /consent is public (OptionalAuth already ran group-wide):
+			// the cookie banner records anonymous decisions — user_id NULL —
+			// before any session exists (§19).
+			r.With(mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/consent", gdprHandlers.RecordConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/consent", gdprHandlers.GetUserConsents)
@@ -10372,6 +10375,10 @@ func (a *spamActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, e
 func csrfExempt(r *http.Request) bool {
 	return csrf.IsNonCookieAuthenticated(r) ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
+		// POST /consent is a public privacy-rights call (§19): guests posting
+		// a banner decision carry the jc_consent cookie but can never hold a
+		// csrf_token, and recording consent mutates no session state.
+		r.URL.Path == "/api/v1/consent" ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
 		r.URL.Path == "/api/v1/assessment/submit" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/") ||

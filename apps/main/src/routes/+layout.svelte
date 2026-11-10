@@ -11,6 +11,7 @@
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
 	import { syncPushSubscription } from '#lib/pwa/push-sync.js';
 
 	import {
@@ -373,6 +374,11 @@
 	     (beforeinstallprompt fired or manual iOS flow) and not standalone. -->
 	<PwaInstallBanner />
 {/if}
+
+<!-- §19 cookie consent — self-hides once the jc_consent decision cookie
+     exists. The cookie gates non-essential identifiers (jc_guest) on the
+     API side; the POST is the audit trail. -->
+<CookieConsentBanner />
 
 {#if customJs}
 	<!-- Admin custom JavaScript (§57). Renders only when the super_admin-approved

@@ -181,11 +181,11 @@ func TestRecordConsentInvalidJSON(t *testing.T) {
 	h := &Handlers{Service: nil}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/consent", bytes.NewBufferString("not json"))
-	// Without auth middleware, requireUser will fail first.
+	// Anonymous callers reach the decoder — POST /consent is public, so a
+	// malformed body deterministically 400s before the service is touched.
 	h.RecordConsent(w, r)
 
-	if w.Code != http.StatusServiceUnavailable {
-		// Will fail at platform resolution first.
-		t.Logf("got status %d (expected failure at platform resolution)", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
 }

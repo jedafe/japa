@@ -159,15 +159,22 @@ func (s *Service) RecordConsent(ctx context.Context, userID pgtype.UUID, input R
 		return gen.ConsentRecord{}, fmt.Errorf("invalid consent_type: %s", input.ConsentType)
 	}
 
-	if input.PolicyVersion == "" {
-		return gen.ConsentRecord{}, errors.New("policy_version is required")
+	// Default to the policy version currently in force when the caller omits
+	// it — the banner posts decisions without first fetching /consent/config,
+	// and a client-supplied version could otherwise drift from the real one.
+	policyVersion := input.PolicyVersion
+	if policyVersion == "" {
+		policyVersion = "1.0"
+		if s.settings != nil {
+			policyVersion = s.settings.GetStringOr(ctx, "gdpr.policy_version", "1.0")
+		}
 	}
 
 	return s.store.recordConsent(ctx, gen.RecordConsentParams{
 		UserID:        userID,
 		ConsentType:   input.ConsentType,
 		Granted:       input.Granted,
-		PolicyVersion: input.PolicyVersion,
+		PolicyVersion: policyVersion,
 		IpAddress:     parseIPAddress(input.IPAddress),
 		UserAgent:     input.UserAgent,
 	})
