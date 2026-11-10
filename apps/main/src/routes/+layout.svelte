@@ -190,7 +190,7 @@
 	// binds its own history listeners, so mid-session revocation applies
 	// from the next full page load — the cookie already governs that.
 	const umamiEnabled = $derived(
-		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID && consent.granted
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID && consent.analytics
 	);
 
 	// Cross-origin API host (logos, avatars, media). Preconnecting saves the

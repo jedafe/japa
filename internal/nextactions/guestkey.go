@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -17,13 +18,30 @@ const GuestCookieName = "jc_guest"
 
 // ConsentCookieName is the cookie-consent decision cookie written by the
 // frontend banner on the shared base domain (visible to api.<domain>).
-// ConsentValueAll is the only value that permits non-essential cookies;
-// "necessary" and every absent/unknown value mean "strictly necessary only"
-// (strict opt-in — §19).
+// The value is "all", "necessary", or a comma-list of granted consent_type
+// tokens (see ConsentGrants) — absent/unknown values mean "strictly
+// necessary only" (strict opt-in — §19).
 const ConsentCookieName = "jc_consent"
 const ConsentValueAll = "all"
 
 const guestCookieMaxAge = 365 * 24 * time.Hour // 1 year
+
+// ConsentGrants reports whether a jc_consent cookie value grants a
+// consent_type category. "all" grants every category; "necessary" and
+// absent/unknown values grant nothing; otherwise the cookie is a
+// comma-list of granted consent_type tokens (the per-category decisions
+// written by the banner's Customize view or a settings toggle).
+func ConsentGrants(value, category string) bool {
+	if value == ConsentValueAll {
+		return true
+	}
+	for _, part := range strings.Split(value, ",") {
+		if strings.TrimSpace(part) == category {
+			return true
+		}
+	}
+	return false
+}
 
 // GuestSessionKey returns the stable guest identity: the jc_guest cookie
 // when present, else the client IP (cookie-less clients, crawlers).
@@ -60,7 +78,7 @@ func GuestSessionMiddleware(secure bool) func(http.Handler) http.Handler {
 
 			hasConsent := false
 			if c, err := r.Cookie(ConsentCookieName); err == nil {
-				hasConsent = c.Value == ConsentValueAll
+				hasConsent = ConsentGrants(c.Value, "functional_cookies")
 			}
 
 			guest, guestErr := r.Cookie(GuestCookieName)

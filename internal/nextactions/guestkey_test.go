@@ -57,6 +57,24 @@ func TestGuestSessionMiddleware_MintsOnlyWithAffirmativeConsent(t *testing.T) {
 			wantMint: true,
 		},
 		{
+			name:     "jc_consent=functional_cookies — mints (category grant)",
+			cookies:  []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookies"}},
+			wantMint: true,
+		},
+		{
+			name:     "jc_consent=functional_cookies,analytics_tracking — mints (list)",
+			cookies:  []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookies,analytics_tracking"}},
+			wantMint: true,
+		},
+		{
+			name:    "jc_consent=analytics_tracking — no mint (functional not granted)",
+			cookies: []*http.Cookie{{Name: ConsentCookieName, Value: "analytics_tracking"}},
+		},
+		{
+			name:    "jc_consent near-miss token — no mint",
+			cookies: []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookiess"}},
+		},
+		{
 			name: "jc_consent=all + existing guest — no re-mint",
 			cookies: []*http.Cookie{
 				{Name: ConsentCookieName, Value: ConsentValueAll},

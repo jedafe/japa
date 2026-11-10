@@ -20,6 +20,7 @@
 	import { api, apiBaseUrl } from '#lib/api/client.js';
 	import { buildApiUrl } from '#lib/api/url.js';
 	import { exportData, cancelDataExport } from '#lib/api/hub.js';
+	import { setConsent } from '#lib/consent.js';
 	import { Download, Loader2, ShieldCheck, X } from 'lucide-svelte';
 
 	/** Backend consent record — matches gen.ConsentRecord (Section 19). */
@@ -36,10 +37,11 @@
 	// state while the client retries.
 	let consentTypes = $state<string[]>([]);
 	let policyVersion = $state('');
+	let dpoContact = $state('');
 
 	interface DataPrivacyData {
 		consents: ConsentRecord[];
-		consentConfig?: { consent_types: string[]; policy_version: string } | null;
+		consentConfig?: { consent_types: string[]; policy_version: string; dpo_contact?: string } | null;
 		exportStatus: ExportStatusResponse;
 	}
 
@@ -92,6 +94,7 @@
 	const initialConfig = untrack(() => payload?.consentConfig);
 	if (initialConfig?.consent_types?.length) consentTypes = initialConfig.consent_types;
 	if (initialConfig?.policy_version) policyVersion = initialConfig.policy_version;
+	if (initialConfig?.dpo_contact) dpoContact = initialConfig.dpo_contact;
 
 	let consentMap = $state<Map<string, boolean>>(untrack(() => buildConsentMap(consentTypes, payload?.consents ?? [])));
 	const initialNorm = untrack(() => normalizeStatus(payload?.exportStatus));
@@ -104,6 +107,7 @@
 		const types = p?.consentConfig?.consent_types ?? [];
 		consentTypes = types;
 		policyVersion = p?.consentConfig?.policy_version ?? '';
+		dpoContact = p?.consentConfig?.dpo_contact ?? '';
 		consentMap = buildConsentMap(types, p?.consents ?? []);
 		const norm = normalizeStatus(p?.exportStatus);
 		uiStatus = norm.status;
@@ -142,6 +146,15 @@
 		if (res.error) {
 			consentMap = new Map(consentMap).set(type, wasGranted);
 			consentError = res.error.message || t('settings.data_privacy.consent_error', 'Failed to update consent. Try again.');
+		} else if (type === 'functional_cookies' || type === 'analytics_tracking') {
+			// The jc_consent cookie is the operative gate for these two types —
+			// keep it (and the shared consent state driving Umami) in sync with
+			// the recorded decision so a revocation here can't be undone by a
+			// stale 'all' cookie after logout.
+			setConsent(
+				consentMap.get('functional_cookies') ?? false,
+				consentMap.get('analytics_tracking') ?? false
+			);
 		}
 		toggling = null;
 	}
@@ -260,6 +273,11 @@
 		<a href="#cookie-settings" class="mt-2 inline-block text-xs text-[var(--color-primary)] hover:underline">
 			{t('cookies.footer.settings', 'Cookie settings')}
 		</a>
+		{#if dpoContact}
+			<p class="mt-2 text-xs text-[var(--color-muted)]">
+				{t('settings.data_privacy.dpo_label', 'Data protection contact')}: {dpoContact}
+			</p>
+		{/if}
 	</section>
 
 	<!-- Data export -->

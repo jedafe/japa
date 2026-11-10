@@ -103,7 +103,7 @@
 	// binds its own history listeners, so mid-session revocation applies
 	// from the next full page load — the cookie already governs that.
 	const umamiEnabled = $derived(
-		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_DOCS && consent.granted
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_DOCS && consent.analytics
 	);
 
 	// §115 AI Quick Panel: FAB toggles the page-aware slide-in panel

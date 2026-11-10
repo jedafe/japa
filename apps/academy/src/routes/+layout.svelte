@@ -201,7 +201,7 @@
 	// binds its own history listeners, so mid-session revocation applies
 	// from the next full page load — the cookie already governs that.
 	const umamiEnabled = $derived(
-		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ACADEMY && consent.granted
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ACADEMY && consent.analytics
 	);
 </script>
 

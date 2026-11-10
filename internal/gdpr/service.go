@@ -193,6 +193,11 @@ func (s *Service) GetUserConsents(ctx context.Context, userID pgtype.UUID, conse
 type ConsentConfigResponse struct {
 	ConsentTypes  []string `json:"consent_types"`
 	PolicyVersion string   `json:"policy_version"`
+	// DpoContact is the designated data-protection contact (e.g. a DPO
+	// email), sourced from system_settings key "gdpr.dpo_contact". Empty
+	// until legal designates one — the field is omitted, not surfaced
+	// as a placeholder.
+	DpoContact string `json:"dpo_contact,omitempty"`
 }
 
 // validConsentTypes is the canonical list of consent types recognized by the
@@ -215,16 +220,19 @@ var validConsentTypes = []string{
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (s *Service) GetConsentConfig(ctx context.Context) (*ConsentConfigResponse, error) {
 	policyVersion := "1.0"
+	dpoContact := ""
 	if s.settings != nil {
 		// Use GetStringOr — system_settings values are stored as JSON-encoded
 		// strings (e.g. '"1.0"'), so GetSetting returns the raw quoted value.
 		// GetStringOr unquotes it to '1.0'. Ref: §6.2 nil/quote handling.
 		policyVersion = s.settings.GetStringOr(ctx, "gdpr.policy_version", "1.0")
+		dpoContact = s.settings.GetStringOr(ctx, "gdpr.dpo_contact", "")
 	}
 
 	return &ConsentConfigResponse{
 		ConsentTypes:  validConsentTypes,
 		PolicyVersion: policyVersion,
+		DpoContact:    dpoContact,
 	}, nil
 }
 
