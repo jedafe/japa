@@ -49,8 +49,18 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE f.entity_type = @entity_type AND f.entity_id = @entity_id
   AND u.status = 'active'
+  -- §19/§50: listed users honour their own profile_visibility — guests see
+  -- 'public' followers only; authenticated viewers additionally see
+  -- 'members' and 'followers' profiles they already follow.
+  AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+           AND (f.follower_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+                SELECT 1 FROM follows vf
+                WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = f.follower_id))))
   AND (
     @entity_type <> 'user'
     OR sqlc.narg(viewer_id)::uuid IS NULL
@@ -87,6 +97,7 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
  END::text AS entity_avatar_url
 FROM follows f
+LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = @follower_id
   AND (
     (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
@@ -95,6 +106,15 @@ WHERE f.follower_id = @follower_id
     OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
     OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
   )
+  -- §19/§50: followed users honour their own profile_visibility (same
+  -- viewer-aware rule as the follower list).
+  AND (f.entity_type <> 'user'
+       OR COALESCE(ups2.profile_visibility, 'public') = 'public'
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups2.profile_visibility, 'public') = 'members')
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups2.profile_visibility, 'public') = 'followers'
+           AND (f.entity_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+                SELECT 1 FROM follows vf
+                WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = f.entity_id))))
   AND (f.entity_type <> 'user' OR sqlc.narg(viewer_id)::uuid IS NULL
     OR NOT EXISTS (
       SELECT 1 FROM user_blocks ub
@@ -129,6 +149,7 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
  END::text AS entity_avatar_url
 FROM follows f
+LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = @follower_id AND f.entity_type = @entity_type
   AND (
     (f.entity_type = 'user' AND EXISTS (SELECT 1 FROM users fu WHERE fu.id = f.entity_id AND fu.status = 'active'))
@@ -137,6 +158,13 @@ WHERE f.follower_id = @follower_id AND f.entity_type = @entity_type
     OR (f.entity_type = 'organization' AND EXISTS (SELECT 1 FROM organizations og WHERE og.id = f.entity_id AND og.deleted_at IS NULL))
     OR (f.entity_type = 'source' AND EXISTS (SELECT 1 FROM intel_sources src WHERE src.id = f.entity_id))
   )
+  AND (f.entity_type <> 'user'
+       OR COALESCE(ups2.profile_visibility, 'public') = 'public'
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups2.profile_visibility, 'public') = 'members')
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups2.profile_visibility, 'public') = 'followers'
+           AND (f.entity_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+                SELECT 1 FROM follows vf
+                WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = f.entity_id))))
   AND (f.entity_type <> 'user' OR sqlc.narg(viewer_id)::uuid IS NULL
     OR NOT EXISTS (
       SELECT 1 FROM user_blocks ub
@@ -164,8 +192,19 @@ ORDER BY f.created_at DESC
 LIMIT @page_limit;
 
 -- name: CountFollowersByEntity :one
-SELECT COUNT(*)::int AS count FROM follows
-WHERE entity_type = @entity_type AND entity_id = @entity_id;
+-- Count applies the same §19/§50 viewer-aware visibility predicate as
+-- GetFollowersByEntity so the displayed count matches the listed rows.
+SELECT COUNT(*)::int AS count FROM follows f
+JOIN users u ON u.id = f.follower_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE f.entity_type = @entity_type AND f.entity_id = @entity_id
+  AND u.status = 'active'
+  AND (COALESCE(ups.profile_visibility, 'public') = 'public'
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+       OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+           AND (f.follower_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+                SELECT 1 FROM follows vf
+                WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = f.follower_id))));
 
 -- =====================
 -- Bulk Operations

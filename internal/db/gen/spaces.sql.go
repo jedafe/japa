@@ -2957,7 +2957,26 @@ SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.d
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = sm.user_id
 WHERE sm.space_id = $1 AND sm.status = 'approved'
+ AND (
+   (
+     $2::uuid IS NOT NULL
+     AND (EXISTS (SELECT 1 FROM space_members sm2
+                  WHERE sm2.space_id = sm.space_id AND sm2.user_id = $2::uuid
+                    AND sm2.role = 'owner' AND sm2.status = 'approved')
+          OR EXISTS (SELECT 1 FROM space_moderators mo
+                     WHERE mo.space_id = sm.space_id AND mo.user_id = $2::uuid))
+   )
+   OR (
+     COALESCE(ups.profile_visibility, 'public') = 'public'
+     OR ($2::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+     OR ($2::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+         AND (sm.user_id = $2::uuid OR EXISTS (
+              SELECT 1 FROM follows vf
+              WHERE vf.follower_id = $2::uuid AND vf.entity_type = 'user' AND vf.entity_id = sm.user_id)))
+   )
+ )
  AND (
    $2::uuid IS NULL
    OR NOT EXISTS (
@@ -2986,6 +3005,11 @@ type ListSpaceMembersWithProfileRow struct {
 }
 
 // SPACES-007: only list approved members, not pending join requests.
+// §19/§50: roster rows honour each member's profile_visibility — guests see
+// 'public' members only; authenticated viewers additionally see 'members'
+// and 'followers' profiles they already follow. Space owners and
+// moderators always see the full roster — a hidden member would be
+// un-moderatable otherwise.
 func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpaceMembersWithProfileParams) ([]ListSpaceMembersWithProfileRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile,
 		arg.SpaceID,

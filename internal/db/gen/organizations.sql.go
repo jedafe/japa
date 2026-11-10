@@ -1436,9 +1436,43 @@ SELECT om.organization_id, om.user_id, om.role, om.joined_at,
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = om.user_id
 WHERE om.organization_id = $1
+ AND (
+   (
+     $2::uuid IS NOT NULL
+     AND (EXISTS (SELECT 1 FROM organization_members om2
+                  WHERE om2.organization_id = om.organization_id
+                    AND om2.user_id = $2::uuid
+                    AND om2.role IN ('owner', 'admin'))
+          OR EXISTS (SELECT 1 FROM organizations o2
+                     WHERE o2.id = om.organization_id
+                       AND o2.owner_user_id = $2::uuid))
+   )
+   OR (
+     COALESCE(ups.profile_visibility, 'public') = 'public'
+     OR ($2::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+     OR ($2::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+         AND (om.user_id = $2::uuid OR EXISTS (
+              SELECT 1 FROM follows vf
+              WHERE vf.follower_id = $2::uuid AND vf.entity_type = 'user' AND vf.entity_id = om.user_id)))
+   )
+ )
+ AND (
+   $2::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = $2::uuid)
+   )
+ )
 ORDER BY om.joined_at DESC
 `
+
+type ListPublicOrganizationMembersParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ViewerID       pgtype.UUID `json:"viewer_id"`
+}
 
 type ListPublicOrganizationMembersRow struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
@@ -1453,8 +1487,12 @@ type ListPublicOrganizationMembersRow struct {
 // Public Members tab: ACTIVE members only (banned/suspended/deleted users
 // excluded), platform-scoped via the users join (defense-in-depth). Excludes the
 // internal invited_by column by projecting only public fields.
-func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListPublicOrganizationMembersRow, error) {
-	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, organizationID)
+// §19/§50: roster rows honour each member's profile_visibility — guests see
+// 'public' members only; authenticated viewers additionally see 'members'
+// and 'followers' profiles they already follow. Org owners/admins always
+// see the full roster — a hidden member would be un-moderatable otherwise.
+func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPublicOrganizationMembersParams) ([]ListPublicOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, arg.OrganizationID, arg.ViewerID)
 	if err != nil {
 		return nil, err
 	}

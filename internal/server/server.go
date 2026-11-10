@@ -4621,6 +4621,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// §19/§50 amendment: when the owner restricts profile_visibility,
 				// these lists are profile surfaces and follow the same gate —
 				// §31's "public" holds only while the profile itself is public.
+				// Rows are additionally filtered per-member: a public profile's
+				// list still elides members/followers-only accounts from
+				// unauthorised viewers (same rule as the user directory).
 				// follow-status and mutual remain RequireAuth: both are
 				// caller-scoped and meaningless for guests.
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileUser(usersService, "user_id")).Get("/users/{user_id}/followers", followHandlers.GetFollowers)

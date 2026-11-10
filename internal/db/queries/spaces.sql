@@ -1247,11 +1247,35 @@ SELECT EXISTS (
 
 -- name: ListSpaceMembersWithProfile :many
 -- SPACES-007: only list approved members, not pending join requests.
+-- §19/§50: roster rows honour each member's profile_visibility — guests see
+-- 'public' members only; authenticated viewers additionally see 'members'
+-- and 'followers' profiles they already follow. Space owners and
+-- moderators always see the full roster — a hidden member would be
+-- un-moderatable otherwise.
 SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = sm.user_id
 WHERE sm.space_id = @space_id AND sm.status = 'approved'
+ AND (
+   (
+     sqlc.narg(viewer_id)::uuid IS NOT NULL
+     AND (EXISTS (SELECT 1 FROM space_members sm2
+                  WHERE sm2.space_id = sm.space_id AND sm2.user_id = sqlc.narg(viewer_id)::uuid
+                    AND sm2.role = 'owner' AND sm2.status = 'approved')
+          OR EXISTS (SELECT 1 FROM space_moderators mo
+                     WHERE mo.space_id = sm.space_id AND mo.user_id = sqlc.narg(viewer_id)::uuid))
+   )
+   OR (
+     COALESCE(ups.profile_visibility, 'public') = 'public'
+     OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+     OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+         AND (sm.user_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+              SELECT 1 FROM follows vf
+              WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = sm.user_id)))
+   )
+ )
  AND (
    sqlc.narg(viewer_id)::uuid IS NULL
    OR NOT EXISTS (

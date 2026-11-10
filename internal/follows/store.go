@@ -245,10 +245,11 @@ func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, 
 }
 
 // countFollowers returns the number of followers for an entity.
-func (s *Store) countFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error) {
+func (s *Store) countFollowers(ctx context.Context, entityType string, entityID, viewerID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountFollowersByEntity(ctx, gen.CountFollowersByEntityParams{
 		EntityType: entityType,
 		EntityID:   entityID,
+		ViewerID:   viewerID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting followers: %w", err)

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/brand"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -1153,8 +1154,14 @@ func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string) 
 }
 
 // ListPublicMembers returns the org's ACTIVE members for the public Members tab.
+// §19/§50: rows are filtered by each member's profile_visibility relative to
+// the viewer — org owners/admins always see the full roster.
 func (s *Service) ListPublicMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
-	return s.store.ListPublicMembers(ctx, orgID)
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(ctx); u != nil {
+		viewerID = u.UserID
+	}
+	return s.store.ListPublicMembers(ctx, orgID, viewerID)
 }
 
 // GetOrgOwnerPublicProfile returns the org owner's public identity for the

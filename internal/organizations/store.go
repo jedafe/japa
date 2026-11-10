@@ -337,8 +337,11 @@ func (s *Store) BankExistsBySlug(ctx context.Context, slug string) (bool, error)
 }
 
 // ListPublicMembers is an exported method.
-func (s *Store) ListPublicMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
-	return s.read.ListPublicOrganizationMembers(ctx, orgID)
+func (s *Store) ListPublicMembers(ctx context.Context, orgID, viewerID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
+	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{
+		OrganizationID: orgID,
+		ViewerID:       viewerID,
+	})
 }
 
 // GetOrgOwnerPublicProfile returns the org owner's public identity for the

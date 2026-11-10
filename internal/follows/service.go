@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
@@ -716,9 +717,15 @@ func (s *Service) resolveBulkFollowingByType(ctx context.Context, callerID pgtyp
 	return result
 }
 
-// CountFollowers returns the follower count for an entity.
+// CountFollowers returns the follower count for an entity, filtered by the
+// same §19/§50 viewer-aware visibility rule as the followers list so the
+// displayed count matches the listed rows.
 func (s *Service) CountFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error) {
-	return s.store.countFollowers(ctx, entityType, entityID)
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(ctx); u != nil {
+		viewerID = u.UserID
+	}
+	return s.store.countFollowers(ctx, entityType, entityID, viewerID)
 }
 
 // GetBulkFollowingStatus returns follow status for multiple entities of the same type.

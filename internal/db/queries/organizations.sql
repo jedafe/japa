@@ -387,12 +387,45 @@ WHERE o.id = @organization_id AND o.deleted_at IS NULL;
 -- Public Members tab: ACTIVE members only (banned/suspended/deleted users
 -- excluded), platform-scoped via the users join (defense-in-depth). Excludes the
 -- internal invited_by column by projecting only public fields.
+-- §19/§50: roster rows honour each member's profile_visibility — guests see
+-- 'public' members only; authenticated viewers additionally see 'members'
+-- and 'followers' profiles they already follow. Org owners/admins always
+-- see the full roster — a hidden member would be un-moderatable otherwise.
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
  COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = om.user_id
 WHERE om.organization_id = @organization_id
+ AND (
+   (
+     sqlc.narg(viewer_id)::uuid IS NOT NULL
+     AND (EXISTS (SELECT 1 FROM organization_members om2
+                  WHERE om2.organization_id = om.organization_id
+                    AND om2.user_id = sqlc.narg(viewer_id)::uuid
+                    AND om2.role IN ('owner', 'admin'))
+          OR EXISTS (SELECT 1 FROM organizations o2
+                     WHERE o2.id = om.organization_id
+                       AND o2.owner_user_id = sqlc.narg(viewer_id)::uuid))
+   )
+   OR (
+     COALESCE(ups.profile_visibility, 'public') = 'public'
+     OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+     OR (sqlc.narg(viewer_id)::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+         AND (om.user_id = sqlc.narg(viewer_id)::uuid OR EXISTS (
+              SELECT 1 FROM follows vf
+              WHERE vf.follower_id = sqlc.narg(viewer_id)::uuid AND vf.entity_type = 'user' AND vf.entity_id = om.user_id)))
+   )
+ )
+ AND (
+   sqlc.narg(viewer_id)::uuid IS NULL
+   OR NOT EXISTS (
+     SELECT 1 FROM user_blocks ub
+     WHERE (ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = om.user_id)
+        OR (ub.blocker_id = om.user_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid)
+   )
+ )
 ORDER BY om.joined_at DESC;
 
 -- name: ListPublicOrganizations :many
