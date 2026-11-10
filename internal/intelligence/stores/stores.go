@@ -863,6 +863,13 @@ func (s *Store) CreateContent(ctx context.Context, arg gen.CreateContentParams) 
 	return row, nil
 }
 
+// Queries exposes the store's query handle so callers that bypass
+// content.Service can run the §14 media-field sync on the same
+// connection — inside WithTx this is the transaction's querier.
+func (s *Store) Queries() *gen.Queries {
+	return s.queries
+}
+
 // GetContentByID fetches a single contents row by primary key. Used by the
 // promoter (Task 3) to load an existing guide for update.
 func (s *Store) GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {

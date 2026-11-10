@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -796,8 +797,23 @@ func (s *Store) SystemAuthorID(ctx context.Context) (pgtype.UUID, error) {
 // CreateStubContent inserts a contents row — used to mint published stub
 // guides for roadmap steps that reference a slug with no backing content.
 func (s *Store) CreateStubContent(ctx context.Context, arg gen.CreateContentParams) error {
-	if _, err := s.writeQueries.CreateContent(ctx, arg); err != nil {
+	row, err := s.writeQueries.CreateContent(ctx, arg)
+	if err != nil {
 		return fmt.Errorf("assessment: create stub content: %w", err)
+	}
+
+	// §14: stub inserts bypass content.Service, so the media-field sync
+	// runs here.
+	if err := content.SyncMediaRefs(ctx, s.queries, s.writeQueries, row.ID, content.MediaRefSource{
+		ContentType:     arg.ContentType,
+		GuideCategory:   arg.GuideCategory,
+		FieldValues:     arg.FieldValues,
+		Body:            arg.Body,
+		BodyHTML:        arg.BodyHtml,
+		HeaderImageID:   arg.HeaderImageID,
+		FeaturedImageID: arg.FeaturedImageID,
+	}); err != nil {
+		return fmt.Errorf("assessment: sync media fields: %w", err)
 	}
 
 	return nil

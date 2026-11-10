@@ -178,6 +178,10 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 			return fmt.Errorf("promoter: create guide content: %w", err)
 		}
 
+		if err := syncCreateMediaRefs(ctx, tx, contentRow); err != nil {
+			return fmt.Errorf("promoter: sync media fields: %w", err)
+		}
+
 		if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
 			ID:               record.ID,
 			PromotedRecordID: contentRow.ID,
@@ -278,6 +282,10 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 				return fmt.Errorf("promoter: recreate guide content: %w", cerr)
 			}
 
+			if err := syncCreateMediaRefs(ctx, tx, created); err != nil {
+				return fmt.Errorf("promoter: sync media fields: %w", err)
+			}
+
 			if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
 				ID:               record.ID,
 				PromotedRecordID: created.ID,
@@ -336,8 +344,13 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 		params.AiGeneratedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
 		params.AiModel = p.aiModel
 
-		if _, uerr := tx.UpdateContent(ctx, params); uerr != nil {
+		updated, uerr := tx.UpdateContent(ctx, params)
+		if uerr != nil {
 			return fmt.Errorf("promoter: update guide content: %w", uerr)
+		}
+
+		if err := syncUpdateMediaRefs(ctx, tx, updated); err != nil {
+			return fmt.Errorf("promoter: sync media fields: %w", err)
 		}
 
 		changesJSON, merr := json.Marshal(changes)

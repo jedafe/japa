@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 )
@@ -228,4 +229,58 @@ func domainUpdateTx[P any, T reviewLogWriter](
 		Action:        ActionUpdated,
 		ChangedFields: changed,
 	}, nil
+}
+
+// txQueriesProvider exposes the *gen.Queries backing a promoter tx store —
+// *stores.Store implements it; the in-memory test mocks don't, so the §14
+// media-field sync no-ops where there's no real database.
+type txQueriesProvider interface {
+	Queries() *gen.Queries
+}
+
+// syncCreateMediaRefs / syncUpdateMediaRefs re-derive a contents row's
+// content_media_fields after a direct write that bypassed content.Service
+// (§14). The RETURNING row carries the resolved post-write values —
+// preserve-on-omit and clears already applied — so it is the sync source.
+func syncCreateMediaRefs(ctx context.Context, tx any, row gen.CreateContentRow) error {
+	q, ok := txQueries(tx)
+	if !ok {
+		return nil
+	}
+
+	return content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+		ContentType:     row.ContentType,
+		GuideCategory:   row.GuideCategory,
+		FieldValues:     row.FieldValues,
+		Body:            row.Body,
+		BodyHTML:        row.BodyHtml,
+		HeaderImageID:   row.HeaderImageID,
+		FeaturedImageID: row.FeaturedImageID,
+	})
+}
+
+func syncUpdateMediaRefs(ctx context.Context, tx any, row gen.UpdateContentRow) error {
+	q, ok := txQueries(tx)
+	if !ok {
+		return nil
+	}
+
+	return content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+		ContentType:     row.ContentType,
+		GuideCategory:   row.GuideCategory,
+		FieldValues:     row.FieldValues,
+		Body:            row.Body,
+		BodyHTML:        row.BodyHtml,
+		HeaderImageID:   row.HeaderImageID,
+		FeaturedImageID: row.FeaturedImageID,
+	})
+}
+
+func txQueries(tx any) (*gen.Queries, bool) {
+	p, ok := tx.(txQueriesProvider)
+	if !ok {
+		return nil, false
+	}
+
+	return p.Queries(), true
 }

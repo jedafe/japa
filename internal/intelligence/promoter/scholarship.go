@@ -356,6 +356,10 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 		return pgtype.UUID{}, fmt.Errorf("promoter: create guide content: %w", err)
 	}
 
+	if err := syncCreateMediaRefs(ctx, tx, contentRow); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("promoter: sync media fields: %w", err)
+	}
+
 	return contentRow.ID, nil
 }
 
@@ -558,6 +562,10 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 		return fmt.Errorf("promoter: create guide content on approve: %w", err)
 	}
 
+	if err := syncCreateMediaRefs(ctx, tx, newContent); err != nil {
+		return fmt.Errorf("promoter: sync media fields: %w", err)
+	}
+
 	params.GuideID = newContent.ID
 
 	return nil
@@ -585,8 +593,13 @@ func (p *ScholarshipPromoter) syncGuideContent(ctx context.Context, tx TxStore, 
 		return nil
 	}
 
-	if _, err := tx.UpdateContent(ctx, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
+	updated, err := tx.UpdateContent(ctx, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash))
+	if err != nil {
 		return fmt.Errorf("promoter: update guide content: %w", err)
+	}
+
+	if err := syncUpdateMediaRefs(ctx, tx, updated); err != nil {
+		return fmt.Errorf("promoter: sync media fields: %w", err)
 	}
 
 	return nil

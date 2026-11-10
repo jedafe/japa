@@ -889,6 +889,20 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// §14: this insert bypasses content.Service, so the media-field sync
+	// runs here — the guide body could carry /media/serve/ embeds.
+	if err := content.SyncMediaRefs(r.Context(), h.svc.store.queries, h.svc.store.queries, contentRow.ID, content.MediaRefSource{
+		ContentType:   contentParams.ContentType,
+		GuideCategory: contentParams.GuideCategory,
+		FieldValues:   contentParams.FieldValues,
+		Body:          contentParams.Body,
+		BodyHTML:      contentParams.BodyHtml,
+	}); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship guide content")
+
+		return
+	}
+
 	// 2. Insert the scholarship projection row with guide_id. The slug column
 	// is NOT NULL + UNIQUE, so it is derived from the title and deduplicated
 	// against existing scholarship rows.
