@@ -753,6 +753,21 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		return gen.CreateContentRow{}, fmt.Errorf("creating initial revision: %w", err)
 	}
 
+	// §14: register every media reference this row carries so deletes can
+	// report "in use" — cover columns, list item slots, body embeds, and
+	// media-typed custom field values.
+	if err := s.syncContentMediaFields(ctx, writeQ, content.ID, contentMediaRefSource{
+		ContentType:     input.ContentType,
+		GuideCategory:   input.GuideCategory,
+		FieldValues:     fieldValues,
+		Body:            input.Body,
+		BodyHTML:        bodyHTML,
+		HeaderImageID:   input.HeaderImageID,
+		FeaturedImageID: input.FeaturedImageID,
+	}); err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("syncing media fields: %w", err)
+	}
+
 	// §79: keep the story_meta companion row in sync for stories written
 	// through the generic contents pipeline.
 	if input.ContentType == TypeStory {
@@ -1560,6 +1575,26 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	content, err := s.write.UpdateContent(ctx, params)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
+	}
+
+	// §14: re-derive the tracked media references from the values actually
+	// written — params carries the post-merge set (preserve-on-omit and
+	// explicit clears already resolved).
+	syncGuideCategory := params.GuideCategory
+	if syncGuideCategory == nil && !input.ClearGuideCategory {
+		syncGuideCategory = existing.GuideCategory
+	}
+
+	if err := s.syncContentMediaFields(ctx, s.write, content.ID, contentMediaRefSource{
+		ContentType:     existing.ContentType,
+		GuideCategory:   syncGuideCategory,
+		FieldValues:     params.FieldValues,
+		Body:            params.Body,
+		BodyHTML:        params.BodyHtml,
+		HeaderImageID:   params.HeaderImageID,
+		FeaturedImageID: params.FeaturedImageID,
+	}); err != nil {
+		return gen.UpdateContentRow{}, fmt.Errorf("syncing media fields: %w", err)
 	}
 
 	// Synchronize content_spaces when the primary space changes, preserving

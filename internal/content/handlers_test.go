@@ -73,7 +73,12 @@ func (d rowDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTa
 	return pgconn.CommandTag{}, errors.New("unexpected Exec in test")
 }
 
-func (d rowDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (d rowDBTX) Query(_ context.Context, query string, _ ...interface{}) (pgx.Rows, error) {
+	// The media-field sync (content_media_fields) resolves referenced rows
+	// via :many reads — empty sets mean "no live media found" for stubs.
+	if strings.Contains(query, "media") {
+		return emptyRows{}, nil
+	}
 	return nil, errors.New("unexpected Query in test")
 }
 
@@ -350,11 +355,21 @@ type captureUpdateDBTX struct {
 	updateRow  *gen.UpdateContentRow
 }
 
-func (d *captureUpdateDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+func (d *captureUpdateDBTX) Exec(_ context.Context, query string, _ ...interface{}) (pgconn.CommandTag, error) {
+	// The media-field sync deletes + reinserts tracking rows — succeed so
+	// the stubbed update reaches completion.
+	if strings.Contains(query, "content_media_fields") {
+		return pgconn.CommandTag{}, nil
+	}
 	return pgconn.CommandTag{}, errors.New("unexpected Exec in test")
 }
 
-func (d *captureUpdateDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (d *captureUpdateDBTX) Query(_ context.Context, query string, _ ...interface{}) (pgx.Rows, error) {
+	// Storage-path and media-field-key lookups run on the write querier —
+	// empty sets keep the stubbed update flowing.
+	if strings.Contains(query, "media") || strings.Contains(query, "custom_field") {
+		return emptyRows{}, nil
+	}
 	return nil, errors.New("unexpected Query in test")
 }
 
@@ -610,9 +625,10 @@ func (d authorAwareReadDBTX) Exec(context.Context, string, ...interface{}) (pgco
 
 func (d authorAwareReadDBTX) Query(_ context.Context, query string, _ ...interface{}) (pgx.Rows, error) {
 	// The publish transition's required-field check (validateRequiredFields)
-	// lists custom-field groups + fields — return empty sets so the
-	// stubbed path sees "no required fields" instead of a stub error.
-	if strings.Contains(query, "custom_field") {
+	// lists custom-field groups + fields, and the media-field sync resolves
+	// referenced rows — return empty sets so the stubbed path sees "no
+	// required fields" / "no live media" instead of a stub error.
+	if strings.Contains(query, "custom_field") || strings.Contains(query, "media") {
 		return emptyRows{}, nil
 	}
 	return nil, errors.New("unexpected Query in test")

@@ -1336,6 +1336,15 @@ type ContentImport struct {
 	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
 }
 
+type ContentMediaField struct {
+	ID        pgtype.UUID        `json:"id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	MediaID   pgtype.UUID        `json:"media_id"`
+	FieldKey  string             `json:"field_key"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type ContentReport struct {
 	ID             pgtype.UUID        `json:"id"`
 	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`

@@ -752,6 +752,9 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 const listMediaDeletedForCleanup = `-- name: ListMediaDeletedForCleanup :many
 SELECT id, storage_bucket, storage_path FROM media
 WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(days => $1)
+  AND NOT EXISTS (
+      SELECT 1 FROM content_media_fields cmf WHERE cmf.media_id = media.id
+  )
 ORDER BY deleted_at ASC
 LIMIT $2
 `
@@ -770,6 +773,10 @@ type ListMediaDeletedForCleanupRow struct {
 // Soft-deleted media rows past the retention window — the
 // media:cleanup_deleted sweep removes their storage objects then
 // hard-deletes the rows (Section 34, Rule 11 approved hard-delete path).
+// Rows still referenced by a contents row via content_media_fields are
+// skipped: purging them would orphan rendered images (§14 referential
+// integrity). The ref drops when the content is edited or deleted, so the
+// sweep collects the media on a later pass.
 func (q *Queries) ListMediaDeletedForCleanup(ctx context.Context, arg ListMediaDeletedForCleanupParams) ([]ListMediaDeletedForCleanupRow, error) {
 	rows, err := q.db.Query(ctx, listMediaDeletedForCleanup, arg.RetentionDays, arg.RowLimit)
 	if err != nil {
