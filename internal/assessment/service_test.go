@@ -42,10 +42,10 @@ func TestParseJourneyFieldsVisaRouteFallback(t *testing.T) {
 		answers map[string]any
 		want    string
 	}{
-		{"explicit visa_type wins", map[string]any{"visa_type": "investment", tfPurpose: tfWork}, "investment"},
-		{"purpose study derives student route", map[string]any{tfPurpose: tfStudy}, "student"},
+		{"explicit visa_type wins", map[string]any{tfVisaType: "investment", tfPurpose: tfWork}, "investment"},
+		{"purpose study derives student route", map[string]any{tfPurpose: tfStudy}, tfStudent},
 		{"purpose work derives work route", map[string]any{tfPurpose: tfWork}, tfWork},
-		{"purpose business derives business route", map[string]any{tfPurpose: "business"}, "business"},
+		{"purpose business derives business route", map[string]any{tfPurpose: tfBusiness}, tfBusiness},
 		{"purpose tourism derives tourist route", map[string]any{tfPurpose: "tourism"}, "tourist"},
 		{"purpose family derives family route", map[string]any{tfPurpose: "family"}, "family"},
 		{"purpose relocation falls back to other", map[string]any{tfPurpose: "relocation"}, "other"},
@@ -62,15 +62,49 @@ func TestParseJourneyFieldsVisaRouteFallback(t *testing.T) {
 	}
 }
 
+// TestParseJourneyFieldsPurposeFallback verifies the route-derived purpose
+// used when purpose goes unanswered — the field is hidden at
+// relocated/settled (migration 001108), so the visa_type those users still
+// answer must produce a purpose for roadmap matching.
+func TestParseJourneyFieldsPurposeFallback(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		answers map[string]any
+		want    string
+	}{
+		{"explicit purpose wins", map[string]any{tfVisaType: tfStudent, tfPurpose: tfWork}, tfWork},
+		{"route student derives study", map[string]any{tfVisaType: tfStudent}, tfStudy},
+		{"route work derives work", map[string]any{tfVisaType: tfWork}, tfWork},
+		{"route business derives business", map[string]any{tfVisaType: tfBusiness}, tfBusiness},
+		{"route tourist derives tourism", map[string]any{tfVisaType: "tourist"}, "tourism"},
+		{"route spouse derives family", map[string]any{tfVisaType: "spouse"}, "family"},
+		{"route investment derives business", map[string]any{tfVisaType: "investment"}, tfBusiness},
+		{"route transit has no purpose", map[string]any{tfVisaType: "transit"}, ""},
+		{"route other has no purpose", map[string]any{tfVisaType: "other"}, ""},
+		{"both blank stays blank", map[string]any{}, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := parseJourneyFields(tc.answers)
+			assert.Equal(t, tc.want, got.Purpose)
+		})
+	}
+}
+
 func TestPickBestRoadmapContent_PrefersStrongestContextMatch(t *testing.T) {
 	base := "guide-generic-finance"
 	rows := []gen.FindRoadmapContentByDimensionRow{
 		{Slug: base},
-		{Slug: "canada-study-finance", TargetCountry: ptr("CA"), VisaRoute: ptr("student")},
+		{Slug: "canada-study-finance", TargetCountry: ptr("CA"), VisaRoute: ptr(tfStudent)},
 	}
 	journey := JourneyContext{
 		DestinationCountry: "CA",
-		VisaRoute:          "student",
+		VisaRoute:          tfStudent,
 		JourneyStage:       "planning",
 	}
 

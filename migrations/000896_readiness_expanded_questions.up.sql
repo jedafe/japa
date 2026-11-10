@@ -19,13 +19,14 @@ DO $$ DECLARE
     gid uuid := '00000000-0000-0000-0000-00000000a001';
 BEGIN
 
--- 1. Reorder: journey-context fields first (destination selector = first
---    input), then scored questions grouped by dimension.
-UPDATE custom_fields SET position = 1  WHERE group_id = gid AND key = 'destination_country';
-UPDATE custom_fields SET position = 2  WHERE group_id = gid AND key = 'origin_country';
-UPDATE custom_fields SET position = 3  WHERE group_id = gid AND key = 'visa_type';
-UPDATE custom_fields SET position = 4  WHERE group_id = gid AND key = 'journey_stage';
-UPDATE custom_fields SET position = 5  WHERE group_id = gid AND key = 'purpose';
+-- 1. Reorder: journey-context fields first (journey_stage — the primary
+--    conditional driver — = first input), then scored questions grouped by
+--    dimension. Order matches the post-001108 live sequence.
+UPDATE custom_fields SET position = 1  WHERE group_id = gid AND key = 'journey_stage';
+UPDATE custom_fields SET position = 2  WHERE group_id = gid AND key = 'destination_country';
+UPDATE custom_fields SET position = 3  WHERE group_id = gid AND key = 'origin_country';
+UPDATE custom_fields SET position = 4  WHERE group_id = gid AND key = 'purpose';
+UPDATE custom_fields SET position = 5  WHERE group_id = gid AND key = 'visa_type';
 UPDATE custom_fields SET position = 6  WHERE group_id = gid AND key = 'travel_date';
 UPDATE custom_fields SET position = 7  WHERE group_id = gid AND key = 'savings';
 UPDATE custom_fields SET position = 8  WHERE group_id = gid AND key = 'income_source';

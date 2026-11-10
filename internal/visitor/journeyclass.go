@@ -59,3 +59,14 @@ func PurposeForIntent(intent string) string {
 
 	return ""
 }
+
+// PurposeForVisaRoute returns the ADR-064 `purpose` custom-field vocabulary
+// value implied by a visa route — the inverse of the readiness assessment's
+// purpose→route fallback (migration 001108). Canonical routes carry intent
+// values both normalizers already accept: student→study, work→work,
+// business→business, tourist→tourism (via visit), spouse→family,
+// investment→business. Routes with no purpose equivalent (transit, other,
+// unknown or empty input) return "".
+func PurposeForVisaRoute(route string) string {
+	return PurposeForIntent(normalizeVisaRoute(route))
+}

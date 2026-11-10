@@ -1691,6 +1691,11 @@ func parseJourneyFields(answers map[string]any) JourneyContext {
 	if j.VisaRoute == "" {
 		j.VisaRoute = visitor.NormalizeVisaRoute(j.Purpose)
 	}
+	// purpose is hidden at relocated/settled (migration 001108) — an
+	// unanswered purpose falls back to the route-implied purpose.
+	if j.Purpose == "" {
+		j.Purpose = visitor.PurposeForVisaRoute(j.VisaRoute)
+	}
 	if _, err := time.Parse("2006-01-02", j.TravelDate); err != nil {
 		j.TravelDate = ""
 	}

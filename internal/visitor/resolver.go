@@ -1070,6 +1070,12 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 		vc.Purpose = fields.Purpose
 	}
 
+	// purpose is hidden at relocated/settled (migration 001108) — an
+	// unanswered purpose falls back to the route-implied purpose.
+	if vc.Purpose == "" {
+		vc.Purpose = PurposeForVisaRoute(vc.VisaRoute)
+	}
+
 	if fields.JapaStage != "" {
 		vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
 		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
