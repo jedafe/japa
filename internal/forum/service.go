@@ -848,6 +848,14 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		thread = t
 	}
 
+	// §41: a mutual block between voter and entity author forbids the vote
+	// (same class of interaction as CreateReply's BLK-002 check).
+	if entityAuthor.Valid && entityAuthor != userID {
+		if blocked, bErr := s.IsBlocked(ctx, userID, entityAuthor); bErr == nil && blocked {
+			return gen.ForumVote{}, pgtype.UUID{}, 0, errpkg.ErrForbidden
+		}
+	}
+
 	if err := s.requireFullThreadAccess(ctx, thread.ID, userID); err != nil {
 		return gen.ForumVote{}, pgtype.UUID{}, 0, err
 	}
@@ -956,6 +964,34 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 	} else {
 		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, priorRef+":undo", undoes)
 	}
+}
+
+// VoteTargetBlocked reports whether a block exists in either direction
+// between voterID and the vote target's author (spec §1.4: a delegated vote
+// is denied when EITHER the operator or the persona is blocked — the voter
+// side is checked inside Vote; the operator side uses this helper).
+func (s *Service) VoteTargetBlocked(ctx context.Context, entityType string, entityID, voterID pgtype.UUID) (bool, error) {
+	var entityAuthor pgtype.UUID
+	switch entityType {
+	case EntityTypeThread:
+		t, err := s.store.getThreadByID(ctx, entityID)
+		if err != nil {
+			return false, err
+		}
+		entityAuthor = t.AuthorUserID
+	case EntityTypeReply:
+		r, err := s.store.getReplyByID(ctx, entityID)
+		if err != nil {
+			return false, err
+		}
+		entityAuthor = r.AuthorUserID
+	default:
+		return false, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
+	}
+	if !entityAuthor.Valid || entityAuthor == voterID {
+		return false, nil
+	}
+	return s.IsBlocked(ctx, voterID, entityAuthor)
 }
 
 // RemoveVote retracts the user's vote on a thread or reply and recalculates

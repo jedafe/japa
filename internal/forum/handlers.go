@@ -1889,8 +1889,9 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		EntityType string `json:"entity_type"`
-		Value      int16  `json:"value"`
+		EntityType string  `json:"entity_type"`
+		Value      int16   `json:"value"`
+		ActorID    *string `json:"actor_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1912,7 +1913,25 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vote, contentID, delta, err := h.Service.Vote(r.Context(), user.UserID, VoteInput{
+	// Delegated authorship (spec §1.4): actor_id casts the vote as a bot
+	// persona backing user. The vote service block-checks the voter; the
+	// operator is block-checked here so EITHER party being blocked denies.
+	effectiveID := user.UserID
+	if input.ActorID != nil && *input.ActorID != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.ActorID)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveID = aid
+
+		if blocked, bErr := h.Service.VoteTargetBlocked(r.Context(), input.EntityType, entityID, user.UserID); bErr == nil && blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot interact with this user")
+			return
+		}
+	}
+
+	vote, contentID, delta, err := h.Service.Vote(r.Context(), effectiveID, VoteInput{
 		EntityType: input.EntityType,
 		EntityID:   entityID,
 		Value:      input.Value,
@@ -1920,6 +1939,14 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.vote.
+	if effectiveID.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveID, "vote", input.EntityType, entityID); err != nil {
+			slog.Warn("forum: persona_attrib vote audit failed", "error", err)
+		}
 	}
 
 	// E-006: votes feed content_scores.vote_score on the backing content row.
@@ -1955,10 +1982,29 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, delta, err := h.Service.RemoveVote(r.Context(), user.UserID, entityType, entityID)
+	// Delegated authorship (spec §1.4): ?actor_id= retracts the persona's vote.
+	effectiveID := user.UserID
+	if actorRaw := r.URL.Query().Get("actor_id"); actorRaw != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, actorRaw)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveID = aid
+	}
+
+	contentID, delta, err := h.Service.RemoveVote(r.Context(), effectiveID, entityType, entityID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.vote.
+	if effectiveID.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveID, "vote", entityType, entityID); err != nil {
+			slog.Warn("forum: persona_attrib vote audit failed", "error", err)
+		}
 	}
 
 	if contentID.Valid {
