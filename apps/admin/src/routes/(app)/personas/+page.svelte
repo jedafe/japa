@@ -1378,6 +1378,7 @@
 
 <MediaPickerModal
 	bind:open={avatarPickerOpen}
+	uploadContext="avatar"
 	onselect={(media: { id: string; url: string }) => {
 		editForm.avatar_media_id = media.id;
 		editAvatarUrl = media.url;

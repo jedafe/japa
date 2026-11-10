@@ -1020,6 +1020,21 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Upload context selects the allowed MIME set (§34), matching the
+	// two-step upload's semantics. Optional — defaults to "media";
+	// pickers for avatar surfaces pass "avatar" so
+	// users.allowed_avatar_types applies at upload time too, not only
+	// when the media id is later attached to a profile.
+	uploadCtx := UploadContextMedia
+	if ctxParam := r.FormValue("context"); ctxParam != "" {
+		uploadCtx = UploadContext(ctxParam)
+		if MIMETypeForContext(uploadCtx) == nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload_context",
+				"Unknown upload context '"+ctxParam+"'")
+			return
+		}
+	}
+
 	if header.Size > h.service.MaxUploadBytes(r.Context()) {
 		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
@@ -1036,7 +1051,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	n, _ := io.ReadFull(file, sniffBuf)
 
 	contentType := DetectStorageMIME(sniffBuf[:n], header.Filename)
-	if !h.service.isAllowedMIME(r.Context(), contentType, UploadContextMedia) {
+	if !h.service.isAllowedMIME(r.Context(), contentType, uploadCtx) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "File type is not allowed for upload")
 		return
 	}

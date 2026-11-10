@@ -40,11 +40,13 @@
 	let {
 		open = $bindable(false),
 		onselect,
-		accept = 'image/*,.heic,.heif'
+		accept = 'image/*,.heic,.heif',
+		uploadContext = ''
 	}: {
 		open?: boolean;
 		onselect: (media: { id: string; url: string; filename: string }) => void;
 		accept?: string;
+		uploadContext?: 'media' | 'avatar' | 'document' | '';
 	} = $props();
 
 	// --- Browse tab state ---
@@ -225,6 +227,7 @@
 			const convertedFile = await convertImageToModernFormat(uploadFile);
 			const formData = new FormData();
 			formData.append('file', convertedFile);
+			if (uploadContext) formData.append('context', uploadContext);
 			const result = await apiFetch<{ media_id: string; url: string }>(
 				'/admin/media/upload',
 				{ method: 'POST', body: formData }
