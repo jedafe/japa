@@ -468,7 +468,20 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 // the platform. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (gen.CreateContentRow, error) {
-	content, err := s.createContent(ctx, s.read, s.write, input)
+	// The insert, content_spaces, initial revision, and media-ref tracking
+	// commit atomically — a mid-flow failure must not leave a partial row.
+	// The nil-guard keeps bare Service{read, write} test doubles working.
+	var content gen.CreateContentRow
+	var err error
+	if s.db != nil {
+		err = db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+			var err error
+			content, err = s.createContent(ctx, q, q, input)
+			return err
+		})
+	} else {
+		content, err = s.createContent(ctx, s.read, s.write, input)
+	}
 	if err != nil {
 		return content, err
 	}
@@ -762,6 +775,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		FieldValues:     fieldValues,
 		Body:            input.Body,
 		BodyHTML:        bodyHTML,
+		OgImageURL:      derefString(input.OgImageUrl),
 		HeaderImageID:   input.HeaderImageID,
 		FeaturedImageID: input.FeaturedImageID,
 	}); err != nil {
@@ -1572,29 +1586,50 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		}
 	}
 
-	content, err := s.write.UpdateContent(ctx, params)
+	// Update + media-ref sync commit atomically: a sync failure must not
+	// leave tracking rows describing the pre-update field set. The
+	// nil-guard keeps bare Service{read, write} test doubles working.
+	var content gen.UpdateContentRow
+	runUpdate := func(read, write *gen.Queries) error {
+		var err error
+		content, err = write.UpdateContent(ctx, params)
+		if err != nil {
+			return fmt.Errorf("updating content: %w", err)
+		}
+
+		// §14: re-derive the tracked media references from the values actually
+		// written — params carries the post-merge set (preserve-on-omit and
+		// explicit clears already resolved).
+		syncGuideCategory := params.GuideCategory
+		if syncGuideCategory == nil && !input.ClearGuideCategory {
+			syncGuideCategory = existing.GuideCategory
+		}
+
+		if err := SyncMediaRefs(ctx, read, write, content.ID, MediaRefSource{
+			ContentType:     existing.ContentType,
+			GuideCategory:   syncGuideCategory,
+			FieldValues:     params.FieldValues,
+			Body:            params.Body,
+			BodyHTML:        params.BodyHtml,
+			OgImageURL:      derefString(params.OgImageUrl),
+			HeaderImageID:   params.HeaderImageID,
+			FeaturedImageID: params.FeaturedImageID,
+		}); err != nil {
+			return fmt.Errorf("syncing media fields: %w", err)
+		}
+
+		return nil
+	}
+
+	if s.db != nil {
+		err = db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+			return runUpdate(q, q)
+		})
+	} else {
+		err = runUpdate(s.read, s.write)
+	}
 	if err != nil {
-		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
-	}
-
-	// §14: re-derive the tracked media references from the values actually
-	// written — params carries the post-merge set (preserve-on-omit and
-	// explicit clears already resolved).
-	syncGuideCategory := params.GuideCategory
-	if syncGuideCategory == nil && !input.ClearGuideCategory {
-		syncGuideCategory = existing.GuideCategory
-	}
-
-	if err := SyncMediaRefs(ctx, s.read, s.write, content.ID, MediaRefSource{
-		ContentType:     existing.ContentType,
-		GuideCategory:   syncGuideCategory,
-		FieldValues:     params.FieldValues,
-		Body:            params.Body,
-		BodyHTML:        params.BodyHtml,
-		HeaderImageID:   params.HeaderImageID,
-		FeaturedImageID: params.FeaturedImageID,
-	}); err != nil {
-		return gen.UpdateContentRow{}, fmt.Errorf("syncing media fields: %w", err)
+		return gen.UpdateContentRow{}, err
 	}
 
 	// Synchronize content_spaces when the primary space changes, preserving

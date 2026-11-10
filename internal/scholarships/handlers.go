@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
@@ -857,6 +858,15 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	guideCategory := "scholarship"
 	now := time.Now().UTC()
 
+	// This path bypasses content.Service (BL-01), so the registered-
+	// category check runs here explicitly rather than relying on the
+	// guide_category trigger to reject the insert.
+	if _, err := h.svc.store.queries.GetCustomFieldEntityTypeByValue(r.Context(), "guide_category:"+guideCategory); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Scholarship guide category is not configured")
+
+		return
+	}
+
 	// 1. Insert the guide content row.
 	contentParams := gen.CreateContentParams{
 		AuthorID:        userID,
@@ -877,48 +887,52 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
 	}
 
-	contentRow, err := h.svc.store.queries.CreateContent(r.Context(), contentParams)
+	// Guide insert + media-ref sync + scholarship projection commit
+	// atomically — a failure past the first insert must not leave an
+	// orphaned guide row.
+	var sch gen.Scholarship
+	err = db.WithTx(r.Context(), h.svc.store.pool.Writer, func(q *gen.Queries) error {
+		contentRow, err := q.CreateContent(r.Context(), contentParams)
+		if err != nil {
+			return err
+		}
+
+		// §14: this insert bypasses content.Service, so the media-field sync
+		// runs here — the guide body could carry /media/serve/ embeds.
+		if err := content.SyncMediaRefs(r.Context(), q, q, contentRow.ID, content.MediaRefSource{
+			ContentType:   contentParams.ContentType,
+			GuideCategory: contentParams.GuideCategory,
+			FieldValues:   contentParams.FieldValues,
+			Body:          contentParams.Body,
+			BodyHTML:      contentParams.BodyHtml,
+			OgImageURL:    strDeref(contentParams.OgImageUrl),
+		}); err != nil {
+			return err
+		}
+
+		// 2. Insert the scholarship projection row with guide_id. The slug
+		// column is NOT NULL + UNIQUE, so it is derived from the title and
+		// deduplicated against existing scholarship rows.
+		arg := buildScholarshipCreateParams(contentRow.ID, body, deadline)
+
+		schSlug, err := ensureUniqueScholarshipSlug(r.Context(), q, slug)
+		if err != nil {
+			return err
+		}
+
+		arg.Slug = schSlug
+
+		sch, err = q.CreateScholarship(r.Context(), arg)
+		return err
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A scholarship with this content already exists")
 			return
 		}
 
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship guide content")
-
-		return
-	}
-
-	// §14: this insert bypasses content.Service, so the media-field sync
-	// runs here — the guide body could carry /media/serve/ embeds.
-	if err := content.SyncMediaRefs(r.Context(), h.svc.store.queries, h.svc.store.queries, contentRow.ID, content.MediaRefSource{
-		ContentType:   contentParams.ContentType,
-		GuideCategory: contentParams.GuideCategory,
-		FieldValues:   contentParams.FieldValues,
-		Body:          contentParams.Body,
-		BodyHTML:      contentParams.BodyHtml,
-	}); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship guide content")
-
-		return
-	}
-
-	// 2. Insert the scholarship projection row with guide_id. The slug column
-	// is NOT NULL + UNIQUE, so it is derived from the title and deduplicated
-	// against existing scholarship rows.
-	arg := buildScholarshipCreateParams(contentRow.ID, body, deadline)
-
-	schSlug, err := h.svc.store.EnsureUniqueScholarshipSlug(r.Context(), slug)
-	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
-		return
-	}
 
-	arg.Slug = schSlug
-
-	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), arg)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
 		return
 	}
 

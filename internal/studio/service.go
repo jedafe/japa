@@ -405,15 +405,16 @@ func (s *Service) DefaultPersonaID(ctx context.Context) (pgtype.UUID, error) {
 var defaultGuideCategories = []string{"visa", "travel_routes", "scholarship", "grants", "admission", "accommodation", "banking", "work_career", "health_insurance", "culture_lifestyle"}
 
 // guideCategories resolves the admin-configured guide category slugs via
-// the injected lister, falling back to the seeded set when unwired or when
-// the lookup fails — a settings read must never take the type list down.
+// the injected lister. The seeded set is only a degraded-mode fallback —
+// an unwired lister or a lookup error; a successful empty result means
+// the admin genuinely removed every category and is returned as-is.
 func (s *Service) guideCategories(ctx context.Context) []string {
 	if s.guideCatLister == nil {
 		return defaultGuideCategories
 	}
 
 	cats, err := s.guideCatLister(ctx)
-	if err != nil || len(cats) == 0 {
+	if err != nil {
 		return defaultGuideCategories
 	}
 

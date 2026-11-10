@@ -1,6 +1,7 @@
 package content
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -71,22 +72,39 @@ func TestMediaServeURL_NoMatch(t *testing.T) {
 	}
 }
 
-func TestUUIDLiteral_Extraction(t *testing.T) {
-	// The shapes parseMediaFieldRefs (wiki) accepts — the regex must catch
-	// the id inside every one of them.
+func TestMediaValueIDs_Extraction(t *testing.T) {
+	// The documented storage shapes — the structured walk must pull the id
+	// out of every one of them.
 	for _, raw := range []string{
 		`"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"`,
 		`{"value":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`,
+		`{"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`,
+		`{"media_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`,
 		`["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]`,
 		`{"media_ids":["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]}`,
 		`[{"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","alt":"x"}]`,
 	} {
-		matches := uuidLiteral.FindAll([]byte(raw), -1)
-		if len(matches) == 0 {
-			t.Fatalf("no uuid extracted from %s", raw)
+		ids := mediaValueIDs(json.RawMessage(raw))
+		if len(ids) == 0 {
+			t.Fatalf("no id extracted from %s", raw)
 		}
-		if string(matches[0]) != "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" {
-			t.Fatalf("first match = %s, want the id", matches[0])
+		if ids[0].String() != "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" {
+			t.Fatalf("first id = %s, want the documented id", ids[0])
+		}
+	}
+}
+
+func TestMediaValueIDs_RejectsNonMediaShapes(t *testing.T) {
+	// UUID-looking strings in unrelated keys are not media references.
+	for _, raw := range []string{
+		`{"label":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`,
+		`{"description":"see aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`,
+		`{"foreign_ref":{"entity":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}}`,
+		`12345`,
+		`null`,
+	} {
+		if ids := mediaValueIDs(json.RawMessage(raw)); len(ids) != 0 {
+			t.Fatalf("expected no ids from %s, got %v", raw, ids)
 		}
 	}
 }

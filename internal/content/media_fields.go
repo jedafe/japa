@@ -34,6 +34,7 @@ type MediaRefSource struct {
 	FieldValues     []byte
 	Body            string
 	BodyHTML        string
+	OgImageURL      string
 	HeaderImageID   pgtype.UUID
 	FeaturedImageID pgtype.UUID
 }
@@ -43,8 +44,71 @@ type MediaRefSource struct {
 // <img> HTML. The path captures through query/fragment-free characters.
 var mediaServeURL = regexp.MustCompile(`media/serve/([a-z0-9_-]+)/([0-9A-Za-z_\-\./%]+)`)
 
-// uuidLiteral matches a canonical UUID anywhere inside a JSON value.
-var uuidLiteral = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+// mediaValueIDs extracts media IDs from one media-typed custom field value
+// using the documented storage shapes (the same set wiki's
+// parseMediaFieldRefs accepts, plus media_id/media_ids keys):
+//
+//	"<uuid>"                          — bare id
+//	{"value": "<uuid>"}               — wrapped single (select convention)
+//	{"id": "<uuid>"} / {"media_id": "<uuid>"} — object with id key
+//	["<uuid>", …]                     — id array
+//	{"value": ["<uuid>", …]}          — wrapped array
+//	{"media_ids": ["<uuid>", …]}      — §80 documented envelope
+//	[{"id": "<uuid>"}, …]             — object array
+//
+// Structured extraction beats a bare UUID regex: a UUID-shaped string in
+// an unrelated key (a label, a description, a foreign reference) is not a
+// media reference.
+func mediaValueIDs(raw json.RawMessage) []pgtype.UUID {
+	var ids []pgtype.UUID
+
+	addID := func(s string) {
+		var id pgtype.UUID
+		if err := id.Scan(s); err == nil && id.Valid {
+			ids = append(ids, id)
+		}
+	}
+	addObj := func(m map[string]any) {
+		for _, k := range []string{"id", "media_id"} {
+			if s, _ := m[k].(string); s != "" {
+				addID(s)
+			}
+		}
+	}
+
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+
+	// Unwrap the {"value": …} select-style envelope and the
+	// {"media_ids": […]} §80 envelope.
+	if m, ok := probe.(map[string]any); ok {
+		if inner, exists := m["value"]; exists {
+			probe = inner
+		} else if inner, exists := m["media_ids"]; exists {
+			probe = inner
+		}
+	}
+
+	switch t := probe.(type) {
+	case string:
+		addID(t)
+	case map[string]any:
+		addObj(t)
+	case []any:
+		for _, el := range t {
+			switch e := el.(type) {
+			case string:
+				addID(e)
+			case map[string]any:
+				addObj(e)
+			}
+		}
+	}
+
+	return ids
+}
 
 // SyncMediaRefs replaces the content's tracked media references with the
 // set derived from src. write is the querier for the delete+insert so the
@@ -104,7 +168,7 @@ func collectMediaRefs(ctx context.Context, read, write *gen.Queries, src MediaRe
 		refs = append(refs, listItemMediaRefs(src.FieldValues)...)
 	}
 
-	bodyRefs, err := bodyMediaRefs(ctx, write, src.Body, src.BodyHTML)
+	bodyRefs, err := bodyMediaRefs(ctx, write, src)
 	if err != nil {
 		return nil, err
 	}
@@ -175,30 +239,39 @@ func listItemMediaRefs(fieldValues []byte) []mediaRef {
 	return refs
 }
 
-// bodyMediaRefs resolves /media/serve/{bucket}/{path} URLs in body and
-// body_html back to media rows. Position is the match order across the
-// combined text so repeated embeds stay distinct.
-func bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyHTML string) ([]mediaRef, error) {
-	combined := body + "\n" + bodyHTML
+// bodyMediaRefs resolves /media/serve/{bucket}/{path} URLs in body,
+// body_html, and og_image_url back to media rows. Body positions follow
+// match order across the combined text; og_image_url tracks under
+// 'og_image' position 0 — the same media embedded in both surfaces is
+// tracked once per field.
+func bodyMediaRefs(ctx context.Context, q *gen.Queries, src MediaRefSource) ([]mediaRef, error) {
+	combined := src.Body + "\n" + src.BodyHTML
 	matches := mediaServeURL.FindAllStringSubmatch(combined, -1)
-	if len(matches) == 0 {
+	ogMatch := mediaServeURL.FindStringSubmatch(src.OgImageURL)
+	if len(matches) == 0 && ogMatch == nil {
 		return nil, nil
 	}
 
 	// Dedupe coordinate pairs before resolving — the same URL can appear
-	// in both body (TipTap src) and body_html (rendered <img>).
+	// in body (TipTap src), body_html (rendered <img>), and og_image_url.
 	type coord struct{ bucket, path string }
 	var buckets, paths []string
-	seen := map[coord]int{}
-
-	for _, m := range matches {
+	seen := map[coord]bool{}
+	addCoord := func(m []string) {
 		c := coord{m[1], m[2]}
-		if _, ok := seen[c]; ok {
-			continue
+		if seen[c] {
+			return
 		}
-		seen[c] = len(buckets)
+		seen[c] = true
 		buckets = append(buckets, c.bucket)
 		paths = append(paths, c.path)
+	}
+
+	for _, m := range matches {
+		addCoord(m)
+	}
+	if ogMatch != nil {
+		addCoord(ogMatch)
 	}
 
 	rows, err := q.ListMediaIDsByStoragePaths(ctx, gen.ListMediaIDsByStoragePathsParams{
@@ -215,7 +288,7 @@ func bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyHTML string) (
 	}
 
 	// Re-walk matches in order; first occurrence of each media row claims a
-	// position — the same image embedded twice tracks once.
+	// position — the same image embedded twice tracks once per field.
 	seenMedia := map[pgtype.UUID]bool{}
 	var refs []mediaRef
 	pos := int32(0)
@@ -228,6 +301,12 @@ func bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyHTML string) (
 		seenMedia[id] = true
 		refs = append(refs, mediaRef{id, "body_block", pos})
 		pos++
+	}
+
+	if ogMatch != nil {
+		if id, ok := byCoord[coord{ogMatch[1], ogMatch[2]}]; ok {
+			refs = append(refs, mediaRef{id, "og_image", 0})
+		}
 	}
 
 	return refs, nil
@@ -267,11 +346,7 @@ func customFieldMediaRefs(ctx context.Context, q *gen.Queries, src MediaRefSourc
 			continue
 		}
 
-		for pos, m := range uuidLiteral.FindAll(raw, -1) {
-			var id pgtype.UUID
-			if err := id.Scan(string(m)); err != nil {
-				continue
-			}
+		for pos, id := range mediaValueIDs(raw) {
 			refs = append(refs, mediaRef{id, key, int32(pos)})
 		}
 	}

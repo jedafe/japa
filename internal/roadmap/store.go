@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -17,6 +18,9 @@ import (
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
+	// db is the pool pair used to open transactions for multi-statement
+	// writes (shadow content + media-ref sync). Nil in tests.
+	db *db.DB
 }
 
 // NewStore creates a Store backed by the given gen.Queries instances.
@@ -323,20 +327,32 @@ func (s *Store) hardDeleteItem(ctx context.Context, id pgtype.UUID) error {
 }
 
 func (s *Store) updateShadowContent(ctx context.Context, p gen.UpdateRoadmapShadowContentParams) error {
-	if err := s.write.UpdateRoadmapShadowContent(ctx, p); err != nil {
-		return fmt.Errorf("updating roadmap shadow content: %w", err)
+	run := func(read, write *gen.Queries) error {
+		if err := write.UpdateRoadmapShadowContent(ctx, p); err != nil {
+			return fmt.Errorf("updating roadmap shadow content: %w", err)
+		}
+
+		// §14: re-derive the shadow row's tracked media refs — this write
+		// bypasses the content service, so the sync runs here (§14 cmf).
+		if err := content.SyncMediaRefs(ctx, read, write, p.ContentID, content.MediaRefSource{
+			ContentType: "roadmap",
+			Body:        p.Body,
+		}); err != nil {
+			return fmt.Errorf("syncing shadow media fields: %w", err)
+		}
+
+		return nil
 	}
 
-	// §14: re-derive the shadow row's tracked media refs — this write
-	// bypasses the content service, so the sync runs here (§14 cmf).
-	if err := content.SyncMediaRefs(ctx, s.read, s.write, p.ContentID, content.MediaRefSource{
-		ContentType: "roadmap",
-		Body:        p.Body,
-	}); err != nil {
-		return fmt.Errorf("syncing shadow media fields: %w", err)
+	// Update + sync commit atomically when the pool is available; the
+	// NewStore path (tests, in-memory callers) runs without a tx.
+	if s.db != nil {
+		return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+			return run(q, q)
+		})
 	}
 
-	return nil
+	return run(s.read, s.write)
 }
 
 func (s *Store) reorderItems(ctx context.Context, ids []pgtype.UUID, orders []int32) error {
@@ -489,21 +505,35 @@ func (s *Store) listVoterIDs(ctx context.Context, itemID pgtype.UUID) ([]pgtype.
 // ---------------------------------------------------------------------------
 
 func (s *Store) createShadowContent(ctx context.Context, p gen.CreateRoadmapShadowContentParams) (pgtype.UUID, error) {
-	id, err := s.write.CreateRoadmapShadowContent(ctx, p)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("creating roadmap shadow content: %w", err)
+	var id pgtype.UUID
+	run := func(read, write *gen.Queries) error {
+		var err error
+		id, err = write.CreateRoadmapShadowContent(ctx, p)
+		if err != nil {
+			return fmt.Errorf("creating roadmap shadow content: %w", err)
+		}
+
+		// §14: register the shadow row's tracked media refs — this insert
+		// bypasses the content service, so the sync runs here.
+		if err := content.SyncMediaRefs(ctx, read, write, id, content.MediaRefSource{
+			ContentType: "roadmap",
+			Body:        p.Body,
+		}); err != nil {
+			return fmt.Errorf("syncing shadow media fields: %w", err)
+		}
+
+		return nil
 	}
 
-	// §14: register the shadow row's tracked media refs — this insert
-	// bypasses the content service, so the sync runs here.
-	if err := content.SyncMediaRefs(ctx, s.read, s.write, id, content.MediaRefSource{
-		ContentType: "roadmap",
-		Body:        p.Body,
-	}); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("syncing shadow media fields: %w", err)
+	if s.db != nil {
+		err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+			return run(q, q)
+		})
+		return id, err
 	}
 
-	return id, nil
+	err := run(s.read, s.write)
+	return id, err
 }
 
 func (s *Store) softDeleteShadowContent(ctx context.Context, contentID pgtype.UUID) error {

@@ -14,12 +14,13 @@ import (
 const countContentMediaRefsByMedia = `-- name: CountContentMediaRefsByMedia :one
 SELECT count(*)::int AS ref_count
 FROM content_media_fields cmf
-JOIN contents c ON c.id = cmf.content_id AND c.deleted_at IS NULL
 WHERE cmf.media_id = $1
 `
 
-// Live contents referencing a media row — powers "in use" reporting and
-// any future delete-warning surface.
+// Contents referencing a media row — powers "in use" reporting and any
+// future delete-warning surface. Counts refs from soft-deleted contents
+// too: ListMediaDeletedForCleanup blocks purge on any cmf row, so the
+// report must reflect what the sweep actually sees.
 func (q *Queries) CountContentMediaRefsByMedia(ctx context.Context, mediaID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countContentMediaRefsByMedia, mediaID)
 	var ref_count int32
@@ -67,23 +68,27 @@ func (q *Queries) InsertContentMediaFields(ctx context.Context, arg InsertConten
 }
 
 const listContentsByMedia = `-- name: ListContentsByMedia :many
-SELECT c.id, c.content_type, c.title, c.slug, cmf.field_key
+SELECT c.id, c.content_type, c.title, c.slug, c.deleted_at, cmf.field_key
 FROM content_media_fields cmf
-JOIN contents c ON c.id = cmf.content_id AND c.deleted_at IS NULL
+JOIN contents c ON c.id = cmf.content_id
 WHERE cmf.media_id = $1
-ORDER BY cmf.created_at DESC
+ORDER BY c.deleted_at NULLS FIRST, cmf.created_at DESC
 LIMIT 50
 `
 
 type ListContentsByMediaRow struct {
-	ID          pgtype.UUID `json:"id"`
-	ContentType string      `json:"content_type"`
-	Title       string      `json:"title"`
-	Slug        string      `json:"slug"`
-	FieldKey    string      `json:"field_key"`
+	ID          pgtype.UUID        `json:"id"`
+	ContentType string             `json:"content_type"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	FieldKey    string             `json:"field_key"`
 }
 
-// Which live contents reference a media row (admin "used in" surface).
+// Which contents reference a media row (admin "used in" surface). Same
+// soft-delete semantics as the count — a ref keeps the media from purge
+// whether or not its content is deleted. c.deleted_at is surfaced so the
+// caller can badge deleted entries.
 func (q *Queries) ListContentsByMedia(ctx context.Context, mediaID pgtype.UUID) ([]ListContentsByMediaRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByMedia, mediaID)
 	if err != nil {
@@ -98,6 +103,7 @@ func (q *Queries) ListContentsByMedia(ctx context.Context, mediaID pgtype.UUID) 
 			&i.ContentType,
 			&i.Title,
 			&i.Slug,
+			&i.DeletedAt,
 			&i.FieldKey,
 		); err != nil {
 			return nil, err
@@ -163,8 +169,9 @@ type ListMediaIDsByStoragePathsRow struct {
 }
 
 // Resolves /media/serve/{bucket}/{path} URL pairs extracted from body text
-// back to media rows — soft-deleted media still resolves (a deleted-then-
-// restored image keeps working; quarantine is a serve-time gate).
+// back to media rows. No deleted_at filter here — resolution is a lookup
+// only; the caller's GetMediaByIDs liveness check filters soft-deleted
+// rows out of the tracked set.
 func (q *Queries) ListMediaIDsByStoragePaths(ctx context.Context, arg ListMediaIDsByStoragePathsParams) ([]ListMediaIDsByStoragePathsRow, error) {
 	rows, err := q.db.Query(ctx, listMediaIDsByStoragePaths, arg.Buckets, arg.Paths)
 	if err != nil {

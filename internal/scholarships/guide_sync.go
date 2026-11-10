@@ -446,31 +446,24 @@ func (s *Store) resolveCountrySpaceID(ctx context.Context, countryCode string) (
 		return pgtype.UUID{}, nil
 	}
 
-	// 3-letter geo_code lookup first — the canonical path.
+	// 3-letter geo_code lookup first — the canonical path. A miss falls
+	// through to the name lookup rather than giving up.
 	if len(code) == 3 {
 		row, err := s.queries.GetSpaceByGeoCode(ctx,
 			&code,
 		)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return pgtype.UUID{}, nil
-			}
-
+		if err == nil {
+			return row.ID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, err
 		}
-
-		return row.ID, nil
 	}
 
 	// Name fallback: guide fields often carry the country's display name
 	// ("Canada", "United Kingdom") rather than an ISO code.
-	var id pgtype.UUID
-	if err := s.pool.Reader.QueryRow(ctx,
-		`SELECT id FROM spaces
-		 WHERE level = 'country' AND deleted_at IS NULL AND lower(name) = lower($1)
-		 LIMIT 1`,
-		strings.TrimSpace(countryCode),
-	).Scan(&id); err != nil {
+	id, err := s.queries.GetCountrySpaceByName(ctx, strings.TrimSpace(countryCode))
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, nil
 		}

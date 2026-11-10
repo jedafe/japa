@@ -341,12 +341,11 @@ WHERE c.author_id = @user_id
 
 -- name: ListMentorshipShadowMediaFields :many
 -- Companion to AnonymizeMentorshipShadowListings: returns the id and
--- surviving field_values of every shadow row the anonymize scrubs, so
--- the caller can re-derive content_media_fields in the same pass (body
--- refs are wiped; field_values — and any media-typed custom-field refs
--- inside it — is preserved). Same WHERE scope: already-tombstoned rows
--- included.
-SELECT c.id, c.field_values
+-- surviving media-bearing columns of every shadow row the anonymize
+-- scrubs, so the caller can re-derive content_media_fields in the same
+-- pass (body refs are wiped; field_values and og_image_url survive).
+-- Same WHERE scope: already-tombstoned rows included.
+SELECT c.id, c.field_values, c.og_image_url
 FROM contents c
 WHERE c.author_id = @user_id
   AND c.content_type = 'service_listing'

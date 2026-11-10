@@ -279,6 +279,14 @@ func (s *Store) AdminGetScholarship(ctx context.Context, id pgtype.UUID) (gen.Sc
 // AdminCreateScholarship because scholarships.slug is NOT NULL + UNIQUE and
 // the insert fails without it.
 func (s *Store) EnsureUniqueScholarshipSlug(ctx context.Context, base string) (string, error) {
+	return ensureUniqueScholarshipSlug(ctx, s.queries, base)
+}
+
+// ensureUniqueScholarshipSlug is the querier-bound form — the admin
+// create path runs it inside the transaction that also inserts the guide
+// content + media refs, so a projection failure can't leave the guide
+// orphaned.
+func ensureUniqueScholarshipSlug(ctx context.Context, q *gen.Queries, base string) (string, error) {
 	if base == "" {
 		return "", fmt.Errorf("scholarships: cannot ensure unique empty slug")
 	}
@@ -289,7 +297,7 @@ func (s *Store) EnsureUniqueScholarshipSlug(ctx context.Context, base string) (s
 			candidate = fmt.Sprintf("%s-%d", base, i-1)
 		}
 
-		exists, err := s.queries.ScholarshipSlugExists(ctx, candidate)
+		exists, err := q.ScholarshipSlugExists(ctx, candidate)
 		if err != nil {
 			return "", fmt.Errorf("scholarships: check slug %q: %w", candidate, err)
 		}

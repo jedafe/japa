@@ -797,26 +797,31 @@ func (s *Store) SystemAuthorID(ctx context.Context) (pgtype.UUID, error) {
 // CreateStubContent inserts a contents row — used to mint published stub
 // guides for roadmap steps that reference a slug with no backing content.
 func (s *Store) CreateStubContent(ctx context.Context, arg gen.CreateContentParams) error {
-	row, err := s.writeQueries.CreateContent(ctx, arg)
-	if err != nil {
-		return fmt.Errorf("assessment: create stub content: %w", err)
-	}
+	// Insert + media-ref sync commit atomically — a sync failure must not
+	// leave a stub row whose refs describe nothing.
+	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
+		row, err := q.CreateContent(ctx, arg)
+		if err != nil {
+			return fmt.Errorf("assessment: create stub content: %w", err)
+		}
 
-	// §14: stub inserts bypass content.Service, so the media-field sync
-	// runs here.
-	if err := content.SyncMediaRefs(ctx, s.queries, s.writeQueries, row.ID, content.MediaRefSource{
-		ContentType:     arg.ContentType,
-		GuideCategory:   arg.GuideCategory,
-		FieldValues:     arg.FieldValues,
-		Body:            arg.Body,
-		BodyHTML:        arg.BodyHtml,
-		HeaderImageID:   arg.HeaderImageID,
-		FeaturedImageID: arg.FeaturedImageID,
-	}); err != nil {
-		return fmt.Errorf("assessment: sync media fields: %w", err)
-	}
+		// §14: stub inserts bypass content.Service, so the media-field sync
+		// runs here.
+		if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+			ContentType:     arg.ContentType,
+			GuideCategory:   arg.GuideCategory,
+			FieldValues:     arg.FieldValues,
+			Body:            arg.Body,
+			BodyHTML:        arg.BodyHtml,
+			OgImageURL:      strFromPtr(arg.OgImageUrl),
+			HeaderImageID:   arg.HeaderImageID,
+			FeaturedImageID: arg.FeaturedImageID,
+		}); err != nil {
+			return fmt.Errorf("assessment: sync media fields: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // IsAssessmentSubmission reports whether the submission exists and belongs
@@ -898,4 +903,13 @@ func (s *Store) PublishedSlugs(ctx context.Context, slugs []string) ([]string, e
 	}
 
 	return out, rows.Err()
+}
+
+// strFromPtr dereferences a *string for sync sources ("" when nil).
+func strFromPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
 }

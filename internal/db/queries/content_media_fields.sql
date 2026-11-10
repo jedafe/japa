@@ -14,26 +14,31 @@ FROM (SELECT unnest(@media_ids::uuid[]) AS m,
 ON CONFLICT (content_id, field_key, position) DO NOTHING;
 
 -- name: CountContentMediaRefsByMedia :one
--- Live contents referencing a media row — powers "in use" reporting and
--- any future delete-warning surface.
+-- Contents referencing a media row — powers "in use" reporting and any
+-- future delete-warning surface. Counts refs from soft-deleted contents
+-- too: ListMediaDeletedForCleanup blocks purge on any cmf row, so the
+-- report must reflect what the sweep actually sees.
 SELECT count(*)::int AS ref_count
 FROM content_media_fields cmf
-JOIN contents c ON c.id = cmf.content_id AND c.deleted_at IS NULL
 WHERE cmf.media_id = @media_id;
 
 -- name: ListContentsByMedia :many
--- Which live contents reference a media row (admin "used in" surface).
-SELECT c.id, c.content_type, c.title, c.slug, cmf.field_key
+-- Which contents reference a media row (admin "used in" surface). Same
+-- soft-delete semantics as the count — a ref keeps the media from purge
+-- whether or not its content is deleted. c.deleted_at is surfaced so the
+-- caller can badge deleted entries.
+SELECT c.id, c.content_type, c.title, c.slug, c.deleted_at, cmf.field_key
 FROM content_media_fields cmf
-JOIN contents c ON c.id = cmf.content_id AND c.deleted_at IS NULL
+JOIN contents c ON c.id = cmf.content_id
 WHERE cmf.media_id = @media_id
-ORDER BY cmf.created_at DESC
+ORDER BY c.deleted_at NULLS FIRST, cmf.created_at DESC
 LIMIT 50;
 
 -- name: ListMediaIDsByStoragePaths :many
 -- Resolves /media/serve/{bucket}/{path} URL pairs extracted from body text
--- back to media rows — soft-deleted media still resolves (a deleted-then-
--- restored image keeps working; quarantine is a serve-time gate).
+-- back to media rows. No deleted_at filter here — resolution is a lookup
+-- only; the caller's GetMediaByIDs liveness check filters soft-deleted
+-- rows out of the tracked set.
 SELECT id, storage_bucket, storage_path
 FROM media
 WHERE (storage_bucket, storage_path) IN (

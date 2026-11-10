@@ -254,6 +254,7 @@ func syncCreateMediaRefs(ctx context.Context, tx any, row gen.CreateContentRow) 
 		FieldValues:     row.FieldValues,
 		Body:            row.Body,
 		BodyHTML:        row.BodyHtml,
+		OgImageURL:      strFromPtr(row.OgImageUrl),
 		HeaderImageID:   row.HeaderImageID,
 		FeaturedImageID: row.FeaturedImageID,
 	})
@@ -271,9 +272,19 @@ func syncUpdateMediaRefs(ctx context.Context, tx any, row gen.UpdateContentRow) 
 		FieldValues:     row.FieldValues,
 		Body:            row.Body,
 		BodyHTML:        row.BodyHtml,
+		OgImageURL:      strFromPtr(row.OgImageUrl),
 		HeaderImageID:   row.HeaderImageID,
 		FeaturedImageID: row.FeaturedImageID,
 	})
+}
+
+// strFromPtr dereferences a *string for sync sources ("" when nil).
+func strFromPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
 }
 
 func txQueries(tx any) (*gen.Queries, bool) {

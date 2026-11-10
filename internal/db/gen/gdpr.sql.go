@@ -3116,7 +3116,7 @@ func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]pgtype.UUID, er
 }
 
 const listMentorshipShadowMediaFields = `-- name: ListMentorshipShadowMediaFields :many
-SELECT c.id, c.field_values
+SELECT c.id, c.field_values, c.og_image_url
 FROM contents c
 WHERE c.author_id = $1
   AND c.content_type = 'service_listing'
@@ -3129,14 +3129,14 @@ WHERE c.author_id = $1
 type ListMentorshipShadowMediaFieldsRow struct {
 	ID          pgtype.UUID `json:"id"`
 	FieldValues []byte      `json:"field_values"`
+	OgImageUrl  *string     `json:"og_image_url"`
 }
 
 // Companion to AnonymizeMentorshipShadowListings: returns the id and
-// surviving field_values of every shadow row the anonymize scrubs, so
-// the caller can re-derive content_media_fields in the same pass (body
-// refs are wiped; field_values — and any media-typed custom-field refs
-// inside it — is preserved). Same WHERE scope: already-tombstoned rows
-// included.
+// surviving media-bearing columns of every shadow row the anonymize
+// scrubs, so the caller can re-derive content_media_fields in the same
+// pass (body refs are wiped; field_values and og_image_url survive).
+// Same WHERE scope: already-tombstoned rows included.
 func (q *Queries) ListMentorshipShadowMediaFields(ctx context.Context, userID pgtype.UUID) ([]ListMentorshipShadowMediaFieldsRow, error) {
 	rows, err := q.db.Query(ctx, listMentorshipShadowMediaFields, userID)
 	if err != nil {
@@ -3146,7 +3146,7 @@ func (q *Queries) ListMentorshipShadowMediaFields(ctx context.Context, userID pg
 	var items []ListMentorshipShadowMediaFieldsRow
 	for rows.Next() {
 		var i ListMentorshipShadowMediaFieldsRow
-		if err := rows.Scan(&i.ID, &i.FieldValues); err != nil {
+		if err := rows.Scan(&i.ID, &i.FieldValues, &i.OgImageUrl); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
