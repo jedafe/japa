@@ -1320,6 +1320,8 @@
 	"consent.ai_processing.title": "Traitement IA",
 	"consent.analytics_tracking.desc": "Autoriser le suivi analytique anonyme pour nous aider à améliorer la plateforme.",
 	"consent.analytics_tracking.title": "Suivi analytique",
+	"consent.functional_cookies.desc": "Autoriser les cookies optionnels qui mémorisent vos préférences et votre état de session.",
+	"consent.functional_cookies.title": "Cookies fonctionnels",
 	"consent.marketing_email.desc": "Recevoir des e-mails promotionnels sur les nouvelles fonctionnalités et offres.",
 	"consent.marketing_email.title": "E-mail marketing",
 	"consent.third_party_sharing.desc": "Autoriser le partage de vos données avec des partenaires de confiance.",

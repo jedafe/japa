@@ -11,8 +11,9 @@
 	 * jc_theme) are not gated — they carry no consent requirement.
 	 *
 	 * The decision is also POSTed to /api/v1/consent as the server-side
-	 * audit trail (anonymous → consent_records.user_id NULL keyed on IP;
-	 * authenticated → user-bound row). Fire-and-forget: the cookie alone
+	 * audit trail — functional_cookies (the jc_guest gate) plus
+	 * analytics_tracking. Anonymous → consent_records.user_id NULL keyed on
+	 * IP; authenticated → user-bound rows. Fire-and-forget: the cookie alone
 	 * governs what the backend may set.
 	 *
 	 * Withdrawal: navigating to #cookie-settings clears the decision and
@@ -91,11 +92,11 @@
 		if (page.url.hash === REOPEN_HASH) {
 			void goto(page.url.pathname + page.url.search, { replaceState: true });
 		}
-		void api.post(
-			'/consent',
-			{ consent_type: 'analytics_tracking', granted },
-			{ 'x-silent-error': '1' }
-		);
+		// functional_cookies is the category the decision actually gates
+		// (jc_guest); analytics_tracking covers the cookieless-Umami slot.
+		for (const type of ['functional_cookies', 'analytics_tracking']) {
+			void api.post('/consent', { consent_type: type, granted }, { 'x-silent-error': '1' });
+		}
 	}
 </script>
 
@@ -115,7 +116,7 @@
 						'cookies.banner.body',
 						'We use cookies to keep you signed in and remember your preferences, plus optional analytics cookies that help us improve the platform.'
 					)}
-					<a href="/pages/privacy" class="text-[var(--color-primary)] hover:underline">
+					<a href="/cookies" class="text-[var(--color-primary)] hover:underline">
 						{t('cookies.banner.learn_more', 'Learn more')}
 					</a>
 				</p>

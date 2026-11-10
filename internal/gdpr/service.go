@@ -203,6 +203,7 @@ type ConsentConfigResponse struct {
 var validConsentTypes = []string{
 	"marketing_email",
 	"analytics_tracking",
+	"functional_cookies",
 	"third_party_sharing",
 	"ai_processing",
 }

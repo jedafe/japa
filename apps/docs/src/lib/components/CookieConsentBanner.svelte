@@ -51,9 +51,9 @@
 		try {
 			const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
 			const base = apiHost.startsWith('api.') ? apiHost.slice(4) : apiHost;
-			return `https://${base}/pages/privacy`;
+			return `https://${base}/cookies`;
 		} catch {
-			return '/pages/privacy';
+			return '/cookies';
 		}
 	}
 
@@ -90,12 +90,16 @@
 		}
 		// Fire-and-forget audit trail — POST /consent is public, and the CSRF
 		// exemption is scoped to requests without a session credential.
-		void fetch(buildApiUrl('/consent', API_BASE), {
-			method: 'POST',
-			credentials: 'include',
-			headers: { 'Content-Type': 'application/json', 'X-JC-Surface': 'docs' },
-			body: JSON.stringify({ consent_type: 'analytics_tracking', granted })
-		}).catch(() => {});
+		// functional_cookies is the category the decision actually gates
+		// (jc_guest); analytics_tracking covers the cookieless-Umami slot.
+		for (const type of ['functional_cookies', 'analytics_tracking']) {
+			void fetch(buildApiUrl('/consent', API_BASE), {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json', 'X-JC-Surface': 'docs' },
+				body: JSON.stringify({ consent_type: type, granted })
+			}).catch(() => {});
+		}
 	}
 </script>
 

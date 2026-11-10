@@ -1375,6 +1375,8 @@
 	"consent.ai_processing.title": "AI Processing",
 	"consent.analytics_tracking.desc": "Allow anonymous analytics tracking to help us improve the platform.",
 	"consent.analytics_tracking.title": "Analytics Tracking",
+	"consent.functional_cookies.desc": "Allow optional cookies that remember guest preferences and session state.",
+	"consent.functional_cookies.title": "Functional Cookies",
 	"consent.marketing_email.desc": "Receive marketing and promotional emails about new features and offers.",
 	"consent.marketing_email.title": "Marketing Email",
 	"consent.third_party_sharing.desc": "Allow your data to be shared with trusted third-party partners.",

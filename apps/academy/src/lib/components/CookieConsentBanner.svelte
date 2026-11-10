@@ -50,9 +50,9 @@
 		try {
 			const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
 			const base = apiHost.startsWith('api.') ? apiHost.slice(4) : apiHost;
-			return `https://${base}/pages/privacy`;
+			return `https://${base}/cookies`;
 		} catch {
-			return '/pages/privacy';
+			return '/cookies';
 		}
 	}
 
@@ -87,11 +87,11 @@
 		if (page.url.hash === REOPEN_HASH) {
 			void goto(page.url.pathname + page.url.search, { replaceState: true });
 		}
-		void api.post(
-			'/consent',
-			{ consent_type: 'analytics_tracking', granted },
-			{ 'x-silent-error': '1' }
-		);
+		// functional_cookies is the category the decision actually gates
+		// (jc_guest); analytics_tracking covers the cookieless-Umami slot.
+		for (const type of ['functional_cookies', 'analytics_tracking']) {
+			void api.post('/consent', { consent_type: type, granted }, { 'x-silent-error': '1' });
+		}
 	}
 </script>
 
