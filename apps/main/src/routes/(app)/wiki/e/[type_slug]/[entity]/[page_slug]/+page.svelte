@@ -199,7 +199,7 @@
 	canonical={canonicalUrl}
 	ogType="article"
 	robots={page.indexable !== true ? 'noindex,follow' : ''}
-	jsonLd={[entityArticleJsonLd, entityBreadcrumbJsonLd].filter(Boolean)}
+	jsonLd={page ? [entityArticleJsonLd, entityBreadcrumbJsonLd].filter(Boolean) : null}
 />
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
