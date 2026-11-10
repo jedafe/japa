@@ -260,6 +260,14 @@ type PublicProfileResponse struct {
 
 	IsFollowing bool `json:"is_following"`
 
+	// PersonaID is the backing ai_personas row id — populated only when the
+	// viewer holds persona.manage (handler-gated; the service carries the
+	// value unexported so an undisclosed persona's managed status never
+	// leaks to the public payload).
+	PersonaID *string `json:"persona_id,omitempty"`
+	// personaID carries the row value internally between service and handler.
+	personaID string
+
 	// §43 — indexable mirrors the users sitemap quality gate (group
 	// allow_search_indexing + seo.sitemap.user_min_posts). Set only on the
 	// public profile detail; nil elsewhere (fail-open: absent = indexable).

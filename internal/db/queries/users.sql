@@ -556,6 +556,11 @@ SELECT
  -- users). The service layer maps it to ai_disclosed — undisclosed personas
  -- keep the flag hidden publicly (internal is_bot flag unaffected).
  ap.disclosure_mode AS persona_disclosure_mode,
+ -- §68 Plan B: the backing persona id for permission-gated consumers
+ -- (profile → Edit persona affordance). Never serialized publicly — the
+ -- handler emits it only to viewers holding persona.manage, so an
+ -- undisclosed persona's managed status is not leaked.
+ ap.id AS persona_id,
  (SELECT COUNT(*)::int
  FROM follows f
  WHERE f.follower_id = u.id AND (

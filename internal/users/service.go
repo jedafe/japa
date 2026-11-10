@@ -423,6 +423,11 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 	if p.PersonaDisclosureMode != nil && *p.PersonaDisclosureMode == "disclosed" {
 		resp.AIDisclosed = true
 	}
+	// §68 Plan B: carry the backing persona id unexported — the handler
+	// exposes it to viewers holding persona.manage only.
+	if p.PersonaID.Valid {
+		resp.personaID = p.PersonaID.String()
+	}
 
 	resp.Verified = p.Verified
 	resp.VerificationType = p.VerificationType

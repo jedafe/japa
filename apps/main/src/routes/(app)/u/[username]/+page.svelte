@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, invalidate, invalidateAll } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2 } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2, Bot } from 'lucide-svelte';
 	import { MenuItem, Modal } from '#lib/components/ui/index.js';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -25,7 +25,10 @@
 	import { formatMetric } from '#lib/components/hub/charts/format.js';
 	import { tiptapExcerpt, decodeTipTapDoc, tiptapToText } from '#lib/tiptap/serialize.js';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '#lib/api/hub.js';
+	import { getPersona, updatePersona, type PersonaDetail, type UpdatePersonaInput } from '#lib/api/personas.js';
 	import { deleteMedia } from '#lib/api/create.js';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import type { MediaAsset } from '#lib/types/index.js';
 	import type { FollowableType } from '#lib/api/hub.js';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
@@ -114,6 +117,85 @@
 	function openMessage(recipient: { id: string; name: string }) {
 		messageRecipient = recipient;
 		messageOpen = true;
+	}
+
+	// §68 persona affordance — "Edit persona" on a persona-backed profile.
+	// user.persona_id is emitted only to viewers holding persona.manage, so
+	// its presence IS the permission gate. The detail is fetched on open
+	// (profile payload carries only the id); PATCH sends the diff.
+	let personaEditOpen = $state(false);
+	let personaLoading = $state(false);
+	let personaSaving = $state(false);
+	let personaError = $state('');
+	let personaOriginal = $state<PersonaDetail | null>(null);
+	let personaForm = $state<UpdatePersonaInput>({});
+	let personaInterestsText = $state('');
+	let personaAvatarUrl = $state('');
+	let personaCoverUrl = $state('');
+	let personaAvatarPickerOpen = $state(false);
+	let personaCoverPickerOpen = $state(false);
+
+	async function openPersonaEdit() {
+		const personaId = data.user.persona_id;
+		if (!personaId) return;
+		personaLoading = true;
+		personaError = '';
+		personaEditOpen = true;
+		const p = await getPersona(personaId);
+		personaLoading = false;
+		if (!p) {
+			personaError = t('personas.load_error', 'Could not load persona settings.');
+			return;
+		}
+		personaOriginal = p;
+		personaAvatarUrl = p.avatar_url ?? '';
+		personaCoverUrl = p.cover_url ?? '';
+		personaInterestsText = (p.interests ?? []).join(', ');
+		personaForm = {
+			name: p.profile_name ?? '',
+			username: p.backing_username ?? '',
+			tagline: p.profile_tagline ?? '',
+			disclosure_mode: p.disclosure_mode,
+			avatar_media_id: p.avatar_media_id ?? '',
+			header_media_id: p.header_media_id ?? '',
+			profession: p.profession ?? '',
+			location: p.location ?? '',
+			website_url: p.website_url ?? '',
+			education: p.education ?? '',
+			tips_enabled: p.tips_enabled ?? false
+		};
+	}
+
+	async function submitPersonaEdit() {
+		const orig = personaOriginal;
+		if (!orig || personaSaving) return;
+		const body: UpdatePersonaInput = { ...personaForm };
+		// Send only changed fields — '' clears, omission preserves.
+		if (body.name === (orig.profile_name ?? '')) delete body.name;
+		if (body.username === (orig.backing_username ?? '')) delete body.username;
+		if (body.tagline === (orig.profile_tagline ?? '')) delete body.tagline;
+		if (body.disclosure_mode === orig.disclosure_mode) delete body.disclosure_mode;
+		if (body.avatar_media_id === (orig.avatar_media_id ?? '')) delete body.avatar_media_id;
+		if (body.header_media_id === (orig.header_media_id ?? '')) delete body.header_media_id;
+		if (body.profession === (orig.profession ?? '')) delete body.profession;
+		if (body.location === (orig.location ?? '')) delete body.location;
+		if (body.website_url === (orig.website_url ?? '')) delete body.website_url;
+		if (body.education === (orig.education ?? '')) delete body.education;
+		const interests = personaInterestsText.split(',').map((s) => s.trim()).filter(Boolean);
+		if (interests.join(',') !== (orig.interests ?? []).join(',')) body.interests = interests;
+		if (body.tips_enabled === (orig.tips_enabled ?? false)) delete body.tips_enabled;
+		personaSaving = true;
+		personaError = '';
+		const res = await updatePersona(orig.id, body);
+		personaSaving = false;
+		if (!res.ok) {
+			personaError = res.error ?? t('personas.update_error', 'Failed to update persona.');
+			return;
+		}
+		personaEditOpen = false;
+		personaOriginal = null;
+		// The profile header (name/avatar/bio) may have changed — reload.
+		await invalidate(`/api/v1/users/${data.user.username}`);
 	}
 
 	// Per-tab client-side filter / search / pagination over the SSR-loaded data.
@@ -939,6 +1021,11 @@
 			{/if}
 		{/if}
 		{#snippet menuItems()}
+			{#if user.persona_id}
+				<!-- §68: persona_id is only emitted to persona.manage holders —
+				     the menu item is permission-gated server-side already. -->
+				<MenuItem icon={Bot} onSelect={openPersonaEdit}>{t('personas.edit_persona', 'Edit persona')}</MenuItem>
+			{/if}
 			{#if isAuthenticated && !isOwnProfile}
 			<MenuItem icon={VolumeX} disabled={mutePending} onSelect={toggleMute}>
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
@@ -1035,6 +1122,140 @@
 	recipientName={messageRecipient.name}
 	authed={isAuthenticated}
 />
+
+<!-- §68 persona profile editor — same field set as the admin modal
+     (profile fields only; geo/voice/policy editing stays in admin). -->
+<Modal
+	bind:open={personaEditOpen}
+	icon={Bot}
+	title={t('personas.edit_title', 'Edit Persona')}
+	size="lg"
+>
+	{#snippet children(close)}
+		{#if personaLoading}
+			<div class="flex items-center gap-2 py-6 text-sm text-[var(--color-muted)]">
+				<Loader2 class="h-4 w-4 animate-spin" />
+				{t('common.loading', 'Loading…')}
+			</div>
+		{:else}
+			{#if personaError}
+				<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]">{personaError}</div>
+			{/if}
+			<div class="space-y-4">
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div>
+						<label for="pe-name" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.name_label', 'Name')}</label>
+						<input id="pe-name" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.name} />
+					</div>
+					<div>
+						<label for="pe-username" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.username', 'Username')}</label>
+						<input id="pe-username" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-mono text-[var(--color-text)]" bind:value={personaForm.username} />
+					</div>
+				</div>
+				<div>
+					<label for="pe-tagline" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.tagline', 'Tagline')}</label>
+					<input id="pe-tagline" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.tagline} placeholder={t('personas.tagline_placeholder', 'Short bio / expertise summary')} />
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div>
+						<p class="mb-1 text-xs font-medium text-[var(--color-muted)]">{t('personas.avatar', 'Avatar')}</p>
+						<div class="flex items-center gap-2">
+							{#if personaAvatarUrl}
+								<img src={personaAvatarUrl} alt="" class="h-12 w-12 rounded-full border border-[var(--color-border)] object-cover" />
+							{:else}
+								<div class="grid h-12 w-12 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
+									<Image class="h-5 w-5 text-[var(--color-muted)]" />
+								</div>
+							{/if}
+							<div class="flex flex-col items-start gap-1">
+								<button type="button" class="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" onclick={() => (personaAvatarPickerOpen = true)}>{t('personas.choose_avatar', 'Choose Avatar')}</button>
+								{#if personaForm.avatar_media_id || personaAvatarUrl}
+									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.avatar_media_id = ''; personaAvatarUrl = ''; }}>{t('common.remove', 'Remove')}</button>
+								{/if}
+							</div>
+						</div>
+					</div>
+					<div>
+						<p class="mb-1 text-xs font-medium text-[var(--color-muted)]">{t('personas.cover_photo', 'Cover Photo')}</p>
+						<div class="flex items-center gap-2">
+							{#if personaCoverUrl}
+								<img src={personaCoverUrl} alt="" class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+							{:else}
+								<div class="grid h-12 w-20 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
+									<Image class="h-5 w-5 text-[var(--color-muted)]" />
+								</div>
+							{/if}
+							<div class="flex flex-col items-start gap-1">
+								<button type="button" class="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" onclick={() => (personaCoverPickerOpen = true)}>{t('personas.choose_cover', 'Choose Cover')}</button>
+								{#if personaForm.header_media_id || personaCoverUrl}
+									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.header_media_id = ''; personaCoverUrl = ''; }}>{t('common.remove', 'Remove')}</button>
+								{/if}
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div>
+						<label for="pe-profession" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.profession', 'Profession')}</label>
+						<input id="pe-profession" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.profession} placeholder={t('personas.profession_placeholder', 'e.g. Immigration Consultant')} />
+					</div>
+					<div>
+						<label for="pe-location" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.location', 'Location')}</label>
+						<input id="pe-location" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.location} placeholder={t('personas.location_placeholder', 'e.g. London, UK')} />
+					</div>
+					<div>
+						<label for="pe-website" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.website_url', 'Website')}</label>
+						<input id="pe-website" type="url" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.website_url} placeholder="https://" />
+					</div>
+					<div>
+						<label for="pe-education" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.education', 'Education')}</label>
+						<input id="pe-education" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.education} placeholder={t('personas.education_placeholder', 'e.g. MSc, University of Lagos')} />
+					</div>
+				</div>
+				<div>
+					<label for="pe-interests" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.interests', 'Interests (comma-separated)')}</label>
+					<input id="pe-interests" type="text" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaInterestsText} placeholder={t('personas.interests_placeholder', 'e.g. visas, fintech, community')} />
+				</div>
+				<div>
+					<label for="pe-disclosure" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('personas.disclosure', 'Disclosure Mode')}</label>
+					<select id="pe-disclosure" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]" bind:value={personaForm.disclosure_mode}>
+						<option value="disclosed">{t('personas.disclosure_disclosed', 'Disclosed (shown as AI)')}</option>
+						<option value="undisclosed">{t('personas.disclosure_undisclosed', 'Undisclosed')}</option>
+					</select>
+				</div>
+				<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+					<input type="checkbox" class="rounded" bind:checked={personaForm.tips_enabled} />
+					{t('personas.tips_enabled', 'Accept tips on this persona\'s profile')}
+				</label>
+				{#if personaOriginal?.points_balance != null}
+					<p class="text-xs text-[var(--color-muted)]">{t('personas.points_balance', 'Points')}: <span class="font-semibold text-[var(--color-text)]">{personaOriginal.points_balance.toLocaleString()}</span></p>
+				{/if}
+				<div class="flex justify-end gap-2 pt-2">
+					<button type="button" class="rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" onclick={close}>{t('common.cancel', 'Cancel')}</button>
+					<button type="button" class="rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" disabled={personaSaving} onclick={submitPersonaEdit}>
+						{personaSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+					</button>
+				</div>
+			</div>
+		{/if}
+	{/snippet}
+</Modal>
+
+{#if personaAvatarPickerOpen}
+	<MediaLibraryModal
+		allowedType="image"
+		uploadContext="avatar"
+		onSelect={(asset: MediaAsset) => { personaForm.avatar_media_id = asset.id; personaAvatarUrl = asset.url; personaAvatarPickerOpen = false; }}
+		onClose={() => (personaAvatarPickerOpen = false)}
+	/>
+{/if}
+{#if personaCoverPickerOpen}
+	<MediaLibraryModal
+		allowedType="image"
+		onSelect={(asset: MediaAsset) => { personaForm.header_media_id = asset.id; personaCoverUrl = asset.url; personaCoverPickerOpen = false; }}
+		onClose={() => (personaCoverPickerOpen = false)}
+	/>
+{/if}
 
 <!-- Media tab delete confirmation — DELETE /media/{id} is soft-delete and
      ownership-scoped; only reachable on the owner's own profile. -->

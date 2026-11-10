@@ -974,6 +974,9 @@ export interface PublicUser {
 	/** §43 — public profile detail only: false when the profile misses the
 	 *  users sitemap quality gate → noindex. Absent = indexable. */
 	indexable?: boolean;
+	/** §68 — ai_personas row id backing this profile. Emitted only to viewers
+	 *  holding persona.manage; presence implies edit rights. */
+	persona_id?: string;
 }
 
 /** GET /users/{id}/followers — mapped row for the profile followers tab. */

@@ -316,6 +316,15 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §68 Plan B: persona_id drives the profile-page "Edit persona"
+	// affordance. Gated to viewers holding persona.manage so an undisclosed
+	// persona's managed status is never leaked to the public payload.
+	if profile.personaID != "" && h.permResolver != nil {
+		if viewer := auth.FromContext(r.Context()); viewer != nil && h.permResolver.HasPermission(r.Context(), viewer.UserID, "persona.manage") {
+			profile.PersonaID = &profile.personaID
+		}
+	}
+
 	// JSON-LD structured data (Section 14 / Section 26). Resolve the
 	// admin-managed Person template, interpolating the profile's field
 	// values. Best-effort: a missing template or resolution error degrades

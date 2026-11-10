@@ -435,6 +435,11 @@ SELECT
  -- users). The service layer maps it to ai_disclosed — undisclosed personas
  -- keep the flag hidden publicly (internal is_bot flag unaffected).
  ap.disclosure_mode AS persona_disclosure_mode,
+ -- §68 Plan B: the backing persona id for permission-gated consumers
+ -- (profile → Edit persona affordance). Never serialized publicly — the
+ -- handler emits it only to viewers holding persona.manage, so an
+ -- undisclosed persona's managed status is not leaked.
+ ap.id AS persona_id,
  (SELECT COUNT(*)::int
  FROM follows f
  WHERE f.follower_id = u.id AND (
@@ -475,6 +480,7 @@ type GetPublicProfileByUsernameRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	ShowPointsPublicly    bool               `json:"show_points_publicly"`
 	PersonaDisclosureMode *string            `json:"persona_disclosure_mode"`
+	PersonaID             pgtype.UUID        `json:"persona_id"`
 	FollowingCount        int32              `json:"following_count"`
 }
 
@@ -508,6 +514,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.CreatedAt,
 		&i.ShowPointsPublicly,
 		&i.PersonaDisclosureMode,
+		&i.PersonaID,
 		&i.FollowingCount,
 	)
 	return i, err
