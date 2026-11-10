@@ -115,8 +115,12 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		var username, displayName string
 		err := h.reader.QueryRow(ctx,
 			`SELECT u.username, COALESCE(up.display_name, '')
-			 FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
-			 WHERE u.username = $1 AND u.status = 'active'`, slug).Scan(&username, &displayName)
+			 FROM users u
+			 LEFT JOIN user_profiles up ON up.user_id = u.id
+			 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+			 WHERE u.username = $1 AND u.status = 'active'
+			   AND COALESCE(ups.search_indexable, true)
+			   AND COALESCE(ups.profile_visibility, 'public') = 'public'`, slug).Scan(&username, &displayName)
 		if err != nil {
 			return nil
 		}
