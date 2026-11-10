@@ -200,8 +200,9 @@
 		return text.length > 160 ? text.slice(0, 157).trimEnd() + '…' : text;
 	});
 	// og:image — space cover → first inline body image → space logo → the
-	// backend-generated title card (ogMediaUrl drops SVG/data: — share
-	// cards ignore them).
+	// backend-generated title card; directory pages carry no page id, so
+	// they fall back to the destination card (ogMediaUrl drops SVG/data:
+	// — share cards ignore them).
 	const firstImg = $derived.by(() => {
 		const c = data.page?.current_content;
 		return c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
@@ -212,7 +213,7 @@
 			ogMediaUrl(o, data.spaceDetail?.header_url) ||
 			ogMediaUrl(o, firstImg) ||
 			ogMediaUrl(o, data.spaceDetail?.logo_url) ||
-			(data.page?.id ? ogCardUrl(o, data.page.id) : '')
+			(data.page?.id ? ogCardUrl(o, data.page.id) : ogCardUrl(o, `space:${data.spaceSlug}`))
 		);
 	});
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);

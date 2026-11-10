@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestSitemapXML(t *testing.T) {
@@ -386,6 +388,33 @@ func TestServeOGImage(t *testing.T) {
 
 	if rec.Body.Len() == 0 {
 		t.Error("response body should not be empty")
+	}
+}
+
+func TestServeOGImageNamespacedKey(t *testing.T) {
+	t.Parallel()
+
+	h := NewOGImageHandler(nil, nil, "Test Site")
+	r := chi.NewRouter()
+	r.Get("/og/{id}.png", h.ServeOGImage)
+
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// The colon namespaced key must survive {id} param capture and resolve
+	// the registry title — a resolved card differs byte-wise from the
+	// brand fallback served for unresolvable keys.
+	tool := get("/og/tool:visa-routes.png")
+	brand := get("/og/definitely-not-a-thing.png")
+	if tool.Code != http.StatusOK || tool.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("tool key: got %d %q", tool.Code, tool.Header().Get("Content-Type"))
+	}
+	if bytes.Equal(tool.Body.Bytes(), brand.Body.Bytes()) {
+		t.Error("tool:visa-routes rendered the brand fallback — namespaced key did not resolve")
 	}
 }
 

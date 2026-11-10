@@ -122,7 +122,7 @@
 		return c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
 	});
 	const ogImage = $derived(
-		ogMediaUrl(pageStore.url.origin, firstImg) || (page?.id ? ogCardUrl(pageStore.url.origin, page.id) : '')
+		ogMediaUrl(pageStore.url.origin, firstImg) || ogCardUrl(pageStore.url.origin, page?.id || 'wiki')
 	);
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {
