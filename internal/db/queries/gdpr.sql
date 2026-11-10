@@ -1623,3 +1623,14 @@ FROM (SELECT * FROM badge_progress WHERE user_id = @user_id) t;
 -- §64 v2: award-audit rows where the user is the recipient.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM badge_award_events WHERE user_id = @user_id) t;
+
+-- name: ClearCommentsCreatedBy :exec
+-- Delegated-authorship spec: drop the operator linkage from persona-attributed
+-- comments on erasure. Tombstone/ownership flows never surface the operator id.
+UPDATE comments SET created_by_user_id = NULL
+WHERE created_by_user_id = @user_id;
+
+-- name: ClearForumRepliesCreatedBy :exec
+-- Delegated-authorship spec: same operator-linkage erasure for forum replies.
+UPDATE forum_replies SET created_by_user_id = NULL
+WHERE created_by_user_id = @user_id;

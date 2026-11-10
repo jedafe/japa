@@ -966,27 +966,28 @@ type ChecklistProgress struct {
 }
 
 type Comment struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	ReplyCount    int32              `json:"reply_count"`
-	Status        string             `json:"status"`
-	RemovedBy     pgtype.UUID        `json:"removed_by"`
-	RemovedReason *string            `json:"removed_reason"`
-	ViewCount     int32              `json:"view_count"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	ReplyCount      int32              `json:"reply_count"`
+	Status          string             `json:"status"`
+	RemovedBy       pgtype.UUID        `json:"removed_by"`
+	RemovedReason   *string            `json:"removed_reason"`
+	ViewCount       int32              `json:"view_count"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 type CommentView struct {
@@ -2165,20 +2166,21 @@ type ForumPollVote struct {
 }
 
 type ForumReply struct {
-	ID            pgtype.UUID        `json:"id"`
-	ThreadID      pgtype.UUID        `json:"thread_id"`
-	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	Body          []byte             `json:"body"`
-	VoteScore     int32              `json:"vote_score"`
-	ViewCount     int32              `json:"view_count"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	IsEdited      bool               `json:"is_edited"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending    bool               `json:"ama_pending"`
-	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
+	ID              pgtype.UUID        `json:"id"`
+	ThreadID        pgtype.UUID        `json:"thread_id"`
+	ParentReplyID   pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	Body            []byte             `json:"body"`
+	VoteScore       int32              `json:"vote_score"`
+	ViewCount       int32              `json:"view_count"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	IsEdited        bool               `json:"is_edited"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending      bool               `json:"ama_pending"`
+	AmaApprovedAt   pgtype.Timestamptz `json:"ama_approved_at"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 type ForumTag struct {

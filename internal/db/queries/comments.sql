@@ -1,10 +1,10 @@
 -- name: CreateComment :one
-INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous) VALUES (@content_id, @author_user_id, sqlc.narg(parent_id), @body, @depth, @is_anonymous)
+INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous, created_by_user_id) VALUES (@content_id, @author_user_id, sqlc.narg(parent_id), @body, @depth, @is_anonymous, sqlc.narg(created_by_user_id))
 
 RETURNING *;
 
 -- name: GetComment :one
-SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
@@ -27,9 +27,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = @viewer_id
+ AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -64,9 +65,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = @viewer_id
+ AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -92,6 +94,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  0::smallint AS user_vote,
+ false AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -118,9 +121,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = @viewer_id
+ AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -151,9 +155,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = @viewer_id
+ AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -183,9 +188,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = @viewer_id
+ AND cv.user_id = COALESCE(sqlc.narg(vote_actor_id)::uuid, @viewer_id)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -209,9 +215,11 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: UpdateComment :one
 -- Section 49 — edit after the edit window: marks is_edited = true and stamps
 -- edited_at. Used when comments.edit_window_minutes has elapsed since creation.
+-- created_by_user_id lets the operator behind a persona-attributed comment
+-- edit it (author-or-creator ownership, delegated-authorship spec).
 UPDATE comments
 SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
-WHERE id = @id AND author_user_id = @author_user_id AND deleted_at IS NULL
+WHERE id = @id AND (author_user_id = @author_user_id OR created_by_user_id = @author_user_id) AND deleted_at IS NULL
  AND status = 'published'
 RETURNING *;
 
@@ -221,7 +229,7 @@ RETURNING *;
 -- occurs within comments.edit_window_minutes of creation.
 UPDATE comments
 SET body = @body, updated_at = now()
-WHERE id = @id AND author_user_id = @author_user_id AND deleted_at IS NULL
+WHERE id = @id AND (author_user_id = @author_user_id OR created_by_user_id = @author_user_id) AND deleted_at IS NULL
  AND status = 'published'
 RETURNING *;
 
@@ -245,12 +253,13 @@ UPDATE comments SET deleted_at = now(), updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: SoftDeleteCommentByAuthor :exec
--- Section 49 — soft-delete own comment. The author_user_id clause makes the
--- ownership check atomic so a comments.delete_own holder cannot delete
--- another author's comment (BUG-003).
+-- Section 49 — soft-delete own comment. The author-or-creator clause makes
+-- the ownership check atomic so a comments.delete_own holder cannot delete
+-- another author's comment (BUG-003); created_by_user_id covers the
+-- operator behind a persona-attributed comment (delegated-authorship spec).
 UPDATE comments
 SET deleted_at = now(), is_pinned = false, updated_at = now()
-WHERE id = @id AND author_user_id = @author_user_id
+WHERE id = @id AND (author_user_id = @author_user_id OR created_by_user_id = @author_user_id)
  AND deleted_at IS NULL;
 
 -- name: RemoveComment :exec

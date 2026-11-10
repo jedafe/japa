@@ -384,22 +384,27 @@ WHERE id = @id;
 -- =====================
 
 -- name: CreateForumReply :one
-INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES (@thread_id, sqlc.narg(parent_reply_id), @author_user_id, @body, @is_anonymous)
+-- created_by_user_id records the operator behind a persona-attributed reply
+-- (delegated-authorship spec) — NULL for normal replies.
+INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous, created_by_user_id) VALUES (@thread_id, sqlc.narg(parent_reply_id), @author_user_id, @body, @is_anonymous, sqlc.narg(created_by_user_id))
 RETURNING id, thread_id, parent_reply_id, author_user_id,
  body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at, created_by_user_id;
 
 -- name: GetForumReplyByID :one
 SELECT id, thread_id, parent_reply_id, author_user_id,
  body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at, created_by_user_id
 FROM forum_replies
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: GetForumReplyByIDWithAuthor :one
 -- Returns a single reply with author details. Used for the accepted-answer
 -- in QAPage JSON-LD and the solved thread highlight (BL-012).
+-- viewer_can_manage flags author-or-creator ownership for the given viewer
+-- (NULL viewer → false); created_by_user_id stays internal-only.
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ COALESCE((fr.author_user_id = sqlc.narg(viewer_id)::uuid OR fr.created_by_user_id = sqlc.narg(viewer_id)::uuid), false) AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -416,7 +421,7 @@ WHERE fr.id = @id
 -- returned so the tree stays navigable — its body is scrubbed by the caller.
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at, fr.created_by_user_id
 FROM forum_replies fr
 WHERE fr.thread_id = @thread_id
  AND (fr.deleted_at IS NULL OR EXISTS (
@@ -427,7 +432,10 @@ WHERE fr.thread_id = @thread_id
 ORDER BY fr.created_at ASC;
 
 -- name: ListForumRepliesByThreadWithAuthor :many
+-- viewer_can_manage flags author-or-creator ownership for @viewer_id
+-- (NULL viewer → false); created_by_user_id stays internal-only.
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ COALESCE((fr.author_user_id = @viewer_id OR fr.created_by_user_id = @viewer_id), false) AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -449,7 +457,7 @@ ORDER BY fr.created_at ASC;
 -- accepted-answer candidate for QAPage JSON-LD on solved threads (BL-012).
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.created_by_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
@@ -475,7 +483,7 @@ WHERE fr.id = @id AND fr.deleted_at IS NULL
  AND ft.id = fr.thread_id
 RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at;
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at, fr.created_by_user_id;
 
 -- name: SoftDeleteForumReply :exec
 -- deleted_at IS NULL keeps the write idempotent — a second delete is a no-op

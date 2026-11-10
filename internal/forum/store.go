@@ -1229,9 +1229,9 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, viewerID, tagID
 }
 
 // listRepliesByThreadWithAuthor returns all replies for a thread with author data.
-func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, viewerID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
 	rows, err := s.read.ListForumRepliesByThreadWithAuthor(ctx,
-		threadID,
+		gen.ListForumRepliesByThreadWithAuthorParams{ThreadID: threadID, ViewerID: viewerID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing forum replies by thread with author: %w", err)

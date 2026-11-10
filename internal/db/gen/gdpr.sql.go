@@ -410,6 +410,29 @@ func (q *Queries) AnonymizeUserProfile(ctx context.Context, userID pgtype.UUID) 
 	return err
 }
 
+const clearCommentsCreatedBy = `-- name: ClearCommentsCreatedBy :exec
+UPDATE comments SET created_by_user_id = NULL
+WHERE created_by_user_id = $1
+`
+
+// Delegated-authorship spec: drop the operator linkage from persona-attributed
+// comments on erasure. Tombstone/ownership flows never surface the operator id.
+func (q *Queries) ClearCommentsCreatedBy(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearCommentsCreatedBy, userID)
+	return err
+}
+
+const clearForumRepliesCreatedBy = `-- name: ClearForumRepliesCreatedBy :exec
+UPDATE forum_replies SET created_by_user_id = NULL
+WHERE created_by_user_id = $1
+`
+
+// Delegated-authorship spec: same operator-linkage erasure for forum replies.
+func (q *Queries) ClearForumRepliesCreatedBy(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearForumRepliesCreatedBy, userID)
+	return err
+}
+
 const clearInstructorPayoutMethod = `-- name: ClearInstructorPayoutMethod :execrows
 
 UPDATE academy_instructor_profiles
@@ -2082,7 +2105,7 @@ func (q *Queries) GdprExportUserForumPollVotes(ctx context.Context, userID pgtyp
 
 const gdprExportUserForumReplies = `-- name: GdprExportUserForumReplies :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at, ama_pending, ama_approved_at FROM forum_replies WHERE author_user_id = $1) t
+FROM (SELECT id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at, ama_pending, ama_approved_at, created_by_user_id FROM forum_replies WHERE author_user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserForumReplies(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

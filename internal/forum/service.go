@@ -1192,9 +1192,10 @@ func (s *Service) GetTopReplyForThread(ctx context.Context, threadID pgtype.UUID
 
 // GetReplyByIDWithAuthor returns a single reply with author details.
 // Used for the accepted-answer in QAPage JSON-LD (BL-012).
-func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
+// viewerID scopes viewer_can_manage — public paths pass a zero UUID.
+func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, viewerID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
 	return s.store.read.GetForumReplyByIDWithAuthor(ctx,
-		replyID,
+		gen.GetForumReplyByIDWithAuthorParams{ID: replyID, ViewerID: viewerID},
 	)
 }
 
@@ -1235,8 +1236,9 @@ func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, viewerID, tag
 }
 
 // ListRepliesByThreadWithAuthor returns all replies for a thread with author data.
-func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
-	return s.store.listRepliesByThreadWithAuthor(ctx, threadID)
+// viewerID scopes viewer_can_manage (author-or-creator, delegated-authorship spec).
+func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID, viewerID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+	return s.store.listRepliesByThreadWithAuthor(ctx, threadID, viewerID)
 }
 
 // IsBlocked reports whether either user has blocked the other (§41).

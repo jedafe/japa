@@ -186,18 +186,19 @@ func (q *Queries) CountTopLevelCommentsByContent(ctx context.Context, contentID 
 }
 
 const createComment = `-- name: CreateComment :one
-INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous) VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id
 `
 
 type CreateCommentParams struct {
-	ContentID    pgtype.UUID `json:"content_id"`
-	AuthorUserID pgtype.UUID `json:"author_user_id"`
-	ParentID     pgtype.UUID `json:"parent_id"`
-	Body         []byte      `json:"body"`
-	Depth        int32       `json:"depth"`
-	IsAnonymous  bool        `json:"is_anonymous"`
+	ContentID       pgtype.UUID `json:"content_id"`
+	AuthorUserID    pgtype.UUID `json:"author_user_id"`
+	ParentID        pgtype.UUID `json:"parent_id"`
+	Body            []byte      `json:"body"`
+	Depth           int32       `json:"depth"`
+	IsAnonymous     bool        `json:"is_anonymous"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
 }
 
 func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error) {
@@ -208,6 +209,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		arg.Body,
 		arg.Depth,
 		arg.IsAnonymous,
+		arg.CreatedByUserID,
 	)
 	var i Comment
 	err := row.Scan(
@@ -232,6 +234,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.ViewCount,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -342,7 +345,7 @@ func (q *Queries) EnsureContentThreadLink(ctx context.Context, arg EnsureContent
 }
 
 const getComment = `-- name: GetComment :one
-SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
@@ -356,27 +359,28 @@ WHERE c.id = $1
 `
 
 type GetCommentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	Status        string             `json:"status"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	Status          string             `json:"status"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow, error) {
@@ -386,6 +390,7 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow
 		&i.ID,
 		&i.ContentID,
 		&i.AuthorUserID,
+		&i.CreatedByUserID,
 		&i.ParentID,
 		&i.Body,
 		&i.Depth,
@@ -813,9 +818,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = $1
+ AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -823,51 +829,53 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2
+WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL) AND (
-   $1::uuid IS NULL
+   $2::uuid IS NULL
    OR NOT EXISTS (
      SELECT 1 FROM user_blocks ub
-     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
-        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $2::uuid)
    )
  )
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListCommentsByContentParams struct {
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	ContentID  pgtype.UUID `json:"content_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	VoteActorID pgtype.UUID `json:"vote_actor_id"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	ContentID   pgtype.UUID `json:"content_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListCommentsByContentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 // Soft-deleted comments with live replies are returned as tombstones
@@ -875,6 +883,7 @@ type ListCommentsByContentRow struct {
 // Leaf soft-deletes stay filtered out.
 func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByContentParams) ([]ListCommentsByContentRow, error) {
 	rows, err := q.db.Query(ctx, listCommentsByContent,
+		arg.VoteActorID,
 		arg.ViewerID,
 		arg.ContentID,
 		arg.PageOffset,
@@ -906,6 +915,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -929,9 +939,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = $1
+ AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -939,56 +950,59 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2
+WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL) AND (
-   $1::uuid IS NULL
+   $2::uuid IS NULL
    OR NOT EXISTS (
      SELECT 1 FROM user_blocks ub
-     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
-        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $2::uuid)
    )
  )
 ORDER BY c.is_pinned DESC, c.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListCommentsByContentNewParams struct {
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	ContentID  pgtype.UUID `json:"content_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	VoteActorID pgtype.UUID `json:"vote_actor_id"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	ContentID   pgtype.UUID `json:"content_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListCommentsByContentNewRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 // Section 49 ?sort=new — newest first (pinned still surface on top).
 func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListCommentsByContentNewParams) ([]ListCommentsByContentNewRow, error) {
 	rows, err := q.db.Query(ctx, listCommentsByContentNew,
+		arg.VoteActorID,
 		arg.ViewerID,
 		arg.ContentID,
 		arg.PageOffset,
@@ -1020,6 +1034,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -1043,9 +1058,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = $1
+ AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1053,56 +1069,59 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.content_id = $2
+WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL) AND (
-   $1::uuid IS NULL
+   $2::uuid IS NULL
    OR NOT EXISTS (
      SELECT 1 FROM user_blocks ub
-     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
-        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $2::uuid)
    )
  )
 ORDER BY c.is_pinned DESC, c.created_at ASC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListCommentsByContentOldestParams struct {
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	ContentID  pgtype.UUID `json:"content_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	VoteActorID pgtype.UUID `json:"vote_actor_id"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	ContentID   pgtype.UUID `json:"content_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListCommentsByContentOldestRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 // Section 49 ?sort=oldest — oldest first (pinned still surface on top).
 func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListCommentsByContentOldestParams) ([]ListCommentsByContentOldestRow, error) {
 	rows, err := q.db.Query(ctx, listCommentsByContentOldest,
+		arg.VoteActorID,
 		arg.ViewerID,
 		arg.ContentID,
 		arg.PageOffset,
@@ -1134,6 +1153,7 @@ func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListComme
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -1287,9 +1307,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = $1
+ AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1298,7 +1319,7 @@ FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
-WHERE c.content_id = $2
+WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published'
  AND (c.parent_id IS NULL)
@@ -1306,39 +1327,41 @@ WHERE c.content_id = $2
  AND parent.visibility = 'public'
  AND parent.deleted_at IS NULL
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListPublicCommentsByContentParams struct {
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	ContentID  pgtype.UUID `json:"content_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	VoteActorID pgtype.UUID `json:"vote_actor_id"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	ContentID   pgtype.UUID `json:"content_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListPublicCommentsByContentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 // Public API (Section 47): top-level published comments for a content item,
@@ -1348,6 +1371,7 @@ type ListPublicCommentsByContentRow struct {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPublicCommentsByContentParams) ([]ListPublicCommentsByContentRow, error) {
 	rows, err := q.db.Query(ctx, listPublicCommentsByContent,
+		arg.VoteActorID,
 		arg.ViewerID,
 		arg.ContentID,
 		arg.PageOffset,
@@ -1379,6 +1403,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -1399,6 +1424,7 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  0::smallint AS user_vote,
+ false AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1425,28 +1451,29 @@ type ListPublicRepliesByParentParams struct {
 }
 
 type ListPublicRepliesByParentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage bool               `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 // Public API parity with ListRepliesByParent: replies for a parent comment,
@@ -1484,6 +1511,7 @@ func (q *Queries) ListPublicRepliesByParent(ctx context.Context, arg ListPublicR
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -1507,9 +1535,10 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  SELECT cv.value
  FROM comment_votes cv
  WHERE cv.comment_id = c.id
- AND cv.user_id = $1
+ AND cv.user_id = COALESCE($1::uuid, $2)
  LIMIT 1
  ), 0)::smallint AS user_vote,
+ COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false) AS viewer_can_manage,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
@@ -1517,55 +1546,58 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
 FROM comments c
 JOIN users u ON u.id = c.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE c.parent_id = $2 AND c.content_id = $3
+WHERE c.parent_id = $3 AND c.content_id = $4
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
  AND c.status = 'published' AND (
-   $1::uuid IS NULL
+   $2::uuid IS NULL
    OR NOT EXISTS (
      SELECT 1 FROM user_blocks ub
-     WHERE (ub.blocker_id = $1::uuid AND ub.blocked_id = c.author_user_id)
-        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $1::uuid)
+     WHERE (ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_user_id)
+        OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = $2::uuid)
    )
  )
 ORDER BY c.vote_score DESC, c.created_at ASC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListRepliesByParentParams struct {
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	ParentID   pgtype.UUID `json:"parent_id"`
-	ContentID  pgtype.UUID `json:"content_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	VoteActorID pgtype.UUID `json:"vote_actor_id"`
+	ViewerID    pgtype.UUID `json:"viewer_id"`
+	ParentID    pgtype.UUID `json:"parent_id"`
+	ContentID   pgtype.UUID `json:"content_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListRepliesByParentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	ParentID      pgtype.UUID        `json:"parent_id"`
-	Body          []byte             `json:"body"`
-	Depth         int32              `json:"depth"`
-	VoteScore     int32              `json:"vote_score"`
-	UpvoteCount   int32              `json:"upvote_count"`
-	DownvoteCount int32              `json:"downvote_count"`
-	ViewCount     int32              `json:"view_count"`
-	IsPinned      bool               `json:"is_pinned"`
-	IsEdited      bool               `json:"is_edited"`
-	EditedAt      pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	ReplyCount    int32              `json:"reply_count"`
-	UserVote      int16              `json:"user_vote"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarUrl     string             `json:"avatar_url"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Body            []byte             `json:"body"`
+	Depth           int32              `json:"depth"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
+	ViewCount       int32              `json:"view_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	IsEdited        bool               `json:"is_edited"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount      int32              `json:"reply_count"`
+	UserVote        int16              `json:"user_vote"`
+	ViewerCanManage interface{}        `json:"viewer_can_manage"`
+	IsAnonymous     bool               `json:"is_anonymous"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       string             `json:"avatar_url"`
 }
 
 func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByParentParams) ([]ListRepliesByParentRow, error) {
 	rows, err := q.db.Query(ctx, listRepliesByParent,
+		arg.VoteActorID,
 		arg.ViewerID,
 		arg.ParentID,
 		arg.ContentID,
@@ -1598,6 +1630,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 			&i.DeletedAt,
 			&i.ReplyCount,
 			&i.UserVote,
+			&i.ViewerCanManage,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -1766,7 +1799,7 @@ func (q *Queries) SoftDeleteComment(ctx context.Context, id pgtype.UUID) error {
 const softDeleteCommentByAuthor = `-- name: SoftDeleteCommentByAuthor :exec
 UPDATE comments
 SET deleted_at = now(), is_pinned = false, updated_at = now()
-WHERE id = $1 AND author_user_id = $2
+WHERE id = $1 AND (author_user_id = $2 OR created_by_user_id = $2)
  AND deleted_at IS NULL
 `
 
@@ -1775,9 +1808,10 @@ type SoftDeleteCommentByAuthorParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 }
 
-// Section 49 — soft-delete own comment. The author_user_id clause makes the
-// ownership check atomic so a comments.delete_own holder cannot delete
-// another author's comment (BUG-003).
+// Section 49 — soft-delete own comment. The author-or-creator clause makes
+// the ownership check atomic so a comments.delete_own holder cannot delete
+// another author's comment (BUG-003); created_by_user_id covers the
+// operator behind a persona-attributed comment (delegated-authorship spec).
 func (q *Queries) SoftDeleteCommentByAuthor(ctx context.Context, arg SoftDeleteCommentByAuthorParams) error {
 	_, err := q.db.Exec(ctx, softDeleteCommentByAuthor, arg.ID, arg.AuthorUserID)
 	return err
@@ -1807,9 +1841,9 @@ func (q *Queries) UnpinComment(ctx context.Context, id pgtype.UUID) error {
 const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
-WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
+WHERE id = $2 AND (author_user_id = $3 OR created_by_user_id = $3) AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id
 `
 
 type UpdateCommentParams struct {
@@ -1820,6 +1854,8 @@ type UpdateCommentParams struct {
 
 // Section 49 — edit after the edit window: marks is_edited = true and stamps
 // edited_at. Used when comments.edit_window_minutes has elapsed since creation.
+// created_by_user_id lets the operator behind a persona-attributed comment
+// edit it (author-or-creator ownership, delegated-authorship spec).
 func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error) {
 	row := q.db.QueryRow(ctx, updateComment, arg.Body, arg.ID, arg.AuthorUserID)
 	var i Comment
@@ -1845,6 +1881,7 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.ViewCount,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -1854,7 +1891,7 @@ UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id
 `
 
 type UpdateCommentByIDParams struct {
@@ -1889,6 +1926,7 @@ func (q *Queries) UpdateCommentByID(ctx context.Context, arg UpdateCommentByIDPa
 		&i.ViewCount,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -1896,9 +1934,9 @@ func (q *Queries) UpdateCommentByID(ctx context.Context, arg UpdateCommentByIDPa
 const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
 UPDATE comments
 SET body = $1, updated_at = now()
-WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
+WHERE id = $2 AND (author_user_id = $3 OR created_by_user_id = $3) AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id
 `
 
 type UpdateCommentUnmarkedParams struct {
@@ -1935,6 +1973,7 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 		&i.ViewCount,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }

@@ -1096,7 +1096,8 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			// Fall back to the top-voted reply when no explicit accepted
 			// reply exists.
 			if thread.ParentReplyID.Valid {
-				if accepted, accErr := h.Service.GetReplyByIDWithAuthor(r.Context(), thread.ParentReplyID); accErr == nil {
+				// Public JSON-LD path: zero viewer → viewer_can_manage false.
+				if accepted, accErr := h.Service.GetReplyByIDWithAuthor(r.Context(), thread.ParentReplyID, pgtype.UUID{}); accErr == nil {
 					answerBody = forumBodyText(accepted.Body)
 					answerAuthor = ifaceString(accepted.AuthorDisplayName, accepted.AuthorUsername)
 					answerCreatedAt = tsString(accepted.CreatedAt)
@@ -1589,7 +1590,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	// C-020 parity: return the joined row so the new reply renders with
 	// author name/avatar without a refetch. The joined query already
 	// NULL-wraps identity fields for anonymous replies.
-	if row, getErr := h.Service.GetReplyByIDWithAuthor(r.Context(), reply.ID); getErr == nil {
+	if row, getErr := h.Service.GetReplyByIDWithAuthor(r.Context(), reply.ID, user.UserID); getErr == nil {
 		h.resolveLiterals(r, &row)
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": row})
 		return
@@ -1634,7 +1635,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	// Use the WithAuthor variant so the frontend receives joined author data
 	// (username, display_name, avatar_url) in the same response.
-	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID)
+	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID, requesterID(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return

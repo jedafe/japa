@@ -162,23 +162,26 @@ func (q *Queries) CreateForumPoll(ctx context.Context, arg CreateForumPollParams
 
 const createForumReply = `-- name: CreateForumReply :one
 
-INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES ($1, $2, $3, $4, $5)
+INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, thread_id, parent_reply_id, author_user_id,
  body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at, created_by_user_id
 `
 
 type CreateForumReplyParams struct {
-	ThreadID      pgtype.UUID `json:"thread_id"`
-	ParentReplyID pgtype.UUID `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID `json:"author_user_id"`
-	Body          []byte      `json:"body"`
-	IsAnonymous   bool        `json:"is_anonymous"`
+	ThreadID        pgtype.UUID `json:"thread_id"`
+	ParentReplyID   pgtype.UUID `json:"parent_reply_id"`
+	AuthorUserID    pgtype.UUID `json:"author_user_id"`
+	Body            []byte      `json:"body"`
+	IsAnonymous     bool        `json:"is_anonymous"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
 }
 
 // =====================
 // Replies
 // =====================
+// created_by_user_id records the operator behind a persona-attributed reply
+// (delegated-authorship spec) — NULL for normal replies.
 func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyParams) (ForumReply, error) {
 	row := q.db.QueryRow(ctx, createForumReply,
 		arg.ThreadID,
@@ -186,6 +189,7 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 		arg.AuthorUserID,
 		arg.Body,
 		arg.IsAnonymous,
+		arg.CreatedByUserID,
 	)
 	var i ForumReply
 	err := row.Scan(
@@ -203,6 +207,7 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 		&i.DeletedAt,
 		&i.AmaPending,
 		&i.AmaApprovedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -549,7 +554,7 @@ func (q *Queries) GetForumPollResults(ctx context.Context, pollID pgtype.UUID) (
 const getForumReplyByID = `-- name: GetForumReplyByID :one
 SELECT id, thread_id, parent_reply_id, author_user_id,
  body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at, created_by_user_id
 FROM forum_replies
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -572,12 +577,14 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (ForumR
 		&i.DeletedAt,
 		&i.AmaPending,
 		&i.AmaApprovedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
 
 const getForumReplyByIDWithAuthor = `-- name: GetForumReplyByIDWithAuthor :one
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ COALESCE((fr.author_user_id = $1::uuid OR fr.created_by_user_id = $1::uuid), false) AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -586,15 +593,21 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
-WHERE fr.id = $1
+WHERE fr.id = $2
  AND fr.deleted_at IS NULL
 `
+
+type GetForumReplyByIDWithAuthorParams struct {
+	ViewerID pgtype.UUID `json:"viewer_id"`
+	ID       pgtype.UUID `json:"id"`
+}
 
 type GetForumReplyByIDWithAuthorRow struct {
 	ID                pgtype.UUID        `json:"id"`
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ViewerCanManage   interface{}        `json:"viewer_can_manage"`
 	Body              []byte             `json:"body"`
 	VoteScore         int32              `json:"vote_score"`
 	ViewCount         int32              `json:"view_count"`
@@ -610,14 +623,17 @@ type GetForumReplyByIDWithAuthorRow struct {
 
 // Returns a single reply with author details. Used for the accepted-answer
 // in QAPage JSON-LD and the solved thread highlight (BL-012).
-func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, id pgtype.UUID) (GetForumReplyByIDWithAuthorRow, error) {
-	row := q.db.QueryRow(ctx, getForumReplyByIDWithAuthor, id)
+// viewer_can_manage flags author-or-creator ownership for the given viewer
+// (NULL viewer → false); created_by_user_id stays internal-only.
+func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, arg GetForumReplyByIDWithAuthorParams) (GetForumReplyByIDWithAuthorRow, error) {
+	row := q.db.QueryRow(ctx, getForumReplyByIDWithAuthor, arg.ViewerID, arg.ID)
 	var i GetForumReplyByIDWithAuthorRow
 	err := row.Scan(
 		&i.ID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
+		&i.ViewerCanManage,
 		&i.Body,
 		&i.VoteScore,
 		&i.ViewCount,
@@ -1023,7 +1039,7 @@ func (q *Queries) GetSpaceAccess(ctx context.Context, arg GetSpaceAccessParams) 
 const getTopReplyForThread = `-- name: GetTopReplyForThread :one
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.created_by_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
@@ -1049,6 +1065,7 @@ type GetTopReplyForThreadRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
 	AuthorUsername    interface{}        `json:"author_username"`
 	AuthorDisplayName interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
@@ -1072,6 +1089,7 @@ func (q *Queries) GetTopReplyForThread(ctx context.Context, threadID pgtype.UUID
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.CreatedByUserID,
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
@@ -1261,7 +1279,7 @@ func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollU
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at, fr.created_by_user_id
 FROM forum_replies fr
 WHERE fr.thread_id = $1
  AND (fr.deleted_at IS NULL OR EXISTS (
@@ -1298,6 +1316,7 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.
 			&i.DeletedAt,
 			&i.AmaPending,
 			&i.AmaApprovedAt,
+			&i.CreatedByUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -1311,6 +1330,7 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.
 
 const listForumRepliesByThreadWithAuthor = `-- name: ListForumRepliesByThreadWithAuthor :many
 SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ COALESCE((fr.author_user_id = $1 OR fr.created_by_user_id = $1), false) AS viewer_can_manage,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
@@ -1319,7 +1339,7 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
-WHERE fr.thread_id = $1
+WHERE fr.thread_id = $2
  AND (fr.deleted_at IS NULL OR EXISTS (
  SELECT 1 FROM forum_replies child
  WHERE child.parent_reply_id = fr.id
@@ -1328,11 +1348,17 @@ WHERE fr.thread_id = $1
 ORDER BY fr.created_at ASC
 `
 
+type ListForumRepliesByThreadWithAuthorParams struct {
+	ViewerID pgtype.UUID `json:"viewer_id"`
+	ThreadID pgtype.UUID `json:"thread_id"`
+}
+
 type ListForumRepliesByThreadWithAuthorRow struct {
 	ID                pgtype.UUID        `json:"id"`
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ViewerCanManage   interface{}        `json:"viewer_can_manage"`
 	Body              []byte             `json:"body"`
 	VoteScore         int32              `json:"vote_score"`
 	ViewCount         int32              `json:"view_count"`
@@ -1348,8 +1374,10 @@ type ListForumRepliesByThreadWithAuthorRow struct {
 	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
 }
 
-func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]ListForumRepliesByThreadWithAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listForumRepliesByThreadWithAuthor, threadID)
+// viewer_can_manage flags author-or-creator ownership for @viewer_id
+// (NULL viewer → false); created_by_user_id stays internal-only.
+func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg ListForumRepliesByThreadWithAuthorParams) ([]ListForumRepliesByThreadWithAuthorRow, error) {
+	rows, err := q.db.Query(ctx, listForumRepliesByThreadWithAuthor, arg.ViewerID, arg.ThreadID)
 	if err != nil {
 		return nil, err
 	}
@@ -1362,6 +1390,7 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, thread
 			&i.ThreadID,
 			&i.ParentReplyID,
 			&i.AuthorUserID,
+			&i.ViewerCanManage,
 			&i.Body,
 			&i.VoteScore,
 			&i.ViewCount,
@@ -2622,7 +2651,7 @@ WHERE fr.id = $2 AND fr.deleted_at IS NULL
  AND ft.id = fr.thread_id
 RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at, fr.created_by_user_id
 `
 
 type UpdateForumReplyParams struct {
@@ -2648,6 +2677,7 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 		&i.DeletedAt,
 		&i.AmaPending,
 		&i.AmaApprovedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
