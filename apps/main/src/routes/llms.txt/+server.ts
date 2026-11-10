@@ -60,6 +60,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 				headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }
 			});
 		}
+		if (res.status === 404) {
+			return new Response('Not found', { status: 404 });
+		}
 	} catch {
 		// Backend unreachable — fall through to the static file.
 	}
