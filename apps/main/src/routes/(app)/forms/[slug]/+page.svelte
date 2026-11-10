@@ -10,7 +10,7 @@
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { FileText, Send, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { fieldVisible, stepVisible, hiddenStepsByJump } from '@japaconnect/formlogic';
+	import { resolveVisibility, stepVisible, hiddenStepsByJump } from '@japaconnect/formlogic';
 	import type { FormField, FormStep } from '#lib/types/index.js';
 
 	let { data } = $props();
@@ -60,10 +60,21 @@
 		return out;
 	});
 
+	// Ordered visibility (ADR-137): a field's visible_if reads answers of
+	// earlier visible fields only — retained answers for hidden fields are
+	// off the visible path and never drive downstream rules.
+	const visPath = $derived(
+		resolveVisibility(
+			allFields.map((f) => ({ key: fieldKey(f), config: f.config })),
+			evalValues
+		)
+	);
+	const evalAnswers = $derived(visPath.answers);
+
 	const visibleFieldIds = $derived.by(() => {
 		const s = new Set<string>();
 		for (const f of allFields) {
-			if (fieldVisible(f.config, evalValues, fieldKey(f))) s.add(f.id);
+			if (visPath.visible.has(fieldKey(f))) s.add(f.id);
 		}
 		return s;
 	});
@@ -71,7 +82,7 @@
 	// Steps hidden by their own visible_if — seeds the jump pass so a field
 	// inside a hidden step can't fire a jump (ADR-137).
 	const stepRuleHidden = $derived(
-		new Set(steps.filter((s) => !stepVisible(s.config, evalValues)).map((s) => s.id))
+		new Set(steps.filter((s) => !stepVisible(s.config, evalAnswers)).map((s) => s.id))
 	);
 
 	// Steps hidden by triggered forward jumps between steps. Jump targets
@@ -84,8 +95,9 @@
 				config: f.config
 			})),
 			steps.map((s) => s.id),
-			evalValues,
-			stepRuleHidden
+			evalAnswers,
+			stepRuleHidden,
+			visPath.visible
 		)
 	);
 

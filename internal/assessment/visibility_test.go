@@ -19,6 +19,10 @@ const (
 	tfVisaType      = "visa_type"
 	tfStudent       = "student"
 	tfBusiness      = "business"
+	tfJourneyStage  = "journey_stage"
+	tfPlanning      = "planning"
+	tfFamily        = "family"
+	tfInvestment    = "investment"
 	dimGeneral      = "general"
 	dimPersonal     = "personal"
 	dimProfessional = "professional"
@@ -104,6 +108,80 @@ func TestMissingRequiredSkipsJumpHiddenDim(t *testing.T) {
 
 	if got := missingRequiredFields(fields, vals, vis); len(got) != 0 {
 		t.Fatalf("jump-hidden required field blocked submit: %v", got)
+	}
+}
+
+// TestVisibleFieldSetStaleDriverAnswer verifies a hidden driver's retained
+// answer is off the visible path: journey_stage=relocated hides purpose, so
+// a stale purpose answer must read unanswered — visa_type stays visible
+// (its not_answered clause opens) and its visible business answer drives
+// business_readiness legitimately, while a stale purpose=business alone
+// cannot reveal it — matching the live readiness gates (ADR-137).
+func TestVisibleFieldSetStaleDriverAnswer(t *testing.T) {
+	t.Parallel()
+
+	fields := []AssessmentField{
+		{Key: tfJourneyStage, Required: true},
+		{
+			Key: tfPurpose,
+			Config: FieldScoringConfig{VisibleIf: &formlogic.Condition{
+				Any: []formlogic.Clause{
+					{Field: tfJourneyStage, Op: "not_answered"},
+					{Field: tfJourneyStage, Op: "in", Value: []any{"considering", tfPlanning, "preparing", "applied", "approved"}},
+				},
+			}},
+		},
+		{
+			Key: tfVisaType,
+			Config: FieldScoringConfig{VisibleIf: &formlogic.Condition{
+				Any: []formlogic.Clause{
+					{Field: tfPurpose, Op: "not_answered"},
+					{Field: tfPurpose, Op: "in", Value: []any{"relocation", tfFamily, "vacation", "other"}},
+				},
+			}},
+		},
+		{
+			Key: "business_readiness",
+			Config: FieldScoringConfig{VisibleIf: &formlogic.Condition{
+				Any: []formlogic.Clause{
+					{Field: tfPurpose, Op: "eq", Value: tfBusiness},
+					{Field: tfVisaType, Op: "in", Value: []any{tfBusiness, tfInvestment}},
+				},
+			}},
+		},
+	}
+
+	// Draft carried a pre-move purpose=work; the user then marked relocated
+	// and answered visa_type=business. purpose is hidden so its stale answer
+	// reads unanswered — visa_type shows and drives business_readiness.
+	vis := visibleFieldSet(fields, map[string]any{
+		tfJourneyStage: "relocated", tfPurpose: tfWork, tfVisaType: tfBusiness,
+	}, nil)
+
+	if vis[tfPurpose] {
+		t.Fatal("purpose should be hidden at relocated")
+	}
+
+	if !vis[tfVisaType] {
+		t.Fatal("visa_type should be visible — hidden purpose reads unanswered, restoring the backfill path")
+	}
+
+	if !vis["business_readiness"] {
+		t.Fatal("business_readiness should show via the visible visa_type=business answer")
+	}
+
+	// Same relocation but a stale purpose=business and no visa_type answer:
+	// the hidden purpose answer must not reveal business_readiness.
+	vis = visibleFieldSet(fields, map[string]any{
+		tfJourneyStage: "relocated", tfPurpose: tfBusiness,
+	}, nil)
+
+	if vis["business_readiness"] {
+		t.Fatal("business_readiness must hide — a hidden driver's stale answer can't reveal it")
+	}
+
+	if !vis[tfVisaType] {
+		t.Fatal("visa_type should still be visible — purpose reads unanswered")
 	}
 }
 

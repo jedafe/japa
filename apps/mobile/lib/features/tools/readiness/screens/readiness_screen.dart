@@ -80,21 +80,28 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
       final dim = _dimOf(f);
       if (!seen.contains(dim)) seen.add(dim);
     }
+    // Ordered visibility (ADR-137): a field's visible_if reads answers of
+    // earlier visible fields only — retained answers for hidden fields are
+    // off the visible path and never drive downstream rules.
+    final path = resolveVisibility(fields, _answers);
     // Steps hidden by their own step_rules.visible_if seed the jump pass —
     // a field inside a hidden step can't fire a jump (ADR-137).
     final ruleHidden = <String>{};
     for (final step in seen) {
       final rule = stepRules?[step];
-      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, _answers)) {
+      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, path.answers)) {
         ruleHidden.add(step);
       }
     }
-    final hiddenByJump = hiddenStepsByJump(fields, seen, _answers, stepHidden: ruleHidden);
-    final vis = visibleFields(fields, _answers);
+    final hiddenByJump = hiddenStepsByJump(fields, seen, path.answers, stepHidden: ruleHidden, visible: path.visible);
+    final vis = fields.whereType<Map>().map((f) => f.cast<String, dynamic>()).where((f) {
+      final k = f['key'];
+      return path.visible.contains(k is String ? k : '');
+    }).toList();
     return seen.where((step) {
       if (hiddenByJump.contains(step)) return false;
       final rule = stepRules?[step];
-      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, _answers)) {
+      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, path.answers)) {
         return false;
       }
       return _fieldsForStep(vis, step).isNotEmpty;

@@ -19,7 +19,7 @@
 	import UserDropdown from '#lib/components/shell/UserDropdown.svelte';
 	import { api } from '#lib/api/client.js';
 	import { completePendingNextAction } from '#lib/api/nextActions.js';
-	import { visibleFields, hiddenStepsByJump, stepVisible } from '@japaconnect/formlogic';
+	import { resolveVisibility, hiddenStepsByJump, stepVisible } from '@japaconnect/formlogic';
 	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem, SessionUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -195,9 +195,12 @@
 
 	// ADR-137: answers drive visibility — fields whose visible_if fails are
 	// not rendered, not required, and not counted toward progress. Their
-	// answers stay in local state (re-showing restores input); the server
-	// drops them at submit.
-	const visFields = $derived(visibleFields(fields, answers));
+	// answers stay in local state (re-showing restores input) but are off the
+	// visible path — they never drive downstream rules and the server drops
+	// them at submit.
+	const visPath = $derived(resolveVisibility(fields, answers));
+	const visFields = $derived(fields.filter((f) => visPath.visible.has(f.key)));
+	const evalAnswers = $derived(visPath.answers);
 	const stepRules = $derived(form?.scoring_config?.step_rules ?? {});
 
 	// Dimension order over the FULL field list — jump intervals are measured
@@ -220,7 +223,7 @@
 	const stepRuleHidden = $derived.by(() => {
 		const s = new Set<string>();
 		for (const dim of stepOrder) {
-			if (!stepVisible(stepRules[dim], answers)) s.add(dim);
+			if (!stepVisible(stepRules[dim], evalAnswers)) s.add(dim);
 		}
 		return s;
 	});
@@ -230,8 +233,9 @@
 		hiddenStepsByJump(
 			fields.map((f) => ({ key: f.key, stepKey: f.config?.dimension || 'general', config: f.config })),
 			stepOrder,
-			answers,
-			stepRuleHidden
+			evalAnswers,
+			stepRuleHidden,
+			visPath.visible
 		)
 	);
 
@@ -271,7 +275,7 @@
 			.filter(
 				(dim) =>
 					!jumpHidden.has(dim) &&
-					stepVisible(stepRules[dim], answers) &&
+					stepVisible(stepRules[dim], evalAnswers) &&
 					(map.get(dim)?.length ?? 0) > 0
 			)
 			.map((name) => ({ name, fields: map.get(name)! }));

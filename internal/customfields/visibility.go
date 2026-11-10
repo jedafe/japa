@@ -100,14 +100,21 @@ type stepDef struct {
 // unreachable — the renderer only shows steps.flatMap — so it is hidden
 // too; requiring it would deadlock every submission.
 func hiddenFieldKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
+	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+	for _, f := range fields {
+		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: f.StepKey, Config: f.Config})
+	}
+
+	visible, evalAnswers := formlogic.VisiblePath(ruleFields, canon)
+
 	hidden := make(map[string]bool, len(fields))
 	for _, f := range fields {
-		if !formlogic.FieldVisible(f.Config, canon, f.Key) || (len(steps) > 0 && f.StepKey == "") {
+		if !visible[f.Key] || (len(steps) > 0 && f.StepKey == "") {
 			hidden[f.Key] = true
 		}
 	}
 
-	for sk := range hiddenStepKeys(fields, steps, canon) {
+	for sk := range hiddenStepKeys(ruleFields, steps, evalAnswers, visible) {
 		for _, f := range fields {
 			if f.StepKey == sk {
 				hidden[f.Key] = true
@@ -124,7 +131,7 @@ func hiddenFieldKeys(fields []fieldDef, steps []stepDef, canon map[string]any) m
 // the "hidden source can't fire" clause of ADR-137. The auto-hide rule (a
 // step whose defined fields are all hidden) needs no handling here — those
 // fields are already individually hidden, so hiding the step adds nothing.
-func hiddenStepKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
+func hiddenStepKeys(ruleFields []formlogic.RuleField, steps []stepDef, evalAnswers map[string]any, visible map[string]bool) map[string]bool {
 	if len(steps) == 0 {
 		return nil
 	}
@@ -134,19 +141,14 @@ func hiddenStepKeys(fields []fieldDef, steps []stepDef, canon map[string]any) ma
 		order = append(order, st.ID)
 	}
 
-	ruleFields := make([]formlogic.RuleField, 0, len(fields))
-	for _, f := range fields {
-		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: f.StepKey, Config: f.Config})
-	}
-
 	ruleHidden := make(map[string]bool, len(steps))
 	for _, st := range steps {
-		if !formlogic.StepVisible(st.Config, canon) {
+		if !formlogic.StepVisible(st.Config, evalAnswers) {
 			ruleHidden[st.ID] = true
 		}
 	}
 
-	return formlogic.HiddenByJump(ruleFields, order, canon, ruleHidden)
+	return formlogic.HiddenByJump(ruleFields, order, evalAnswers, ruleHidden, visible)
 }
 
 // dropHiddenValues removes entries whose field's visible_if fails against

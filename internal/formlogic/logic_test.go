@@ -115,6 +115,69 @@ func TestFieldVisible(t *testing.T) {
 	}
 }
 
+func TestVisiblePath(t *testing.T) {
+	t.Parallel()
+
+	mk := func(key, cfg string) RuleField {
+		return RuleField{Key: key, StepKey: "s1", Config: []byte(cfg)}
+	}
+
+	// gated opens on driver unanswered-or-yes; revealed needs driver=yes.
+	// With stage=post the driver is hidden — its retained answer is off
+	// the visible path and reads as unanswered downstream (ADR-137).
+	fields := []RuleField{
+		mk("driver", `{"visible_if":{"all":[{"field":"stage","op":"eq","value":"pre"}]}}`),
+		mk("gated", `{"visible_if":{"any":[{"field":"driver","op":"not_answered"},{"field":"driver","op":"eq","value":"yes"}]}}`),
+		mk("revealed", `{"visible_if":{"all":[{"field":"driver","op":"eq","value":"yes"}]}}`),
+	}
+
+	visible, evalAnswers := VisiblePath(fields, map[string]any{
+		"stage": "post", "driver": "yes", "gated": "x", "revealed": "y",
+	})
+
+	if visible["driver"] {
+		t.Fatal("driver should be hidden — stage=post")
+	}
+
+	if !visible["gated"] {
+		t.Fatal("gated should show — hidden driver's stale answer reads unanswered")
+	}
+
+	if visible["revealed"] {
+		t.Fatal("revealed should stay hidden — a stale driver answer can't reveal it")
+	}
+
+	if _, ok := evalAnswers["driver"]; ok {
+		t.Fatal("hidden driver's answer must not enter the eval map")
+	}
+
+	if _, ok := evalAnswers["gated"]; !ok {
+		t.Fatal("visible answered field should enter the eval map")
+	}
+
+	// Chain through a VISIBLE driver still works: stage=pre shows driver,
+	// its answer then gates deeper fields.
+	visible, _ = VisiblePath(fields, map[string]any{"stage": "pre", "driver": "yes"})
+	if !visible["driver"] || !visible["gated"] || !visible["revealed"] {
+		t.Fatalf("visible driver should gate deeper fields: %v", visible)
+	}
+}
+
+func TestHiddenByJumpVisibleSet(t *testing.T) {
+	t.Parallel()
+
+	fields := []RuleField{
+		{Key: "j1", StepKey: "s1", Config: []byte(`{"jump":{"step":"s3"}}`)},
+	}
+
+	// Answered but ordered-hidden source cannot fire when the caller
+	// supplies the VisiblePath result.
+	hidden := HiddenByJump(fields, []string{"s1", "s2", "s3"}, map[string]any{"j1": "x"}, nil, map[string]bool{"j1": false})
+	if len(hidden) != 0 {
+		t.Fatalf("hidden source should not fire: %v", hidden)
+	}
+}
+
 func TestHiddenByJump(t *testing.T) {
 	t.Parallel()
 
@@ -228,7 +291,7 @@ func TestHiddenByJump(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := HiddenByJump(c.fields, order, c.answers, c.seed); !reflect.DeepEqual(got, c.want) {
+			if got := HiddenByJump(c.fields, order, c.answers, c.seed, nil); !reflect.DeepEqual(got, c.want) {
 				t.Fatalf("got %v want %v", got, c.want)
 			}
 		})

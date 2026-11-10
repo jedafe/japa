@@ -441,15 +441,10 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 // the client rail so the server never requires what the user could not see.
 // Ref: ADR-137.
 func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules map[string]StepRule) map[string]bool {
-	set := make(map[string]bool, len(fields))
 	ruleFields := make([]formlogic.RuleField, 0, len(fields))
 
 	dims := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Config.VisibleIf.Eval(answers, f.Key) {
-			set[f.Key] = true
-		}
-
 		dim := fieldDimension(f.Config)
 		cfg, _ := json.Marshal(f.Config)
 
@@ -459,7 +454,9 @@ func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules
 		}
 	}
 
-	for dim := range hiddenDimensions(ruleFields, dims, stepRules, answers) {
+	set, evalAnswers := formlogic.VisiblePath(ruleFields, answers)
+
+	for dim := range hiddenDimensions(ruleFields, dims, stepRules, evalAnswers, set) {
 		for _, f := range fields {
 			if fieldDimension(f.Config) == dim {
 				delete(set, f.Key)
@@ -471,20 +468,21 @@ func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules
 }
 
 // hiddenDimensions returns the dimension keys hidden by step_rules.visible_if
-// or by triggered forward jumps between dimension steps (ADR-137).
-// Rule-hidden dimensions seed the jump pass so a field inside one can't
-// fire a jump — invisible fields can't drive the flow. Auto-hide of empty
-// dimensions needs no handling — their fields are already hidden
-// individually.
-func hiddenDimensions(ruleFields []formlogic.RuleField, dimOrder []string, stepRules map[string]StepRule, answers map[string]any) map[string]bool {
+// or by triggered forward jumps between dimension steps (ADR-137). evalAnswers
+// is the VisiblePath-restricted map — hidden fields' answers never drive
+// rules. visible carries the ordered field-visibility result so a field
+// hidden by its own rule can't fire a jump. Rule-hidden dimensions seed the
+// jump pass for the same reason. Auto-hide of empty dimensions needs no
+// handling — their fields are already hidden individually.
+func hiddenDimensions(ruleFields []formlogic.RuleField, dimOrder []string, stepRules map[string]StepRule, evalAnswers map[string]any, visible map[string]bool) map[string]bool {
 	ruleHidden := make(map[string]bool, len(dimOrder))
 	for _, dim := range dimOrder {
-		if r, ok := stepRules[dim]; ok && !r.VisibleIf.Eval(answers, "") {
+		if r, ok := stepRules[dim]; ok && !r.VisibleIf.Eval(evalAnswers, "") {
 			ruleHidden[dim] = true
 		}
 	}
 
-	return formlogic.HiddenByJump(ruleFields, dimOrder, answers, ruleHidden)
+	return formlogic.HiddenByJump(ruleFields, dimOrder, evalAnswers, ruleHidden, visible)
 }
 
 // fieldDimension returns the field's step identifier — its dimension, or the
@@ -1401,7 +1399,8 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		}
 	}
 
-	hiddenDims := hiddenDimensions(ruleFields, dims, scoringConfig.StepRules, answers)
+	visible, evalAnswers := formlogic.VisiblePath(ruleFields, answers)
+	hiddenDims := hiddenDimensions(ruleFields, dims, scoringConfig.StepRules, evalAnswers, visible)
 
 	// Aggregate raw scores per dimension and track the max possible per
 	// dimension for normalisation.
@@ -1415,7 +1414,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		}
 
 		fsc := parseFieldScoringConfig(field.Config)
-		if !fsc.VisibleIf.Eval(answers, key) || hiddenDims[fieldDimension(fsc)] {
+		if !visible[key] || hiddenDims[fieldDimension(fsc)] {
 			continue // defense-in-depth: stale/crafted answer for a hidden field (ADR-137)
 		}
 		if fsc.Dimension == "" {

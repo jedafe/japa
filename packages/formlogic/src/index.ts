@@ -171,11 +171,51 @@ export function stepVisible(
 	return evalCondition(config.visible_if, answers, '');
 }
 
+export interface VisibilityPath {
+	/** Keys of fields on the visible path. */
+	visible: Set<string>;
+	/**
+	 * Answers restricted to visible fields — the eval map for step
+	 * visible_if and jump rules so hidden answers never drive the flow.
+	 */
+	answers: Answers;
+}
+
+/**
+ * resolveVisibility walks fields in list order evaluating each field's
+ * visible_if against answers restricted to already-visible fields. A hidden
+ * field's retained/stale answer is off the visible path — it does not drive
+ * downstream rules, extending the "invisible fields can't drive the flow"
+ * rule from jump sources to visible_if drivers (ADR-137).
+ *
+ * Order matters: conditions should reference fields positioned earlier
+ * than the gated field (the authoring convention clients render in). A
+ * clause referencing a later field sees it as unanswered.
+ */
+export function resolveVisibility(
+	fields: ReadonlyArray<{ key: string; config?: FieldLogicConfig | null }>,
+	answers: Answers
+): VisibilityPath {
+	const visible = new Set<string>();
+	// Seed with non-field keys (external context clauses may reference)
+	// then re-add each visible field's answer — a hidden field's answer
+	// never reaches the eval map.
+	const evalAnswers: Answers = { ...answers };
+	for (const f of fields) delete evalAnswers[f.key];
+	for (const f of fields) {
+		if (!fieldVisible(f.config, evalAnswers, f.key)) continue;
+		visible.add(f.key);
+		if (Object.prototype.hasOwnProperty.call(answers, f.key)) evalAnswers[f.key] = answers[f.key];
+	}
+	return { visible, answers: evalAnswers };
+}
+
 /** visibleFields filters a field list by visible_if against current answers. */
 export function visibleFields<
 	T extends { key: string; config?: FieldLogicConfig | null }
 >(fields: T[], answers: Answers): T[] {
-	return fields.filter((f) => fieldVisible(f.config, answers, f.key));
+	const { visible } = resolveVisibility(fields, answers);
+	return fields.filter((f) => visible.has(f.key));
 }
 
 /**
@@ -195,7 +235,8 @@ export function hiddenStepsByJump(
 	fields: LogicField[],
 	stepOrder: string[],
 	answers: Answers,
-	stepHidden?: ReadonlySet<string>
+	stepHidden?: ReadonlySet<string>,
+	visible?: ReadonlySet<string>
 ): Set<string> {
 	const idx = new Map<string, number>();
 	stepOrder.forEach((k, i) => idx.set(k, i));
@@ -205,7 +246,7 @@ export function hiddenStepsByJump(
 	);
 	for (const f of sorted) {
 		if (hidden.has(f.stepKey)) continue;
-		if (!fieldVisible(f.config, answers, f.key)) continue;
+		if (visible ? !visible.has(f.key) : !fieldVisible(f.config, answers, f.key)) continue;
 		const j = f.config?.jump;
 		if (j == null || typeof j !== 'object' || !j.step) continue;
 		const hasWhen = Boolean(

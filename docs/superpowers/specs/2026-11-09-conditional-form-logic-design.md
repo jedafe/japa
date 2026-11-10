@@ -76,10 +76,15 @@ Clause    = { "field": "<field_key>", "op": "<op>", "value": <any> }
   identical. The admin rule builder picks values from the field's raw
   `{value,label}` option defs (new `option_defs` key on the admin field
   JSON; the public `options` list stays label-only).
-- A clause references the **answers map only**, never the referenced field's
-  own visibility. Chains (hidden field revealing another field) work: a field
-  whose `visible_if` passes can itself gate deeper fields. There is no
-  recursion, so cycles are impossible.
+- Clauses evaluate against the **visible-path answers map**, built in a
+  single ordered pass: seed with the submission minus every field key
+  (non-field context keys remain), then walk fields in natural order — a
+  field whose `visible_if` passes contributes its answer for deeper fields;
+  a hidden field's answer (draft-retained or crafted) never enters the map
+  and reads as unanswered. Chains through *visible* fields still work; a
+  hidden field cannot gate — the same "invisible fields can't drive the
+  flow" rule jump sources already follow. Still one pass, no recursion, so
+  cycles remain impossible. Authors place drivers before their dependents.
 - An unanswered referenced field makes every op false except `not_answered`.
 - Absent or malformed `visible_if`/`jump` → treated as absent (fail-open:
   field visible, no jump). Old clients on new forms degrade to "extra
@@ -114,8 +119,9 @@ jumpHidden     = union over triggered jumps of open intervals (S_idx, T_idx)
 visibleSteps   = naturalOrder.filter(s => stepVisible(s) && s ∉ jumpHidden)
 ```
 
-- Field visibility and step visibility both evaluate against the current
-  answers; order of evaluation does not matter (no recursion).
+- Field visibility resolves in the ordered pass above; step `visible_if`
+  rules evaluate against the same visible-path map, so step rules also
+  cannot be driven by a hidden field's answer.
 - Jumps: for each **visible** field in natural step order — a field that
   passes `visible_if` **and whose containing step is not already hidden**
   (by the step's own `visible_if` or an earlier-fired jump) — if the jump's

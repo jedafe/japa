@@ -42,12 +42,12 @@ func TestParseJourneyFieldsVisaRouteFallback(t *testing.T) {
 		answers map[string]any
 		want    string
 	}{
-		{"explicit visa_type wins", map[string]any{tfVisaType: "investment", tfPurpose: tfWork}, "investment"},
+		{"explicit visa_type wins", map[string]any{tfVisaType: tfInvestment, tfPurpose: tfWork}, tfInvestment},
 		{"purpose study derives student route", map[string]any{tfPurpose: tfStudy}, tfStudent},
 		{"purpose work derives work route", map[string]any{tfPurpose: tfWork}, tfWork},
 		{"purpose business derives business route", map[string]any{tfPurpose: tfBusiness}, tfBusiness},
 		{"purpose tourism derives tourist route", map[string]any{tfPurpose: "tourism"}, "tourist"},
-		{"purpose family derives family route", map[string]any{tfPurpose: "family"}, "family"},
+		{"purpose family derives family route", map[string]any{tfPurpose: tfFamily}, tfFamily},
 		{"purpose relocation falls back to other", map[string]any{tfPurpose: "relocation"}, "other"},
 		{"both blank stays blank", map[string]any{}, ""},
 	}
@@ -79,8 +79,8 @@ func TestParseJourneyFieldsPurposeFallback(t *testing.T) {
 		{"route work derives work", map[string]any{tfVisaType: tfWork}, tfWork},
 		{"route business derives business", map[string]any{tfVisaType: tfBusiness}, tfBusiness},
 		{"route tourist derives tourism", map[string]any{tfVisaType: "tourist"}, "tourism"},
-		{"route spouse derives family", map[string]any{tfVisaType: "spouse"}, "family"},
-		{"route investment derives business", map[string]any{tfVisaType: "investment"}, tfBusiness},
+		{"route spouse derives family", map[string]any{tfVisaType: "spouse"}, tfFamily},
+		{"route investment derives business", map[string]any{tfVisaType: tfInvestment}, tfBusiness},
 		{"route transit has no purpose", map[string]any{tfVisaType: "transit"}, ""},
 		{"route other has no purpose", map[string]any{tfVisaType: "other"}, ""},
 		{"both blank stays blank", map[string]any{}, ""},
@@ -105,7 +105,7 @@ func TestPickBestRoadmapContent_PrefersStrongestContextMatch(t *testing.T) {
 	journey := JourneyContext{
 		DestinationCountry: "CA",
 		VisaRoute:          tfStudent,
-		JourneyStage:       "planning",
+		JourneyStage:       tfPlanning,
 	}
 
 	best, score := pickBestRoadmapContent(rows, base, map[string]bool{}, journey)
@@ -117,10 +117,10 @@ func TestPickBestRoadmapContent_PrefersStrongestContextMatch(t *testing.T) {
 func TestPickBestRoadmapContent_KeepsOriginalOnTie(t *testing.T) {
 	base := "guide-generic-finance"
 	rows := []gen.FindRoadmapContentByDimensionRow{
-		{Slug: "another-planning-finance", JourneyStage: ptr("planning")},
-		{Slug: base, JourneyStage: ptr("planning")},
+		{Slug: "another-planning-finance", JourneyStage: ptr(tfPlanning)},
+		{Slug: base, JourneyStage: ptr(tfPlanning)},
 	}
-	journey := JourneyContext{JourneyStage: "planning"}
+	journey := JourneyContext{JourneyStage: tfPlanning}
 
 	best, _ := pickBestRoadmapContent(rows, base, map[string]bool{}, journey)
 	assert.Equal(t, base, best.Slug, "when scores tie, the original curated slug wins")
@@ -141,10 +141,10 @@ func TestPickBestRoadmapContent_SkipsUsedSlugs(t *testing.T) {
 func TestPickBestRoadmapContent_BaseWinsTieEvenWhenUsed(t *testing.T) {
 	base := "guide-generic-finance"
 	rows := []gen.FindRoadmapContentByDimensionRow{
-		{Slug: "another-planning-finance", JourneyStage: ptr("planning")},
-		{Slug: base, JourneyStage: ptr("planning")},
+		{Slug: "another-planning-finance", JourneyStage: ptr(tfPlanning)},
+		{Slug: base, JourneyStage: ptr(tfPlanning)},
 	}
-	journey := JourneyContext{JourneyStage: "planning"}
+	journey := JourneyContext{JourneyStage: tfPlanning}
 
 	// base is in used (as it would be at runtime from the seed map), but it is
 	// still allowed to compete and win on a tie.

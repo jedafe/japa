@@ -211,6 +211,47 @@ func FieldVisible(config []byte, answers map[string]any, selfKey string) bool {
 	return ParseFieldRules(config).VisibleIf.Eval(answers, selfKey)
 }
 
+// VisiblePath walks fields in list order, evaluating each field's
+// visible_if against answers restricted to fields already determined
+// visible. A hidden field's retained/stale answer is off the visible path
+// — it does not drive downstream rules, extending the "invisible fields
+// can't drive the flow" rule from jump sources to visible_if drivers
+// (ADR-137). Returns the visible key set and the restricted answers map —
+// pass the latter to step visible_if and jump evaluation so rules never
+// read answers the user could not supply.
+//
+// Order matters: conditions should reference fields positioned earlier
+// than the gated field (the authoring convention clients render in). A
+// clause referencing a later field sees it as unanswered.
+func VisiblePath(fields []RuleField, answers map[string]any) (visible map[string]bool, evalAnswers map[string]any) {
+	visible = make(map[string]bool, len(fields))
+
+	// Seed with non-field keys (external context clauses may reference)
+	// then re-add each visible field's answer — a hidden field's answer
+	// never reaches the eval map.
+	evalAnswers = make(map[string]any, len(answers))
+	for k, v := range answers {
+		evalAnswers[k] = v
+	}
+
+	for _, f := range fields {
+		delete(evalAnswers, f.Key)
+	}
+
+	for _, f := range fields {
+		if !FieldVisible(f.Config, evalAnswers, f.Key) {
+			continue
+		}
+
+		visible[f.Key] = true
+		if v, ok := answers[f.Key]; ok {
+			evalAnswers[f.Key] = v
+		}
+	}
+
+	return visible, evalAnswers
+}
+
 // StepVisible reports whether a form_steps.config (or a step_rules entry's
 // serialized config) passes its visible_if. Nil/empty config → visible.
 func StepVisible(config []byte, answers map[string]any) bool {
@@ -233,7 +274,12 @@ func StepVisible(config []byte, answers map[string]any) bool {
 // are processed in natural step order so a field inside a step hidden by an
 // earlier jump can never fire its own; it hides the open interval
 // (source, target). Backward/self/unknown targets are ignored.
-func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any, stepHidden map[string]bool) map[string]bool {
+// visible carries the VisiblePath result — a field hidden by its own
+// visible_if can never fire a jump; nil falls back to per-field
+// FieldVisible evaluation for callers that have not run the ordered pass.
+func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any, stepHidden map[string]bool,
+	visible map[string]bool,
+) map[string]bool {
 	idx := make(map[string]int, len(stepOrder))
 	for i, k := range stepOrder {
 		idx[k] = i
@@ -254,7 +300,7 @@ func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any
 	})
 
 	for _, f := range sorted {
-		j := fireableJump(f, hidden, answers)
+		j := fireableJump(f, hidden, answers, visible)
 		if j == nil {
 			continue
 		}
@@ -279,12 +325,16 @@ func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any
 // user: its own visible_if passes and its containing step is not already
 // hidden (seeded or by an earlier jump). A When with no clauses fires iff
 // the owning field is answered.
-func fireableJump(f RuleField, hidden map[string]bool, answers map[string]any) *JumpRule {
+func fireableJump(f RuleField, hidden map[string]bool, answers map[string]any, visible map[string]bool) *JumpRule {
 	if hidden[f.StepKey] {
 		return nil
 	}
 
-	if !FieldVisible(f.Config, answers, f.Key) {
+	if visible != nil {
+		if !visible[f.Key] {
+			return nil
+		}
+	} else if !FieldVisible(f.Config, answers, f.Key) {
 		return nil
 	}
 

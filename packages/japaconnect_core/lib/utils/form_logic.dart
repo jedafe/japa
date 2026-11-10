@@ -127,14 +127,53 @@ bool stepVisible(Map<String, dynamic>? config, Answers answers) {
   return evalCondition(vis is Map ? vis.cast<String, dynamic>() : null, answers, '');
 }
 
-/// Filters a field list by visible_if against current answers. Each entry
-/// must expose `key` and may expose `config`.
-List<Map<String, dynamic>> visibleFields(List<dynamic> fields, Answers answers) {
-  return fields.whereType<Map>().map((f) => f.cast<String, dynamic>()).where((f) {
+/// Walks [fields] in list order evaluating each field's visible_if against
+/// answers restricted to already-visible fields. A hidden field's retained/
+/// stale answer is off the visible path — it does not drive downstream
+/// rules, extending the "invisible fields can't drive the flow" rule from
+/// jump sources to visible_if drivers (ADR-137). Returns the visible key
+/// set and the restricted answers map — pass the latter to step visible_if
+/// and jump evaluation so rules never read answers the user could not
+/// supply.
+///
+/// Order matters: conditions should reference fields positioned earlier
+/// than the gated field (the authoring convention clients render in). A
+/// clause referencing a later field sees it as unanswered.
+({Set<String> visible, Answers answers}) resolveVisibility(
+    List<dynamic> fields, Answers answers) {
+  final visible = <String>{};
+  // Seed with non-field keys (external context clauses may reference)
+  // then re-add each visible field's answer — a hidden field's answer
+  // never reaches the eval map.
+  final evalAnswers = <String, dynamic>{...answers};
+  for (final raw in fields) {
+    if (raw is! Map) continue;
+    final k = raw.cast<String, dynamic>()['key'];
+    if (k is String) evalAnswers.remove(k);
+  }
+  for (final raw in fields) {
+    if (raw is! Map) continue;
+    final f = raw.cast<String, dynamic>();
     final k = f['key'];
     final key = k is String ? k : '';
     final cfg = f['config'];
-    return fieldVisible(cfg is Map ? cfg.cast<String, dynamic>() : null, answers, key);
+    if (!fieldVisible(cfg is Map ? cfg.cast<String, dynamic>() : null, evalAnswers, key)) {
+      continue;
+    }
+    visible.add(key);
+    if (answers.containsKey(key)) evalAnswers[key] = answers[key];
+  }
+  return (visible: visible, answers: evalAnswers);
+}
+
+/// Filters a field list by visible_if against current answers. Each entry
+/// must expose `key` and may expose `config`.
+List<Map<String, dynamic>> visibleFields(List<dynamic> fields, Answers answers) {
+  final path = resolveVisibility(fields, answers);
+  return fields.whereType<Map>().map((f) => f.cast<String, dynamic>()).where((f) {
+    final k = f['key'];
+    final key = k is String ? k : '';
+    return path.visible.contains(key);
   }).toList();
 }
 
@@ -159,6 +198,7 @@ Set<String> hiddenStepsByJump(
   Answers answers, {
   String Function(Map<String, dynamic> field)? stepKeyOf,
   Set<String>? stepHidden,
+  Set<String>? visible,
 }) {
   // Dimensionless fields belong to the server's "general" fallback step
   // (fieldDimension) — returning '' would orphan them: their jumps could
@@ -193,7 +233,7 @@ Set<String> hiddenStepsByJump(
     final cfg = raw['config'];
     final config = cfg is Map ? cfg.cast<String, dynamic>() : null;
     if (hidden.contains(keyOf(raw))) continue;
-    if (!fieldVisible(config, answers, fKey)) continue;
+    if (!(visible?.contains(fKey) ?? fieldVisible(config, answers, fKey))) continue;
     final j = config?['jump'];
     if (j is! Map) continue;
     final target = j['step'];

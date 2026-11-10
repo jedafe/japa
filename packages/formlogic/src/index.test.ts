@@ -3,6 +3,7 @@ import {
 	evalCondition,
 	fieldVisible,
 	hiddenStepsByJump,
+	resolveVisibility,
 	type Clause,
 	type LogicField,
 } from './index';
@@ -175,5 +176,51 @@ describe('hiddenStepsByJump', () => {
 		expect([...hiddenStepsByJump(fields, order, { u1: 'x' })].sort()).toEqual(['s2']);
 		expect(hiddenStepsByJump(fields, order, {}).size).toBe(0);
 		expect(hiddenStepsByJump(fields, order, { u1: '' }).size).toBe(0);
+	});
+});
+
+describe('resolveVisibility', () => {
+	const mk = (key: string, config: string) => ({ key, config: JSON.parse(config) });
+	const fields = [
+		mk('driver', `{"visible_if":{"all":[{"field":"stage","op":"eq","value":"pre"}]}}`),
+		mk('gated', `{"visible_if":{"any":[{"field":"driver","op":"not_answered"},{"field":"driver","op":"eq","value":"yes"}]}}`),
+		mk('revealed', `{"visible_if":{"all":[{"field":"driver","op":"eq","value":"yes"}]}}`),
+	];
+
+	it('hidden driver answer is off the visible path', () => {
+		const { visible, answers } = resolveVisibility(fields, {
+			stage: 'post',
+			driver: 'yes',
+			gated: 'x',
+			revealed: 'y',
+		});
+		expect(visible.has('driver')).toBe(false);
+		expect(visible.has('gated')).toBe(true); // stale driver reads unanswered
+		expect(visible.has('revealed')).toBe(false); // stale driver can't reveal
+		expect('driver' in answers).toBe(false);
+		expect('gated' in answers).toBe(true);
+	});
+
+	it('visible driver still gates deeper fields (chains work)', () => {
+		const { visible } = resolveVisibility(fields, { stage: 'pre', driver: 'yes' });
+		expect(visible.has('driver')).toBe(true);
+		expect(visible.has('gated')).toBe(true);
+		expect(visible.has('revealed')).toBe(true);
+	});
+
+	it('visibleFields uses the ordered pass', async () => {
+		const { visibleFields } = await import('./index');
+		const vis = visibleFields(fields, { stage: 'post', driver: 'yes' });
+		expect(vis.map((f) => f.key)).toEqual(['gated']);
+	});
+});
+
+describe('hiddenStepsByJump with visible set', () => {
+	it('answered but hidden source cannot fire', () => {
+		const fields: LogicField[] = [
+			{ key: 'j1', stepKey: 's1', config: { jump: { step: 's3' } } },
+		];
+		const h = hiddenStepsByJump(fields, ['s1', 's2', 's3'], { j1: 'x' }, undefined, new Set());
+		expect(h.size).toBe(0);
 	});
 });

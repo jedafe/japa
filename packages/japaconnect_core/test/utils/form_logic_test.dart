@@ -183,4 +183,41 @@ void main() {
       expect(hiddenStepsByJump(fields, order, {'u1': ''}), isEmpty);
     });
   });
+
+  group('resolveVisibility', () {
+    final fields = <Map<String, dynamic>>[
+      {'key': 'driver', 'config': dec('{"visible_if":{"all":[{"field":"stage","op":"eq","value":"pre"}]}}')},
+      {'key': 'gated', 'config': dec('{"visible_if":{"any":[{"field":"driver","op":"not_answered"},{"field":"driver","op":"eq","value":"yes"}]}}')},
+      {'key': 'revealed', 'config': dec('{"visible_if":{"all":[{"field":"driver","op":"eq","value":"yes"}]}}')},
+    ];
+
+    test('hidden driver answer is off the visible path', () {
+      final r = resolveVisibility(fields, {'stage': 'post', 'driver': 'yes', 'gated': 'x', 'revealed': 'y'});
+      expect(r.visible.contains('driver'), isFalse);
+      expect(r.visible.contains('gated'), isTrue); // stale driver reads unanswered
+      expect(r.visible.contains('revealed'), isFalse); // stale driver can't reveal
+      expect(r.answers.containsKey('driver'), isFalse);
+      expect(r.answers.containsKey('gated'), isTrue);
+    });
+
+    test('visible driver still gates deeper fields (chains work)', () {
+      final r = resolveVisibility(fields, {'stage': 'pre', 'driver': 'yes'});
+      expect(r.visible.containsAll({'driver', 'gated', 'revealed'}), isTrue);
+    });
+
+    test('non-field keys stay in the eval map', () {
+      final r = resolveVisibility(fields, {'stage': 'pre', 'driver': 'yes'});
+      expect(r.answers['stage'], 'pre');
+    });
+  });
+
+  group('hiddenStepsByJump with visible set', () {
+    test('answered but hidden source cannot fire', () {
+      final fields = <Map<String, dynamic>>[
+        {'key': 'j1', 'stepKey': 's1', 'config': dec('{"jump":{"step":"s3"}}')},
+      ];
+      final h = hiddenStepsByJump(fields, ['s1', 's2', 's3'], {'j1': 'x'}, visible: <String>{});
+      expect(h, isEmpty);
+    });
+  });
 }
