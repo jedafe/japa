@@ -120,3 +120,4 @@ screenshot/
 /llms-full.txt
 /sitemap.xml
 .coolify-provision.json
+api.log
