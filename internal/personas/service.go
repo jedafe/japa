@@ -1061,12 +1061,16 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 			params.Interests = *in.Interests
 		}
 
+		// Media assignment is authoritative over the url columns: clearing the
+		// id also clears the stale url, and a resolved url always replaces any
+		// explicit url merge above (media id wins).
 		if in.AvatarMediaID != nil {
 			mid, url, err := s.mergeMediaID(ctx, *in.AvatarMediaID, "avatar_media_id", true)
 			if err != nil {
 				return PersonaDetail{}, err
 			}
 			params.AvatarMediaID = mid
+			params.AvatarUrl = nil
 			if url != "" {
 				params.AvatarUrl = &url
 			}
@@ -1077,6 +1081,7 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 				return PersonaDetail{}, err
 			}
 			params.HeaderMediaID = mid
+			params.CoverUrl = nil
 			if url != "" {
 				params.CoverUrl = &url
 			}
