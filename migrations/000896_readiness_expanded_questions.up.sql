@@ -44,9 +44,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 ('00000000-0000-0000-0000-00000000c001', gid,
  'Do you meet the proof-of-funds requirement for your visa route?',
  'proof_of_funds', 'select',
- '[{"value":"unaware","label":"I don''t know the requirement"},{"value":"below","label":"Below the required amount"},{"value":"close","label":"Close to the required amount"},{"value":"met","label":"Requirement fully met"}]'::jsonb,
+ '[{"value":"unaware","label":"I don''t know the requirement"},{"value":"below","label":"Below the required amount"},{"value":"close","label":"Close to the required amount"},{"value":"met","label":"Requirement fully met"},{"value":"not_required","label":"Not required for my route"}]'::jsonb,
  'Select the closest match', true, false, true, 9,
- '{"weight":1.0,"dimension":"financial","option_scores":{"unaware":10,"below":30,"close":60,"met":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
+ '{"weight":1.0,"dimension":"financial","option_scores":{"unaware":10,"below":30,"close":60,"met":100,"not_required":90},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c002', gid,
  'Have you budgeted the full cost of your move (flights, shipping, first months'' costs)?',

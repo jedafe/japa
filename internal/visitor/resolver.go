@@ -537,6 +537,18 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		vc.Purpose = PurposeForIntent(vc.JapaIntent)
 	}
 
+	// and the visa route as a last resort — a post-move readiness user
+	// answers visa_type but not purpose (migration 001108); a profile
+	// visa_route implies the same purpose. Then keep JapaIntent in step
+	// with the derived purpose.
+	if vc.Purpose == "" {
+		vc.Purpose = PurposeForVisaRoute(vc.VisaRoute)
+	}
+
+	if vc.JapaIntent == "" {
+		vc.JapaIntent = NormalizeIntent(vc.Purpose)
+	}
+
 	// Resolve archetype (ADR-064). CurrentCountry is the primary signal
 	// (now from Space hierarchy when set, else GeoIP); japa_status and
 	// destination_country refine it. OriginCountry (profile field, guest

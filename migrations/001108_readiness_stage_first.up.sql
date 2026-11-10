@@ -22,13 +22,21 @@
 
 BEGIN;
 
--- Rotate the first three context fields: journey_stage first.
-UPDATE custom_fields SET position = 1
-WHERE group_id = '00000000-0000-0000-0000-00000000a001' AND key = 'journey_stage';
-UPDATE custom_fields SET position = 2
-WHERE group_id = '00000000-0000-0000-0000-00000000a001' AND key = 'destination_country';
-UPDATE custom_fields SET position = 3
-WHERE group_id = '00000000-0000-0000-0000-00000000a001' AND key = 'origin_country';
+-- Reorder the context block: journey_stage first. All six positions are
+-- assigned explicitly (not rotated) because 001103's relative position
+-- rotation produces a different layout on fresh installs — explicit values
+-- converge live and seeded databases on the same end state.
+UPDATE custom_fields SET position = CASE key
+  WHEN 'journey_stage' THEN 1
+  WHEN 'destination_country' THEN 2
+  WHEN 'origin_country' THEN 3
+  WHEN 'purpose' THEN 4
+  WHEN 'visa_type' THEN 5
+  WHEN 'travel_date' THEN 6
+END
+WHERE group_id = '00000000-0000-0000-0000-00000000a001'
+  AND key IN ('journey_stage', 'destination_country', 'origin_country',
+              'purpose', 'visa_type', 'travel_date');
 
 -- Hide purpose at relocated/settled (Band B shape, fail-open on unanswered).
 UPDATE custom_fields
