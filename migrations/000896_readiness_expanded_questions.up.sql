@@ -66,7 +66,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 ('00000000-0000-0000-0000-00000000c004', gid,
  'Is health insurance or healthcare coverage arranged at your destination?',
  'health_insurance', 'select',
- '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"short_term","label":"Short-term cover arranged"},{"value":"covered","label":"Fully covered from day one"}]'::jsonb,
+ '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"short_term","label":"Short-term cover arranged"},{"value":"covered","label":"Fully covered"}]'::jsonb,
  'Select the closest match', true, false, true, 13,
  '{"weight":1.0,"dimension":"logistical","option_scores":{"none":10,"researching":40,"short_term":70,"covered":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
@@ -88,9 +88,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 ('00000000-0000-0000-0000-00000000c007', gid,
  'How far along is your job search in your destination?',
  'job_search_progress', 'select',
- '[{"value":"not_started","label":"Not started"},{"value":"cv_ready","label":"CV/resume localized for the market"},{"value":"applying","label":"Applying or interviewing"},{"value":"offer","label":"Offer secured"}]'::jsonb,
+ '[{"value":"not_started","label":"Not started"},{"value":"cv_ready","label":"CV/resume localized for the market"},{"value":"applying","label":"Applying or interviewing"},{"value":"offer","label":"Offer secured"},{"value":"employed","label":"Already employed at destination"}]'::jsonb,
  'Select the closest match', true, false, true, 18,
- '{"weight":1.0,"dimension":"professional","option_scores":{"not_started":10,"cv_ready":40,"applying":70,"offer":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"professional","option_scores":{"not_started":10,"cv_ready":40,"applying":70,"offer":100,"employed":100}}'::jsonb),
 
 -- Personal
 ('00000000-0000-0000-0000-00000000c008', gid,
@@ -103,7 +103,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 ('00000000-0000-0000-0000-00000000c009', gid,
  'If family or dependants are part of your move, are their arrangements (visas, school, care) sorted?',
  'dependents_plan', 'select',
- '[{"value":"alone","label":"No dependants — not applicable"},{"value":"planning","label":"Dependants coming, still planning"},{"value":"partial","label":"Partially arranged"},{"value":"arranged","label":"Fully arranged"}]'::jsonb,
+ '[{"value":"alone","label":"No dependants — not applicable"},{"value":"planning","label":"Still being planned"},{"value":"partial","label":"Partially arranged"},{"value":"arranged","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 21,
  '{"weight":1.0,"dimension":"personal","option_scores":{"alone":90,"planning":40,"partial":70,"arranged":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"dependents"}]}}'::jsonb),
 

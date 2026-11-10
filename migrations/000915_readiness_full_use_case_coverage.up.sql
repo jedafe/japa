@@ -56,7 +56,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 ('00000000-0000-0000-0000-00000000f024', gid,
  'If pets are part of your move, are their vaccinations, permits, and transport arranged?',
  'pets_relocation', 'select',
- '[{"value":"no_pets","label":"No pets — not applicable"},{"value":"not_started","label":"Pets coming, not started"},{"value":"arranging","label":"Vaccinations/permits in progress"},{"value":"sorted","label":"Fully arranged"}]'::jsonb,
+ '[{"value":"no_pets","label":"No pets — not applicable"},{"value":"not_started","label":"Not started yet"},{"value":"arranging","label":"Vaccinations/permits in progress"},{"value":"sorted","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 36,
  '{"weight":1.0,"dimension":"logistical","option_scores":{"no_pets":90,"not_started":15,"arranging":60,"sorted":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"pets"}]}}'::jsonb),
 
@@ -80,7 +80,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'business_readiness', 'select',
  '[{"value":"not_business","label":"Not a business move — not applicable"},{"value":"idea","label":"Idea stage only"},{"value":"developing","label":"Plan developing / registration underway"},{"value":"validated","label":"Registered or revenue-ready"}]'::jsonb,
  'Select the closest match', true, false, true, 39,
- '{"weight":1.0,"dimension":"professional","option_scores":{"not_business":90,"idea":25,"developing":60,"validated":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"business"},{"field":"visa_type","op":"eq","value":"business"}]}}'::jsonb),
+ '{"weight":1.0,"dimension":"professional","option_scores":{"not_business":90,"idea":25,"developing":60,"validated":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"business"},{"field":"visa_type","op":"in","value":["business","investment"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f028', gid,
  'Have you built professional connections at your destination (recruiters, associations, online network)?',
