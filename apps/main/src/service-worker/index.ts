@@ -88,7 +88,7 @@ sw.addEventListener('push', (event) => {
 	const options: NotificationOptions = {
 		body,
 		data: { url: actionUrl },
-		icon: '/favicon.png',
+		icon: '/icon-192.png',
 		badge: '/favicon.png'
 	};
 
