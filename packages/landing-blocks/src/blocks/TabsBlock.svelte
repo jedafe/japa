@@ -21,9 +21,8 @@
   const allNested = $derived(props.tabs.flatMap((tab) => tab.content_blocks ?? []));
   const visibilityCss = $derived(responsiveVisibilityCss(allNested));
 
-  // Vertical orientation renders as a sidenav: trigger column pinned left on
-  // sm+ (sticky so long tab content can scroll past it), horizontal scroll
-  // row on mobile.
+  // Vertical orientation renders as a sidenav: trigger column pinned left at
+  // every breakpoint (sticky on sm+ so long tab content can scroll past it).
   const vertical = $derived(props.orientation === 'vertical');
 
   const triggerLayoutClass = $derived(
@@ -46,14 +45,13 @@
 <section class="px-6 py-16">
   <div class="mx-auto max-w-5xl">
     <Tabs.Root value={String(props.initial_tab ?? 0)} orientation={props.orientation}>
-      <div class={vertical ? 'flex flex-col gap-6 sm:flex-row sm:items-start' : 'contents'}>
-        <!-- Mobile: the trigger row scrolls horizontally instead of overflowing the page. -->
-        <Tabs.List class={vertical ? 'flex shrink-0 gap-1 overflow-x-auto sm:sticky sm:top-24 sm:w-56 sm:flex-col sm:self-start sm:overflow-visible' : 'flex gap-1 overflow-x-auto ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
+      <div class={vertical ? 'flex flex-row items-start gap-4 sm:gap-6' : 'contents'}>
+        <Tabs.List class={vertical ? 'flex w-36 shrink-0 flex-col gap-2 self-start sm:sticky sm:top-24 sm:w-56' : 'flex gap-1 overflow-x-auto ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
           {#each props.tabs as tab, i}
             <Tabs.Trigger
               value={String(i)}
-              class="flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors
-                {vertical ? 'justify-start sm:w-full sm:whitespace-normal sm:text-start ' : ''}{triggerLayoutClass}"
+              class="flex shrink-0 items-center gap-2 px-4 py-2 text-sm font-medium transition-colors
+                {vertical ? 'w-full justify-start whitespace-normal text-start ' : 'whitespace-nowrap '}{triggerLayoutClass}"
             >
               {#if tab.icon}
                 <LazyIcon name={tab.icon} size={16} />
@@ -63,7 +61,9 @@
           {/each}
         </Tabs.List>
         {#each props.tabs as tab, i}
-          <Tabs.Content value={String(i)} class={vertical ? 'min-w-0 flex-1' : 'pt-4'}>
+          <!-- Vertical: strip the first block section's top padding so the
+               question column starts on the same row as the sidenav. -->
+          <Tabs.Content value={String(i)} class={vertical ? 'min-w-0 flex-1 [&>*:first-child_section:first-child]:pt-0' : 'pt-4'}>
             {#if tab.content_blocks}
               {#each tab.content_blocks as block (block.id)}
                 {#if isBlockVisible(block, geoCountry)}
