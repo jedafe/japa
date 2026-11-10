@@ -10,6 +10,7 @@
 	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	
@@ -249,6 +250,10 @@
 		filterSeriesId = '';
 		goto(buildUrl({ page: 1, tag: '', space_id: '', author_id: '', series_id: '' }));
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'blog')
+	);
 </script>
 
 <svelte:head>
@@ -257,7 +262,13 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if data.page > 1}
 		{@const blogPrevUrl = (() => { const u = new URL(page.url.href); if (data.page - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(data.page - 1)); return u.toString(); })()}
 		<link rel="prev" href={blogPrevUrl} />

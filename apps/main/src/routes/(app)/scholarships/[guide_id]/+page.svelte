@@ -25,6 +25,7 @@
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	/**
 	 * Scholarship detail page — Section 73, ADR-073.
 	 * Shows full scholarship info and lets authenticated users save/unsave,
@@ -231,6 +232,10 @@
 			.filter(([k, v]) => v !== '' && !PROJECTED_KEYS.has(k))
 			.map(([k, v]) => ({ label: humanize(k), value: humanizeValue(v) }))
 	);
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'scholarship')
+	);
 </script>
 
 <svelte:head>
@@ -239,8 +244,13 @@
 	<link rel="canonical" href="{page.url.origin}/guide/{scholarship.slug}" />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
-	<meta property="og:url" content={page.url.href} />
+	<meta property="og:url" content={`${page.url.origin}/guide/${scholarship.slug}`} />
 	<meta property="og:type" content="website" />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}

@@ -29,6 +29,7 @@
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('calendar.list_title', 'Community Calendar — {site}'));
@@ -424,6 +425,10 @@
 			new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(i18n.locale, { weekday: 'short' })
 		)
 	);
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'calendar')
+	);
 </script>
 
 <svelte:head>
@@ -432,8 +437,11 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	{#if jsonLd}

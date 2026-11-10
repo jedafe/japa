@@ -18,6 +18,7 @@
 	import type { PageData, ActionData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// SavedScholarship is exported from +page.server.ts as
 	// SavedScholarshipView and inferred by $types via PageData, but we
 	// redeclare the interface here for direct use in component state
@@ -331,6 +332,10 @@ const hasActiveFilters = $derived(
 		guideOverride = v;
 		return null;
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'scholarships')
+	);
 </script>
 
 <svelte:head>
@@ -339,7 +344,13 @@ const hasActiveFilters = $derived(
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}

@@ -6,7 +6,8 @@
 	import { t } from '#lib/i18n/index.js';
 	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { ogCardUrl } from '#lib/seo/og.js';
 	import { apiBaseUrl } from '#lib/api/client.js';
 	import { getCsrfToken } from '#lib/api/csrf.svelte.js';
 
@@ -39,13 +40,12 @@
 		? data.landing?.description ?? t('landing.description', 'Stories, discussions, and guides for Nigerians abroad.')
 		: t('home.description', 'Explore the Nigerian diaspora community: stories, discussions, comparisons, and guides.'));
 
-	const jsonLd = $derived(JSON.stringify({
+	const jsonLd = $derived({
 		'@context': 'https://schema.org',
 		'@type': 'WebSite',
 		name: t('app.name'),
 		url: page.url.origin
-		})
-	);
+	});
 
 	// Fetch context for Page Builder blocks (newsletter, widgets, etc.).
 	// Only pass in the browser — blocks like MapBlock call fetch during
@@ -75,18 +75,7 @@
 	]);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead {title} {description} ogImage={ogCardUrl(page.url.origin, 'home')} {jsonLd} />
 
 {#if data.guestHome}
 	<!-- ADR-058 §5 Exception #3: new default guest homepage -->

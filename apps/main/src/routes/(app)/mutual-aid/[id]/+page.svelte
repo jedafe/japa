@@ -21,6 +21,7 @@
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const post = $derived(data.post);
@@ -166,6 +167,10 @@
 		}
 		goto('/mutual-aid');
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'mutual-aid')
+	);
 </script>
 
 <svelte:head>
@@ -174,7 +179,13 @@
 	<meta property="og:title" content={post.title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={post.title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if post && post.status === 'expired'}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}

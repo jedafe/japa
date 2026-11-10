@@ -26,6 +26,7 @@
 	import type { PlanningMilestone, PlanningCheckin } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const group = $derived(data.group);
@@ -167,6 +168,10 @@
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'planning-group')
+	);
 </script>
 
 <svelte:head>
@@ -175,7 +180,13 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if data.checkins && data.checkins.length === 0}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}

@@ -33,6 +33,7 @@
 	import type { IconComponent } from '#lib/components/ui/icons.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const achievement = $derived(data.achievement);
@@ -116,6 +117,10 @@
 		}
 		goto('/achievements');
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'achievement')
+	);
 </script>
 
 <svelte:head>
@@ -124,7 +129,13 @@
 	<meta property="og:title" content={achievement.title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:url" content={`${page.url.origin}${page.url.pathname}`} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={achievement.title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if achievement?.seo_indexable === false || achievement?.indexable === false}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
