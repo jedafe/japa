@@ -274,8 +274,13 @@ func ResolveDelegatedActor(ctx context.Context, bots BotChecker, resolver *rbac.
 
 // WriteDelegatedError maps a ResolveDelegatedActor error to the standard
 // envelope. param selects the field name in codes ("author_id"/"actor_id").
+// Non-sentinel errors are internal failures (e.g. the is_bot DB lookup),
+// never a client error.
 func WriteDelegatedError(w http.ResponseWriter, err error, param string) {
 	switch {
+	case errors.Is(err, ErrDelegatedInvalid):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_"+param,
+			param+" does not identify a user")
 	case errors.Is(err, ErrDelegatedForbidden):
 		errpkg.WriteError(w, http.StatusForbidden, "author_assign_forbidden",
 			"Setting "+param+" to another user requires the content.assign_author permission")
@@ -283,14 +288,16 @@ func WriteDelegatedError(w http.ResponseWriter, err error, param string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "author_not_bot",
 			param+" must identify a bot persona account — real-user attribution requires impersonation")
 	default:
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_"+param,
-			param+" does not identify a user")
+		slog.Error("delegated actor resolution failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
+			"Failed to validate "+param)
 	}
 }
 
 // AuditAttribution writes a persona_attrib.* audit_logs row — fire-and-forget
-// callers; a nil pool/logs failure is logged by the caller, never fails the
-// request (same posture as impersonation.auditLog, Rule 10).
+// callers; a failure is logged by the caller, never fails the request
+// (same posture as impersonation.auditLog, Rule 10). Callers reach the
+// writer pool via their service's DB() accessor (see Task 3).
 func AuditAttribution(ctx context.Context, pool *pgxpool.Pool, operatorID, actorID pgtype.UUID, actionType, entityType string, entityID pgtype.UUID) error {
 	meta, _ := json.Marshal(map[string]any{"entity_type": entityType, "entity_id": entityID.String()})
 	_, err := pool.Exec(ctx,
@@ -414,8 +421,18 @@ func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, erro
 - Spam pipeline + `RecordContentCreation` keep `user.UserID` (operator).
 - Space `CanCommentInSpace`/`CanReplyInSpace` calls pass `effectiveID`.
 - `createInput.CreatedByUserID = createdBy`; service call passes `effectiveID`.
-- After `CreateComment` succeeds, when `createdBy.Valid`:
-  `go personas.AuditAttribution(context.Background(), h.auditPool, user.UserID, effectiveID, "comment", "comment", comment.ID)` — wire `auditPool *pgxpool.Pool` onto `Handlers` via a `SetAuditPool` setter (set in `server.go` where handlers are constructed, ~line 740).
+- Audit: add an accessor on `comments.Service` (mirrors
+  `personas.Store.DB()` precedent — no new wiring on Handlers):
+
+```go
+// DB exposes the writer pool for fire-and-forget audit writes.
+func (s *Service) DB() *db.DB { return s.db }
+```
+
+  then after `CreateComment` succeeds, when `createdBy.Valid`:
+  `go personas.AuditAttribution(context.Background(), h.Service.DB().Writer, user.UserID, effectiveID, "comment", "comment", comment.ID)`
+  (same `DB()` accessor pattern is used by every service that audits —
+  forum/follows/content add it the same way when their tasks need it).
 
 - [ ] **Step 4: Run — PASS** (`go test ./internal/comments/ -v`)
 
@@ -489,7 +506,21 @@ func (h *Handlers) resolveActor(w http.ResponseWriter, r *http.Request, operator
 - `VoteComment`: input gains `ActorID *string`; `actor, ok := h.resolveActor(...)`; `VoteComment(ctx, commentID, actor, value)`; audit `persona_attrib.vote` when `actor != operator`.
 - `RemoveVote`: `?actor_id=` → same resolution → `RemoveCommentVote(ctx, commentID, actor)`; audit.
 - `VoteContent`/`RemoveContentVote`: identical.
-- Comment-list handlers: `?actor_id=` resolves (validated same way; empty → nil) → pass `sqlc.narg(vote_actor_id)` = actor while `@viewer_id` stays the caller (block filter unchanged; `viewer_can_manage` stays viewer-scoped).
+- Comment-list plumbing: `ListComments` (`handlers.go:361`) and the replies
+  branch (`:413`) read `?actor_id=` → resolve via `resolveActor` (empty →
+  caller) → thread the actor through the service signatures, which gain a
+  param:
+
+```go
+ListCommentsByContent(ctx, contentID, viewerID, actorID pgtype.UUID, sort string, limit, offset int32)
+ListRepliesByParent(ctx, contentID, parentID, viewerID, actorID pgtype.UUID, limit, offset int32)
+```
+
+  The gen params then set `ViewerID: viewerID, VoteActorID: actorID` —
+  `@viewer_id` stays the caller for the block filter AND `viewer_can_manage`;
+  `vote_actor_id` only feeds the `user_vote` subquery (see Task 1 SQL).
+  Update `coerceNewRows`/`coerceOldestRows` (`store.go:557,590`) to copy
+  `ViewerCanManage` into the canonical row struct.
 
 - [ ] **Step 4: Run — PASS** (`go test ./internal/comments/`)
 
@@ -541,8 +572,15 @@ func (h *Handlers) resolveActor(w http.ResponseWriter, r *http.Request, operator
   `reply.AuthorUserID == userID || reply.CreatedByUserID == userID` (keep
   `canModerateReply` moderator path; the author-path F-009 access check
   applies to the creator too).
-- List replies: pass `@viewer_id` = caller; surface `can_manage` in the
-  reply payload; never serialize `created_by_user_id`.
+- Signature changes — `ListRepliesByThreadWithAuthor` gains a viewer param
+  (`ListRepliesByThreadWithAuthor(ctx, threadID, viewerID)`); the
+  `ListReplies` handler passes the caller. `GetReplyByIDWithAuthor` also
+  gains `viewer_id` for the computed flag — **mind the other callers**: it
+  is also used for the create-response row (`handlers.go:1592` → pass the
+  operator) and JSON-LD/accepted-answer paths (public → pass zero UUID,
+  `viewer_can_manage` evaluates false).
+- Surface `can_manage` in the reply payload; never serialize
+  `created_by_user_id`.
 - GDPR hookup covered in Task 4 (`ClearForumRepliesCreatedBy`).
 
 - [ ] **Step 4: Run — PASS** (`go test ./internal/forum/`)
@@ -667,15 +705,18 @@ r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolv
 
 - [ ] **Step 1: `personas.ts` API client**
 
+(`api.get` unwraps the envelope's `data` field — see
+`apps/main/src/lib/api/reactions.ts` for the pattern):
+
 ```ts
-import { api } from './client';
+import { api } from '#lib/api/client.js';
 export interface AssignablePersona {
 	persona_id: string; user_id: string; name: string; username: string;
 	avatar_url: string; geo_space_id: string | null;
 	geo_space_name: string | null; geo_space_level: string | null;
 }
 export async function listAssignablePersonas(): Promise<AssignablePersona[]> {
-	const res = await api.get<{ data: AssignablePersona[] }>('/me/personas');
+	const res = await api.get<AssignablePersona[]>('/me/personas');
 	return res.data ?? [];
 }
 ```

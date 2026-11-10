@@ -141,12 +141,29 @@ block (~line 807-839) with a merged profile block that:
    `users.allowed_avatar_types` for avatar; header unrestricted) →
    `ResolveMediaURL` fills the `*_url` field when resolver present.
 4. `q.UpsertPersonaProfile(...)` with the merged params.
-5. `tips_enabled`: inside the same tx —
-   `q.UpsertTipSettings(owner_type:'user', owner_id:detail.UserID,
-   tips_enabled:*in.TipsEnabled, accept_credits:true, accept_fiat:false,
-   accept_external:false, min_tip_amount:<platform default>)`.
-   First-upsert defaults: credits only (fiat/external need provider config
-   the admin can add later via the tips UI).
+5. `tips_enabled`: inside the same tx — **read-merge-write**, because
+   `UpsertTipSettings` writes `accept_*` fields unconditionally and would
+   otherwise clobber an existing row's configuration:
+
+```go
+var acceptCredits, acceptFiat, acceptExternal bool = true, false, false // first-upsert defaults: credits only
+var minTip pgtype.Numeric                                               // platform default
+if existing, err := q.GetTipSettings(ctx, gen.GetTipSettingsParams{OwnerType: "user", OwnerID: detail.UserID}); err == nil {
+	acceptCredits, acceptFiat, acceptExternal = existing.AcceptCredits, existing.AcceptFiat, existing.AcceptExternal
+	minTip = existing.MinTipAmount
+} else if !errors.Is(err, pgx.ErrNoRows) {
+	return PersonaDetail{}, fmt.Errorf("personas: load tip settings: %w", err)
+}
+if _, err := q.UpsertTipSettings(ctx, gen.UpsertTipSettingsParams{
+	OwnerType: "user", OwnerID: detail.UserID, TipsEnabled: *in.TipsEnabled,
+	AcceptCredits: acceptCredits, AcceptFiat: acceptFiat, AcceptExternal: acceptExternal,
+	MinTipAmount: minTip,
+}); err != nil {
+	return PersonaDetail{}, fmt.Errorf("personas: upsert tip settings: %w", err)
+}
+```
+
+   (Fiat/external need provider config the admin adds later via the tips UI.)
 
 `handlers.go` `HandleUpdate` — decode the new fields into `UpdatePersonaInput`
 (mirror how `GeoSpace *string`/`Name *string` are decoded today).
