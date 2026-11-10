@@ -71,6 +71,7 @@
 	$effect(() => {
 		if (page.url.hash === REOPEN_HASH) {
 			writeConsent('');
+			deciding = false; // reset the debounce — reopened buttons must work
 			visible = true;
 		}
 	});

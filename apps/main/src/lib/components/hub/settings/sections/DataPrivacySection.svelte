@@ -126,8 +126,9 @@
 		toggling = type;
 		consentError = '';
 		const wasGranted = consentMap.get(type) ?? false;
-		// Optimistic update
-		consentMap.set(type, !wasGranted);
+		// Optimistic update — plain Map isn't deeply proxied by $state, so
+		// reassign a new Map to trigger the re-render.
+		consentMap = new Map(consentMap).set(type, !wasGranted);
 		// api.* returns { error } — it never throws — so the failure branch
 		// must inspect the result envelope, not catch (the previous try/catch
 		// rollback was dead code and a failed toggle left phantom state).
@@ -139,7 +140,7 @@
 					policy_version: policyVersion
 				});
 		if (res.error) {
-			consentMap.set(type, wasGranted);
+			consentMap = new Map(consentMap).set(type, wasGranted);
 			consentError = res.error.message || t('settings.data_privacy.consent_error', 'Failed to update consent. Try again.');
 		}
 		toggling = null;

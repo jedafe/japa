@@ -193,12 +193,10 @@
 
   <div class="guest-footer-bottom">
     <p class="footer-copyright">{copyright}</p>
-    {#if bottomChildren.length > 0}
-      <div class="footer-legal">
+    <div class="footer-legal">
+      {#if bottomChildren.length > 0}
         <GuestChildren blocks={bottomChildren} {fetchCtx} {geoCountry} />
-      </div>
-    {:else if bottomLinks.length > 0}
-      <div class="footer-legal">
+      {:else}
         {#each bottomLinks as link (link.label)}
           {@const attrs = linkAttrs(link.url, link.target)}
           {#if link.url}
@@ -209,7 +207,11 @@
             <span>{link.label}</span>
           {/if}
         {/each}
-      </div>
-    {/if}
+      {/if}
+      <!-- §19 cookie withdrawal — a functional control, not CMS content:
+           re-opens the consent banner. Always rendered, whatever the
+           menu configuration. -->
+      <a href="#cookie-settings">Cookie settings</a>
+    </div>
   </div>
 </footer>
