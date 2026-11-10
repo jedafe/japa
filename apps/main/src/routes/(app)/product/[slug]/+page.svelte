@@ -69,7 +69,7 @@
 	title={`${product.name} — ${t('products.heading', 'Products')} — ${siteName()}`}
 	description={metaDescription}
 	ogTitle={`${product.name} — ${product.type_label}`}
-	ogImage={ogMediaUrl(page.url.origin, product.logo_url) || ogCardUrl(page.url.origin, 'product')}
+	ogImage={ogMediaUrl(page.url.origin, product.logo_url) || ogCardUrl(page.url.origin, `product:${product.slug}`)}
 	canonical={canonicalUrl}
 	jsonLd={productJsonLd}
 />

@@ -452,6 +452,43 @@ func TestLookupToolKey(t *testing.T) {
 	}
 }
 
+// TestLookupEntityNamespaces proves every namespaced entity key routes to
+// its resolver — with a nil reader the DB-backed lookups return nil → brand
+// fallback rather than panicking, and none fall through to the UUID path.
+func TestLookupEntityNamespaces(t *testing.T) {
+	t.Parallel()
+
+	h := NewOGImageHandler(nil, nil, "Test Site")
+
+	for _, key := range []string{
+		"user:someone", "product:widget", "tag:visa", "source:gov-ng",
+		"org:acme", "scholarship:chevening",
+		"event:8f1c2a3b-0000-4000-8000-000000000000",
+		"scam-alert:8f1c2a3b-0000-4000-8000-000000000000",
+	} {
+		if m := h.lookup(t.Context(), key); m != nil {
+			t.Errorf("expected nil meta for %q with nil reader, got %+v", key, m)
+		}
+	}
+}
+
+func TestHumanizeLabel(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"fake_landlord":      "Fake Landlord",
+		"romance_scam":       "Romance Scam",
+		"single":             "Single",
+		"":                   "",
+		"multi__underscores": "Multi Underscores",
+	}
+	for in, want := range cases {
+		if got := humanizeLabel(in); got != want {
+			t.Errorf("humanizeLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestHumanizeContentType(t *testing.T) {
 	t.Parallel()
 
@@ -460,6 +497,14 @@ func TestHumanizeContentType(t *testing.T) {
 		"tool":             "Tool",
 		"wiki_page":        "Wiki Page",
 		"destination_wiki": "Destination Wiki",
+		"profile":          "Member Profile",
+		"product":          "Product",
+		"tag":              "Tag",
+		"source":           "Source",
+		"organization":     "Organization",
+		"scholarship":      "Scholarship",
+		"event":            "Event",
+		"scam_alert":       "Scam Alert",
 		"":                 "Content",
 		"custom_thing":     "Custom_thing",
 	}

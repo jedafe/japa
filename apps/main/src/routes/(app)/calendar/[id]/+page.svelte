@@ -116,7 +116,7 @@
 	);
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'event')
+		ogCardUrl(page.url.origin, `event:${page.params.id}`)
 	);
 </script>
 

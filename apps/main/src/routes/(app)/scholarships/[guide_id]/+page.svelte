@@ -234,7 +234,7 @@
 	);
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'scholarship')
+		ogCardUrl(page.url.origin, `scholarship:${scholarship.slug ?? page.params.guide_id}`)
 	);
 </script>
 

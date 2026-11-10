@@ -160,7 +160,7 @@
 
 	const seoOgImage = $derived(
 		ogMediaUrl(page.url.origin, story?.featured_image_url) ||
-		ogCardUrl(page.url.origin, 'story')
+		ogCardUrl(page.url.origin, story?.id ?? 'story')
 	);
 </script>
 

@@ -386,7 +386,7 @@
 	}
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'tag')
+		ogCardUrl(page.url.origin, `tag:${tag.slug}`)
 	);
 </script>
 

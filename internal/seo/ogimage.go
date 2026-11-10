@@ -80,11 +80,16 @@ type contentMeta struct {
 // Keys are namespaced so arbitrary path segments can never collide with
 // content UUIDs:
 //
-//	tool:{slug}   indexable /tools/{slug} page — registry title card
-//	space:{slug}  /wiki/{slug} destination index — space-name card
-//	{uuid}        contents row, then wiki_pages row (space + entity pages)
+//	tool:{slug}    indexable /tools/{slug} page — registry title card
+//	space:{slug}   /wiki/{slug} + /universities/{slug} index — space-name card
+//	user:{user}    /u/{username} profile — display-name card
+//	{type}:{slug}  entity title card (product/tag/source/org/scholarship)
+//	{type}:{uuid}  entity title card (calendar event, scam alert)
+//	{uuid}         contents row, then wiki_pages row (space + entity pages)
 //
-// Unknown or unresolvable keys return nil → the brand fallback card.
+// Every entity query gates on the same public/active predicate that
+// entity's public page uses. Unknown or unresolvable keys return nil →
+// the brand fallback card.
 func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta {
 	if slug, ok := strings.CutPrefix(idStr, "tool:"); ok {
 		p, found := tools.Lookup(slug)
@@ -92,6 +97,10 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			return nil
 		}
 		return &contentMeta{Title: p.Title, ContentType: "tool"}
+	}
+	// Every remaining resolver hits the database.
+	if h.reader == nil {
+		return nil
 	}
 	if slug, ok := strings.CutPrefix(idStr, "space:"); ok {
 		var name string
@@ -102,10 +111,68 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		}
 		return &contentMeta{Title: name, ContentType: "destination_wiki"}
 	}
+	if slug, ok := strings.CutPrefix(idStr, "user:"); ok {
+		var username, displayName string
+		err := h.reader.QueryRow(ctx,
+			`SELECT u.username, COALESCE(up.display_name, '')
+			 FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
+			 WHERE u.username = $1 AND u.status = 'active'`, slug).Scan(&username, &displayName)
+		if err != nil {
+			return nil
+		}
+		if displayName == "" {
+			displayName = "@" + username
+		}
+		return &contentMeta{Title: displayName, ContentType: "profile"}
+	}
+	if slug, ok := strings.CutPrefix(idStr, "scam-alert:"); ok {
+		var scamType string
+		err := h.reader.QueryRow(ctx,
+			`SELECT scam_type FROM scam_reports WHERE id::text = $1 AND status = 'published' AND deleted_at IS NULL`, slug).Scan(&scamType)
+		if err != nil || scamType == "" {
+			return nil
+		}
+		return &contentMeta{Title: humanizeLabel(scamType), ContentType: "scam_alert"}
+	}
+	// Shared slug→title resolvers — each gates on its public page's
+	// predicate. {prefix}:{param} → single title column.
+	simple := []struct {
+		prefix string
+		query  string
+		ctype  string
+	}{
+		{"product:", `SELECT name FROM products WHERE slug = $1 AND deleted_at IS NULL`, "product"},
+		{"tag:", `SELECT name FROM tags WHERE slug = $1`, "tag"},
+		{"source:", `SELECT name FROM intel_sources WHERE slug = $1 AND status = 'active'`, "source"},
+		{"org:", `SELECT name FROM organizations WHERE slug = $1 AND status = 'active' AND deleted_at IS NULL`, "organization"},
+		{"scholarship:", `SELECT title FROM scholarships WHERE slug = $1`, "scholarship"},
+		{"event:", `SELECT title FROM calendar_entries WHERE id::text = $1 AND status = 'published' AND deleted_at IS NULL`, "event"},
+	}
+	for _, r := range simple {
+		if param, ok := strings.CutPrefix(idStr, r.prefix); ok {
+			var title string
+			if err := h.reader.QueryRow(ctx, r.query, param).Scan(&title); err != nil || title == "" {
+				return nil
+			}
+			return &contentMeta{Title: title, ContentType: r.ctype}
+		}
+	}
 	if meta := h.lookupContent(ctx, idStr); meta != nil {
 		return meta
 	}
 	return h.lookupWikiPage(ctx, idStr)
+}
+
+// humanizeLabel renders a snake_case slug/enum as a title ("fake_landlord"
+// → "Fake Landlord") for OG card text.
+func humanizeLabel(s string) string {
+	parts := strings.Fields(strings.ReplaceAll(s, "_", " "))
+	for i, p := range parts {
+		if p != "" {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // lookupContent queries the contents table for the title and content_type
@@ -383,6 +450,22 @@ func humanizeContentType(ct string) string {
 		return "Wiki Page"
 	case "destination_wiki":
 		return "Destination Wiki"
+	case "profile":
+		return "Member Profile"
+	case "product":
+		return "Product"
+	case "tag":
+		return "Tag"
+	case "source":
+		return "Source"
+	case "organization":
+		return "Organization"
+	case "scholarship":
+		return "Scholarship"
+	case "event":
+		return "Event"
+	case "scam_alert":
+		return "Scam Alert"
 	default:
 		if ct == "" {
 			return "Content"

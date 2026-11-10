@@ -129,7 +129,7 @@
 
 	const seoOgImage = $derived(
 		ogMediaUrl(page.url.origin, source?.logo_url) ||
-		ogCardUrl(page.url.origin, 'source')
+		ogCardUrl(page.url.origin, `source:${source.slug}`)
 	);
 </script>
 

@@ -85,7 +85,7 @@
 	}
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'scam-alert')
+		ogCardUrl(page.url.origin, `scam-alert:${page.params.id}`)
 	);
 </script>
 

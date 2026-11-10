@@ -136,6 +136,20 @@
 	let personaAvatarPickerOpen = $state(false);
 	let personaCoverPickerOpen = $state(false);
 
+	// Reset the editor when client-side navigation swaps the profile —
+	// personaOriginal/personaForm are bound to the persona the modal was
+	// opened for, not the page's current user.
+	let personaEditUserId = $state<string | undefined>(untrack(() => data.user?.id));
+	$effect(() => {
+		if (data.user?.id !== personaEditUserId) {
+			personaEditUserId = data.user?.id;
+			personaEditOpen = false;
+			personaOriginal = null;
+			personaForm = {};
+			personaError = '';
+		}
+	});
+
 	async function openPersonaEdit() {
 		const personaId = data.user.persona_id;
 		if (!personaId) return;
@@ -947,7 +961,7 @@
 
 	const seoOgImage = $derived(
 		ogMediaUrl(page.url.origin, user?.banner_url) || ogMediaUrl(page.url.origin, user?.avatar_url) ||
-		ogCardUrl(page.url.origin, 'user')
+		ogCardUrl(page.url.origin, `user:${user?.username ?? page.params.username}`)
 	);
 </script>
 

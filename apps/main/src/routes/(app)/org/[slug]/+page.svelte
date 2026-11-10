@@ -149,7 +149,7 @@
 	);
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'org')
+		ogCardUrl(page.url.origin, `org:${org.slug}`)
 	);
 </script>
 
