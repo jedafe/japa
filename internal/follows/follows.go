@@ -79,6 +79,23 @@ func (s *Service) SetNotificationDispatcher(d NotificationDispatcher) {
 // Optional — when nil, caching is disabled (backward-compatible with tests).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
+// IsBotUser reports whether the user is a bot backing account — feeds the
+// delegated-actor resolver for persona actor_id overrides (spec §1.6).
+func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	return s.store.read.GetUserIsBot(ctx, userID)
+}
+
+// DB exposes the database pools for fire-and-forget audit writes
+// (personas.AuditAttribution) — same accessor pattern as personas.Store.DB.
+func (s *Service) DB() *db.DB { return s.db }
+
+// IsBlockedBetween reports whether a block exists in either direction
+// between two users — used by delegated-follow handler checks so the
+// operator is held to the same §41 block rules as the persona actor.
+func (s *Service) IsBlockedBetween(ctx context.Context, a, b pgtype.UUID) (bool, error) {
+	return s.store.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: a, BlockedID: b})
+}
+
 // SetActivityEmitter injects the wallet activity emitter used to record
 // follow.created events so §64 badge/challenge triggers (e.g.
 // super_connector) can fire. Optional — nil-safe.

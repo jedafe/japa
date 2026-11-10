@@ -3,6 +3,7 @@ package follows
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 const defaultPageSize int32 = 20
@@ -101,6 +104,11 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 
 	var entityID pgtype.UUID
 
+	// Delegated authorship (spec §1.6): actor_id follows/unfollows as a bot
+	// persona backing user. Query param on the entity routes (no request
+	// body), body field on the generic POST /follows.
+	actorRaw := r.URL.Query().Get("actor_id")
+
 	// Entity-specific route: /users/{id}/follow carries the target id as a
 	// path parameter and implies entity_type "user". The frontend calls this
 	// route with no request body, so resolve from the path before attempting
@@ -116,13 +124,18 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		// Generic route: POST /follows — entity_type and entity_id come from
 		// the JSON body.
 		var input struct {
-			EntityType string `json:"entity_type"`
-			EntityID   string `json:"entity_id"`
+			EntityType string  `json:"entity_type"`
+			EntityID   string  `json:"entity_id"`
+			ActorID    *string `json:"actor_id"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 			return
+		}
+
+		if input.ActorID != nil && *input.ActorID != "" {
+			actorRaw = *input.ActorID
 		}
 
 		if input.EntityType == "" {
@@ -143,6 +156,28 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		entityType = input.EntityType
 	}
 
+	// Resolve the effective actor — the operator, or a delegated bot persona
+	// when actor_id is supplied (spec §1.6).
+	effectiveID := user.UserID
+	if actorRaw != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.service, rbac.FromContext(r.Context()), user.UserID, actorRaw)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		effectiveID = aid
+
+		// §41 parity: the operator is held to the same block rules as the
+		// persona actor — a mutual block between operator and a user target
+		// denies the follow create leg.
+		if entityType == EntityTypeUser && r.Method != http.MethodDelete {
+			if blocked, bErr := h.service.IsBlockedBetween(r.Context(), user.UserID, entityID); bErr == nil && blocked {
+				errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot follow this user")
+				return
+			}
+		}
+	}
+
 	// POST means "ensure follow" and DELETE means "ensure unfollow" — never
 	// toggle. A raw toggle would let DELETE on a non-followed entity create a
 	// follow (and vice versa for stale clients), violating the catalog's
@@ -153,9 +188,9 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if r.Method == http.MethodDelete {
-		followed, err = h.service.EnsureUnfollow(r.Context(), user.UserID, entityType, entityID)
+		followed, err = h.service.EnsureUnfollow(r.Context(), effectiveID, entityType, entityID)
 	} else {
-		followed, err = h.service.EnsureFollow(r.Context(), user.UserID, entityType, entityID)
+		followed, err = h.service.EnsureFollow(r.Context(), effectiveID, entityType, entityID)
 	}
 
 	if err != nil {
@@ -180,6 +215,14 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	count, _ := h.service.CountFollowers(r.Context(), entityType, entityID)
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.follow.
+	if effectiveID.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.service.DB().Writer,
+			user.UserID, effectiveID, "follow", entityType, entityID); err != nil {
+			slog.Warn("follows: persona_attrib follow audit failed", "error", err)
+		}
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"following": followed, "follower_count": count},
@@ -406,7 +449,19 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	following, err := h.service.IsFollowing(r.Context(), user.UserID, entityType, targetID)
+	// Delegated authorship (spec §1.6): ?actor_id= swaps the follow-state
+	// subject to the persona backing user.
+	subjectID := user.UserID
+	if actorRaw := r.URL.Query().Get("actor_id"); actorRaw != "" {
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.service, rbac.FromContext(r.Context()), user.UserID, actorRaw)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "actor_id")
+			return
+		}
+		subjectID = aid
+	}
+
+	following, err := h.service.IsFollowing(r.Context(), subjectID, entityType, targetID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow status")
 		return
@@ -417,7 +472,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	// entity cannot "follow back", so it is always false.
 	followedBy := false
 	if entityType == EntityTypeUser {
-		followedBy, err = h.service.IsFollowing(r.Context(), targetID, EntityTypeUser, user.UserID)
+		followedBy, err = h.service.IsFollowing(r.Context(), targetID, EntityTypeUser, subjectID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow-back status")
 			return
