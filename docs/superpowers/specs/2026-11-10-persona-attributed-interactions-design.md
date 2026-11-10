@@ -300,11 +300,11 @@ backing `users`/`user_profiles` rows (same write path `name`/`tagline`/
 |---|---|
 | `avatar_url` / `avatar_media_id` | `user_profiles.avatar_url` / `avatar_media_id` (media id resolved to URL, `PATCH /users/me` semantics) |
 | `cover_url` / `header_media_id` | `user_profiles.cover_url` / `header_media_id` |
-| `profession` | `users.profession` |
+| `profession` | `user_profiles.profession` |
 | `location` | `user_profiles.location` |
 | `website_url` | `user_profiles.website_url` |
-| `education` | `users.education` |
-| `interests` | `users.interests` |
+| `education` | `user_profiles.education` |
+| `interests` | `user_profiles.interests` |
 | `disclosure_mode` | `ai_personas.disclosure_mode` (exists — "show as AI") |
 | `tips_enabled` | `tip_settings` upsert for backing user (new — §1.7) |
 | `geo_space` | geo chain + `current_geo_space_id` (exists) |
