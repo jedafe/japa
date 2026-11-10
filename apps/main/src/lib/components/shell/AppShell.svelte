@@ -120,10 +120,12 @@
 	});
 	const effectiveCollapsed = $derived(collapsed && !navHoverExpand);
 
-	// The nav column is always rail width — expanding the sidenav (pin or
-	// hover) renders it as an overlay over the center column instead of
-	// reflowing the page, so content never shifts sitewide.
-	const columnNavWidth = 'var(--nav-width-collapsed)';
+	// Column width follows the PINNED state only: pinning the nav open grows
+	// the column and reflows the page (classic behavior), while hover-expand
+	// renders as an overlay so the center column never jitters on a peek.
+	const columnNavWidth = $derived(
+		collapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width-expanded)'
+	);
 
 	// Left rail (Section 59, ADR-066): an ad-only 160px column between the
 	// collapsed nav and the content. It opens only while the nav is collapsed
