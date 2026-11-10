@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -788,7 +789,9 @@
 	);
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 {#snippet historyPanel()}
 	<!-- Score history analytics — rendered in the aside of both form and

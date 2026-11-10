@@ -21,6 +21,7 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tools"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -75,6 +76,39 @@ type contentMeta struct {
 	ContentType string
 }
 
+// lookup resolves an /og/{key}.png key to the title card it should render.
+// Keys are namespaced so arbitrary path segments can never collide with
+// content UUIDs:
+//
+//	tool:{slug}   indexable /tools/{slug} page — registry title card
+//	space:{slug}  /wiki/{slug} destination index — space-name card
+//	{uuid}        contents row, then wiki_pages row (space + entity pages)
+//
+// Unknown or unresolvable keys return nil → the brand fallback card.
+func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta {
+	if slug, ok := strings.CutPrefix(idStr, "tool:"); ok {
+		for _, p := range tools.Pages {
+			if p.Slug == slug {
+				return &contentMeta{Title: p.Title, ContentType: "tool"}
+			}
+		}
+		return nil
+	}
+	if slug, ok := strings.CutPrefix(idStr, "space:"); ok {
+		var name string
+		err := h.reader.QueryRow(ctx,
+			`SELECT name FROM spaces WHERE slug = $1 AND deleted_at IS NULL`, slug).Scan(&name)
+		if err != nil || name == "" {
+			return nil
+		}
+		return &contentMeta{Title: name, ContentType: "destination_wiki"}
+	}
+	if meta := h.lookupContent(ctx, idStr); meta != nil {
+		return meta
+	}
+	return h.lookupWikiPage(ctx, idStr)
+}
+
 // lookupContent queries the contents table for the title and content_type
 // of the given content ID within the platform. Returns nil if the ID is
 // invalid, the content does not exist, or the content is private /
@@ -110,6 +144,31 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string) *conte
 		return nil
 	}
 
+	return &meta
+}
+
+// lookupWikiPage resolves a wiki_pages UUID (space-bound and entity-bound
+// wiki pages share the table) to its title card. Inactive/deleted pages
+// return nil → brand fallback.
+func (h *OGImageHandler) lookupWikiPage(ctx context.Context, idStr string) *contentMeta {
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return nil
+	}
+
+	var pgID pgtype.UUID
+	if err := pgID.Scan(id.String()); err != nil {
+		return nil
+	}
+
+	var meta contentMeta
+	err = h.reader.QueryRow(ctx,
+		`SELECT title FROM wiki_pages WHERE id = $1 AND is_active = true AND deleted_at IS NULL`,
+		pgID).Scan(&meta.Title)
+	if err != nil {
+		return nil
+	}
+	meta.ContentType = "wiki_page"
 	return &meta
 }
 
@@ -151,7 +210,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 
 	isBrandFallback := false
 
-	if meta := h.lookupContent(r.Context(), idStr); meta != nil {
+	if meta := h.lookup(r.Context(), idStr); meta != nil {
 		title = cleanTitle(meta.Title)
 		subtitle = humanizeContentType(meta.ContentType)
 	}
@@ -318,6 +377,12 @@ func humanizeContentType(ct string) string {
 		return "Article"
 	case "guide":
 		return "Guide"
+	case "tool":
+		return "Tool"
+	case "wiki_page":
+		return "Wiki Page"
+	case "destination_wiki":
+		return "Destination Wiki"
 	default:
 		if ct == "" {
 			return "Content"

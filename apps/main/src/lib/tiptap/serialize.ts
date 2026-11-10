@@ -122,6 +122,12 @@ function firstImageSrcInDoc(doc: TipTapDoc | PMNode[] | null): string | undefine
 	return visit(doc);
 }
 
+/** Same as {@link tiptapFirstImageSrc} but takes an already-decoded TipTap
+ * document object — e.g. wiki page `current_content` / entity `content`. */
+export function tiptapDocFirstImageSrc(doc: TipTapDoc | PMNode[] | null): string | undefined {
+	return firstImageSrcInDoc(doc);
+}
+
 /** Return the `src` of the first `image` node in a base64 TipTap body, or
  * undefined when the document has no image. Used to derive card cover images
  * for content types without explicit cover media (e.g. forum threads). */

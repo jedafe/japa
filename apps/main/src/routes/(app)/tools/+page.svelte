@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
@@ -131,7 +132,9 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header — EntityHero directory panel -->

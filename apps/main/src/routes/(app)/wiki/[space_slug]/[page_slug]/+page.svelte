@@ -26,7 +26,7 @@
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
-	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { tiptapToHtml, tiptapToText, tiptapDocFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	let { data }: { data: PageData } = $props();
@@ -198,8 +198,20 @@
 		if (!text) return t('wiki.page_description');
 		return text.length > 160 ? text.slice(0, 157).trimEnd() + '…' : text;
 	});
+	// First inline image in the page body — a raster og:image fallback when
+	// the space has no cover (§26; SVG is filtered — share cards ignore it).
+	const firstImg = $derived.by(() => {
+		const c = data.page?.current_content;
+		const src = c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
+		return src && !src.split('?')[0].toLowerCase().endsWith('.svg') ? src : undefined;
+	});
 	const ogImage = $derived.by(() => {
-		const u = data.spaceDetail?.header_url || data.spaceDetail?.logo_url || '';
+		const logo = data.spaceDetail?.logo_url ?? '';
+		const u =
+			data.spaceDetail?.header_url ||
+			firstImg ||
+			(logo && !logo.split('?')[0].toLowerCase().endsWith('.svg') ? logo : '') ||
+			(data.page?.id ? `/og/${data.page.id}.png` : '');
 		return u && !u.startsWith('http') ? page.url.origin + u : u;
 	});
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);

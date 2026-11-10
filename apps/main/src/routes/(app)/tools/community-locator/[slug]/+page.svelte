@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Users, ArrowLeft, MapPin, Globe, Mail, Navigation, BadgeCheck, Hand, CheckCircle2, Loader2 } from 'lucide-svelte';
@@ -58,7 +59,9 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

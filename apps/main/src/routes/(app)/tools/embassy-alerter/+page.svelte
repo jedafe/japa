@@ -24,6 +24,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 
 	/**
 	 * Embassy Appointment Alerter tool — §91, ADR-099.
@@ -267,6 +268,7 @@
 		'embassy_alerter.seo_description',
 		'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
 	)}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
 <div class="mx-auto w-full max-w-3xl">

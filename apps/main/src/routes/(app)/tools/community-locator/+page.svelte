@@ -31,6 +31,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 
 	/**
 	 * Diaspora Community Locator tool — §101, ADR-088.
@@ -334,6 +335,7 @@
 		'community_locator.seo_description',
 		'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
 	)}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
 <div class="mx-auto w-full max-w-3xl">

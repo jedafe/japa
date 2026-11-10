@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085, ADR-124)
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { afterNavigate, goto } from '$app/navigation';
@@ -884,7 +885,9 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={travelJsonLd} />
+<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={travelJsonLd}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="travel-page">
 	{#if disabled}

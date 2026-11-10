@@ -12,6 +12,7 @@
 	import type { ColCity, ColCitiesListResponse, ColCityData, ColComparisonMatrix } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
@@ -369,7 +370,9 @@
 	);
 </script>
 
-<SeoHead {title} {description} {jsonLd} />
+<SeoHead {title} {description} {jsonLd}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="px-4 pt-4">

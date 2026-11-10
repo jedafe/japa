@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
@@ -266,7 +267,9 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="px-4 pt-4">

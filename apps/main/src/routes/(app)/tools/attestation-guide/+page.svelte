@@ -23,6 +23,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 
 	/**
 	 * Attestation Guide tool — §97, ADR-088.
@@ -271,6 +272,7 @@
 		'attestation_guide.seo_description',
 		'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
 	)}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
 <div class="mx-auto w-full max-w-3xl">

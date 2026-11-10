@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { untrack } from 'svelte';
 	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
@@ -192,7 +193,9 @@
 	const cardCls = 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]';
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6">
 	<ToolHeader icon={FileBadge} title={t('eca_guide.title', 'ECA Evaluation Guide')} description={t('eca_guide.subtitle', 'Compare credential evaluation providers and follow the step-by-step process for your destination.')} />

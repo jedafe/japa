@@ -4,6 +4,7 @@
 	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 
 	/**
 	 * Visa Route detail page — Section 90, ADR-098.
@@ -72,6 +73,7 @@
 	{canonical}
 	robots="noindex,nofollow"
 	jsonLd={visaJsonLd}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
 <div class="mx-auto w-full max-w-3xl">

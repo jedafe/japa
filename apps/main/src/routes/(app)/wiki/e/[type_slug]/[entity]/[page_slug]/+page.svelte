@@ -7,7 +7,7 @@
 	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { tiptapToText, type TipTapDoc as TipDoc } from '#lib/tiptap/serialize.js';
-	import { tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { tiptapToHtml, tiptapDocFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
@@ -113,6 +113,17 @@
 				])
 			: null
 	);
+	// og:image — first inline body image (raster only; share cards ignore
+	// SVG), else the backend-generated title card for this wiki page.
+	const firstImg = $derived.by(() => {
+		const c = page?.content;
+		const src = c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
+		return src && !src.split('?')[0].toLowerCase().endsWith('.svg') ? src : undefined;
+	});
+	const ogImage = $derived.by(() => {
+		const u = firstImg || (page?.id ? `/og/${page.id}.png` : '');
+		return u && !u.startsWith('http') ? pageStore.url.origin + u : u;
+	});
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {
 		const i = siblings.findIndex((s) => s.current);
@@ -198,6 +209,7 @@
 	ogTitle="{page.title} — {page.entity_name}"
 	canonical={canonicalUrl}
 	ogType="article"
+	{ogImage}
 	robots={page.indexable !== true ? 'noindex,follow' : ''}
 	jsonLd={page ? [entityArticleJsonLd, entityBreadcrumbJsonLd].filter(Boolean) : null}
 />

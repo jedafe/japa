@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { toolOgCard } from '#lib/seo/og.js';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
@@ -179,7 +180,9 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead title={title} description={description} ogTitle={title}
+	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+/>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<ToolHeader icon={Wallet} title={t('pof_calculator.title', 'Proof of Funds Calculator')} description={t(
