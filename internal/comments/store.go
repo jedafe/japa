@@ -1014,6 +1014,21 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 		return pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own comment", errpkg.ErrInvalid)
 	}
 
+	// §41 (BLK-002 parity): a mutual block between voter and comment author
+	// forbids the vote — same class of interaction as CreateComment's check.
+	if target.AuthorUserID.Valid && target.AuthorUserID != userID {
+		blocked, bErr := s.read.IsBlocked(ctx, gen.IsBlockedParams{
+			BlockerID: userID,
+			BlockedID: target.AuthorUserID,
+		})
+		if bErr != nil {
+			return pgtype.UUID{}, 0, fmt.Errorf("checking block status: %w", bErr)
+		}
+		if blocked {
+			return pgtype.UUID{}, 0, fmt.Errorf("%w: user_blocked", errpkg.ErrForbidden)
+		}
+	}
+
 	// C-014: votes only count on comments the voter can actually see — the
 	// comment is only as visible as its parent content.
 	visible, err := s.CanViewComments(ctx, target.ContentID, userID, true)
@@ -1211,6 +1226,21 @@ func (s *Service) VoteContent(ctx context.Context, contentID, userID pgtype.UUID
 		return 0, fmt.Errorf("%w: cannot vote on your own content", errpkg.ErrInvalid)
 	}
 
+	// §41 parity: a mutual block between voter and content author forbids
+	// the vote — same class of interaction as VoteComment/forum Vote.
+	if target.AuthorID.Valid && target.AuthorID != userID {
+		blocked, bErr := s.read.IsBlocked(ctx, gen.IsBlockedParams{
+			BlockerID: userID,
+			BlockedID: target.AuthorID,
+		})
+		if bErr != nil {
+			return 0, fmt.Errorf("checking block status: %w", bErr)
+		}
+		if blocked {
+			return 0, fmt.Errorf("%w: user_blocked", errpkg.ErrForbidden)
+		}
+	}
+
 	// C-014 parity: votes only count on content the voter can actually see —
 	// the same CanViewComments visibility predicate used by comment votes.
 	visible, err := s.CanViewComments(ctx, contentID, userID, true)
@@ -1330,6 +1360,43 @@ func (s *Service) RemoveContentVote(ctx context.Context, contentID, userID pgtyp
 	}
 
 	return newScore, nil
+}
+
+// VoteTargetBlocked reports whether a mutual block exists between voterID
+// and the author of a votable entity ("comment" or "content"). VoteComment/
+// VoteContent check the voter themselves — this helper exists so handlers
+// can additionally block-check the OPERATOR when a delegated actor_id
+// votes (spec §1.4: either party being blocked denies). Vote retraction
+// is exempt (same posture as forum RemoveVote).
+func (s *Service) VoteTargetBlocked(ctx context.Context, entityType string, entityID, voterID pgtype.UUID) (bool, error) {
+	var entityAuthor pgtype.UUID
+	switch entityType {
+	case "comment":
+		c, err := s.read.GetComment(ctx,
+			gen.GetCommentParams{ID: entityID, ViewerID: pgtype.UUID{}},
+		)
+		if err != nil {
+			return false, err
+		}
+		entityAuthor = c.AuthorUserID
+	case "content":
+		t, err := s.read.GetContentByID(ctx,
+			entityID,
+		)
+		if err != nil {
+			return false, err
+		}
+		entityAuthor = t.AuthorID
+	default:
+		return false, fmt.Errorf("%w: entity type must be 'comment' or 'content'", errpkg.ErrInvalid)
+	}
+	if !entityAuthor.Valid || entityAuthor == voterID {
+		return false, nil
+	}
+	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
+		BlockerID: voterID,
+		BlockedID: entityAuthor,
+	})
 }
 
 // ---------------------------------------------------------------------------

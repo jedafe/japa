@@ -44,12 +44,17 @@ export const load: PageServerLoad = async (event) => {
 	let userVotes: Record<string, number> = {};
 	let indexable = true;
 	let seoIndexable = true;
+
+	// Delegated authorship: the act-as-persona cookie forwards actor_id so
+	// user_votes reflects the selected persona's vote state (spec §1.4).
+	const actAs = event.cookies.get('act_as_persona');
+	const actorQs = actAs ? `?actor_id=${encodeURIComponent(actAs)}` : '';
 	try {
 		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
 		// json_ld (QAPage structured data with acceptedAnswer text) and the
 		// can_solve capability flag (which includes moderator scope, not just
 		// the author). Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
-		const envelope = await apiGetEnvelope<ForumThread>(ctx, `/thread/${slug}`);
+		const envelope = await apiGetEnvelope<ForumThread>(ctx, `/thread/${slug}${actorQs}`);
 		thread = envelope.data;
 		indexable = envelope.indexable ?? thread.indexable ?? true;
 		seoIndexable = envelope.seo_indexable ?? thread.seo_indexable ?? true;
@@ -78,7 +83,10 @@ export const load: PageServerLoad = async (event) => {
 		// by ListReplies for erased-mention redaction in reply bodies
 		// (Section 15 / ADR-029). The thread envelope's deleted_user_ids only
 		// covers the thread body — replies may mention different erased users.
-		const repliesEnvelope = await apiGetEnvelope<ForumReply[]>(ctx, `/thread/${thread.id}/replies`);
+		const repliesEnvelope = await apiGetEnvelope<ForumReply[]>(
+			ctx,
+			`/thread/${thread.id}/replies${actorQs}`
+		);
 		replies = repliesEnvelope.data ?? [];
 		replyDeletedUserIds = repliesEnvelope.deleted_user_ids ?? null;
 		userVotes = repliesEnvelope.user_votes ?? {};

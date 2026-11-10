@@ -387,6 +387,22 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
+// resolveActor validates an actor_id delegation (spec §1.1): empty raw
+// returns the operator; otherwise ResolveDelegatedActor enforces the
+// content.assign_author gate + bot-target check and the delegated error
+// contract. Returns false after writing the error response.
+func (h *Handlers) resolveActor(w http.ResponseWriter, r *http.Request, operator pgtype.UUID, raw string) (pgtype.UUID, bool) {
+	if raw == "" {
+		return operator, true
+	}
+	id, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), operator, raw)
+	if err != nil {
+		personas.WriteDelegatedError(w, err, "actor_id")
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
@@ -1201,7 +1217,12 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 		// BUG-006: return the current user's vote state for the thread and
 		// its replies so VoteRail can render the selected direction.
-		if votes, err := h.Service.GetUserVotesForThread(r.Context(), thread.ID, user.UserID); err == nil {
+		// ?actor_id= swaps the state to the persona's (spec §1.4).
+		voteActor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
+		if !ok {
+			return
+		}
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), thread.ID, voteActor); err == nil {
 			response["user_votes"] = userVoteMap(votes)
 		}
 	}
@@ -1771,8 +1792,13 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-006: include the current user's reply votes so the frontend can
 	// render each VoteRail in the selected state.
+	// ?actor_id= swaps the state to the persona's (spec §1.4).
 	if user := auth.FromContext(r.Context()); user != nil {
-		if votes, err := h.Service.GetUserVotesForThread(r.Context(), threadID, user.UserID); err == nil {
+		voteActor, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
+		if !ok {
+			return
+		}
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), threadID, voteActor); err == nil {
 			resp["user_votes"] = userVoteMap(votes)
 		}
 	}
@@ -1916,15 +1942,15 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	// Delegated authorship (spec §1.4): actor_id casts the vote as a bot
 	// persona backing user. The vote service block-checks the voter; the
 	// operator is block-checked here so EITHER party being blocked denies.
-	effectiveID := user.UserID
-	if input.ActorID != nil && *input.ActorID != "" {
-		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.ActorID)
-		if err != nil {
-			personas.WriteDelegatedError(w, err, "actor_id")
-			return
-		}
-		effectiveID = aid
-
+	actorRaw := ""
+	if input.ActorID != nil {
+		actorRaw = *input.ActorID
+	}
+	effectiveID, ok := h.resolveActor(w, r, user.UserID, actorRaw)
+	if !ok {
+		return
+	}
+	if actorRaw != "" {
 		if blocked, bErr := h.Service.VoteTargetBlocked(r.Context(), input.EntityType, entityID, user.UserID); bErr == nil && blocked {
 			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot interact with this user")
 			return
@@ -1982,15 +2008,12 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delegated authorship (spec §1.4): ?actor_id= retracts the persona's vote.
-	effectiveID := user.UserID
-	if actorRaw := r.URL.Query().Get("actor_id"); actorRaw != "" {
-		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, actorRaw)
-		if err != nil {
-			personas.WriteDelegatedError(w, err, "actor_id")
-			return
-		}
-		effectiveID = aid
+	// Delegated authorship (spec §1.4): ?actor_id= retracts the persona's
+	// vote. Retraction is exempt from the operator-side block check —
+	// removing a vote is always permitted (same posture as RemoveCommentVote).
+	effectiveID, ok := h.resolveActor(w, r, user.UserID, r.URL.Query().Get("actor_id"))
+	if !ok {
+		return
 	}
 
 	contentID, delta, err := h.Service.RemoveVote(r.Context(), effectiveID, entityType, entityID)

@@ -2997,7 +2997,14 @@ func (a *agentCommentsAdapter) CreateComment(ctx context.Context, userID pgtype.
 }
 
 func (a *agentCommentsAdapter) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
-	return a.svc.GetComment(ctx, commentID, pgtype.UUID{})
+	row, err := a.svc.GetComment(ctx, commentID, pgtype.UUID{})
+	if err != nil {
+		return row, err
+	}
+	// created_by_user_id is an internal ownership field — the same scrub
+	// the HTTP handlers apply so delegated-operator identity never serializes.
+	row.CreatedByUserID = pgtype.UUID{}
+	return row, nil
 }
 
 func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {

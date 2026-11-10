@@ -1031,6 +1031,16 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delegated-vote parity with forum (spec §1.4): VoteComment block-checks
+	// the voter; the operator is checked here so EITHER party being blocked
+	// by the comment author denies the vote.
+	if actorRaw != "" {
+		if blocked, bErr := h.Service.VoteTargetBlocked(r.Context(), "comment", commentID, user.UserID); bErr == nil && blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot interact with this user")
+			return
+		}
+	}
+
 	contentID, delta, err := h.Service.VoteComment(r.Context(), commentID, actor, input.Value)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1114,6 +1124,16 @@ func (h *Handlers) VoteContent(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.resolveActor(w, r, user.UserID, actorRaw)
 	if !ok {
 		return
+	}
+
+	// Delegated-vote parity with forum (spec §1.4): VoteContent block-checks
+	// the voter; the operator is checked here so EITHER party being blocked
+	// by the content author denies the vote.
+	if actorRaw != "" {
+		if blocked, bErr := h.Service.VoteTargetBlocked(r.Context(), "content", contentID, user.UserID); bErr == nil && blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot interact with this user")
+			return
+		}
 	}
 
 	score, err := h.Service.VoteContent(r.Context(), contentID, actor, input.Value)
