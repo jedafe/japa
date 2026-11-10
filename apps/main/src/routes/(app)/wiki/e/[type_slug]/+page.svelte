@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { ogCardUrl } from '#lib/seo/og.js';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -245,7 +246,7 @@
 	}
 </script>
 
-<SeoHead title={`${label} — ${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.type_description', 'Community-maintained wiki entries for {name} — maintained by members on {site}.').replace('{name}', label)} />
+<SeoHead title={`${label} — ${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.type_description', 'Community-maintained wiki entries for {name} — maintained by members on {site}.').replace('{name}', label)} ogImage={ogCardUrl(page.url.origin, 'wiki-entities')} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<EntityHero

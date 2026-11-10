@@ -37,8 +37,8 @@ type OGImageHandler struct {
 }
 
 // NewOGImageHandler creates a new OG image handler. The vkClient enables
-// Valkey caching of rendered images (Section 26: key jc:og:{}:
-// {content_id}, TTL 24h) so repeated fetches don't re-render. The font face
+// Valkey caching of rendered images (Section 26: key jc:og:{key},
+// TTL 24h) so repeated fetches don't re-render. The font face
 // is loaded once at construction from the embedded Go Regular font
 // (golang.org/x/image/font/gofont/goregular). If font loading fails the
 // handler still works — text rendering degrades gracefully to a fallback
@@ -87,17 +87,16 @@ type contentMeta struct {
 // Unknown or unresolvable keys return nil → the brand fallback card.
 func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta {
 	if slug, ok := strings.CutPrefix(idStr, "tool:"); ok {
-		for _, p := range tools.Pages {
-			if p.Slug == slug {
-				return &contentMeta{Title: p.Title, ContentType: "tool"}
-			}
+		p, found := tools.Lookup(slug)
+		if !found {
+			return nil
 		}
-		return nil
+		return &contentMeta{Title: p.Title, ContentType: "tool"}
 	}
 	if slug, ok := strings.CutPrefix(idStr, "space:"); ok {
 		var name string
 		err := h.reader.QueryRow(ctx,
-			`SELECT name FROM spaces WHERE slug = $1 AND deleted_at IS NULL`, slug).Scan(&name)
+			`SELECT name FROM spaces WHERE slug = $1 AND status = 'active' AND deleted_at IS NULL`, slug).Scan(&name)
 		if err != nil || name == "" {
 			return nil
 		}
@@ -173,17 +172,18 @@ func (h *OGImageHandler) lookupWikiPage(ctx context.Context, idStr string) *cont
 }
 
 // ogCacheKey builds the Valkey cache key for an OG image.
-// Pattern: jc:og:{content_id} (Section 26, valkey-keys-catalog).
-func ogCacheKey(contentID string) string {
-	return "jc:og:" + contentID
+// Pattern: jc:og:{key} — key is a namespaced slug (tool:{slug},
+// space:{slug}) or a contents/wiki_pages UUID (valkey-keys-catalog).
+func ogCacheKey(key string) string {
+	return "jc:og:" + key
 }
 
 // ogBrandCacheKey is the fixed Valkey key for the brand-fallback OG image,
 // used for invalid, private, and non-indexable content IDs.
 const ogBrandCacheKey = "jc:og:default"
 
-// ServeOGImage generates and serves an OG image for the given content ID.
-// Rendered images are cached in Valkey (key jc:og:{content_id},
+// ServeOGImage generates and serves an OG image for the given key.
+// Rendered images are cached in Valkey (key jc:og:{key},
 // TTL 24h per Section 26) so repeated fetches by social crawlers don't
 // re-render. If the content is found and indexable, its title is rendered
 // as the main text; otherwise a default brand image is served. Private or

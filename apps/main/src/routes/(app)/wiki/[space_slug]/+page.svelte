@@ -42,7 +42,7 @@
 	} from 'lucide-svelte';
 	import type { WikiPageIndex } from '#lib/types/index.js';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
-	import { ogCardUrl } from '#lib/seo/og.js';
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import type { PageData } from './$types';
 
@@ -287,9 +287,9 @@
 
 	const title = $derived(`${spaceName} ${t('wiki.heading')} — ${siteName()}`);
 	const description = $derived(intro || t('wiki.index_description'));
-	const ogImage = $derived(heroUrl
-		? heroUrl.startsWith('http') ? heroUrl : page.url.origin + heroUrl
-		: ogCardUrl(page.url.origin, `space:${data.spaceSlug}`));
+	const ogImage = $derived(
+		ogMediaUrl(page.url.origin, heroUrl) || ogCardUrl(page.url.origin, `space:${data.spaceSlug}`)
+	);
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
 	// CollectionPage + BreadcrumbList JSON-LD (Section 26 — the space
 	// index lists that destination's wiki articles).

@@ -397,3 +397,46 @@ func TestNewOGImageHandler(t *testing.T) {
 		t.Fatal("NewOGImageHandler should return non-nil")
 	}
 }
+
+func TestLookupToolKey(t *testing.T) {
+	t.Parallel()
+
+	h := NewOGImageHandler(nil, nil, "Test Site")
+
+	// Registered tool slug resolves to its registry title card.
+	meta := h.lookup(t.Context(), "tool:visa-routes")
+	if meta == nil {
+		t.Fatal("expected contentMeta for tool:visa-routes, got nil")
+	}
+	if meta.Title != "Visa Routes" {
+		t.Errorf("expected title 'Visa Routes', got %q", meta.Title)
+	}
+	if meta.ContentType != "tool" {
+		t.Errorf("expected contentType 'tool', got %q", meta.ContentType)
+	}
+
+	// Unknown tool slugs and namespaces resolve to nil → brand fallback.
+	for _, key := range []string{"tool:not-a-tool", "bogus:thing", "not-a-uuid"} {
+		if m := h.lookup(t.Context(), key); m != nil {
+			t.Errorf("expected nil meta for %q, got %+v", key, m)
+		}
+	}
+}
+
+func TestHumanizeContentType(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"blog_post":        "Blog Post",
+		"tool":             "Tool",
+		"wiki_page":        "Wiki Page",
+		"destination_wiki": "Destination Wiki",
+		"":                 "Content",
+		"custom_thing":     "Custom_thing",
+	}
+	for ct, want := range cases {
+		if got := humanizeContentType(ct); got != want {
+			t.Errorf("humanizeContentType(%q) = %q, want %q", ct, got, want)
+		}
+	}
+}

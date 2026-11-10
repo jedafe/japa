@@ -10,6 +10,7 @@
 	import { tiptapToHtml, tiptapDocFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import type { PageData } from './$types';
@@ -113,17 +114,16 @@
 				])
 			: null
 	);
-	// og:image — first inline body image (raster only; share cards ignore
-	// SVG), else the backend-generated title card for this wiki page.
+	// og:image — first inline body image, else the backend-generated title
+	// card for this wiki page (ogMediaUrl drops SVG/data: — share cards
+	// ignore them).
 	const firstImg = $derived.by(() => {
 		const c = page?.content;
-		const src = c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
-		return src && !src.split('?')[0].toLowerCase().endsWith('.svg') ? src : undefined;
+		return c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
 	});
-	const ogImage = $derived.by(() => {
-		const u = firstImg || (page?.id ? `/og/${page.id}.png` : '');
-		return u && !u.startsWith('http') ? pageStore.url.origin + u : u;
-	});
+	const ogImage = $derived(
+		ogMediaUrl(pageStore.url.origin, firstImg) || (page?.id ? ogCardUrl(pageStore.url.origin, page.id) : '')
+	);
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {
 		const i = siblings.findIndex((s) => s.current);
