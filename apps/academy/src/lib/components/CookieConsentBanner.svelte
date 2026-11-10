@@ -15,6 +15,7 @@
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
+	import { consent, initConsent } from '#lib/consent.js';
 	import { Cookie } from 'lucide-svelte';
 
 	const CONSENT_COOKIE = 'jc_consent';
@@ -71,12 +72,14 @@
 	$effect(() => {
 		if (page.url.hash === REOPEN_HASH) {
 			writeConsent('');
+			consent.granted = false;
 			deciding = false; // reset the debounce — reopened buttons must work
 			visible = true;
 		}
 	});
 
 	onMount(() => {
+		initConsent();
 		if (!visible) visible = !hasDecision();
 	});
 
@@ -84,6 +87,7 @@
 		if (deciding) return;
 		deciding = true;
 		writeConsent(granted ? 'all' : 'necessary');
+		consent.granted = granted;
 		visible = false;
 		if (page.url.hash === REOPEN_HASH) {
 			void goto(page.url.pathname + page.url.search, { replaceState: true });
@@ -110,7 +114,7 @@
 				<p class="text-sm leading-snug text-[var(--color-muted)]">
 					{t(
 						'cookies.banner.body',
-						'We use cookies to keep you signed in and remember your preferences, plus optional analytics cookies that help us improve the platform.'
+						'We use cookies to keep you signed in and remember your preferences, plus optional analytics that help us improve the platform.'
 					)}
 					<a href={policyUrl()} class="text-[var(--color-primary)] hover:underline">
 						{t('cookies.banner.learn_more', 'Learn more')}

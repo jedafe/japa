@@ -18,6 +18,7 @@
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
+	import { consent, initConsent } from '#lib/consent.js';
 	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	import { theme } from '#lib/stores/theme.svelte.js';
 	import { seedCsrfToken } from '#lib/api/csrf.svelte.js';
@@ -96,6 +97,10 @@
 	});
 
 	onMount(() => ensureAiPanelDeps());
+
+	// Sync the shared consent state from jc_consent so consent-gated scripts
+	// (Umami below) match the cookie the API gates on.
+	onMount(initConsent);
 
 	const routeSidebar = $derived(sidebarStore.current);
 	const tourParam = $derived(page.url.searchParams.get('tour'));
@@ -192,7 +197,12 @@
 
 	// Umami analytics — Academy surface (§40, ROADMAP-ACADEMY 01.08).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ACADEMY);
+	// §19 opt-in: inject only after jc_consent=all. Once injected the script
+	// binds its own history listeners, so mid-session revocation applies
+	// from the next full page load — the cookie already governs that.
+	const umamiEnabled = $derived(
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ACADEMY && consent.granted
+	);
 </script>
 
 <svelte:head>

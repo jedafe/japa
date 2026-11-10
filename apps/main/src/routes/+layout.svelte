@@ -12,6 +12,7 @@
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
+	import { consent, initConsent } from '#lib/consent.js';
 	import { syncPushSubscription } from '#lib/pwa/push-sync.js';
 
 	import {
@@ -29,6 +30,10 @@
 	// Sync the client theme store with the server-resolved value once, after
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
+
+	// Sync the shared consent state from jc_consent so consent-gated scripts
+	// (Umami below) match the cookie the API gates on.
+	onMount(initConsent);
 
 	// Surface unhandled API failures (network loss, 5xx, mutating 403s) as
 	// toasts — callers keep their own inline errors for page-level problems.
@@ -181,7 +186,12 @@
 
 	// Umami analytics — Main surface (§40, ROADMAP-MAIN 01.10).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID);
+	// §19 opt-in: inject only after jc_consent=all. Once injected the script
+	// binds its own history listeners, so mid-session revocation applies
+	// from the next full page load — the cookie already governs that.
+	const umamiEnabled = $derived(
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID && consent.granted
+	);
 
 	// Cross-origin API host (logos, avatars, media). Preconnecting saves the
 	// DNS+TLS handshake on the first media request — a real LCP factor on

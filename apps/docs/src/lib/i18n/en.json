@@ -387,7 +387,7 @@
   "api.browse_endpoints": "Browse API endpoints →",
   "cookies.banner.accept_all": "Accept all",
   "cookies.banner.aria": "Cookie consent",
-  "cookies.banner.body": "We use cookies to keep you signed in and remember your preferences, plus optional analytics cookies that help us improve the platform.",
+  "cookies.banner.body": "We use cookies to keep you signed in and remember your preferences, plus optional analytics that help us improve the platform.",
   "cookies.banner.learn_more": "Learn more",
   "cookies.banner.necessary_only": "Necessary only",
   "cookies.footer.settings": "Cookie settings",

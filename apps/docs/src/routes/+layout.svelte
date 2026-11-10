@@ -10,6 +10,7 @@
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
+	import { consent, initConsent } from '#lib/consent.js';
 	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
 	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
 	import NextActions from '#lib/components/shell/NextActions.svelte';
@@ -44,6 +45,10 @@
 	// Sync the client theme store with the server-resolved value once, after
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
+
+	// Sync the shared consent state from jc_consent so consent-gated scripts
+	// (Umami below) match the cookie the API gates on.
+	onMount(initConsent);
 
 	// Surface unhandled API failures (network loss, 5xx) as toasts — docs
 	// forms keep their own inline errors for request-level problems.
@@ -94,7 +99,12 @@
 
 	// Umami analytics — Docs surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_DOCS);
+	// §19 opt-in: inject only after jc_consent=all. Once injected the script
+	// binds its own history listeners, so mid-session revocation applies
+	// from the next full page load — the cookie already governs that.
+	const umamiEnabled = $derived(
+		!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_DOCS && consent.granted
+	);
 
 	// §115 AI Quick Panel: FAB toggles the page-aware slide-in panel
 	// ("Open in Japa AI" links to the main app's /ai). Deps init on
