@@ -344,8 +344,11 @@
 	</AppShell>
 	{#if isPublishedPage && !publishedHasOwnFooter}
 		<!-- inline-size container matches LandingRenderer so the footer
-		     block's @container queries resolve against the page width. -->
-		<div style="container-type: inline-size">
+		     block's @container queries resolve against the page width.
+		     When the sidenav is PINNED open the band indents like the
+		     center column (classic reflow); collapsed rail and transient
+		     hover-expand leave it full-bleed underneath the nav. -->
+		<div class="published-footer" class:published-footer--pinned={!shownCollapsed}>
 			<GuestBlockStyles />
 			<GuestFooterBlock props={{}} />
 		</div>
@@ -403,6 +406,15 @@
 <AdConversionTracker />
 
 <style>
+	.published-footer {
+		container-type: inline-size;
+	}
+	@media (min-width: 768px) {
+		.published-footer--pinned {
+			margin-inline-start: var(--nav-width-expanded);
+		}
+	}
+
 	/* ADR-127 minimal roadmap shell */
 	.roadmap-header {
 		position: sticky;
