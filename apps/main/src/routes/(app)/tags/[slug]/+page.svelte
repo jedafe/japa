@@ -9,6 +9,7 @@
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 	import type { MediaAsset, FeedItem } from '#lib/types/index.js';
 	import type { SearchResult } from '#lib/types/search.js';
@@ -278,9 +279,24 @@
 		const was = following;
 		following = !was;
 		pending = true;
-		const res = was
-			? await api.delete<{ following: boolean }>(`/tags/${tag.slug}/follow`)
-			: await api.post<{ following: boolean }>(`/tags/${tag.slug}/follow`);
+		// Delegated authorship (spec §1.6): a selected persona follows as the
+		// actor — only the generic /follows route accepts actor_id for tags.
+		const actor = actAsPersona.actorId;
+		const res = actor
+			? was
+				? await api.delete<{ following: boolean }>('/follows', {
+						entity_type: 'tag',
+						entity_id: tag.id,
+						actor_id: actor
+					})
+				: await api.post<{ following: boolean }>('/follows', {
+						entity_type: 'tag',
+						entity_id: tag.id,
+						actor_id: actor
+					})
+			: was
+				? await api.delete<{ following: boolean }>(`/tags/${tag.slug}/follow`)
+				: await api.post<{ following: boolean }>(`/tags/${tag.slug}/follow`);
 		if (res.error) {
 			following = was;
 		} else if (res.data && typeof res.data.following === 'boolean') {

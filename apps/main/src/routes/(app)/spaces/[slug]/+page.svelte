@@ -17,6 +17,7 @@
 	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
 	import type { UrlTab } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
@@ -185,9 +186,24 @@ import { flagUrl } from '#lib/utils/flags.js';
 		const was = following;
 		following = !was;
 		followPending = true;
-		const res = was
-			? await api.delete<{ following: boolean }>(`/spaces/${space.slug}/follow`)
-			: await api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);
+		// Delegated authorship (spec §1.6): a selected persona follows as the
+		// actor — only the generic /follows route accepts actor_id for spaces.
+		const actor = actAsPersona.actorId;
+		const res = actor
+			? was
+				? await api.delete<{ following: boolean }>('/follows', {
+						entity_type: 'space',
+						entity_id: space.id,
+						actor_id: actor
+					})
+				: await api.post<{ following: boolean }>('/follows', {
+						entity_type: 'space',
+						entity_id: space.id,
+						actor_id: actor
+					})
+			: was
+				? await api.delete<{ following: boolean }>(`/spaces/${space.slug}/follow`)
+				: await api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);
 		if (res.error) {
 			following = was;
 		} else if (res.data && typeof res.data.following === 'boolean') {
