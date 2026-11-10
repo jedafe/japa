@@ -19,6 +19,10 @@ func TestConsentTypeConstants(t *testing.T) {
 		t.Errorf("expected analytics_tracking, got %s", ConsentAnalyticsTracking)
 	}
 
+	if ConsentFunctionalCookies != "functional_cookies" {
+		t.Errorf("expected functional_cookies, got %s", ConsentFunctionalCookies)
+	}
+
 	if ConsentThirdPartySharing != "third_party_sharing" {
 		t.Errorf("expected third_party_sharing, got %s", ConsentThirdPartySharing)
 	}
@@ -72,8 +76,8 @@ func TestAllConsentTypes(t *testing.T) {
 	t.Parallel()
 
 	types := AllConsentTypes()
-	if len(types) != 4 {
-		t.Errorf("expected 4 consent types, got %d", len(types))
+	if len(types) != 5 {
+		t.Errorf("expected 5 consent types, got %d", len(types))
 	}
 }
 
@@ -86,6 +90,7 @@ func TestValidConsentType(t *testing.T) {
 	}{
 		{"marketing_email", true},
 		{"analytics_tracking", true},
+		{"functional_cookies", true},
 		{"third_party_sharing", true},
 		{"ai_processing", true},
 		{"invalid_type", false},
@@ -101,6 +106,21 @@ func TestValidConsentType(t *testing.T) {
 				t.Errorf("ValidConsentType(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestConsentConfigTypesRecordable pins the two consent-type lists together:
+// every type GET /consent/config advertises must be accepted by
+// RecordConsent/RevokeConsent validation. A manual copy of the list once
+// left functional_cookies config-visible but un-recordable — banner POSTs
+// and the settings toggle silently failed.
+func TestConsentConfigTypesRecordable(t *testing.T) {
+	t.Parallel()
+
+	for _, ct := range validConsentTypes {
+		if !ValidConsentType(ct) {
+			t.Errorf("config-advertised consent_type %q rejected by ValidConsentType", ct)
+		}
 	}
 }
 

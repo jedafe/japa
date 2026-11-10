@@ -202,17 +202,21 @@ type ConsentConfigResponse struct {
 }
 
 // validConsentTypes is the canonical list of consent types recognized by the
-// platform. Mirrors the values documented in Section 19 and enforced by the
+// platform, derived from AllConsentTypes so GET /consent/config can never
+// drift from the RecordConsent/RevokeConsent validation set (a manual copy
+// once left functional_cookies config-visible but un-recordable). Mirrors
+// the values documented in Section 19 and enforced by the
 // consent_records.consent_type column. These are platform constants — they
 // are NOT admin-configurable, but surfacing them via the API keeps the
 // frontend in sync if the set changes (BUG-015).
-var validConsentTypes = []string{
-	"marketing_email",
-	"analytics_tracking",
-	"functional_cookies",
-	"third_party_sharing",
-	"ai_processing",
-}
+var validConsentTypes = func() []string {
+	types := AllConsentTypes()
+	out := make([]string, len(types))
+	for i, t := range types {
+		out[i] = string(t)
+	}
+	return out
+}()
 
 // GetConsentConfig returns the valid consent types and the current privacy
 // policy version for the platform. The policy version is sourced from
@@ -673,30 +677,36 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// Unlike the sibling scrubs this one is fatal: the artifact it
 		// protects is publicly visible, and a warn-only failure would
 		// checkpoint past the step so a retry never scrubs it.
-		shadowRows, err := s.store.read.ListMentorshipShadowMediaFields(ctx,
-			request.UserID,
-		)
-		if err != nil {
-			s.markDeletionFailed(ctx, requestID)
-			return fmt.Errorf("listing mentorship shadow media fields: %w", err)
-		}
-		if err := s.store.write.AnonymizeMentorshipShadowListings(ctx,
-			request.UserID,
-		); err != nil {
-			s.markDeletionFailed(ctx, requestID)
-			return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
-		}
-		// §14: the scrub wipes body/body_html — re-derive each shadow's
-		// tracked media refs so body embeds don't pin media rows forever.
-		// field_values survives the scrub and passes through unchanged.
-		for _, row := range shadowRows {
-			if err := content.SyncMediaRefs(ctx, s.store.read, s.store.write, row.ID, content.MediaRefSource{
-				ContentType: "service_listing",
-				FieldValues: row.FieldValues,
-			}); err != nil {
-				s.markDeletionFailed(ctx, requestID)
-				return fmt.Errorf("syncing shadow media fields: %w", err)
+		// Scrub + media-ref re-sync commit atomically so a sync failure
+		// can't leave refs describing the pre-scrub body.
+		if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+			shadowRows, err := q.ListMentorshipShadowMediaFields(ctx,
+				request.UserID,
+			)
+			if err != nil {
+				return fmt.Errorf("listing mentorship shadow media fields: %w", err)
 			}
+			if err := q.AnonymizeMentorshipShadowListings(ctx,
+				request.UserID,
+			); err != nil {
+				return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
+			}
+			// §14: the scrub wipes body/body_html — re-derive each shadow's
+			// tracked media refs so body embeds don't pin media rows forever.
+			// field_values survives the scrub and passes through unchanged.
+			for _, row := range shadowRows {
+				if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+					ContentType: "service_listing",
+					FieldValues: row.FieldValues,
+					OgImageURL: strFromPtr(row.OgImageUrl),
+				}); err != nil {
+					return fmt.Errorf("syncing shadow media fields: %w", err)
+				}
+			}
+			return nil
+		}); err != nil {
+			s.markDeletionFailed(ctx, requestID)
+			return err
 		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
@@ -1116,6 +1126,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
 				ContentType: "service_listing",
 				FieldValues: row.FieldValues,
+				OgImageURL: strFromPtr(row.OgImageUrl),
 			}); err != nil {
 				return fmt.Errorf("syncing shadow media fields: %w", err)
 			}
@@ -3858,4 +3869,13 @@ func (s *Service) exportRows(ctx context.Context, query string, userID pgtype.UU
 		out = append(out, m)
 	}
 	return out
+}
+
+// strFromPtr dereferences a *string for sync sources ("" when nil).
+func strFromPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
 }

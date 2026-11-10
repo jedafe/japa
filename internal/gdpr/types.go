@@ -16,8 +16,12 @@ type ConsentType string
 const (
 	// ConsentMarketingEmail is the consent marketing email constant.
 	ConsentMarketingEmail ConsentType = "marketing_email"
-	// ConsentAnalyticsTracking is the consent analytics tracking.
+	// ConsentAnalyticsTracking is the consent analytics tracking — the
+	// Umami injection gate (§19).
 	ConsentAnalyticsTracking ConsentType = "analytics_tracking"
+	// ConsentFunctionalCookies is the consent for functional cookies —
+	// the jc_guest mint gate (§19).
+	ConsentFunctionalCookies ConsentType = "functional_cookies"
 	// ConsentThirdPartySharing is the consent third party sharing.
 	ConsentThirdPartySharing ConsentType = "third_party_sharing"
 	// ConsentAIProcessing is the consent a i processing.
@@ -29,6 +33,7 @@ func AllConsentTypes() []ConsentType {
 	return []ConsentType{
 		ConsentMarketingEmail,
 		ConsentAnalyticsTracking,
+		ConsentFunctionalCookies,
 		ConsentThirdPartySharing,
 		ConsentAIProcessing,
 	}
