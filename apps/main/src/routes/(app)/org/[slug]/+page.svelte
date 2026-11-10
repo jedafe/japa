@@ -17,6 +17,7 @@
 	import TipButton from '#lib/components/tips/TipButton.svelte';
 	import type { ProfilePost, FeedItem } from '#lib/types/index.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const mediaImages = $derived(data.media.filter((m) => m.mime_type.startsWith('image/')));
@@ -146,6 +147,10 @@
 					description: org.description ?? org.tagline ?? ''
 				})
 	);
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'org')
+	);
 </script>
 
 <svelte:head>
@@ -156,6 +161,11 @@
 	<meta property="og:type" content="profile" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={org.name} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{@html safeJsonLdScript(jsonLd)}
 	{#if data.posts && data.posts.length === 0}
 		<meta name="robots" content="noindex,nofollow" />

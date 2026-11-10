@@ -31,6 +31,7 @@
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('universities.title', 'Universities — {site}'));
@@ -363,7 +364,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'universities')} title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header — EntityHero directory panel -->

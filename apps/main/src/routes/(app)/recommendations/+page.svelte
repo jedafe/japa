@@ -4,12 +4,15 @@
 	import RecommendationsWidget from '#lib/components/hub/dashboard/RecommendationsWidget.svelte';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+import { page } from '$app/state';
 	let { data }: { data: PageData } = $props();
 
 	const resolvedCountry = $derived(data.recommendations?.context?.content_country ?? null);
 </script>
 
-<SeoHead title={`${t('dashboard.overview.recommendations')} — ${siteName()}`} description={t('recommendations.description', 'Personalised picks — stories, spaces, and guides matched to your interests on {site}.')} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'recommendations')} title={`${t('dashboard.overview.recommendations')} — ${siteName()}`} description={t('recommendations.description', 'Personalised picks — stories, spaces, and guides matched to your interests on {site}.')} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<header class="mb-4">

@@ -34,6 +34,7 @@
 	import type { ServiceListing, Space } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('services.marketplace_title', 'Services Marketplace — {site}'));
@@ -324,6 +325,8 @@
 			body: t('services.trust_support_body', 'Real humans help you compare options and avoid relocation scams.')
 		}
 	]);
+
+	const seoOgImage = $derived(ogCardUrl(page.url.origin, 'services'));
 </script>
 
 <svelte:head>
@@ -334,6 +337,11 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />

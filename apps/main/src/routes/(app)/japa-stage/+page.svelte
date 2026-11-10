@@ -42,6 +42,7 @@
 	import type { JapaStage, JapaIntent, MemberStage, TrendingContent } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const intentOpts = $derived(japaIntentOptions(t, data.intents));
@@ -278,7 +279,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'japa-stage')} title={title} description={description} ogTitle={title} />
 
 <svelte:head>
 	{#if mediaOrigin}<link rel="preconnect" href={mediaOrigin} />{/if}

@@ -13,6 +13,7 @@
 	import type { PageData } from './$types';
 	import type { ProductProvider } from './+page.server';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 	let product = $derived(data.product);
 
@@ -68,7 +69,7 @@
 	title={`${product.name} — ${t('products.heading', 'Products')} — ${siteName()}`}
 	description={metaDescription}
 	ogTitle={`${product.name} — ${product.type_label}`}
-	ogImage={product.logo_url}
+	ogImage={ogMediaUrl(page.url.origin, product.logo_url) || ogCardUrl(page.url.origin, 'product')}
 	canonical={canonicalUrl}
 	jsonLd={productJsonLd}
 />

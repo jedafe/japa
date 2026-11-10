@@ -19,6 +19,7 @@
 	import { dealPath, type Coupon } from '#lib/types/index.js';
 	import DealForm from '#lib/components/deals/DealForm.svelte';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const coupon = $derived(data.coupon);
@@ -168,7 +169,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'deal')} title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

@@ -82,6 +82,7 @@
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const service = $derived<ServiceListing | null>(data.service);
@@ -138,11 +139,8 @@
 		service ? `${page.url.origin}/services/${service.slug}` : `${page.url.origin}/services`
 	);
 	const ogImage = $derived(
-		service?.featured_image_url
-			? service.featured_image_url.startsWith('http')
-				? service.featured_image_url
-				: `${page.url.origin}${service.featured_image_url}`
-			: ''
+		ogMediaUrl(page.url.origin, service?.featured_image_url) ||
+		ogCardUrl(page.url.origin, 'service')
 	);
 
 	// §114 category badge — the taxonomy row carries the admin-managed

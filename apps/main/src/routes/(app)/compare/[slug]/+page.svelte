@@ -27,6 +27,7 @@
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
@@ -150,6 +151,10 @@
 		if (cell.value_boolean !== undefined && cell.value_boolean !== null) return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');
 		return '—';
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'compare')
+	);
 </script>
 
 <svelte:head>
@@ -161,6 +166,8 @@
 	<meta property="og:description" content={headDescription} />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	<meta name="twitter:description" content={headDescription} />

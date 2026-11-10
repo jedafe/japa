@@ -8,6 +8,7 @@
 	import type { PageData } from './$types';
 	import { formatMoney } from '#lib/utils/currency.js';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const offering = $derived(data.offering);
@@ -59,7 +60,8 @@
 	});
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={jsonLd} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'university')} title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<!-- Header -->

@@ -6,6 +6,8 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import type { RoadmapRelease } from '#lib/types/index.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+import { page } from '$app/state';
 	/**
 	 * Releases timeline — Discourse-style release bands + per-release cards.
 	 * Band width/offset computed from released_at → superseded_at (falling
@@ -56,7 +58,8 @@
 	}
 </script>
 
-<SeoHead title={`${t('roadmap.releases.title', 'Releases')} — ${siteName()}`} description={t('roadmap.releases.description', 'Every shipped release — changelogs, fixes, and improvements to {site}.')} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'roadmap')} title={`${t('roadmap.releases.title', 'Releases')} — ${siteName()}`} description={t('roadmap.releases.description', 'Every shipped release — changelogs, fixes, and improvements to {site}.')} />
 
 <svelte:head>
 	<link

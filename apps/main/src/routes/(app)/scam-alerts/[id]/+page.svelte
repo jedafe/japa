@@ -14,6 +14,7 @@
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const alert = $derived(data.alert);
@@ -82,6 +83,10 @@
 	function statusLabel(status: ScamStatus): string {
 		return t(`scam_alerts.status.${status}`, status.replace(/_/g, ' '));
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'scam-alert')
+	);
 </script>
 
 <svelte:head>
@@ -92,6 +97,11 @@
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if scamJsonLd}
 		{@html safeJsonLdScript(scamJsonLd)}
 	{/if}

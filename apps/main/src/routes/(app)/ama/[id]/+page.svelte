@@ -17,6 +17,7 @@
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const session = $derived(data.session);
@@ -126,6 +127,10 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		}
 		await invalidateAll();
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'ama')
+	);
 </script>
 
 <svelte:head>
@@ -136,6 +141,11 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={session?.title ?? title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if faqJsonLd}
 		{@html safeJsonLdScript(faqJsonLd)}
 	{/if}

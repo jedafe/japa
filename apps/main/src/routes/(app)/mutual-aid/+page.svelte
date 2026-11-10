@@ -16,6 +16,7 @@
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const posts = $derived(data.posts);
@@ -191,6 +192,8 @@
 	const selectedDestinationLabel = $derived(
 		dest ? (data.countries ?? []).find((c) => c.id === dest)?.name ?? null : null
 	);
+
+	const seoOgImage = $derived(ogCardUrl(page.url.origin, 'mutual-aid'));
 </script>
 
 <svelte:head>
@@ -201,6 +204,11 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.origin + '/mutual-aid'} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if currentPage > 1}
 		{@const maPrevUrl = (() => { const u = new URL(page.url.href); if (currentPage - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(currentPage - 1)); return u.toString(); })()}
 		<link rel="prev" href={maPrevUrl} />

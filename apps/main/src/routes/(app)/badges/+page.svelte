@@ -17,6 +17,7 @@
 	import type { Badge, CollectionBadge } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// Guest view — group the public catalogue by category so it renders
@@ -91,7 +92,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'badges')} title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6" style="--page-gutter: 1rem">
 	<!-- Hero — mirrors the "Your Journey. Your Badges." mockup header. -->

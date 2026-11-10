@@ -17,6 +17,7 @@
 	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	import { Autocomplete, type AutocompleteItem } from '@japaconnect/ui';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// The native <input type="color"> only understands #rrggbb — stored values
@@ -383,6 +384,10 @@
 		}
 		editSaving = false;
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'tag')
+	);
 </script>
 
 <svelte:head>
@@ -393,7 +398,9 @@
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
-	<meta name="twitter:card" content="summary" />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	<!-- Ref: api-routes-catalog.md — GET /tags/{slug}/feed.xml (public RSS) -->

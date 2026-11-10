@@ -30,6 +30,7 @@
 	import type { PageData } from './$types';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '#lib/types/index.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const story = $derived(data.story);
@@ -156,6 +157,11 @@
 		if (!story?.id) return;
 		api.post(`/content/${story.id}/view`, {}, { 'x-silent-error': '1' });
 	});
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, story?.featured_image_url) ||
+		ogCardUrl(page.url.origin, 'story')
+	);
 </script>
 
 <svelte:head>
@@ -166,7 +172,9 @@
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
-	<meta name="twitter:card" content="summary" />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={story?.title ?? title} />
 	<meta name="twitter:description" content={description} />
 	{#if jsonLd}

@@ -34,6 +34,7 @@
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	type ProductItem = PageData['items'][number];
 
 	let { data }: { data: PageData } = $props();
@@ -232,7 +233,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'products')} title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	{#snippet barActions()}

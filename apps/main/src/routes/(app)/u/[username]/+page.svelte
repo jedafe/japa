@@ -39,6 +39,7 @@
 	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
@@ -177,6 +178,8 @@
 		if (body.disclosure_mode === orig.disclosure_mode) delete body.disclosure_mode;
 		if (body.avatar_media_id === (orig.avatar_media_id ?? '')) delete body.avatar_media_id;
 		if (body.header_media_id === (orig.header_media_id ?? '')) delete body.header_media_id;
+		if (body.avatar_url === (orig.avatar_url ?? '')) delete body.avatar_url;
+		if (body.cover_url === (orig.cover_url ?? '')) delete body.cover_url;
 		if (body.profession === (orig.profession ?? '')) delete body.profession;
 		if (body.location === (orig.location ?? '')) delete body.location;
 		if (body.website_url === (orig.website_url ?? '')) delete body.website_url;
@@ -941,6 +944,11 @@
 			sortDir: sortVal
 		})
 	);
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, user?.banner_url) || ogMediaUrl(page.url.origin, user?.avatar_url) ||
+		ogCardUrl(page.url.origin, 'user')
+	);
 </script>
 
 <svelte:head>
@@ -951,6 +959,11 @@
 	<meta property="og:type" content="profile" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if data.user?.indexable === false}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
@@ -1170,7 +1183,7 @@
 							<div class="flex flex-col items-start gap-1">
 								<button type="button" class="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" onclick={() => (personaAvatarPickerOpen = true)}>{t('personas.choose_avatar', 'Choose Avatar')}</button>
 								{#if personaForm.avatar_media_id || personaAvatarUrl}
-									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.avatar_media_id = ''; personaAvatarUrl = ''; }}>{t('common.remove', 'Remove')}</button>
+									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.avatar_media_id = ''; personaForm.avatar_url = ''; personaAvatarUrl = ''; }}>{t('common.remove', 'Remove')}</button>
 								{/if}
 							</div>
 						</div>
@@ -1188,7 +1201,7 @@
 							<div class="flex flex-col items-start gap-1">
 								<button type="button" class="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" onclick={() => (personaCoverPickerOpen = true)}>{t('personas.choose_cover', 'Choose Cover')}</button>
 								{#if personaForm.header_media_id || personaCoverUrl}
-									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.header_media_id = ''; personaCoverUrl = ''; }}>{t('common.remove', 'Remove')}</button>
+									<button type="button" class="text-[10px] text-[var(--color-danger)] underline" onclick={() => { personaForm.header_media_id = ''; personaForm.cover_url = ''; personaCoverUrl = ''; }}>{t('common.remove', 'Remove')}</button>
 								{/if}
 							</div>
 						</div>

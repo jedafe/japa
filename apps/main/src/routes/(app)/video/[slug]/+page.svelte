@@ -10,7 +10,9 @@
 	import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
 	import { t, siteName} from '#lib/i18n/index.js';
 	import type { PageData } from './$types';
+import { page } from '$app/state';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const source = $derived(data.videoSource);
@@ -31,6 +33,10 @@
 		summarizing = false;
 		summarizeResult = r.error ? 'error' : 'queued';
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'video')
+	);
 </script>
 
 <svelte:head>
@@ -42,6 +48,11 @@
 		{@const videoCanonical = `https://japa.to/video/${source.slug ?? source.id}`}
 		<link rel="canonical" href={videoCanonical} />
 		<meta property="og:url" content={videoCanonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={source.title ?? t('video.single.title', 'Video')} />
+	<meta name="twitter:description" content={source.description ?? ''} />
+	<meta name="twitter:image" content={seoOgImage} />
 		<meta property="og:type" content="video.other" />
 	{/if}
 	{#if data.sourceOnly}

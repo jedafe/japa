@@ -37,6 +37,7 @@
 	import { hydrateContentEmbeds } from '#lib/tiptap/hydrateContentEmbeds.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
@@ -115,6 +116,11 @@
 	const sanitizedBody = $derived(
 		sanitizeContentHtml(comparison.content.body_html ?? comparison.content.body ?? '')
 	);
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, comparison?.content?.featured_image_url) ||
+		ogCardUrl(page.url.origin, 'comparison')
+	);
 </script>
 
 <svelte:head>
@@ -128,9 +134,10 @@
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 	<meta property="og:url" content={canonical} />
-	{#if comparison.content.featured_image_url}<meta property="og:image" content={comparison.content.featured_image_url} />{/if}
+	<meta property="og:image" content={seoOgImage} />
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if headDescription}<meta name="twitter:description" content={headDescription} />{/if}
 	{@html safeJsonLdScript(
 		breadcrumbJsonLd([

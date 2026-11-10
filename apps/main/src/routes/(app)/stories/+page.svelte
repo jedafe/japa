@@ -18,6 +18,7 @@
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('stories.list_title', 'Community Stories — {site}'));
@@ -261,7 +262,8 @@
 	);
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'stories')} title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('stories.heading', 'Community Stories')}</h1>

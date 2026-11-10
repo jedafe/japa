@@ -15,6 +15,7 @@
 	import { formatMoney } from '#lib/utils/currency.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const university = $derived(data.university);
@@ -250,6 +251,11 @@
 	function formatWikiCategory(category: string): string {
 		return category.replace(/_/g, ' ');
 	}
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, university?.logo_url) ||
+		ogCardUrl(page.url.origin, 'university')
+	);
 </script>
 
 <svelte:head>
@@ -260,6 +266,11 @@
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if data.university.indexable === false}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}

@@ -32,6 +32,7 @@
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 import { flagUrl } from '#lib/utils/flags.js';
+import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -56,6 +57,13 @@ import { flagUrl } from '#lib/utils/flags.js';
 	// logo_url remains for other space types and unresolvable codes.
 	const spaceLogo = $derived(
 		space?.level === 'country' ? (flagUrl(space.geo_code) ?? data.logoUrl) : data.logoUrl
+	);
+	// og:image — cover banner, else raster logo, else the generated space
+	// title card (ogMediaUrl drops SVG/data: — share cards ignore them).
+	const ogImage = $derived(
+		ogMediaUrl(page.url.origin, data.headerUrl) ||
+		ogMediaUrl(page.url.origin, data.logoUrl) ||
+		ogCardUrl(page.url.origin, `space:${space?.slug ?? page.params.slug}`)
 	);
 	const authed = $derived(!!page.data.user);
 	// Native ad insertion interval — public system setting (§25, Rule 3).
@@ -571,6 +579,11 @@ import { flagUrl } from '#lib/utils/flags.js';
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={ogImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={ogImage} />
 	{#if data.seoIndexable === false}
 		<meta name="robots" content="noindex,nofollow" />
 	{:else}

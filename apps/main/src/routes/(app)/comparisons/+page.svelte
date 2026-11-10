@@ -10,6 +10,7 @@
 	import { api } from '#lib/api/client.js';
 	import HeroArtCompare from '#lib/components/heroes/HeroArtCompare.svelte';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// "How it works" slide-over — editable via comparisons.guide (admins).
@@ -166,6 +167,10 @@
 		if (searchTimeout) clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => apply(), 300);
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'comparisons')
+	);
 </script>
 
 <svelte:head>
@@ -175,6 +180,11 @@
 	<meta property="og:title" content={listTitle} />
 	<meta property="og:description" content={listDescription} />
 	<meta property="og:type" content="website" />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={listTitle} />
+	<meta name="twitter:description" content={listDescription} />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta property="og:url" content={page.url.origin + '/comparisons'} />
 	{#if currentPage > 1}
 		{@const compPrevUrl = (() => { const u = new URL(page.url.href); if (currentPage - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(currentPage - 1)); return u.toString(); })()}

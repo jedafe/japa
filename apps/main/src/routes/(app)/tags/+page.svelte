@@ -9,6 +9,7 @@
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('tags.title', 'Tags — {site}'));
@@ -100,6 +101,10 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 			type: 'tag'
 		}));
 	}
+
+	const seoOgImage = $derived(
+		ogCardUrl(page.url.origin, 'tags')
+	);
 </script>
 
 <svelte:head>
@@ -110,6 +115,8 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={tagsCanonical} />
 	<meta property="og:url" content={tagsCanonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{#if data.page > 0}
 		{@const tagsPrevUrl = (() => { const u = new URL(page.url.href); if (data.page - 1 <= 0) u.searchParams.delete('page'); else u.searchParams.set('page', String(data.page)); return u.toString(); })()}
 		<link rel="prev" href={tagsPrevUrl} />
@@ -118,7 +125,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		{@const tagsNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(data.page + 2)); return u.toString(); })()}
 		<link rel="next" href={tagsNextUrl} />
 	{/if}
-	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}

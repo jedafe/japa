@@ -26,6 +26,7 @@
 	import type { PageData } from './$types';
 	import type { Source } from '#lib/types/sources.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// Load more — client-side appends (replaces Previous/Next pagination);
@@ -187,6 +188,8 @@
 		}
 	}
 
+
+	const seoOgImage = $derived(ogCardUrl(page.url.origin, 'sources'));
 </script>
 
 <svelte:head>
@@ -196,6 +199,11 @@
 	     filtered query-string form) so filter/sort hits consolidate. -->
 	<link rel="canonical" href="{page.url.origin}/sources" />
 	<meta property="og:url" content="{page.url.origin}/sources" />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={seoOgImage} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 </svelte:head>

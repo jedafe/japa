@@ -14,6 +14,7 @@
 	import { dealPath, type Coupon } from '#lib/types/index.js';
 	import { currencySymbol } from '#lib/utils/currency.js';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// Surface tabs — /products is the sibling directory; the Products tab
@@ -380,7 +381,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'deals')} title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	{#snippet barActions()}

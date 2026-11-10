@@ -9,6 +9,7 @@
 	import type { LeaderboardEntry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('leaderboard.title', 'Leaderboard — {site}'));
@@ -58,7 +59,8 @@
 	};
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'leaderboard')} title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-2xl" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('leaderboard.heading', 'Leaderboard')}</h1>

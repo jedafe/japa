@@ -15,6 +15,7 @@
 	import type { PageData } from './$types';
 	import type { Source, SourceItemEnvelope } from '#lib/types/sources.js';
 
+	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// svelte-ignore state_referenced_locally
@@ -125,6 +126,11 @@
 	function onEdit(updated: Source) {
 		source = updated;
 	}
+
+	const seoOgImage = $derived(
+		ogMediaUrl(page.url.origin, source?.logo_url) ||
+		ogCardUrl(page.url.origin, 'source')
+	);
 </script>
 
 <svelte:head>
@@ -135,6 +141,11 @@
 	<meta property="og:type" content="profile" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	<meta property="og:image" content={seoOgImage} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={source.description ?? source.domain} />
+	<meta name="twitter:image" content={seoOgImage} />
 	{@html safeJsonLdScript(breadcrumbLd)}
 	{#if data.feed.items.length === 0}
 		<meta name="robots" content="noindex,nofollow" />

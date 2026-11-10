@@ -13,6 +13,7 @@
 	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 
+import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	function toFeedItem(g: GuideListItem): FeedItem {
@@ -219,7 +220,8 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} />
+<SeoHead
+	ogImage={ogCardUrl(page.url.origin, 'guides')} title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('guides.heading', 'Guides')}</h1>
