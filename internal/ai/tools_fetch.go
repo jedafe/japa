@@ -35,6 +35,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -253,6 +254,18 @@ func FetchWeb(ctx context.Context, client *http.Client, settings SettingsReader,
 	finalURL := rawURL
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()
+	}
+
+	// A LimitReader cut may split a multi-byte rune at the maxBytes boundary —
+	// drop up to 4 trailing bytes before judging the body binary. A payload
+	// that is still invalid UTF-8 slipped past the content-type check (a
+	// server omitting the header or mislabeling binary as text/plain) —
+	// reject it rather than feed mojibake to the model.
+	for i := 0; i < 4 && len(body) > 0 && !utf8.Valid(body); i++ {
+		body = body[:len(body)-1]
+	}
+	if !utf8.Valid(body) {
+		return nil, fmt.Errorf("%w: non-text body (invalid UTF-8)", errUnsupportedFetchMediaType)
 	}
 
 	bodyStr := string(body)

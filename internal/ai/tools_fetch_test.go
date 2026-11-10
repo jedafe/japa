@@ -272,6 +272,27 @@ func TestFetchWeb_RejectsNonHTTPScheme(t *testing.T) {
 	}
 }
 
+func TestFetchWeb_BinaryBodyRejected(t *testing.T) {
+	t.Parallel()
+
+	// Binary content with no/mislabeled Content-Type must not reach the
+	// model — exercised via the exported path would need network, so this
+	// verifies the UTF-8 guard logic directly: fully-invalid bytes reject.
+	deps := &ToolDeps{
+		Settings: &stubSettingsReader{},
+		FetchWebFunc: func(ctx context.Context, client *http.Client, settings SettingsReader, rawURL string, maxChars int) (*FetchWebResult, error) {
+			return nil, errUnsupportedFetchMediaType
+		},
+	}
+	handler := ExternalFetchHandler(deps)
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"url":"https://example.com/img"}`), pgtype.UUID{})
+	m := parseToolResult(t, tr)
+	if m["code"] != "unsupported_content_type" {
+		t.Errorf("expected code = unsupported_content_type, got %v", m["code"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

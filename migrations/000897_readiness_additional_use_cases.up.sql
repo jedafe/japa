@@ -53,21 +53,21 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'visa_medical', 'select',
  '[{"value":"not_required","label":"Not required for my route"},{"value":"not_started","label":"Required, not started"},{"value":"booked","label":"Booked / scheduled"},{"value":"done","label":"Completed"}]'::jsonb,
  'Select the closest match', true, false, true, 29,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_required":90,"not_started":20,"booked":60,"done":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_required":90,"not_started":20,"booked":60,"done":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000e018', gid,
  'Do you have the police clearance certificates your visa route requires?',
  'police_clearance', 'select',
  '[{"value":"not_required","label":"Not required for my route"},{"value":"not_started","label":"Required, not started"},{"value":"requested","label":"Requested / processing"},{"value":"have","label":"Certificates in hand"}]'::jsonb,
  'Select the closest match', true, false, true, 30,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_required":90,"not_started":20,"requested":60,"have":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_required":90,"not_started":20,"requested":60,"have":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000e019', gid,
  'Have you planned your exit from home (job notice, lease, subscriptions, belongings)?',
  'exit_plan', 'select',
  '[{"value":"not_started","label":"Not thought about it yet"},{"value":"thinking","label":"Thinking it through"},{"value":"partial","label":"Partially planned"},{"value":"planned","label":"Fully planned with dates"}]'::jsonb,
  'Select the closest match', true, false, true, 31,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":15,"thinking":40,"partial":70,"planned":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":15,"thinking":40,"partial":70,"planned":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb),
 
 -- Destination knowledge / settlement readiness
 ('00000000-0000-0000-0000-00000000e020', gid,
@@ -75,7 +75,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'banking_setup', 'select',
  '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"partial","label":"Account opened or fintech set up"},{"value":"sorted","label":"Banking sorted before departure"}]'::jsonb,
  'Select the closest match', true, false, true, 32,
- '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":15,"researching":40,"partial":70,"sorted":100}}'::jsonb)
+ '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":15,"researching":40,"partial":70,"sorted":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb)
 
 ON CONFLICT (id) DO NOTHING;
 

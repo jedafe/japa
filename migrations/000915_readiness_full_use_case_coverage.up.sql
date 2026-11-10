@@ -51,7 +51,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'belongings_shipping', 'select',
  '[{"value":"minimal","label":"Travelling light — nothing to ship"},{"value":"undecided","label":"Haven''t decided yet"},{"value":"planning","label":"Comparing movers / selling items"},{"value":"arranged","label":"Shipping, sale, or storage booked"}]'::jsonb,
  'Select the closest match', true, false, true, 35,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"minimal":85,"undecided":20,"planning":60,"arranged":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"minimal":85,"undecided":20,"planning":60,"arranged":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f024', gid,
  'If you''re moving with pets, are their vaccinations, permits, and transport arranged?',
@@ -65,14 +65,14 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'healthcare_continuity', 'select',
  '[{"value":"none_needed","label":"No ongoing medical needs"},{"value":"not_planned","label":"Needs exist, no plan yet"},{"value":"researching","label":"Researching providers and prescription transfers"},{"value":"arranged","label":"Continuity of care arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 37,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"none_needed":90,"not_planned":20,"researching":55,"arranged":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"none_needed":90,"not_planned":20,"researching":55,"arranged":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f026', gid,
  'If you''ll drive at your destination, is your licence sorted (validity, international permit, conversion rules)?',
  'driving_transport', 'select',
  '[{"value":"not_driving","label":"Won''t be driving"},{"value":"unsure","label":"Haven''t checked the rules"},{"value":"in_progress","label":"IDP/conversion in progress"},{"value":"sorted","label":"Licence valid or conversion confirmed"}]'::jsonb,
  'Select the closest match', true, false, true, 38,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_driving":90,"unsure":35,"in_progress":65,"sorted":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_driving":90,"unsure":35,"in_progress":65,"sorted":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 -- Professional
 ('00000000-0000-0000-0000-00000000f027', gid,

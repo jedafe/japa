@@ -45,7 +45,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'proof_of_funds', 'select',
  '[{"value":"unaware","label":"I don''t know the requirement"},{"value":"below","label":"Below the required amount"},{"value":"close","label":"Close to the required amount"},{"value":"met","label":"Requirement fully met"}]'::jsonb,
  'Select the closest match', true, false, true, 9,
- '{"weight":1.0,"dimension":"financial","option_scores":{"unaware":10,"below":30,"close":60,"met":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"financial","option_scores":{"unaware":10,"below":30,"close":60,"met":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c002', gid,
  'Have you budgeted the full cost of your move (flights, shipping, first months'' costs)?',
@@ -60,21 +60,21 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'documents_ready', 'select',
  '[{"value":"not_started","label":"Not started gathering them"},{"value":"gathering","label":"Gathering documents"},{"value":"mostly","label":"Mostly ready, some expiring or missing"},{"value":"ready","label":"All valid and certified/attested"}]'::jsonb,
  'Select the closest match', true, false, true, 12,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":10,"gathering":30,"mostly":70,"ready":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":10,"gathering":30,"mostly":70,"ready":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c004', gid,
  'Is health insurance or healthcare coverage arranged for your arrival?',
  'health_insurance', 'select',
  '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"short_term","label":"Short-term cover arranged"},{"value":"covered","label":"Fully covered from day one"}]'::jsonb,
  'Select the closest match', true, false, true, 13,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"none":10,"researching":40,"short_term":70,"covered":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"none":10,"researching":40,"short_term":70,"covered":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c005', gid,
  'How far along are your travel logistics (flights, luggage, first-night stay)?',
  'travel_logistics', 'select',
  '[{"value":"not_started","label":"Not started"},{"value":"researching","label":"Comparing options"},{"value":"partial","label":"Partially booked"},{"value":"booked","label":"Fully booked"}]'::jsonb,
  'Select the closest match', true, false, true, 14,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":10,"researching":30,"partial":70,"booked":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":10,"researching":30,"partial":70,"booked":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb),
 
 -- Professional
 ('00000000-0000-0000-0000-00000000c006', gid,
@@ -119,7 +119,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'language_test', 'select',
  '[{"value":"not_required","label":"Not required for my route"},{"value":"not_started","label":"Required, not started"},{"value":"preparing","label":"Preparing / booked"},{"value":"passed","label":"Passed at required level"}]'::jsonb,
  'Select the closest match', true, false, true, 23,
- '{"weight":1.0,"dimension":"language","option_scores":{"not_required":90,"not_started":10,"preparing":50,"passed":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"language","option_scores":{"not_required":90,"not_started":10,"preparing":50,"passed":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 -- Destination knowledge (new dimension — covered by the curated library)
 ('00000000-0000-0000-0000-00000000d012', gid,
@@ -127,14 +127,14 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'destination_research', 'select',
  '[{"value":"none","label":"Haven''t researched it"},{"value":"some","label":"Some online research"},{"value":"good","label":"Good working knowledge"},{"value":"deep","label":"Lived or visited extensively"}]'::jsonb,
  'Select the closest match', true, false, true, 24,
- '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":10,"some":40,"good":70,"deep":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":10,"some":40,"good":70,"deep":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000d013', gid,
  'Do you have a concrete 90-day settlement plan (bank account, phone, registration/ID, tax number)?',
  'settlement_plan', 'select',
  '[{"value":"none","label":"No plan yet"},{"value":"rough","label":"Rough idea"},{"value":"mostly","label":"Mostly planned"},{"value":"detailed","label":"Detailed week-by-week plan"}]'::jsonb,
  'Select the closest match', true, false, true, 25,
- '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":10,"rough":40,"mostly":70,"detailed":100}}'::jsonb)
+ '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":10,"rough":40,"mostly":70,"detailed":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb)
 
 ON CONFLICT (id) DO NOTHING;
 
