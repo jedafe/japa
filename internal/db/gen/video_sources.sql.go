@@ -402,7 +402,16 @@ const listVideoSourcesByAuthor = `-- name: ListVideoSourcesByAuthor :many
 SELECT vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id, vs.slug
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
-WHERE (u.username = $1 OR lower(u.public_username) = lower($1)) AND vs.status = 'active'
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1)
+ -- §50 former-username amendment: resolves a former handle to the owner's
+ -- current canonical; inert while any live handle claims the name.
+ OR u.username = (SELECT u2.username FROM username_redirects ur
+                  JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+                 WHERE ur.username = $1
+                   AND NOT EXISTS (SELECT 1 FROM users ux
+                                    WHERE ux.username = $1
+                                       OR lower(ux.public_username) = lower($1))))
+ AND vs.status = 'active'
 ORDER BY vs.created_at DESC, vs.id DESC
 LIMIT $3 OFFSET $2
 `

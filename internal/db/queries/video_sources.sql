@@ -44,7 +44,16 @@ WHERE source_type = @source_type AND external_id = @external_id;
 SELECT vs.*
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
-WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND vs.status = 'active'
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)
+ -- §50 former-username amendment: resolves a former handle to the owner's
+ -- current canonical; inert while any live handle claims the name.
+ OR u.username = (SELECT u2.username FROM username_redirects ur
+                  JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+                 WHERE ur.username = @username
+                   AND NOT EXISTS (SELECT 1 FROM users ux
+                                    WHERE ux.username = @username
+                                       OR lower(ux.public_username) = lower(@username))))
+ AND vs.status = 'active'
 ORDER BY vs.created_at DESC, vs.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 

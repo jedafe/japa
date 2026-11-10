@@ -123,7 +123,16 @@ WHERE u.username = COALESCE(
  -- §50 former-username amendment: a live username always wins; only on a
  -- miss does the redirect map the former handle to the current canonical.
  (SELECT @username::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = @username)),
- (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = @username)
+ -- The guard keeps the redirect inert while ANY live handle claims the
+ -- name — without the alias clause a former canonical that is now someone's
+ -- public_username would misdirect internal lookups (tips, mentions) to
+ -- the previous owner instead of failing cleanly.
+ (SELECT u2.username FROM username_redirects ur
+   JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+  WHERE ur.username = @username
+    AND NOT EXISTS (SELECT 1 FROM users ux
+                     WHERE ux.username = @username
+                        OR lower(ux.public_username) = lower(@username)))
 )
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
@@ -600,16 +609,18 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 LEFT JOIN user_groups pg ON pg.id = u.public_group_id
 LEFT JOIN ai_personas ap ON ap.user_id = u.id
 WHERE (u.username = @username OR lower(u.public_username) = lower(@username)
- -- §50 former-username amendment: third arm resolves a former handle to the
- -- owner's current canonical. Live handles still win — the ORDER BY below
- -- prefers the exact-match row, and the COALESCE inner arms never shadow a
- -- live username because the first arm yields @username unchanged.
- OR u.username = COALESCE(
-   (SELECT @username::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = @username)),
-   (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = @username)
- ))
+ -- §50 former-username amendment: third arm resolves a former handle to
+ -- the owner's current canonical. The NOT EXISTS guard keeps the arm inert
+ -- while any live canonical or alias claims the name, so stale rows can
+ -- never shadow a live handle or fan out to a second user.
+ OR u.username = (SELECT u2.username FROM username_redirects ur
+                  JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+                 WHERE ur.username = @username
+                   AND NOT EXISTS (SELECT 1 FROM users ux
+                                    WHERE ux.username = @username
+                                       OR lower(ux.public_username) = lower(@username))))
  AND u.status = 'active'
-ORDER BY (u.username = @username) DESC, (lower(u.public_username) = lower(@username)) DESC, u.id
+ORDER BY (u.username = @username) DESC, u.id
 LIMIT 1;
 
 -- name: ListPublicUsers :many

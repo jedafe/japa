@@ -86,7 +86,16 @@ LEFT JOIN LATERAL (
  ORDER BY sc.id
  LIMIT 1
 ) ml ON true
-WHERE (u.username = @username OR lower(u.public_username) = lower(@username)) AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)
+ -- §50 former-username amendment: resolves a former handle to the owner's
+ -- current canonical; inert while any live handle claims the name.
+ OR u.username = (SELECT u2.username FROM username_redirects ur
+                  JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+                 WHERE ur.username = @username
+                   AND NOT EXISTS (SELECT 1 FROM users ux
+                                    WHERE ux.username = @username
+                                       OR lower(ux.public_username) = lower(@username))))
+ AND up.is_mentor = true AND u.status <> 'banned' AND EXISTS (SELECT 1 FROM contents pc WHERE pc.id = up.mentor_listing_content_id AND pc.status = 'published' AND pc.deleted_at IS NULL)
  AND EXISTS (
    SELECT 1 FROM contents sc
    JOIN service_listing_meta sm ON sm.content_id = sc.id

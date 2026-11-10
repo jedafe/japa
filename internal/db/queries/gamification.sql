@@ -105,7 +105,15 @@ SELECT
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 JOIN users u ON u.id = ub.user_id
-WHERE (u.username = @username OR lower(u.public_username) = lower(@username))
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)
+ -- §50 former-username amendment: resolves a former handle to the owner's
+ -- current canonical; inert while any live handle claims the name.
+ OR u.username = (SELECT u2.username FROM username_redirects ur
+                  JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+                 WHERE ur.username = @username
+                   AND NOT EXISTS (SELECT 1 FROM users ux
+                                    WHERE ux.username = @username
+                                       OR lower(ux.public_username) = lower(@username))))
 ORDER BY ub.awarded_at DESC;
 
 -- name: GetUserBadge :one
