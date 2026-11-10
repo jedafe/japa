@@ -4,7 +4,7 @@
 FROM oven/bun:1.4 AS build
 WORKDIR /repo
 
-COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
+COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json patches/*.patch ./
 # --ignore-scripts: only manifests are present here, so workspace lifecycle
 # hooks (svelte-kit sync, the extension's `wxt prepare`) cannot run yet.
 RUN bun install --frozen-lockfile --ignore-scripts

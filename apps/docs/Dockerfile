@@ -6,7 +6,7 @@ WORKDIR /repo
 
 # Install all workspaces from the lockfile. --parents keeps each package.json
 # in place so bun sees every workspace manifest.
-COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
+COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json patches/*.patch ./
 # --ignore-scripts: only manifests are present here, so workspace lifecycle
 # hooks (svelte-kit sync, the extension's `wxt prepare`) cannot run yet.
 RUN bun install --frozen-lockfile --ignore-scripts
@@ -59,7 +59,7 @@ ENV NODE_ENV=production \
 # Production-only deps — the build stage's node_modules carries vite,
 # typescript, eslint, etc. Reinstall from manifests with --production;
 # the adapter-node bundle only needs runtime deps at serve time.
-COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
+COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json patches/*.patch ./
 RUN bun install --frozen-lockfile --ignore-scripts --production --filter './apps/docs'
 
 COPY --from=build /repo/packages ./packages
