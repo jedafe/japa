@@ -260,6 +260,18 @@ SELECT
  COALESCE(up.display_name, u.username) AS profile_name,
  u.username AS profile_slug,
  up.bio AS profile_tagline,
+ up.avatar_url,
+ up.cover_url,
+ up.avatar_media_id,
+ up.header_media_id,
+ up.profession,
+ up.location,
+ up.website_url,
+ up.education,
+ up.interests,
+ COALESCE(ts.tips_enabled, false) AS tips_enabled,
+ COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl
+  WHERE wl.user_id = u.id AND wl.ledger_type = 'points'), 0)::bigint AS points_balance,
  pv.name AS voice_name,
  pv.slug AS voice_slug,
  gs.id AS geo_space_id,
@@ -269,6 +281,7 @@ SELECT
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN tip_settings ts ON ts.owner_type = 'user' AND ts.owner_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 WHERE ap.id = $1
@@ -293,6 +306,17 @@ type GetAIPersonaByIDRow struct {
 	ProfileName         string             `json:"profile_name"`
 	ProfileSlug         string             `json:"profile_slug"`
 	ProfileTagline      *string            `json:"profile_tagline"`
+	AvatarUrl           *string            `json:"avatar_url"`
+	CoverUrl            *string            `json:"cover_url"`
+	AvatarMediaID       pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID       pgtype.UUID        `json:"header_media_id"`
+	Profession          *string            `json:"profession"`
+	Location            *string            `json:"location"`
+	WebsiteUrl          *string            `json:"website_url"`
+	Education           *string            `json:"education"`
+	Interests           []string           `json:"interests"`
+	TipsEnabled         bool               `json:"tips_enabled"`
+	PointsBalance       int64              `json:"points_balance"`
 	VoiceName           *string            `json:"voice_name"`
 	VoiceSlug           *string            `json:"voice_slug"`
 	GeoSpaceID          pgtype.UUID        `json:"geo_space_id"`
@@ -328,6 +352,17 @@ func (q *Queries) GetAIPersonaByID(ctx context.Context, id pgtype.UUID) (GetAIPe
 		&i.ProfileName,
 		&i.ProfileSlug,
 		&i.ProfileTagline,
+		&i.AvatarUrl,
+		&i.CoverUrl,
+		&i.AvatarMediaID,
+		&i.HeaderMediaID,
+		&i.Profession,
+		&i.Location,
+		&i.WebsiteUrl,
+		&i.Education,
+		&i.Interests,
+		&i.TipsEnabled,
+		&i.PointsBalance,
 		&i.VoiceName,
 		&i.VoiceSlug,
 		&i.GeoSpaceID,
@@ -467,6 +502,18 @@ SELECT
  pv.name AS voice_name,
  stats.total_actions AS total_actions,
  stats.last_action_at AS last_action_at,
+ up.avatar_url,
+ up.cover_url,
+ up.avatar_media_id,
+ up.header_media_id,
+ up.profession,
+ up.location,
+ up.website_url,
+ up.education,
+ up.interests,
+ COALESCE(ts.tips_enabled, false) AS tips_enabled,
+ COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl
+  WHERE wl.user_id = u.id AND wl.ledger_type = 'points'), 0)::bigint AS points_balance,
  gs.id AS geo_space_id,
  gs.name AS geo_space_name,
  gs.slug AS geo_space_slug,
@@ -474,6 +521,7 @@ SELECT
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN tip_settings ts ON ts.owner_type = 'user' AND ts.owner_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 LEFT JOIN LATERAL (
@@ -524,6 +572,17 @@ type ListAIPersonasRow struct {
 	VoiceName           *string            `json:"voice_name"`
 	TotalActions        int64              `json:"total_actions"`
 	LastActionAt        interface{}        `json:"last_action_at"`
+	AvatarUrl           *string            `json:"avatar_url"`
+	CoverUrl            *string            `json:"cover_url"`
+	AvatarMediaID       pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID       pgtype.UUID        `json:"header_media_id"`
+	Profession          *string            `json:"profession"`
+	Location            *string            `json:"location"`
+	WebsiteUrl          *string            `json:"website_url"`
+	Education           *string            `json:"education"`
+	Interests           []string           `json:"interests"`
+	TipsEnabled         bool               `json:"tips_enabled"`
+	PointsBalance       int64              `json:"points_balance"`
 	GeoSpaceID          pgtype.UUID        `json:"geo_space_id"`
 	GeoSpaceName        *string            `json:"geo_space_name"`
 	GeoSpaceSlug        *string            `json:"geo_space_slug"`
@@ -569,6 +628,17 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 			&i.VoiceName,
 			&i.TotalActions,
 			&i.LastActionAt,
+			&i.AvatarUrl,
+			&i.CoverUrl,
+			&i.AvatarMediaID,
+			&i.HeaderMediaID,
+			&i.Profession,
+			&i.Location,
+			&i.WebsiteUrl,
+			&i.Education,
+			&i.Interests,
+			&i.TipsEnabled,
+			&i.PointsBalance,
 			&i.GeoSpaceID,
 			&i.GeoSpaceName,
 			&i.GeoSpaceSlug,
@@ -1009,5 +1079,63 @@ type UpsertPersonaBylineParams struct {
 // =====================================================================
 func (q *Queries) UpsertPersonaByline(ctx context.Context, arg UpsertPersonaBylineParams) error {
 	_, err := q.db.Exec(ctx, upsertPersonaByline, arg.UserID, arg.DisplayName, arg.Bio)
+	return err
+}
+
+const upsertPersonaProfile = `-- name: UpsertPersonaProfile :exec
+INSERT INTO user_profiles (user_id, display_name, bio, avatar_url, avatar_media_id, header_media_id, cover_url, location, website_url, education, profession, interests)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    avatar_url = EXCLUDED.avatar_url,
+    avatar_media_id = EXCLUDED.avatar_media_id,
+    header_media_id = EXCLUDED.header_media_id,
+    cover_url = EXCLUDED.cover_url,
+    location = EXCLUDED.location,
+    website_url = EXCLUDED.website_url,
+    education = EXCLUDED.education,
+    profession = EXCLUDED.profession,
+    interests = COALESCE(EXCLUDED.interests, user_profiles.interests),
+    updated_at = now()
+`
+
+type UpsertPersonaProfileParams struct {
+	UserID        pgtype.UUID `json:"user_id"`
+	DisplayName   *string     `json:"display_name"`
+	Bio           *string     `json:"bio"`
+	AvatarUrl     *string     `json:"avatar_url"`
+	AvatarMediaID pgtype.UUID `json:"avatar_media_id"`
+	HeaderMediaID pgtype.UUID `json:"header_media_id"`
+	CoverUrl      *string     `json:"cover_url"`
+	Location      *string     `json:"location"`
+	WebsiteUrl    *string     `json:"website_url"`
+	Education     *string     `json:"education"`
+	Profession    *string     `json:"profession"`
+	Interests     []string    `json:"interests"`
+}
+
+// =====================================================================
+// Full persona profile upsert (PATCH /admin/personas/{id}) — same
+// read-merge-write contract as UpsertUserProfile: the caller merges request
+// fields against the row-locked profile first; the written values are then
+// unconditional (""-cleared fields arrive as NULL). interests NULL
+// preserves the stored array — the caller sends [] to clear.
+// =====================================================================
+func (q *Queries) UpsertPersonaProfile(ctx context.Context, arg UpsertPersonaProfileParams) error {
+	_, err := q.db.Exec(ctx, upsertPersonaProfile,
+		arg.UserID,
+		arg.DisplayName,
+		arg.Bio,
+		arg.AvatarUrl,
+		arg.AvatarMediaID,
+		arg.HeaderMediaID,
+		arg.CoverUrl,
+		arg.Location,
+		arg.WebsiteUrl,
+		arg.Education,
+		arg.Profession,
+		arg.Interests,
+	)
 	return err
 }

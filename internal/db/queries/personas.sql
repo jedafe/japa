@@ -54,6 +54,18 @@ SELECT
  COALESCE(up.display_name, u.username) AS profile_name,
  u.username AS profile_slug,
  up.bio AS profile_tagline,
+ up.avatar_url,
+ up.cover_url,
+ up.avatar_media_id,
+ up.header_media_id,
+ up.profession,
+ up.location,
+ up.website_url,
+ up.education,
+ up.interests,
+ COALESCE(ts.tips_enabled, false) AS tips_enabled,
+ COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl
+  WHERE wl.user_id = u.id AND wl.ledger_type = 'points'), 0)::bigint AS points_balance,
  pv.name AS voice_name,
  pv.slug AS voice_slug,
  gs.id AS geo_space_id,
@@ -63,6 +75,7 @@ SELECT
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN tip_settings ts ON ts.owner_type = 'user' AND ts.owner_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 WHERE ap.id = @id;
@@ -92,6 +105,18 @@ SELECT
  pv.name AS voice_name,
  stats.total_actions AS total_actions,
  stats.last_action_at AS last_action_at,
+ up.avatar_url,
+ up.cover_url,
+ up.avatar_media_id,
+ up.header_media_id,
+ up.profession,
+ up.location,
+ up.website_url,
+ up.education,
+ up.interests,
+ COALESCE(ts.tips_enabled, false) AS tips_enabled,
+ COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl
+  WHERE wl.user_id = u.id AND wl.ledger_type = 'points'), 0)::bigint AS points_balance,
  gs.id AS geo_space_id,
  gs.name AS geo_space_name,
  gs.slug AS geo_space_slug,
@@ -99,6 +124,7 @@ SELECT
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN tip_settings ts ON ts.owner_type = 'user' AND ts.owner_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 LEFT JOIN LATERAL (
@@ -288,6 +314,30 @@ VALUES (@user_id, @display_name, @bio)
 ON CONFLICT (user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     bio = EXCLUDED.bio,
+    updated_at = now();
+
+-- =====================================================================
+-- Full persona profile upsert (PATCH /admin/personas/{id}) — same
+-- read-merge-write contract as UpsertUserProfile: the caller merges request
+-- fields against the row-locked profile first; the written values are then
+-- unconditional (""-cleared fields arrive as NULL). interests NULL
+-- preserves the stored array — the caller sends [] to clear.
+-- =====================================================================
+-- name: UpsertPersonaProfile :exec
+INSERT INTO user_profiles (user_id, display_name, bio, avatar_url, avatar_media_id, header_media_id, cover_url, location, website_url, education, profession, interests)
+VALUES (@user_id, sqlc.narg(display_name), sqlc.narg(bio), sqlc.narg(avatar_url), sqlc.narg(avatar_media_id), sqlc.narg(header_media_id), sqlc.narg(cover_url), sqlc.narg(location), sqlc.narg(website_url), sqlc.narg(education), sqlc.narg(profession), sqlc.narg(interests))
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    avatar_url = EXCLUDED.avatar_url,
+    avatar_media_id = EXCLUDED.avatar_media_id,
+    header_media_id = EXCLUDED.header_media_id,
+    cover_url = EXCLUDED.cover_url,
+    location = EXCLUDED.location,
+    website_url = EXCLUDED.website_url,
+    education = EXCLUDED.education,
+    profession = EXCLUDED.profession,
+    interests = COALESCE(EXCLUDED.interests, user_profiles.interests),
     updated_at = now();
 
 -- =====================================================================
