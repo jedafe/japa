@@ -139,13 +139,19 @@ func (s *Service) anchorBotUser(ctx context.Context, fallback pgtype.UUID) pgtyp
 func (s *Service) anchorSpaceForContent(ctx context.Context, row gen.GetContentByIDRow) (pgtype.UUID, bool) {
 	spaceID := row.SpaceID
 	bound := spaceID.Valid
-	if spaces, err := s.read.GetContentSpaces(ctx, row.ID); err == nil {
-		for _, sp := range spaces {
-			bound = true
-			if sp.IsPrimary {
-				spaceID = sp.SpaceID
-				break
-			}
+	spaces, err := s.read.GetContentSpaces(ctx, row.ID)
+	if err != nil && !spaceID.Valid {
+		// The authoritative binding set is unreadable and the legacy
+		// space_id can't vouch for it either — the row might be
+		// private-bound, so it must not mint under the public platform
+		// space. Fail closed; the caller can retry.
+		return pgtype.UUID{}, false
+	}
+	for _, sp := range spaces {
+		bound = true
+		if sp.IsPrimary {
+			spaceID = sp.SpaceID
+			break
 		}
 	}
 	if spaceID.Valid {
@@ -317,7 +323,7 @@ type entityDescriptor struct {
 	Visibility string
 	// AuthorID the minted thread is attributed to when the entity has an
 	// owner (content entities: the article author). Zero for communal
-	// entities (wiki/tool) — the minting caller owns those.
+	// entities (wiki/tool) — those mint under the community-threads bot.
 	AuthorID pgtype.UUID
 }
 

@@ -391,7 +391,37 @@ func (s *Service) SetThreadAnchorMinter(m ThreadAnchorMinter) { s.threadAnchorMi
 
 // SetThreadAnchorDeleter injects the anchor deleter — fires when a wiki
 // page is deleted so its /thread page drops with it.
-func (s *Service) SetThreadAnchorDeleter(d ThreadAnchorDeleter) { s.threadAnchorDeleter = d }
+func (s *Service) SetThreadAnchorDeleter(d ThreadAnchorDeleter) {
+	s.threadAnchorDeleter = d
+	// Store-level hook — the agent tool registry calls Store.UpdatePage /
+	// DeleteWikiPage / HardDeleteWikiPage directly, so a service-level
+	// hook alone would miss its is_active flips and deletes (the same
+	// bypass SetPageLifecycleHook covers for embeddings).
+	s.store.SetThreadAnchorHook(s.reconcileThreadAnchor)
+}
+
+// reconcileThreadAnchor keeps a page's /thread lifecycle in step with its
+// live flag from every write path (REST handlers AND agent-tool store
+// calls): deactivation or delete drops the public thread, while
+// reactivation get-or-creates it (restore-over-remint revives the row,
+// its comments and its canonical slug). The hook signature carries no
+// direction, so the flag is re-read — a dropped thread on a failed probe
+// is the safe direction since mint can always re-run later.
+func (s *Service) reconcileThreadAnchor(ctx context.Context, pageID pgtype.UUID) {
+	if s.threadAnchorMinter == nil && s.threadAnchorDeleter == nil {
+		return
+	}
+	active, err := s.store.PageActiveState(ctx, pageID)
+	if err == nil && active {
+		s.mintAnchorForApprovedPage(ctx, pgtype.UUID{}, pageID)
+		return
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "wiki: page active-state probe failed, dropping thread anchor",
+			"page_id", pageID.String(), "error", err)
+	}
+	s.deleteThreadAnchor(ctx, pageID)
+}
 
 // mintThreadAnchor best-effort mints the /thread anchor for a wiki page.
 // Never fails the caller on a mint error.
@@ -2033,10 +2063,9 @@ func (s *Service) DeletePage(ctx context.Context, pageID pgtype.UUID, force bool
 		return fmt.Errorf("wiki: delete page: %w", err)
 	}
 
-	// Unified-discussion spec: the page's thread goes down with it —
-	// the backing contents row is soft-deleted so /thread/{slug} drops
-	// out of resolve and listings.
-	s.deleteThreadAnchor(ctx, pageID)
+	// The page's thread goes down with it — the store's threadAnchorHook
+	// (reconcileThreadAnchor) already dropped it, covering this path plus
+	// the agent-tool store calls that bypass Service entirely.
 	return nil
 }
 

@@ -40,6 +40,12 @@ type Store struct {
 	// these store methods directly — keeps content_embeddings in step
 	// (§69/ADR-069). Nil hook is a no-op.
 	pageLifecycleHook func(ctx context.Context, pageID pgtype.UUID)
+	// threadAnchorHook fires on the writes that change whether a page may
+	// hold a public /thread: UpdatePage when is_active is passed, and both
+	// delete paths. Same coverage rationale as pageLifecycleHook — the
+	// agent tool registry calls UpdatePage/DeleteWikiPage directly, so a
+	// service-level hook alone would miss its deactivations and deletes.
+	threadAnchorHook func(ctx context.Context, pageID pgtype.UUID)
 }
 
 // SetPageLifecycleHook registers the post-mutation callback for
@@ -48,6 +54,13 @@ type Store struct {
 // fan out (the Service's hook fans out per Rule 8).
 func (s *Store) SetPageLifecycleHook(f func(ctx context.Context, pageID pgtype.UUID)) {
 	s.pageLifecycleHook = f
+}
+
+// SetThreadAnchorHook registers the post-mutation callback for writes
+// that change a page's /thread eligibility. Same synchronous-after-write
+// contract as SetPageLifecycleHook.
+func (s *Store) SetThreadAnchorHook(f func(ctx context.Context, pageID pgtype.UUID)) {
+	s.threadAnchorHook = f
 }
 
 // NewStore creates a wiki store backed by the given database.
@@ -382,6 +395,19 @@ func (s *Store) PageIndexState(ctx context.Context, pageID pgtype.UUID) (indexab
 	indexed := r.IsJapabotIndexed != nil && *r.IsJapabotIndexed
 
 	return indexed && !deleted, nil
+}
+
+// PageActiveState reports the page's raw public-live flag (is_active and
+// not soft-deleted) — the /thread anchor gate, which is narrower than
+// is_japabot_indexed: a locked page still serves its thread.
+func (s *Store) PageActiveState(ctx context.Context, pageID pgtype.UUID) (bool, error) {
+	r, err := s.read.GetWikiPageIndexState(ctx, pageID)
+	if err != nil {
+		return false, fmt.Errorf("wiki: get page active state: %w", err)
+	}
+	deleted, _ := r.IsDeleted.(bool)
+
+	return r.IsActive && !deleted, nil
 }
 
 // ListWikiPagesBySpace returns all active wiki pages for a space, with the
@@ -1091,6 +1117,12 @@ func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, is
 		s.pageLifecycleHook(ctx, pageID)
 	}
 
+	// is_active alone gates the public thread — is_locked leaves the page
+	// readable, so its anchor stays.
+	if s.threadAnchorHook != nil && isActive != nil {
+		s.threadAnchorHook(ctx, pageID)
+	}
+
 	return nil
 }
 
@@ -1125,6 +1157,9 @@ func (s *Store) DeleteWikiPage(ctx context.Context, pageID pgtype.UUID) error {
 	if s.pageLifecycleHook != nil {
 		s.pageLifecycleHook(ctx, pageID)
 	}
+	if s.threadAnchorHook != nil {
+		s.threadAnchorHook(ctx, pageID)
+	}
 
 	return nil
 }
@@ -1153,6 +1188,9 @@ func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) erro
 
 	if s.pageLifecycleHook != nil {
 		s.pageLifecycleHook(ctx, pageID)
+	}
+	if s.threadAnchorHook != nil {
+		s.threadAnchorHook(ctx, pageID)
 	}
 
 	return nil

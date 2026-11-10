@@ -238,7 +238,7 @@ LEFT JOIN LATERAL (
     ORDER BY wr.created_at DESC
     LIMIT 1
 ) lr ON true
-WHERE wp.id = $1 AND wp.deleted_at IS NULL
+WHERE wp.id = $1 AND wp.deleted_at IS NULL AND wp.is_active = true
 `
 
 type GetWikiPageAnchorInfoRow struct {

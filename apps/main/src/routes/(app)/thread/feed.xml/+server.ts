@@ -5,10 +5,10 @@ import type { RequestHandler } from './$types';
 
 /**
  * RSS feed proxy — GET /thread/feed.xml
- * Canonical feed URL for the forum (matches the backend route mounted at
- * the API root outside /api/v1). /thread/rss.xml stays live for existing
- * subscribers. Production nginx routes this path straight to the API —
- * this route keeps it reachable on the site origin in dev.
+ * Canonical feed URL for threads (matches the backend route mounted at
+ * the API root outside /api/v1). Legacy /thread/rss.xml and
+ * /forum/feed.xml 301 here. Production nginx routes this path straight
+ * to the API — this route keeps it reachable on the site origin in dev.
  *
  * Ref: japaconnect-engineering/sections/26-seo-performance.md
  */
