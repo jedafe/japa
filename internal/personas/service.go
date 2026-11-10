@@ -228,7 +228,10 @@ func (s *Service) mergeMediaID(ctx context.Context, raw, field string, isAvatar 
 	if err := id.Scan(strings.TrimSpace(raw)); err != nil || !id.Valid {
 		return zero, "", fmt.Errorf("personas: %s must be a media UUID: %w", field, errpkg.ErrInvalid)
 	}
-	if mime := s.resolveMediaMIME(ctx, id); mime != "" {
+	if mime, loaded := s.resolveMediaMIME(ctx, id); loaded {
+		if mime == "" {
+			return zero, "", fmt.Errorf("personas: %s media has no recorded MIME type: %w", field, errpkg.ErrInvalid)
+		}
 		if !strings.HasPrefix(mime, "image/") {
 			return zero, "", fmt.Errorf("personas: %s must be an image: %w", field, errpkg.ErrInvalid)
 		}
@@ -254,21 +257,24 @@ func (s *Service) resolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (str
 	return s.mediaResolver.ResolveMediaURL(ctx, mediaID)
 }
 
-// resolveMediaMIME fetches a media row's stored MIME type; "" means "cannot
-// determine" (nil resolver, missing row, unset type) and fails open.
-func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) string {
+// resolveMediaMIME fetches a media row's normalized MIME type; loaded is
+// false when the resolver is unwired or the row cannot be loaded — callers
+// fail open since resolveMediaURL reports dangling ids downstream. A loaded
+// row with an empty stored type returns ("", true) and must be rejected:
+// the type can no longer be verified.
+func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) (mime string, loaded bool) {
 	if s.mediaResolver == nil {
-		return ""
+		return "", false
 	}
 	mimeType, err := s.mediaResolver.ResolveMediaMIME(ctx, mediaID)
-	if err != nil || mimeType == "" {
-		return ""
+	if err != nil {
+		return "", false
 	}
 	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
 	if mimeType == "image/jpg" || mimeType == "image/pjpeg" {
 		mimeType = "image/jpeg"
 	}
-	return mimeType
+	return mimeType, true
 }
 
 // avatarExtMIME maps the extension tokens allowed by users.allowed_avatar_types

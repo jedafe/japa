@@ -35,7 +35,16 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || $1 || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND ($2::text = '' OR u.profile_type = $2)
 `
 
@@ -198,7 +207,16 @@ func (q *Queries) CountUserFollowersGained(ctx context.Context, arg CountUserFol
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
-WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || $1 || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND ($2::text = '' OR
  ($2 = 'restricted' AND EXISTS (
  SELECT 1 FROM user_operation_bans uob
@@ -2307,7 +2325,16 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.public_username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || $1 || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND ($2::text = '' OR u.profile_type = $2)
 ORDER BY
  CASE WHEN $3::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
@@ -2707,7 +2734,16 @@ SELECT u.id, u.email, u.username, u.profile_type, u.verified,
  JOIN user_groups ug ON ug.id = ugm.group_id
  WHERE ugm.user_id = u.id) AS groups
 FROM users u
-WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || $1 || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND ($2::text = '' OR
  ($2 = 'restricted' AND EXISTS (
  SELECT 1 FROM user_operation_bans uob

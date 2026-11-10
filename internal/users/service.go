@@ -785,18 +785,19 @@ var avatarExtMIME = map[string]string{
 }
 
 // resolveMediaMIME fetches and normalizes a media row's MIME type via the
-// MediaResolver. Returns "" when the resolver is unwired, the row cannot be
-// loaded, or the stored type is empty — callers treat "" as "cannot
-// determine" and fail open, since a dangling ID still fails on the FK
-// constraint downstream.
-func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) string {
+// MediaResolver. loaded reports whether the row itself was read — false when
+// the resolver is unwired or the load fails, in which case callers fail open
+// (a dangling ID still fails on the FK constraint downstream). A loaded row
+// with an empty stored type returns ("", true): the row is real but its type
+// can no longer be verified, so callers must reject it.
+func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) (mime string, loaded bool) {
 	if s.MediaResolver == nil {
-		return ""
+		return "", false
 	}
 
 	mimeType, err := s.MediaResolver.ResolveMediaMIME(ctx, mediaID)
-	if err != nil || mimeType == "" {
-		return ""
+	if err != nil {
+		return "", false
 	}
 
 	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
@@ -804,7 +805,7 @@ func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) str
 		mimeType = "image/jpeg"
 	}
 
-	return mimeType
+	return mimeType, true
 }
 
 // checkAvatarMIMEAllowed enforces users.allowed_avatar_types (Rule 3) when a
@@ -812,9 +813,12 @@ func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) str
 // — regardless of the setting; when the CSV is configured the media type must
 // additionally map to an extension in it.
 func (s *Service) checkAvatarMIMEAllowed(ctx context.Context, mediaID pgtype.UUID) error {
-	mimeType := s.resolveMediaMIME(ctx, mediaID)
-	if mimeType == "" {
+	mimeType, loaded := s.resolveMediaMIME(ctx, mediaID)
+	if !loaded {
 		return nil
+	}
+	if mimeType == "" {
+		return fmt.Errorf("%w: avatar media has no recorded MIME type", errpkg.ErrInvalid)
 	}
 
 	if !strings.HasPrefix(mimeType, "image/") {
@@ -842,11 +846,18 @@ func (s *Service) checkAvatarMIMEAllowed(ctx context.Context, mediaID pgtype.UUI
 
 // checkImageMedia verifies the referenced media row stores an image — used
 // for header_media_id, which has no dedicated allowed-types setting but can
-// never legitimately point at a video, audio file, or PDF. Fail-open when the
-// MIME cannot be determined.
+// never legitimately point at a video, audio file, or PDF. Fail-open only
+// when the row itself cannot be loaded (the FK reports dangling ids); a row
+// with an empty stored type fails closed.
 func (s *Service) checkImageMedia(ctx context.Context, mediaID pgtype.UUID, field string) error {
-	mimeType := s.resolveMediaMIME(ctx, mediaID)
-	if mimeType != "" && !strings.HasPrefix(mimeType, "image/") {
+	mimeType, loaded := s.resolveMediaMIME(ctx, mediaID)
+	if !loaded {
+		return nil
+	}
+	if mimeType == "" {
+		return fmt.Errorf("%w: %s media has no recorded MIME type", errpkg.ErrInvalid, field)
+	}
+	if !strings.HasPrefix(mimeType, "image/") {
 		return fmt.Errorf("%w: %s must reference an image, got %q", errpkg.ErrInvalid, field, mimeType)
 	}
 

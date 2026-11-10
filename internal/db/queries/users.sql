@@ -257,7 +257,16 @@ SELECT u.id, u.email, u.username, u.profile_type, u.verified,
  JOIN user_groups ug ON ug.id = ugm.group_id
  WHERE ugm.user_id = u.id) AS groups
 FROM users u
-WHERE (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || @search || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND (@status::text = '' OR
  (@status = 'restricted' AND EXISTS (
  SELECT 1 FROM user_operation_bans uob
@@ -288,7 +297,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
-WHERE (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%')
+WHERE (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || @search || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND (@status::text = '' OR
  (@status = 'restricted' AND EXISTS (
  SELECT 1 FROM user_operation_bans uob
@@ -665,7 +683,16 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+ AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || @search || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND (@profile_type::text = '' OR u.profile_type = @profile_type)
 ORDER BY
  CASE WHEN @sort_key::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
@@ -684,7 +711,16 @@ LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE u.status = 'active'
  AND u.is_synthetic = false
  AND COALESCE(ups.search_indexable, true) = true
- AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
+ AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.public_username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%'
+ -- §50 former-username amendment: a renamed user's former handles still
+ -- match — the row emits the live handle, and the per-row guard suppresses
+ -- any former handle another live user now claims.
+ OR EXISTS (SELECT 1 FROM username_redirects ur
+            WHERE ur.user_id = u.id
+              AND ur.username ILIKE '%' || @search || '%'
+              AND NOT EXISTS (SELECT 1 FROM users ux
+                               WHERE ux.username = ur.username
+                                  OR lower(ux.public_username) = lower(ur.username))))
  AND (@profile_type::text = '' OR u.profile_type = @profile_type);
 
 -- name: GetPublicUserByID :one

@@ -101,25 +101,25 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 	}
 
 	wantKeys := map[string]any{
-		"id":               "550e8400-e29b-41d4-a716-446655440000",
-		"username":         "testuser",
-		"display_name":     "Test User",
-		"avatar_url":       "https://example.com/avatar.jpg",
-		"cover_url":        nil,
-		"bio":              "A bio",
-		"profile_type":     "regular",
-		"follower_count":   float64(3),
-		"following_count":  float64(2),
-		"created_at":       "2026-01-01T00:00:00Z",
-		"is_synthetic":     false,
-		"synthetic_source": nil,
-		"ai_disclosed":     false,
-		"is_following":     false,
-		"location":         nil,
-		"banner_url":       nil,
-		"website_url":      nil,
-		"role":             nil,
-		"verified":         false,
+		"id":                "550e8400-e29b-41d4-a716-446655440000",
+		"username":          "testuser",
+		"display_name":      "Test User",
+		"avatar_url":        "https://example.com/avatar.jpg",
+		"cover_url":         nil,
+		"bio":               "A bio",
+		"profile_type":      "regular",
+		"follower_count":    float64(3),
+		"following_count":   float64(2),
+		"created_at":        "2026-01-01T00:00:00Z",
+		"is_synthetic":      false,
+		"synthetic_source":  nil,
+		"ai_disclosed":      false,
+		"is_following":      false,
+		"location":          nil,
+		"banner_url":        nil,
+		"website_url":       nil,
+		"role":              nil,
+		"verified":          false,
 		"verification_type": nil,
 	}
 
@@ -680,6 +680,13 @@ func TestCheckAvatarMIMEAllowed(t *testing.T) {
 	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
 		t.Errorf("resolver error returned %v, want nil (fail-open)", err)
 	}
+
+	// A loaded row with an empty stored type fails closed — the row is real
+	// but its type can no longer be verified.
+	svc.MediaResolver = fakeMediaResolver{mime: ""}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("empty mime_type: err = %v, want ErrInvalid", err)
+	}
 }
 
 func TestCheckImageMedia(t *testing.T) {
@@ -711,6 +718,12 @@ func TestCheckImageMedia(t *testing.T) {
 	svc.MediaResolver = fakeMediaResolver{err: errors.New("not found")}
 	if err := svc.checkImageMedia(ctx, mid, "header_media_id"); err != nil {
 		t.Errorf("resolver error returned %v, want nil (fail-open)", err)
+	}
+
+	// Loaded row with an empty stored type — fail-closed.
+	svc.MediaResolver = fakeMediaResolver{mime: ""}
+	if err := svc.checkImageMedia(ctx, mid, "header_media_id"); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("empty mime_type: err = %v, want ErrInvalid", err)
 	}
 }
 
