@@ -61,7 +61,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 </script>
 
 <SeoHead
-	ogImage={ogCardUrl(page.url.origin, 'university')} title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={jsonLd} />
+	ogImage={ogCardUrl(page.url.origin, `space:${offering.university.slug}`)} title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<!-- Header -->

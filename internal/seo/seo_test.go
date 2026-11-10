@@ -525,12 +525,12 @@ func TestSanitizeForFace(t *testing.T) {
 	face := loadFontFace(48)
 
 	cases := map[string]string{
-		"Ahmed Al-Farsi":      "Ahmed Al-Farsi",
-		"Ahmed 🎓 MBA":        "Ahmed MBA",
-		"أحمد":               "",
-		"プログラム":           "",
+		"Ahmed Al-Farsi":   "Ahmed Al-Farsi",
+		"Ahmed 🎓 MBA":      "Ahmed MBA",
+		"أحمد":             "",
+		"プログラム":            "",
 		"Visa Guide ":      "Visa Guide",
-		"  spaced   out  ":    "spaced out",
+		"  spaced   out  ": "spaced out",
 	}
 	for in, want := range cases {
 		if got := sanitizeForFace(face, in); got != want {

@@ -8,7 +8,9 @@
  * Keys:
  *   <uuid>        contents / wiki_pages row — title card
  *   tool:{slug}   /tools/{slug} index card (registry title)
- *   space:{slug}  /wiki/{slug} destination card (space name)
+ *   space:{slug}  /wiki/{slug} + /universities/{slug} destination card
+ *   user:{name}   /u/{name} member card (display name)
+ *   product/tag/source/org/scholarship/event/ama:{id-or-slug} — entity cards
  *
  * Unknown keys render the brand fallback card, so a bad key degrades
  * gracefully instead of 404ing.

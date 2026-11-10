@@ -119,7 +119,7 @@
 	}
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'achievement')
+		ogCardUrl(page.url.origin, achievement?.id ?? 'achievement')
 	);
 </script>
 

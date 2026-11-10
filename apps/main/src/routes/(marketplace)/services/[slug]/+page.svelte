@@ -140,7 +140,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	);
 	const ogImage = $derived(
 		ogMediaUrl(page.url.origin, service?.featured_image_url) ||
-		ogCardUrl(page.url.origin, 'service')
+		ogCardUrl(page.url.origin, service?.id ?? 'service')
 	);
 
 	// §114 category badge — the taxonomy row carries the admin-managed
