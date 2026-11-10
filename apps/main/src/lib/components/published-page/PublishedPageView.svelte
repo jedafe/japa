@@ -77,9 +77,8 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		<EmptyState icon={FileText} title={pageData.title} />
 	</div>
 {:else}
-	<!-- Standard center-shell width (max-w-3xl) — same column every other
-	     page renders in (/tools/*, /thread, /wiki). -->
-	<div class="mx-auto w-full max-w-3xl">
+	<!-- Center-shell width — max-w-4xl, matching the /wiki column. -->
+	<div class="mx-auto w-full max-w-4xl">
 		<LandingRenderer blocks={normalizedBlocks} {guestHome} />
 	</div>
 {/if}
