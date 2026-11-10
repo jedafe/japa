@@ -118,7 +118,15 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			 FROM users u
 			 LEFT JOIN user_profiles up ON up.user_id = u.id
 			 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
-			 WHERE u.username = $1 AND u.status = 'active'
+			 WHERE u.username = COALESCE(
+			   -- §50 former-username amendment: a live username always wins;
+			   -- only on a miss does the redirect map to the current handle.
+			   (SELECT $1::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = $1)),
+			   (SELECT u2.username FROM username_redirects ur
+			    JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted'
+			    WHERE ur.username = $1)
+			 )
+			   AND u.status = 'active'
 			   AND COALESCE(ups.search_indexable, true)
 			   AND COALESCE(ups.profile_visibility, 'public') = 'public'`, slug).Scan(&username, &displayName)
 		if err != nil {
@@ -149,7 +157,15 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		{"tag:", `SELECT name FROM tags WHERE slug = $1`, "tag"},
 		{"source:", `SELECT name FROM intel_sources WHERE slug = $1 AND status = 'active'`, "source"},
 		{"org:", `SELECT name FROM organizations WHERE slug = $1 AND status = 'active' AND deleted_at IS NULL`, "organization"},
-		{"scholarship:", `SELECT title FROM scholarships WHERE slug = $1`, "scholarship"},
+		// /scholarships/{guide_id} is keyed by the guide contents row; the API
+		// returns c.slug, so match either slug column or the guide UUID, and
+		// gate on the content's indexability like the sitemap does.
+		{"scholarship:", `SELECT s.title FROM scholarships s
+			 JOIN contents c ON c.id = s.guide_id
+			 WHERE (s.slug = $1 OR c.slug = $1 OR s.guide_id::text = $1)
+			   AND c.status = 'published' AND c.deleted_at IS NULL
+			   AND c.visibility = 'public' AND c.seo_indexable = true
+			   AND c.guide_category = 'scholarship'`, "scholarship"},
 		{"event:", `SELECT title FROM calendar_entries WHERE id::text = $1 AND status = 'published' AND deleted_at IS NULL`, "event"},
 	}
 	for _, r := range simple {
