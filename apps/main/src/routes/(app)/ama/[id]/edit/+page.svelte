@@ -79,7 +79,7 @@
 	);
 </script>
 
-<SeoHead title={t('ama.edit_title', 'Edit AMA — {site}')} description={t('ama.edit_description', 'Update your AMA session title and introduction.')} ogTitle={t('ama.edit_title', 'Edit AMA')} robots="`noindex`" />
+<SeoHead title={t('ama.edit_title', 'Edit AMA — {site}')} description={t('ama.edit_description', 'Update your AMA session title and introduction.')} ogTitle={t('ama.edit_title', 'Edit AMA')} robots="noindex" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

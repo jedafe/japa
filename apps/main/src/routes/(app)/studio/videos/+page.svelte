@@ -156,7 +156,7 @@
 	});
 </script>
 
-<SeoHead title={`${t('studio.tabs.videos', 'Videos')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.videos_description', 'Generated and uploaded video content.')} />
+<SeoHead title={`${t('studio.tabs.videos', 'Videos')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.videos_description', 'Generated and uploaded video content.')} />
 
 <div class="w-full">
 	<p class="mb-4 text-sm text-[var(--color-muted)]">

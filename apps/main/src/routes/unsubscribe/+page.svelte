@@ -15,7 +15,7 @@
 	let autoSubmitted = $state(false);
 </script>
 
-<SeoHead title={t('newsletter.unsubscribe_title', 'Unsubscribe — {site}')} robots="`noindex`" description={t('newsletter.unsubscribe_description', 'Unsubscribe from {site} emails.')} />
+<SeoHead title={t('newsletter.unsubscribe_title', 'Unsubscribe — {site}')} robots="noindex" description={t('newsletter.unsubscribe_description', 'Unsubscribe from {site} emails.')} />
 
 <div class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4">
 	{#if unsubResult?.ok}

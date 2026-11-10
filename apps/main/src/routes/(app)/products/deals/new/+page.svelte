@@ -115,7 +115,7 @@
 	}
 </script>
 
-<SeoHead title={title} ogTitle={title} robots="`noindex`" description={t('deals.new_description', 'Submit a new deal or discount for the community.')} />
+<SeoHead title={title} ogTitle={title} robots="noindex" description={t('deals.new_description', 'Submit a new deal or discount for the community.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div

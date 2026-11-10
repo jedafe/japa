@@ -201,7 +201,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('processing_tracker.my_apps_title_short', 'My Applications')} — ${t('processing_tracker.title', 'Visa Processing Time Tracker')}`} description={t('processing_tracker.my_apps_desc', 'Track your own visa application milestones and optionally share your timeline anonymously with the community.')} robots="`noindex,nofollow`" />
+<SeoHead title={`${t('processing_tracker.my_apps_title_short', 'My Applications')} — ${t('processing_tracker.title', 'Visa Processing Time Tracker')}`} description={t('processing_tracker.my_apps_desc', 'Track your own visa application milestones and optionally share your timeline anonymously with the community.')} robots="noindex,nofollow" />
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	{#if !data.authed}

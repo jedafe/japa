@@ -41,7 +41,7 @@
 		X
 	} from 'lucide-svelte';
 	import type { WikiPageIndex } from '#lib/types/index.js';
-	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import type { PageData } from './$types';
 
@@ -292,30 +292,26 @@
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
 	// CollectionPage + BreadcrumbList JSON-LD (Section 26 — the space
 	// index lists that destination's wiki articles).
-	const wikiIndexJsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'CollectionPage',
-			name: title,
-			description,
-			url: canonicalUrl
-		})
-	);
+	const wikiIndexJsonLd = $derived({
+		'@context': 'https://schema.org',
+		'@type': 'CollectionPage',
+		name: title,
+		description,
+		url: canonicalUrl
+	});
 	// BreadcrumbList mirrors the visual chain — Wiki / ancestors… / space —
 	// so crawlers see the full geo lineage (region → country → state → city)
 	// rather than a flat Home → space pair.
 	const wikiIndexBreadcrumbJsonLd = $derived(
-		JSON.stringify(
-			breadcrumbJsonLd([
-				{ name: 'Home', path: page.url.origin },
-				{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
-				...(data.ancestors ?? []).map((anc) => ({
-					name: anc.name,
-					path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
-				})),
-				{ name: spaceName, path: canonicalUrl }
-			])
-		)
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+			...(data.ancestors ?? []).map((anc) => ({
+				name: anc.name,
+				path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+			})),
+			{ name: spaceName, path: canonicalUrl }
+		])
 	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	// §80 Super-Admin Direct Publish — `*` wildcard counts as wiki.edit.
@@ -365,28 +361,14 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={canonicalUrl} />
-	{#if ogImage}
-		<meta property="og:image" content={ogImage} />
-		<meta name="twitter:image" content={ogImage} />
-		<meta name="twitter:card" content="summary_large_image" />
-	{/if}
-	<link rel="canonical" href={canonicalUrl} />
-	{#if data.indexable === false || data.loadError}
-		<meta
-			name="robots"
-			content={data.loadError ? 'noindex,nofollow' : 'noindex,follow'}
-		/>
-	{/if}
-	{@html safeJsonLdScript(wikiIndexJsonLd)}
-	{@html safeJsonLdScript(wikiIndexBreadcrumbJsonLd)}
-</svelte:head>
+<SeoHead
+	{title}
+	{description}
+	canonical={canonicalUrl}
+	{ogImage}
+	robots={data.loadError ? 'noindex,nofollow' : data.indexable === false ? 'noindex,follow' : ''}
+	jsonLd={[wikiIndexJsonLd, wikiIndexBreadcrumbJsonLd]}
+/>
 
 <SetSidebar>
 	<WikiSidebar

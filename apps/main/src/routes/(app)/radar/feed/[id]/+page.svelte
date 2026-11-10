@@ -111,7 +111,7 @@
 	}
 </script>
 
-<SeoHead title={`${item.title} · ${t('radar.title')}`} robots="`noindex, nofollow`" description={t('radar.item_description', 'Community radar — signals and updates from the diaspora.')} />
+<SeoHead title={`${item.title} · ${t('radar.title')}`} robots="noindex, nofollow" description={t('radar.item_description', 'Community radar — signals and updates from the diaspora.')} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 <div class="mx-auto max-w-3xl px-4 py-6">

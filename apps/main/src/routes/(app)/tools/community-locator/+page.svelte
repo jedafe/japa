@@ -30,6 +30,7 @@
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 
 	/**
 	 * Diaspora Community Locator tool — §101, ADR-088.
@@ -327,46 +328,13 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title} — {siteName()} Tools</title>
-	<meta
-		name="description"
-		content={t(
-			'community_locator.seo_description',
-			'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
-		)}
-	/>
-	<link rel="canonical" href={page.url.href} />
-
-	<meta
-		property="og:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		property="og:description"
-		content={t(
-			'community_locator.seo_description',
-			'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
-		)}
-	/>
-	<meta property="og:url" content={page.url.href} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-
-	<meta
-		name="twitter:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		name="twitter:description"
-		content={t(
-			'community_locator.seo_description',
-			'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
-		)}
-	/>
-</svelte:head>
+<SeoHead
+	title="{title} — {siteName()} Tools"
+	description={t(
+		'community_locator.seo_description',
+		'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
+	)}
+/>
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="px-4 pt-4">

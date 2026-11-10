@@ -51,7 +51,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={t('calendar.saved_description', 'Calendar entries you have saved.')} robots="`noindex`" />
+<SeoHead title={title} description={t('calendar.saved_description', 'Calendar entries you have saved.')} robots="noindex" />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">

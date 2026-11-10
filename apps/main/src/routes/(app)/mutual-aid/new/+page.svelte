@@ -139,7 +139,7 @@
 	);
 </script>
 
-<SeoHead title={t('mutual_aid.new_title', 'New Mutual Aid Post — {site}')} description={t('mutual_aid.new_description', 'Post a help request or offer.')} robots="`noindex`" />
+<SeoHead title={t('mutual_aid.new_title', 'New Mutual Aid Post — {site}')} description={t('mutual_aid.new_description', 'Post a help request or offer.')} robots="noindex" />
 
 {#if authed}
 	<div class="mx-auto w-full max-w-full">

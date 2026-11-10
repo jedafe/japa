@@ -8,7 +8,8 @@
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { tiptapToText, type TipTapDoc as TipDoc } from '#lib/tiptap/serialize.js';
 	import { tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
-	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import type { PageData } from './$types';
@@ -85,34 +86,32 @@
 	});
 	const entityArticleJsonLd = $derived(
 		page
-			? JSON.stringify({
+			? {
 					'@context': 'https://schema.org',
 					'@type': 'Article',
 					headline: page.title,
 					description: metaDescription,
 					url: canonicalUrl,
 					about: { '@type': 'Thing', name: page.entity_name }
-				})
-			: ''
+				}
+			: null
 	);
 	const entityBreadcrumbJsonLd = $derived(
 		page
-			? JSON.stringify(
-					breadcrumbJsonLd([
-						{ name: 'Home', path: pageStore.url.origin },
-						{ name: t('nav.wiki', 'Wiki'), path: `${pageStore.url.origin}/wiki` },
-						...(page.ancestors ?? []).map((anc) => ({
-							name: anc.name,
-							path: `${pageStore.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
-						})),
-						// The entity itself has no standalone index URL —
-						// /wiki/e/{type}/{entity} is not a route — so the crumb
-						// carries a name only (schema.org ListItem without item).
-						{ name: page.entity_name, path: '' },
-						{ name: page.title, path: canonicalUrl }
-					])
-				)
-			: ''
+			? breadcrumbJsonLd([
+					{ name: 'Home', path: pageStore.url.origin },
+					{ name: t('nav.wiki', 'Wiki'), path: `${pageStore.url.origin}/wiki` },
+					...(page.ancestors ?? []).map((anc) => ({
+						name: anc.name,
+						path: `${pageStore.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+					})),
+					// The entity itself has no standalone index URL —
+					// /wiki/e/{type}/{entity} is not a route — so the crumb
+					// carries a name only (schema.org ListItem without item).
+					{ name: page.entity_name, path: '' },
+					{ name: page.title, path: canonicalUrl }
+				])
+			: null
 	);
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {
@@ -193,24 +192,15 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{page.title} — {page.entity_name} | {siteName()} Wiki</title>
-	<meta name="description" content={metaDescription} />
-	<meta property="og:title" content="{page.title} — {page.entity_name}" />
-	<meta property="og:description" content={metaDescription} />
-	<meta property="og:type" content="article" />
-	<meta property="og:url" content={canonicalUrl} />
-	<link rel="canonical" href={canonicalUrl} />
-	{#if page.indexable !== true}
-		<meta name="robots" content="noindex,follow" />
-	{/if}
-	{#if entityArticleJsonLd}
-		{@html safeJsonLdScript(entityArticleJsonLd)}
-	{/if}
-	{#if entityBreadcrumbJsonLd}
-		{@html safeJsonLdScript(entityBreadcrumbJsonLd)}
-	{/if}
-</svelte:head>
+<SeoHead
+	title="{page.title} — {page.entity_name} | {siteName()} Wiki"
+	description={metaDescription}
+	ogTitle="{page.title} — {page.entity_name}"
+	canonical={canonicalUrl}
+	ogType="article"
+	robots={page.indexable !== true ? 'noindex,follow' : ''}
+	jsonLd={[entityArticleJsonLd, entityBreadcrumbJsonLd].filter(Boolean)}
+/>
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
 	<header class="space-y-1">

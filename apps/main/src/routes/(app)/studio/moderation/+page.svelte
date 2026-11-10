@@ -343,7 +343,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('studio.tabs.moderation', 'Moderation')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.moderation_description', 'Review flagged and pending content.')} />
+<SeoHead title={`${t('studio.tabs.moderation', 'Moderation')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.moderation_description', 'Review flagged and pending content.')} />
 
 <section class="space-y-4">
 	{#if actionError}

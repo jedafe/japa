@@ -305,7 +305,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('onboarding.title', 'Welcome to {site}')} — ${t('app.name')}`} robots="`noindex, nofollow`" description={t('onboarding.description', 'Set up your {site} account — interests, spaces, and profile.')} />
+<SeoHead title={`${t('onboarding.title', 'Welcome to {site}')} — ${t('app.name')}`} robots="noindex, nofollow" description={t('onboarding.description', 'Set up your {site} account — interests, spaces, and profile.')} />
 
 <div class="min-h-screen bg-[var(--color-bg)] px-4 py-6 sm:px-6 sm:py-10">
 	<div class="mx-auto grid grid-cols-1 w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">

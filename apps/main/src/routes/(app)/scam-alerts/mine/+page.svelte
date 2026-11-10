@@ -33,7 +33,7 @@
 	}
 </script>
 
-<SeoHead title={t('scam_alerts.my_reports_title', 'My Scam Reports — {site}')} robots="`noindex`" description={t('scam_alerts.mine_description', 'Scam reports you have filed — status and moderation outcomes.')} />
+<SeoHead title={t('scam_alerts.my_reports_title', 'My Scam Reports — {site}')} robots="noindex" description={t('scam_alerts.mine_description', 'Scam reports you have filed — status and moderation outcomes.')} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<div class="mb-5 flex items-center gap-3">

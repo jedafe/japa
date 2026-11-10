@@ -128,7 +128,7 @@
 	);
 </script>
 
-<SeoHead title={pageTitle} description={pageTitle} ogTitle={pageTitle} robots="`noindex, nofollow`" />
+<SeoHead title={pageTitle} description={pageTitle} ogTitle={pageTitle} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
 	<div class="mb-5 flex items-center gap-2">

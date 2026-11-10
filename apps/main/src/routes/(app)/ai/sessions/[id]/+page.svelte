@@ -123,7 +123,7 @@
 	}
 </script>
 
-<SeoHead title={`${session ? truncate(session.prompt, 60) : 'Session'} — ${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.session.description', 'A Japa AI session — answers grounded in community knowledge.')} />
+<SeoHead title={`${session ? truncate(session.prompt, 60) : 'Session'} — ${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="noindex, nofollow" description={t('ai.session.description', 'A Japa AI session — answers grounded in community knowledge.')} />
 
 <div class="mx-auto max-w-4xl">
 	<!-- Back link -->

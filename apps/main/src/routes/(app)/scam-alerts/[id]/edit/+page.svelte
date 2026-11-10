@@ -115,7 +115,7 @@
 	);
 </script>
 
-<SeoHead title={t('scam_alerts.edit_title', 'Edit Scam Alert — {site}')} description={t('scam_alerts.edit_description', 'Update your scam report.')} ogTitle={t('scam_alerts.edit_title', 'Edit Scam Alert')} robots="`noindex`" />
+<SeoHead title={t('scam_alerts.edit_title', 'Edit Scam Alert — {site}')} description={t('scam_alerts.edit_description', 'Update your scam report.')} ogTitle={t('scam_alerts.edit_title', 'Edit Scam Alert')} robots="noindex" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

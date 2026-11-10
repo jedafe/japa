@@ -416,7 +416,7 @@
 	}
 </script>
 
-<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="`noindex, nofollow`" />
+<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

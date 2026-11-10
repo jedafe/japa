@@ -28,7 +28,7 @@
 	);
 </script>
 
-<SeoHead title={`${t('create.title', 'Create')} — ${t('app.name', '{site}')}`} robots="`noindex, nofollow`" description={t('create.description', 'Create new content — stories, guides, and posts on {site}.')} />
+<SeoHead title={`${t('create.title', 'Create')} — ${t('app.name', '{site}')}`} robots="noindex, nofollow" description={t('create.description', 'Create new content — stories, guides, and posts on {site}.')} />
 
 {#if data.loadError}
 	<div class="mx-auto w-full max-w-full py-10">

@@ -323,7 +323,7 @@
 	const titleText = $derived(`${t('wiki.create_title', 'Create page')} — ${data.spaceSlug}`);
 </script>
 
-<SeoHead title={titleText} description={t('wiki.create_description', 'Create a new wiki page')} robots="`noindex,nofollow`" />
+<SeoHead title={titleText} description={t('wiki.create_description', 'Create a new wiki page')} robots="noindex,nofollow" />
 
 <div class="mx-auto w-full max-w-3xl p-4">
 	<div class="mb-6 flex flex-col items-start gap-1">

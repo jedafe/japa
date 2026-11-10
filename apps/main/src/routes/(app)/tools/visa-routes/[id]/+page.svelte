@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 
 	/**
 	 * Visa Route detail page — Section 90, ADR-098.
@@ -66,19 +66,13 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:url" content={canonical} />
-	<meta property="og:type" content="website" />
-	{#if visaJsonLd}
-		{@html safeJsonLdScript(visaJsonLd)}
-	{/if}
-	<meta name="robots" content="noindex,nofollow" />
-</svelte:head>
+<SeoHead
+	{title}
+	{description}
+	{canonical}
+	robots="noindex,nofollow"
+	jsonLd={visaJsonLd}
+/>
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

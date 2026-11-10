@@ -13,7 +13,7 @@
 	const title = $derived(t('sources.submit.title', 'Propose a source'));
 </script>
 
-<SeoHead title={title} robots="`noindex, nofollow`" description={t('sources.submit.description', 'Propose a content source for the community feed.')} />
+<SeoHead title={title} robots="noindex, nofollow" description={t('sources.submit.description', 'Propose a content source for the community feed.')} />
 
 <div class="mx-auto max-w-xl p-4">
 	<h1 class="flex items-center gap-2 text-xl font-bold">

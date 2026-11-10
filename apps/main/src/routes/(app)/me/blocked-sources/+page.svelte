@@ -17,7 +17,7 @@
 	}
 </script>
 
-<SeoHead title={t('sources.blocked.title', 'Blocked sources — {site}')} robots="`noindex, nofollow`" description={t('sources.blocked.description', 'Sources you have blocked from your feed.')} />
+<SeoHead title={t('sources.blocked.title', 'Blocked sources — {site}')} robots="noindex, nofollow" description={t('sources.blocked.description', 'Sources you have blocked from your feed.')} />
 
 <div class="flex flex-col gap-4 p-4">
 	<div>

@@ -61,7 +61,7 @@
 	}
 </script>
 
-<SeoHead title={title} robots="`noindex, nofollow`" description={t('messages.bookings_description', 'Booking requests and conversations.')} />
+<SeoHead title={title} robots="noindex, nofollow" description={t('messages.bookings_description', 'Booking requests and conversations.')} />
 
 <!-- Exact-height column like /messages so the panes scroll internally;
      below md the shell's top bar + bottom tab bar are subtracted. -->

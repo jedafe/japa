@@ -10,6 +10,6 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<SeoHead title={`${t('studio.tabs.contents', 'Contents')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.contents_description', 'Review and manage generated content.')} />
+<SeoHead title={`${t('studio.tabs.contents', 'Contents')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.contents_description', 'Review and manage generated content.')} />
 
 <ContentManagerView {data} />

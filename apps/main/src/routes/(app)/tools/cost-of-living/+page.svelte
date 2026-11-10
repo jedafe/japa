@@ -11,7 +11,7 @@
 	import { api } from '#lib/api/client.js';
 	import type { ColCity, ColCitiesListResponse, ColCityData, ColComparisonMatrix } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
@@ -369,17 +369,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	{#if jsonLd}
-		{@html safeJsonLdScript(jsonLd)}
-	{/if}
-</svelte:head>
+<SeoHead {title} {description} {jsonLd} />
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="px-4 pt-4">

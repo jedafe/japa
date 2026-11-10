@@ -134,7 +134,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} robots="`noindex, nofollow`" />
+<SeoHead title={title} description={description} ogTitle={title} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-4">
 	<div class="mb-4 flex items-center gap-2 border-b border-[var(--color-border)] pb-3">

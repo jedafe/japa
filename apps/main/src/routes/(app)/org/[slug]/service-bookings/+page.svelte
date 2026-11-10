@@ -120,7 +120,7 @@
 	}
 </script>
 
-<SeoHead title={title} robots="`noindex`" description={t('bookings.inbox_description', 'Service bookings inbox for your organisation.')} />
+<SeoHead title={title} robots="noindex" description={t('bookings.inbox_description', 'Service bookings inbox for your organisation.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

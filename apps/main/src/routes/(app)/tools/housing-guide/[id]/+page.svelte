@@ -47,7 +47,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} robots="`noindex,nofollow`" />
+<SeoHead title={title} description={description} ogTitle={title} robots="noindex,nofollow" />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

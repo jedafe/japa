@@ -23,6 +23,7 @@
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 
 	/**
 	 * Embassy Appointment Alerter tool — §91, ADR-099.
@@ -260,46 +261,13 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title} — {siteName()} Tools</title>
-	<meta
-		name="description"
-		content={t(
-			'embassy_alerter.seo_description',
-			'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
-		)}
-	/>
-	<link rel="canonical" href={page.url.href} />
-
-	<meta
-		property="og:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		property="og:description"
-		content={t(
-			'embassy_alerter.seo_description',
-			'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
-		)}
-	/>
-	<meta property="og:url" content={page.url.href} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-
-	<meta
-		name="twitter:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		name="twitter:description"
-		content={t(
-			'embassy_alerter.seo_description',
-			'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
-		)}
-	/>
-</svelte:head>
+<SeoHead
+	title="{title} — {siteName()} Tools"
+	description={t(
+		'embassy_alerter.seo_description',
+		'Subscribe to embassy appointment availability alerts. Get notified when a visa slot opens in your date range.'
+	)}
+/>
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="px-4 pt-4">

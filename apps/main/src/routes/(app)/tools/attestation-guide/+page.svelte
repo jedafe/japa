@@ -22,6 +22,7 @@
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 
 	/**
 	 * Attestation Guide tool — §97, ADR-088.
@@ -264,46 +265,13 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title} — {siteName()} Tools</title>
-	<meta
-		name="description"
-		content={t(
-			'attestation_guide.seo_description',
-			'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
-		)}
-	/>
-	<link rel="canonical" href={page.url.href} />
-
-	<meta
-		property="og:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		property="og:description"
-		content={t(
-			'attestation_guide.seo_description',
-			'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
-		)}
-	/>
-	<meta property="og:url" content={page.url.href} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-
-	<meta
-		name="twitter:title"
-		content="{title} — {siteName()} Tools"
-	/>
-
-	<meta
-		name="twitter:description"
-		content={t(
-			'attestation_guide.seo_description',
-			'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
-		)}
-	/>
-</svelte:head>
+<SeoHead
+	title="{title} — {siteName()} Tools"
+	description={t(
+		'attestation_guide.seo_description',
+		'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
+	)}
+/>
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="px-4 pt-4">

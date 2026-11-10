@@ -190,7 +190,7 @@
 	);
 </script>
 
-<SeoHead title={t('scam_alerts.new_title', 'Report a Scam — {site}')} description={t('scam_alerts.new_description', 'Report a scam to warn the community.')} ogTitle={t('scam_alerts.new_title', 'Report a Scam')} robots="`noindex`" />
+<SeoHead title={t('scam_alerts.new_title', 'Report a Scam — {site}')} description={t('scam_alerts.new_description', 'Report a scam to warn the community.')} ogTitle={t('scam_alerts.new_title', 'Report a Scam')} robots="noindex" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

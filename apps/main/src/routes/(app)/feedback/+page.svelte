@@ -68,7 +68,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('feedback.title')} — ${siteName()}`} description={t('feedback.subtitle')} robots="`noindex, nofollow`" />
+<SeoHead title={`${t('feedback.title')} — ${siteName()}`} description={t('feedback.subtitle')} robots="noindex, nofollow" />
 
 <section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
 	<header class="flex items-center gap-3">

@@ -93,7 +93,7 @@
 	);
 </script>
 
-<SeoHead title={t('forum.new.title', 'New discussion — {site}')} description={t('forum.new.description', 'Start a new discussion in the community.')} ogTitle={t('forum.new.title', 'New discussion')} robots="`noindex`" />
+<SeoHead title={t('forum.new.title', 'New discussion — {site}')} description={t('forum.new.description', 'Start a new discussion in the community.')} ogTitle={t('forum.new.title', 'New discussion')} robots="noindex" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

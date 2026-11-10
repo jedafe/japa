@@ -113,7 +113,7 @@
 	}
 </script>
 
-<SeoHead title={title} robots="`noindex`" description={t('my_reports.description', 'Content reports you have filed — status and moderation outcomes.')} />
+<SeoHead title={title} robots="noindex" description={t('my_reports.description', 'Content reports you have filed — status and moderation outcomes.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

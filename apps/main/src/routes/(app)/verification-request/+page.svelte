@@ -450,7 +450,7 @@
 	}
 </script>
 
-<SeoHead title={pageTitle} robots="`noindex, nofollow`" description={t('verification.description', 'Request a verification badge for your profile or organisation.')} />
+<SeoHead title={pageTitle} robots="noindex, nofollow" description={t('verification.description', 'Request a verification badge for your profile or organisation.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

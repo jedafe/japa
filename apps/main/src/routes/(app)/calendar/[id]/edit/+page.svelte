@@ -163,7 +163,7 @@
 	);
 </script>
 
-<SeoHead title={pageTitle} description={t('calendar.edit_description', 'Update this community calendar event.')} ogTitle={pageTitle} robots="`noindex`" />
+<SeoHead title={pageTitle} description={t('calendar.edit_description', 'Update this community calendar event.')} ogTitle={pageTitle} robots="noindex" />
 
 <div class="mx-auto w-full max-w-2xl pb-24">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

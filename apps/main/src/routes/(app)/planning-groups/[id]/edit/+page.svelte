@@ -82,7 +82,7 @@
 	);
 </script>
 
-<SeoHead title={`${t('planning_groups.edit_heading', 'Edit Planning Group')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('planning_groups.edit_description', 'Edit your planning group — members, milestones, and check-ins.')} />
+<SeoHead title={`${t('planning_groups.edit_heading', 'Edit Planning Group')} — ${siteName()}`} robots="noindex, nofollow" description={t('planning_groups.edit_description', 'Edit your planning group — members, milestones, and check-ins.')} />
 
 <div class="mx-auto max-w-2xl px-4 py-6">
 	<a

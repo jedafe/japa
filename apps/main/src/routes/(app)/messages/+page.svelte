@@ -412,7 +412,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={title} ogTitle={title} robots="`noindex, nofollow`" />
+<SeoHead title={title} description={title} ogTitle={title} robots="noindex, nofollow" />
 
 <!-- Exact-height column so the panes below scroll internally instead of
      growing the document. Below 768px the shell renders a sticky top bar

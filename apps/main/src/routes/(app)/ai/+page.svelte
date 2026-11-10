@@ -24,7 +24,7 @@
 	);
 </script>
 
-<SeoHead title={`${t('ai.page.title', 'Japa AI')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.description', 'Ask Japa AI — relocation guidance grounded in community knowledge.')} />
+<SeoHead title={`${t('ai.page.title', 'Japa AI')} — ${siteName()}`} robots="noindex, nofollow" description={t('ai.description', 'Ask Japa AI — relocation guidance grounded in community knowledge.')} />
 
 {#if !data.chatEnabled}
 	<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-5xl flex-col items-center justify-center gap-4 text-center">

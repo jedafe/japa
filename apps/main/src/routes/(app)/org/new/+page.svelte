@@ -83,7 +83,7 @@
 	}
 </script>
 
-<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="`noindex, nofollow`" />
+<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->

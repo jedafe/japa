@@ -69,7 +69,7 @@
 	);
 </script>
 
-<SeoHead title={`${t('studio.tabs.prompts', 'Prompts')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.prompts_description', 'Reusable generation prompts for your content pipeline.')} />
+<SeoHead title={`${t('studio.tabs.prompts', 'Prompts')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.prompts_description', 'Reusable generation prompts for your content pipeline.')} />
 
 <div class="composer-grid" data-mobile-section={studioMobile.section}>
 	<div class="composer-main">

@@ -116,7 +116,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={title} ogTitle={title} robots="`noindex, nofollow`" />
+<SeoHead title={title} description={title} ogTitle={title} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<ListPageBar>

@@ -118,7 +118,7 @@
 	}}
 />
 
-<SeoHead title={`${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.sessions.description', 'Your Japa AI session history — revisit past answers and conversations.')} />
+<SeoHead title={`${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="noindex, nofollow" description={t('ai.sessions.description', 'Your Japa AI session history — revisit past answers and conversations.')} />
 
 <div class="mx-auto max-w-4xl">
 	<header class="mb-6 flex items-center justify-between gap-3">

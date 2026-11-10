@@ -23,7 +23,8 @@
 	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send, Trash2 } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
@@ -206,39 +207,37 @@
 	// hierarchical articles under their destination space index).
 	const wikiArticleJsonLd = $derived(
 		data.page
-			? JSON.stringify({
+			? {
 					'@context': 'https://schema.org',
 					'@type': 'Article',
 					headline: data.page.title,
 					description,
 					url: canonicalUrl,
 					about: { '@type': 'Place', name: spaceName }
-				})
-			: ''
+				}
+			: null
 	);
 	// BreadcrumbList mirrors the visual chain — Wiki / ancestors… / space /
 	// page parents… / page — so crawlers see the full geo + topic lineage
 	// rather than a flat Home → space → page triple.
 	const wikiBreadcrumbJsonLd = $derived(
-		JSON.stringify(
-			breadcrumbJsonLd([
-				{ name: 'Home', path: page.url.origin },
-				{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
-				...(data.page?.ancestors ?? []).map((anc) => ({
-					name: anc.name,
-					path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
-				})),
-				{
-					name: spaceName,
-					path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}`
-				},
-				...(data.page?.parents ?? []).map((par) => ({
-					name: par.title,
-					path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(par.slug)}`
-				})),
-				{ name: data.page?.title ?? data.pageSlug, path: canonicalUrl }
-			])
-		)
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+			...(data.page?.ancestors ?? []).map((anc) => ({
+				name: anc.name,
+				path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+			})),
+			{
+				name: spaceName,
+				path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}`
+			},
+			...(data.page?.parents ?? []).map((par) => ({
+				name: par.title,
+				path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(par.slug)}`
+			})),
+			{ name: data.page?.title ?? data.pageSlug, path: canonicalUrl }
+		])
 	);
 	// §80 Super-Admin Direct Publish — super_admin carries the `*` wildcard
 	// node (the resolved list holds no per-node keys), bypasses lock state,
@@ -385,30 +384,15 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="article" />
-	<meta property="og:url" content={canonicalUrl} />
-	{#if ogImage}
-		<meta property="og:image" content={ogImage} />
-		<meta name="twitter:image" content={ogImage} />
-		<meta name="twitter:card" content="summary_large_image" />
-	{/if}
-	<link rel="canonical" href={canonicalUrl} />
-	{#if data.page && !data.page.indexable || data.loadError || data.removed}
-		<meta
-			name="robots"
-			content={data.loadError || data.removed ? 'noindex,nofollow' : 'noindex,follow'}
-		/>
-	{/if}
-	{#if wikiArticleJsonLd}
-		{@html safeJsonLdScript(wikiArticleJsonLd)}
-	{/if}
-	{@html safeJsonLdScript(wikiBreadcrumbJsonLd)}
-</svelte:head>
+<SeoHead
+	{title}
+	{description}
+	canonical={canonicalUrl}
+	ogType="article"
+	{ogImage}
+	robots={data.loadError || data.removed ? 'noindex,nofollow' : data.page && !data.page.indexable ? 'noindex,follow' : ''}
+	jsonLd={[wikiArticleJsonLd, wikiBreadcrumbJsonLd].filter(Boolean)}
+/>
 
 <SetSidebar>
 	<WikiSidebar

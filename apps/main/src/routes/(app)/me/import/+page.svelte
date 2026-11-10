@@ -51,7 +51,7 @@
 	);
 </script>
 
-<SeoHead title={t('import.title', 'Import Content — {site}')} robots="`noindex`" description={t('import.description', 'Import your existing content into {site}.')} />
+<SeoHead title={t('import.title', 'Import Content — {site}')} robots="noindex" description={t('import.description', 'Import your existing content into {site}.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

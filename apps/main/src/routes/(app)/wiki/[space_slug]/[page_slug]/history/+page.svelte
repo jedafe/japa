@@ -106,7 +106,7 @@
 	}
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} robots="`noindex,nofollow`" />
+<SeoHead title={title} description={description} ogTitle={title} robots="noindex,nofollow" />
 
 <SetSidebar>
 	<WikiSidebar

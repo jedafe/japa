@@ -53,7 +53,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — ${siteName()}`} robots="`noindex`" description={t('mutual_aid.edit_description', 'Edit your mutual aid post.')} />
+<SeoHead title={`${t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — ${siteName()}`} robots="noindex" description={t('mutual_aid.edit_description', 'Edit your mutual aid post.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

@@ -30,7 +30,7 @@
 	}
 </script>
 
-<SeoHead title={`${t('wiki.history', 'History')} — ${page.title} | ${siteName()} Wiki`} robots="`noindex,nofollow`" description={t('wiki.history_description', 'Revision history for this wiki page.')} />
+<SeoHead title={`${t('wiki.history', 'History')} — ${page.title} | ${siteName()} Wiki`} robots="noindex,nofollow" description={t('wiki.history_description', 'Revision history for this wiki page.')} />
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
 	<header class="space-y-2">

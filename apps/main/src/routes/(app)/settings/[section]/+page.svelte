@@ -8,7 +8,7 @@
 	const title = $derived(meta ? t(meta.labelKey) : '');
 </script>
 
-<SeoHead title={`${title} — ${t('settings.nav.label')}`} robots="`noindex, nofollow`" description={t('settings.section_description', '{name} — account settings on {site}.').replace('{name}', title)} />
+<SeoHead title={`${title} — ${t('settings.nav.label')}`} robots="noindex, nofollow" description={t('settings.section_description', '{name} — account settings on {site}.').replace('{name}', title)} />
 
 {#if SectionComponent}
 	<SectionComponent data={data.sectionData} />

@@ -40,7 +40,7 @@
 	}
 </script>
 
-<SeoHead title={pageTitle} robots="`noindex`" description={t('org.invite_description', 'You have been invited to join an organisation on {site}.')} />
+<SeoHead title={pageTitle} robots="noindex" description={t('org.invite_description', 'You have been invited to join an organisation on {site}.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto w-full max-w-3xl p-4">

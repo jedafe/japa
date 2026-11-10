@@ -83,7 +83,7 @@
 	);
 </script>
 
-<SeoHead title={t('planning_groups.new_title', 'Create Planning Group — {site}')} description={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')} robots="`noindex, nofollow`" />
+<SeoHead title={t('planning_groups.new_title', 'Create Planning Group — {site}')} description={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')} robots="noindex, nofollow" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
