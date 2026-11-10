@@ -58,15 +58,16 @@ export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	return 'for_you';
 }
 
-/** Resolve the active sort; always yields an explicit value. Most tabs
- * default to 'relevant' — the for-you feed ranks it, the following feed
- * has a real relevant arm, and explore serves its geo discovery blend for
- * it; the Thread tab defaults to 'latest' (chronological, like /thread).
+/** Resolve the active sort; always yields an explicit value. For You and
+ * Following are chronological by default ('latest'); Explore defaults to
+ * 'relevant' — its geo discovery blend; the Thread tab defaults to
+ * 'latest' (chronological, like /thread).
  */
 export function resolveSort(raw: string | null, tab?: FeedTab): SortValue {
 	// The Thread tab mirrors the /thread index — Latest/Top only, so a
 	// carried-over ?sort=relevant|rising coerces to the default instead of
 	// leaving no chip highlighted.
 	if (tab === 'thread') return raw === 'top' ? 'top' : 'latest';
-	return (SORTS as string[]).includes(raw ?? '') ? (raw as SortValue) : 'relevant';
+	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
+	return tab === 'for_you' || tab === 'following' ? 'latest' : 'relevant';
 }

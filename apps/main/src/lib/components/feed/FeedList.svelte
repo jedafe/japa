@@ -35,10 +35,9 @@
 			undefined
 	);
 
-	// For You/Following entries open /thread/{slug} by default (thread-rename
-	// spec); so does the Thread tab — it IS the discussions feed. Explore
-	// keeps canonical content links.
-	const threadDefault = $derived(tab === 'for_you' || tab === 'following' || tab === 'thread');
+	// The Thread tab opens /thread/{slug} — it IS the discussions feed.
+	// For You/Following and Explore link to canonical content pages.
+	const threadDefault = $derived(tab === 'thread');
 	// The Thread tab carries the same vote rail as the /thread index.
 	const voteRail = $derived(tab === 'thread');
 

@@ -61,8 +61,8 @@
 
 	interface Props {
 		item: FeedItem;
-		/** For You/Following feeds open /thread/{slug} by default (thread-
-		 *  rename spec); share URLs stay canonical. */
+		/** Thread surfaces open /thread/{slug} by default (thread-rename
+		 *  spec); share URLs stay canonical. */
 		threadDefault?: boolean;
 		/** Render the up/down VoteRail instead of the like button — /thread
 		 *  cards are all threads, so they take the forum rail (forum threads

@@ -20,10 +20,10 @@
 		item: FeedItem;
 		style: CardStyle;
 		layout: 'stream' | 'grid-cell';
-		/** For You/Following feeds open the unified discussion page by
-		 *  default (thread-rename spec): every item resolves to
-		 *  /thread/{slug} — the embed card there links back to the
-		 *  canonical content page. Other surfaces keep canonical links. */
+		/** Thread surfaces open the unified discussion page by default
+		 *  (thread-rename spec): every item resolves to /thread/{slug} —
+		 *  the embed card there links back to the canonical content
+		 *  page. Other surfaces keep canonical links. */
 		threadDefault?: boolean;
 		/** Daily-style cards render the up/down VoteRail for every item
 		 *  (/thread index — every card is a thread). */

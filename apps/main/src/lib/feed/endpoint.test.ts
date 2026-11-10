@@ -48,12 +48,12 @@ describe('resolveSort', () => {
 			expect(resolveSort(s, 'explore')).toBe(s);
 		}
 	});
-	it('defaults every tab to relevant', () => {
-		expect(resolveSort(null, 'for_you')).toBe('relevant');
-		expect(resolveSort(null, 'following')).toBe('relevant');
+	it('defaults For You/Following to latest and explore to relevant', () => {
+		expect(resolveSort(null, 'for_you')).toBe('latest');
+		expect(resolveSort(null, 'following')).toBe('latest');
 		expect(resolveSort(null, 'explore')).toBe('relevant');
-		expect(resolveSort('', 'for_you')).toBe('relevant');
-		expect(resolveSort('popular', 'following')).toBe('relevant'); // "popular" is a label, not a value
+		expect(resolveSort('', 'for_you')).toBe('latest');
+		expect(resolveSort('popular', 'following')).toBe('latest'); // "popular" is a label, not a value
 	});
 	it('restricts the thread tab to latest/top like the /thread index', () => {
 		expect(resolveSort('top', 'thread')).toBe('top');
