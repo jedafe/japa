@@ -463,12 +463,20 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 			continue
 		}
 
+		// A content-anchored discussion's own slug 301s to the parent's
+		// thread URL — the sitemap advertises the live URL, never a
+		// redirect source.
+		slug := c.Slug
+		if c.ContentType == "discussion" && c.AnchorParentSlug != nil && *c.AnchorParentSlug != "" {
+			slug = *c.AnchorParentSlug
+		}
+
 		entries = append(entries, urlEntry{
 			// Canonical frontend URLs are per-content-type routes
 			// (ADR-058 route families: /blog/, /forum/, /story/,
 			// /guide/, /comparisons/, /jobs/, /services/, /video/),
 			// not the generic /content/ prefix.
-			Loc:        base + bots.ContentURLPath(c.ContentType, c.Slug),
+			Loc:        base + bots.ContentURLPath(c.ContentType, slug),
 			LastMod:    c.UpdatedAt.Time.Format(time.RFC3339),
 			ChangeFreq: "weekly",
 			Priority:   "0.8",

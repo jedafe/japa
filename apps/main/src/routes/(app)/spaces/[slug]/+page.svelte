@@ -239,7 +239,7 @@ import { flagUrl } from '#lib/utils/flags.js';
 		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
 		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
 		...(pinnedItems.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
-		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
+		{ value: 'forum', label: t('space.tab.forum', 'Threads') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		// §05 amendment — on follow-only primary spaces the members list is
 		// the follower set (join↔follow are coupled), so label it that way.

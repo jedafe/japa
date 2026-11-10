@@ -1741,8 +1741,14 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 // have no template — the resolver returns nil and the page emits no json_ld.
 func jsonldTemplateKey(contentType string) string {
 	switch contentType {
-	case "blog_post", "guide", "story", "news", "discussion", "forum_thread", "service_listing":
+	case "blog_post", "guide", "story", "news", "service_listing":
 		return "Article"
+	// Discussion pages carry unique UGC — DiscussionForumPosting is the
+	// schema type Google uses for forum rich results. Forum threads reached
+	// through this path are rare (the forum handler emits QAPage) but map
+	// identically when they arrive.
+	case "discussion", "forum_thread":
+		return "DiscussionForumPosting"
 	case "job_listing":
 		return "JobPosting"
 	default:
@@ -1798,16 +1804,23 @@ func contentJSONLDFields(c gen.GetContentDetailBySlugRow) map[string]string {
 		coverImageURL = media.MediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
 
+	authorProfileURL := ""
+	if c.AuthorUsername != "" {
+		authorProfileURL = "/u/" + c.AuthorUsername
+	}
+
 	fields := map[string]string{
-		"title":           c.Title,
-		"description":     desc,
-		"body":            c.Body,
-		"canonical_url":   canonical,
-		"published_at":    tsFormat(c.PublishedAt),
-		"updated_at":      tsFormat(c.UpdatedAt),
-		"created_at":      tsFormat(c.CreatedAt),
-		"cover_image_url": coverImageURL,
-		"author_name":     c.AuthorName,
+		"title":              c.Title,
+		"description":        desc,
+		"body":               c.Body,
+		"canonical_url":      canonical,
+		"published_at":       tsFormat(c.PublishedAt),
+		"updated_at":         tsFormat(c.UpdatedAt),
+		"created_at":         tsFormat(c.CreatedAt),
+		"cover_image_url":    coverImageURL,
+		"author_name":        c.AuthorName,
+		"author_profile_url": authorProfileURL,
+		"comment_count":      strconv.FormatInt(c.CommentCount, 10),
 	}
 	mergeFieldValueScalars(fields, c.FieldValues)
 

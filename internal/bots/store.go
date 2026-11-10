@@ -331,9 +331,17 @@ func (s *Store) GetLLMsData(ctx context.Context, cfg SitemapQualityConfig) (LLMs
 			continue
 		}
 
+		// Same canonical-URL rule as the content sitemap: a content-
+		// anchored discussion's minted slug redirects to the parent's
+		// thread URL, so llms.txt advertises the live URL.
+		slug := p.Slug
+		if p.ContentType == "discussion" && p.AnchorParentSlug != nil && *p.AnchorParentSlug != "" {
+			slug = *p.AnchorParentSlug
+		}
+
 		recentPosts = append(recentPosts, Link{
 			Title:       p.Title,
-			URL:         ContentURLPath(p.ContentType, p.Slug),
+			URL:         ContentURLPath(p.ContentType, slug),
 			Description: excerpt(p.Excerpt),
 		})
 	}

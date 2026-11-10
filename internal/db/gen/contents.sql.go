@@ -4526,7 +4526,8 @@ SELECT c.title, c.slug, c.content_type, c.visibility, c.seo_indexable,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
  COALESCE(r.reaction_count, 0) AS reaction_count,
- left(c.body, 400) AS excerpt
+ left(c.body, 400) AS excerpt,
+ pc.slug AS anchor_parent_slug
 FROM contents c
 LEFT JOIN forum_threads ft ON ft.content_id = c.id
 LEFT JOIN (
@@ -4535,6 +4536,8 @@ LEFT JOIN (
  WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
+LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
 ORDER BY c.created_at DESC
@@ -4542,20 +4545,21 @@ LIMIT 1000
 `
 
 type ListPublishedContentForLLMsTxtRow struct {
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	ContentType   string `json:"content_type"`
-	Visibility    string `json:"visibility"`
-	SeoIndexable  bool   `json:"seo_indexable"`
-	CommentCount  int32  `json:"comment_count"`
-	ShareCount    int32  `json:"share_count"`
-	ReshareCount  int32  `json:"reshare_count"`
-	WordCount     int32  `json:"word_count"`
-	ReplyCount    int32  `json:"reply_count"`
-	Solved        bool   `json:"solved"`
-	IsQuestion    *bool  `json:"is_question"`
-	ReactionCount int64  `json:"reaction_count"`
-	Excerpt       string `json:"excerpt"`
+	Title            string  `json:"title"`
+	Slug             string  `json:"slug"`
+	ContentType      string  `json:"content_type"`
+	Visibility       string  `json:"visibility"`
+	SeoIndexable     bool    `json:"seo_indexable"`
+	CommentCount     int32   `json:"comment_count"`
+	ShareCount       int32   `json:"share_count"`
+	ReshareCount     int32   `json:"reshare_count"`
+	WordCount        int32   `json:"word_count"`
+	ReplyCount       int32   `json:"reply_count"`
+	Solved           bool    `json:"solved"`
+	IsQuestion       *bool   `json:"is_question"`
+	ReactionCount    int64   `json:"reaction_count"`
+	Excerpt          string  `json:"excerpt"`
+	AnchorParentSlug *string `json:"anchor_parent_slug"`
 }
 
 // Same visibility/indexability contract as ListPublishedSlugsForSitemap:
@@ -4587,6 +4591,7 @@ func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context) ([]ListPub
 			&i.IsQuestion,
 			&i.ReactionCount,
 			&i.Excerpt,
+			&i.AnchorParentSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -4605,7 +4610,8 @@ SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
  COALESCE(ft.reply_count, 0) AS reply_count,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
- COALESCE(r.reaction_count, 0) AS reaction_count
+ COALESCE(r.reaction_count, 0) AS reaction_count,
+ pc.slug AS anchor_parent_slug
 FROM contents c
 LEFT JOIN forum_threads ft ON ft.content_id = c.id
 LEFT JOIN (
@@ -4614,6 +4620,8 @@ LEFT JOIN (
  WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
+LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
  AND ($1::text = '' OR c.content_type = $1::text)
@@ -4628,21 +4636,25 @@ type ListPublishedSlugsForSitemapParams struct {
 }
 
 type ListPublishedSlugsForSitemapRow struct {
-	Slug          string             `json:"slug"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	Visibility    string             `json:"visibility"`
-	SeoIndexable  bool               `json:"seo_indexable"`
-	ContentType   string             `json:"content_type"`
-	CommentCount  int32              `json:"comment_count"`
-	ShareCount    int32              `json:"share_count"`
-	ReshareCount  int32              `json:"reshare_count"`
-	WordCount     int32              `json:"word_count"`
-	ReplyCount    int32              `json:"reply_count"`
-	Solved        bool               `json:"solved"`
-	IsQuestion    *bool              `json:"is_question"`
-	ReactionCount int64              `json:"reaction_count"`
+	Slug             string             `json:"slug"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Visibility       string             `json:"visibility"`
+	SeoIndexable     bool               `json:"seo_indexable"`
+	ContentType      string             `json:"content_type"`
+	CommentCount     int32              `json:"comment_count"`
+	ShareCount       int32              `json:"share_count"`
+	ReshareCount     int32              `json:"reshare_count"`
+	WordCount        int32              `json:"word_count"`
+	ReplyCount       int32              `json:"reply_count"`
+	Solved           bool               `json:"solved"`
+	IsQuestion       *bool              `json:"is_question"`
+	ReactionCount    int64              `json:"reaction_count"`
+	AnchorParentSlug *string            `json:"anchor_parent_slug"`
 }
 
+// anchor_parent_slug resolves a content-anchored discussion's canonical
+// thread URL: /thread/{parent-slug} is the live URL (the row's own slug
+// 301s there), so the sitemap must not emit the redirecting mint slug.
 func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, arg ListPublishedSlugsForSitemapParams) ([]ListPublishedSlugsForSitemapRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap, arg.TypeFilter, arg.ChunkOffset, arg.ChunkLimit)
 	if err != nil {
@@ -4666,6 +4678,7 @@ func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, arg ListPubl
 			&i.Solved,
 			&i.IsQuestion,
 			&i.ReactionCount,
+			&i.AnchorParentSlug,
 		); err != nil {
 			return nil, err
 		}

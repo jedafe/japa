@@ -3704,9 +3704,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
 		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
-		r.With(features.Gate(featureChecker, "feature.forum")).Get("/forum/feed.xml", rssHandlers.HandleForumFeed)
-		// Canonical thread feed — same handler as the legacy /forum/feed.xml
-		// URL; existing feed subscriptions keep working.
+		// Legacy forum feed URL — 301 to the canonical /thread/feed.xml so
+		// existing subscriptions follow to one URL instead of the feed
+		// being served under two indexable paths.
+		r.With(features.Gate(featureChecker, "feature.forum")).Get("/forum/feed.xml", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/thread/feed.xml", http.StatusMovedPermanently)
+		})
 		r.With(features.Gate(featureChecker, "feature.forum")).Get("/thread/feed.xml", rssHandlers.HandleForumFeed)
 		// Per-content-type feeds — one per ADR-058 route family
 		// (/story/feed.xml, /guide/feed.xml, …). Registry: model.TypeFeeds().
@@ -7924,7 +7927,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// an anchor is just a lazily-minted discussion row.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/threads/anchor/{entityType}/{entityKey}", commentsHandlers.ResolveAnchor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).
 				Post("/threads/anchor", commentsHandlers.CreateAnchor)
 			// NOTE: /content/{id}/react (POST+DELETE) and /content/{id}/spaces
 			// (PATCH) are registered once in the main content route group above

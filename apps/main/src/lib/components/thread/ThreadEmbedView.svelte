@@ -68,7 +68,20 @@
 	let { data }: Props = $props();
 
 	const article = $derived(data.article);
-	const canonical = $derived(`${page.url.origin}/thread/${article.slug}`);
+	// Conditional canonical (§43 quality gate, discussion_min_comments=2):
+	//  - a live thread self-canonicals to the URL it was reached on — never
+	//    `article.slug`, which 301s here for content-anchored threads
+	//  - an empty/near-empty anchor shell (indexable=false) canonicalizes
+	//    to its parent entity — it's a near-duplicate of the parent and
+	//    must not compete with it
+	// Once comments push the row past the gate, indexable flips true and
+	// the canonical returns to self.
+	const selfUrl = $derived(`${page.url.origin}${page.url.pathname}`);
+	const canonical = $derived(
+		data.indexable === false && data.embed?.href
+			? `${page.url.origin}${data.embed.href}`
+			: selfUrl
+	);
 	const description = $derived(article.excerpt ?? data.embed?.excerpt ?? '');
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds) : undefined
@@ -331,7 +344,9 @@
 	}
 
 	async function shareThread() {
-		const url = canonical;
+		// Share the live URL, not the canonical — a shell's canonical
+		// points at its parent, and a minted slug would 301 anyway.
+		const url = selfUrl;
 		const shareData = { title: article.title, url };
 		try {
 			if (navigator.share) {

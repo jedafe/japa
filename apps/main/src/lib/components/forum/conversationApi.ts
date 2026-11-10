@@ -114,17 +114,23 @@ export async function listAllComments(contentId: string): Promise<Comment[]> {
 		if (items.length === 0 || offset >= total) break;
 	}
 	// Depth is capped at 3 — walk reply_count'd parents level by level.
+	// Each level's parents fetch in parallel; sequential walks made the
+	// client hydration pass N+1-slow on busy threads.
 	let parents = out.filter((c) => (c.reply_count ?? 0) > 0);
 	while (parents.length > 0) {
-		const next: Comment[] = [];
-		for (const p of parents) {
-			for (let offset = 0; ; ) {
-				const { items, total } = await fetchCommentPage(contentId, p.id, offset);
-				next.push(...items);
-				offset += items.length;
-				if (items.length === 0 || offset >= total) break;
-			}
-		}
+		const subtrees = await Promise.all(
+			parents.map(async (p) => {
+				const branch: Comment[] = [];
+				for (let offset = 0; ; ) {
+					const { items, total } = await fetchCommentPage(contentId, p.id, offset);
+					branch.push(...items);
+					offset += items.length;
+					if (items.length === 0 || offset >= total) break;
+				}
+				return branch;
+			})
+		);
+		const next = subtrees.flat();
 		out.push(...next);
 		parents = next.filter((c) => (c.reply_count ?? 0) > 0);
 	}

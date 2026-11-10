@@ -57,9 +57,9 @@
 			case 'source': return `${PUBLIC_JC_SITE_URL}/sources/${slug}`;
 			case 'message': return null;
 			default: {
-					if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/forum/${row.thread_slug}`;
+					if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/thread/${row.thread_slug}`;
 					const prefixes: Record<string, string> = {
-					blog_post: '/blog', guide: '/guide', discussion: '/content', forum_thread: '/forum',
+					blog_post: '/blog', guide: '/guide', discussion: '/thread', forum_thread: '/thread',
 					comparison: '/comparisons', story: '/story', achievement: '/achievements',
 					page: '/pages', job_listing: '/jobs', service_listing: '/services',
 					video: '/video', list: '/list'

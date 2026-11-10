@@ -164,16 +164,24 @@ func TestIsContentIndexableByType(t *testing.T) {
 			SitemapQualityConfig{ForumMinWords: 30, ForumMinReplies: 1, QuestionMinAnswers: 0},
 			true,
 		},
-		// Discussions — word count + comment gate.
+		// Discussions — word count + comment gate. The default comment
+		// threshold is 2 (same flip as the page-level noindex gate): an
+		// empty anchor shell must not be treated as indexable content.
 		{
 			"discussion meets defaults",
-			ContentIndexableInput{ContentType: "discussion", Status: "published", Visibility: "public", WordCount: 60, CommentCount: 0, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "discussion", Status: "published", Visibility: "public", WordCount: 60, CommentCount: 2, SeoIndexable: true},
 			def,
 			true,
 		},
 		{
+			"discussion shell below default comment gate",
+			ContentIndexableInput{ContentType: "discussion", Status: "published", Visibility: "public", WordCount: 60, CommentCount: 1, SeoIndexable: true},
+			def,
+			false,
+		},
+		{
 			"discussion below min words",
-			ContentIndexableInput{ContentType: "discussion", Status: "published", Visibility: "public", WordCount: 20, CommentCount: 0, SeoIndexable: true},
+			ContentIndexableInput{ContentType: "discussion", Status: "published", Visibility: "public", WordCount: 20, CommentCount: 5, SeoIndexable: true},
 			def,
 			false,
 		},
@@ -316,7 +324,7 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected QuestionMinAnswers 2, got %d", cfg.QuestionMinAnswers)
 	}
 
-	if cfg.DiscussionMinComments != 0 {
-		t.Errorf("expected DiscussionMinComments 0, got %d", cfg.DiscussionMinComments)
+	if cfg.DiscussionMinComments != 2 {
+		t.Errorf("expected DiscussionMinComments 2, got %d", cfg.DiscussionMinComments)
 	}
 }

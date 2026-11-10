@@ -538,9 +538,11 @@ func (q *Queries) GetRoadmapItemByID(ctx context.Context, id pgtype.UUID) (Roadm
 
 const getRoadmapItemBySlug = `-- name: GetRoadmapItemBySlug :one
 SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, i.release_id, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       sc.slug AS content_slug,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN contents sc ON sc.id = i.content_id AND sc.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = $1
 WHERE i.slug = $2 AND i.deleted_at IS NULL
 `
@@ -574,9 +576,13 @@ type GetRoadmapItemBySlugRow struct {
 	CategoryName   *string            `json:"category_name"`
 	CategorySlug   *string            `json:"category_slug"`
 	CategoryColor  *string            `json:"category_color"`
+	ContentSlug    *string            `json:"content_slug"`
 	HasVoted       bool               `json:"has_voted"`
 }
 
+// content_slug resolves the item's shadow contents row slug — the detail
+// page threads EntityDiscussions' "view full thread" links through it so
+// guests land on the canonical /thread/{slug} URL.
 func (q *Queries) GetRoadmapItemBySlug(ctx context.Context, arg GetRoadmapItemBySlugParams) (GetRoadmapItemBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getRoadmapItemBySlug, arg.ViewerID, arg.Slug)
 	var i GetRoadmapItemBySlugRow
@@ -604,6 +610,7 @@ func (q *Queries) GetRoadmapItemBySlug(ctx context.Context, arg GetRoadmapItemBy
 		&i.CategoryName,
 		&i.CategorySlug,
 		&i.CategoryColor,
+		&i.ContentSlug,
 		&i.HasVoted,
 	)
 	return i, err

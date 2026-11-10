@@ -20,9 +20,20 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('forum.list_title', 'Forum — {site}'));
+	const title = $derived(t('forum.list_title', 'Threads — {site}'));
 	const description = $derived(
 		t('forum.list_description', 'Discussions, questions, and answers from the Nigerian diaspora community.')
+	);
+	// SEO-004: the unfiltered default tab serves the same /explore feed —
+	// two indexable near-identical lists would compete. noindex it and
+	// canonical to /explore; filtered views (status/tag/author/featured)
+	// are thread-specific and keep their own indexable URL.
+	const isFiltered = $derived(
+		data.status !== 'all' || !!data.tagSlug || !!data.authorId || data.sort === 'featured'
+	);
+	const robots = $derived(isFiltered ? '' : 'noindex,follow');
+	const canonical = $derived(
+		isFiltered ? `${page.url.origin}/thread` : `${page.url.origin}/explore`
 	);
 
 	function buildUrl(sort: string, status: string) {
@@ -132,10 +143,10 @@
 	});
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} canonical={page.url.origin + '/thread'} />
+<SeoHead title={title} description={description} ogTitle={title} {canonical} {robots} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<h1 class="sr-only">{t('forum.heading', 'Forum')}</h1>
+	<h1 class="sr-only">{t('forum.heading', 'Threads')}</h1>
 	<ListPageBar>
 		<UrlTabs
 			{tabs}

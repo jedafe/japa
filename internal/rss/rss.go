@@ -408,9 +408,10 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// HandleForumFeed serves the forum-wide RSS feed at /forum/feed.xml.
-// Items are published threads from public spaces — members/private-space
-// threads and anonymous authors never leak (see ListRSSForumFeedItems).
+// HandleForumFeed serves the community thread feed at /thread/feed.xml
+// (legacy /forum/feed.xml redirects here). Items are published threads from
+// public spaces — members/private-space threads and anonymous authors never
+// leak (see ListRSSForumFeedItems).
 func (h *Handlers) HandleForumFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 	cacheKey := valkey.MustKey("cache:feed:rss:forum")
@@ -426,9 +427,9 @@ func (h *Handlers) HandleForumFeed(w http.ResponseWriter, r *http.Request) {
 
 			return feedItemsFromForumRows(rows, siteURL), nil
 		},
-		h.siteName+" — Forum",
+		h.siteName+" — Threads",
 		siteURL+"/thread",
-		"Latest discussions from the "+h.siteName+" community forum.",
+		"Latest discussions from the "+h.siteName+" community.",
 	)
 }
 

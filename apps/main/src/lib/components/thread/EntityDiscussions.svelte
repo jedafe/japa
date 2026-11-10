@@ -43,6 +43,10 @@
 	let comments = $state<Comment[]>([]);
 	let total = $state(0);
 	let anchor = $state<ThreadAnchor | null>(null);
+	// True when the anchor resolve 404'd — for content entities the
+	// comments can still live on the row itself (posted before its thread
+	// was minted), so the preview falls back to reading them directly.
+	let anchorMissing = $state(false);
 	let resolved = $state(false);
 	let loading = $state(true);
 	let tabLoading = $state(false);
@@ -56,13 +60,19 @@
 	const threadHref = $derived(
 		contentSlug ? `/thread/${contentSlug}` : anchor ? `/thread/${anchor.slug}` : ''
 	);
+	// The content row comments are read from — normally the anchored
+	// thread; when the anchor is missing on a content entity, the row
+	// itself so pre-migration comments still render for guests.
+	const threadContentId = $derived(
+		anchor?.content_id ?? (anchorMissing && entityType === 'content' ? entityKey : null)
+	);
 	const hasConversation = $derived(comments.length > 0 || total > 0 || (anchor?.comment_count ?? 0) > 0);
 	const currentUserId = $derived((page.data.user as { id?: string } | null)?.id ?? null);
 	// ReplyItem's mutations refresh via invalidateAll() — which only re-runs
 	// page loaders. This comment set is component-local state, so wrap each
 	// mutating backend call to re-run the preview fetch on success.
 	const convApi = $derived.by(() => {
-		const base = anchor?.content_id ? commentsApi(anchor.content_id) : null;
+		const base = threadContentId ? commentsApi(threadContentId) : null;
 		if (!base) return null;
 		const reload = () => void loadComments();
 		return {
@@ -92,16 +102,18 @@
 		};
 	});
 	const conversation = $derived(
-		anchor?.content_id ? commentsConversation(comments, anchor.content_id) : { replies: [], userVotes: {} }
+		threadContentId ? commentsConversation(comments, threadContentId) : { replies: [], userVotes: {} }
 	);
 
 	// Fetch the first 5 top-level comments plus every descendant of those
 	// five (parent_id filter, same walk as listAllComments but scoped to
-	// the preview set — depth is capped at 3 server-side).
+	// the preview set — depth is capped at 3 server-side). Each level's
+	// parents are fetched in parallel — sequential per-parent calls made
+	// the preview N+1-slow on busy threads.
 	async function loadComments() {
-		if (!anchor?.content_id) return;
+		if (!threadContentId) return;
 		const res = await api.getEnvelope<Comment[]>(
-			`/content/${anchor.content_id}/comments?sort=${sortParam}&page_size=5`
+			`/content/${threadContentId}/comments?sort=${sortParam}&page_size=5`
 		);
 		if (res.error || !res.data) {
 			// Clear rather than leave the previous tab's order rendered under
@@ -119,11 +131,15 @@
 		const all = [...top];
 		let parents = top.filter((c) => (c.reply_count ?? 0) > 0);
 		while (parents.length > 0) {
+			const batches = await Promise.all(
+				parents.map((p) =>
+					api.getEnvelope<Comment[]>(
+						`/content/${threadContentId}/comments?parent_id=${p.id}&page_size=100`
+					)
+				)
+			);
 			const next: Comment[] = [];
-			for (const p of parents) {
-				const child = await api.getEnvelope<Comment[]>(
-					`/content/${anchor.content_id}/comments?parent_id=${p.id}&page_size=100`
-				);
+			for (const child of batches) {
 				if (!child.error && child.data) {
 					next.push(...child.data);
 					for (const id of
@@ -141,6 +157,7 @@
 	async function load() {
 		loading = true;
 		loadError = null;
+		anchorMissing = false;
 		try {
 			const res = await api.get<ThreadAnchor>(`/threads/anchor/${entityType}/${entityKey}`);
 			if (!res.error && res.data) {
@@ -148,8 +165,17 @@
 				await loadComments();
 			} else if (res.error?.status === 404) {
 				anchor = null;
-				comments = [];
-				total = 0;
+				anchorMissing = true;
+				// A missing anchor doesn't mean no conversation — comments
+				// posted before the thread was minted still sit on the entity
+				// row. Content entities fall back to reading them directly
+				// (guests can't mint, so this is their only view of them).
+				if (entityType === 'content') {
+					await loadComments();
+				} else {
+					comments = [];
+					total = 0;
+				}
 			} else {
 				loadError = res.error?.message ?? t('comments.load_error', 'Could not load discussions');
 			}
@@ -184,6 +210,7 @@
 		starting = false;
 		if (!res.error && res.data) {
 			anchor = res.data;
+			anchorMissing = false;
 			await goto(`${threadHref}#replies`);
 		} else {
 			// The mint can legitimately fail (private-space content, etc.) —
@@ -239,7 +266,7 @@
 			<div class="ed-state"><Loader2 size={16} class="animate-spin" /> {t('common.loading', 'Loading')}</div>
 		{:else if loadError}
 			<div class="ed-state ed-error">{loadError}</div>
-		{:else if comments.length > 0 && convApi && anchor}
+		{:else if comments.length > 0 && convApi && threadContentId}
 			<!-- Same ReplyThread as /thread/{slug} — identical format and
 			     interaction (vote, reply, edit, pin); only the top-level set is
 			     capped at 5 here. Replies refresh via the component's own
@@ -250,7 +277,7 @@
 				     identical to Popular. -->
 				<ReplyThread
 					replies={conversation.replies}
-					threadId={anchor.content_id}
+					threadId={threadContentId}
 					backend={convApi}
 					preview
 					sort={tab === 'popular' ? 'top' : 'newest'}

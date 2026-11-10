@@ -180,9 +180,14 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	let article: ContentArticle;
 	let jsonLd: unknown = null;
 	let deletedUserIds: string[] | null = null;
+	// The row loaded for the URL slug — when it's the discussion's parent
+	// (the /thread/{article-slug} path), the parent fetch below reuses it
+	// instead of round-tripping the same row a second time.
+	let initialArticle: ContentArticle | null = null;
 	try {
 		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/content/${slug}`);
 		article = envelope.data;
+		initialArticle = article;
 		jsonLd = envelope.json_ld ?? null;
 		deletedUserIds = envelope.deleted_user_ids ?? null;
 	} catch (err) {
@@ -259,21 +264,27 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	// (the excerpt needs body_html, which thread_parent doesn't carry).
 	let parentArticle: ContentArticle | null = null;
 	if (article.thread_parent?.slug) {
-		try {
-			const envelope = await apiGetEnvelope<ContentArticle>(
-				ctx,
-				`/content/${article.thread_parent.slug}`
-			);
-			parentArticle = envelope.data ?? null;
-			// The excerpt renders parent-article markup — merge its erased
-			// mentions into the redaction set too.
-			if (envelope.deleted_user_ids) {
-				deletedUserIds = Array.from(
-					new Set([...(deletedUserIds ?? []), ...envelope.deleted_user_ids])
+		// The /thread/{article-slug} path already fetched the parent as
+		// `article` above — reuse it instead of issuing an identical GET.
+		if (initialArticle && article.thread_parent.slug === initialArticle.slug) {
+			parentArticle = initialArticle;
+		} else {
+			try {
+				const envelope = await apiGetEnvelope<ContentArticle>(
+					ctx,
+					`/content/${article.thread_parent.slug}`
 				);
+				parentArticle = envelope.data ?? null;
+				// The excerpt renders parent-article markup — merge its erased
+				// mentions into the redaction set too.
+				if (envelope.deleted_user_ids) {
+					deletedUserIds = Array.from(
+						new Set([...(deletedUserIds ?? []), ...envelope.deleted_user_ids])
+					);
+				}
+			} catch {
+				parentArticle = null;
 			}
-		} catch {
-			parentArticle = null;
 		}
 	}
 

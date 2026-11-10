@@ -194,7 +194,7 @@
 
 	{#if item.content_id}
 		<!-- Discussion preview — full engine lives at /thread/{slug}. -->
-		<EntityDiscussions entityType="content" entityKey={item.content_id} authed={data.authed} />
+		<EntityDiscussions entityType="content" entityKey={item.content_id} contentSlug={item.content_slug ?? undefined} authed={data.authed} />
 		<!-- §25: engagement-area ad slot. -->
 		<AdSlot slot="comments_below" format="banner" />
 	{/if}

@@ -31,7 +31,7 @@ const mainRoutes: string[] = [
 	'/discover',
 	'/explore',
 	'/feedback',
-	'/forum',
+	'/thread',
 	'/login',
 	'/logout',
 	'/messages',

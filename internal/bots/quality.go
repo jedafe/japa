@@ -49,7 +49,7 @@ type SitemapQualityConfig struct {
 //   - seo.sitemap.blog_min_engagement  → 0
 //   - seo.sitemap.forum_min_replies    → 1
 //   - seo.sitemap.question_min_answers → 1
-//   - seo.sitemap.discussion_min_comments → 0
+//   - seo.sitemap.discussion_min_comments → 2
 //
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func DefaultSitemapQualityConfig() SitemapQualityConfig {
@@ -69,7 +69,7 @@ func DefaultSitemapQualityConfig() SitemapQualityConfig {
 		BlogMinEngagement:     0,
 		ForumMinReplies:       2,
 		QuestionMinAnswers:    2,
-		DiscussionMinComments: 0,
+		DiscussionMinComments: 2,
 		UserMinPosts:          1,
 		TagMinContent:         1,
 	}

@@ -21,6 +21,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	rssmodel "github.com/jedafe/japa/internal/rss/model"
+	"github.com/jedafe/japa/internal/tools"
 )
 
 // ---------------------------------------------------------------------------
@@ -48,93 +49,22 @@ const anchorPlatformSpaceSlug = "community-threads"
 // id is environment-dependent (migrations run against different datasets).
 var anchorSpaceID pgtype.UUID
 
-// toolAnchorMeta mirrors the indexable /tools/{tool} pages
-// (seo.mainAppToolPaths + the names surfaced on the /tools hub). Only these
-// keys may bind a 'tool' anchor — arbitrary slugs are rejected so the
-// endpoint cannot mint threads for non-existent pages.
-var toolAnchorMeta = map[string]struct {
-	Title   string
-	Summary string
-}{
-	"arrival-checklist":  {"Arrival Checklist", "A personalized checklist for your first weeks after landing — documents to carry, registrations to complete, bank, phone, transport, and the tasks people commonly forget. Built per destination so nothing slips through."},
-	"attestation-guide":  {"Attestation Guide", "Step-by-step guidance for getting your documents attested — which offices to visit, what order to follow, and the fees and timelines at each stage. Covers Nigerian and destination-country requirements."},
-	"community-locator":  {"Community Locator", "Find diaspora communities near you — associations, religious centres, cultural groups, and informal networks organised by city and country of origin."},
-	"cost-of-living":     {"Cost of Living Calculator", "Compare real living costs across destination cities — rent, food, transport, childcare, and utilities — side by side with your origin city so you can budget before you move."},
-	"credential-checker": {"Credential Checker", "Check how your degrees and professional credentials transfer abroad — recognition status, evaluation bodies, and the extra steps each destination requires."},
-	"crs-calculator":     {"CRS Calculator", "Estimate your Comprehensive Ranking System score for Canadian Express Entry — age, education, language, and work experience broken down per factor so you can see where to gain points."},
-	"currency-converter": {"Currency Converter", "Convert between your home and destination currencies with live rates — useful for budgeting, remittances, and comparing salaries across countries."},
-	"cv-formatter":       {"CV Formatter", "Format your CV for your destination market — the structure, length, and conventions recruiters in that country actually expect."},
-	"eca-guide":          {"ECA Guide", "Educational Credential Assessment guidance — which ECA bodies evaluate your qualifications, how long each takes, and which one your destination accepts."},
-	"embassy-alerter":    {"Embassy Alerter", "Alerts when embassy and visa application centre appointment slots open — interview calendars fill fast and checking manually is a losing game."},
-	"housing-guide":      {"Housing Guide", "Housing guides for destination cities — where newcomers typically live, what deposits and paperwork landlords expect, and realistic rent ranges by area."},
-	"language-test":      {"Language Test Hub", "Prepare for IELTS, TOEFL, PTE and other language tests — target scores per visa route, prep resources, and booking links."},
-	"pof-calculator":     {"Proof of Funds Calculator", "Compute proof-of-funds requirements for your destination — minimum balances, how many months of statements, and acceptable account types."},
-	"processing-tracker": {"Processing Time Tracker", "Track current visa and permit processing times — real submission-to-decision timelines by route, so you can plan flights and resignations sensibly."},
-	"readiness":          {"Readiness Assessment", "Assess how ready you are to relocate — documents, finances, credentials, and timeline scored so you know exactly what's left before you can move."},
-	"remittance":         {"Remittance Rate Tracker", "Track live remittance rates and fees across corridors — compare providers before you send money home."},
-	"sop-generator":      {"SOP Generator", "Draft a statement of purpose for admissions or visa applications — structured around your background, goals, and the programme you're targeting."},
-	"tax-calculator":     {"Tax Calculator", "Estimate income tax and take-home pay in your destination country — so salary offers can be compared on net, not gross."},
-	"travel":             {"Travel Search", "Search and compare flights and hotels for your route — prices across airlines and dates so you can book the legwork smartly."},
-	"visa-checklist":     {"Visa Checklist", "Generate your visa document checklist by destination — every required document, form, and supporting evidence for your route, in submission order."},
-	"visa-routes":        {"Visa Routes", "Compare visa routes for your destination — eligibility, cost, timeline, and pathway-to-residency for each option."},
-}
-
-// toolAnchorFlag maps each anchorable tool slug to the feature flag gating
-// its /tools/{slug} page — mirrors routeFeatureFlags.ts on the frontend.
-// A disabled tool's public thread would outlive its page, so mint and
-// resolve both gate on this, and the flag-change hook drops the thread.
-var toolAnchorFlag = map[string]string{
-	"arrival-checklist":  "arrival_checklist.enabled",
-	"attestation-guide":  "attestation_guide.enabled",
-	"community-locator":  "community_locator.enabled",
-	"cost-of-living":     "col_calculator.enabled",
-	"credential-checker": "credential_checker.enabled",
-	"crs-calculator":     "crs_calculator.enabled",
-	"currency-converter": "fx.enabled",
-	"cv-formatter":       "cv_formatter.enabled",
-	"eca-guide":          "eca_guide.enabled",
-	"embassy-alerter":    "appointment_alert.enabled",
-	"housing-guide":      "housing_guide.enabled",
-	"language-test":      "language_test_hub.enabled",
-	"pof-calculator":     "pof_calculator.enabled",
-	"processing-tracker": "visa_timeline.enabled",
-	"readiness":          "assessment.enabled",
-	"remittance":         "remittance.enabled",
-	"sop-generator":      "sop_generator.enabled",
-	"tax-calculator":     "tax_calculator.enabled",
-	"travel":             "travel.enabled",
-	"visa-checklist":     "checklist.enabled",
-	"visa-routes":        "visa_routes.enabled",
-}
-
-// toolFlagToSlug is toolAnchorFlag inverted — built once at init.
-var toolFlagToSlug = func() map[string]string {
-	m := make(map[string]string, len(toolAnchorFlag))
-	for slug, flag := range toolAnchorFlag {
-		m[flag] = slug
-	}
-	return m
-}()
-
-// ToolSlugForFlag returns the anchor entity_key a tool feature flag gates.
-// False when the flag doesn't gate an anchored tool page.
-func ToolSlugForFlag(flagKey string) (string, bool) {
-	slug, ok := toolFlagToSlug[flagKey]
-	return slug, ok
-}
+// anchorBotUserID is resolved lazily from the 'community-threads' system
+// user seeded by migration 001093 — environment-dependent like the space id.
+var anchorBotUserID pgtype.UUID
 
 // toolAnchorEnabled reports whether a tool may hold a live anchor: known to
 // the static page registry AND not disabled by its feature flag. A missing
 // flag mapping or nil checker means the tool is always on.
 func (s *Service) toolAnchorEnabled(ctx context.Context, entityKey string) bool {
-	if _, ok := toolAnchorMeta[entityKey]; !ok {
+	page, ok := tools.Lookup(entityKey)
+	if !ok {
 		return false
 	}
-	key, ok := toolAnchorFlag[entityKey]
-	if !ok || s.flags == nil {
+	if page.Flag == "" || s.flags == nil {
 		return true
 	}
-	return s.flags.IsEnabled(ctx, key)
+	return s.flags.IsEnabled(ctx, page.Flag)
 }
 
 // AnchorSummary is the public shape returned by the anchor endpoints — the
@@ -150,6 +80,11 @@ type AnchorSummary struct {
 	EntityURL     string      `json:"entity_url"`
 	EntityTitle   string      `json:"entity_title"`
 	EntitySummary *string     `json:"entity_summary,omitempty"`
+	// Created is true only on the fresh-mint path — false for an existing
+	// anchor resolution and for a soft-deleted thread's restore. Lets
+	// callers (StartConversation) distinguish a genuinely new conversation
+	// from get-or-create "get" hits without a second resolve.
+	Created bool `json:"created"`
 }
 
 // anchorSpace resolves the seeded platform space id once per process.
@@ -168,33 +103,67 @@ func (s *Service) anchorSpace(ctx context.Context) (pgtype.UUID, error) {
 	return anchorSpaceID, nil
 }
 
-// primaryAnchorSpace resolves the space a content anchor files under —
+// anchorBotUser resolves the 'community-threads' system author (seeded by
+// migration 001093) once per process. Communal entities — tools and wiki
+// pages — have no single owner, so their minted threads are attributed to
+// the bot, never to whichever visitor or approver triggered a lazy mint:
+// a user-owned anchor thread could be retitled (defeating the generated-
+// title heal) or deleted by a drive-by minter. Falls back to the caller
+// when the bot row can't be resolved — a failed lookup must not block a
+// legitimate mint.
+func (s *Service) anchorBotUser(ctx context.Context, fallback pgtype.UUID) pgtype.UUID {
+	if anchorBotUserID.Valid {
+		return anchorBotUserID
+	}
+	bot, err := s.read.GetUserByUsername(ctx, "community-threads")
+	if err != nil {
+		slog.Warn("comments: anchor bot user lookup failed", "error", err)
+		return fallback
+	}
+	anchorBotUserID = bot.UserID
+	return anchorBotUserID
+}
+
+// anchorSpaceForContent resolves the space a content anchor files under —
 // the content_spaces primary is authoritative, contents.space_id the
-// legacy fallback. ok=false when the parent has no primary or the space
-// is missing, not public, or not active. Shared by the mint gate
-// (describeEntity) and the resolve gate so a re-filed parent stops
-// resolving on the same rule that blocked minting.
-func (s *Service) primaryAnchorSpace(ctx context.Context, row gen.GetContentByIDRow) (pgtype.UUID, bool) {
+// legacy fallback. Three outcomes:
+//   - public+active primary space → the thread files under it, inheriting
+//     the article's audience
+//   - a bound but non-public/inactive/missing space → ok=false (a public
+//     thread would outlive its parent's space gate — leak protection)
+//   - no space binding at all (roadmap shadow rows, imports) → the
+//     platform anchor space, same as tool/wiki threads
+//
+// Shared by the mint gate (describeEntity) and the resolve gate so a
+// re-filed parent stops resolving on the same rule that blocked minting.
+func (s *Service) anchorSpaceForContent(ctx context.Context, row gen.GetContentByIDRow) (pgtype.UUID, bool) {
 	spaceID := row.SpaceID
+	bound := spaceID.Valid
 	if spaces, err := s.read.GetContentSpaces(ctx, row.ID); err == nil {
 		for _, sp := range spaces {
+			bound = true
 			if sp.IsPrimary {
 				spaceID = sp.SpaceID
 				break
 			}
 		}
 	}
-	if !spaceID.Valid {
+	if spaceID.Valid {
+		space, err := s.read.GetSpaceByID(ctx, spaceID)
+		if err != nil {
+			return pgtype.UUID{}, false
+		}
+		if space.Visibility != "public" || space.Status != "active" || space.DeletedAt.Valid {
+			return pgtype.UUID{}, false
+		}
+		return spaceID, true
+	}
+	if bound {
+		// content_spaces rows exist but none resolves to a usable primary.
 		return pgtype.UUID{}, false
 	}
-	space, err := s.read.GetSpaceByID(ctx, spaceID)
-	if err != nil {
-		return pgtype.UUID{}, false
-	}
-	if space.Visibility != "public" || space.Status != "active" || space.DeletedAt.Valid {
-		return pgtype.UUID{}, false
-	}
-	return spaceID, true
+	platform, err := s.anchorSpace(ctx)
+	return platform, err == nil
 }
 
 // contentEntityURL mirrors the frontend CONTENT_ROUTE_PREFIX map
@@ -265,7 +234,7 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 		// re-filed into a private/inactive space (UpdateContentSpaces)
 		// stops resolving on the same gate that blocks minting, even
 		// before the sweeper drops the backing row.
-		if _, ok := s.primaryAnchorSpace(ctx, row); !ok {
+		if _, ok := s.anchorSpaceForContent(ctx, row); !ok {
 			return AnchorSummary{}, pgx.ErrNoRows
 		}
 
@@ -388,8 +357,10 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 			// Same leak guard as wiki pages: the thread files under the
 			// parent's primary space (content_spaces is authoritative;
 			// contents.space_id is the legacy fallback), so only
-			// public+active spaces may bind a public anchor.
-			spaceID, ok := s.primaryAnchorSpace(ctx, row)
+			// public+active spaces may bind a public anchor. Rows with no
+			// space binding at all (roadmap shadows, imports) fall back to
+			// the platform anchor space.
+			spaceID, ok := s.anchorSpaceForContent(ctx, row)
 			if !ok {
 				return entityDescriptor{}, fmt.Errorf("content has no public primary space: %w", errpkg.ErrInvalid)
 			}
@@ -421,7 +392,7 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 
 	switch entityType {
 	case "tool":
-		meta, ok := toolAnchorMeta[entityKey]
+		page, ok := tools.Lookup(entityKey)
 		if !ok {
 			return entityDescriptor{}, fmt.Errorf("unknown tool %q: %w", entityKey, errpkg.ErrInvalid)
 		}
@@ -433,8 +404,8 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 
 		return entityDescriptor{
 			URL:     "/tools/" + entityKey,
-			Title:   meta.Title,
-			Summary: &meta.Summary,
+			Title:   page.Title,
+			Summary: &page.Summary,
 			SpaceID: spaceID,
 		}, nil
 	case "wiki_page":
@@ -695,10 +666,11 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 
 	// The minted thread is authored by the entity's owner when it has one —
 	// a visitor who triggers a lazy mint on someone else's article must not
-	// end up owning (and moderating) its thread.
+	// end up owning (and moderating) its thread. Communal entities (tools,
+	// wiki pages) attribute to the platform bot author instead.
 	authorID := desc.AuthorID
 	if !authorID.Valid {
-		authorID = userID
+		authorID = s.anchorBotUser(ctx, userID)
 	}
 
 	row, err := s.creator.CreateContent(ctx, content.CreateContentInput{
@@ -793,6 +765,7 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		EntityURL:     anchor.EntityUrl,
 		EntityTitle:   anchor.EntityTitle,
 		EntitySummary: anchor.EntitySummary,
+		Created:       true,
 	}, nil
 }
 
@@ -807,8 +780,13 @@ func summaryEqual(a, b *string) bool {
 // reparentComments moves comments left on an entity row (posted before its
 // thread was minted, or written straight to the article via the API) onto
 // its canonical thread, then resyncs both rows' comment_count. Idempotent —
-// safe to run on every anchor resolution.
+// safe to run on every anchor resolution. The cheap existence probe short-
+// circuits the common steady state (nothing to move) so an anchor resolve
+// doesn't write five rows on every call.
 func (s *Service) reparentComments(ctx context.Context, from, to pgtype.UUID) error {
+	if n, err := s.read.CountCommentsByContent(ctx, from); err == nil && n == 0 {
+		return nil
+	}
 	if err := s.write.ReparentCommentsToThread(ctx, gen.ReparentCommentsToThreadParams{
 		ThreadID:  to,
 		ContentID: from,
@@ -867,11 +845,11 @@ func (s *Service) ReconcileAnchorsWithFlags(ctx context.Context) {
 	if s.flags == nil {
 		return
 	}
-	for slug, flag := range toolAnchorFlag {
-		if !s.flags.IsEnabled(ctx, flag) {
-			if err := s.DeleteAnchor(ctx, "tool", slug); err != nil {
+	for _, page := range tools.Pages {
+		if page.Flag != "" && !s.flags.IsEnabled(ctx, page.Flag) {
+			if err := s.DeleteAnchor(ctx, "tool", page.Slug); err != nil {
 				slog.Warn("comments: drop disabled-tool anchor failed",
-					"entity_key", slug, "error", err)
+					"entity_key", page.Slug, "error", err)
 			}
 		}
 	}

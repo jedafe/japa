@@ -1318,13 +1318,17 @@ FROM contents
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: ListPublishedSlugsForSitemap :many
+-- anchor_parent_slug resolves a content-anchored discussion's canonical
+-- thread URL: /thread/{parent-slug} is the live URL (the row's own slug
+-- 301s there), so the sitemap must not emit the redirecting mint slug.
 SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
  c.comment_count, c.share_count, c.reshare_count,
  array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
  COALESCE(ft.reply_count, 0) AS reply_count,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
- COALESCE(r.reaction_count, 0) AS reaction_count
+ COALESCE(r.reaction_count, 0) AS reaction_count,
+ pc.slug AS anchor_parent_slug
 FROM contents c
 LEFT JOIN forum_threads ft ON ft.content_id = c.id
 LEFT JOIN (
@@ -1333,6 +1337,8 @@ LEFT JOIN (
  WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
+LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
  AND (@type_filter::text = '' OR c.content_type = @type_filter::text)
@@ -1361,7 +1367,8 @@ SELECT c.title, c.slug, c.content_type, c.visibility, c.seo_indexable,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
  COALESCE(r.reaction_count, 0) AS reaction_count,
- left(c.body, 400) AS excerpt
+ left(c.body, 400) AS excerpt,
+ pc.slug AS anchor_parent_slug
 FROM contents c
 LEFT JOIN forum_threads ft ON ft.content_id = c.id
 LEFT JOIN (
@@ -1370,6 +1377,8 @@ LEFT JOIN (
  WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
+LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
 ORDER BY c.created_at DESC

@@ -97,7 +97,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<a href="/thread" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to forum')}>
+		<a href="/thread" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to threads')}>
 			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">

@@ -26,10 +26,15 @@ SELECT * FROM roadmap_items WHERE id = @id;
 SELECT id FROM roadmap_items WHERE slug = @slug;
 
 -- name: GetRoadmapItemBySlug :one
+-- content_slug resolves the item's shadow contents row slug — the detail
+-- page threads EntityDiscussions' "view full thread" links through it so
+-- guests land on the canonical /thread/{slug} URL.
 SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       sc.slug AS content_slug,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN contents sc ON sc.id = i.content_id AND sc.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = sqlc.narg(viewer_id)
 WHERE i.slug = @slug AND i.deleted_at IS NULL;
 

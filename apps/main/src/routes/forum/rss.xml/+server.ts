@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 
 import type { RequestHandler } from './$types';
 
-// Legacy RSS URL — the forum feed moved to /thread/rss.xml.
+// Legacy RSS URL — the forum feed moved to /thread/feed.xml.
 export const GET: RequestHandler = () => {
-	throw redirect(301, '/thread/rss.xml');
+	throw redirect(301, '/thread/feed.xml');
 };

@@ -50,7 +50,7 @@
 	// extractIdFromUrl parses a pasted frontend URL and returns the content
 	// slug if the URL points at a content-bearing route, or null if it's not
 	// a content URL. Supported patterns (per apps/main route tree):
-	//   /content/{slug}   /blog/{slug}   /forum/{slug}
+	//   /content/{slug}   /blog/{slug}   /thread/{slug}   /forum/{slug} (legacy)
 	// The slug is resolved to an id via the content search endpoint (which
 	// is authed and returns drafts, unlike the public GET /content/{slug}).
 	function extractSlugFromUrl(input: string): string | null {
@@ -64,9 +64,10 @@
 			return null;
 		}
 		// Strip leading slash and the (app) route group if present.
-		// Matches /content/{slug}, /blog/{slug}, /forum/{slug} (with or
-		// without the (app) SvelteKit route group prefix).
-		const m = path.match(/^\/?(?:\(app\)\/)?(?:content|blog|forum)\/([^/]+)$/);
+		// Matches /content/{slug}, /blog/{slug}, /thread/{slug}, and the
+		// legacy /forum/{slug} (with or without the (app) SvelteKit route
+		// group prefix).
+		const m = path.match(/^\/?(?:\(app\)\/)?(?:content|blog|thread|forum)\/([^/]+)$/);
 		return m ? decodeURIComponent(m[1]) : null;
 	}
 

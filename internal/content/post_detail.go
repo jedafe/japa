@@ -288,19 +288,26 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 		sourceType = *c.VideoSourceType
 	}
 
+	authorProfileURL := ""
+	if c.AuthorUsername != "" {
+		authorProfileURL = "/u/" + c.AuthorUsername
+	}
+
 	fields := map[string]string{
-		"title":           c.Title,
-		"description":     desc,
-		"body":            c.Body,
-		"canonical_url":   canonical,
-		"published_at":    tsFormat(c.PublishedAt),
-		"updated_at":      tsFormat(c.UpdatedAt),
-		"created_at":      tsFormat(c.CreatedAt),
-		"cover_image_url": coverImageURL,
-		"author_name":     c.AuthorName,
-		"source_url":      sourceURL,
-		"duration":        duration,
-		"source_type":     sourceType,
+		"title":              c.Title,
+		"description":        desc,
+		"body":               c.Body,
+		"canonical_url":      canonical,
+		"published_at":       tsFormat(c.PublishedAt),
+		"updated_at":         tsFormat(c.UpdatedAt),
+		"created_at":         tsFormat(c.CreatedAt),
+		"cover_image_url":    coverImageURL,
+		"author_name":        c.AuthorName,
+		"author_profile_url": authorProfileURL,
+		"comment_count":      strconv.FormatInt(c.CommentCount, 10),
+		"source_url":         sourceURL,
+		"duration":           duration,
+		"source_type":        sourceType,
 	}
 	mergeFieldValueScalars(fields, c.FieldValues)
 

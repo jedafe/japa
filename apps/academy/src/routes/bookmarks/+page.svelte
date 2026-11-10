@@ -133,9 +133,9 @@
 			case 'content':
 				return `${MAIN_ORIGIN}/blog/${idOrSlug}`;
 			case 'forum_thread':
-				return `${MAIN_ORIGIN}/forum/${idOrSlug}`;
+				return `${MAIN_ORIGIN}/thread/${idOrSlug}`;
 			case 'forum_reply':
-				return `${MAIN_ORIGIN}/forum/${idOrSlug}#reply-${b.entity_id}`;
+				return `${MAIN_ORIGIN}/thread/${idOrSlug}#reply-${b.entity_id}`;
 			case 'space':
 				return `${MAIN_ORIGIN}/spaces/${idOrSlug}`;
 			case 'comment':

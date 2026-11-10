@@ -74,7 +74,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 	);
 	const spaceHref = $derived(thread.space_slug ? `/spaces/${thread.space_slug}` : null);
 
-	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Forum')}`);
+	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Threads')}`);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(`${page.url.origin}/thread/${thread.slug}`);
@@ -111,13 +111,13 @@ import { contentHref } from '#lib/utils/contentLink.js';
 				thread.space_slug
 					? [
 							{ name: 'Home', path: page.url.origin },
-							{ name: 'Forum', path: `${page.url.origin}/thread` },
+							{ name: 'Threads', path: `${page.url.origin}/thread` },
 							{ name: thread.space_name ?? thread.space_slug, path: `${page.url.origin}/spaces/${thread.space_slug}` },
 							{ name: thread.title, path: canonical }
 						]
 					: [
 							{ name: 'Home', path: page.url.origin },
-							{ name: 'Forum', path: `${page.url.origin}/thread` },
+							{ name: 'Threads', path: `${page.url.origin}/thread` },
 							{ name: thread.title, path: canonical }
 						]
 			)
@@ -483,7 +483,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		href="/thread"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
-		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('forum.back', 'Back to forum')}
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('forum.back', 'Back to threads')}
 	</a>
 
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">

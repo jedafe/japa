@@ -5671,6 +5671,9 @@ export interface RoadmapItemDetail extends RoadmapBoardItem {
 	body: string | null;
 	/** True when the caller submitted the item — gates the §22 appeal control on declined items. */
 	is_submitter?: boolean;
+	/** Slug of the item's shadow contents row — the canonical /thread/{slug}
+	 *  its EntityDiscussions block links to. */
+	content_slug?: string | null;
 }
 
 /**

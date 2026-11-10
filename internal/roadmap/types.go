@@ -193,6 +193,11 @@ type BoardItem struct {
 type ItemDetail struct {
 	BoardItem
 	Body *string `json:"body"`
+	// ContentSlug is the slug of the item's shadow contents row — the
+	// detail page passes it to EntityDiscussions so "view full thread"
+	// links resolve straight to /thread/{contentSlug} without a
+	// client-side anchor resolve.
+	ContentSlug *string `json:"content_slug"`
 	// IsSubmitter tells the frontend the caller submitted the item — gates
 	// owner-only affordances (e.g. the §22 appeal button on declined items)
 	// without exposing the raw submitted_by id publicly.

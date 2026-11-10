@@ -602,7 +602,11 @@ func (s *Service) GetItem(ctx context.Context, slug string, viewerID pgtype.UUID
 		HasVoted:       row.HasVoted,
 	})
 
-	detail := &ItemDetail{BoardItem: item, Body: row.Body, IsSubmitter: row.SubmittedBy == viewerID && viewerID.Valid}
+	var contentSlug *string
+	if row.ContentSlug != nil && *row.ContentSlug != "" {
+		contentSlug = row.ContentSlug
+	}
+	detail := &ItemDetail{BoardItem: item, Body: row.Body, ContentSlug: contentSlug, IsSubmitter: row.SubmittedBy == viewerID && viewerID.Valid}
 
 	// Related items — same category, excluding self, capped at 3 (SQL-side).
 	// The category join is NULL when the item is uncategorized → no related

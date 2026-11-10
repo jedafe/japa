@@ -139,6 +139,14 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 			return StartConversationResult{}, fmt.Errorf("resolving canonical thread: %w", err)
 		}
 		threadID = anchor.ContentID
+		// §49 BL-005: fan out only on a genuinely fresh mint — resolving an
+		// existing anchor or restoring a soft-deleted thread must not
+		// re-announce the conversation to followers.
+		if anchor.Created {
+			if row, rErr := s.read.GetContentByID(ctx, threadID); rErr == nil {
+				createdThread = gen.CreateContentRow{ID: row.ID, SpaceID: row.SpaceID}
+			}
+		}
 	}
 
 	// A discussion row resolves to itself — linking it to itself would
