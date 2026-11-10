@@ -21,7 +21,24 @@
   const allNested = $derived(props.tabs.flatMap((tab) => tab.content_blocks ?? []));
   const visibilityCss = $derived(responsiveVisibilityCss(allNested));
 
+  // Vertical orientation renders as a sidenav: trigger column pinned left on
+  // sm+ (sticky so long tab content can scroll past it), horizontal scroll
+  // row on mobile.
+  const vertical = $derived(props.orientation === 'vertical');
 
+  const triggerLayoutClass = $derived(
+    vertical
+      ? props.layout === 'underline'
+        ? 'rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-surface-subtle)] data-[state=active]:text-[var(--color-text)]'
+        : props.layout === 'pills'
+          ? 'rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-primary)] data-[state=active]:text-[var(--color-primary-contrast)]'
+          : 'rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:bg-[var(--color-surface)] data-[state=active]:text-[var(--color-text)]'
+      : props.layout === 'underline'
+        ? 'border-b-2 border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)]'
+        : props.layout === 'pills'
+          ? 'rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-primary)] data-[state=active]:text-[var(--color-primary-contrast)]'
+          : 'rounded-t-[var(--radius)] border border-[var(--color-border)] border-b-0 text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-surface)] data-[state=active]:text-[var(--color-text)]'
+  );
 </script>
 
 <ScopedCss css={visibilityCss} />
@@ -29,54 +46,51 @@
 <section class="px-6 py-16">
   <div class="mx-auto max-w-5xl">
     <Tabs.Root value={String(props.initial_tab ?? 0)} orientation={props.orientation}>
-      <!-- Mobile: the trigger row scrolls horizontally instead of overflowing the page. -->
-      <Tabs.List class={props.orientation === 'vertical' ? 'flex flex-col gap-1 w-full sm:w-48' : 'flex gap-1 overflow-x-auto ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
-        {#each props.tabs as tab, i}
-          <Tabs.Trigger
-            value={String(i)}
-            class="flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors
-              {props.layout === 'underline'
-                ? 'border-b-2 border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)]'
-                : props.layout === 'pills'
-                  ? 'rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-primary)] data-[state=active]:text-[var(--color-primary-contrast)]'
-                  : 'rounded-t-[var(--radius)] border border-[var(--color-border)] border-b-0 text-[var(--color-muted)] hover:text-[var(--color-text)] data-[state=active]:bg-[var(--color-surface)] data-[state=active]:text-[var(--color-text)]'
-              }"
-          >
-            {#if tab.icon}
-              <LazyIcon name={tab.icon} size={16} />
-            {/if}
-            {tab.label}
-          </Tabs.Trigger>
-        {/each}
-      </Tabs.List>
-      {#each props.tabs as tab, i}
-        <Tabs.Content value={String(i)} class={props.orientation === 'vertical' ? 'flex-1 p-4' : 'pt-4'}>
-          {#if tab.content_blocks}
-            {#each tab.content_blocks as block (block.id)}
-              {#if isBlockVisible(block, geoCountry)}
-                {@const meta = blockComponentFor(block.type)}
-                {#if meta}
-                  {@const Component = meta.component}
-                  <BlockShell
-                    style={block.style}
-                    motion={block.motion}
-                    background={block.style?.background}
-                    hideIfEmpty={block.visibility_rules?.hide_if_empty}
-                    initialHasContent={!isBlockEmpty(block)}
-                    scopeKey={block.id}
-                  >
-                    {#if block.type === 'custom'}
-                      <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
-                    {:else}
-                      <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
-                    {/if}
-                  </BlockShell>
-                {/if}
+      <div class={vertical ? 'flex flex-col gap-6 sm:flex-row sm:items-start' : 'contents'}>
+        <!-- Mobile: the trigger row scrolls horizontally instead of overflowing the page. -->
+        <Tabs.List class={vertical ? 'flex shrink-0 gap-1 overflow-x-auto sm:sticky sm:top-24 sm:w-56 sm:flex-col sm:self-start sm:overflow-visible' : 'flex gap-1 overflow-x-auto ' + (props.layout === 'underline' ? 'border-b border-[var(--color-border)]' : '')}>
+          {#each props.tabs as tab, i}
+            <Tabs.Trigger
+              value={String(i)}
+              class="flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors
+                {vertical ? 'justify-start sm:w-full sm:whitespace-normal sm:text-start ' : ''}{triggerLayoutClass}"
+            >
+              {#if tab.icon}
+                <LazyIcon name={tab.icon} size={16} />
               {/if}
-            {/each}
-          {/if}
-        </Tabs.Content>
-      {/each}
+              {tab.label}
+            </Tabs.Trigger>
+          {/each}
+        </Tabs.List>
+        {#each props.tabs as tab, i}
+          <Tabs.Content value={String(i)} class={vertical ? 'min-w-0 flex-1' : 'pt-4'}>
+            {#if tab.content_blocks}
+              {#each tab.content_blocks as block (block.id)}
+                {#if isBlockVisible(block, geoCountry)}
+                  {@const meta = blockComponentFor(block.type)}
+                  {#if meta}
+                    {@const Component = meta.component}
+                    <BlockShell
+                      style={block.style}
+                      motion={block.motion}
+                      background={block.style?.background}
+                      hideIfEmpty={block.visibility_rules?.hide_if_empty}
+                      initialHasContent={!isBlockEmpty(block)}
+                      scopeKey={block.id}
+                    >
+                      {#if block.type === 'custom'}
+                        <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+                      {:else}
+                        <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+                      {/if}
+                    </BlockShell>
+                  {/if}
+                {/if}
+              {/each}
+            {/if}
+          </Tabs.Content>
+        {/each}
+      </div>
     </Tabs.Root>
   </div>
 </section>
