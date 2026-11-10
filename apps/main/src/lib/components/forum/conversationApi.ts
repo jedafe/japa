@@ -7,6 +7,7 @@
  */
 import { api } from '#lib/api/client.js';
 import { queueCommentView } from '#lib/comments/viewTracker.js';
+import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 import type { Comment, ForumReply } from '#lib/types/index.js';
 
 export interface ConversationBackend {
@@ -53,7 +54,8 @@ export function commentToReply(c: Comment, contentId: string): ForumReply {
 		author_username: c.username || null,
 		author_display_name: c.display_name || null,
 		author_avatar_url: c.avatar_url || null,
-		is_pinned: c.is_pinned
+		is_pinned: c.is_pinned,
+		viewer_can_manage: c.viewer_can_manage
 	};
 }
 
@@ -72,7 +74,9 @@ export function forumApi(threadId: string): ConversationBackend {
 		postReply: async (parentId, body) => {
 			const res = await api.post<ForumReply>(`/thread/${threadId}/replies`, {
 				body,
-				...(parentId ? { parent_reply_id: parentId } : {})
+				...(parentId ? { parent_reply_id: parentId } : {}),
+				// Delegated authorship: the persona authors the reply.
+				...(actAsPersona.actorId ? { author_id: actAsPersona.actorId } : {})
 			});
 			return res.error ? null : (res.data ?? null);
 		},
@@ -96,9 +100,10 @@ export function forumApi(threadId: string): ConversationBackend {
 }
 
 async function fetchCommentPage(contentId: string, parentId: string | null, offset: number) {
+	const actor = actAsPersona.actorId ? `&actor_id=${actAsPersona.actorId}` : '';
 	const qs = parentId
-		? `parent_id=${parentId}&page_size=100&page_offset=${offset}`
-		: `sort=top&page_size=100&page_offset=${offset}`;
+		? `parent_id=${parentId}&page_size=100&page_offset=${offset}${actor}`
+		: `sort=top&page_size=100&page_offset=${offset}${actor}`;
 	const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?${qs}`);
 	const meta = (res.envelope as { meta?: { total?: number } } | null)?.meta;
 	return { items: res.data ?? [], total: meta?.total ?? res.data?.length ?? 0 };
@@ -158,7 +163,9 @@ export function commentsApi(contentId: string): ConversationBackend {
 		postReply: async (parentId, body) => {
 			const res = await api.post<Comment>(`/content/${contentId}/comments`, {
 				body,
-				...(parentId ? { parent_id: parentId } : {})
+				...(parentId ? { parent_id: parentId } : {}),
+				// Delegated authorship: the persona authors the comment.
+				...(actAsPersona.actorId ? { author_id: actAsPersona.actorId } : {})
 			});
 			return res.error || !res.data ? null : commentToReply(res.data, contentId);
 		},

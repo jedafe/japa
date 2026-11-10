@@ -5,6 +5,7 @@
 	import { api } from '#lib/api/client.js';
 	import { getReactionTypes, type ReactionType } from '#lib/api/reactions.js';
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { shareContrastColor } from '#lib/utils/shareColor.js';
@@ -241,12 +242,18 @@
 		updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
+			// Delegated authorship: a selected persona holds the reaction —
+			// actor_id on POST bodies, ?actor_id= on DELETEs (spec §1.5).
+			const actor = actAsPersona.actorId;
 			if (wasActive) {
-				const res = await api.delete(`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}`);
+				const res = await api.delete(
+					`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}${actor ? `&actor_id=${encodeURIComponent(actor)}` : ''}`
+				);
 				if (res.error) throw new Error(res.error.message);
 			} else {
 				const res = await api.post(`/content/${contentId}/react`, {
-					reaction_key: reactionKey
+					reaction_key: reactionKey,
+					...(actor ? { actor_id: actor } : {})
 				});
 				if (res.error) throw new Error(res.error.message);
 			}

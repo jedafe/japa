@@ -3427,6 +3427,8 @@
 	"pagination.next": "Suivant",
 	"pagination.page": "Page {page} sur {total}",
 	"pagination.previous": "Précédent",
+	"personas.interact_as": "Agir en tant que",
+	"personas.you": "Vous",
 	"planning_groups.back": "Tous les groupes de planification",
 	"planning_groups.back_to_group": "Retour au groupe",
 	"planning_groups.checkin_placeholder": "Partagez vos progrès cette semaine (200 caractères max)…",

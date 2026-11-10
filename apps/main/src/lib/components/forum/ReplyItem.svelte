@@ -219,7 +219,11 @@
 		return () => observer.disconnect();
 	});
 
-	const canEditReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	// Delegated authorship: viewer_can_manage covers the operator behind a
+	// persona-attributed reply (author is the persona, creator is the viewer).
+	const canEditReply = $derived.by(
+		() => authed && (canModerate || currentUserId === reply.author_user_id || reply.viewer_can_manage === true)
+	);
 	// Reply edit window mirrors the parent thread's edit_window_minutes: the
 	// thread page passes it via `reply.edit_window_minutes` when present,
 	// defaulting to 30. Authors see a countdown; the edit entry disables
@@ -243,7 +247,9 @@
 		return t('forum.edit_minutes_left', '{n}m left to edit').replace('{n}', String(Math.max(1, mins)));
 	});
 	const canEditReplyInWindow = $derived(canEditReply && !replyEditExpired);
-	const canDeleteReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	const canDeleteReply = $derived.by(
+		() => authed && (canModerate || currentUserId === reply.author_user_id || reply.viewer_can_manage === true)
+	);
 	const canReport = $derived.by(() => authed && currentUserId !== reply.author_user_id);
 	const canMarkSolved = $derived.by(() => canSolve && !isAccepted && !removed && typeof onMarkSolved === 'function');
 

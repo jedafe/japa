@@ -869,6 +869,10 @@ export interface ForumReply {
 	/** §49 comments rendered through ReplyThread carry their pin flag
 	 *  (forum replies have no pin concept). */
 	is_pinned?: boolean;
+	/** Delegated authorship: true when the viewer authors OR created the
+	 *  reply (operator behind a persona-attributed reply keeps manage
+	 *  rights). Absent on bare rows. */
+	viewer_can_manage?: boolean;
 }
 
 /** Vote entity type accepted by POST /thread/vote. */
@@ -925,6 +929,10 @@ export interface Comment {
 	avatar_url: string;
 	/** Number of published, non-deleted direct replies (Section 49). */
 	reply_count: number;
+	/** Delegated authorship: true when the viewer authors OR created the
+	 *  comment (operator behind a persona-attributed comment keeps manage
+	 *  rights). */
+	viewer_can_manage?: boolean;
 }
 
 /* ------------------------------------------------------------------ *

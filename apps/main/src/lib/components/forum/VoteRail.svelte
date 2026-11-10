@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
 	import { updateViewerState } from '#lib/api/viewerState.js';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { t } from '#lib/i18n/index.js';
 	import type { ForumThread, ForumVoteEntity, ForumVote } from '#lib/types/index.js';
@@ -121,20 +122,28 @@
 		optimisticVote = next;
 		optimisticDelta = prevDelta + (next - prevVote);
 
+		// Delegated authorship: a selected persona casts/retracts the vote —
+		// actor_id in POST bodies, ?actor_id= on DELETEs (spec §1.4).
+		const actor = actAsPersona.actorId;
+		const actorBody = actor ? { actor_id: actor } : {};
+		const actorQs = actor ? `actor_id=${encodeURIComponent(actor)}` : '';
 		const res =
 			backend === 'comments'
 				? next === 0
-					? await api.delete<unknown>(`/comments/${id}/vote`)
-					: await api.post<ForumVote>(`/comments/${id}/vote`, { value: next })
+					? await api.delete<unknown>(`/comments/${id}/vote${actorQs ? `?${actorQs}` : ''}`)
+					: await api.post<ForumVote>(`/comments/${id}/vote`, { value: next, ...actorBody })
 				: backend === 'content'
 					? next === 0
-						? await api.delete<unknown>(`/content/${id}/vote`)
-						: await api.post<ForumVote>(`/content/${id}/vote`, { value: next })
+						? await api.delete<unknown>(`/content/${id}/vote${actorQs ? `?${actorQs}` : ''}`)
+						: await api.post<ForumVote>(`/content/${id}/vote`, { value: next, ...actorBody })
 					: next === 0
-						? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
+						? await api.delete<unknown>(
+								`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}${actorQs ? `&${actorQs}` : ''}`
+							)
 						: await api.post<ForumVote>(`/thread/${id}/vote`, {
 								entity_type: entityType,
-								value: next
+								value: next,
+								...actorBody
 							});
 		pending = false;
 

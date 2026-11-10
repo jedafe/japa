@@ -5,6 +5,7 @@
 	import { api } from '#lib/api/client.js';
 	import { getReactionTypes, type ReactionType } from '#lib/api/reactions.js';
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { page } from '$app/state';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 
@@ -167,10 +168,19 @@
 
 		try {
 			if (wasActive) {
-				const res = await api.delete(`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}`);
+				// Delegated authorship: actor_id records the reaction under the
+				// selected persona (spec §1.5).
+				const actor = actAsPersona.actorId;
+				const res = await api.delete(
+					`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}${actor ? `&actor_id=${encodeURIComponent(actor)}` : ''}`
+				);
 				if (res.error) throw new Error(res.error.message);
 			} else {
-				const res = await api.post(`/content/${contentId}/react`, { reaction_key: reactionKey });
+				const actor = actAsPersona.actorId;
+				const res = await api.post(`/content/${contentId}/react`, {
+					reaction_key: reactionKey,
+					...(actor ? { actor_id: actor } : {})
+				});
 				if (res.error) throw new Error(res.error.message);
 			}
 		} catch {

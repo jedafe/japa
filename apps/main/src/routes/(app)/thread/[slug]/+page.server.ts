@@ -251,7 +251,11 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	let commentDeletedUserIds: string[] | null = null;
 	let commentsTotal: number | null = null;
 	try {
-		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
+		// Delegated authorship: the act-as-persona cookie forwards actor_id so
+		// user_vote reflects the selected persona's vote state (spec §1.4).
+		const actAs = event.cookies.get('act_as_persona');
+		const actorQs = actAs ? `&actor_id=${encodeURIComponent(actAs)}` : '';
+		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50${actorQs}`);
 		comments = envelope.data ?? [];
 		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
 		commentsTotal = (envelope.meta as { total?: number } | undefined)?.total ?? null;

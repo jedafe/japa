@@ -6,6 +6,8 @@
 	import type { ForumReply } from '#lib/types/index.js';
 	import ReplyItem from './ReplyItem.svelte';
 	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
+	import InteractAsPicker from '#lib/components/personas/InteractAsPicker.svelte';
+	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { forumApi, type ConversationBackend } from './conversationApi.js';
 
 	interface Props {
@@ -49,6 +51,12 @@
 	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved, preview = false, sort = 'top' }: Props = $props();
 
 	const convApi = $derived(backend ?? forumApi(threadId));
+
+	// Delegated authorship (spec §1.8): lazy-load the operator's drivable
+	// personas — the picker self-hides when the list is empty.
+	$effect(() => {
+		void actAsPersona.load();
+	});
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -163,8 +171,11 @@
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 			<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} {resetNonce} />
 			<div class="mt-2 flex items-center justify-between">
-				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
+				<span class="inline-flex items-center gap-2 text-xs text-[var(--color-muted)]">
 					<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
+					{#if authed}
+						<InteractAsPicker />
+					{/if}
 				</span>
 				<button
 					type="button"

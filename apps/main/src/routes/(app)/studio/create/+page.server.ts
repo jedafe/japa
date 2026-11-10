@@ -342,13 +342,19 @@ export const load: PageServerLoad = async (event) => {
 				profile_name?: string | null;
 				backing_username?: string | null;
 				status?: string;
+				geo_space_name?: string | null;
 			}>(ctx, '/admin/personas?page_size=100');
 			botAuthors = personasRes.items
 				.filter((p) => p.user_id && p.status !== 'retired')
 				.map((p) => ({
 					id: p.user_id,
 					label: p.profile_name || p.backing_username || p.user_id,
-					sublabel: p.backing_username ? `@${p.backing_username}` : undefined
+					// Delegated authorship: the persona's geo is its activity
+					// location — surface it in the picker sublabel.
+					sublabel:
+						[p.backing_username ? `@${p.backing_username}` : null, p.geo_space_name ?? null]
+							.filter(Boolean)
+							.join(' · ') || undefined
 				}));
 		} catch {
 			botAuthors = [];

@@ -3506,6 +3506,8 @@
 	"pagination.next": "Next",
 	"pagination.page": "Page {page} of {total}",
 	"pagination.previous": "Previous",
+	"personas.interact_as": "Interact as",
+	"personas.you": "You",
 	"planning_groups.back": "All planning groups",
 	"planning_groups.back_to_group": "Back to group",
 	"planning_groups.checkin_placeholder": "Share your progress this week (max 200 chars)…",
