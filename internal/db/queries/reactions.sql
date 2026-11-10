@@ -74,7 +74,7 @@ SELECT r.reaction_key, r.created_at, u.id AS user_id,
        u.username, COALESCE(up.display_name, '') AS display_name,
        up.avatar_media_id
 FROM reactions r
-JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+JOIN users u ON u.id = r.user_id AND u.status != 'deleted'
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE r.entity_type = @entity_type AND r.entity_id = @entity_id
   AND (@reaction_key::text = '' OR r.reaction_key = @reaction_key)
