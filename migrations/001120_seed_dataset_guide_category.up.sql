@@ -59,7 +59,7 @@ FROM custom_field_groups g WHERE g.slug = 'guide_dataset_fields'
 ON CONFLICT (group_id, key) DO NOTHING;
 
 INSERT INTO custom_fields (group_id, label, key, field_type, options, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position)
-SELECT g.id, 'Country', 'country', 'text', NULL, false, false, true, true, false, true, 5
+SELECT g.id, 'Country', 'country', 'suggest', '{"source":"geo_countries"}'::jsonb, false, false, true, true, false, true, 5
 FROM custom_field_groups g WHERE g.slug = 'guide_dataset_fields'
 ON CONFLICT (group_id, key) DO NOTHING;
 
