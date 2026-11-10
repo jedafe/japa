@@ -39,7 +39,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"financial","option_scores":{"unaware":10,"not_started":25,"in_progress":60,"sorted":100}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f022', gid,
- 'Will you regularly support family or obligations back home? Is a remittance plan in place?',
+ 'Do you send — or plan to send — regular support to family or obligations back home? Is a remittance plan in place?',
  'remittance_commitments', 'select',
  '[{"value":"no_obligation","label":"No regular obligations"},{"value":"unplanned","label":"Obligations exist, no plan yet"},{"value":"planned","label":"Planned (providers compared, budget set)"},{"value":"setup","label":"Remittance channel set up and tested"}]'::jsonb,
  'Select the closest match', true, false, true, 34,
@@ -54,9 +54,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"logistical","option_scores":{"minimal":85,"undecided":20,"planning":60,"arranged":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f024', gid,
- 'If you''re moving with pets, are their vaccinations, permits, and transport arranged?',
+ 'If pets are part of your move, are their vaccinations, permits, and transport arranged?',
  'pets_relocation', 'select',
- '[{"value":"no_pets","label":"Not moving with pets"},{"value":"not_started","label":"Pets coming, not started"},{"value":"arranging","label":"Vaccinations/permits in progress"},{"value":"sorted","label":"Fully arranged"}]'::jsonb,
+ '[{"value":"no_pets","label":"No pets — not applicable"},{"value":"not_started","label":"Pets coming, not started"},{"value":"arranging","label":"Vaccinations/permits in progress"},{"value":"sorted","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 36,
  '{"weight":1.0,"dimension":"logistical","option_scores":{"no_pets":90,"not_started":15,"arranging":60,"sorted":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"pets"}]}}'::jsonb),
 
@@ -68,17 +68,17 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"logistical","option_scores":{"none_needed":90,"not_planned":20,"researching":55,"arranged":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f026', gid,
- 'If you''ll drive at your destination, is your licence sorted (validity, international permit, conversion rules)?',
+ 'If you drive — or plan to drive — at your destination, is your licence sorted (validity, international permit, conversion rules)?',
  'driving_transport', 'select',
- '[{"value":"not_driving","label":"Won''t be driving"},{"value":"unsure","label":"Haven''t checked the rules"},{"value":"in_progress","label":"IDP/conversion in progress"},{"value":"sorted","label":"Licence valid or conversion confirmed"}]'::jsonb,
+ '[{"value":"not_driving","label":"I don''t drive — not applicable"},{"value":"unsure","label":"Haven''t checked the rules"},{"value":"in_progress","label":"IDP/conversion in progress"},{"value":"sorted","label":"Licence valid or conversion confirmed"}]'::jsonb,
  'Select the closest match', true, false, true, 38,
  '{"weight":1.0,"dimension":"logistical","option_scores":{"not_driving":90,"unsure":35,"in_progress":65,"sorted":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 -- Professional
 ('00000000-0000-0000-0000-00000000f027', gid,
- 'If you''re relocating for business, how far along is your plan (market research, registration, funding)?',
+ 'If your move is for business, how far along is your plan (market research, registration, funding)?',
  'business_readiness', 'select',
- '[{"value":"not_business","label":"Not relocating for business"},{"value":"idea","label":"Idea stage only"},{"value":"developing","label":"Plan developing / registration underway"},{"value":"validated","label":"Registered or revenue-ready"}]'::jsonb,
+ '[{"value":"not_business","label":"Not a business move — not applicable"},{"value":"idea","label":"Idea stage only"},{"value":"developing","label":"Plan developing / registration underway"},{"value":"validated","label":"Registered or revenue-ready"}]'::jsonb,
  'Select the closest match', true, false, true, 39,
  '{"weight":1.0,"dimension":"professional","option_scores":{"not_business":90,"idea":25,"developing":60,"validated":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"business"},{"field":"visa_type","op":"eq","value":"business"}]}}'::jsonb),
 
@@ -91,9 +91,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 
 -- Personal
 ('00000000-0000-0000-0000-00000000f029', gid,
- 'If you''re moving with a partner or spouse, do they have a work or career plan at the destination?',
+ 'If a partner or spouse is part of your move, do they have a work or career plan at the destination?',
  'spouse_career', 'select',
- '[{"value":"no_partner","label":"Not moving with a partner"},{"value":"not_started","label":"No plan yet"},{"value":"planning","label":"Planning or searching"},{"value":"secured","label":"Plan or job secured"}]'::jsonb,
+ '[{"value":"no_partner","label":"No partner — not applicable"},{"value":"not_started","label":"No plan yet"},{"value":"planning","label":"Planning or searching"},{"value":"secured","label":"Plan or job secured"}]'::jsonb,
  'Select the closest match', true, false, true, 41,
  '{"weight":1.0,"dimension":"personal","option_scores":{"no_partner":90,"not_started":25,"planning":60,"secured":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"partner"}]}}'::jsonb),
 

@@ -101,9 +101,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"personal","option_scores":{"none":20,"few":40,"community":70,"family":100}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c009', gid,
- 'If you''re moving with family or dependants, are their arrangements (visas, school, care) sorted?',
+ 'If family or dependants are part of your move, are their arrangements (visas, school, care) sorted?',
  'dependents_plan', 'select',
- '[{"value":"alone","label":"Moving alone"},{"value":"planning","label":"Dependants coming, still planning"},{"value":"partial","label":"Partially arranged"},{"value":"arranged","label":"Fully arranged"}]'::jsonb,
+ '[{"value":"alone","label":"No dependants — not applicable"},{"value":"planning","label":"Dependants coming, still planning"},{"value":"partial","label":"Partially arranged"},{"value":"arranged","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 21,
  '{"weight":1.0,"dimension":"personal","option_scores":{"alone":90,"planning":40,"partial":70,"arranged":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"dependents"}]}}'::jsonb),
 

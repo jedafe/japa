@@ -27,7 +27,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 
 -- Financial
 ('00000000-0000-0000-0000-00000000e014', gid,
- 'If you''re going the study route, how is your tuition & living-cost funding secured?',
+ 'If your route is study, how is your tuition & living-cost funding secured?',
  'study_funding', 'select',
  '[{"value":"not_study","label":"Not studying — not applicable"},{"value":"unfunded","label":"No funding secured yet"},{"value":"partial","label":"Partially funded / awaiting scholarship decision"},{"value":"funded","label":"Fully funded (savings, scholarship, or sponsor)"}]'::jsonb,
  'Select the closest match', true, false, true, 26,
@@ -42,7 +42,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 
 -- Logistical
 ('00000000-0000-0000-0000-00000000e016', gid,
- 'If you''re going the study route, where are you with admission (application, offer, deposit/enrolment)?',
+ 'If your route is study, where are you with admission (application, offer, deposit/enrolment)?',
  'admission_status', 'select',
  '[{"value":"not_study","label":"Not studying — not applicable"},{"value":"not_applied","label":"Haven''t applied yet"},{"value":"applied","label":"Applied, awaiting decision"},{"value":"offer","label":"Offer/admission secured (deposit paid or enrolled)"}]'::jsonb,
  'Select the closest match', true, false, true, 28,
@@ -71,9 +71,9 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 
 -- Destination knowledge / settlement readiness
 ('00000000-0000-0000-0000-00000000e020', gid,
- 'Have you sorted how you''ll bank and access money at your destination?',
+ 'Have you sorted how to bank and access money at your destination?',
  'banking_setup', 'select',
- '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"partial","label":"Account opened or fintech set up"},{"value":"sorted","label":"Banking sorted before departure"}]'::jsonb,
+ '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"partial","label":"Account opened or fintech set up"},{"value":"sorted","label":"Banking fully sorted"}]'::jsonb,
  'Select the closest match', true, false, true, 32,
  '{"weight":1.0,"dimension":"destination_knowledge","option_scores":{"none":15,"researching":40,"partial":70,"sorted":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb)
 
