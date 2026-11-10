@@ -106,9 +106,37 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		return nil
 	}
 	if slug, ok := strings.CutPrefix(idStr, "space:"); ok {
+		// Gate mirrors the §43 quality floor the space endpoint applies for
+		// seo_indexable (and /wiki + /universities share the same space row):
+		// public visibility plus member/post/forum/question minimums read
+		// from the same seo.sitemap.space_* system_settings the sitemap uses.
+		cfg := bots.LoadSitemapQualityConfig(ctx, h.settings)
+		def := bots.DefaultSitemapQualityConfig()
+		if cfg.MinMembers <= 0 {
+			cfg.MinMembers = def.MinMembers
+		}
+		if cfg.MinPosts <= 0 {
+			cfg.MinPosts = def.MinPosts
+		}
+		if cfg.MinForums <= 0 {
+			cfg.MinForums = def.MinForums
+		}
+		if cfg.MinQuestions <= 0 {
+			cfg.MinQuestions = def.MinQuestions
+		}
 		var name string
 		err := h.reader.QueryRow(ctx,
-			`SELECT name FROM spaces WHERE slug = $1 AND status = 'active' AND deleted_at IS NULL`, slug).Scan(&name)
+			`SELECT s.name FROM spaces s
+			 WHERE s.slug = $1 AND s.status = 'active' AND s.deleted_at IS NULL
+			   AND s.visibility = 'public'
+			   AND s.member_count >= $2 AND s.post_count >= $3
+			   AND (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+			        WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL
+			          AND c.visibility = 'public') >= $4
+			   AND (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+			        WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL
+			          AND c.visibility = 'public' AND ft.solved = true) >= $5`,
+			slug, cfg.MinMembers, cfg.MinPosts, cfg.MinForums, cfg.MinQuestions).Scan(&name)
 		if err != nil || name == "" {
 			return nil
 		}
@@ -163,7 +191,7 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 	if slug, ok := strings.CutPrefix(idStr, "scam-alert:"); ok {
 		var scamType string
 		err := h.reader.QueryRow(ctx,
-			`SELECT scam_type FROM scam_reports WHERE id::text = $1 AND status = 'published' AND deleted_at IS NULL`, slug).Scan(&scamType)
+			`SELECT scam_type FROM scam_reports WHERE id::text = $1 AND status = 'confirmed' AND deleted_at IS NULL`, slug).Scan(&scamType)
 		if err != nil || scamType == "" {
 			return nil
 		}
@@ -179,7 +207,13 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		{"product:", `SELECT name FROM products WHERE slug = $1 AND deleted_at IS NULL`, "product"},
 		{"tag:", `SELECT name FROM tags WHERE slug = $1`, "tag"},
 		{"source:", `SELECT name FROM intel_sources WHERE slug = $1 AND status = 'active'`, "source"},
-		{"org:", `SELECT name FROM organizations WHERE slug = $1 AND status = 'active' AND deleted_at IS NULL`, "organization"},
+		// The org page noindexes when it has no published public content —
+		// the EXISTS mirrors ListPublishedContentByOrganization's gate.
+		{"org:", `SELECT o.name FROM organizations o
+			 WHERE o.slug = $1 AND o.status = 'active' AND o.deleted_at IS NULL
+			   AND EXISTS (SELECT 1 FROM contents c WHERE c.organization_id = o.id
+			               AND c.status = 'published' AND c.visibility = 'public'
+			               AND c.deleted_at IS NULL)`, "organization"},
 		// /scholarships/{guide_id} is keyed by the guide contents row; the API
 		// returns c.slug, so match either slug column or the guide UUID, and
 		// gate on the content's indexability like the sitemap does.
@@ -243,20 +277,17 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string) *conte
 
 	var meta contentMeta
 
-	var visibility string
-
-	var seoIndexable bool
-
-	err = h.reader.QueryRow(ctx, `SELECT title, content_type, visibility, seo_indexable
-		 FROM contents WHERE id = $1`, pgID).Scan(&meta.Title, &meta.ContentType, &visibility, &seoIndexable)
+	// Section 26: non-public or non-indexable content must not surface a
+	// content-specific OG image. Drafts, in_review/scheduled/archived rows,
+	// soft-deletes, and members/private visibility all fail the same
+	// published+public+seo_indexable gate the public page applies — the
+	// caller falls back to the brand image instead of leaking the title.
+	err = h.reader.QueryRow(ctx, `SELECT title, content_type
+		 FROM contents WHERE id = $1
+		   AND status = 'published' AND deleted_at IS NULL
+		   AND visibility = 'public' AND seo_indexable = true`,
+		pgID).Scan(&meta.Title, &meta.ContentType)
 	if err != nil {
-		return nil
-	}
-
-	// Section 26: private or non-indexable content must not surface a
-	// content-specific OG image. Return nil so the caller falls back to
-	// the default brand image instead of leaking the content title.
-	if visibility == "private" || !seoIndexable {
 		return nil
 	}
 
@@ -279,7 +310,10 @@ func (h *OGImageHandler) lookupWikiPage(ctx context.Context, idStr string) *cont
 
 	var meta contentMeta
 	err = h.reader.QueryRow(ctx,
-		`SELECT title FROM wiki_pages WHERE id = $1 AND is_active = true AND deleted_at IS NULL`,
+		// Indexability mirrors PageIndexState (is_japabot_indexed) — the flag
+		// the article page noindexes on — not just is_active, which also
+		// covers thin stubs that serve but shouldn't surface title cards.
+		`SELECT title FROM wiki_pages WHERE id = $1 AND is_active = true AND is_japabot_indexed = true AND deleted_at IS NULL`,
 		pgID).Scan(&meta.Title)
 	if err != nil {
 		return nil
