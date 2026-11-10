@@ -17,6 +17,7 @@
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
 	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	import { theme } from '#lib/stores/theme.svelte.js';
 	import { seedCsrfToken } from '#lib/api/csrf.svelte.js';
@@ -254,6 +255,9 @@
 	<!-- §124 install prompt — renders only when the browser can install. -->
 	<PwaInstallBanner />
 {/if}
+
+<!-- §19 cookie consent — self-hides once the jc_consent decision exists. -->
+<CookieConsentBanner />
 
 <!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
 <ToastHost />

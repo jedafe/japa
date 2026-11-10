@@ -176,15 +176,15 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) fun
 
 			cookie, err := r.Cookie(CookieName)
 			if err != nil || cookie.Value == "" {
-				// The request carries OTHER cookies but no CSRF token cookie.
-				// If any of those cookies are (or ever become) credentials,
-				// this request is a live CSRF vector — a cross-site request
-				// would arrive exactly like this. Reject rather than pass:
-				// the SPA always bootstraps a token via GET /api/v1/csrf.
-				// Requests with NO Cookie header at all (curl, mobile, first-
-				// contact anonymous calls) can't carry cookie credentials,
-				// so they pass through to the downstream 401.
-				if r.Header.Get("Cookie") != "" {
+				// Only a credential-bearing cookie makes this request
+				// CSRF-relevant. Tracking and preference cookies —
+				// jc_guest, jc_consent, jc_theme, jc_locale,
+				// jc_journey_token — authenticate nothing, so a request
+				// carrying only those can't be forged against a session.
+				// Rejecting them anyway broke every public guest write
+				// (§122 guest journey, consent) the moment any such cookie
+				// existed.
+				if HasCredentialedCookie(r) {
 					writeRejection(w)
 					return
 				}
@@ -202,6 +202,32 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) fun
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// credentialedCookies are the cookies the platform honors as session
+// credentials — jc_token (session JWT) and jc_refresh (refresh token, read
+// by the auth refresh flow). The list lives in code, not config, because
+// adding a credential cookie is a security-relevant event that belongs in
+// review, not a settings toggle.
+var credentialedCookies = []string{"jc_token", "jc_refresh"}
+
+// HasCredentialedCookie reports whether the request carries a cookie the
+// platform treats as a session credential. Cookies are how the browser
+// attaches ambient credentials, so a request carrying one but no
+// csrf_token is a live CSRF vector and must be rejected; requests whose
+// cookies are all non-credential (anonymous visitor ids, consent flags,
+// preferences) can proceed — there is no session to forge against.
+//
+// Exposed for callers scoping CSRF exemptions to anonymous traffic —
+// e.g. a public write endpoint may be exempt for guests yet still protect
+// the same route when a member's session cookie is attached.
+func HasCredentialedCookie(r *http.Request) bool {
+	for _, name := range credentialedCookies {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // IsNonCookieAuthenticated reports whether a request carries a non-cookie

@@ -9,6 +9,7 @@
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
 	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
 	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
 	import NextActions from '#lib/components/shell/NextActions.svelte';
@@ -201,6 +202,9 @@
 	<!-- §124 install prompt — renders only when the browser can install. -->
 	<PwaInstallBanner />
 {/if}
+
+<!-- §19 cookie consent — self-hides once the jc_consent decision exists. -->
+<CookieConsentBanner />
 
 <!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
 <ToastHost />

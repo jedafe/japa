@@ -15,6 +15,9 @@
 	 * authenticated → user-bound row). Fire-and-forget: the cookie alone
 	 * governs what the backend may set.
 	 *
+	 * Withdrawal: navigating to #cookie-settings clears the decision and
+	 * re-shows the banner (footer link "Cookie settings" → href="/#cookie-settings").
+	 *
 	 * Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	 */
 	import { onMount } from 'svelte';
@@ -25,36 +28,65 @@
 
 	const CONSENT_COOKIE = 'jc_consent';
 	const CONSENT_MAX_AGE = 365 * 24 * 60 * 60; // 1 year, matches jc_guest
+	const REOPEN_HASH = '#cookie-settings';
 
 	let visible = $state(false);
+	let deciding = $state(false);
 
-	onMount(() => {
-		visible = !document.cookie
-			.split('; ')
-			.some((c) => c.startsWith(`${CONSENT_COOKIE}=`));
-	});
+	function hasDecision(): boolean {
+		return document.cookie.split('; ').some((c) => c.startsWith(`${CONSENT_COOKIE}=`));
+	}
 
 	// Scope the cookie to the shared base domain so api.<domain> receives it
-	// — same derivation as CSRF_COOKIE_DOMAIN in hooks.server.ts. Empty when
-	// the API host isn't api.* (local dev → host-only cookie, still fine
-	// since cookies ignore ports).
+	// — same derivation as CSRF_COOKIE_DOMAIN in hooks.server.ts, but only
+	// when the current host is same-site with the API host. On custom-domain
+	// surfaces (academy hosts like japauni.com) a .japa.to attribute would be
+	// rejected outright — the cookie must fall back to host-only (api.* is
+	// cross-site there anyway, so consent can't reach it regardless).
 	function cookieDomain(): string {
 		try {
 			const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
-			return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
+			if (!apiHost.startsWith('api.')) return '';
+			const base = apiHost.slice(4);
+			const host = location.hostname;
+			return host === base || host.endsWith(`.${base}`) ? `.${base}` : '';
 		} catch {
 			return '';
 		}
 	}
 
-	function decide(granted: boolean) {
+	function writeConsent(value: 'all' | 'necessary' | '') {
 		const domain = cookieDomain();
 		const secure = location.protocol === 'https:' ? '; Secure' : '';
+		const maxAge = value === '' ? 0 : CONSENT_MAX_AGE;
 		document.cookie =
-			`${CONSENT_COOKIE}=${granted ? 'all' : 'necessary'}; path=/` +
-			`; max-age=${CONSENT_MAX_AGE}; SameSite=Lax` +
+			`${CONSENT_COOKIE}=${value}; path=/; max-age=${maxAge}; SameSite=Lax` +
 			(domain ? `; domain=${domain}` : '') +
 			secure;
+	}
+
+	// #cookie-settings clears the stored decision and re-opens the banner —
+	// GDPR requires withdrawal to be as easy as consent. Evaluated on mount
+	// and on hashchange so an on-page footer link works without a reload.
+	function evaluate() {
+		if (location.hash === REOPEN_HASH) {
+			writeConsent('');
+			visible = true;
+			return;
+		}
+		visible = !hasDecision();
+	}
+
+	onMount(() => {
+		evaluate();
+		window.addEventListener('hashchange', evaluate);
+		return () => window.removeEventListener('hashchange', evaluate);
+	});
+
+	function decide(granted: boolean) {
+		if (deciding) return;
+		deciding = true;
+		writeConsent(granted ? 'all' : 'necessary');
 		visible = false;
 		void api.post(
 			'/consent',

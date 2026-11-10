@@ -10377,8 +10377,11 @@ func csrfExempt(r *http.Request) bool {
 		strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
 		// POST /consent is a public privacy-rights call (§19): guests posting
 		// a banner decision carry the jc_consent cookie but can never hold a
-		// csrf_token, and recording consent mutates no session state.
-		r.URL.Path == "/api/v1/consent" ||
+		// csrf_token. The exemption is scoped to requests without a session
+		// credential — credentialed posts clear the origin + double-submit
+		// checks so a cross-site call can't write consent rows under a
+		// member's user_id.
+		(r.URL.Path == "/api/v1/consent" && !csrf.HasCredentialedCookie(r)) ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
 		r.URL.Path == "/api/v1/assessment/submit" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/") ||
