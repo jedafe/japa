@@ -1091,16 +1091,18 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 
 		// Media assignment is authoritative over the url columns: clearing the
 		// id also clears the stale url, and a resolved url always replaces any
-		// explicit url merge above (media id wins).
+		// explicit url merge above (media id wins). An explicitly-sent url in
+		// the same request survives a clear, so media→url switches are atomic.
 		if in.AvatarMediaID != nil {
 			mid, url, err := s.mergeMediaID(ctx, *in.AvatarMediaID, "avatar_media_id", true)
 			if err != nil {
 				return PersonaDetail{}, err
 			}
 			params.AvatarMediaID = mid
-			params.AvatarUrl = nil
 			if url != "" {
 				params.AvatarUrl = &url
+			} else if in.AvatarURL == nil {
+				params.AvatarUrl = nil
 			}
 		}
 		if in.HeaderMediaID != nil {
@@ -1109,9 +1111,10 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 				return PersonaDetail{}, err
 			}
 			params.HeaderMediaID = mid
-			params.CoverUrl = nil
 			if url != "" {
 				params.CoverUrl = &url
+			} else if in.CoverURL == nil {
+				params.CoverUrl = nil
 			}
 		}
 
