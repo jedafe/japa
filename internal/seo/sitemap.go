@@ -877,8 +877,13 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		args = append(args, minPosts)
 	}
 
+	// profile_visibility is enforced on the public endpoint (§19/§50) —
+	// 'members'/'followers' profiles 403 for anonymous crawlers, so they
+	// must not be advertised in the sitemap.
 	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
+		 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 		 WHERE u.status = 'active'
+		   AND COALESCE(ups.profile_visibility, 'public') = 'public'
 		   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
 		     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
 		                JOIN user_groups ug ON ug.id = ugm.group_id

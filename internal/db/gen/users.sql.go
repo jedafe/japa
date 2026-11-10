@@ -456,6 +456,9 @@ SELECT
  pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, true) AS show_points_publicly,
+ -- §50 privacy settings: enforced in the service layer — 'members' and
+ -- 'followers' profiles are not served to unauthorized viewers.
+ COALESCE(ups.profile_visibility, 'public') AS profile_visibility,
  -- §68 disclosure toggle: the persona's disclosure_mode (NULL for non-bot
  -- users). The service layer maps it to ai_disclosed — undisclosed personas
  -- keep the flag hidden publicly (internal is_bot flag unaffected).
@@ -514,6 +517,7 @@ type GetPublicProfileByUsernameRow struct {
 	PublicRole            *string            `json:"public_role"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	ShowPointsPublicly    bool               `json:"show_points_publicly"`
+	ProfileVisibility     string             `json:"profile_visibility"`
 	PersonaDisclosureMode *string            `json:"persona_disclosure_mode"`
 	PersonaID             pgtype.UUID        `json:"persona_id"`
 	FollowingCount        int32              `json:"following_count"`
@@ -548,6 +552,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.PublicRole,
 		&i.CreatedAt,
 		&i.ShowPointsPublicly,
+		&i.ProfileVisibility,
 		&i.PersonaDisclosureMode,
 		&i.PersonaID,
 		&i.FollowingCount,

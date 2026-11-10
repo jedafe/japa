@@ -399,6 +399,10 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 		return nil, fmt.Errorf("getting public profile by username: %w", err)
 	}
 
+	if err := s.enforceProfileVisibility(ctx, p); err != nil {
+		return nil, err
+	}
+
 	resp := &PublicProfileResponse{
 		ID:              p.UserID.String(),
 		Username:        p.Username,
@@ -491,6 +495,56 @@ func (s *Service) publicProfileIndexable(ctx context.Context, userID pgtype.UUID
 		return nil
 	}
 	return &ok
+}
+
+// ErrProfilePrivate is returned when a viewer without the required
+// relationship requests a profile whose owner set profile_visibility to
+// 'members' or 'followers' (§19/§50). The handler maps it to a 403
+// 'profile_private' — distinct from user_blocked so the frontend can
+// render a private-profile state instead of a block state.
+var ErrProfilePrivate = errors.New("profile visibility restricts this profile")
+
+// enforceProfileVisibility applies the owner's profile_visibility setting
+// (§19/§50) to a fetched public-profile row:
+//
+//	public    → any viewer, including guests
+//	members   → authenticated viewers only
+//	followers → the owner themselves or viewers who follow them
+//
+// Missing/null rows default to 'public' (the column default), matching
+// UpsertUserPrivacySettings' COALESCE semantics.
+func (s *Service) enforceProfileVisibility(ctx context.Context, p gen.GetPublicProfileByUsernameRow) error {
+	switch p.ProfileVisibility {
+	case "", "public":
+		return nil
+	case "members":
+		if auth.FromContext(ctx) != nil {
+			return nil
+		}
+		return ErrProfilePrivate
+	case "followers":
+		viewer := auth.FromContext(ctx)
+		if viewer == nil {
+			return ErrProfilePrivate
+		}
+		if viewer.UserID == p.UserID {
+			return nil
+		}
+		following, err := s.store.read.IsFollowing(ctx, gen.IsFollowingParams{
+			FollowerID: viewer.UserID,
+			EntityType: "user",
+			EntityID:   p.UserID,
+		})
+		if err != nil {
+			return fmt.Errorf("users: profile visibility follow check: %w", err)
+		}
+		if !following {
+			return ErrProfilePrivate
+		}
+		return nil
+	default:
+		return ErrProfilePrivate
+	}
 }
 
 // UpdateProfile updates the user profile fields. Only non-nil fields are

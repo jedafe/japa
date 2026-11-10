@@ -293,6 +293,10 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.Service.GetPublicProfileByUsername(r.Context(), username)
 	if err != nil {
+		if errors.Is(err, ErrProfilePrivate) {
+			errpkg.WriteError(w, http.StatusForbidden, "profile_private", "This profile is private")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}

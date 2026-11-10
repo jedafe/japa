@@ -202,11 +202,11 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 	}
 	if slug, ok := strings.CutPrefix(idStr, "user:"); ok {
 		// Gate mirrors users.publicProfileIndexable + sitemap-users.xml
-		// (§26/§43): active status, UserGroup allow_search_indexing, and the
-		// seo.sitemap.user_min_posts published-content floor. Privacy settings
-		// are intentionally NOT consulted — search_indexable is the internal
-		// Meilisearch opt-out (§50), and profile_visibility is not enforced
-		// on the anonymous read path; neither affects SEO indexability.
+		// (§26/§43): active status, UserGroup allow_search_indexing, the
+		// seo.sitemap.user_min_posts published-content floor, and
+		// profile_visibility — enforced by the endpoint for anonymous
+		// viewers (§19/§50). search_indexable stays out: it's the internal
+		// Meilisearch opt-out (§50), not an SEO signal.
 		minPosts := bots.LoadSitemapQualityConfig(ctx, h.settings).UserMinPosts
 		if minPosts < 0 {
 			minPosts = bots.DefaultSitemapQualityConfig().UserMinPosts
@@ -224,6 +224,7 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			`SELECT u.username, COALESCE(up.display_name, '')
 			 FROM users u
 			 LEFT JOIN user_profiles up ON up.user_id = u.id
+			 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 			 WHERE u.username = COALESCE(
 			   -- §50 former-username amendment: a live username always wins;
 			   -- only on a miss does the redirect map to the current handle.
@@ -233,6 +234,7 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			    WHERE ur.username = $1)
 			 )
 			   AND u.status = 'active'
+			   AND COALESCE(ups.profile_visibility, 'public') = 'public'
 			   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
 			     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
 			                JOIN user_groups ug ON ug.id = ugm.group_id

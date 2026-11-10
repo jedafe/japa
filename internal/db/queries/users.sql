@@ -585,6 +585,9 @@ SELECT
  pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, true) AS show_points_publicly,
+ -- §50 privacy settings: enforced in the service layer — 'members' and
+ -- 'followers' profiles are not served to unauthorized viewers.
+ COALESCE(ups.profile_visibility, 'public') AS profile_visibility,
  -- §68 disclosure toggle: the persona's disclosure_mode (NULL for non-bot
  -- users). The service layer maps it to ai_disclosed — undisclosed personas
  -- keep the flag hidden publicly (internal is_bot flag unaffected).

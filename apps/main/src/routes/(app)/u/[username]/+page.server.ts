@@ -95,11 +95,16 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
-		// 403 = §41 strict block: the profile owner has blocked the viewer —
-		// surface "unavailable", not a server error.
-		const code = status === 404 ? 'not_found' : status === 403 ? 'user_blocked' : 'server_error';
+		const apiCode = e instanceof Error && 'code' in e ? (e as { code: string }).code : '';
+		// 403 splits two ways: §41 strict block (viewer blocked by the owner)
+		// and §19/§50 profile_visibility (members/followers-only profile).
+		const code =
+			status === 404 ? 'not_found'
+			: status === 403 ? (apiCode === 'profile_private' ? 'profile_private' : 'user_blocked')
+			: 'server_error';
 		const message =
 			status === 404 ? 'User not found'
+			: status === 403 && apiCode === 'profile_private' ? 'This profile is private'
 			: status === 403 ? 'This account is unavailable'
 			: 'Failed to load profile';
 		throw error(status === 404 || status === 403 ? status : 500, { code, message });

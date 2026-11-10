@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -358,6 +360,82 @@ func TestNewHandlersNotNil(t *testing.T) {
 	if h.Service != svc {
 		t.Error("handlers.Service does not match provided service")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// enforceProfileVisibility (§19/§50) — public read-path privacy gate
+// ---------------------------------------------------------------------------
+
+func viewerCtx(userID pgtype.UUID) context.Context {
+	return context.WithValue(context.Background(), auth.UserContextKey,
+		&auth.AuthenticatedUser{UserID: userID})
+}
+
+func mustUUID(t *testing.T, s string) pgtype.UUID {
+	t.Helper()
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		t.Fatalf("scan uuid: %v", err)
+	}
+	return u
+}
+
+func TestEnforceProfileVisibility(t *testing.T) {
+	t.Parallel()
+
+	ownerID := mustUUID(t, "11111111-1111-1111-1111-111111111111")
+	otherID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	row := func(vis string) gen.GetPublicProfileByUsernameRow {
+		return gen.GetPublicProfileByUsernameRow{UserID: ownerID, ProfileVisibility: vis}
+	}
+	svc := &Service{store: &Store{}} // nil-safe: never reached on these branches
+
+	t.Run("public allows guest", func(t *testing.T) {
+		if err := svc.enforceProfileVisibility(context.Background(), row("public")); err != nil {
+			t.Fatalf("public+guest: %v", err)
+		}
+	})
+	t.Run("empty defaults public", func(t *testing.T) {
+		if err := svc.enforceProfileVisibility(context.Background(), row("")); err != nil {
+			t.Fatalf("empty+guest: %v", err)
+		}
+	})
+	t.Run("public allows member", func(t *testing.T) {
+		if err := svc.enforceProfileVisibility(viewerCtx(otherID), row("public")); err != nil {
+			t.Fatalf("public+member: %v", err)
+		}
+	})
+	t.Run("members denies guest", func(t *testing.T) {
+		err := svc.enforceProfileVisibility(context.Background(), row("members"))
+		if !errors.Is(err, ErrProfilePrivate) {
+			t.Fatalf("members+guest: got %v, want ErrProfilePrivate", err)
+		}
+	})
+	t.Run("members allows authed", func(t *testing.T) {
+		if err := svc.enforceProfileVisibility(viewerCtx(otherID), row("members")); err != nil {
+			t.Fatalf("members+authed: %v", err)
+		}
+	})
+	t.Run("followers denies guest", func(t *testing.T) {
+		err := svc.enforceProfileVisibility(context.Background(), row("followers"))
+		if !errors.Is(err, ErrProfilePrivate) {
+			t.Fatalf("followers+guest: got %v, want ErrProfilePrivate", err)
+		}
+	})
+	t.Run("followers allows owner", func(t *testing.T) {
+		if err := svc.enforceProfileVisibility(viewerCtx(ownerID), row("followers")); err != nil {
+			t.Fatalf("followers+owner: %v", err)
+		}
+	})
+	// followers + non-owner authed viewer hits store.read.IsFollowing (real
+	// DB) — covered by live/API verification, not the nil-store unit path.
+	t.Run("unknown value denies", func(t *testing.T) {
+		err := svc.enforceProfileVisibility(viewerCtx(ownerID), row("everyone"))
+		if !errors.Is(err, ErrProfilePrivate) {
+			t.Fatalf("unknown value: got %v, want ErrProfilePrivate", err)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
