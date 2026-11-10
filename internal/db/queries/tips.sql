@@ -21,6 +21,11 @@ RETURNING *;
 -- name: GetTipSettings :one
 SELECT * FROM tip_settings WHERE owner_type = @owner_type AND owner_id = @owner_id;
 
+-- name: GetTipSettingsForUpdate :one
+-- §125 persona-tips amendment: row-locks the settings row inside the persona
+-- PATCH tx so concurrent persona.manage writers serialize on read-merge-write.
+SELECT * FROM tip_settings WHERE owner_type = @owner_type AND owner_id = @owner_id FOR UPDATE;
+
 -- name: ListTipSettingsWithOCToken :many
 SELECT * FROM tip_settings WHERE oc_collective_slug IS NOT NULL AND oc_api_token_encrypted IS NOT NULL;
 

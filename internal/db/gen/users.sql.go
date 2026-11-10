@@ -270,6 +270,31 @@ func (q *Queries) DecideKYCSubmission(ctx context.Context, arg DecideKYCSubmissi
 	return err
 }
 
+const deleteUsernameRedirectByName = `-- name: DeleteUsernameRedirectByName :exec
+DELETE FROM username_redirects WHERE username = $1
+`
+
+// §50 former-username amendment: releases a redirect when the handle is
+// claimed by a rename or alias assignment (release-on-claim).
+func (q *Queries) DeleteUsernameRedirectByName(ctx context.Context, username string) error {
+	_, err := q.db.Exec(ctx, deleteUsernameRedirectByName, username)
+	return err
+}
+
+const deleteUsernameRedirectsForUser = `-- name: DeleteUsernameRedirectsForUser :exec
+DELETE FROM username_redirects
+WHERE user_id = $1
+   OR username = (SELECT username FROM users WHERE id = $1)
+`
+
+// §50 former-username amendment: GDPR cleanup — drops the user's own rows
+// plus any stale row pointing at the user's CURRENT name (left by a later
+// claimant's rename path that bypassed redirect bookkeeping).
+func (q *Queries) DeleteUsernameRedirectsForUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUsernameRedirectsForUser, userID)
+	return err
+}
+
 const disconnectOAuthAccount = `-- name: DisconnectOAuthAccount :exec
 DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2
 `
@@ -454,9 +479,17 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 LEFT JOIN user_groups pg ON pg.id = u.public_group_id
 LEFT JOIN ai_personas ap ON ap.user_id = u.id
-WHERE (u.username = $1 OR lower(u.public_username) = lower($1))
+WHERE (u.username = $1 OR lower(u.public_username) = lower($1)
+ -- §50 former-username amendment: third arm resolves a former handle to the
+ -- owner's current canonical. Live handles still win — the ORDER BY below
+ -- prefers the exact-match row, and the COALESCE inner arms never shadow a
+ -- live username because the first arm yields @username unchanged.
+ OR u.username = COALESCE(
+   (SELECT $1::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = $1)),
+   (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = $1)
+ ))
  AND u.status = 'active'
-ORDER BY (u.username = $1) DESC, u.id
+ORDER BY (u.username = $1) DESC, (lower(u.public_username) = lower($1)) DESC, u.id
 LIMIT 1
 `
 
@@ -734,7 +767,12 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id
-WHERE u.username = $1
+WHERE u.username = COALESCE(
+ -- §50 former-username amendment: a live username always wins; only on a
+ -- miss does the redirect map the former handle to the current canonical.
+ (SELECT $1::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = $1)),
+ (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = $1)
+)
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
@@ -2765,6 +2803,23 @@ func (q *Queries) PublicHandleTaken(ctx context.Context, arg PublicHandleTakenPa
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const recordUsernameRedirect = `-- name: RecordUsernameRedirect :exec
+INSERT INTO username_redirects (username, user_id) VALUES ($1, $2)
+ON CONFLICT (username) DO UPDATE SET user_id = EXCLUDED.user_id, created_at = now()
+`
+
+type RecordUsernameRedirectParams struct {
+	Username string      `json:"username"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// §50 former-username amendment: records a rename so /u/{old} keeps
+// resolving. Called inside the rename tx after UpdateUserUsername.
+func (q *Queries) RecordUsernameRedirect(ctx context.Context, arg RecordUsernameRedirectParams) error {
+	_, err := q.db.Exec(ctx, recordUsernameRedirect, arg.Username, arg.UserID)
+	return err
 }
 
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec

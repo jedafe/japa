@@ -119,8 +119,32 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id
-WHERE u.username = @username
+WHERE u.username = COALESCE(
+ -- §50 former-username amendment: a live username always wins; only on a
+ -- miss does the redirect map the former handle to the current canonical.
+ (SELECT @username::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = @username)),
+ (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = @username)
+)
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
+
+-- name: RecordUsernameRedirect :exec
+-- §50 former-username amendment: records a rename so /u/{old} keeps
+-- resolving. Called inside the rename tx after UpdateUserUsername.
+INSERT INTO username_redirects (username, user_id) VALUES (@username, @user_id)
+ON CONFLICT (username) DO UPDATE SET user_id = EXCLUDED.user_id, created_at = now();
+
+-- name: DeleteUsernameRedirectByName :exec
+-- §50 former-username amendment: releases a redirect when the handle is
+-- claimed by a rename or alias assignment (release-on-claim).
+DELETE FROM username_redirects WHERE username = @username;
+
+-- name: DeleteUsernameRedirectsForUser :exec
+-- §50 former-username amendment: GDPR cleanup — drops the user's own rows
+-- plus any stale row pointing at the user's CURRENT name (left by a later
+-- claimant's rename path that bypassed redirect bookkeeping).
+DELETE FROM username_redirects
+WHERE user_id = @user_id
+   OR username = (SELECT username FROM users WHERE id = @user_id);
 
 -- name: SetUserDisplayName :exec
 -- Minimal profile upsert used by admin user creation — writes only
@@ -575,9 +599,17 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 LEFT JOIN user_groups pg ON pg.id = u.public_group_id
 LEFT JOIN ai_personas ap ON ap.user_id = u.id
-WHERE (u.username = @username OR lower(u.public_username) = lower(@username))
+WHERE (u.username = @username OR lower(u.public_username) = lower(@username)
+ -- §50 former-username amendment: third arm resolves a former handle to the
+ -- owner's current canonical. Live handles still win — the ORDER BY below
+ -- prefers the exact-match row, and the COALESCE inner arms never shadow a
+ -- live username because the first arm yields @username unchanged.
+ OR u.username = COALESCE(
+   (SELECT @username::text WHERE EXISTS (SELECT 1 FROM users ux WHERE ux.username = @username)),
+   (SELECT u2.username FROM username_redirects ur JOIN users u2 ON u2.id = ur.user_id AND u2.status != 'deleted' WHERE ur.username = @username)
+ ))
  AND u.status = 'active'
-ORDER BY (u.username = @username) DESC, u.id
+ORDER BY (u.username = @username) DESC, (lower(u.public_username) = lower(@username)) DESC, u.id
 LIMIT 1;
 
 -- name: ListPublicUsers :many

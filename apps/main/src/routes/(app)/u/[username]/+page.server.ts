@@ -105,6 +105,13 @@ export const load: PageServerLoad = async (event) => {
 		throw error(status === 404 || status === 403 ? status : 500, { code, message });
 	}
 
+	// §50 former-username amendment: the API resolved a former handle (or the
+	// alias-preferred projection differs from the URL) — consolidate on the
+	// live handle so SEO and shared links follow the rename.
+	if (user.username && user.username !== username) {
+		throw redirect(301, `/u/${encodeURIComponent(user.username)}${event.url.search}`);
+	}
+
 	// §106: video-channel synthetic users have no public profile — the
 	// canonical surface is their /sources/{slug} directory page (a source,
 	// not a profile, per the sources-directory model). Resolve one of the

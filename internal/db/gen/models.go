@@ -5057,6 +5057,12 @@ type UserSourceBlock struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type UsernameRedirect struct {
+	Username  string             `json:"username"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type VerificationRequest struct {
 	ID               pgtype.UUID        `json:"id"`
 	RequesterUserID  pgtype.UUID        `json:"requester_user_id"`

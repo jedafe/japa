@@ -782,6 +782,14 @@ func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([
 }
 
 func (s *Store) anonymizeUser(ctx context.Context, userID pgtype.UUID) error {
+	// §50 former-username amendment: drop the user's redirect rows (and any
+	// stale row carrying their current handle) BEFORE AnonymizeUser rewrites
+	// the username — otherwise a former handle could keep resolving to the
+	// anonymized account.
+	if err := s.write.DeleteUsernameRedirectsForUser(ctx, userID); err != nil {
+		return fmt.Errorf("clearing username redirects: %w", err)
+	}
+
 	if err := s.write.AnonymizeUser(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing user: %w", err)
 	}

@@ -2200,6 +2200,21 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 					return nil, fmt.Errorf("updating username: %w", err)
 				}
 
+				// §50 former-username amendment: release the new handle if it
+				// was a redirect, then record the old one so /u/{old} keeps
+				// resolving to this account.
+				if err := q.DeleteUsernameRedirectByName(ctx, newUsername); err != nil {
+					return nil, fmt.Errorf("releasing username redirect: %w", err)
+				}
+				if acct.Username != "" {
+					if err := q.RecordUsernameRedirect(ctx, gen.RecordUsernameRedirectParams{
+						Username: acct.Username,
+						UserID:   userID,
+					}); err != nil {
+						return nil, fmt.Errorf("recording username redirect: %w", err)
+					}
+				}
+
 				txResult.UsernameChanged = true
 			}
 		}
@@ -2321,6 +2336,23 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 				UserID:         userID,
 			}); err != nil {
 				return nil, fmt.Errorf("updating public identity: %w", err)
+			}
+
+			// §50 former-username amendment: alias changes feed the same
+			// redirect mechanism — release the newly claimed handle, record
+			// the previous alias so its links keep resolving.
+			if pubUsername != nil && *pubUsername != "" && (acct.PublicUsername == nil || *acct.PublicUsername != *pubUsername) {
+				if err := q.DeleteUsernameRedirectByName(ctx, *pubUsername); err != nil {
+					return nil, fmt.Errorf("releasing alias redirect: %w", err)
+				}
+			}
+			if acct.PublicUsername != nil && *acct.PublicUsername != "" && (pubUsername == nil || *pubUsername != *acct.PublicUsername) {
+				if err := q.RecordUsernameRedirect(ctx, gen.RecordUsernameRedirectParams{
+					Username: *acct.PublicUsername,
+					UserID:   userID,
+				}); err != nil {
+					return nil, fmt.Errorf("recording alias redirect: %w", err)
+				}
 			}
 
 			txResult.PublicIdentityChanged = true

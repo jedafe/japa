@@ -977,6 +977,18 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 			return PersonaDetail{}, fmt.Errorf("personas: rename backing user: %w", err)
 		}
 
+		// §50 former-username amendment: release the new handle if it was a
+		// redirect, then record the old backing handle so /u/{old} keeps
+		// resolving to this persona's profile.
+		if err := q.DeleteUsernameRedirectByName(ctx, newUsername); err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: release username redirect: %w", err)
+		}
+		if detail.BackingUsername != "" && detail.BackingUsername != newUsername {
+			if err := q.RecordUsernameRedirect(ctx, gen.RecordUsernameRedirectParams{Username: detail.BackingUsername, UserID: detail.UserID}); err != nil {
+				return PersonaDetail{}, fmt.Errorf("personas: record username redirect: %w", err)
+			}
+		}
+
 		// Email follows the handle — the persona+<slug>+@bot.internal
 		// convention would otherwise diverge on every rename (legacy intel-*
 		// emails migrate to the convention on first rename).
@@ -1100,7 +1112,7 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		acceptCredits, acceptFiat, acceptExternal := true, false, false
 		var minTip int64
 		var ocSlug, ocToken, thanks *string
-		if existing, err := q.GetTipSettings(ctx, gen.GetTipSettingsParams{OwnerType: "user", OwnerID: detail.UserID}); err == nil {
+		if existing, err := q.GetTipSettingsForUpdate(ctx, gen.GetTipSettingsForUpdateParams{OwnerType: "user", OwnerID: detail.UserID}); err == nil {
 			acceptCredits = existing.AcceptCredits
 			acceptFiat = existing.AcceptFiat
 			acceptExternal = existing.AcceptExternal

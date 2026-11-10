@@ -713,6 +713,42 @@ func (q *Queries) GetTipSettingsByOCWebhookSecret(ctx context.Context, ocWebhook
 	return i, err
 }
 
+const getTipSettingsForUpdate = `-- name: GetTipSettingsForUpdate :one
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE owner_type = $1 AND owner_id = $2 FOR UPDATE
+`
+
+type GetTipSettingsForUpdateParams struct {
+	OwnerType string      `json:"owner_type"`
+	OwnerID   pgtype.UUID `json:"owner_id"`
+}
+
+// §125 persona-tips amendment: row-locks the settings row inside the persona
+// PATCH tx so concurrent persona.manage writers serialize on read-merge-write.
+func (q *Queries) GetTipSettingsForUpdate(ctx context.Context, arg GetTipSettingsForUpdateParams) (TipSetting, error) {
+	row := q.db.QueryRow(ctx, getTipSettingsForUpdate, arg.OwnerType, arg.OwnerID)
+	var i TipSetting
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.TipsEnabled,
+		&i.AcceptCredits,
+		&i.AcceptFiat,
+		&i.AcceptExternal,
+		&i.OcCollectiveSlug,
+		&i.OcApiTokenEncrypted,
+		&i.OcWebhookSecret,
+		&i.MinTipAmount,
+		&i.ThankYouMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.KofiWebhookSecret,
+		&i.BmcPageSlug,
+		&i.BmcApiTokenEncrypted,
+	)
+	return i, err
+}
+
 const getUserDisplayNames = `-- name: GetUserDisplayNames :many
 SELECT u.id, u.username, up.display_name
 FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id
