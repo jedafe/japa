@@ -322,7 +322,9 @@ func (q *Queries) AnonymizeTipsForUser(ctx context.Context, senderUserID pgtype.
 
 const anonymizeUser = `-- name: AnonymizeUser :exec
 UPDATE users
-SET username = 'Deleted User',
+SET username = 'deleted-' || id::text,
+ public_username = NULL,
+ public_group_id = NULL,
  email = 'deleted-' || id::text,
  password_hash = '',
  profile_type = NULL,
@@ -331,6 +333,12 @@ SET username = 'Deleted User',
 WHERE id = $1
 `
 
+// username uses the same unique-per-user pattern as email — the shared
+// 'Deleted User' display label lives on user_profiles.display_name (which
+// has no uniqueness constraint); a literal here would violate
+// idx_users_username_global on the SECOND erasure. public_username /
+// public_group_id are cleared — the §03 alias is a public handle tied to
+// the erased identity.
 func (q *Queries) AnonymizeUser(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, anonymizeUser, userID)
 	return err
@@ -360,7 +368,8 @@ func (q *Queries) AnonymizeUserJourneys(ctx context.Context, userID pgtype.UUID)
 }
 
 const anonymizeUserProfile = `-- name: AnonymizeUserProfile :exec
-UPDATE user_profiles
+INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'Deleted User')
+ON CONFLICT (user_id) DO UPDATE
 SET display_name = 'Deleted User',
  avatar_url = NULL,
  cover_url = NULL,
@@ -391,7 +400,6 @@ SET display_name = 'Deleted User',
  mentor_embedding = NULL,
  mentor_listing_content_id = NULL,
  updated_at = now()
-WHERE user_id = $1
 `
 
 // Clears PII columns in user_profiles during the GDPR retention window

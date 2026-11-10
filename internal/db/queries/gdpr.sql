@@ -198,8 +198,16 @@ ORDER BY adr.created_at ASC
 LIMIT @page_limit;
 
 -- name: AnonymizeUser :exec
+-- username uses the same unique-per-user pattern as email — the shared
+-- 'Deleted User' display label lives on user_profiles.display_name (which
+-- has no uniqueness constraint); a literal here would violate
+-- idx_users_username_global on the SECOND erasure. public_username /
+-- public_group_id are cleared — the §03 alias is a public handle tied to
+-- the erased identity.
 UPDATE users
-SET username = 'Deleted User',
+SET username = 'deleted-' || id::text,
+ public_username = NULL,
+ public_group_id = NULL,
  email = 'deleted-' || id::text,
  password_hash = '',
  profile_type = NULL,
@@ -219,7 +227,8 @@ WHERE id = @user_id;
 -- japa_stage_dest_space_id, japa_stage_history (an append-only log of the
 -- member's relocation stage + destination over time — PII), and
 -- japa_stage_is_public (revoked so no public directory leak survives).
-UPDATE user_profiles
+INSERT INTO user_profiles (user_id, display_name) VALUES (@user_id, 'Deleted User')
+ON CONFLICT (user_id) DO UPDATE
 SET display_name = 'Deleted User',
  avatar_url = NULL,
  cover_url = NULL,
@@ -249,8 +258,7 @@ SET display_name = 'Deleted User',
  mentor_since = NULL,
  mentor_embedding = NULL,
  mentor_listing_content_id = NULL,
- updated_at = now()
-WHERE user_id = @user_id;
+ updated_at = now();
 
 -- name: AnonymizeUserJourneys :exec
 -- Scrubs PII from user_journeys rows (ADR-136): the member-supplied label,
