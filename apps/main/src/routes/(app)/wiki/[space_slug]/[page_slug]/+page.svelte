@@ -227,6 +227,11 @@
 					headline: data.page.title,
 					description,
 					url: canonicalUrl,
+					image: ogImage || undefined,
+					dateModified: data.page.updated_at || undefined,
+					author: { '@type': 'Organization', name: siteName() },
+					publisher: { '@type': 'Organization', name: siteName(), url: page.url.origin },
+					mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
 					about: { '@type': 'Place', name: spaceName }
 				}
 			: null

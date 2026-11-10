@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
@@ -45,6 +46,19 @@
 	const description = $derived(
 		t('tools.description', 'Plan your move with calculators, checklists, and trackers built for the diaspora.')
 	);
+	const toolsJsonLd = $derived([
+		{
+			'@context': 'https://schema.org',
+			'@type': 'CollectionPage',
+			name: title,
+			description,
+			url: `${page.url.origin}/tools`
+		},
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('nav.tools', 'Tools'), path: `${page.url.origin}/tools` }
+		])
+	]);
 
 	// Lucide icon component per tool href. Kept here (not in the registry) because
 	// the registry stores plain serialisable metadata; icon components are runtime
@@ -134,6 +148,7 @@
 
 <SeoHead title={title} description={description} ogTitle={title}
 	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+	jsonLd={toolsJsonLd}
 />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">

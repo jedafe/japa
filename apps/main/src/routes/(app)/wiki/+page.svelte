@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { ogCardUrl } from '#lib/seo/og.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	// Global wiki landing at /wiki — the root type's grid (countries today)
 	// plus a country-only search. Child-type exploration lives on each
@@ -141,9 +142,24 @@
 		{ value: 'name', label: t('wiki.sort_az', 'A–Z') },
 		{ value: 'page_count', label: t('wiki.sort_most_guides', 'Most guides') }
 	]);
+	// CollectionPage + BreadcrumbList — the global wiki root collection
+	// (Section 26 convention, matching the per-space index).
+	const wikiHomeJsonLd = $derived({
+		'@context': 'https://schema.org',
+		'@type': 'CollectionPage',
+		name: t('wiki.heading', 'Wiki'),
+		description: t('wiki.landing_description', 'Explore destination wikis'),
+		url: `${page.url.origin}/wiki`
+	});
+	const wikiHomeBreadcrumbJsonLd = $derived(
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` }
+		])
+	);
 </script>
 
-<SeoHead title={`${t('wiki.heading', 'Wiki')} — ${siteName()}`} description={t('wiki.landing_description', 'Explore destination wikis')} ogTitle={t('wiki.heading', 'Wiki')} ogImage={ogCardUrl(page.url.origin, 'wiki')} />
+<SeoHead title={`${t('wiki.heading', 'Wiki')} — ${siteName()}`} description={t('wiki.landing_description', 'Explore destination wikis')} ogTitle={t('wiki.heading', 'Wiki')} ogImage={ogCardUrl(page.url.origin, 'wiki')} jsonLd={[wikiHomeJsonLd, wikiHomeBreadcrumbJsonLd]} />
 
 <!-- The map leads on every device — the title/description block stays
      hidden (the route's <svelte:head> still carries the page title). -->

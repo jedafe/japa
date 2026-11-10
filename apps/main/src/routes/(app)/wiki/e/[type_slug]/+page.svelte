@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { ogCardUrl } from '#lib/seo/og.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -22,6 +23,26 @@
 	let items = $derived(data.items ?? []);
 	let total = $derived(data.total ?? 0);
 	let label = $derived(data.label ?? data.kind);
+	const description = $derived(
+		t('wiki.entities.type_description', 'Community-maintained wiki entries for {name} — maintained by members on {site}.').replace('{name}', label)
+	);
+	// CollectionPage + BreadcrumbList — the type index lists this entity
+	// kind's entries (Section 26 convention, matching the space index).
+	const typeJsonLd = $derived({
+		'@context': 'https://schema.org',
+		'@type': 'CollectionPage',
+		name: label,
+		description,
+		url: page.url.origin + page.url.pathname
+	});
+	const typeBreadcrumbJsonLd = $derived(
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+			{ name: t('wiki.entities.title', 'Entity Wiki'), path: `${page.url.origin}/wiki/e` },
+			{ name: label, path: page.url.origin + page.url.pathname }
+		])
+	);
 	let pageCount = $derived(Math.max(1, Math.ceil(total / data.limit)));
 	// Seeded from the URL once, then re-synced when in-route navigation changes
 	// ?q= (back/forward, pager links) — the box must not show a stale query.
@@ -246,7 +267,7 @@
 	}
 </script>
 
-<SeoHead title={`${label} — ${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.type_description', 'Community-maintained wiki entries for {name} — maintained by members on {site}.').replace('{name}', label)} ogImage={ogCardUrl(page.url.origin, 'wiki-entities')} />
+<SeoHead title={`${label} — ${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} {description} ogImage={ogCardUrl(page.url.origin, 'wiki-entities')} jsonLd={[typeJsonLd, typeBreadcrumbJsonLd]} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<EntityHero

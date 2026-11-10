@@ -85,6 +85,16 @@
 					name: page.entity_name
 				});
 	});
+	// og:image — first inline body image, else the backend-generated title
+	// card for this wiki page (ogMediaUrl drops SVG/data: — share cards
+	// ignore them).
+	const firstImg = $derived.by(() => {
+		const c = page?.content;
+		return c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
+	});
+	const ogImage = $derived(
+		ogMediaUrl(pageStore.url.origin, firstImg) || ogCardUrl(pageStore.url.origin, page?.id || 'wiki')
+	);
 	const entityArticleJsonLd = $derived(
 		page
 			? {
@@ -93,6 +103,10 @@
 					headline: page.title,
 					description: metaDescription,
 					url: canonicalUrl,
+					image: ogImage || undefined,
+					author: { '@type': 'Organization', name: siteName() },
+					publisher: { '@type': 'Organization', name: siteName(), url: pageStore.url.origin },
+					mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
 					about: { '@type': 'Thing', name: page.entity_name }
 				}
 			: null
@@ -113,16 +127,6 @@
 					{ name: page.title, path: canonicalUrl }
 				])
 			: null
-	);
-	// og:image — first inline body image, else the backend-generated title
-	// card for this wiki page (ogMediaUrl drops SVG/data: — share cards
-	// ignore them).
-	const firstImg = $derived.by(() => {
-		const c = page?.content;
-		return c && typeof c === 'object' ? tiptapDocFirstImageSrc(c as TipTapDoc) : undefined;
-	});
-	const ogImage = $derived(
-		ogMediaUrl(pageStore.url.origin, firstImg) || ogCardUrl(pageStore.url.origin, page?.id || 'wiki')
 	);
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { ogCardUrl } from '#lib/seo/og.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { page } from '$app/state';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 	import { t, siteName } from '#lib/i18n/index.js';
@@ -36,9 +37,24 @@
 	function kindIcon(kind: string) {
 		return KIND_ICONS[kind] ?? BookOpen;
 	}
+	// CollectionPage + BreadcrumbList — the entity-wiki root collection.
+	const entityHomeJsonLd = $derived({
+		'@context': 'https://schema.org',
+		'@type': 'CollectionPage',
+		name: t('wiki.entities.title', 'Entity Wiki'),
+		description: t('wiki.entities.description', 'Community-maintained wiki entries for destinations, services, schools, and organisations — written and kept up to date by members.'),
+		url: `${page.url.origin}/wiki/e`
+	});
+	const entityHomeBreadcrumbJsonLd = $derived(
+		breadcrumbJsonLd([
+			{ name: 'Home', path: page.url.origin },
+			{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+			{ name: t('wiki.entities.title', 'Entity Wiki'), path: `${page.url.origin}/wiki/e` }
+		])
+	);
 </script>
 
-<SeoHead title={`${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.description', 'Community-maintained wiki entries for destinations, services, schools, and organisations — written and kept up to date by members.')} ogImage={ogCardUrl(page.url.origin, 'wiki-entities')} />
+<SeoHead title={`${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.description', 'Community-maintained wiki entries for destinations, services, schools, and organisations — written and kept up to date by members.')} ogImage={ogCardUrl(page.url.origin, 'wiki-entities')} jsonLd={[entityHomeJsonLd, entityHomeBreadcrumbJsonLd]} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<EntityHero
