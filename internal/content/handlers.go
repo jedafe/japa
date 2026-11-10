@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/bots"
@@ -35,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/rbac"
 	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/spam"
@@ -338,55 +338,21 @@ func canModifyContent(r *http.Request, userID, authorID pgtype.UUID, anyPerm str
 	return false
 }
 
-// canAssignAuthor reports whether the caller may reassign contents.author_id
-// to another user — super-admins and holders of content.assign_author
-// (the same node that gates the agent's content.create author_id override).
-func canAssignAuthor(r *http.Request, userID pgtype.UUID) bool {
-	resolver := rbac.FromContext(r.Context())
-	if resolver == nil {
-		return false
-	}
-
-	return resolver.IsSuperAdmin(r.Context(), userID) ||
-		resolver.HasPermission(r.Context(), userID, "content.assign_author")
-}
-
 // resolveBotAuthor validates an author_id override supplied on create/update
 // requests. Returns the resolved bot user ID, or writes the error response
 // and returns ok=false. The override is bots-only: authorship as a real
 // human user goes through admin impersonation instead (SEC-002), so a
 // valid-but-non-bot target is rejected with author_not_bot.
+// Delegates to personas.ResolveDelegatedActor — the shared resolver used by
+// comments, forum replies, votes, reactions and follows (delegated-authorship
+// spec §1.1).
 func (h *Handlers) resolveBotAuthor(w http.ResponseWriter, r *http.Request, actorID pgtype.UUID, raw string) (pgtype.UUID, bool) {
-	var authorID pgtype.UUID
-	if err := authorID.Scan(raw); err != nil || !authorID.Valid {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "author_id is not a valid UUID")
-		return pgtype.UUID{}, false
-	}
-
-	if !canAssignAuthor(r, actorID) {
-		errpkg.WriteError(w, http.StatusForbidden, "author_assign_forbidden",
-			"Setting author_id to another user requires the content.assign_author permission")
-		return pgtype.UUID{}, false
-	}
-
-	isBot, err := h.Service.IsBotUser(r.Context(), authorID)
+	id, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), actorID, raw)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "author_id does not identify a user")
-			return pgtype.UUID{}, false
-		}
-		slog.Error("content: bot author check failed", "error", err, "author_id", authorID.String())
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to validate author_id")
+		personas.WriteDelegatedError(w, err, "author_id")
 		return pgtype.UUID{}, false
 	}
-
-	if !isBot {
-		errpkg.WriteError(w, http.StatusBadRequest, "author_not_bot",
-			"author_id must identify a bot persona account — real-user authorship requires impersonation")
-		return pgtype.UUID{}, false
-	}
-
-	return authorID, true
+	return id, true
 }
 
 // isStoryModerator reports whether the caller may publish/schedule stories
