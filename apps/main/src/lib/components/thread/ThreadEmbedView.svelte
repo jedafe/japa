@@ -74,11 +74,14 @@
 	//  - an empty/near-empty anchor shell (indexable=false) canonicalizes
 	//    to its parent entity — it's a near-duplicate of the parent and
 	//    must not compete with it
+	//  - a kind='self' view (a non-discussion row on /thread/{slug} with no
+	//    minted thread) renders only a truncated duplicate of its canonical
+	//    content page — canonical always points there
 	// Once comments push the row past the gate, indexable flips true and
 	// the canonical returns to self.
 	const selfUrl = $derived(`${page.url.origin}${page.url.pathname}`);
 	const canonical = $derived(
-		data.indexable === false && data.embed?.href
+		data.embed?.href && (data.indexable === false || data.embed.kind === 'self')
 			? `${page.url.origin}${data.embed.href}`
 			: selfUrl
 	);

@@ -258,6 +258,9 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 	if c.MetaDescription != nil {
 		desc = *c.MetaDescription
 	}
+	if desc == "" {
+		desc = ExcerptFromBody(c.Body, c.BodyHtml, 160)
+	}
 
 	canonical := ""
 	if c.CanonicalUrl != nil {

@@ -27,14 +27,25 @@
 	// SEO-004: the unfiltered default tab serves the same /explore feed —
 	// two indexable near-identical lists would compete. noindex it and
 	// canonical to /explore; filtered views (status/tag/author/featured)
-	// are thread-specific and keep their own indexable URL.
+	// are thread-specific and keep their own indexable URL — canonicalized
+	// to the normalized filter URL, not bare /thread (a canonical chain
+	// through the noindexed unfiltered view would defeat the purpose).
 	const isFiltered = $derived(
 		data.status !== 'all' || !!data.tagSlug || !!data.authorId || data.sort === 'featured'
 	);
 	const robots = $derived(isFiltered ? '' : 'noindex,follow');
-	const canonical = $derived(
-		isFiltered ? `${page.url.origin}/thread` : `${page.url.origin}/explore`
-	);
+	const canonical = $derived.by(() => {
+		if (!isFiltered) return `${page.url.origin}/explore`;
+		const params = new URLSearchParams();
+		if (data.sort !== 'latest') params.set('sort', data.sort);
+		if (data.sort !== 'featured') {
+			if (data.status !== 'all') params.set('status', data.status);
+			if (data.tagSlug) params.set('tag', data.tagSlug);
+			if (data.authorId) params.set('author_id', data.authorId);
+		}
+		const qs = params.toString();
+		return `${page.url.origin}/thread${qs ? `?${qs}` : ''}`;
+	});
 
 	function buildUrl(sort: string, status: string) {
 		const params = new URLSearchParams();
