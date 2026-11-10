@@ -30,6 +30,10 @@ type CreateCommentInput struct {
 	ParentID    pgtype.UUID
 	Body        []byte // TipTap JSON document (jsonb column)
 	IsAnonymous bool
+	// CreatedByUserID is the operator when the comment is attributed to a
+	// persona via an author_id override (delegated-authorship spec). Zero
+	// (invalid) for normal comments.
+	CreatedByUserID pgtype.UUID
 }
 
 // CanViewComments reports whether the viewer may read or create comments on
@@ -150,12 +154,13 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 
 	comment, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.Comment, error) {
 		c, err := q.CreateComment(ctx, gen.CreateCommentParams{
-			ContentID:    input.ContentID,
-			AuthorUserID: userID,
-			ParentID:     parentID,
-			Body:         input.Body,
-			Depth:        depth,
-			IsAnonymous:  input.IsAnonymous,
+			ContentID:       input.ContentID,
+			AuthorUserID:    userID,
+			ParentID:        parentID,
+			Body:            input.Body,
+			Depth:           depth,
+			IsAnonymous:     input.IsAnonymous,
+			CreatedByUserID: input.CreatedByUserID,
 		})
 		if err != nil {
 			return gen.Comment{}, fmt.Errorf("creating comment: %w", err)
@@ -448,6 +453,17 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.
 		}
 	}
 }
+
+// IsBotUser reports whether the user is a bot backing account — feeds the
+// delegated-actor resolver for persona author_id/actor_id overrides
+// (delegated-authorship spec §1.1).
+func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	return s.read.GetUserIsBot(ctx, userID)
+}
+
+// DB exposes the database pools for fire-and-forget audit writes
+// (personas.AuditAttribution) — same accessor pattern as personas.Store.DB.
+func (s *Service) DB() *db.DB { return s.db }
 
 // GetContentSpaceID returns the space_id of the content that a comment is
 // posted on. Returns pgtype.UUID{} with Valid=false if the content has no

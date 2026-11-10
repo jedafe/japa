@@ -18,6 +18,8 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -596,6 +598,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		ParentID    *string `json:"parent_id"`
 		Body        []byte  `json:"body"` // TipTap JSON (base64-encoded in transport, decoded to raw JSON bytes by encoding/json)
 		IsAnonymous bool    `json:"is_anonymous"`
+		AuthorID    *string `json:"author_id"`
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+1024)
@@ -626,6 +629,28 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Delegated authorship (spec §1.2): author_id attributes the comment to a
+	// bot persona backing user while the operator stays the spam/rate-limit
+	// subject and audit actor. The operator is persisted in
+	// comments.created_by_user_id so they keep edit/delete rights.
+	effectiveID := user.UserID
+	var createdBy pgtype.UUID
+	if input.AuthorID != nil && *input.AuthorID != "" {
+		if input.IsAnonymous {
+			errpkg.WriteError(w, http.StatusBadRequest, "mutually_exclusive",
+				"author_id and is_anonymous cannot be combined")
+			return
+		}
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.AuthorID)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "author_id")
+			return
+		}
+		effectiveID = aid
+		createdBy = user.UserID
+	}
+	createInput.CreatedByUserID = createdBy
 
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.SpamPipeline != nil {
@@ -660,9 +685,9 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			var allowed bool
 
 			if isReply {
-				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, user.UserID)
+				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, effectiveID)
 			} else {
-				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, user.UserID)
+				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, effectiveID)
 			}
 
 			if err != nil {
@@ -682,16 +707,27 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 				}
 
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
-					spaceDenialMessage(r.Context(), h.spaceChecker, spaceID, user.UserID, action))
+					spaceDenialMessage(r.Context(), h.spaceChecker, spaceID, effectiveID, action))
 				return
 			}
 		}
 	}
 
-	comment, err := h.Service.CreateComment(r.Context(), user.UserID, createInput)
+	comment, err := h.Service.CreateComment(r.Context(), effectiveID, createInput)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.comment rows tie
+	// the operator to the persona-attributed write. Synchronous like
+	// impersonation.auditLog — a failure is logged, never fails the request.
+	if createdBy.Valid {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveID, "comment", "comment", comment.ID); err != nil {
+			slog.Warn("comments: persona_attrib audit write failed",
+				"error", err, "comment_id", comment.ID.String())
+		}
 	}
 
 	// Record the creation for the spam rate-limit layer (BUG-004). Without
