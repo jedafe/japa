@@ -878,7 +878,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 	}
 
 	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
-		 WHERE u.status = 'active' AND u.deleted_at IS NULL
+		 WHERE u.status = 'active'
 		   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
 		     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
 		                JOIN user_groups ug ON ug.id = ugm.group_id
