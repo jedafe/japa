@@ -8116,11 +8116,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 68 — AI Persona System (ADR-068)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "persona.view", "persona.manage")).
 				Get("/admin/personas", personasHandlers.HandleList)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage"), mw.RateLimit(vkClient.Redis(), "mass_provision")).
 				Post("/admin/personas", personasHandlers.HandleCreate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "persona.view", "persona.manage")).
 				Get("/admin/personas/{id}", personasHandlers.HandleGet)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
 				Patch("/admin/personas/{id}", personasHandlers.HandleUpdate)
