@@ -193,8 +193,13 @@
 		}}
 		onmouseleave={() => (navHoverExpand = false)}
 	>
+		<!-- Fixed inner: the nav stays viewport-pinned over whatever follows
+		     the shell (e.g. the published-page footer band), instead of
+		     stopping at the grid's bottom edge. -->
 		{#if navMounted}
-			<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} shellRail onToggle={onToggleCollapse} />
+			<div class="shell-nav-fixed">
+				<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} shellRail onToggle={onToggleCollapse} />
+			</div>
 		{/if}
 	</div>
 
@@ -309,16 +314,22 @@
 		grid-template-columns: var(--current-nav-width) var(--left-rail-width) 1fr;
 	}
 
+	/* In-flow grid placeholder — reserves the nav column only. */
 	.shell-nav {
-		position: sticky;
-		top: 0;
 		height: 100vh;
 	}
 
-	/* Collapsed nav: raise the rail's stacking context so the item-label
-	   flyouts rendered inside LeftNav paint above the left rail and page
-	   content (sticky siblings would otherwise overlay them in DOM order). */
-	.shell[data-nav-collapsed='true'] .shell-nav {
+	/* The nav itself: viewport-fixed so it keeps full height over content
+	   rendered after the shell (published-page footer). Fixed removes it
+	   from the grid; the placeholder above holds the column. z-index keeps
+	   the rail — and collapsed-rail item-label flyouts — above the center
+	   column and footer band. */
+	.shell-nav-fixed {
+		position: fixed;
+		top: 0;
+		bottom: 0;
+		inset-inline-start: 0;
+		width: var(--current-nav-width);
 		z-index: 30;
 	}
 
