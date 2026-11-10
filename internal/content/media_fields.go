@@ -25,10 +25,10 @@ type mediaRef struct {
 	Position int32
 }
 
-// contentMediaRefSource carries the values that were actually written to
-// the contents row — for updates this is the post-merge params (preserve-
+// MediaRefSource carries the values that were actually written to the
+// contents row — for updates this is the post-merge params (preserve-
 // on-omit already resolved), not the raw input.
-type contentMediaRefSource struct {
+type MediaRefSource struct {
 	ContentType     string
 	GuideCategory   *string
 	FieldValues     []byte
@@ -46,18 +46,22 @@ var mediaServeURL = regexp.MustCompile(`media/serve/([a-z0-9_-]+)/([0-9A-Za-z_\-
 // uuidLiteral matches a canonical UUID anywhere inside a JSON value.
 var uuidLiteral = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
 
-// syncContentMediaFields replaces the content's tracked media references
-// with the set derived from src. q is the write querier so the sync joins
-// the caller's transaction when one is open. A collection error aborts
-// before the delete — a transient read failure must never wipe tracking
-// rows the content still references.
-func (s *Service) syncContentMediaFields(ctx context.Context, q *gen.Queries, contentID pgtype.UUID, src contentMediaRefSource) error {
-	refs, err := s.collectMediaRefs(ctx, q, src)
+// SyncMediaRefs replaces the content's tracked media references with the
+// set derived from src. write is the querier for the delete+insert so the
+// sync joins the caller's transaction when one is open; read resolves the
+// referenced rows. A collection error aborts before the delete — a
+// transient read failure must never wipe tracking rows the content still
+// references.
+//
+// Exported for writers that bypass the content service (roadmap and
+// mentorship shadow contents rows insert via their own queries).
+func SyncMediaRefs(ctx context.Context, read, write *gen.Queries, contentID pgtype.UUID, src MediaRefSource) error {
+	refs, err := collectMediaRefs(ctx, read, write, src)
 	if err != nil {
 		return err
 	}
 
-	if err := q.DeleteContentMediaFields(ctx, contentID); err != nil {
+	if err := write.DeleteContentMediaFields(ctx, contentID); err != nil {
 		return err
 	}
 
@@ -78,7 +82,7 @@ func (s *Service) syncContentMediaFields(ctx context.Context, q *gen.Queries, co
 		params.Positions = append(params.Positions, r.Position)
 	}
 
-	return q.InsertContentMediaFields(ctx, params)
+	return write.InsertContentMediaFields(ctx, params)
 }
 
 // collectMediaRefs gathers every media reference the saved values carry.
@@ -86,7 +90,7 @@ func (s *Service) syncContentMediaFields(ctx context.Context, q *gen.Queries, co
 // than failing the write — the tracking table must never reject a save
 // the contents row itself accepted. Resolution errors propagate so the
 // caller aborts before touching stored rows.
-func (s *Service) collectMediaRefs(ctx context.Context, q *gen.Queries, src contentMediaRefSource) ([]mediaRef, error) {
+func collectMediaRefs(ctx context.Context, read, write *gen.Queries, src MediaRefSource) ([]mediaRef, error) {
 	var refs []mediaRef
 
 	if src.HeaderImageID.Valid {
@@ -100,13 +104,13 @@ func (s *Service) collectMediaRefs(ctx context.Context, q *gen.Queries, src cont
 		refs = append(refs, listItemMediaRefs(src.FieldValues)...)
 	}
 
-	bodyRefs, err := s.bodyMediaRefs(ctx, q, src.Body, src.BodyHTML)
+	bodyRefs, err := bodyMediaRefs(ctx, write, src.Body, src.BodyHTML)
 	if err != nil {
 		return nil, err
 	}
 	refs = append(refs, bodyRefs...)
 
-	cfRefs, err := s.customFieldMediaRefs(ctx, q, src)
+	cfRefs, err := customFieldMediaRefs(ctx, write, src)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +127,7 @@ func (s *Service) collectMediaRefs(ctx context.Context, q *gen.Queries, src cont
 		ids = append(ids, r.MediaID)
 	}
 
-	rows, err := s.read.GetMediaByIDs(ctx, ids)
+	rows, err := read.GetMediaByIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("resolving media references: %w", err)
 	}
@@ -174,7 +178,7 @@ func listItemMediaRefs(fieldValues []byte) []mediaRef {
 // bodyMediaRefs resolves /media/serve/{bucket}/{path} URLs in body and
 // body_html back to media rows. Position is the match order across the
 // combined text so repeated embeds stay distinct.
-func (s *Service) bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyHTML string) ([]mediaRef, error) {
+func bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyHTML string) ([]mediaRef, error) {
 	combined := body + "\n" + bodyHTML
 	matches := mediaServeURL.FindAllStringSubmatch(combined, -1)
 	if len(matches) == 0 {
@@ -232,7 +236,7 @@ func (s *Service) bodyMediaRefs(ctx context.Context, q *gen.Queries, body, bodyH
 // customFieldMediaRefs extracts media IDs from media-typed custom field
 // values in field_values. Keys come from the groups assigned to the
 // content's entity classes — the same classes validateRequiredFields uses.
-func (s *Service) customFieldMediaRefs(ctx context.Context, q *gen.Queries, src contentMediaRefSource) ([]mediaRef, error) {
+func customFieldMediaRefs(ctx context.Context, q *gen.Queries, src MediaRefSource) ([]mediaRef, error) {
 	if len(src.FieldValues) == 0 {
 		return nil, nil
 	}

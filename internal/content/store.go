@@ -756,7 +756,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// §14: register every media reference this row carries so deletes can
 	// report "in use" — cover columns, list item slots, body embeds, and
 	// media-typed custom field values.
-	if err := s.syncContentMediaFields(ctx, writeQ, content.ID, contentMediaRefSource{
+	if err := SyncMediaRefs(ctx, readQ, writeQ, content.ID, MediaRefSource{
 		ContentType:     input.ContentType,
 		GuideCategory:   input.GuideCategory,
 		FieldValues:     fieldValues,
@@ -1585,7 +1585,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		syncGuideCategory = existing.GuideCategory
 	}
 
-	if err := s.syncContentMediaFields(ctx, s.write, content.ID, contentMediaRefSource{
+	if err := SyncMediaRefs(ctx, s.read, s.write, content.ID, MediaRefSource{
 		ContentType:     existing.ContentType,
 		GuideCategory:   syncGuideCategory,
 		FieldValues:     params.FieldValues,

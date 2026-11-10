@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -326,6 +327,15 @@ func (s *Store) updateShadowContent(ctx context.Context, p gen.UpdateRoadmapShad
 		return fmt.Errorf("updating roadmap shadow content: %w", err)
 	}
 
+	// §14: re-derive the shadow row's tracked media refs — this write
+	// bypasses the content service, so the sync runs here (§14 cmf).
+	if err := content.SyncMediaRefs(ctx, s.read, s.write, p.ContentID, content.MediaRefSource{
+		ContentType: "roadmap",
+		Body:        p.Body,
+	}); err != nil {
+		return fmt.Errorf("syncing shadow media fields: %w", err)
+	}
+
 	return nil
 }
 
@@ -482,6 +492,15 @@ func (s *Store) createShadowContent(ctx context.Context, p gen.CreateRoadmapShad
 	id, err := s.write.CreateRoadmapShadowContent(ctx, p)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating roadmap shadow content: %w", err)
+	}
+
+	// §14: register the shadow row's tracked media refs — this insert
+	// bypasses the content service, so the sync runs here.
+	if err := content.SyncMediaRefs(ctx, s.read, s.write, id, content.MediaRefSource{
+		ContentType: "roadmap",
+		Body:        p.Body,
+	}); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("syncing shadow media fields: %w", err)
 	}
 
 	return id, nil

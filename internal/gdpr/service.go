@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -672,11 +673,30 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// Unlike the sibling scrubs this one is fatal: the artifact it
 		// protects is publicly visible, and a warn-only failure would
 		// checkpoint past the step so a retry never scrubs it.
+		shadowRows, err := s.store.read.ListMentorshipShadowMediaFields(ctx,
+			request.UserID,
+		)
+		if err != nil {
+			s.markDeletionFailed(ctx, requestID)
+			return fmt.Errorf("listing mentorship shadow media fields: %w", err)
+		}
 		if err := s.store.write.AnonymizeMentorshipShadowListings(ctx,
 			request.UserID,
 		); err != nil {
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
+		}
+		// §14: the scrub wipes body/body_html — re-derive each shadow's
+		// tracked media refs so body embeds don't pin media rows forever.
+		// field_values survives the scrub and passes through unchanged.
+		for _, row := range shadowRows {
+			if err := content.SyncMediaRefs(ctx, s.store.read, s.store.write, row.ID, content.MediaRefSource{
+				ContentType: "service_listing",
+				FieldValues: row.FieldValues,
+			}); err != nil {
+				s.markDeletionFailed(ctx, requestID)
+				return fmt.Errorf("syncing shadow media fields: %w", err)
+			}
 		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
@@ -1083,8 +1103,22 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		//    the worker path (which already ran it in the anonymize phase)
 		//    is unaffected. Fatal: a failure rolls the whole tx back rather
 		//    than reassigning a PII-bearing listing to the placeholder.
+		shadowRows, err := q.ListMentorshipShadowMediaFields(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("listing mentorship shadow media fields: %w", err)
+		}
 		if err := q.AnonymizeMentorshipShadowListings(ctx, userID); err != nil {
 			return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
+		}
+		// §14: re-derive tracked media refs — body embeds are scrubbed,
+		// field_values survives.
+		for _, row := range shadowRows {
+			if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+				ContentType: "service_listing",
+				FieldValues: row.FieldValues,
+			}); err != nil {
+				return fmt.Errorf("syncing shadow media fields: %w", err)
+			}
 		}
 
 		// 1. Reassign content authorship to preserve thread continuity.

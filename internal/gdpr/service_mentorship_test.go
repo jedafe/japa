@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -247,5 +248,84 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 	againTomb := readShadowState(t, database, tombID)
 	if !againTomb.DeletedAt.Time.Equal(tombDeletedAt.Time) {
 		t.Error("second run rewrote the opt-out tombstone timestamp")
+	}
+}
+
+// TestAnonymizeShadowMediaFields_LiveDB proves the §14 follow-up to the
+// erasure scrub: a body embed that pins a media row through
+// content_media_fields releases it once the shadow is anonymized and its
+// refs re-derived. Mirrors the sync block inside the anonymize and
+// hard-delete paths.
+func TestAnonymizeShadowMediaFields_LiveDB(t *testing.T) {
+	ctx := t.Context()
+	database := liveDB(t)
+	q := gen.New(database.Writer)
+	uniq := uniqTag("gdpr-cmf-")
+
+	mentorID := insertGDPRTestUser(t, database, uniq+"m")
+
+	var mediaID pgtype.UUID
+	mediaPath := "gdpr-cmf/" + uniq + ".jpg"
+	if err := database.Writer.QueryRow(ctx,
+		`INSERT INTO media (uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, storage_bucket)
+		 VALUES ($1, 'bio.jpg', 'image/jpeg', 1, $2, 'japaconnect') RETURNING id`,
+		mentorID, mediaPath).Scan(&mediaID); err != nil {
+		t.Fatalf("insert media: %v", err)
+	}
+
+	shadowID, _ := insertShadowListing(t, database, mentorID, "", "mentor-"+uniq+"m")
+	if _, err := database.Writer.Exec(ctx,
+		`UPDATE contents SET body = 'bio with photo ![p](media/serve/japaconnect/`+mediaPath+`)' WHERE id = $1`,
+		shadowID); err != nil {
+		t.Fatalf("embed media in shadow body: %v", err)
+	}
+
+	// The shadow write bypasses content.Service, so its media refs are
+	// registered by the store-level sync — same call, direct.
+	if err := content.SyncMediaRefs(ctx, q, q, shadowID, content.MediaRefSource{
+		ContentType: "service_listing",
+		Body:        "bio with photo ![p](media/serve/japaconnect/" + mediaPath + ")",
+	}); err != nil {
+		t.Fatalf("initial media sync: %v", err)
+	}
+
+	var fieldKey string
+	if err := database.Writer.QueryRow(ctx,
+		`SELECT field_key FROM content_media_fields WHERE content_id = $1 AND media_id = $2`,
+		shadowID, mediaID).Scan(&fieldKey); err != nil {
+		t.Fatalf("expected tracked body_block ref: %v", err)
+	}
+	if fieldKey != "body_block" {
+		t.Fatalf("field_key = %q, want body_block", fieldKey)
+	}
+
+	// Mirror the service: list survivors, scrub, re-sync each.
+	rows, err := q.ListMentorshipShadowMediaFields(ctx, mentorID)
+	if err != nil {
+		t.Fatalf("ListMentorshipShadowMediaFields: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != shadowID {
+		t.Fatalf("list returned %d rows, want the one shadow", len(rows))
+	}
+	if err := q.AnonymizeMentorshipShadowListings(ctx, mentorID); err != nil {
+		t.Fatalf("AnonymizeMentorshipShadowListings: %v", err)
+	}
+	for _, row := range rows {
+		if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
+			ContentType: "service_listing",
+			FieldValues: row.FieldValues,
+		}); err != nil {
+			t.Fatalf("post-scrub media sync: %v", err)
+		}
+	}
+
+	var n int
+	if err := database.Writer.QueryRow(ctx,
+		`SELECT count(*) FROM content_media_fields WHERE content_id = $1`,
+		shadowID).Scan(&n); err != nil {
+		t.Fatalf("count refs: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("%d media refs survived the scrub, want 0", n)
 	}
 }

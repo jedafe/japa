@@ -339,6 +339,22 @@ WHERE c.author_id = @user_id
       WHERE m.content_id = c.id AND m.listing_kind = 'mentorship'
   );
 
+-- name: ListMentorshipShadowMediaFields :many
+-- Companion to AnonymizeMentorshipShadowListings: returns the id and
+-- surviving field_values of every shadow row the anonymize scrubs, so
+-- the caller can re-derive content_media_fields in the same pass (body
+-- refs are wiped; field_values — and any media-typed custom-field refs
+-- inside it — is preserved). Same WHERE scope: already-tombstoned rows
+-- included.
+SELECT c.id, c.field_values
+FROM contents c
+WHERE c.author_id = @user_id
+  AND c.content_type = 'service_listing'
+  AND EXISTS (
+      SELECT 1 FROM service_listing_meta m
+      WHERE m.content_id = c.id AND m.listing_kind = 'mentorship'
+  );
+
 -- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()

@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -54,6 +55,15 @@ func (s *Store) CreateMentorShadow(ctx context.Context, authorID pgtype.UUID, ti
 			return pgtype.UUID{}, fmt.Errorf("servicedir: mentor shadow meta: %w", err)
 		}
 
+		// §14: register tracked media refs — the insert bypasses
+		// content.Service, so the sync joins this transaction.
+		if err := content.SyncMediaRefs(ctx, q, q, contentID, content.MediaRefSource{
+			ContentType: "service_listing",
+			Body:        body,
+		}); err != nil {
+			return pgtype.UUID{}, fmt.Errorf("servicedir: sync shadow media fields: %w", err)
+		}
+
 		if err := q.SetMentorListingContentID(ctx, gen.SetMentorListingContentIDParams{
 			ContentID: contentID, UserID: authorID,
 		}); err != nil {
@@ -87,6 +97,14 @@ func (s *Store) UpdateMentorShadow(ctx context.Context, contentID, authorID pgty
 
 		if err := q.EnsureMentorshipShadowMeta(ctx, contentID); err != nil {
 			return fmt.Errorf("servicedir: mentor shadow meta: %w", err)
+		}
+
+		// §14: re-derive tracked media refs in the same transaction.
+		if err := content.SyncMediaRefs(ctx, q, q, contentID, content.MediaRefSource{
+			ContentType: "service_listing",
+			Body:        body,
+		}); err != nil {
+			return fmt.Errorf("servicedir: sync shadow media fields: %w", err)
 		}
 
 		return q.SetMentorListingContentID(ctx, gen.SetMentorListingContentIDParams{
