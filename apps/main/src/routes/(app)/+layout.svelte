@@ -73,11 +73,14 @@
 	// The new default guest homepage (guestHome) also uses GuestHeader and a custom footer.
 	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestHome);
 
-	// Published Page Builder pages (data.page from loadPublishedPage) share
-	// the guest-home footer block. It renders BELOW AppShell so the left nav
-	// never indents the band — pages that ship their own guest_footer block
-	// keep it and don't double-render.
-	const isPublishedPage = $derived(!!page.data.page);
+	// Published Page Builder pages (data.page from loadPublishedPage on the
+	// /{slug} catch-all only — wiki/entity routes also return a `page` key)
+	// share the guest-home footer block. It renders BELOW AppShell so the
+	// left nav never indents the band — pages that ship their own
+	// guest_footer block keep it and don't double-render.
+	const isPublishedPage = $derived(
+		page.route.id === '/(app)/[slug]' && !!page.data.page
+	);
 	const publishedHasOwnFooter = $derived(
 		containsBlock(
 			((page.data.page as { blocks?: unknown } | undefined)?.blocks ?? []) as Block[],
