@@ -235,7 +235,7 @@
 		Content single pages render the unified shell's left ad rail (Section 59) instead of a
 		page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 	-->
-	<div class="mx-auto flex max-w-[65rem] gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-8">
+	<div class="mx-auto flex max-w-[72rem] gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-8">
 		<!-- Center: story -->
 		<article class="min-w-0 flex-1 max-w-[41rem]">
 			<div class="mb-8 flex items-center justify-between gap-3">
@@ -485,7 +485,7 @@
 		</article>
 
 		<!-- Right: CreatorCard + admin-managed widgets -->
-		<aside class="hidden w-80 shrink-0 xl:block">
+		<aside class="ms-auto hidden w-80 shrink-0 xl:block">
 			<div class="sticky top-24 flex flex-col gap-4">
 				{@render rightSidebar()}
 			</div>
