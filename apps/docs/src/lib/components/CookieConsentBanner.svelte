@@ -18,11 +18,16 @@
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.js';
 	import { t } from '#lib/i18n/index.js';
-	import { readConsent, setConsent, clearConsent, initConsent } from '#lib/consent.js';
+	import {
+		readConsent,
+		setConsent,
+		clearConsent,
+		initConsent,
+		hasConsentDecision
+	} from '#lib/consent.svelte.js';
 	import { Cookie } from 'lucide-svelte';
 	import { Switch } from 'bits-ui';
 
-	const CONSENT_COOKIE = 'jc_consent';
 	const REOPEN_HASH = '#cookie-settings';
 	const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
@@ -34,17 +39,14 @@
 	let functional = $state(false);
 	let analytics = $state(false);
 
-	function hasDecision(): boolean {
-		return document.cookie.split('; ').some((c) => c.startsWith(`${CONSENT_COOKIE}=`));
-	}
-
 	// The policy page lives on the main surface; derive its host from the
-	// shared API base domain, falling back to a relative path in dev.
+	// shared API base domain. Non-'api.' hosts (dev localhost, path-based
+	// mounts) have no sibling main site to link to — stay relative.
 	function policyUrl(): string {
 		try {
 			const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
-			const base = apiHost.startsWith('api.') ? apiHost.slice(4) : apiHost;
-			return `https://${base}/cookies`;
+			if (!apiHost.startsWith('api.')) return '/cookies';
+			return `https://${apiHost.slice(4)}/cookies`;
 		} catch {
 			return '/cookies';
 		}
@@ -68,7 +70,7 @@
 
 	onMount(() => {
 		initConsent();
-		if (!visible) visible = !hasDecision();
+		if (!visible) visible = !hasConsentDecision();
 	});
 
 	// Record a per-category decision: jc_consent encodes the granted types,
@@ -93,9 +95,8 @@
 			['analytics_tracking', a]
 		];
 		void (async () => {
-			const post = (type: string, granted: boolean) => {
-				const csrf = getCsrfToken();
-				return fetch(buildApiUrl('/consent', API_BASE), {
+			const post = (type: string, granted: boolean, csrf = getCsrfToken()) =>
+				fetch(buildApiUrl('/consent', API_BASE), {
 					method: 'POST',
 					credentials: 'include',
 					headers: {
@@ -105,13 +106,14 @@
 					},
 					body: JSON.stringify({ consent_type: type, granted })
 				});
-			};
 			for (const [type, granted] of decisions) {
 				try {
 					const res = await post(type, granted);
 					if (res.status === 403) {
-						await refreshCsrfToken();
-						await post(type, granted);
+						// Attach the body-echoed token — the refreshed csrf cookie
+						// may not be visible to this surface's document.cookie.
+						const fresh = await refreshCsrfToken();
+						await post(type, granted, fresh ?? getCsrfToken());
 					}
 				} catch {}
 			}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
@@ -18,9 +19,9 @@ const GuestCookieName = "jc_guest"
 
 // ConsentCookieName is the cookie-consent decision cookie written by the
 // frontend banner on the shared base domain (visible to api.<domain>).
-// The value is "all", "necessary", or a comma-list of granted consent_type
-// tokens (see ConsentGrants) — absent/unknown values mean "strictly
-// necessary only" (strict opt-in — §19).
+// The value is "all", "necessary", or a '+'-joined list of granted
+// consent_type tokens (see ConsentGrants) — absent/unknown values mean
+// "strictly necessary only" (strict opt-in — §19).
 const ConsentCookieName = "jc_consent"
 const ConsentValueAll = "all"
 
@@ -28,19 +29,26 @@ const guestCookieMaxAge = 365 * 24 * time.Hour // 1 year
 
 // ConsentGrants reports whether a jc_consent cookie value grants a
 // consent_type category. "all" grants every category; "necessary" and
-// absent/unknown values grant nothing; otherwise the cookie is a
-// comma-list of granted consent_type tokens (the per-category decisions
-// written by the banner's Customize view or a settings toggle).
+// absent/unknown values grant nothing; otherwise the cookie is a list of
+// granted consent_type tokens (the per-category decisions written by the
+// banner's Customize view or a settings toggle). Tokens are separated by
+// '+' (a legal RFC 6265 cookie-octet — ',' is not); ',' and whitespace
+// are also accepted so cookies written by older frontends — or a layer
+// that decoded '+' into a space — still decode.
 func ConsentGrants(value, category string) bool {
 	if value == ConsentValueAll {
 		return true
 	}
-	for _, part := range strings.Split(value, ",") {
-		if strings.TrimSpace(part) == category {
+	for _, part := range strings.FieldsFunc(value, isConsentSeparator) {
+		if part == category {
 			return true
 		}
 	}
 	return false
+}
+
+func isConsentSeparator(r rune) bool {
+	return r == '+' || r == ',' || unicode.IsSpace(r)
 }
 
 // GuestSessionKey returns the stable guest identity: the jc_guest cookie
@@ -65,7 +73,8 @@ func guestSessionKey(r *http.Request) string { return GuestSessionKey(r) }
 // consent is absent so a revoked decision can't outlive the login.
 //
 // §19 opt-in: jc_guest is a persistent non-essential identifier, so it is
-// only minted after the visitor affirmatively consents (jc_consent=all).
+// only minted after the visitor affirmatively grants functional_cookies
+// (via jc_consent=all or a per-category list containing the token).
 // Without consent the request falls back to client-IP keying. An existing
 // jc_guest presented under a missing/rejected consent decision is expired —
 // e.g. a cookie minted before the banner, or a decision changed later.

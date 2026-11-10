@@ -5,9 +5,14 @@
  * it on decide()/reopen; the root layout reads it to gate scripts;
  * DataPrivacySection keeps it in sync when a cookie-gated type toggles.
  *
- * Cookie value encoding: 'all' | 'necessary' | a comma-list of granted
- * consent_type tokens (e.g. 'functional_cookies,analytics_tracking') —
- * the same contract GuestSessionMiddleware.ConsentGrants parses.
+ * Cookie value encoding: 'all' | 'necessary' | a '+'-joined list of
+ * granted consent_type tokens (e.g. 'functional_cookies+analytics_tracking')
+ * — the same contract GuestSessionMiddleware.ConsentGrants parses.
+ * '+' is a legal RFC 6265 cookie-octet; ',' is not — parsers on both
+ * sides also accept ','/whitespace so older cookies still decode.
+ *
+ * Lives in a .svelte.ts module because it uses $state (required for
+ * runes outside components).
  *
  * Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
  */
@@ -17,31 +22,56 @@ import { PUBLIC_JC_API_URL } from '$app/env/public';
 const CONSENT_COOKIE = 'jc_consent';
 const CONSENT_MAX_AGE = 365 * 24 * 60 * 60; // 1 year
 
+// The consent_type tokens jc_consent can carry — a cookie containing
+// anything else counts as no decision (fail closed + re-prompt).
+const KNOWN_TYPES = new Set(['functional_cookies', 'analytics_tracking']);
+
+// A granted-token list may be separated by '+', ',', or whitespace —
+// writers emit '+', older cookies used ',', and any layer that
+// URL-decodes '+' into a space still parses.
+const SPLIT_RE = /[,+\s]+/;
+
 /** Consent state mirrored into every consumer. Strict opt-in: both flags
  *  stay false until an affirmative decision is read from the cookie. */
 export const consent = $state({ functional: false, analytics: false });
 
-/** Parse the jc_consent cookie into per-category flags. */
-export function readConsent(): { functional: boolean; analytics: boolean } {
-	const raw =
+function rawConsentValue(): string {
+	return (
 		document.cookie
 			.split('; ')
 			.find((c) => c.startsWith(`${CONSENT_COOKIE}=`))
-			?.slice(CONSENT_COOKIE.length + 1) ?? '';
-	const granted =
-		raw === 'all'
-			? ['functional_cookies', 'analytics_tracking']
-			: raw === '' || raw === 'necessary'
-				? []
-				: raw.split(',').map((s) => s.trim());
+			?.slice(CONSENT_COOKIE.length + 1) ?? ''
+	);
+}
+
+function grantedTokens(raw: string): string[] {
+	if (raw === 'all') return [...KNOWN_TYPES];
+	if (raw === '' || raw === 'necessary') return [];
+	return raw.split(SPLIT_RE).filter(Boolean);
+}
+
+/** Parse the jc_consent cookie into per-category flags. */
+export function readConsent(): { functional: boolean; analytics: boolean } {
+	const granted = grantedTokens(rawConsentValue());
 	return {
 		functional: granted.includes('functional_cookies'),
 		analytics: granted.includes('analytics_tracking')
 	};
 }
 
+/** True only when jc_consent holds a value we recognize — a malformed or
+ *  unknown value means the banner should re-prompt rather than silently
+ *  suppress itself forever on a cookie that grants nothing. */
+export function hasConsentDecision(): boolean {
+	const raw = rawConsentValue();
+	if (raw === 'all' || raw === 'necessary') return true;
+	const tokens = raw.split(SPLIT_RE).filter(Boolean);
+	return tokens.length > 0 && tokens.every((tok) => KNOWN_TYPES.has(tok));
+}
+
 /** Encode a category decision: 'all' when everything is granted,
- *  'necessary' when nothing is, else the comma-list of granted types. */
+ *  'necessary' when nothing is, else the '+'-joined list of granted
+ *  consent_type tokens. */
 export function consentCookieValue(functional: boolean, analytics: boolean): string {
 	if (functional && analytics) return 'all';
 	if (!functional && !analytics) return 'necessary';
@@ -50,7 +80,7 @@ export function consentCookieValue(functional: boolean, analytics: boolean): str
 		analytics ? 'analytics_tracking' : ''
 	]
 		.filter(Boolean)
-		.join(',');
+		.join('+');
 }
 
 // Scope the cookie to the shared base domain so api.<domain> receives it,

@@ -10,7 +10,20 @@ export function getCsrfToken(): string | null {
 	return getCookie('csrf_token') ?? null;
 }
 
-export async function refreshCsrfToken(): Promise<void> {
+/**
+ * Fetch a fresh CSRF token and return it. GET /csrf both sets the
+ * csrf_token cookie (the double-submit half the middleware reads) and
+ * echoes the token in the body — the body value is returned so callers
+ * can attach it to a retry even when the cookie isn't readable from this
+ * surface's document.cookie (e.g. a host-only cookie on the API host).
+ */
+export async function refreshCsrfToken(): Promise<string | null> {
 	const base = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
-	await fetch(buildApiUrl('/csrf', base), { credentials: 'include' });
+	try {
+		const res = await fetch(buildApiUrl('/csrf', base), { credentials: 'include' });
+		const body = (await res.json()) as { data?: { csrfToken?: string } };
+		return body?.data?.csrfToken ?? null;
+	} catch {
+		return null;
+	}
 }

@@ -20,7 +20,7 @@
 	import { api, apiBaseUrl } from '#lib/api/client.js';
 	import { buildApiUrl } from '#lib/api/url.js';
 	import { exportData, cancelDataExport } from '#lib/api/hub.js';
-	import { setConsent } from '#lib/consent.js';
+	import { setConsent } from '#lib/consent.svelte.js';
 	import { Download, Loader2, ShieldCheck, X } from 'lucide-svelte';
 
 	/** Backend consent record — matches gen.ConsentRecord (Section 19). */

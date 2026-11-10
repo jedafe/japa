@@ -18,7 +18,7 @@
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
-	import { consent, initConsent } from '#lib/consent.js';
+	import { consent, initConsent } from '#lib/consent.svelte.js';
 	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	import { theme } from '#lib/stores/theme.svelte.js';
 	import { seedCsrfToken } from '#lib/api/csrf.svelte.js';

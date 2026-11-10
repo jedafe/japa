@@ -62,8 +62,18 @@ func TestGuestSessionMiddleware_MintsOnlyWithAffirmativeConsent(t *testing.T) {
 			wantMint: true,
 		},
 		{
-			name:     "jc_consent=functional_cookies,analytics_tracking — mints (list)",
+			name:     "jc_consent=functional_cookies+analytics_tracking — mints ('+' list)",
+			cookies:  []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookies+analytics_tracking"}},
+			wantMint: true,
+		},
+		{
+			name:     "jc_consent=functional_cookies,analytics_tracking — mints (legacy ',' list)",
 			cookies:  []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookies,analytics_tracking"}},
+			wantMint: true,
+		},
+		{
+			name:     "jc_consent=functional_cookies analytics_tracking — mints (space-decoded '+')",
+			cookies:  []*http.Cookie{{Name: ConsentCookieName, Value: "functional_cookies analytics_tracking"}},
 			wantMint: true,
 		},
 		{

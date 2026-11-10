@@ -15,11 +15,16 @@
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
-	import { readConsent, setConsent, clearConsent, initConsent } from '#lib/consent.js';
+	import {
+		readConsent,
+		setConsent,
+		clearConsent,
+		initConsent,
+		hasConsentDecision
+	} from '#lib/consent.svelte.js';
 	import { Cookie } from 'lucide-svelte';
 	import { Switch } from 'bits-ui';
 
-	const CONSENT_COOKIE = 'jc_consent';
 	const REOPEN_HASH = '#cookie-settings';
 
 	let visible = $state(false);
@@ -30,17 +35,14 @@
 	let functional = $state(false);
 	let analytics = $state(false);
 
-	function hasDecision(): boolean {
-		return document.cookie.split('; ').some((c) => c.startsWith(`${CONSENT_COOKIE}=`));
-	}
-
 	// The policy page lives on the main surface; derive its host from the
-	// shared API base domain, falling back to a relative path in dev.
+	// shared API base domain. Non-'api.' hosts (dev localhost, path-based
+	// mounts) have no sibling main site to link to — stay relative.
 	function policyUrl(): string {
 		try {
 			const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
-			const base = apiHost.startsWith('api.') ? apiHost.slice(4) : apiHost;
-			return `https://${base}/cookies`;
+			if (!apiHost.startsWith('api.')) return '/cookies';
+			return `https://${apiHost.slice(4)}/cookies`;
 		} catch {
 			return '/cookies';
 		}
@@ -64,7 +66,7 @@
 
 	onMount(() => {
 		initConsent();
-		if (!visible) visible = !hasDecision();
+		if (!visible) visible = !hasConsentDecision();
 	});
 
 	// Record a per-category decision: jc_consent encodes the granted types,

@@ -10,7 +10,7 @@
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
-	import { consent, initConsent } from '#lib/consent.js';
+	import { consent, initConsent } from '#lib/consent.svelte.js';
 	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
 	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
 	import NextActions from '#lib/components/shell/NextActions.svelte';

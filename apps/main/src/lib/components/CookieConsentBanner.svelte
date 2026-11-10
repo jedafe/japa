@@ -5,7 +5,7 @@
 	 * decision is made, then hidden for a year.
 	 *
 	 * The jc_consent cookie is the operative record — 'all', 'necessary',
-	 * or a comma-list of granted consent_types. GuestSessionMiddleware
+	 * or a '+'-joined list of granted consent_types. GuestSessionMiddleware
 	 * mints the jc_guest visitor-id cookie only when functional_cookies is
 	 * granted, and expires it otherwise; the layouts inject Umami only when
 	 * analytics_tracking is granted. Strictly necessary cookies (jc_token,
@@ -27,11 +27,16 @@
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
-	import { readConsent, setConsent, clearConsent, initConsent } from '#lib/consent.js';
+	import {
+		readConsent,
+		setConsent,
+		clearConsent,
+		initConsent,
+		hasConsentDecision
+	} from '#lib/consent.svelte.js';
 	import { Cookie } from 'lucide-svelte';
 	import { Switch } from 'bits-ui';
 
-	const CONSENT_COOKIE = 'jc_consent';
 	const REOPEN_HASH = '#cookie-settings';
 
 	let visible = $state(false);
@@ -41,10 +46,6 @@
 	let customizing = $state(false);
 	let functional = $state(false);
 	let analytics = $state(false);
-
-	function hasDecision(): boolean {
-		return document.cookie.split('; ').some((c) => c.startsWith(`${CONSENT_COOKIE}=`));
-	}
 
 	// #cookie-settings clears the stored decision and re-opens the banner —
 	// GDPR requires withdrawal to be as easy as consent. Watching page.url.hash
@@ -66,7 +67,7 @@
 
 	onMount(() => {
 		initConsent();
-		if (!visible) visible = !hasDecision();
+		if (!visible) visible = !hasConsentDecision();
 	});
 
 	// Record a per-category decision: jc_consent encodes the granted types,
