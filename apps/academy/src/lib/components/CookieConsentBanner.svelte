@@ -134,6 +134,7 @@
 						</span>
 						<Switch.Root
 							checked={functional}
+							aria-label={t('cookies.banner.functional_title', 'Functional cookies')}
 							onCheckedChange={(v) => (functional = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>
@@ -153,6 +154,7 @@
 						</span>
 						<Switch.Root
 							checked={analytics}
+							aria-label={t('cookies.banner.analytics_title', 'Analytics')}
 							onCheckedChange={(v) => (analytics = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>

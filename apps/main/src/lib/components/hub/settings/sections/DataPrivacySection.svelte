@@ -259,6 +259,7 @@
 						checked={granted}
 						onCheckedChange={() => toggleConsent(type)}
 						disabled={toggling === type}
+						aria-label={t(`consent.${type}.title`, type)}
 						class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 					>
 						<Switch.Thumb

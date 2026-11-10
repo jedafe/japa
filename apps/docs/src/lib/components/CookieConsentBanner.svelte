@@ -16,6 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
+	import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.js';
 	import { t } from '#lib/i18n/index.js';
 	import { readConsent, setConsent, clearConsent, initConsent } from '#lib/consent.js';
 	import { Cookie } from 'lucide-svelte';
@@ -82,19 +83,39 @@
 			void goto(page.url.pathname + page.url.search, { replaceState: true });
 		}
 		// Fire-and-forget audit trail — POST /consent is public, and the CSRF
-		// exemption is scoped to requests without a session credential.
+		// exemption is scoped to requests without a session credential. When a
+		// member IS signed in, jc_token makes this a credentialed request that
+		// must clear the double-submit check — attach the token and, if the
+		// api-host csrf cookie is missing entirely (403), refresh it once and
+		// retry before giving up silently.
 		const decisions: Array<[string, boolean]> = [
 			['functional_cookies', f],
 			['analytics_tracking', a]
 		];
-		for (const [type, granted] of decisions) {
-			void fetch(buildApiUrl('/consent', API_BASE), {
-				method: 'POST',
-				credentials: 'include',
-				headers: { 'Content-Type': 'application/json', 'X-JC-Surface': 'docs' },
-				body: JSON.stringify({ consent_type: type, granted })
-			}).catch(() => {});
-		}
+		void (async () => {
+			const post = (type: string, granted: boolean) => {
+				const csrf = getCsrfToken();
+				return fetch(buildApiUrl('/consent', API_BASE), {
+					method: 'POST',
+					credentials: 'include',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-JC-Surface': 'docs',
+						...(csrf ? { 'X-CSRF-Token': csrf } : {})
+					},
+					body: JSON.stringify({ consent_type: type, granted })
+				});
+			};
+			for (const [type, granted] of decisions) {
+				try {
+					const res = await post(type, granted);
+					if (res.status === 403) {
+						await refreshCsrfToken();
+						await post(type, granted);
+					}
+				} catch {}
+			}
+		})();
 	}
 </script>
 
@@ -144,6 +165,7 @@
 						</span>
 						<Switch.Root
 							checked={functional}
+							aria-label={t('cookies.banner.functional_title', 'Functional cookies')}
 							onCheckedChange={(v) => (functional = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>
@@ -163,6 +185,7 @@
 						</span>
 						<Switch.Root
 							checked={analytics}
+							aria-label={t('cookies.banner.analytics_title', 'Analytics')}
 							onCheckedChange={(v) => (analytics = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>

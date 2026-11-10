@@ -4,17 +4,18 @@
 	 * compliance. Shown once to every visitor (guest or member) until a
 	 * decision is made, then hidden for a year.
 	 *
-	 * The jc_consent cookie is the operative record: GuestSessionMiddleware
-	 * on the API only mints the jc_guest visitor-id cookie after an
-	 * affirmative "all", and expires it under any other decision. Strictly
-	 * necessary cookies (jc_token, jc_refresh, csrf_token, jc_locale,
-	 * jc_theme) are not gated — they carry no consent requirement.
+	 * The jc_consent cookie is the operative record — 'all', 'necessary',
+	 * or a comma-list of granted consent_types. GuestSessionMiddleware
+	 * mints the jc_guest visitor-id cookie only when functional_cookies is
+	 * granted, and expires it otherwise; the layouts inject Umami only when
+	 * analytics_tracking is granted. Strictly necessary cookies (jc_token,
+	 * jc_refresh, csrf_token, jc_locale, jc_theme) are never gated.
 	 *
-	 * The decision is also POSTed to /api/v1/consent as the server-side
-	 * audit trail — functional_cookies (the jc_guest gate) plus
-	 * analytics_tracking. Anonymous → consent_records.user_id NULL keyed on
-	 * IP; authenticated → user-bound rows. Fire-and-forget: the cookie alone
-	 * governs what the backend may set.
+	 * Each category decision is also POSTed to /api/v1/consent as its own
+	 * audit row so partial Customize choices record honestly. Anonymous →
+	 * consent_records.user_id NULL keyed on IP; authenticated → user-bound
+	 * rows. Fire-and-forget: the cookie alone governs what the backend may
+	 * set.
 	 *
 	 * Withdrawal: navigating to #cookie-settings clears the decision and
 	 * re-shows the banner (footer link "Cookie settings" → href="/#cookie-settings").
@@ -136,6 +137,7 @@
 						</span>
 						<Switch.Root
 							checked={functional}
+							aria-label={t('cookies.banner.functional_title', 'Functional cookies')}
 							onCheckedChange={(v) => (functional = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>
@@ -155,6 +157,7 @@
 						</span>
 						<Switch.Root
 							checked={analytics}
+							aria-label={t('cookies.banner.analytics_title', 'Analytics')}
 							onCheckedChange={(v) => (analytics = v)}
 							class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
 						>

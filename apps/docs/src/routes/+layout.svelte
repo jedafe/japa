@@ -176,6 +176,7 @@
 			defer
 			src="{PUBLIC_JC_UMAMI_URL}/script.js"
 			data-website-id={PUBLIC_JC_UMAMI_SITE_ID_DOCS}
+			data-do-not-track="true"
 		></script>
 	{/if}
 </svelte:head>
