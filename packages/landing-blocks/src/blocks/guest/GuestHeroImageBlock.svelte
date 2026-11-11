@@ -5,6 +5,7 @@
   import { blockComponentFor } from '../../render/blockComponent';
   import BlockShell from '../../shell/BlockShell.svelte';
   import { resolveAssetUrl } from '../../assetBase';
+  import { mediaSrcSet } from '../../mediaResize';
   import { isBlockVisible, isBlockEmpty } from '../../render/blockVisibility';
   import { responsiveVisibilityCss } from '../../shell/styleToCss';
   import ScopedCss from '../../shell/ScopedCss.svelte';
@@ -120,12 +121,16 @@
 <div class="hero-image-wrap" {id}>
   {#each slides as slide, i (i)}
     {#if i === index}
+      {@const src = resolveAssetUrl(slide.url)}
+      {@const srcset = mediaSrcSet(src, [560, 1120])}
       <img
-        src={resolveAssetUrl(slide.url)}
+        {src}
         alt={slide.alt}
         class="hero-image"
         loading={i === 0 ? 'eager' : 'lazy'}
         fetchpriority={i === 0 ? 'high' : undefined}
+        srcset={srcset || undefined}
+        sizes={srcset ? '(max-width: 560px) 100vw, 560px' : undefined}
         width="800"
         height="534"
         decoding="async"

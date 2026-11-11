@@ -11,6 +11,7 @@
 	import type { DocAudience } from '#lib/types/index.js';
 	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import { page } from '$app/state';
+	import { mediaSized } from '@japaconnect/ui';
 
 	// Login/signup live on the Main app. Build full URLs against the main origin
 	// so these links do not 404 when the guest header is rendered.
@@ -24,13 +25,23 @@
 	}
 
 	let { logoUrl = '', accessibleAudiences, activeAudience }: Props = $props();
+
+	// Logo dims come from appearance.logo_width/height (resolveLogoDims at
+	// write time). When absent — uploads predating the resolver — emit the
+	// rendered slot box so the img still reserves space for CLS/Lighthouse.
+	const site = $derived(page.data?.siteSettings as Record<string, unknown> | undefined);
+	const logoDims = $derived.by(() => {
+		const w = Number(site?.['appearance.logo_width']) || 0;
+		const h = Number(site?.['appearance.logo_height']) || 0;
+		return w && h ? { width: w, height: h } : { width: 140, height: 28 };
+	});
 </script>
 
 <header class="guest-header">
 	<div class="guest-header-inner">
 		<a href="/docs" class="guest-brand" aria-label={t('app.name')}>
 			{#if logoUrl}
-				<img src={logoUrl} alt={t('app.name')} class="guest-logo" />
+				<img src={mediaSized(logoUrl, { h: 56 })} alt={t('app.name')} class="guest-logo" {...logoDims} />
 			{:else}
 				<span class="guest-brand-mark">JC</span>
 			{/if}

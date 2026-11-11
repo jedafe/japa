@@ -1340,6 +1340,28 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ?w= / ?h= (+ optional ?fmt=) requests redirect to the imgproxy-resized
+	// derivative so callers embedding a raw serve URL in a fixed slot (logos,
+	// hero images) can fetch a right-sized image without holding the signing
+	// key. Only when S3 is configured — imgproxy reads objects via s3:// so
+	// local-only deployments have nothing to proxy — and only for image
+	// extensions, so PDFs/videos/SVGs keep the raw path.
+	if h.service.s3 != nil {
+		if rw, rh, rfmt := serveResizeParams(r); rw > 0 || rh > 0 {
+			mimeByExt := mime.TypeByExtension(strings.ToLower(filepath.Ext(storagePath)))
+			if isProxyableImageMIME(mimeByExt) {
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				http.Redirect(w, r, MediaURL(bucket, storagePath, ImageProxyOpts{
+					ResizingType: "fit",
+					Width:        rw,
+					Height:       rh,
+					Format:       rfmt,
+				}), http.StatusFound)
+				return
+			}
+		}
+	}
+
 	info, err := os.Stat(localPath)
 	if err != nil || info.IsDir() {
 		// Objects written through the S3 backend never land on the API's
@@ -1402,6 +1424,30 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=2592000")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
+}
+
+// serveResizeParams parses ServeMedia's optional resize query (?w= & ?h= in
+// pixels, ?fmt= webp|png|jpg|jpeg|avif). Sizes clamp to 2048 — bounding the
+// work a public, unauthenticated request can ask imgproxy to do. Returns a
+// sanitized format ("" = caller default) and zero for absent/invalid dims.
+func serveResizeParams(r *http.Request) (w, h int, format string) {
+	clamp := func(raw string) int {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return 0
+		}
+		if v > 2048 {
+			return 2048
+		}
+		return v
+	}
+	w = clamp(r.URL.Query().Get("w"))
+	h = clamp(r.URL.Query().Get("h"))
+	switch strings.ToLower(r.URL.Query().Get("fmt")) {
+	case "webp", "png", "jpg", "jpeg", "avif":
+		format = strings.ToLower(r.URL.Query().Get("fmt"))
+	}
+	return w, h, format
 }
 
 // sniffStoredContentType reads the first 512 bytes of a stored file and

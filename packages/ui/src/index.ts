@@ -41,6 +41,8 @@ export { default as MediaLightbox } from './media/MediaLightbox.svelte';
 export { default as JsonValueEditor } from './json/JsonValueEditor.svelte';
 export type { JsonEditorLabels } from './json/types';
 export { convertImageToModernFormat } from './media/imageConvert';
+export { mediaSized, mediaSrcSet } from './media/resize';
+export type { MediaSizeOpts } from './media/resize';
 export { buildEditorExtensions } from './editor/extensions';
 export type { EditorExtensionOptions } from './editor/extensions';
 export { createSuggestionRenderer } from './editor/suggestionRenderer';

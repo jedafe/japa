@@ -84,7 +84,7 @@
 	<div class={clsx('flex h-[var(--nav-height)] shrink-0 items-center gap-2 px-3', collapsed && 'justify-center')}>
 		<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 			{#if collapsed}
-				<img src={collapsedFavicon} alt={brandLabel} class="h-8 w-8 shrink-0 object-contain" />
+				<img src={collapsedFavicon} alt={brandLabel} class="h-8 w-8 shrink-0 object-contain" width="32" height="32" />
 			{:else if logoUrl}
 				<ThemeLogo {logoUrl} {logoDarkUrl} alt={brandLabel} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
 			{:else}

@@ -74,7 +74,7 @@
 			<button
 				type="button"
 				disabled={installing}
-				class="flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+				class="flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-50"
 				onclick={install}
 			>
 				<Download size={14} />

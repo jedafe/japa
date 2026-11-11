@@ -3,6 +3,8 @@
 export const PACKAGE_NAME = '@japaconnect/landing-blocks';
 
 export { setAssetBaseUrl, resolveAssetUrl } from './assetBase';
+export { mediaSized, mediaSrcSet } from './mediaResize';
+export type { MediaSizeOpts } from './mediaResize';
 
 export type {
   Block, BaseBlock, BlockStyle, MotionConfig, GeoContext, GeoCopyTokens,

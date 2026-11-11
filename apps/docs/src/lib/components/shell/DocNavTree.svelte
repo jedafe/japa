@@ -177,7 +177,7 @@
 			<ul class="rail">
 				<li>
 					<a href="/" class="rail-item" title={t('nav.home')}>
-						<img src={collapsedFavicon} alt="" class="rail-item-img" />
+						<img src={collapsedFavicon} alt="" class="rail-item-img" width="18" height="18" />
 					</a>
 				</li>
 				<li>

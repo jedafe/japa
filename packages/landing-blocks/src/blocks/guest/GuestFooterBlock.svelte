@@ -4,6 +4,7 @@
   import type { FetchContext } from '../../data/types';
   import { getLucideIcon } from './guestIconMap';
   import { resolveAssetUrl } from '../../assetBase';
+  import { mediaSized } from '../../mediaResize';
   import SocialIcon from './SocialIcon.svelte';
   import GuestChildren from './GuestChildren.svelte';
   import defaultLogoLight from '../../assets/wordmark-light.webp';
@@ -33,17 +34,20 @@
     }
   );
 
-  const logoLightSrc = $derived(resolveAssetUrl(logo.light ?? logo.dark ?? ''));
-  const logoDarkSrc = $derived(resolveAssetUrl(logo.dark ?? logo.light ?? ''));
+  // h=192 serves a 2x-height derivative for the 6rem-tall footer slot.
+  const logoLightSrc = $derived(mediaSized(resolveAssetUrl(logo.light ?? logo.dark ?? ''), { h: 192 }));
+  const logoDarkSrc = $derived(mediaSized(resolveAssetUrl(logo.dark ?? logo.light ?? ''), { h: 192 }));
 
   // Emit intrinsic dims only when they're actually known — the bundled default
-  // (794x384) or explicit width/height on a custom logo. Emitting the
-  // default's dims for a different image misstates the aspect ratio.
+  // (794x384) or explicit width/height on a custom logo. For custom logos
+  // without recorded dims, reserve the rendered slot box (height:6rem,
+  // max-width:13rem + object-fit:contain) so the img still carries explicit
+  // width/height for CLS + Lighthouse instead of none.
   const logoDims = $derived(
     props.logo
       ? props.logo.width && props.logo.height
         ? { width: props.logo.width, height: props.logo.height }
-        : {}
+        : { width: 208, height: 96 }
       : { width: 794, height: 384 }
   );
 

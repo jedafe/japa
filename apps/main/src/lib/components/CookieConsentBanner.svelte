@@ -108,7 +108,7 @@
 					<Cookie size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
 					<p class="text-sm leading-snug text-[var(--color-muted)]">
 						{t('cookies.banner.customize_body', 'Choose which optional cookies we may use.')}
-						<a href="/cookies" class="text-[var(--color-primary)] hover:underline">
+						<a href="/cookies" class="text-[var(--color-primary)] underline underline-offset-2 hover:opacity-80">
 							{t('cookies.banner.learn_more', 'Learn more about cookies')}
 						</a>
 					</p>
@@ -196,7 +196,7 @@
 							'cookies.banner.body',
 							'We use cookies to keep you signed in and remember your preferences, plus optional analytics that help us improve the platform.'
 						)}
-						<a href="/cookies" class="text-[var(--color-primary)] hover:underline">
+						<a href="/cookies" class="text-[var(--color-primary)] underline underline-offset-2 hover:opacity-80">
 							{t('cookies.banner.learn_more', 'Learn more about cookies')}
 						</a>
 					</p>

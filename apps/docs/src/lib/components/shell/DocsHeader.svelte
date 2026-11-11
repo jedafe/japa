@@ -115,7 +115,12 @@
 		{#if versions.length > 0}
 			<Menu contentClass="max-h-60 overflow-y-auto">
 				{#snippet trigger(props)}
-					<button type="button" {...props} class="select-btn" aria-label={t('header.version')}>
+					<button
+						type="button"
+						{...props}
+						class="select-btn"
+						aria-label={`${t('header.version')}: ${versions[0].label}`}
+					>
 						<span class="select-label">{versions[0].label}</span>
 						<ChevronDown size={14} />
 					</button>
@@ -137,7 +142,7 @@
 						type="button"
 						{...props}
 						class="select-btn"
-						aria-label={t('locale.switch_language', 'Switch language')}
+						aria-label={`${t('locale.switch_language', 'Switch language')}: ${localeLabel(i18n.locale)}`}
 					>
 						<Languages size={16} />
 						<span class="select-label">{localeLabel(i18n.locale)}</span>

@@ -5,6 +5,7 @@
 	// Falls back to the bundled homepage wordmark when settings are empty —
 	// never the square icon mark (that's reserved for favicon contexts).
 	import { page } from '$app/state';
+	import { mediaSized } from '@japaconnect/ui';
 	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
 	import wordmarkDark from '#lib/assets/branding/wordmark-dark.webp';
 
@@ -28,8 +29,8 @@
 		class?: string;
 	} = $props();
 
-	const lightSrc = $derived(logoUrl || wordmarkLight);
-	const darkSrc = $derived(logoDarkUrl || logoUrl || wordmarkDark);
+	const lightSrc = $derived(mediaSized(logoUrl, { h: 56 }) || wordmarkLight);
+	const darkSrc = $derived(mediaSized(logoDarkUrl || logoUrl, { h: 56 }) || wordmarkDark);
 	// Intrinsic dims of the bundled defaults — reserves the aspect ratio so
 	// theme-swap and image fetch don't shift layout. Admin-supplied logo URLs
 	// keep their own proportions via w-auto anyway.

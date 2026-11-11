@@ -127,24 +127,37 @@
 	onMount(() => {
 		if (installPromptEnabled) pwaInstall.init();
 
-		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (// Firefox ≤146 / ESR 140 can't run module service workers — it
-		// falls back to classic evaluation of the ES-module dev stub and
-		// throws "script threw an exception during script evaluation" on
-		// every load. Production serves a classic IIFE, so only dev gates.
-		!import.meta.env.DEV || moduleServiceWorkerSupported())) {
-			// SvelteKit/Vite serves the source service worker as an ES module in dev,
-			// but compiles it to a classic IIFE for production. Use the matching
-			// registration type so the browser does not fail to evaluate the script.
-			const swType = import.meta.env.DEV ? 'module' : 'classic';
-			const registerSw = () => {
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (// Firefox ≤146 / ESR 140 can't run module service workers, and the
+		// emitted /service-worker.js IS an ES module in every build — SvelteKit
+		// stopped shipping a classic IIFE, so a classic registration fails
+		// script evaluation on every load (seen in PageSpeed console errors).
+		// Browsers without module-SW support get no PWA worker at all, which
+		// matches the previous dev-only gate.
+		moduleServiceWorkerSupported())) {
+			// Both dev and production service workers are ES modules — register
+			// with the matching type so the browser can evaluate the script.
+			const swType = 'module';
+			const registerSw = (retried = false) => {
 				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
+					// A stale classic-registered worker can win Chrome's update
+					// race and evaluate the dev ES-module stub as a classic
+					// script — one unregister+retry clears it for good.
+					if (!retried) {
+						navigator.serviceWorker.getRegistration().then((reg) => {
+							void (reg ? reg.unregister() : Promise.resolve())
+								.finally(() => registerSw(true));
+						});
+						return;
+					}
 					// eslint-disable-next-line no-console
 					console.error('Service worker registration failed:', err);
 				});
 			};
 			if (import.meta.env.DEV) {
-				// Unregister any stale classic-registered worker before
-				// re-registering as a module (see main +layout.svelte).
+				// During dev, an existing classic-registered worker (from production
+				// or an older dev build) would try to re-fetch the script as a
+				// classic script and fail because it is now an ES module. Unregister
+				// any stale worker first so the new registration can take over.
 				navigator.serviceWorker.getRegistration().then((reg) => {
 					if (reg) {
 						reg.unregister().then(registerSw).catch(registerSw);

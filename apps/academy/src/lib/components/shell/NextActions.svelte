@@ -93,7 +93,7 @@
 			<strong class="font-medium">{bar.title}</strong>
 			{#if bar.body}<span class="ms-1 hidden text-[var(--color-text-muted)] sm:inline">{bar.body}</span>{/if}
 		</span>
-		<a href={bar.cta_url} onclick={() => cta(bar!)} class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]">{bar.cta_label}</a>
+		<a href={bar.cta_url} onclick={() => cta(bar!)} class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition hover:bg-[var(--color-primary-hover)]">{bar.cta_label}</a>
 		{#if bar.snooze_default_hours > 0}
 			<button onclick={() => act(bar!, bar!.snooze_default_hours)} class="shrink-0 rounded-full px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]">{t('nextaction.later', 'Later')}</button>
 		{/if}
@@ -126,7 +126,7 @@
 					<a
 						href={popup.cta_url}
 						onclick={() => cta(popup!)}
-						class="group mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
+						class="group mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:bg-[var(--color-primary-hover)]"
 					>
 						{popup.cta_label}
 						<ArrowRight size={15} class="transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
@@ -155,7 +155,7 @@
 					<InlineIcon size={15} class="shrink-0 text-[var(--color-primary)]" />{inlineAction.title}
 				</p>
 				{#if inlineAction.body}<p class="mt-1 text-sm text-[var(--color-text-muted)]">{inlineAction.body}</p>{/if}
-				<a href={inlineAction.cta_url} onclick={() => cta(inlineAction!)} class="mt-2 inline-block rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]">{inlineAction.cta_label}</a>
+				<a href={inlineAction.cta_url} onclick={() => cta(inlineAction!)} class="mt-2 inline-block rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition hover:bg-[var(--color-primary-hover)]">{inlineAction.cta_label}</a>
 			</div>
 			<button onclick={() => act(inlineAction!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label={t('nextaction.dismiss_suggestion', 'Dismiss suggestion')}>✕</button>
 		</div>
