@@ -1,20 +1,33 @@
 <script lang="ts">
-  import type { GuestFooterProps, Block, GuestFooterLinkProps } from '../../../types';
+  import type { GuestFooterProps, Block, GuestFooterLinkProps, MediaRef } from '../../../types';
+  import type { Component } from 'svelte';
   import GuestCardListEditor from './GuestCardListEditor.svelte';
   import NestedBlocksEditor from '../../NestedBlocksEditor.svelte';
+  import MediaPicker from '../../MediaPicker.svelte';
 
   interface Props {
     props: GuestFooterProps;
     onchange: (v: GuestFooterProps) => void;
+    mediaPickerComponent?: Component;
   }
 
-  let { props, onchange }: Props = $props();
+  let { props, onchange, mediaPickerComponent }: Props = $props();
 
   const inputClass =
     'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]';
 
   function update<K extends keyof GuestFooterProps>(key: K, value: GuestFooterProps[K]) {
     onchange({ ...props, [key]: value });
+  }
+
+  // Logo picks store only the URL — GuestFooterLogo has no media_id field.
+  // Recorded dims are cleared because the picker can't report the new
+  // image's size; the block then reserves its rendered-slot dims. When both
+  // variants are cleared the whole logo prop is dropped so the bundled
+  // wordmark default comes back.
+  function setLogoVariant(variant: 'light' | 'dark', m: MediaRef | undefined) {
+    const next = { ...props.logo, [variant]: m?.url, width: undefined, height: undefined };
+    update('logo', next.light || next.dark ? next : undefined);
   }
 
   function defaultSocial() {
@@ -70,22 +83,22 @@
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
 <div class="space-y-4">
   <div class="grid grid-cols-2 gap-2">
-    <label class="block">
-      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Light logo URL</span>
-      <input
-        class={inputClass}
-        value={props.logo?.light ?? ''}
-        oninput={(e) => update('logo', { ...props.logo, light: e.currentTarget.value || undefined })}
+    <div>
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Light logo</span>
+      <MediaPicker
+        value={props.logo?.light ? { media_id: '', url: props.logo.light, alt: 'Light logo' } : undefined}
+        onchange={(m) => setLogoVariant('light', m)}
+        {mediaPickerComponent}
       />
-    </label>
-    <label class="block">
-      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Dark logo URL</span>
-      <input
-        class={inputClass}
-        value={props.logo?.dark ?? ''}
-        oninput={(e) => update('logo', { ...props.logo, dark: e.currentTarget.value || undefined })}
+    </div>
+    <div>
+      <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Dark logo</span>
+      <MediaPicker
+        value={props.logo?.dark ? { media_id: '', url: props.logo.dark, alt: 'Dark logo' } : undefined}
+        onchange={(m) => setLogoVariant('dark', m)}
+        {mediaPickerComponent}
       />
-    </label>
+    </div>
   </div>
   <label class="block">
     <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Tagline</span>
