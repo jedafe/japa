@@ -245,9 +245,10 @@ class JcApiClient {
     Map<String, dynamic>? query,
     required T Function(dynamic) parse,
   }) async {
-    final decoded = await _rawRequest('GET', path, query: query);
-    final data = (decoded as Map<String, dynamic>?)?['data'];
-    final metaJson = (decoded as Map<String, dynamic>?)?['meta'];
+    final decoded =
+        await _rawRequest('GET', path, query: query) as Map<String, dynamic>?;
+    final data = decoded?['data'];
+    final metaJson = decoded?['meta'];
     final List<T> items;
     if (data is List) {
       items = data.map(parse).cast<T>().toList();
