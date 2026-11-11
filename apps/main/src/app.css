@@ -40,6 +40,47 @@
 @source '../../../packages/landing-blocks/src';
 @source '../../../packages/ui/src';
 
+/* LCP/CLS: the hero headline + subhead render in latin Inter. Fontsource
+   declares font-display:swap, so on slow connections the webfont's late
+   arrival repaints the (larger) LCP text — moving the recorded LCP to font
+   arrival and adding layout shift. `optional` keeps the fallback when the
+   font isn't already in flight-fast (~100ms window), so LCP = first paint
+   and no swap-shift; the +layout.svelte preloads give fast connections the
+   real font well inside the window. A same-family/weight/unicode-range
+   @font-face declared later wins per CSS font matching. */
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-display: optional;
+	font-weight: 400;
+	src: url('@fontsource/inter/files/inter-latin-400-normal.woff2') format('woff2');
+	unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-display: optional;
+	font-weight: 500;
+	src: url('@fontsource/inter/files/inter-latin-500-normal.woff2') format('woff2');
+	unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-display: optional;
+	font-weight: 600;
+	src: url('@fontsource/inter/files/inter-latin-600-normal.woff2') format('woff2');
+	unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-display: optional;
+	font-weight: 700;
+	src: url('@fontsource/inter/files/inter-latin-700-normal.woff2') format('woff2');
+	unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
 /*
  * JapaConnect Main App — design tokens (ADR-058 / ADR-059).
  * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
