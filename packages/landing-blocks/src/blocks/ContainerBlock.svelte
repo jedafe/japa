@@ -4,6 +4,7 @@
   import { blockComponentFor } from '../render/blockComponent';
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
+  import LazyMount from '../render/LazyMount.svelte';
   import { getBlockContentContext } from '../shell/blockContent';
   import { cssIdent, cssTagSafe } from '../shell/styleToCss';
 
@@ -19,6 +20,9 @@
   // parent BlockShell so `hide_if_empty` works for container blocks.
   const parentContentContext = getBlockContentContext();
   const hasVisibleChildren = $derived(props.children.some((c) => isBlockVisible(c, geoCountry) && !isBlockEmpty(c)));
+  // First renderable child stays eager in stack layout; later children mount
+  // lazily — they are below the fold by definition of the layout.
+  const firstChildIdx = $derived(props.children.findIndex((c) => isBlockVisible(c, geoCountry) && !!blockComponentFor(c.type)));
   $effect(() => {
     parentContentContext?.set(hasVisibleChildren);
   });
@@ -247,7 +251,10 @@
         {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockComponentFor(block.type)}
           {#if meta}
-            <div data-cell={i}>
+            <!-- Children after the first are below the fold in a stack — defer
+                 their client mount until idle/approach to keep the hydration
+                 task short (PageSpeed TBT). -->
+            <LazyMount lazy={i > firstChildIdx} data-cell={i}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
                 {@const Component = meta.component}
                 {#if block.type === 'custom'}
@@ -256,7 +263,7 @@
                   <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
                 {/if}
               </BlockShell>
-            </div>
+            </LazyMount>
           {/if}
         {/if}
       {/each}

@@ -3,6 +3,7 @@
   import type { FetchContext } from '../data/types';
   import { blockRegistry } from './blockRegistry';
   import BlockShell from '../shell/BlockShell.svelte';
+  import LazyMount from './LazyMount.svelte';
   import { isBlockVisible, isBlockEmpty, containsGuestBlocks } from './blockVisibility';
   import { applyPageHeader } from './pageHeader';
   import { setGuestHomeData } from '../data/guestHomeContext';
@@ -20,6 +21,11 @@
   // Page-header convention: a leading `heading` (+ optional `media`) block
   // renders as the shared hero panel so every page gets the same header.
   const renderBlocks = $derived(applyPageHeader(blocks));
+
+  // First renderable block hydrates eagerly; everything after defers to
+  // LazyMount. Anchoring to the first *visible* block keeps the hero hot even
+  // when an earlier configured block is hidden by visibility rules.
+  const firstBlockIdx = $derived(renderBlocks.findIndex((b) => isBlockVisible(b, geoCountry) && !!blockRegistry[b.type]));
 
   // svelte-ignore state_referenced_locally
   const guestHomeStore = setGuestHomeData(guestHome);
@@ -67,11 +73,14 @@
 {/if}
 
 <div class="landing-page min-h-screen bg-[var(--color-bg)]" style="container-type: inline-size">
-  {#each renderBlocks as block (block.id)}
+  {#each renderBlocks as block, i (block.id)}
     {#if isBlockVisible(block, geoCountry)}
       {@const meta = blockRegistry[block.type]}
       {#if meta}
-        <div data-rv={cssIdent(block.id)}>
+        <!-- Top-level blocks after the first are below the fold — defer their
+             client mount until idle/approach to keep the hydration task short
+             (PageSpeed TBT). -->
+        <LazyMount lazy={i > firstBlockIdx} data-rv={cssIdent(block.id)}>
           <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
             {@const Component = meta.component}
             {#if block.type === 'custom'}
@@ -80,7 +89,7 @@
               <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
             {/if}
           </BlockShell>
-        </div>
+        </LazyMount>
       {/if}
     {/if}
   {/each}

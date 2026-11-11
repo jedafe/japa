@@ -41,6 +41,24 @@ export function currencyOf(code: string | null | undefined, currencies: Currency
 	return currencies.find((x) => x.code.toUpperCase() === c) ?? null;
 }
 
+// Intl constructors are expensive (~0.5ms each under CPU throttle) and the
+// guest landing formats dozens of amounts per card list — memoize instances
+// and resolved symbols/names per ISO code.
+const currencySymbolCache = new Map<string, string>();
+const currencyNameCache = new Map<string, string>();
+const amountFormatterCache = new Map<string, Intl.NumberFormat>();
+let currencyDisplayNames: Intl.DisplayNames | null | undefined;
+
+function amountFormatter(locale: string | undefined, digits: number): Intl.NumberFormat {
+	const key = `${locale ?? ''}|${digits}`;
+	let nf = amountFormatterCache.get(key);
+	if (!nf) {
+		nf = new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+		amountFormatterCache.set(key, nf);
+	}
+	return nf;
+}
+
 /**
  * Display symbol for a code: platform symbol, then Intl's narrow symbol,
  * then the code itself. Always returns something printable.
@@ -49,18 +67,24 @@ export function currencySymbol(code: string | null | undefined, currencies?: Cur
 	if (!code) return '';
 	const hit = currencyOf(code, currencies);
 	if (hit?.symbol) return hit.symbol;
+	const c = code.trim().toUpperCase();
+	const cachedSym = currencySymbolCache.get(c);
+	if (cachedSym !== undefined) return cachedSym;
+	let sym = c;
 	try {
 		const part = new Intl.NumberFormat(undefined, {
 			style: 'currency',
-			currency: code.trim().toUpperCase(),
+			currency: c,
 			currencyDisplay: 'narrowSymbol'
 		})
 			.formatToParts(0)
 			.find((p) => p.type === 'currency');
-		return part?.value ?? code;
+		sym = part?.value ?? c;
 	} catch {
-		return code;
+		sym = c;
 	}
+	currencySymbolCache.set(c, sym);
+	return sym;
 }
 
 /** Display name for a code: platform name, then Intl's display name, then the code. */
@@ -68,13 +92,18 @@ export function currencyName(code: string | null | undefined, currencies?: Curre
 	if (!code) return '';
 	const hit = currencyOf(code, currencies);
 	if (hit?.name) return hit.name;
+	const c = code.trim().toUpperCase();
+	const cachedName = currencyNameCache.get(c);
+	if (cachedName !== undefined) return cachedName;
+	let name = c;
 	try {
-		return (
-			new Intl.DisplayNames(undefined, { type: 'currency' }).of(code.trim().toUpperCase()) ?? code
-		);
+		currencyDisplayNames ??= new Intl.DisplayNames(undefined, { type: 'currency' });
+		name = currencyDisplayNames.of(c) ?? c;
 	} catch {
-		return code;
+		name = c;
 	}
+	currencyNameCache.set(c, name);
+	return name;
 }
 
 /** Select-label form: "NGN — Nigerian Naira". */
@@ -109,10 +138,7 @@ export function formatMoney(
 	if (amount === null || amount === undefined || Number.isNaN(amount)) return '';
 	const major = opts.minor ? amount / 100 : amount;
 	const digits = opts.fractionDigits ?? (Number.isInteger(major) ? 0 : 2);
-	const num = major.toLocaleString(opts.locale, {
-		minimumFractionDigits: digits,
-		maximumFractionDigits: digits
-	});
+	const num = amountFormatter(opts.locale, digits).format(major);
 	if (!code) return num;
 	const c = code.trim().toUpperCase();
 	const sym = currencySymbol(c, currencies);
