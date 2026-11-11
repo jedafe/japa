@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiList, apiGet, apiGetEnvelope, apiContext } from '#lib/server/api.js';
 import { buildGuestHome, emptyGuestHome } from '#lib/server/guest-home.js';
+import { publishedPagePath } from '#lib/server/published-page.js';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
 import type {
 	FeedItem,
@@ -103,28 +104,24 @@ export const load: PageServerLoad = async (event) => {
 	// "all" as a literal country name.
 	if (geoCountry?.toLowerCase() === 'all') geoCountry = 'global';
 
-	// Fire every geo-independent call up front so the serial chain collapses
-	// to a single wave: the landing fetch, the countries catalog (needed to
-	// name-resolve whatever geo code wins; 5m-cached so usually free), and
-	// the guest-home data — required by any guest_* block on the landing AND
-	// by the no-landing fallback, so the only wasted prefetch is a landing
-	// with zero guest_* blocks.
-	const landingPromise = apiGetEnvelope<LandingPageData>(ctx, '/pages/homepage').then(
-		(envelope) => ({ ok: true as const, envelope }),
-		(err) => ({ ok: false as const, err })
-	);
+	// Geo must resolve before the landing fetch fires: the backend resolves
+	// geo literals from the request's geo context, so a bare /pages/homepage
+	// response is per-IP and unsafe to share. publishedPagePath carries the
+	// resolved destination plus the visitor's detected source country, making
+	// the payload cacheable per (geo, source) for anonymous callers — the api
+	// layer bypasses the cache for auth/journey context it cannot key.
 	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries').catch(() => null);
 	const homePromise = buildGuestHome(ctx, event).catch(() => emptyGuestHome);
+	// IP-cached, so repeat visitors pay ~nothing; it is also the source
+	// country for the page-cache key even when ?geo= or a preference
+	// overrides the destination.
+	const geoMePromise = apiGet<GeoContext>(ctx, '/geo/me').catch(() => null);
 
 	if (!geoCountry) {
-		try {
-			const geo = await apiGet<GeoContext>(ctx, '/geo/me');
-			if (geo?.country_code) {
-				geoCountry = geo.country_code;
-				geoCountryName = geo.country_name || undefined;
-			}
-		} catch {
-			// GeoIP not available (no database, localhost, etc.) — fall back.
+		const geo = await geoMePromise;
+		if (geo?.country_code) {
+			geoCountry = geo.country_code;
+			geoCountryName = geo.country_name || undefined;
 		}
 	}
 	if (geoCountry && geoCountry !== 'global' && !geoCountryName) {
@@ -134,8 +131,15 @@ export const load: PageServerLoad = async (event) => {
 		if (match) geoCountryName = match.name;
 	}
 	if (!geoCountry) geoCountry = 'global';
+	const srcGeo = (await geoMePromise)?.country_code ?? '';
 
-	const landingResult = await landingPromise;
+	const landingResult = await apiGetEnvelope<LandingPageData>(
+		ctx,
+		publishedPagePath('homepage', geoCountry, srcGeo)
+	).then(
+		(envelope) => ({ ok: true as const, envelope }),
+		(err) => ({ ok: false as const, err })
+	);
 	if (landingResult.ok) {
 		const envelope = landingResult.envelope;
 		const landing = envelope.data;

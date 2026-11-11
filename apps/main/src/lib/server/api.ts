@@ -118,8 +118,25 @@ const PUBLIC_GET_CACHE: Array<[RegExp, number]> = [
 	[/^\/users\/[^/]+\/badges(?:[/?]|$)/, 60_000],
 	[/^\/users\/[^/]+\/japa-stage(?:[/?]|$)/, 60_000],
 	[/^\/users\/[^/]+\/media(?:[/?]|$)/, 60_000],
-	[/^\/u\/[^/]+\/videos(?:[/?]|$)/, 60_000]
+	[/^\/u\/[^/]+\/videos(?:[/?]|$)/, 60_000],
+	// /geo/me answers with pure GeoIP data (country/city/suggested spaces are
+	// IP-derived, not session-derived) — response varies only by client IP,
+	// so it is cached keyed by host+path+IP. 30m matches the backend's own
+	// jc:visitor:ctx:ip cache TTL.
+	[/^\/geo\/me(?:[/?]|$)/, 30 * 60_000],
+	// Only /pages/{slug}?…geo=… URLs are cacheable: SSR loaders append the
+	// resolved destination geo plus a `_src` source-country marker so the
+	// path — and therefore the cache key — fully determines the geo context
+	// the backend resolves literals with. Bare /pages/{slug} fetches never
+	// match and stay uncached: keying a backend-GeoIP'd response by path
+	// alone would leak one country's copy to another.
+	[/^\/pages\/[a-z0-9-]+\?[^ ]*\bgeo=/i, 60_000]
 ];
+// /geo/me responses depend on the caller's IP — the cache key must carry it.
+const IP_KEYED_GET = /^\/geo\/me(?:[/?]|$)/;
+// /pages/ payloads may also reflect member/journey origin context that a
+// path-only key cannot capture — cache anonymous requests only.
+const ANON_ONLY_GET = /^\/pages\//;
 const PUBLIC_GET_CACHE_MAX = 500;
 const publicGetCache = new Map<string, { expires: number; payload: unknown }>();
 const publicGetInflight = new Map<string, Promise<ApiOk<unknown>>>();
@@ -150,8 +167,12 @@ async function request<T>(
 ): Promise<ApiOk<T>> {
 	if (method === 'GET') {
 		const ttl = publicGetTtl(path);
-		if (ttl > 0) {
-			const key = `${ctx.host}|${path}`;
+		const cacheable =
+			ttl > 0 && !(ANON_ONLY_GET.test(path) && (ctx.token || ctx.journeyCookie));
+		if (cacheable) {
+			const key = IP_KEYED_GET.test(path)
+				? `${ctx.host}|${path}|ip:${ctx.clientIP ?? ''}`
+				: `${ctx.host}|${path}`;
 			const hit = publicGetCache.get(key);
 			if (hit && hit.expires > Date.now()) return hit.payload as ApiOk<T>;
 			const pending = publicGetInflight.get(key);

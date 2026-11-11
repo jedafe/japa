@@ -28,9 +28,24 @@ import type { GeoContext, GeoCountry, PageBuilderPage } from '#lib/types/index.j
  * Shared by loadPublishedPage and other routes that render builder blocks
  * (e.g. the /wiki index hero).
  */
+/**
+ * Path for a geo-cacheable published-page fetch. `geo` carries the resolved
+ * destination country ('all' for global) so the backend resolves the same
+ * literals a GeoIP lookup would; `_src` carries the visitor's detected IP
+ * country purely for the cache key (the backend ignores it) — Source_Country
+ * literals resolve from the forwarded IP either way. The api layer only
+ * serves these entries to anonymous callers (auth/journey context can't be
+ * captured in the key).
+ */
+export function publishedPagePath(slug: string, geoCountry: string, srcGeo: string): string {
+	const geo = geoCountry === 'global' ? 'all' : geoCountry.toLowerCase();
+	return `/pages/${slug}?geo=${encodeURIComponent(geo)}&_src=${encodeURIComponent(srcGeo.toLowerCase())}`;
+}
+
 export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 	geoCountry: string;
 	geoCountryName: string | undefined;
+	srcGeo: string;
 }> {
 	const ctx = apiContext(event);
 	// ?geo= mirrors the backend's explicitGeoParam contract: 'all' is the
@@ -56,18 +71,20 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 	// It's a 5m-cached public catalog, so the speculative call is usually free.
 	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries').catch(() => null);
 
+	// GeoIP always resolves — it is the visitor's source country for the
+	// geo-keyed page cache even when a ?geo= param or preference already
+	// fixed the destination. IP-cached in the api layer, so repeat visitors
+	// pay ~nothing for this hop.
+	const geoMePromise = apiGet<GeoContext>(ctx, '/geo/me').catch(() => null);
+
 	if (!geoCountry) {
-		try {
-			const geo = await apiGet<GeoContext>(ctx, '/geo/me');
-			if (geo?.country_code) {
-				geoCountry = geo.country_code;
-				geoCountryName = geo.country_name || undefined;
-			}
-			// /geo/me returns country_code/country_name; when the country name is
-			// missing or generic, we look it up in the country catalog below.
-		} catch {
-			// GeoIP not available (no database, localhost, etc.) — fall back.
+		const geo = await geoMePromise;
+		if (geo?.country_code) {
+			geoCountry = geo.country_code;
+			geoCountryName = geo.country_name || undefined;
 		}
+		// /geo/me returns country_code/country_name; when the country name is
+		// missing or generic, we look it up in the country catalog below.
 	}
 
 	// When geo was set via ?geo= param (not GeoIP), resolve the country name
@@ -78,20 +95,26 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 		if (match) geoCountryName = match.name;
 	}
 
-	return { geoCountry: geoCountry || 'global', geoCountryName };
+	const srcGeo = (await geoMePromise)?.country_code ?? '';
+
+	return { geoCountry: geoCountry || 'global', geoCountryName, srcGeo };
 }
 
 export async function loadPublishedPage(event: ServerLoadEvent) {
 	const ctx = apiContext(event);
 	const slug = event.params.slug!;
 
-	// Geo context and the page fetch are independent — run them in one wave
-	// instead of paying a GeoIP round-trip before the page even starts.
-	const geoPromise = resolveGeoContext(event);
+	// Geo resolves first so the page fetch can carry it explicitly — that
+	// makes the payload cacheable per (destination, source) via
+	// publishedPagePath instead of being a per-IP uncacheable response.
+	// /geo/me is IP-cached, so this hop is ~free on repeat visits.
+	const { geoCountry, geoCountryName, srcGeo } = await resolveGeoContext(event);
 
 	try {
-		const envelope = await apiGetEnvelope<PageBuilderPage>(ctx, `/pages/${slug}`);
-		const { geoCountry, geoCountryName } = await geoPromise;
+		const envelope = await apiGetEnvelope<PageBuilderPage>(
+			ctx,
+			publishedPagePath(slug, geoCountry, srcGeo)
+		);
 		const page = envelope.data;
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 		const literals = envelope.literals ?? {};

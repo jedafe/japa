@@ -1,5 +1,7 @@
 <script lang="ts">
 	import '../app.css';
+	import interLatin400 from '@fontsource/inter/files/inter-latin-400-normal.woff2?url';
+	import interLatin700 from '@fontsource/inter/files/inter-latin-700-normal.woff2?url';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { theme } from '#lib/stores/theme.svelte.js';
@@ -315,6 +317,10 @@
 
 <svelte:head>
 	{#if preconnectApi}<link rel="preconnect" href={apiOrigin} crossorigin="anonymous" />{/if}
+	<!-- The hero/LCP text renders in Inter — preloading the latin subsets that
+	     cover it removes the font-swap reflow that showed up as desktop CLS. -->
+	<link rel="preload" href={interLatin400} as="font" type="font/woff2" crossorigin="anonymous" />
+	<link rel="preload" href={interLatin700} as="font" type="font/woff2" crossorigin="anonymous" />
 	<meta property="og:locale" content={ogLocale} />
 	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}
 		<meta property="og:locale:alternate" content={alt} />
