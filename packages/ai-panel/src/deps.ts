@@ -39,7 +39,10 @@ async function unwrap<T>(res: Response): Promise<T | null> {
 
 /** Authenticated GET returning the {data} envelope payload (null on error). */
 export async function apiGet<T>(path: string): Promise<T | null> {
-	const res = await fetch(buildApiUrl(path, getAiPanelDeps().apiBase), {
+	// version:'' — apiBase already carries the version prefix (or the host
+	// app's same-origin authed proxy prefix); appending /api/v1 would break
+	// proxy routing.
+	const res = await fetch(buildApiUrl(path, getAiPanelDeps().apiBase, { version: '' }), {
 		credentials: 'include',
 		headers: headers()
 	});
@@ -48,7 +51,7 @@ export async function apiGet<T>(path: string): Promise<T | null> {
 
 /** Authenticated POST returning the {data} envelope payload (null on error). */
 export async function apiPost<T>(path: string, body?: unknown): Promise<T | null> {
-	const res = await fetch(buildApiUrl(path, getAiPanelDeps().apiBase), {
+	const res = await fetch(buildApiUrl(path, getAiPanelDeps().apiBase, { version: '' }), {
 		method: 'POST',
 		credentials: 'include',
 		headers: headers({ 'content-type': 'application/json' }),

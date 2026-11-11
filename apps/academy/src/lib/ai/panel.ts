@@ -1,6 +1,5 @@
 // §115 AI Quick Panel — wires @japaconnect/ai-panel to the Academy app's
 // api/csrf/i18n. Called once from the root layout onMount.
-import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { initAiPanelDeps } from '@japaconnect/ai-panel';
 import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.svelte.js';
 import { t } from '#lib/i18n/index.js';
@@ -12,7 +11,9 @@ export function ensureAiPanelDeps(): void {
 	if (inited) return;
 	inited = true;
 	initAiPanelDeps({
-		apiBase: PUBLIC_JC_API_URL,
+		// Same-origin authed proxy — a direct api.<domain> base would send
+		// cookie-only calls that the Bearer-only backend always 401s.
+		apiBase: '/api/authed',
 		surface: 'academy',
 		getCsrfToken,
 		refreshCsrfToken,

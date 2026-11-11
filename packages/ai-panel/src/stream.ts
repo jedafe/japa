@@ -44,7 +44,9 @@ export function createStreamChat() {
 			humanize_level: opts.humanizeLevel || undefined,
 			tools: opts.tools
 		});
-		const url = buildApiUrl('/ai/chat', deps.apiBase);
+		// version:'' — apiBase already carries the version prefix (or the
+		// same-origin authed proxy prefix on apps that proxy Bearer).
+		const url = buildApiUrl('/ai/chat', deps.apiBase, { version: '' });
 
 		let res = await fetch(url, {
 			method: 'POST',
