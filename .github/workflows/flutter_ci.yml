@@ -16,7 +16,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version-file: apps/mobile/pubspec.yaml
+          # flutter-version-file reads ">=3.47.0" from pubspec, but the action
+          # can't resolve range constraints ("Unable to determine Flutter
+          # version"). Pin the tracked line; bump alongside pubspec's floor.
+          flutter-version: '3.47.x'
           # Cache the ~1GB SDK + pub cache so hosted runners stay warm.
           cache: true
       - run: flutter pub get
