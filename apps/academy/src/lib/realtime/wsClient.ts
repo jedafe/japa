@@ -18,7 +18,6 @@
  */
 
 import { PUBLIC_JC_API_URL } from '$app/env/public';
-import { buildApiUrl } from '@japaconnect/api-url';
 
 export type WSEventType = 
 	'notification' |
@@ -41,7 +40,11 @@ type MintResult = { ticket: string | null; status: number };
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
 async function mintTicket(): Promise<MintResult> {
 	try {
-		const res = await fetch(buildApiUrl('/auth/ws-ticket', PUBLIC_JC_API_URL), {
+		// Same-origin session proxy: the backend authenticates Authorization:
+		// Bearer only and jc_token is HttpOnly — the proxy attaches the session
+		// server-side. Direct api.<domain> calls always 401'd (see
+		// routes/api/authed/[...path] and clientFetch in lib/api/client.ts).
+		const res = await fetch('/api/authed/auth/ws-ticket', {
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'content-type': 'application/json', 'x-jc-surface': 'academy' }
