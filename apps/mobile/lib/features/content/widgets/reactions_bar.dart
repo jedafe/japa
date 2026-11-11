@@ -53,20 +53,22 @@ class ReactionsBar extends ConsumerWidget {
         spacing: 8,
         children: [
           for (final t in s.types)
-            ActionChip(
-              avatar: Text(t.emoji),
-              label: Text('${s.counts[t.key] ?? 0}'),
-              tooltip: t.label,
-              backgroundColor: s.mine.contains(t.key)
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : null,
-              onPressed: () => _toggle(ref, t.key, s.mine.contains(t.key)),
+            GestureDetector(
               onLongPress: () => _showReactors(context, ref, t.key),
+              child: ActionChip(
+                avatar: Text(t.emoji),
+                label: Text('${s.counts[t.key] ?? 0}'),
+                tooltip: t.label,
+                backgroundColor: s.mine.contains(t.key)
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : null,
+                onPressed: () => _toggle(ref, t.key, s.mine.contains(t.key)),
+              ),
             ),
         ],
       ),
       loading: () => const SizedBox(height: 40),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 }

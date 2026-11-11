@@ -88,7 +88,7 @@ class ReactionService {
     return _client.get<List<Reactor>>(
       '/content/$contentId/reactors',
       query: {
-        if (reactionKey != null) 'key': reactionKey,
+        'key': ?reactionKey,
         'page_size': '25',
       },
       parse: (json) =>

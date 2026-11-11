@@ -20,12 +20,12 @@ class FakeDeviceId extends DeviceId {
 }
 
 void main() {
-  test('JcApiClient.effectiveWsUrl derives ws://localhost:8080/ws from http base', () {
+  test('JcApiClient.effectiveWsUrl derives ws://localhost:8080/api/v1/ws from http base', () {
     final client = JcApiClient(
       baseUrl: 'http://localhost:8080/api/v1',
       tokenStore: FakeTokenStore(),
       deviceId: FakeDeviceId(),
     );
-    expect(client.effectiveWsUrl, 'ws://localhost:8080/ws');
+    expect(client.effectiveWsUrl, 'ws://localhost:8080/api/v1/ws');
   });
 }
