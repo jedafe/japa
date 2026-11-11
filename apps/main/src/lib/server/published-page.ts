@@ -7,7 +7,10 @@ import {
 	resolveString,
 	getGeoTokens,
 	containsGuestBlocks,
+	containsBlock,
+	findBlock,
 	type Block,
+	type GuestFooterProps,
 } from '@japaconnect/landing-blocks';
 import { buildGuestHome, emptyGuestHome } from '#lib/server/guest-home.js';
 import type { GeoContext, GeoCountry, PageBuilderPage } from '#lib/types/index.js';
@@ -142,12 +145,41 @@ export async function loadPublishedPage(event: ServerLoadEvent) {
 			literals,
 		}) as unknown as typeof page.blocks;
 
+		// Shared footer: pages without their own guest_footer block inherit the
+		// homepage's so admins edit it once (homepage editor) and it applies
+		// site-wide. Resolved through the same geo pipeline so geo literals in
+		// tagline/copyright/link labels match the host page. Any failure
+		// (missing homepage page, fetch error) yields undefined → the injected
+		// footer falls back to its bundled defaults.
+		const sharedFooterPromise = containsBlock(blocks, (b) => b.type === 'guest_footer')
+			? Promise.resolve(undefined)
+			: apiGetEnvelope<PageBuilderPage>(
+					ctx,
+					publishedPagePath('homepage', geoCountry, srcGeo)
+				)
+					.then((envelope) => {
+						const footer = findBlock(
+							normalizeLegacyBlocks(envelope.data.blocks) as Block[],
+							(b) => b.type === 'guest_footer'
+						);
+						if (!footer) return undefined;
+						const [resolved] = resolveGeoCopy([footer], {
+							contentCountry: geoCountry,
+							tokens,
+							locale: 'en',
+							literals: envelope.literals ?? literals,
+						});
+						return resolved.props as GuestFooterProps;
+					})
+					.catch(() => undefined);
+
 		// Guest-home context data for any guest_* blocks on the page — they
 		// render context data (stats, categories, stories, …) even without a
 		// guest_home wrapper on the page.
 		const home = containsGuestBlocks(blocks) ? await buildGuestHome(ctx, event) : emptyGuestHome;
+		const sharedFooter = await sharedFooterPromise;
 
-		return { page, contentCountry: geoCountry, home };
+		return { page, contentCountry: geoCountry, home, sharedFooter };
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Page not found' });

@@ -4,7 +4,7 @@
 	import AppShell from '#lib/components/shell/AppShell.svelte';
 	import GuestHeader from '#lib/components/shell/GuestHeader.svelte';
 	import GuestFooter from '#lib/components/shell/GuestFooter.svelte';
-	import { GuestBlockStyles, GuestFooterBlock, containsBlock, type Block } from '@japaconnect/landing-blocks';
+	import { GuestBlockStyles, GuestFooterBlock, containsBlock, type Block, type GuestFooterProps } from '@japaconnect/landing-blocks';
 	import MobileBottomTabBar from '#lib/components/shell/MobileBottomTabBar.svelte';
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
@@ -77,7 +77,9 @@
 	// /{slug} catch-all only — wiki/entity routes also return a `page` key)
 	// share the guest-home footer block. It renders BELOW AppShell so the
 	// left nav never indents the band — pages that ship their own
-	// guest_footer block keep it and don't double-render.
+	// guest_footer block keep it and don't double-render. Pages without one
+	// inherit the homepage's footer block props (data.sharedFooter from
+	// loadPublishedPage) so the footer is edited once, site-wide.
 	const isPublishedPage = $derived(
 		page.route.id === '/(app)/[slug]' && !!page.data.page
 	);
@@ -86,6 +88,9 @@
 			((page.data.page as { blocks?: unknown } | undefined)?.blocks ?? []) as Block[],
 			(b) => b.type === 'guest_footer'
 		)
+	);
+	const sharedFooterProps = $derived(
+		((page.data as { sharedFooter?: GuestFooterProps }).sharedFooter ?? {}) as GuestFooterProps
 	);
 
 	// ADR-127: "Back to JapaConnect" targets the apex domain — derived from the
@@ -353,7 +358,7 @@
 		     hover-expand leave it full-bleed underneath the nav. -->
 		<div class="published-footer" class:published-footer--pinned={!shownCollapsed}>
 			<GuestBlockStyles />
-			<GuestFooterBlock props={{}} />
+			<GuestFooterBlock props={sharedFooterProps} />
 		</div>
 	{/if}
 	<NextActionPopup />

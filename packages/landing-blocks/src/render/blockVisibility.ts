@@ -128,6 +128,17 @@ export function containsBlock(blocks: Block[], predicate: (b: Block) => boolean)
   );
 }
 
+/** First block matching `predicate` at any depth — same traversal as
+ *  containsBlock, but returns the block so callers can read its props. */
+export function findBlock(blocks: Block[], predicate: (b: Block) => boolean): Block | undefined {
+  for (const b of blocks) {
+    if (predicate(b)) return b;
+    const found = findBlock(nestedBlocks(b), predicate);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /**
  * Whether a block tree contains any `guest_*` block at any depth. Used to
  * decide whether guest styles and guest-home context data need to load —
