@@ -109,7 +109,7 @@
 					<p class="text-sm leading-snug text-[var(--color-muted)]">
 						{t('cookies.banner.customize_body', 'Choose which optional cookies we may use.')}
 						<a href="/cookies" class="text-[var(--color-primary)] hover:underline">
-							{t('cookies.banner.learn_more', 'Learn more')}
+							{t('cookies.banner.learn_more', 'Learn more about cookies')}
 						</a>
 					</p>
 				</div>
@@ -197,7 +197,7 @@
 							'We use cookies to keep you signed in and remember your preferences, plus optional analytics that help us improve the platform.'
 						)}
 						<a href="/cookies" class="text-[var(--color-primary)] hover:underline">
-							{t('cookies.banner.learn_more', 'Learn more')}
+							{t('cookies.banner.learn_more', 'Learn more about cookies')}
 						</a>
 					</p>
 				</div>

@@ -137,7 +137,7 @@
          The `max-w` cap keeps it clear of the zoom controls on the right. -->
     {#if (ctx.P.aside_position === 'bottom' || ctx.P.stats_position === 'overlay') && ctx.P.show_stats && (ctx.P.stats?.length ?? 0) > 0}
       <div class="absolute bottom-4 start-4 w-fit max-w-[calc(100%-6rem)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-3 py-2 shadow-sm backdrop-blur-sm">
-        <h3 class="sr-only">Quick stats</h3>
+        <h2 class="sr-only">Quick stats</h2>
         <ul class="flex items-center gap-4 overflow-x-auto">
           {#each ctx.P.stats ?? [] as stat (stat.label)}
             

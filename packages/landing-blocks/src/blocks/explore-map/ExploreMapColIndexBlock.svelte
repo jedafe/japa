@@ -22,7 +22,7 @@
   {#if ctx.P.aside_position === 'bottom'}
     <!-- Card variant — sits in the bottom aside grid -->
     <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h3>
+      <h2 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h2>
       <ul class="space-y-2.5">
         {#each ctx.P.col_bands ?? [] as band (band.key)}
           <li class="flex items-center gap-2.5 rounded-[var(--radius)] px-1.5 py-1 transition-colors hover:bg-[var(--color-surface-subtle)]">
@@ -36,7 +36,7 @@
   {:else}
     <!-- Bar variant — under the map in left-aside mode -->
     <div class="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 shadow-sm">
-      <h3 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h3>
+      <h2 class="mb-3 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Cost of living index (Monthly)</h2>
       <ul class="flex flex-wrap items-center gap-x-8 gap-y-2">
         {#each ctx.P.col_bands ?? [] as band (band.key)}
           <li class="flex items-center gap-2">

@@ -1175,6 +1175,10 @@
   .footer-logo {
     height: 6rem;
     max-width: 13rem;
+    /* Wide logos hit max-width while height stays 6rem — contain letterboxes
+       instead of squishing the aspect ratio. */
+    object-fit: contain;
+    object-position: left center;
     width: auto;
   }
   /* Theme-matched wordmark: the light-mode variant shows by default,

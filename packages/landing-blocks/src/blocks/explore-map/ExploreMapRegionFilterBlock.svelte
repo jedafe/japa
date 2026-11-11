@@ -20,7 +20,7 @@
 
 {#if ctx && exploreMapChildVisible(ctx.P, 'explore_map_region_filter')}
   <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-    <h3 class="mb-2.5 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Region filter</h3>
+    <h2 class="mb-2.5 text-xs font-semibold tracking-wide text-[var(--color-muted)]">Region filter</h2>
     <ul class="space-y-1">
       <li>
         <button

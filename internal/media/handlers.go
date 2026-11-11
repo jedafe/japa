@@ -1396,10 +1396,10 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", ctype)
 	// Media objects are keyed by upload UUID, so the content at a path is
-	// effectively immutable. A day-long TTL keeps repeat views (logos,
+	// effectively immutable. A month-long TTL keeps repeat views (logos,
 	// avatars, featured images) out of the network path while still
 	// bounding how long a deleted object can linger in caches.
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "public, max-age=2592000")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
 }
@@ -1488,7 +1488,7 @@ func (h *Handlers) serveObjectFromS3(w http.ResponseWriter, r *http.Request, buc
 		w.Header().Set("Content-Type", contentType)
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "public, max-age=2592000")
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	for _, hdr := range []string{"Content-Length", "Content-Range"} {

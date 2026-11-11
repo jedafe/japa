@@ -188,10 +188,16 @@
     z-index: 10;
   }
   .hero-dot {
+    /* 10px visual dot inside a 24px touch target: content-box keeps the dot
+       sized by width/height while padding extends the clickable area to the
+       WCAG 2.5.8 minimum without visibly growing the dot. */
+    box-sizing: content-box;
     width: 0.625rem;
     height: 0.625rem;
+    padding: 0.4375rem;
     border-radius: 9999px;
     background: rgba(255, 255, 255, 0.5);
+    background-clip: content-box;
     border: 0;
     cursor: pointer;
     transition: background 0.15s;
