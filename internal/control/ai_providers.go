@@ -162,7 +162,7 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the new provider is immediately available.
-	h.reloadAIProviders(r.Context())
+	h.reloadAIProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
@@ -246,7 +246,7 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the updated config takes effect immediately.
-	h.reloadAIProviders(r.Context())
+	h.reloadAIProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
@@ -282,7 +282,7 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the removed provider is unregistered.
-	h.reloadAIProviders(r.Context())
+	h.reloadAIProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

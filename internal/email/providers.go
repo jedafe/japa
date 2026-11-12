@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,12 +60,14 @@ const providerColumns = `id, name, provider_type, api_key_encrypted,
 		base_url, config, categories, priority, enabled, created_at, updated_at`
 
 // maskSecret returns a masked representation of a secret for display.
+// Secrets of ≤12 chars are fully masked — first4+last4 would reveal 8 of
+// their ≤12 characters, i.e. nearly the entire secret.
 func maskSecret(key string) string {
 	if key == "" {
 		return ""
 	}
 
-	if len(key) <= 8 {
+	if len(key) <= 12 {
 		return "****"
 	}
 
@@ -125,7 +128,18 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 // ListProviders returns all email provider configs, ordered by priority
 // ascending then name.
 func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, error) {
-	rows, err := s.read.Query(ctx, `
+	return s.listProviders(ctx, s.read)
+}
+
+// ListProvidersForUpdate reads via the write pool so callers operating
+// immediately after a mutation (hot-reload) observe their own writes even
+// when the Reader pool is pointed at a lagging replica.
+func (s *ProviderStore) ListProvidersForUpdate(ctx context.Context) ([]ProviderConfig, error) {
+	return s.listProviders(ctx, s.write)
+}
+
+func (s *ProviderStore) listProviders(ctx context.Context, pool *pgxpool.Pool) ([]ProviderConfig, error) {
+	rows, err := pool.Query(ctx, `
 		SELECT `+providerColumns+`
 		FROM email_providers
 		ORDER BY priority ASC, name ASC
@@ -151,7 +165,18 @@ func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, er
 
 // GetProvider returns a single email provider config by ID.
 func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
-	row := s.read.QueryRow(ctx, `
+	return s.getProvider(ctx, s.read, id)
+}
+
+// GetProviderForUpdate reads via the write pool for merge-then-validate
+// flows — the patch is applied onto the row the write will actually hit,
+// not a possibly-stale replica read.
+func (s *ProviderStore) GetProviderForUpdate(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
+	return s.getProvider(ctx, s.write, id)
+}
+
+func (s *ProviderStore) getProvider(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (ProviderConfig, error) {
+	row := pool.QueryRow(ctx, `
 		SELECT `+providerColumns+`
 		FROM email_providers
 		WHERE id = $1
@@ -309,9 +334,19 @@ func (s *ProviderStore) DeleteProvider(ctx context.Context, id pgtype.UUID) erro
 // GetDecryptedSecret returns the plaintext secret for a provider. Used
 // internally by the dispatcher wiring at startup or on hot-reload.
 func (s *ProviderStore) GetDecryptedSecret(ctx context.Context, id pgtype.UUID) (string, error) {
+	return s.getDecryptedSecret(ctx, s.read, id)
+}
+
+// GetDecryptedSecretForUpdate reads via the write pool — see
+// ListProvidersForUpdate for why reload/merge paths read the primary.
+func (s *ProviderStore) GetDecryptedSecretForUpdate(ctx context.Context, id pgtype.UUID) (string, error) {
+	return s.getDecryptedSecret(ctx, s.write, id)
+}
+
+func (s *ProviderStore) getDecryptedSecret(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (string, error) {
 	var encrypted string
 
-	err := s.read.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		SELECT api_key_encrypted FROM email_providers WHERE id = $1
 	`, id).Scan(&encrypted)
 	if err != nil {
@@ -408,7 +443,11 @@ func NewProviderFromConfig(cfg ProviderConfig, secret string) (EmailProvider, er
 // Called at startup (after env-var registration) and on hot-reload when a
 // provider config is created/updated/deleted.
 func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *EmailDispatcher, fallback EmailProvider) error {
-	providers, err := store.ListProviders(ctx)
+	// Read via the write pool: reloads run immediately after a CRUD
+	// mutation, and a lagging Reader replica could rebuild stale chains —
+	// re-registering a provider that was just deleted/disabled (the same
+	// stale-provider defect the full rebuild exists to prevent).
+	providers, err := store.ListProvidersForUpdate(ctx)
 	if err != nil {
 		return fmt.Errorf("loading email providers from db: %w", err)
 	}
@@ -425,7 +464,7 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 			continue
 		}
 
-		secret, err := store.GetDecryptedSecret(ctx, pc.ID)
+		secret, err := store.GetDecryptedSecretForUpdate(ctx, pc.ID)
 		if err != nil {
 			slog.Warn("email: skipping provider, failed to decrypt secret", "provider", pc.Name, "error", err)
 			continue
@@ -522,10 +561,18 @@ func ValidateProviderConfig(cfg ProviderConfig, secret string) error {
 	}
 
 	// SMTP's From falls back to the username (same as NewSMTPProviderFromConfig),
-	// so at least one of from_address/username must be set.
-	if cfg.ProviderType == "smtp" &&
-		configStr(cfg.Config, "from_address") == "" && configStr(cfg.Config, "username") == "" {
-		return fmt.Errorf("config.from_address or config.username is required for provider_type %q", cfg.ProviderType)
+	// so at least one of from_address/username must be set. A non-numeric
+	// port would otherwise persist and only fail at dial time.
+	if cfg.ProviderType == "smtp" {
+		if configStr(cfg.Config, "from_address") == "" && configStr(cfg.Config, "username") == "" {
+			return fmt.Errorf("config.from_address or config.username is required for provider_type %q", cfg.ProviderType)
+		}
+
+		if port := configStr(cfg.Config, "port"); port != "" {
+			if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("config.port must be a numeric TCP port for provider_type %q", cfg.ProviderType)
+			}
+		}
 	}
 
 	// Every vendor type needs a secret; only generic SMTP may go passwordless

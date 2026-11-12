@@ -152,6 +152,29 @@ func TestValidateProviderConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "smtp numeric port ok",
+			mutate: func(c *ProviderConfig) {
+				c.ProviderType = "smtp"
+				c.Config = map[string]string{"host": "smtp.example.com", "from_address": "a@b.c", "port": "465"}
+			},
+		},
+		{
+			name: "smtp non-numeric port rejected",
+			mutate: func(c *ProviderConfig) {
+				c.ProviderType = "smtp"
+				c.Config = map[string]string{"host": "smtp.example.com", "from_address": "a@b.c", "port": "abc"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "smtp out-of-range port rejected",
+			mutate: func(c *ProviderConfig) {
+				c.ProviderType = "smtp"
+				c.Config = map[string]string{"host": "smtp.example.com", "from_address": "a@b.c", "port": "70000"}
+			},
+			wantErr: true,
+		},
+		{
 			name:   "loopback http base_url ok",
 			mutate: func(c *ProviderConfig) { c.BaseURL = "http://127.0.0.1:9000" },
 			secret: "key",
@@ -193,8 +216,48 @@ func TestMaskSecret(t *testing.T) {
 		t.Fatalf("short secret: got %q", got)
 	}
 
+	if got := maskSecret("123456789012"); got != "****" {
+		t.Fatalf("12-char secret must be fully masked: got %q", got)
+	}
+
+	if got := maskSecret("1234567890123"); got != "1234****0123" {
+		t.Fatalf("13-char secret: got %q", got)
+	}
+
 	if got := maskSecret("abcdefghijklmnop"); got != "abcd****mnop" {
 		t.Fatalf("long secret: got %q", got)
+	}
+}
+
+func TestIsProxyEndpointAddr(t *testing.T) {
+	// t.Setenv mutates process env — cannot run in parallel. Clear all
+	// four vars first so a proxied test machine can't skew the results.
+	for _, env := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(env, "")
+	}
+
+	if isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("no proxy env: must not match")
+	}
+
+	t.Setenv("HTTPS_PROXY", "http://user:pass@proxy.corp:3128")
+
+	if !isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("https proxy host: expected match")
+	}
+
+	if !isProxyEndpointAddr("PROXY.CORP:3128") {
+		t.Fatal("hostname match must be case-insensitive")
+	}
+
+	if isProxyEndpointAddr("target.corp:443") {
+		t.Fatal("non-proxy addr must not match")
+	}
+
+	// A request with no scheme-matching proxy dials the target directly —
+	// the guard must still apply even though some proxy env is set.
+	if isProxyEndpointAddr("10.0.0.5:8080") {
+		t.Fatal("direct-dialed target must not be treated as proxy")
 	}
 }
 

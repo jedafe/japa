@@ -165,7 +165,7 @@ func (h *Handlers) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the new provider is immediately available.
-	h.reloadEmailProviders(r.Context())
+	h.reloadEmailProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
@@ -232,7 +232,7 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	// before writing — catches type changes that leave stale/mismatched
 	// config keys (e.g. smtp→ses without region) which would otherwise only
 	// fail when a send is attempted.
-	existing, err := h.EmailProviderStore.GetProvider(r.Context(), id)
+	existing, err := h.EmailProviderStore.GetProviderForUpdate(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
@@ -272,7 +272,7 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the updated config takes effect immediately.
-	h.reloadEmailProviders(r.Context())
+	h.reloadEmailProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
@@ -308,7 +308,7 @@ func (h *Handlers) DeleteEmailProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the dispatcher so the removed provider is unregistered.
-	h.reloadEmailProviders(r.Context())
+	h.reloadEmailProviders(context.WithoutCancel(r.Context()))
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -473,7 +473,7 @@ func (h *Handlers) mergedProviderSecret(ctx context.Context, id pgtype.UUID, new
 		return *newSecret, nil
 	}
 
-	return h.EmailProviderStore.GetDecryptedSecret(ctx, id)
+	return h.EmailProviderStore.GetDecryptedSecretForUpdate(ctx, id)
 }
 
 // reloadEmailProviders re-reads email provider configs and re-registers

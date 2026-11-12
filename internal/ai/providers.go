@@ -52,13 +52,15 @@ func NewProviderStore(read, write *pgxpool.Pool) *ProviderStore {
 
 // maskAPIKey returns a masked representation of an API key for display:
 // shows the first 4 and last 4 characters with **** in between. Empty keys
-// return an empty string. Short keys (≤8 chars) return all-masked.
+// return an empty string. Keys of ≤12 chars are fully masked —
+// first4+last4 would reveal 8 of their ≤12 characters, i.e. nearly the
+// entire key.
 func maskAPIKey(key string) string {
 	if key == "" {
 		return ""
 	}
 
-	if len(key) <= 8 {
+	if len(key) <= 12 {
 		return "****"
 	}
 
@@ -111,7 +113,18 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 // ListProviders returns all AI provider configs for a platform, ordered by
 // priority ascending then name.
 func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, error) {
-	rows, err := s.read.Query(ctx, `
+	return s.listProviders(ctx, s.read)
+}
+
+// ListProvidersForUpdate reads via the write pool so callers operating
+// immediately after a mutation (hot-reload) observe their own writes even
+// when the Reader pool is pointed at a lagging replica.
+func (s *ProviderStore) ListProvidersForUpdate(ctx context.Context) ([]ProviderConfig, error) {
+	return s.listProviders(ctx, s.write)
+}
+
+func (s *ProviderStore) listProviders(ctx context.Context, pool *pgxpool.Pool) ([]ProviderConfig, error) {
+	rows, err := pool.Query(ctx, `
 		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
 		FROM ai_providers
@@ -290,9 +303,19 @@ func (s *ProviderStore) DeleteProvider(ctx context.Context, id pgtype.UUID) erro
 // internally by the dispatcher wiring to construct the provider at startup
 // or on hot-reload. Returns empty string if no key is stored.
 func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, id pgtype.UUID) (string, error) {
+	return s.getDecryptedAPIKey(ctx, s.read, id)
+}
+
+// GetDecryptedAPIKeyForUpdate reads via the write pool — see
+// ListProvidersForUpdate for why reload paths read the primary.
+func (s *ProviderStore) GetDecryptedAPIKeyForUpdate(ctx context.Context, id pgtype.UUID) (string, error) {
+	return s.getDecryptedAPIKey(ctx, s.write, id)
+}
+
+func (s *ProviderStore) getDecryptedAPIKey(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (string, error) {
 	var encrypted string
 
-	err := s.read.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		SELECT api_key_encrypted FROM ai_providers WHERE id = $1
 	`, id).Scan(&encrypted)
 	if err != nil {
@@ -452,7 +475,11 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 // Called at startup (after env-var providers are registered and snapshotted)
 // and on hot-reload when a provider config is created/updated/deleted.
 func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher, fallbackChains map[string][]Provider) error {
-	providers, err := store.ListProviders(ctx)
+	// Read via the write pool: reloads run immediately after a CRUD
+	// mutation, and a lagging Reader replica could rebuild stale chains —
+	// re-registering a provider that was just deleted/disabled (the same
+	// stale-provider defect the full rebuild exists to prevent).
+	providers, err := store.ListProvidersForUpdate(ctx)
 	if err != nil {
 		return fmt.Errorf("loading providers from db: %w", err)
 	}
@@ -470,7 +497,7 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 			continue
 		}
 
-		apiKey, err := store.GetDecryptedAPIKey(ctx, pc.ID)
+		apiKey, err := store.GetDecryptedAPIKeyForUpdate(ctx, pc.ID)
 		if err != nil {
 			slog.Warn("ai: skipping provider, failed to decrypt api key", "provider", pc.Name, "error", err)
 			continue

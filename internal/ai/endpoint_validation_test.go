@@ -399,3 +399,51 @@ func TestGuardedDialTLSBlocksLoopback(t *testing.T) {
 		t.Fatalf("expected errInvalidEndpoint for loopback TLS dial, got %v", err)
 	}
 }
+
+func TestIsProxyEndpointAddr(t *testing.T) {
+	// t.Setenv mutates process env — cannot run in parallel. Clear all
+	// four vars first so a proxied test machine can't skew the results.
+	for _, env := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(env, "")
+	}
+
+	if isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("no proxy env: must not match")
+	}
+
+	t.Setenv("HTTPS_PROXY", "http://user:pass@proxy.corp:3128")
+
+	if !isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("https proxy host: expected match")
+	}
+
+	if !isProxyEndpointAddr("PROXY.CORP:3128") {
+		t.Fatal("hostname match must be case-insensitive")
+	}
+
+	if isProxyEndpointAddr("target.corp:443") {
+		t.Fatal("non-proxy addr must not match")
+	}
+
+	// A request with no scheme-matching proxy dials the target directly —
+	// the guard must still apply even though some proxy env is set.
+	if isProxyEndpointAddr("10.0.0.5:8080") {
+		t.Fatal("direct-dialed target must not be treated as proxy")
+	}
+}
+
+func TestMaskAPIKey(t *testing.T) {
+	t.Parallel()
+
+	if got := maskAPIKey(""); got != "" {
+		t.Fatalf("empty key: got %q", got)
+	}
+
+	if got := maskAPIKey("123456789012"); got != "****" {
+		t.Fatalf("12-char key must be fully masked: got %q", got)
+	}
+
+	if got := maskAPIKey("1234567890123"); got != "1234****0123" {
+		t.Fatalf("13-char key: got %q", got)
+	}
+}

@@ -39,13 +39,38 @@ func newGuardedHTTPClient() *http.Client {
 
 var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 
-// proxyConfigured reports whether an egress proxy is configured — when set,
-// the connection target is the deployment-owned proxy whose egress policy
-// applies, so the remote-IP guard is skipped (an internal proxy would
-// otherwise be misclassified as an internal endpoint).
-func proxyConfigured() bool {
-	return os.Getenv("HTTP_PROXY") != "" || os.Getenv("http_proxy") != "" ||
-		os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != ""
+// isProxyEndpointAddr reports whether the dialed addr is a configured
+// egress proxy. Only then is the remote-IP guard skipped — the connection
+// target is the deployment-owned proxy whose egress policy applies, and an
+// internal proxy would otherwise be misclassified as an internal endpoint.
+// A proxy env var being set does NOT mean this connection traverses it:
+// scheme mismatch (HTTPS_PROXY set, request is http), NO_PROXY exclusions,
+// and malformed proxy URLs all dial the target directly — skipping the
+// check on env-presence alone would let an internal hostname connect
+// unguarded.
+func isProxyEndpointAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+
+	for _, env := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		raw := os.Getenv(env)
+		if raw == "" {
+			continue
+		}
+
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+
+		if strings.EqualFold(u.Hostname(), host) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // guardedDialContext dials then inspects the connected remote address —
@@ -58,7 +83,7 @@ func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, er
 		return nil, err
 	}
 
-	if proxyConfigured() {
+	if isProxyEndpointAddr(addr) {
 		return conn, nil
 	}
 
