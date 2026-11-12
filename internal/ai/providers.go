@@ -436,14 +436,22 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 	}
 }
 
-// LoadAndRegisterProviders loads all enabled provider configs from the
-// database and registers them with the dispatcher, grouped by category.
-// Providers are sorted by priority within each category (lower priority
-// value = tried first). Categories that have no DB-backed providers are
-// left untouched (so env-var-registered providers from startup remain).
-// // This is called at startup (after env-var providers are registered) and
-// on hot-reload when a provider config is created/updated/deleted.
-func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher) error {
+// LoadAndRegisterProviders rebuilds the dispatcher's category→provider
+// chains from the database: enabled provider configs are registered in
+// priority order (lower = tried first), and categories left without a
+// DB-backed provider get their env-registered chain restored from
+// fallbackChains (a Dispatcher.SnapshotProviders copy taken at startup
+// after env registration, nil-safe).
+//
+// A full rebuild — rather than patching categories present in the DB set —
+// is required so delete/disable of a category's last DB provider actually
+// unregisters it instead of leaving a stale provider serving traffic until
+// restart. The rebuild is swapped in atomically so an in-flight Dispatch
+// never observes a partially built category.
+//
+// Called at startup (after env-var providers are registered and snapshotted)
+// and on hot-reload when a provider config is created/updated/deleted.
+func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher, fallbackChains map[string][]Provider) error {
 	providers, err := store.ListProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("loading providers from db: %w", err)
@@ -478,33 +486,49 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 		}
 	}
 
-	// Register DB-backed providers. To make DB providers take priority over
-	// env-var providers, we clear each category and re-register. However, if
-	// no DB provider is successfully registered for a category, we leave the
-	// env-var provider(s) in place so the model picker still returns models.
-	for cat, entries := range byCategory {
-		var registered []Provider
+	// Rebuild every category that could be affected: the canonical set, any
+	// category present in the DB rows, and any category with env-registered
+	// providers. Anything outside the union can't exist in the dispatcher.
+	cats := make(map[string]struct{})
+	for _, c := range SupportedAICategories() {
+		cats[c] = struct{}{}
+	}
+	for c := range byCategory {
+		cats[c] = struct{}{}
+	}
+	for c := range fallbackChains {
+		cats[c] = struct{}{}
+	}
 
-		for _, entry := range entries {
+	chains := make(map[string][]Provider, len(cats))
+
+	for cat := range cats {
+		var chain []Provider
+
+		for _, entry := range byCategory[cat] {
 			p, err := NewProviderFromConfig(entry.config, entry.apiKey)
 			if err != nil {
 				slog.Warn("ai: skipping provider, unsupported type", "provider", entry.config.Name, "error", err)
 				continue
 			}
 
-			registered = append(registered, p)
+			chain = append(chain, p)
 		}
 
-		if len(registered) == 0 {
-			continue
+		// No usable DB provider → restore the env-registered chain so the
+		// model picker still returns models for the category.
+		if len(chain) == 0 {
+			chain = append(chain, fallbackChains[cat]...)
 		}
 
-		dispatcher.ClearCategory(cat)
-
-		for _, p := range registered {
-			dispatcher.RegisterProvider(cat, p)
+		// Skip empty chains — a present-but-empty category key would leak
+		// into RegisteredCategories even though it has no providers.
+		if len(chain) > 0 {
+			chains[cat] = chain
 		}
 	}
+
+	dispatcher.ReplaceProviders(chains)
 
 	return nil
 }

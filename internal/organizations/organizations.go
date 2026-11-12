@@ -213,6 +213,8 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 
 	if s.siteURL != "" {
 		acceptURL = s.siteURL + acceptPath
+	} else {
+		slog.Warn("organizations: site_url unset — invitation email carries a relative accept link", "org", orgName)
 	}
 
 	subject := fmt.Sprintf("You've been invited to join %s on %s", orgName, brand.Get())

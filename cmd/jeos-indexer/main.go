@@ -72,7 +72,7 @@ func run() error {
 	// the API uses.
 	dispatcher := ai.NewDispatcher()
 	providerStore := ai.NewProviderStore(database.Reader, database.Writer)
-	if err := ai.LoadAndRegisterProviders(ctx, providerStore, dispatcher); err != nil {
+	if err := ai.LoadAndRegisterProviders(ctx, providerStore, dispatcher, nil); err != nil {
 		slog.Warn("jeos-indexer: loading db-backed providers", "error", err)
 	}
 

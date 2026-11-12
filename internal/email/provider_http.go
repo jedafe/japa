@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -18,7 +19,59 @@ import (
 // endpoints are called synchronously inside a task that already has its own
 // timeout budget (30s) — 15s keeps a slow provider from eating all of it
 // before the dispatcher can try the next one.
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+var httpClient = newGuardedHTTPClient()
+
+// newGuardedHTTPClient builds the vendor client on a transport whose dialer
+// rejects connections to non-loopback internal addresses AFTER connect —
+// validateEmailEndpoint checks the literal host, but a hostname can resolve
+// (or re-resolve) to a private IP; checking the actual remote address closes
+// that DNS-rebinding hole. Loopback stays allowed because http://loopback
+// base URLs are a supported local-dev relay configuration.
+func newGuardedHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib guarantees *http.Transport
+	transport.DialContext = guardedDialContext
+
+	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
+}
+
+var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+
+// guardedDialContext dials then inspects the connected remote address —
+// the IP the request will actually reach, immune to DNS rebinding between
+// validation and dial. When an egress HTTP(S)_PROXY is configured the
+// connection target is the proxy itself, whose egress policy is owned by
+// the deployment — the guard is skipped in that case (a corporate proxy
+// would otherwise be misclassified as an internal endpoint).
+func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != "" {
+		return conn, nil
+	}
+
+	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isBlockedRemoteIP(ta.IP) {
+		_ = conn.Close()
+
+		return nil, errInvalidEndpoint
+	}
+
+	return conn, nil
+}
+
+// isBlockedRemoteIP reports whether a connected remote IP is internal but
+// not loopback — private ranges, link-local (incl. cloud metadata
+// 169.254.0.0/16), unspecified, and multicast. Loopback is exempt: http to
+// loopback is an allowed local-dev relay endpoint.
+func isBlockedRemoteIP(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return false
+	}
+
+	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()
+}
 
 // errInvalidEndpoint is returned when a provider base URL fails validation.
 var errInvalidEndpoint = errors.New("email: invalid or disallowed endpoint URL")

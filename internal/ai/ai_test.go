@@ -731,3 +731,64 @@ func TestParsePageOffset(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// SnapshotProviders / ReplaceProviders — stale-registration regression tests
+// ---------------------------------------------------------------------------
+
+func TestSnapshotAndReplaceProviders(t *testing.T) {
+	t.Parallel()
+
+	d := NewDispatcher()
+	d.RegisterProvider("chat", &mockProvider{name: "env"})
+
+	snap := d.SnapshotProviders()
+	if len(snap["chat"]) != 1 {
+		t.Fatalf("snapshot should capture the env chain, got %v", snap)
+	}
+
+	// Swapping in a map without the category must actually unregister the
+	// previously registered provider (the stale-registration regression).
+	d.ReplaceProviders(map[string][]Provider{})
+
+	if d.HasCategory("chat") {
+		t.Fatal("expected chat chain to be empty after ReplaceProviders")
+	}
+
+	_, err := d.Dispatch(context.Background(), "chat", Request{Payload: map[string]any{}})
+	if !errors.Is(err, ErrNoProviders) {
+		t.Fatalf("expected ErrNoProviders after swap, got %v", err)
+	}
+
+	// Restoring the snapshot must bring the env provider back — this is what
+	// LoadAndRegisterProviders does for categories left without DB rows.
+	d.ReplaceProviders(snap)
+
+	resp, err := d.Dispatch(context.Background(), "chat", Request{Payload: map[string]any{}})
+	if err != nil {
+		t.Fatalf("dispatch after restore: %v", err)
+	}
+
+	if resp.ProviderRef != "env-ref" {
+		t.Fatalf("expected env provider, got %q", resp.ProviderRef)
+	}
+}
+
+func TestSnapshotProvidersIsACopy(t *testing.T) {
+	t.Parallel()
+
+	d := NewDispatcher()
+	d.RegisterProvider("chat", &mockProvider{name: "env"})
+
+	snap := d.SnapshotProviders()
+	snap["chat"] = nil
+	snap["extra"] = []Provider{&mockProvider{name: "phantom"}}
+
+	if !d.HasCategory("chat") {
+		t.Fatal("mutating the snapshot must not affect the dispatcher")
+	}
+
+	if d.HasCategory("extra") {
+		t.Fatal("snapshot additions must not leak into the dispatcher")
+	}
+}

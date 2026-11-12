@@ -58,6 +58,34 @@ func (d *Dispatcher) ClearAll() {
 	d.providersByCategory = make(map[string][]Provider)
 }
 
+// SnapshotProviders returns a copy of the current category→chain map.
+// Taken at startup after env-var registration so LoadAndRegisterProviders
+// can restore env providers for categories left without DB-backed rows —
+// delete/disable of a category's last DB provider must not leave the stale
+// provider serving traffic, nor silently drop the env fallback.
+func (d *Dispatcher) SnapshotProviders() map[string][]Provider {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	out := make(map[string][]Provider, len(d.providersByCategory))
+	for cat, chain := range d.providersByCategory {
+		out[cat] = append([]Provider(nil), chain...)
+	}
+
+	return out
+}
+
+// ReplaceProviders atomically swaps the whole category→chain map under a
+// single lock. LoadAndRegisterProviders builds the new chains first and
+// calls this once, so an in-flight Dispatch never observes a partially
+// rebuilt (empty) category — which would surface as ErrNoProviders and
+// permanently drop a queued request.
+func (d *Dispatcher) ReplaceProviders(chains map[string][]Provider) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.providersByCategory = chains
+}
+
 // HasCategory reports whether any provider is registered for the category.
 func (d *Dispatcher) HasCategory(category string) bool {
 	d.mu.RLock()

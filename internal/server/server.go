@@ -3689,12 +3689,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetByokStores(byokProviderStore, userAIKeyStore)
 	controlHandlers.SetByokProviderStore(byokProviderStore)
 
+	// Snapshot the env-registered provider chains BEFORE the first DB load —
+	// LoadAndRegisterProviders rebuilds every category from the DB and
+	// restores this snapshot for categories left without a DB-backed
+	// provider (including delete/disable of the last row on hot-reload).
+	aiFallbackChains := aiDispatcher.SnapshotProviders()
+	controlHandlers.SetAIFallbackChains(aiFallbackChains)
+
 	// Load DB-backed provider configs and register them with the dispatcher.
 	// This runs AFTER env-var providers are registered above, so DB configs
 	// take priority (LoadAndRegisterProviders clears and re-registers
 	// categories that have DB-backed providers). The default platform is used
 	// for the initial load; per-platform reload happens on config changes.
-	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher); err != nil {
+	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, aiFallbackChains); err != nil {
 		slog.Warn("ai: loading db-backed providers at startup", "error", err)
 	}
 

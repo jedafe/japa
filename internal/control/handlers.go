@@ -93,23 +93,27 @@ type GeoIPHealthChecker interface {
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	DB                 *db.DB
-	FeatureChecker     *features.Checker
-	SpamStore          *spam.Store
-	PublicAPI          *publicapi.Handlers
-	Inspector          *asynq.Inspector
-	Client             *asynq.Client
-	RBAC               *rbac.RBAC
-	Settings           *config.Settings
-	Valkey             valkeycompat.Cmdable
-	SearchEngine       SearchHealthChecker
-	GeoIP              GeoIPHealthChecker
-	WSHub              *websocket.Hub
-	Honcho             HonchoHealthChecker
-	AIStore            *ai.Store
-	ProviderStore      *ai.ProviderStore
-	ByokStore          *ai.ByokProviderStore
-	AIDispatcher       *ai.Dispatcher
+	DB             *db.DB
+	FeatureChecker *features.Checker
+	SpamStore      *spam.Store
+	PublicAPI      *publicapi.Handlers
+	Inspector      *asynq.Inspector
+	Client         *asynq.Client
+	RBAC           *rbac.RBAC
+	Settings       *config.Settings
+	Valkey         valkeycompat.Cmdable
+	SearchEngine   SearchHealthChecker
+	GeoIP          GeoIPHealthChecker
+	WSHub          *websocket.Hub
+	Honcho         HonchoHealthChecker
+	AIStore        *ai.Store
+	ProviderStore  *ai.ProviderStore
+	ByokStore      *ai.ByokProviderStore
+	AIDispatcher   *ai.Dispatcher
+	// AIFallbackChains is the startup snapshot of env-registered provider
+	// chains — restored for categories left without a DB-backed provider
+	// after a reload.
+	AIFallbackChains   map[string][]ai.Provider
 	EmailProviderStore *email.ProviderStore
 	EmailDispatcher    *email.EmailDispatcher
 	// EmailFallbackProvider is re-registered for categories left without a
@@ -223,6 +227,13 @@ func (h *Handlers) SetProviderStore(s *ai.ProviderStore) {
 // call reloadAIProviders which re-reads configs from the DB).
 func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
 	h.AIDispatcher = d
+}
+
+// SetAIFallbackChains injects the startup snapshot of env-registered AI
+// provider chains — restored for any category left without a DB-backed
+// provider after a reload (mirrors SetEmailFallbackProvider).
+func (h *Handlers) SetAIFallbackChains(chains map[string][]ai.Provider) {
+	h.AIFallbackChains = chains
 }
 
 // SetEmailProviderStore injects the email provider config store for the

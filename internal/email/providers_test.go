@@ -3,6 +3,9 @@ package email
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -219,5 +222,55 @@ func TestBuildMIMEMessageSanitizesAndOrdersHeaders(t *testing.T) {
 
 	if !strings.Contains(msg, "List-Unsubscribe: <https://x.com/u>") {
 		t.Fatalf("custom header missing:\n%s", msg)
+	}
+}
+
+func TestIsBlockedRemoteIP(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		ip      string
+		blocked bool
+	}{
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"127.0.0.1", false},      // loopback exempt — dev relay
+		{"::1", false},            // loopback exempt
+		{"10.0.0.5", true},        // private
+		{"172.16.0.1", true},      // private
+		{"192.168.1.1", true},     // private
+		{"169.254.169.254", true}, // link-local cloud metadata
+		{"0.0.0.0", true},         // unspecified
+		{"224.0.0.1", true},       // multicast
+		{"100.64.0.1", false},     // CGNAT is neither private nor link-local per net.IP
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ip, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isBlockedRemoteIP(net.ParseIP(tt.ip)); got != tt.blocked {
+				t.Fatalf("isBlockedRemoteIP(%s) = %v, want %v", tt.ip, got, tt.blocked)
+			}
+		})
+	}
+}
+
+func TestPostJSONAllowsLoopbackThroughGuardedDialer(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	status, body, err := postJSON(context.Background(), srv.URL, nil, map[string]string{"k": "v"})
+	if err != nil {
+		t.Fatalf("postJSON to loopback test server: %v", err)
+	}
+
+	if status != http.StatusOK || string(body) != `{"ok":true}` {
+		t.Fatalf("unexpected response: %d %s", status, body)
 	}
 }
