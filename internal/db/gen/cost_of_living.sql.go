@@ -204,7 +204,7 @@ SELECT
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
 WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
- WHERE slug = 'cost_of_living'
+ WHERE slug = 'cost-of-living'
  AND is_system = true
  LIMIT 1)
  AND ci.geo_space_id = $1
@@ -424,7 +424,7 @@ SELECT ci.id
 FROM comparison_items ci
 JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
 WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
- WHERE slug = 'cost_of_living'
+ WHERE slug = 'cost-of-living'
  AND is_system = true
  LIMIT 1)
  AND ci.deleted_at IS NULL
@@ -514,7 +514,7 @@ const getCostOfLivingType = `-- name: GetCostOfLivingType :one
 
 
 SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, created_at, config FROM comparison_type_definitions
-WHERE slug = 'cost_of_living' AND is_system = true
+WHERE slug = 'cost-of-living' AND is_system = true
 `
 
 // cost_of_living.sql — Cost of Living Calculator queries (Section 72, ADR-072).
