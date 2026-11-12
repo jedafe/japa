@@ -798,6 +798,7 @@
 			{ label: t('common.home', 'Home'), href: '/' },
 			{ label: t('jce.compare.heading') }
 		]}
+		class="mt-4"
 	>
 		{#snippet actions(c)}
 			<div class="grid w-full grid-cols-2 gap-2 sm:flex">

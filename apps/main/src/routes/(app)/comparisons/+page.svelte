@@ -257,6 +257,7 @@
 			{ label: t('jce.compare.heading'), href: '/compare' },
 			{ label: t('jce.comparisons.heading') }
 		]}
+		class="mt-4"
 	>
 		{#snippet actions(c)}
 			<div class="grid w-full grid-cols-2 gap-2 sm:flex">
