@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/crypto"
@@ -168,13 +169,6 @@ func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (Provid
 	return s.getProvider(ctx, s.read, id)
 }
 
-// GetProviderForUpdate reads via the write pool for merge-then-validate
-// flows — the patch is applied onto the row the write will actually hit,
-// not a possibly-stale replica read.
-func (s *ProviderStore) GetProviderForUpdate(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
-	return s.getProvider(ctx, s.write, id)
-}
-
 func (s *ProviderStore) getProvider(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (ProviderConfig, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT `+providerColumns+`
@@ -243,8 +237,71 @@ type UpdateProviderInput struct {
 	Enabled      *bool
 }
 
-// UpdateProvider updates an existing provider config and returns it.
-func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProviderInput) (ProviderConfig, error) {
+// rowQuerier is satisfied by *pgxpool.Pool and pgx.Tx so the update builder
+// can run inside or outside a transaction.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// UpdateProviderWithLock atomically reads the row FOR UPDATE, hands it and
+// its decrypted secret to fn for merge+validate, and writes the returned
+// field updates — all inside one transaction. The row lock closes the
+// read-merge-write window that previously let concurrent PATCHes each
+// validate against a stale snapshot and clobber each other's changes.
+//
+// fn receives (existing, storedSecret) and returns the UpdateProviderInput
+// to apply; its error aborts the transaction and is returned as-is.
+func (s *ProviderStore) UpdateProviderWithLock(ctx context.Context, id pgtype.UUID, fn func(existing ProviderConfig, storedSecret string) (UpdateProviderInput, error)) (ProviderConfig, error) {
+	tx, err := s.write.Begin(ctx)
+	if err != nil {
+		return ProviderConfig{}, fmt.Errorf("begin provider update tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	existing, err := s.scanProviderConfig(tx.QueryRow(ctx, `
+		SELECT `+providerColumns+`
+		FROM email_providers
+		WHERE id = $1
+		FOR UPDATE
+	`, id))
+	if err != nil {
+		return ProviderConfig{}, errors.New("not_found: provider not found")
+	}
+
+	var storedSecret string
+
+	if existing.APIKeyEncrypted != "" {
+		storedSecret, err = crypto.Decrypt(existing.APIKeyEncrypted)
+		if err != nil {
+			return ProviderConfig{}, fmt.Errorf("email: decrypt secret: %w", err)
+		}
+	}
+
+	upd, err := fn(existing, storedSecret)
+	if err != nil {
+		return ProviderConfig{}, err
+	}
+
+	upd.ID = id
+
+	provider, err := s.updateProvider(ctx, tx, upd)
+	if err != nil {
+		return ProviderConfig{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return ProviderConfig{}, fmt.Errorf("commit provider update: %w", err)
+	}
+
+	return provider, nil
+}
+
+// updateProvider applies the field updates — shared by UpdateProviderWithLock
+// (inside its transaction). There is deliberately no exported non-transactional
+// variant: every update path must hold the row lock for read-merge-write
+// correctness.
+func (s *ProviderStore) updateProvider(ctx context.Context, q rowQuerier, input UpdateProviderInput) (ProviderConfig, error) {
 	setParts := []string{"updated_at = now()"}
 	args := []any{input.ID}
 	argIdx := 2 // $1=id, $2+
@@ -312,7 +369,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 		RETURNING `+providerColumns+`
 	`, strings.Join(setParts, ", "))
 
-	row := s.write.QueryRow(ctx, query, args...)
+	row := q.QueryRow(ctx, query, args...)
 
 	return s.scanProviderConfig(row)
 }

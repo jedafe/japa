@@ -3,6 +3,8 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -231,40 +233,43 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	// Merge the patch onto the stored row and validate the resulting config
 	// before writing — catches type changes that leave stale/mismatched
 	// config keys (e.g. smtp→ses without region) which would otherwise only
-	// fail when a send is attempted.
-	existing, err := h.EmailProviderStore.GetProviderForUpdate(r.Context(), id)
+	// fail when a send is attempted. The row is locked FOR UPDATE inside a
+	// transaction so a concurrent PATCH can't clobber this merge.
+	provider, err := h.EmailProviderStore.UpdateProviderWithLock(r.Context(), id,
+		func(existing email.ProviderConfig, storedSecret string) (email.UpdateProviderInput, error) {
+			merged := mergedProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Config, categoriesPtr)
+
+			mergedSecret := storedSecret
+			if input.Secret != nil && *input.Secret != "" {
+				mergedSecret = *input.Secret
+			}
+
+			if err := email.ValidateProviderConfig(merged, mergedSecret); err != nil {
+				return email.UpdateProviderInput{}, fmt.Errorf("%w: %w", errProviderValidation, err)
+			}
+
+			return email.UpdateProviderInput{
+				Name:         input.Name,
+				ProviderType: input.ProviderType,
+				Secret:       input.Secret,
+				BaseURL:      input.BaseURL,
+				Config:       input.Config,
+				Categories:   categoriesPtr,
+				Priority:     input.Priority,
+				Enabled:      input.Enabled,
+			}, nil
+		})
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
-		return
-	}
+		if errors.Is(err, errProviderValidation) {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", strings.TrimPrefix(err.Error(), errProviderValidation.Error()+": "))
+			return
+		}
 
-	merged := mergedProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Config, categoriesPtr)
+		if strings.Contains(err.Error(), "not_found") {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
+			return
+		}
 
-	mergedSecret, err := h.mergedProviderSecret(r.Context(), id, input.Secret)
-	if err != nil {
-		slog.Error("control: update email provider: decrypt stored secret", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to validate provider")
-
-		return
-	}
-
-	if err := email.ValidateProviderConfig(merged, mergedSecret); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
-		return
-	}
-
-	provider, err := h.EmailProviderStore.UpdateProvider(r.Context(), email.UpdateProviderInput{
-		ID:           id,
-		Name:         input.Name,
-		ProviderType: input.ProviderType,
-		Secret:       input.Secret,
-		BaseURL:      input.BaseURL,
-		Config:       input.Config,
-		Categories:   categoriesPtr,
-		Priority:     input.Priority,
-		Enabled:      input.Enabled,
-	})
-	if err != nil {
 		slog.Error("control: update email provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update email provider")
 
@@ -465,16 +470,9 @@ func mergedProviderConfig(base email.ProviderConfig, name, providerType, baseURL
 	return base
 }
 
-// mergedProviderSecret returns the secret that will be in effect after an
-// update: the new plaintext when supplied, otherwise the stored decrypted
-// value.
-func (h *Handlers) mergedProviderSecret(ctx context.Context, id pgtype.UUID, newSecret *string) (string, error) {
-	if newSecret != nil && *newSecret != "" {
-		return *newSecret, nil
-	}
-
-	return h.EmailProviderStore.GetDecryptedSecretForUpdate(ctx, id)
-}
+// errProviderValidation marks callback errors from UpdateProviderWithLock
+// that should surface as a 400 rather than a 500.
+var errProviderValidation = errors.New("provider_validation")
 
 // reloadEmailProviders re-reads email provider configs and re-registers
 // them with the dispatcher so create/update/delete operations take effect

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 )
 
@@ -40,22 +41,6 @@ func (d *Dispatcher) RegisterProvider(category string, p Provider) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.providersByCategory[category] = append(d.providersByCategory[category], p)
-}
-
-// ClearCategory removes all providers registered for the given category.
-// Used by ReloadProviders to hot-swap the provider list at runtime.
-func (d *Dispatcher) ClearCategory(category string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.providersByCategory, category)
-}
-
-// ClearAll removes all providers from all categories. Used when reloading
-// the entire provider configuration from the database.
-func (d *Dispatcher) ClearAll() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.providersByCategory = make(map[string][]Provider)
 }
 
 // SnapshotProviders returns a copy of the current category→chain map.
@@ -124,6 +109,8 @@ func (d *Dispatcher) RegisteredModels() []Model {
 		}
 	}
 
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+
 	return models
 }
 
@@ -160,6 +147,8 @@ func (d *Dispatcher) RegisteredModelsByCategory(category string) []Model {
 		}
 	}
 
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+
 	return models
 }
 
@@ -174,6 +163,8 @@ func (d *Dispatcher) RegisteredCategories() []string {
 	for cat := range d.providersByCategory {
 		categories = append(categories, cat)
 	}
+
+	sort.Strings(categories)
 
 	return categories
 }
@@ -237,7 +228,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 
 	var lastErr error
 
-	for _, p := range providers {
+	for i, p := range providers {
 		resp, err := p.Send(ctx, req)
 		if err == nil {
 			resp.ProviderName = p.Name()
@@ -245,12 +236,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 		}
 
 		lastErr = err
-		slog.Error(
-			"ai provider failed, trying next",
-			"provider", p.Name(),
-			"category", category,
-			"error", err,
-		)
+		if i < len(providers)-1 {
+			slog.Error(
+				"ai provider failed, trying next",
+				"provider", p.Name(),
+				"category", category,
+				"error", err,
+			)
+		}
 	}
 
 	return Response{}, fmt.Errorf("ai: all providers for category %q failed: %w", category, lastErr)
@@ -276,7 +269,7 @@ func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req Cha
 
 	var lastErr error
 
-	for _, p := range providers {
+	for i, p := range providers {
 		resp, err := p.ChatWithTools(ctx, req)
 		if err == nil {
 			resp.ProviderName = p.Name()
@@ -284,12 +277,14 @@ func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req Cha
 		}
 
 		lastErr = err
-		slog.Error(
-			"ai provider ChatWithTools failed, trying next",
-			"provider", p.Name(),
-			"category", category,
-			"error", err,
-		)
+		if i < len(providers)-1 {
+			slog.Error(
+				"ai provider ChatWithTools failed, trying next",
+				"provider", p.Name(),
+				"category", category,
+				"error", err,
+			)
+		}
 	}
 
 	return ChatWithToolsResponse{}, fmt.Errorf("ai: all providers for category %q failed: %w", category, lastErr)

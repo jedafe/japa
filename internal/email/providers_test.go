@@ -1,8 +1,10 @@
 package email
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -226,6 +228,107 @@ func TestMaskSecret(t *testing.T) {
 
 	if got := maskSecret("abcdefghijklmnop"); got != "abcd****mnop" {
 		t.Fatalf("long secret: got %q", got)
+	}
+}
+
+// serveFakeSMTP speaks just enough SMTP for smtp.Client: greeting,
+// multiline EHLO (no STARTTLS), 250 for everything else, 354 for DATA.
+func serveFakeSMTP(t *testing.T, ln net.Listener) {
+	t.Helper()
+
+	conn, err := ln.Accept()
+	if err != nil {
+		return
+	}
+
+	defer func() { _ = conn.Close() }()
+
+	r := bufio.NewReader(conn)
+	_, _ = fmt.Fprint(conn, "220 fake ESMTP\r\n")
+
+	inData := false
+
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+
+		// Inside DATA the server stays silent until the lone-dot
+		// terminator, then replies 250 once — replying per content line
+		// desyncs the command/response flow.
+		if inData {
+			if line == ".\r\n" {
+				inData = false
+				_, _ = fmt.Fprint(conn, "250 OK\r\n")
+			}
+
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(line, "EHLO"), strings.HasPrefix(line, "HELO"):
+			_, _ = fmt.Fprint(conn, "250-fake greets you\r\n250 HELP\r\n")
+		case strings.HasPrefix(line, "DATA"):
+			inData = true
+			_, _ = fmt.Fprint(conn, "354 End data with <CR><LF>.<CR><LF>\r\n")
+		case strings.HasPrefix(line, "QUIT"):
+			_, _ = fmt.Fprint(conn, "221 Bye\r\n")
+
+			return
+		default:
+			_, _ = fmt.Fprint(conn, "250 OK\r\n")
+		}
+	}
+}
+
+func TestSMTPProviderSendAgainstFakeServer(t *testing.T) {
+	// Not parallel: spawns a listener.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	defer func() { _ = ln.Close() }()
+
+	go serveFakeSMTP(t, ln)
+
+	port := fmt.Sprintf("%d", ln.Addr().(*net.TCPAddr).Port)
+
+	p, err := NewSMTPProviderFromConfig(SMTPConfig{
+		Host: "127.0.0.1", Port: port, From: "a@b.c",
+	})
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+
+	resp, err := p.Send(context.Background(), EmailRequest{
+		To: "x@y.z", Subject: "s", Body: "b", Category: "transactional",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	if resp.Status != "success" {
+		t.Fatalf("status: %q", resp.Status)
+	}
+}
+
+func TestSMTPProviderDialRespectsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	p, err := NewSMTPProviderFromConfig(SMTPConfig{
+		Host: "127.0.0.1", Port: "25", From: "a@b.c",
+	})
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := p.dial(ctx); err == nil {
+		t.Fatal("expected dial error with canceled ctx, got nil")
 	}
 }
 

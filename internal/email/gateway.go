@@ -41,22 +41,6 @@ func (d *EmailDispatcher) RegisterProvider(category string, p EmailProvider) {
 	d.providersByCategory[category] = append(d.providersByCategory[category], p)
 }
 
-// ClearCategory removes all providers registered for the given category.
-// Used by LoadAndRegisterProviders to hot-swap the provider list at runtime.
-func (d *EmailDispatcher) ClearCategory(category string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.providersByCategory, category)
-}
-
-// ClearAll removes all providers from all categories. Used when reloading
-// the entire provider configuration from the database.
-func (d *EmailDispatcher) ClearAll() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.providersByCategory = make(map[string][]EmailProvider)
-}
-
 // ReplaceProviders atomically swaps the whole category→chain map under a
 // single lock. LoadAndRegisterProviders builds the new chains first and
 // calls this once, so an in-flight Dispatch never observes a partially
@@ -90,19 +74,21 @@ func (d *EmailDispatcher) Dispatch(ctx context.Context, req EmailRequest) (Email
 
 	var lastErr error
 
-	for _, p := range providers {
+	for i, p := range providers {
 		resp, err := p.Send(ctx, req)
 		if err == nil {
 			return resp, nil
 		}
 
 		lastErr = err
-		slog.Error(
-			"email provider failed, trying next",
-			"provider", p.Name(),
-			"category", req.Category,
-			"error", err,
-		)
+		if i < len(providers)-1 {
+			slog.Error(
+				"email provider failed, trying next",
+				"provider", p.Name(),
+				"category", req.Category,
+				"error", err,
+			)
+		}
 	}
 
 	return EmailResponse{}, fmt.Errorf("email: all providers for category %q failed: %w", req.Category, lastErr)
