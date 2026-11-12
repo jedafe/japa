@@ -10,6 +10,7 @@
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import { t } from '#lib/i18n/index.js';
 	import { flagUrl } from '#lib/utils/flags.js';
+	import { excerptText } from '#lib/utils/comparison.js';
 	import type { JCEComparisonSummary, JCEPreviewItem } from '#lib/types/jce.js';
 	import type { CompareBadgeKind } from './compareBadge.js';
 
@@ -37,6 +38,9 @@
 			summary.view_count ?? 0
 		)
 	);
+
+	// List rows don't carry an excerpt column — derive one from body.
+	const excerpt = $derived(excerptText(summary.excerpt ?? summary.body));
 
 	let bookmarked = $state(false);
 	let bookmarkInit = $state(false);
@@ -116,8 +120,8 @@
 		<h3 class="font-semibold leading-snug text-[var(--color-text)]">
 			<a {href} class="after:absolute after:inset-0 after:content-['']">{summary.title}</a>
 		</h3>
-		{#if summary.excerpt}
-			<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{summary.excerpt}</p>
+		{#if excerpt}
+			<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{excerpt}</p>
 		{/if}
 		<div class="mt-auto flex items-center justify-between gap-2 pt-1">
 			<span class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)]">

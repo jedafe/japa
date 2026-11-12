@@ -3,6 +3,8 @@ package comparison
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func TestJCEDepthConstants(t *testing.T) {
@@ -118,6 +120,34 @@ func TestMergePreviewItemFields(t *testing.T) {
 	mergePreviewItem(&p, previewItemParts{imageURL: "https://cdn/y.png", countryCode: "us"})
 	if p.ImageURL != "https://cdn/x.png" || p.CountryCode != "ca" {
 		t.Fatalf("merge overwrote explicit fields: %+v", p)
+	}
+}
+
+func TestPreviewCountryCode(t *testing.T) {
+	t.Parallel()
+
+	str := func(s string) *string { return &s }
+
+	// Real level/parent combos from the spaces table: only a country-level
+	// parent supplies the flag code — every other level keeps its own
+	// geo_code (which stores ISO country codes except at state).
+	cases := []struct {
+		name    string
+		row     gen.ListSpaceGeoByIDsRow
+		ownCode string
+		want    string
+	}{
+		{"country, no parent", gen.ListSpaceGeoByIDsRow{Level: "country"}, "NG", "NG"},
+		{"state, country parent", gen.ListSpaceGeoByIDsRow{Level: "state", ParentLevel: str("country"), ParentGeoCode: str("NG")}, "NG-LA", "NG"},
+		{"city, state parent — keeps own ISO code", gen.ListSpaceGeoByIDsRow{Level: "city", ParentLevel: str("state"), ParentGeoCode: str("NG-LA")}, "NG", "NG"},
+		{"university, city parent", gen.ListSpaceGeoByIDsRow{Level: "university", ParentLevel: str("city"), ParentGeoCode: str("NG")}, "NG", "NG"},
+		{"attraction, no parent", gen.ListSpaceGeoByIDsRow{Level: "attraction"}, "GB", "GB"},
+		{"country parent without geo_code", gen.ListSpaceGeoByIDsRow{Level: "state", ParentLevel: str("country")}, "708", "708"},
+	}
+	for _, c := range cases {
+		if got := previewCountryCode(c.row, c.ownCode); got != c.want {
+			t.Errorf("%s: previewCountryCode() = %q, want %q", c.name, got, c.want)
+		}
 	}
 }
 

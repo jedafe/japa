@@ -177,6 +177,10 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Directory cards need ≤3-item previews; admin/agent callers don't set
+	// this so they skip the hydration queries entirely.
+	filter.Previews = true
+
 	// facet=types opts into per-type counts; facet_scope=<csv> restricts the
 	// counted type set (family pages pass their member slugs so the rail
 	// shows sibling-type counts while a sub filter is active).

@@ -6,9 +6,21 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison/resolver"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
 	"golang.org/x/sync/errgroup"
 )
+
+// previewCountryCode picks the flag code for a space. geo_code holds the
+// ISO country code at every level except state (region codes like NG-LA
+// or 708) — so the parent's code only wins when the parent IS a country
+// (city → state, university → city both keep their own ISO code).
+func previewCountryCode(g gen.ListSpaceGeoByIDsRow, ownCode string) string {
+	if g.ParentLevel != nil && *g.ParentLevel == "country" && g.ParentGeoCode != nil {
+		return *g.ParentGeoCode
+	}
+	return ownCode
+}
 
 // loadPreviewItems hydrates ≤3 items per content id for directory cards.
 // Batched: one items query + one media query + one geo query per page of
@@ -68,16 +80,11 @@ func (s *Service) loadPreviewItems(ctx context.Context, contentIDs []pgtype.UUID
 				type geoParts struct{ code, country string }
 				geoByID := map[string]geoParts{}
 				for _, g := range geoRows {
-					code, country := "", ""
+					code := ""
 					if g.GeoCode != nil {
 						code = *g.GeoCode
 					}
-					if g.Level == "country" {
-						country = code
-					} else if g.ParentGeoCode != nil {
-						country = *g.ParentGeoCode
-					}
-					geoByID[g.ID.String()] = geoParts{code: code, country: country}
+					geoByID[g.ID.String()] = geoParts{code: code, country: previewCountryCode(g, code)}
 				}
 				for i, r := range rows {
 					if r.GeoSpaceID.Valid {

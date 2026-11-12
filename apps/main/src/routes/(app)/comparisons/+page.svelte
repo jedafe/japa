@@ -12,6 +12,7 @@
 	import CompareRefineRail from '#lib/components/compare/CompareRefineRail.svelte';
 	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
+	import { excerptText } from '#lib/utils/comparison.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
@@ -140,11 +141,7 @@
 	}
 
 	function excerpt(text?: string | null, max = 140) {
-		if (!text) return '';
-		// Strip simple HTML tags and truncate.
-		const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-		if (plain.length <= max) return plain;
-		return plain.slice(0, max).replace(/\s+\S*$/, '') + '…';
+		return excerptText(text, max);
 	}
 
 	function formatDate(iso?: string) {

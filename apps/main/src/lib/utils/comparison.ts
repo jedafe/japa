@@ -1,6 +1,18 @@
 import type { JCEDimension, MatrixDimension, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
 
 /**
+ * Plain-text excerpt for list cards — the list row has no excerpt column,
+ * so cards derive one from body (strip tags, collapse whitespace, clamp
+ * at a word boundary).
+ */
+export function excerptText(text?: string | null, max = 140): string {
+	if (!text) return '';
+	const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+	if (plain.length <= max) return plain;
+	return plain.slice(0, max).replace(/\s+\S*$/, '') + '…';
+}
+
+/**
  * Return the first occurrence of each item keyed by a computed value.
  * Order is preserved.
  */

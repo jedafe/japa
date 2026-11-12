@@ -112,8 +112,12 @@ type JCEComparisonFilter struct {
 	// nil/empty = all types.
 	FacetTypes bool
 	FacetScope []pgtype.UUID
-	Limit      int32
-	Offset     int32
+	// Previews hydrates ≤3-item card previews per row (batched queries plus
+	// resolver calls). Only the public HTTP list sets this — admin and agent
+	// callers strip rows and shouldn't pay the hydration cost.
+	Previews bool
+	Limit    int32
+	Offset   int32
 }
 
 // JCETypeFacet is one row of meta.facets.types on GET /jce/comparisons.
@@ -758,11 +762,14 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	}
 
 	// Attach ≤3-item card previews (batched hydration; never fails the list).
-	contentIDs := make([]pgtype.UUID, 0, len(items))
-	for _, it := range items {
-		contentIDs = append(contentIDs, it.ID)
+	var previewByContent map[pgtype.UUID][]JCEPreviewItem
+	if f.Previews {
+		contentIDs := make([]pgtype.UUID, 0, len(items))
+		for _, it := range items {
+			contentIDs = append(contentIDs, it.ID)
+		}
+		previewByContent = s.loadPreviewItems(ctx, contentIDs)
 	}
-	previewByContent := s.loadPreviewItems(ctx, contentIDs)
 	listItems := make([]JCEComparisonListItem, len(items))
 	for i, it := range items {
 		listItems[i] = JCEComparisonListItem{
