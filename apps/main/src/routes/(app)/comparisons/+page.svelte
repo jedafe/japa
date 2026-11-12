@@ -9,6 +9,9 @@
 	import type { PageData } from './$types';
 	import { api } from '#lib/api/client.js';
 	import HeroArtCompare from '#lib/components/heroes/HeroArtCompare.svelte';
+	import CompareRefineRail from '#lib/components/compare/CompareRefineRail.svelte';
+	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
+	import { badgeFor } from '#lib/components/compare/compareBadge.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
@@ -171,6 +174,50 @@
 	const seoOgImage = $derived(
 		ogCardUrl(page.url.origin, 'comparisons')
 	);
+
+	// Type-facet rail — facets count every type under the active non-type
+	// filters (the backend facet query ignores filter_type itself), so the
+	// "All types" count sums facets rather than reading meta.total (which is
+	// narrowed by an active type filter).
+	let trendingItems = $derived(data.trendingItems ?? []);
+	let unfiltered = $derived(data.unfiltered ?? false);
+	const facetTypes = $derived(meta.facets?.types ?? []);
+	const facetCountBySlug = $derived.by(() => {
+		const map: Record<string, number> = {};
+		for (const f of facetTypes) if (f.slug) map[f.slug] = f.count;
+		return map;
+	});
+	const allCount = $derived(
+		facetTypes.length > 0
+			? facetTypes.reduce((sum, f) => sum + f.count, 0)
+			: filters.filter_type
+				? undefined
+				: (meta.total ?? 0)
+	);
+
+	function hrefOf(updates: Record<string, string | number | null>): string {
+		const u = buildURL(updates);
+		return u.pathname + u.search;
+	}
+
+	function onQuery(q: string) {
+		goto(buildURL({ q: q || null, page: 1 }), { replace: true, reset: false });
+	}
+
+	const railCategories = $derived([
+		{
+			label: t('jce.comparisons.all_types'),
+			count: allCount,
+			href: hrefOf({ filter_type: null, page: 1 }),
+			active: !filters.filter_type
+		},
+		...types.map((type) => ({
+			label: type.name,
+			count: facetCountBySlug[type.slug] as number | undefined,
+			href: hrefOf({ filter_type: type.slug, page: 1 }),
+			active: filters.filter_type === type.slug
+		}))
+	]);
 </script>
 
 <svelte:head>
@@ -283,73 +330,100 @@
 		{/snippet}
 	</Modal>
 
-	<div class="mx-auto w-full max-w-3xl space-y-4 p-4">
-		{#if loadError}
-			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
-				{t(loadError, undefined, loadErrorParams)}
-			</p>
-		{/if}
+	<div class="mx-auto w-full max-w-6xl p-4">
+		<div class="flex flex-col gap-6 lg:flex-row">
+			{#if !isMine}
+				<CompareRefineRail bind:query categories={railCategories} {onQuery} />
+			{/if}
 
-		{#if filters.q}
-			<p class="text-xs text-[var(--color-muted)]">{t('jce.comparisons.search_placeholder')}: {filters.q}</p>
-		{/if}
+			<main class="min-w-0 flex-1 space-y-4 {isMine ? 'mx-auto w-full max-w-3xl' : ''}">
+				{#if unfiltered && trendingItems.length > 0}
+					<section class="space-y-3">
+						<h2 class="text-sm font-semibold text-[var(--color-text)]">
+							{t('jce.compare.landing.trending', 'Trending comparisons')}
+						</h2>
+						<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+							{#each trendingItems as item, i (item.id)}
+								<ComparisonVsCard
+									summary={item}
+									badge={badgeFor(item, { popularityIndex: i })}
+									authed={Boolean(user)}
+								/>
+							{/each}
+						</div>
+					</section>
+				{/if}
 
-		{#if items.length === 0}
-			<EmptyState
-				icon={GitCompare}
-				title={isMine ? t('jce.comparisons.empty_mine') : t('jce.comparisons.empty_public')}
-				action={isMine
-					? { label: t('jce.comparisons.create_detailed'), href: '/create?type=comparison' }
-					: { label: t('jce.comparisons.create_one'), href: '/compare' }}
-			/>
-		{:else}
-			<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-				{#each items as item (item.id)}
-					<article
-						class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<a href={detailURL(item)} class="block space-y-3">
-							<div class="flex items-start justify-between gap-2">
-								<h2 class="font-semibold leading-snug text-[var(--color-text)]">{item.title}</h2>
-							</div>
-							{#if item.excerpt}
-								<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{item.excerpt}</p>
+				{#if loadError}
+					<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+						{t(loadError, undefined, loadErrorParams)}
+					</p>
+				{/if}
+
+				{#if filters.q}
+					<p class="text-xs text-[var(--color-muted)]">{t('jce.comparisons.search_placeholder')}: {filters.q}</p>
+				{/if}
+
+				{#if items.length === 0}
+					<EmptyState
+						icon={GitCompare}
+						title={isMine ? t('jce.comparisons.empty_mine') : t('jce.comparisons.empty_public')}
+						action={isMine
+							? { label: t('jce.comparisons.create_detailed'), href: '/create?type=comparison' }
+							: { label: t('jce.comparisons.create_one'), href: '/compare' }}
+					/>
+				{:else}
+					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : 'xl:grid-cols-3'}">
+						{#each items as item (item.id)}
+							{#if !isMine}
+								<ComparisonVsCard summary={item} badge={badgeFor(item)} authed={Boolean(user)} />
 							{:else}
-								<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{excerpt(item.body)}</p>
+								<article
+									class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									<a href={detailURL(item)} class="block space-y-3">
+										<div class="flex items-start justify-between gap-2">
+											<h2 class="font-semibold leading-snug text-[var(--color-text)]">{item.title}</h2>
+										</div>
+										{#if item.excerpt}
+											<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{item.excerpt}</p>
+										{:else}
+											<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{excerpt(item.body)}</p>
+										{/if}
+
+										<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+											{#if item.type_name}
+												<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
+											{/if}
+											<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.depth.${item.depth}`, item.depth)}</span>
+											<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.status.${item.status}`, item.status)}</span>
+											<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.visibility.${item.visibility}`, item.visibility)}</span>
+										</div>
+
+										<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
+											<span>{formatDate(item.created_at)}</span>
+											<span class="inline-flex items-center gap-1"><Eye size={12} /> {item.view_count ?? 0}</span>
+											<span class="inline-flex items-center gap-1"><MessageCircle size={12} /> {item.comment_count ?? 0}</span>
+											<span class="inline-flex items-center gap-1"><Share2 size={12} /> {item.share_count ?? 0}</span>
+										</div>
+									</a>
+								</article>
 							{/if}
+						{/each}
+					</div>
 
-							<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-								{#if item.type_name}
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.type_name}</span>
-								{/if}
-								<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.depth.${item.depth}`, item.depth)}</span>
-								{#if isMine}
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.status.${item.status}`, item.status)}</span>
-									<span class="rounded bg-[var(--color-surface-subtle)] px-2 py-0.5">{t(`jce.compare.visibility.${item.visibility}`, item.visibility)}</span>
-								{/if}
-							</div>
-
-							<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
-								<span>{formatDate(item.created_at)}</span>
-								<span class="inline-flex items-center gap-1"><Eye size={12} /> {item.view_count ?? 0}</span>
-								<span class="inline-flex items-center gap-1"><MessageCircle size={12} /> {item.comment_count ?? 0}</span>
-								<span class="inline-flex items-center gap-1"><Share2 size={12} /> {item.share_count ?? 0}</span>
-							</div>
-						</a>
-					</article>
-				{/each}
-			</div>
-
-			<div class="flex flex-col items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4 sm:flex-row">
-				<JceSelect
-					options={pageSizeSelectOptions}
-					value={String(filters.page_size || meta.limit || pageSizeOptions[0] || defaultPageSize)}
-					onchange={(value) => setPageSize(parseInt(value, 10))}
-					class="w-auto min-w-[6rem] py-1"
-				/>
-				<PaginationControls page={currentPage} {totalPages} onPageChange={setPage} />
-			</div>
-		{/if}
+					<div class="flex flex-col items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4 sm:flex-row">
+						<JceSelect
+							options={pageSizeSelectOptions}
+							value={String(filters.page_size || meta.limit || pageSizeOptions[0] || defaultPageSize)}
+							onchange={(value) => setPageSize(parseInt(value, 10))}
+							class="w-auto min-w-[6rem] py-1"
+						/>
+						<PaginationControls page={currentPage} {totalPages} onPageChange={setPage} />
+					</div>
+				{/if}
+			</main>
+		</div>
 	</div>
 </div>
 

@@ -91,9 +91,15 @@ export const load: PageServerLoad = async (event) => {
 	if (filterStatus) params.set('filter_status', filterStatus);
 	if (filterVisibility) params.set('filter_visibility', filterVisibility);
 	if (mine) params.set('mine', 'true');
+	else params.set('facet', 'types'); // powers the type rail — skipped on mine
+
+	// No q/type filter and not the mine tab → the public grid gets a trending
+	// row seeded by popularity above the paginated list.
+	const unfiltered = !q && !filterType && !mine;
 
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };
+	let trendingItems: JCEComparisonSummary[] = [];
 
 	try {
 		const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${params}`);
@@ -121,12 +127,30 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	if (unfiltered) {
+		try {
+			const tp = new URLSearchParams({
+				filter_depth: 'detailed',
+				filter_status: 'published',
+				filter_visibility: 'public',
+				sort: 'popularity',
+				page_size: '3'
+			});
+			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${tp}`);
+			trendingItems = mapComparisonTypes(res.items, types);
+		} catch {
+			trendingItems = [];
+		}
+	}
+
 	return {
 		user: event.locals.user,
 		canManage: await canManageGuides(ctx, event),
 		items,
 		meta,
 		types,
+		trendingItems,
+		unfiltered,
 		defaultPageSize,
 		maxPageSize,
 		loadError,
