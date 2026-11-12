@@ -63,3 +63,42 @@ export function deduplicateMatrix(matrix: MatrixItem[]): MatrixItem[] {
 
 	return [...byItem.values()];
 }
+
+/**
+ * Best-value cell per dimension row. Numeric comparisons only — value_rating
+ * first, then a numeric parse of value (non-numeric strings are skipped).
+ * Cost/rank-like dimensions (cost|price|fee|tuition|rent|expense|rank in the
+ * label) invert to lower-is-better. Keys are `${item.id}:${dim.id}` for the
+ * matrix <td> lookup. Rows with fewer than two numeric cells are skipped, and
+ * ties mark every equal-best cell.
+ */
+const LOWER_IS_BETTER_LABEL = /cost|price|fee|tuition|rent|expense|rank/i;
+
+export function matrixBestCells(matrix: MatrixItem[], dims: JCEDimension[]): Set<string> {
+	const best = new Set<string>();
+	for (const dim of dims) {
+		const lowerIsBetter = LOWER_IS_BETTER_LABEL.test(dim.label);
+		let bestVal: number | null = null;
+		let numericCount = 0;
+		let bestKeys: string[] = [];
+		for (const item of matrix) {
+			const cell = item.dimensions.find((d) => d.dimension_id === dim.id);
+			const v =
+				cell?.value_rating ??
+				(cell?.value != null && cell.value !== '' ? Number(cell.value) : null);
+			if (v == null || Number.isNaN(v)) continue;
+			numericCount++;
+			const key = `${item.id}:${dim.id}`;
+			if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {
+				bestVal = v;
+				bestKeys = [key];
+			} else if (v === bestVal) {
+				bestKeys.push(key);
+			}
+		}
+		if (numericCount >= 2) {
+			for (const k of bestKeys) best.add(k);
+		}
+	}
+	return best;
+}
