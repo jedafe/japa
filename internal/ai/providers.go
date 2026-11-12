@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/crypto"
@@ -222,8 +223,78 @@ type UpdateProviderInput struct {
 	Enabled      *bool
 }
 
-// UpdateProvider updates an existing provider config and returns it.
-func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProviderInput) (ProviderConfig, error) {
+// rowQuerier is satisfied by *pgxpool.Pool and pgx.Tx so the update builder
+// can run inside or outside a transaction.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// UpdateProviderWithLock atomically reads the row FOR UPDATE, hands it and
+// its decrypted API key to fn for merge+validate, and writes the returned
+// field updates — all inside one transaction. The row lock closes the
+// read-merge-write window that would otherwise let concurrent PATCHes each
+// validate against a stale snapshot and clobber each other's changes.
+//
+// fn receives (existing, storedAPIKey) and returns the UpdateProviderInput
+// to apply; its error aborts the transaction and is returned as-is.
+func (s *ProviderStore) UpdateProviderWithLock(ctx context.Context, id pgtype.UUID, fn func(existing ProviderConfig, storedAPIKey string) (UpdateProviderInput, error)) (ProviderConfig, error) {
+	tx, err := s.write.Begin(ctx)
+	if err != nil {
+		return ProviderConfig{}, fmt.Errorf("begin provider update tx: %w", err)
+	}
+
+	// WithoutCancel: a canceled request ctx would make Rollback a no-op,
+	// stranding the tx on the connection until the pool destroys it.
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	existing, err := s.scanProviderConfig(tx.QueryRow(ctx, `
+		SELECT id, name, provider_type, api_key_encrypted,
+		       base_url, model, categories, priority, enabled, created_at, updated_at
+		FROM ai_providers
+		WHERE id = $1
+		FOR UPDATE
+	`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProviderConfig{}, errors.New("not_found: provider not found")
+		}
+
+		return ProviderConfig{}, err
+	}
+
+	var storedKey string
+
+	if existing.APIKeyEncrypted != "" {
+		storedKey, err = crypto.Decrypt(existing.APIKeyEncrypted)
+		if err != nil {
+			return ProviderConfig{}, fmt.Errorf("ai: decrypt api key: %w", err)
+		}
+	}
+
+	upd, err := fn(existing, storedKey)
+	if err != nil {
+		return ProviderConfig{}, err
+	}
+
+	upd.ID = id
+
+	provider, err := s.updateProvider(ctx, tx, upd)
+	if err != nil {
+		return ProviderConfig{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return ProviderConfig{}, fmt.Errorf("commit provider update: %w", err)
+	}
+
+	return provider, nil
+}
+
+// updateProvider applies the field updates — shared by
+// UpdateProviderWithLock (inside its transaction). There is deliberately
+// no exported non-transactional variant: every update path must hold the
+// row lock for read-merge-write correctness.
+func (s *ProviderStore) updateProvider(ctx context.Context, q rowQuerier, input UpdateProviderInput) (ProviderConfig, error) {
 	// Build the SET clause dynamically based on which fields are provided.
 	setParts := []string{"updated_at = now()"}
 	args := []any{input.ID}
@@ -291,7 +362,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 		          base_url, model, categories, priority, enabled, created_at, updated_at
 	`, strings.Join(setParts, ", "))
 
-	row := s.write.QueryRow(ctx, query, args...)
+	row := q.QueryRow(ctx, query, args...)
 
 	return s.scanProviderConfig(row)
 }
@@ -567,6 +638,61 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 	}
 
 	dispatcher.ReplaceProviders(chains)
+
+	return nil
+}
+
+// ValidateProviderConfig checks a provider config before it is persisted —
+// catches configs that would persist fine but silently degrade dispatches
+// at runtime (missing key, bad base_url). apiKey is the plaintext key being
+// stored (for create) or the decrypted stored value (for update).
+func ValidateProviderConfig(cfg ProviderConfig, apiKey string) error {
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+
+	validType := false
+
+	for _, t := range SupportedProviderTypes() {
+		if cfg.ProviderType == t {
+			validType = true
+			break
+		}
+	}
+
+	if !validType {
+		return fmt.Errorf("invalid provider_type %q", cfg.ProviderType)
+	}
+
+	if len(cfg.Categories) == 0 {
+		return fmt.Errorf("at least one category is required")
+	}
+
+	validCat := make(map[string]bool, len(SupportedAICategories()))
+	for _, c := range SupportedAICategories() {
+		validCat[c] = true
+	}
+
+	for _, cat := range cfg.Categories {
+		if !validCat[cat] {
+			return fmt.Errorf("invalid category %q", cat)
+		}
+	}
+
+	// A base URL is only meaningful for types that consume it — xiaomi
+	// ignores it entirely — but validating when set keeps typos out of the
+	// row regardless of type.
+	if cfg.BaseURL != "" {
+		if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+			return fmt.Errorf("invalid base_url: %w", err)
+		}
+	}
+
+	// An empty key loads as a dead provider — LoadAndRegisterProviders
+	// skips apiKey=="" rows and the env chain silently takes over.
+	if apiKey == "" {
+		return fmt.Errorf("api_key is required for provider_type %q", cfg.ProviderType)
+	}
 
 	return nil
 }

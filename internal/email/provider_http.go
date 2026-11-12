@@ -39,6 +39,15 @@ func newGuardedHTTPClient() *http.Client {
 
 var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 
+// proxySchemeDefaultPorts mirrors net/http's canonicalAddr port map for
+// proxy URLs — the transport dials the proxy host on this port when the
+// URL omits one.
+var proxySchemeDefaultPorts = map[string]string{
+	"http":   "80",
+	"https":  "443",
+	"socks5": "1080",
+}
+
 // isProxyEndpointAddr reports whether the dialed addr is a configured
 // egress proxy. Only then is the remote-IP guard skipped — the connection
 // target is the deployment-owned proxy whose egress policy applies, and an
@@ -47,11 +56,13 @@ var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time
 // scheme mismatch (HTTPS_PROXY set, request is http), NO_PROXY exclusions,
 // and malformed proxy URLs all dial the target directly — skipping the
 // check on env-presence alone would let an internal hostname connect
-// unguarded.
+// unguarded. Host AND port must match the proxy URL (with its scheme
+// default when omitted): a target sharing the proxy's hostname on a
+// different port is not proxy traffic and stays guarded.
 func isProxyEndpointAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return false
 	}
 
 	for _, env := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
@@ -65,7 +76,14 @@ func isProxyEndpointAddr(addr string) bool {
 			continue
 		}
 
-		if strings.EqualFold(u.Hostname(), host) {
+		// The transport dials canonicalAddr(proxyURL) — host plus the
+		// scheme-default port when the URL omits one.
+		proxyPort := u.Port()
+		if proxyPort == "" {
+			proxyPort = proxySchemeDefaultPorts[strings.ToLower(u.Scheme)]
+		}
+
+		if strings.EqualFold(u.Hostname(), host) && proxyPort == port {
 			return true
 		}
 	}

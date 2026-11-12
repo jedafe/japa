@@ -430,6 +430,82 @@ func TestIsProxyEndpointAddr(t *testing.T) {
 	if isProxyEndpointAddr("10.0.0.5:8080") {
 		t.Fatal("direct-dialed target must not be treated as proxy")
 	}
+
+	// Same hostname on a different port is not proxy traffic — a service
+	// colocated with the proxy must stay guarded.
+	if isProxyEndpointAddr("proxy.corp:8443") {
+		t.Fatal("port mismatch: same host on another port must not match")
+	}
+
+	// Scheme-default port: the transport dials the proxy host on the
+	// scheme's default when the URL omits the port.
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("HTTP_PROXY", "http://proxy.corp")
+	if !isProxyEndpointAddr("proxy.corp:80") {
+		t.Fatal("omitted proxy port must match scheme default :80")
+	}
+
+	if isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("default-port proxy must not match explicit port dials")
+	}
+}
+
+func TestValidateProviderConfig(t *testing.T) {
+	t.Parallel()
+
+	base := ProviderConfig{
+		Name:         "primary",
+		ProviderType: "openai",
+		BaseURL:      "https://api.openai.com/v1",
+		Model:        "gpt-5.4",
+		Categories:   []string{"chat"},
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*ProviderConfig)
+		apiKey  string
+		wantErr string
+	}{
+		{"valid", func(*ProviderConfig) {}, "sk-test", ""},
+		{"blank name", func(c *ProviderConfig) { c.Name = "  " }, "sk-test", "name is required"},
+		{"bad type", func(c *ProviderConfig) { c.ProviderType = "bogus" }, "sk-test", "invalid provider_type"},
+		{"no categories", func(c *ProviderConfig) { c.Categories = nil }, "sk-test", "at least one category"},
+		{"bad category", func(c *ProviderConfig) { c.Categories = []string{"bogus"} }, "sk-test", "invalid category"},
+		{"empty api key", func(*ProviderConfig) {}, "", "api_key is required"},
+		{"public http base_url", func(c *ProviderConfig) { c.BaseURL = "http://api.openai.com" }, "sk-test", "invalid base_url"},
+		{"private base_url", func(c *ProviderConfig) { c.BaseURL = "https://10.0.0.5" }, "sk-test", "invalid base_url"},
+		{"loopback http base_url allowed", func(c *ProviderConfig) { c.BaseURL = "http://localhost:11434" }, "sk-test", ""},
+		{"empty base_url allowed", func(c *ProviderConfig) { c.BaseURL = "" }, "sk-test", ""},
+		{"decimal ip base_url rejected", func(c *ProviderConfig) { c.BaseURL = "https://2130706433" }, "sk-test", "invalid base_url"},
+		{"model optional", func(c *ProviderConfig) { c.Model = "" }, "sk-test", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := base
+			tc.mutate(&cfg)
+
+			err := ValidateProviderConfig(cfg, tc.apiKey)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected nil error, got %v", err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+			}
+
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q missing %q", err, tc.wantErr)
+			}
+		})
+	}
 }
 
 func TestMaskAPIKey(t *testing.T) {

@@ -365,6 +365,24 @@ func TestIsProxyEndpointAddr(t *testing.T) {
 	if isProxyEndpointAddr("10.0.0.5:8080") {
 		t.Fatal("direct-dialed target must not be treated as proxy")
 	}
+
+	// Same hostname on a different port is not proxy traffic — a service
+	// colocated with the proxy must stay guarded.
+	if isProxyEndpointAddr("proxy.corp:8443") {
+		t.Fatal("port mismatch: same host on another port must not match")
+	}
+
+	// Scheme-default port: the transport dials the proxy host on the
+	// scheme's default when the URL omits the port.
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("HTTP_PROXY", "http://proxy.corp")
+	if !isProxyEndpointAddr("proxy.corp:80") {
+		t.Fatal("omitted proxy port must match scheme default :80")
+	}
+
+	if isProxyEndpointAddr("proxy.corp:3128") {
+		t.Fatal("default-port proxy must not match explicit port dials")
+	}
 }
 
 func TestBuildMIMEMessageSanitizesAndOrdersHeaders(t *testing.T) {

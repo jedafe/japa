@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -144,6 +145,20 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 		enabled = *input.Enabled
 	}
 
+	// Validate the full config before persisting — a row that can't be
+	// constructed (missing key, bad base_url) would silently degrade
+	// dispatches at runtime: the loader skips apiKey=="" rows.
+	if err := ai.ValidateProviderConfig(ai.ProviderConfig{
+		Name:         input.Name,
+		ProviderType: input.ProviderType,
+		BaseURL:      input.BaseURL,
+		Model:        input.Model,
+		Categories:   input.Categories,
+	}, input.APIKey); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+
 	provider, err := h.ProviderStore.CreateProvider(r.Context(), ai.CreateProviderInput{
 		Name:         input.Name,
 		ProviderType: input.ProviderType,
@@ -227,18 +242,48 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 		categoriesPtr = &input.Categories
 	}
 
-	provider, err := h.ProviderStore.UpdateProvider(r.Context(), ai.UpdateProviderInput{
-		ID:           id,
-		Name:         input.Name,
-		ProviderType: input.ProviderType,
-		APIKey:       input.APIKey,
-		BaseURL:      input.BaseURL,
-		Model:        input.Model,
-		Categories:   categoriesPtr,
-		Priority:     input.Priority,
-		Enabled:      input.Enabled,
-	})
+	// Merge the patch onto the stored row and validate the resulting config
+	// before writing. The row is locked FOR UPDATE inside a transaction so
+	// a concurrent PATCH can't clobber this merge (same pattern as email).
+	var validationMsg string
+
+	provider, err := h.ProviderStore.UpdateProviderWithLock(r.Context(), id,
+		func(existing ai.ProviderConfig, storedKey string) (ai.UpdateProviderInput, error) {
+			merged := mergedAIProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Model, categoriesPtr)
+
+			mergedKey := storedKey
+			if input.APIKey != nil && *input.APIKey != "" {
+				mergedKey = *input.APIKey
+			}
+
+			if err := ai.ValidateProviderConfig(merged, mergedKey); err != nil {
+				validationMsg = err.Error()
+
+				return ai.UpdateProviderInput{}, errProviderValidation
+			}
+
+			return ai.UpdateProviderInput{
+				Name:         input.Name,
+				ProviderType: input.ProviderType,
+				APIKey:       input.APIKey,
+				BaseURL:      input.BaseURL,
+				Model:        input.Model,
+				Categories:   categoriesPtr,
+				Priority:     input.Priority,
+				Enabled:      input.Enabled,
+			}, nil
+		})
 	if err != nil {
+		if errors.Is(err, errProviderValidation) {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", validationMsg)
+			return
+		}
+
+		if strings.Contains(err.Error(), "not_found") {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
+			return
+		}
+
 		slog.Error("control: update ai provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI provider")
 
@@ -447,4 +492,32 @@ func (h *Handlers) reloadAIProviders(ctx context.Context) {
 	if err := ai.LoadAndRegisterProviders(ctx, h.ProviderStore, h.AIDispatcher, h.AIFallbackChains); err != nil {
 		slog.Error("control: hot-reload ai providers", "error", err)
 	}
+}
+
+// mergedAIProviderConfig returns the ProviderConfig that would result from
+// applying the patch fields onto the stored row — used to validate the
+// post-merge state inside the update lock.
+func mergedAIProviderConfig(existing ai.ProviderConfig, name, providerType, baseURL, model *string, categories *[]string) ai.ProviderConfig {
+	merged := existing
+	if name != nil {
+		merged.Name = *name
+	}
+
+	if providerType != nil {
+		merged.ProviderType = *providerType
+	}
+
+	if baseURL != nil {
+		merged.BaseURL = *baseURL
+	}
+
+	if model != nil {
+		merged.Model = *model
+	}
+
+	if categories != nil {
+		merged.Categories = *categories
+	}
+
+	return merged
 }
