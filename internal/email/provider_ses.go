@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"sort"
 	"strings"
 	"time"
@@ -114,12 +115,20 @@ func (p *SESProvider) signedPost(ctx context.Context, url string, payload []byte
 	payloadHashBytes := sha256.Sum256(payload)
 	payloadHash := hex.EncodeToString(payloadHashBytes[:])
 
-	host := strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
-	if i := strings.IndexByte(host, '/'); i >= 0 {
-		host = host[:i]
+	// Derive the canonical host/URI from the request URL rather than
+	// hardcoding them — a base_url carrying a path prefix (e.g. a signing
+	// proxy mount) must be reflected in the signature or AWS rejects it.
+	u, err := urlpkg.Parse(url)
+	if err != nil || u.Host == "" {
+		return 0, nil, fmt.Errorf("ses: invalid endpoint %q", url)
 	}
 
-	canonicalURI := "/v2/email/outbound-emails"
+	host := u.Host
+
+	canonicalURI := u.EscapedPath()
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
 	signedHeaders := "content-type;host;x-amz-content-sha256;x-amz-date"
 
 	canonicalHeaders := "content-type:application/json\n" +

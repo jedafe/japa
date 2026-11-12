@@ -441,6 +441,11 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 		body += "\nNote from the reviewer: " + input.ResolutionNote + "\n"
 	}
 
+	supportURL := ""
+	if s.siteURL != "" {
+		supportURL = s.siteURL + "/support"
+	}
+
 	// ADR-055: template_slug routes through the DB-template chain so admins
 	// can customize the review-outcome email; subject/body remain the
 	// caller-body fallback when the template row is missing/inactive.
@@ -451,9 +456,10 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 		"type":          "verification_review",
 		"template_slug": "verification_review",
 		"template_data": map[string]any{
-			"status":     input.Status,
-			"note":       input.ResolutionNote,
-			"action_url": link,
+			"status":      input.Status,
+			"note":        input.ResolutionNote,
+			"action_url":  link,
+			"support_url": supportURL,
 		},
 	})
 	if err != nil {

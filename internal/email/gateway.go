@@ -57,6 +57,17 @@ func (d *EmailDispatcher) ClearAll() {
 	d.providersByCategory = make(map[string][]EmailProvider)
 }
 
+// ReplaceProviders atomically swaps the whole category→chain map under a
+// single lock. LoadAndRegisterProviders builds the new chains first and
+// calls this once, so an in-flight Dispatch never observes a partially
+// rebuilt (empty) category — which would surface as ErrNoProviders and
+// permanently drop a queued send.
+func (d *EmailDispatcher) ReplaceProviders(chains map[string][]EmailProvider) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.providersByCategory = chains
+}
+
 // HasCategory reports whether any provider is registered for the category.
 func (d *EmailDispatcher) HasCategory(category string) bool {
 	d.mu.RLock()

@@ -2678,12 +2678,20 @@ func (s *Service) enqueueVerificationEmail(ctx context.Context, userID pgtype.UU
 	// can customize the badge emails; subject/body remain the caller-body
 	// fallback when the template row is missing/inactive. kind matches the
 	// seeded slug (verification_granted / verification_revoked).
+	supportURL := ""
+	if s.siteURL != "" {
+		supportURL = s.siteURL + "/support"
+	}
+
 	payload, err := json.Marshal(map[string]any{
 		"to":            email,
 		"subject":       subject,
 		"body":          body,
 		"type":          kind,
 		"template_slug": kind,
+		"template_data": map[string]any{
+			"support_url": supportURL,
+		},
 	})
 	if err != nil {
 		slog.Error("users: marshal verification email payload", "error", err)

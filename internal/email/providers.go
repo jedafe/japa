@@ -396,15 +396,18 @@ func NewProviderFromConfig(cfg ProviderConfig, secret string) (EmailProvider, er
 	}
 }
 
-// LoadAndRegisterProviders loads all enabled provider configs from the
-// database and registers them with the dispatcher, grouped by category.
-// Providers are sorted by priority within each category (lower = tried
-// first). Categories with no DB-backed providers are left untouched so the
-// env-var SMTP provider registered at startup remains as fallback.
+// LoadAndRegisterProviders rebuilds every supported category in the
+// dispatcher from the database: enabled provider configs are registered in
+// priority order (lower = tried first), and categories left without a
+// DB-backed provider get fallback re-registered (the env-var SMTP provider,
+// nil-safe). A full rebuild — rather than patching categories present in
+// the DB set — is required so delete/disable of a category's last DB
+// provider actually unregisters it instead of leaving a stale provider
+// serving mail until restart.
 //
 // Called at startup (after env-var registration) and on hot-reload when a
 // provider config is created/updated/deleted.
-func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *EmailDispatcher) error {
+func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *EmailDispatcher, fallback EmailProvider) error {
 	providers, err := store.ListProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("loading email providers from db: %w", err)
@@ -433,31 +436,119 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 		}
 	}
 
-	for cat, entries := range byCategory {
-		var registered []EmailProvider
+	// Build every supported category's chain first, then swap atomically —
+	// a clear-then-register sequence would let an in-flight Dispatch
+	// observe an empty category and fail with ErrNoProviders (SkipRetry →
+	// dropped email). Constructors are pure, so building before the swap
+	// costs nothing.
+	chains := make(map[string][]EmailProvider, len(SupportedEmailCategories()))
 
-		for _, entry := range entries {
+	for _, cat := range SupportedEmailCategories() {
+		var chain []EmailProvider
+
+		for _, entry := range byCategory[cat] {
 			p, err := NewProviderFromConfig(entry.config, entry.secret)
 			if err != nil {
 				slog.Warn("email: skipping provider, unsupported or invalid config", "provider", entry.config.Name, "error", err)
 				continue
 			}
 
-			registered = append(registered, p)
+			chain = append(chain, p)
 		}
 
-		if len(registered) == 0 {
-			continue
+		if len(chain) == 0 && fallback != nil {
+			chain = append(chain, fallback)
 		}
 
-		dispatcher.ClearCategory(cat)
+		chains[cat] = chain
+	}
 
-		for _, p := range registered {
-			dispatcher.RegisterProvider(cat, p)
+	dispatcher.ReplaceProviders(chains)
+
+	return nil
+}
+
+// ValidateProviderConfig checks a provider config before it is persisted —
+// catches configs that would persist fine but silently degrade sends at
+// runtime (missing host/from/credentials). secret is the plaintext secret
+// being stored (for create) or the decrypted stored value (for update).
+func ValidateProviderConfig(cfg ProviderConfig, secret string) error {
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+
+	validType := false
+
+	for _, t := range SupportedProviderTypes() {
+		if cfg.ProviderType == t {
+			validType = true
+			break
 		}
 	}
 
+	if !validType {
+		return fmt.Errorf("invalid provider_type %q", cfg.ProviderType)
+	}
+
+	if len(cfg.Categories) == 0 {
+		return fmt.Errorf("at least one category is required")
+	}
+
+	validCat := make(map[string]bool, len(SupportedEmailCategories()))
+	for _, c := range SupportedEmailCategories() {
+		validCat[c] = true
+	}
+
+	for _, cat := range cfg.Categories {
+		if !validCat[cat] {
+			return fmt.Errorf("invalid category %q", cat)
+		}
+	}
+
+	if cfg.BaseURL != "" {
+		if err := validateEmailEndpoint(cfg.BaseURL); err != nil {
+			return fmt.Errorf("invalid base_url: %w", err)
+		}
+	}
+
+	for _, field := range RequiredConfigFields(cfg.ProviderType) {
+		if configStr(cfg.Config, field) == "" {
+			return fmt.Errorf("config.%s is required for provider_type %q", field, cfg.ProviderType)
+		}
+	}
+
+	// SMTP's From falls back to the username (same as NewSMTPProviderFromConfig),
+	// so at least one of from_address/username must be set.
+	if cfg.ProviderType == "smtp" &&
+		configStr(cfg.Config, "from_address") == "" && configStr(cfg.Config, "username") == "" {
+		return fmt.Errorf("config.from_address or config.username is required for provider_type %q", cfg.ProviderType)
+	}
+
+	// Every vendor type needs a secret; only generic SMTP may go passwordless
+	// (open relays / local dev servers).
+	if cfg.ProviderType != "smtp" && secret == "" {
+		return fmt.Errorf("secret is required for provider_type %q", cfg.ProviderType)
+	}
+
 	return nil
+}
+
+// RequiredConfigFields returns the non-secret config keys a provider type
+// must have set — consumed by ValidateProviderConfig and exposed to the
+// control panel so its form marks required inputs (Rule 16).
+func RequiredConfigFields(providerType string) []string {
+	switch providerType {
+	case "smtp":
+		return []string{"host"}
+	case "ses":
+		return []string{"access_key_id", "from_address"}
+	case "sendpulse":
+		return []string{"client_id", "from_address"}
+	case "resend", "postmark", "sendgrid":
+		return []string{"from_address"}
+	default:
+		return nil
+	}
 }
 
 // SupportedProviderTypes returns the provider_type values that can be

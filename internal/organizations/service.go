@@ -1116,9 +1116,10 @@ func (s *Service) enqueueVerifyGrantEmail(ctx context.Context, org gen.Organizat
 	// ADR-055: template_slug routes through the DB-template chain so admins
 	// can customize the badge-grant email; subject/body remain the
 	// caller-body fallback when the template row is missing/inactive.
-	orgURL := ""
+	orgURL, supportURL := "", ""
 	if s.siteURL != "" {
 		orgURL = s.siteURL + "/org/" + org.Slug
+		supportURL = s.siteURL + "/support"
 	}
 
 	payload, err := json.Marshal(map[string]any{
@@ -1128,11 +1129,12 @@ func (s *Service) enqueueVerifyGrantEmail(ctx context.Context, org gen.Organizat
 			"Your organization %s has been verified — the badge is now shown publicly on its profile.\n",
 			org.Name,
 		),
-		"type":          "verification_granted",
+		"type":          "org_verification_granted",
 		"template_slug": "org_verification_granted",
 		"template_data": map[string]any{
-			"org_name":   org.Name,
-			"action_url": orgURL,
+			"org_name":    org.Name,
+			"action_url":  orgURL,
+			"support_url": supportURL,
 		},
 	})
 	if err != nil {

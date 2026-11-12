@@ -224,6 +224,11 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		orgName, role, acceptURL,
 	)
 
+	supportURL := ""
+	if s.siteURL != "" {
+		supportURL = s.siteURL + "/support"
+	}
+
 	// ADR-055: template_slug routes through the DB-template chain so admins
 	// can customize the invite email; subject/body remain the caller-body
 	// fallback when the template row is missing/inactive.
@@ -234,9 +239,10 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		"type":          "organization_invitation",
 		"template_slug": "organization_invitation",
 		"template_data": map[string]any{
-			"org_name":   orgName,
-			"role":       role,
-			"action_url": acceptURL,
+			"org_name":    orgName,
+			"role":        role,
+			"action_url":  acceptURL,
+			"support_url": supportURL,
 		},
 	})
 	if err != nil {

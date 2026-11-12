@@ -112,8 +112,11 @@ type Handlers struct {
 	AIDispatcher       *ai.Dispatcher
 	EmailProviderStore *email.ProviderStore
 	EmailDispatcher    *email.EmailDispatcher
-	StartTime          time.Time
-	DeploymentVersion  string
+	// EmailFallbackProvider is re-registered for categories left without a
+	// DB-backed provider after a reload (the env-var SMTP provider).
+	EmailFallbackProvider email.EmailProvider
+	StartTime             time.Time
+	DeploymentVersion     string
 	// onFlagEnabled fires when a flag transitions off→on via the extension
 	// write endpoints (enable/disable, PATCH) — mirrors the activation hook
 	// on features.Handlers so enabling e.g. wiki.enabled from /extensions
@@ -234,6 +237,13 @@ func (h *Handlers) SetEmailProviderStore(s *email.ProviderStore) {
 // operations call reloadEmailProviders which re-reads configs from the DB).
 func (h *Handlers) SetEmailDispatcher(d *email.EmailDispatcher) {
 	h.EmailDispatcher = d
+}
+
+// SetEmailFallbackProvider injects the provider re-registered for any
+// category left empty after a DB reload — the env-var SMTP provider (may be
+// nil when SMTP is not configured).
+func (h *Handlers) SetEmailFallbackProvider(p email.EmailProvider) {
+	h.EmailFallbackProvider = p
 }
 
 // SetDeploymentVersion sets the deployment version override. When empty,

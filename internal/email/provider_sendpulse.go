@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -45,6 +46,15 @@ func NewSendPulseProvider(name, clientID, clientSecret, baseURL, from string) *S
 
 // Name returns the provider identifier.
 func (p *SendPulseProvider) Name() string { return p.name }
+
+// invalidateToken drops the cached token so the next accessToken call
+// fetches a fresh one — used when the API rejects a token before its
+// nominal expiry (revoked/rotated server-side).
+func (p *SendPulseProvider) invalidateToken() {
+	p.mu.Lock()
+	p.token = ""
+	p.mu.Unlock()
+}
 
 // accessToken returns a cached OAuth token, fetching a fresh one when the
 // cached token is absent or within 60s of expiry.
@@ -119,9 +129,20 @@ func (p *SendPulseProvider) Send(ctx context.Context, req EmailRequest) (EmailRe
 		mail["headers"] = hdrs
 	}
 
-	_, respBody, err := postJSON(ctx, p.baseURL+"/smtp/emails", map[string]string{
-		"Authorization": "Bearer " + token,
-	}, map[string]any{"email": mail})
+	status, respBody, err := p.sendOnce(ctx, token, mail)
+	if status == http.StatusUnauthorized {
+		// Cached token rejected before nominal expiry — drop it, fetch a
+		// fresh one, and retry once before falling through to the next
+		// provider in the chain.
+		p.invalidateToken()
+
+		token, err = p.accessToken(ctx)
+		if err != nil {
+			return EmailResponse{}, err
+		}
+
+		status, respBody, err = p.sendOnce(ctx, token, mail)
+	}
 	if err != nil {
 		return EmailResponse{}, err
 	}
@@ -130,6 +151,16 @@ func (p *SendPulseProvider) Send(ctx context.Context, req EmailRequest) (EmailRe
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(respBody, &out)
+	_ = status
 
 	return EmailResponse{ProviderRef: out.ID, Status: "success"}, nil
+}
+
+// sendOnce performs a single authenticated POST to the SendPulse send
+// endpoint, returning the raw status so callers can distinguish auth
+// failures from other errors.
+func (p *SendPulseProvider) sendOnce(ctx context.Context, token string, mail map[string]any) (int, []byte, error) {
+	return postJSON(ctx, p.baseURL+"/smtp/emails", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, map[string]any{"email": mail})
 }

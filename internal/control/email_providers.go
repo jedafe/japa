@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -132,6 +133,20 @@ func (h *Handlers) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		enabled = *input.Enabled
 	}
 
+	// Validate the full config before persisting — a row that can't be
+	// constructed (missing host/from/secret, bad base_url) would silently
+	// degrade sends at runtime.
+	if err := email.ValidateProviderConfig(email.ProviderConfig{
+		Name:         input.Name,
+		ProviderType: input.ProviderType,
+		BaseURL:      input.BaseURL,
+		Config:       input.Config,
+		Categories:   input.Categories,
+	}, input.Secret); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+
 	provider, err := h.EmailProviderStore.CreateProvider(r.Context(), email.CreateProviderInput{
 		Name:         input.Name,
 		ProviderType: input.ProviderType,
@@ -211,6 +226,31 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	var categoriesPtr *[]string
 	if input.Categories != nil {
 		categoriesPtr = &input.Categories
+	}
+
+	// Merge the patch onto the stored row and validate the resulting config
+	// before writing — catches type changes that leave stale/mismatched
+	// config keys (e.g. smtp→ses without region) which would otherwise only
+	// fail when a send is attempted.
+	existing, err := h.EmailProviderStore.GetProvider(r.Context(), id)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
+		return
+	}
+
+	merged := mergedProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Config, categoriesPtr)
+
+	mergedSecret, err := h.mergedProviderSecret(r.Context(), id, input.Secret)
+	if err != nil {
+		slog.Error("control: update email provider: decrypt stored secret", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to validate provider")
+
+		return
+	}
+
+	if err := email.ValidateProviderConfig(merged, mergedSecret); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
+		return
 	}
 
 	provider, err := h.EmailProviderStore.UpdateProvider(r.Context(), email.UpdateProviderInput{
@@ -307,6 +347,11 @@ func (h *Handlers) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := mail.ParseAddress(input.Email); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email must be a valid address")
+		return
+	}
+
 	provider, err := h.EmailProviderStore.GetProvider(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
@@ -356,32 +401,26 @@ func (h *Handlers) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
 
 // GetEmailProviderTypes handles GET /control/email-providers/types.
 // Returns the valid provider_type values, dispatcher categories, and the
-// per-type config fields so the control panel frontend can populate its
-// selectors and forms from the API (Rule 16) instead of hardcoding.
+// per-type config field schema (accepted keys + required keys) so the
+// control panel frontend can populate its selectors and forms from the API
+// (Rule 16) instead of hardcoding.
 func (h *Handlers) GetEmailProviderTypes(w http.ResponseWriter, _ *http.Request) {
-	types := make([]string, 0, len(validEmailProviderTypes))
-	for t := range validEmailProviderTypes {
-		types = append(types, t)
-	}
-
-	cats := make([]string, 0, len(validEmailCategories))
-	for c := range validEmailCategories {
-		cats = append(cats, c)
-	}
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"provider_types": types,
-			"categories":     cats,
+			"provider_types": email.SupportedProviderTypes(),
+			"categories":     email.SupportedEmailCategories(),
 			"config_fields":  emailProviderConfigFields(),
 		},
 	})
 }
 
 // emailProviderConfigFields documents the non-secret config keys each
-// provider type accepts — the frontend renders its form from this list.
-func emailProviderConfigFields() map[string][]string {
-	return map[string][]string{
+// provider type accepts, and which are required — the frontend renders its
+// form from this schema.
+func emailProviderConfigFields() map[string]map[string][]string {
+	out := make(map[string]map[string][]string, len(validEmailProviderTypes))
+
+	optional := map[string][]string{
 		"smtp":      {"host", "port", "username", "from_address"},
 		"resend":    {"from_address"},
 		"postmark":  {"from_address", "message_stream"},
@@ -389,6 +428,52 @@ func emailProviderConfigFields() map[string][]string {
 		"sendgrid":  {"from_address"},
 		"sendpulse": {"client_id", "from_address"},
 	}
+
+	for _, t := range email.SupportedProviderTypes() {
+		out[t] = map[string][]string{
+			"accepted": optional[t],
+			"required": email.RequiredConfigFields(t),
+		}
+	}
+
+	return out
+}
+
+// mergedProviderConfig applies an update's non-nil fields onto the stored
+// row so the resulting config can be validated before the write.
+func mergedProviderConfig(base email.ProviderConfig, name, providerType, baseURL *string, config *map[string]string, categories *[]string) email.ProviderConfig {
+	if name != nil {
+		base.Name = *name
+	}
+
+	if providerType != nil {
+		base.ProviderType = *providerType
+	}
+
+	if baseURL != nil {
+		base.BaseURL = *baseURL
+	}
+
+	if config != nil {
+		base.Config = *config
+	}
+
+	if categories != nil {
+		base.Categories = *categories
+	}
+
+	return base
+}
+
+// mergedProviderSecret returns the secret that will be in effect after an
+// update: the new plaintext when supplied, otherwise the stored decrypted
+// value.
+func (h *Handlers) mergedProviderSecret(ctx context.Context, id pgtype.UUID, newSecret *string) (string, error) {
+	if newSecret != nil && *newSecret != "" {
+		return *newSecret, nil
+	}
+
+	return h.EmailProviderStore.GetDecryptedSecret(ctx, id)
 }
 
 // reloadEmailProviders re-reads email provider configs and re-registers
@@ -399,7 +484,7 @@ func (h *Handlers) reloadEmailProviders(ctx context.Context) {
 		return
 	}
 
-	if err := email.LoadAndRegisterProviders(ctx, h.EmailProviderStore, h.EmailDispatcher); err != nil {
+	if err := email.LoadAndRegisterProviders(ctx, h.EmailProviderStore, h.EmailDispatcher, h.EmailFallbackProvider); err != nil {
 		slog.Error("control: hot-reload email providers", "error", err)
 	}
 }

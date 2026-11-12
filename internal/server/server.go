@@ -809,9 +809,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Initialize email provider gateway (ADR-015 — multi-provider failover)
 	emailDispatcher := email.NewEmailDispatcher()
 
+	// smtpFallback is re-registered for any category left without a
+	// DB-backed provider after each LoadAndRegisterProviders rebuild —
+	// including reloads triggered by control-panel CRUD.
+	var smtpFallback *email.SMTPProvider
+
 	if smtpProvider, err := email.NewSMTPProvider(); err != nil {
 		slog.Warn("email: smtp provider not available", "error", err)
 	} else if smtpProvider != nil {
+		smtpFallback = smtpProvider
 		emailDispatcher.RegisterProvider("transactional", smtpProvider)
 		emailDispatcher.RegisterProvider("marketing", smtpProvider)
 		slog.Info("email: registered smtp provider")
@@ -3699,13 +3705,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	emailProviderStore := email.NewProviderStore(database.Reader, database.Writer)
 	controlHandlers.SetEmailProviderStore(emailProviderStore)
 	controlHandlers.SetEmailDispatcher(emailDispatcher)
+	controlHandlers.SetEmailFallbackProvider(smtpFallback)
 
-	// Load DB-backed email provider configs. This runs AFTER the env-var
-	// SMTP provider was registered, so DB configs take priority
-	// (LoadAndRegisterProviders clears and re-registers categories that
-	// have DB-backed providers; categories without DB rows keep the
-	// env-var fallback).
-	if err := email.LoadAndRegisterProviders(context.Background(), emailProviderStore, emailDispatcher); err != nil {
+	// Load DB-backed email provider configs. Each supported category is
+	// rebuilt from the DB — DB configs take priority; categories without
+	// DB rows get the env-var SMTP fallback re-registered.
+	if err := email.LoadAndRegisterProviders(context.Background(), emailProviderStore, emailDispatcher, smtpFallback); err != nil {
 		slog.Warn("email: loading db-backed providers at startup", "error", err)
 	}
 
