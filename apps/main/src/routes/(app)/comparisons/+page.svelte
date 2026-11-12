@@ -151,6 +151,9 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil((meta.total || 0) / (meta.limit || 1))));
 	const currentPage = $derived(meta.page || 1);
+	// Global popularity rank across pages — 'popular' badges score against
+	// the sort-wide top-3, not the current page's.
+	const rankOffset = $derived(((meta.page ?? 1) - 1) * (meta.limit ?? 12));
 	// List head: title/description, self-referencing canonical on the clean
 	// path, and rel=prev/next on numbered pages (same pattern as /blog).
 	const listTitle = $derived(t('jce.comparisons.heading', 'Comparisons') + ` — ${siteName()}`);
@@ -371,9 +374,9 @@
 					/>
 				{:else}
 					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : 'xl:grid-cols-3'}">
-						{#each items as item (item.id)}
+						{#each items as item, i (item.id)}
 							{#if !isMine}
-								<ComparisonVsCard summary={item} badge={badgeFor(item)} authed={Boolean(user)} />
+								<ComparisonVsCard summary={item} badge={filters.sort === 'popularity' ? badgeFor(item, { popularityIndex: rankOffset + i }) : badgeFor(item)} authed={Boolean(user)} />
 							{:else}
 								<article
 									class="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
