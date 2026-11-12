@@ -22,7 +22,7 @@
 	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
 	import JceSelect from '#lib/components/ui/JceSelect.svelte';
-	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '#lib/components/ui/index.js';
+	import { EmptyState, EntityHero, ListPageBar, Modal, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '#lib/components/ui/index.js';
 	import { Popover } from 'bits-ui';
 	import {
 		missingRequiredScope,
@@ -35,7 +35,9 @@
 	import { i18n, t, siteName} from '#lib/i18n/index.js';
 	import {
 		GitCompare,
+		ChevronDown,
 		ChevronRight,
+		LayoutGrid,
 		Search,
 		ArrowRight,
 		Trash2,
@@ -264,12 +266,52 @@
 		trendingItems = null;
 	});
 
-	// Card subtitle: member type names, else item_ref_types labels.
+	// Card subtitle: up to three member type names (+N overflow), else
+	// item_ref_types labels — kept to one line so tiles stay icon-sized.
 	function familySubtitle(members: ComparisonType[]): string {
-		if (members.length > 1) return members.map((m) => m.name).join(', ');
+		if (members.length > 1) {
+			const names = members.slice(0, 3).map((m) => m.name);
+			const extra = members.length - names.length;
+			return extra > 0
+				? `${names.join(', ')} ${t('jce.compare.landing.more_types', '+{n} more', { n: extra })}`
+				: names.join(', ');
+		}
 		const refs = (members[0]?.config?.item_ref_types as string[] | undefined) ?? [];
 		return refs.map(sourcePlural).join(', ');
 	}
+
+	// Unified category tiles — family cards first, then ungrouped types. The
+	// grid shows exactly two rows (4 tiles mobile / 8 desktop); the "All
+	// categories" dialog lists everything in a scrollable view.
+	interface CategoryTile {
+		icon: Component;
+		tint: string;
+		name: string;
+		subtitle: string;
+		count?: number;
+		href: string;
+	}
+	const CATEGORY_TILES_DESKTOP = 8;
+	const CATEGORY_TILES_MOBILE = 4;
+	let categoryTiles = $derived<CategoryTile[]>([
+		...familyGroups.groups.map((g) => ({
+			icon: g.family.icon,
+			tint: g.family.tint,
+			name: t(`jce.compare.family.${g.family.key}`, g.family.key),
+			subtitle: familySubtitle(g.types),
+			href: `/compare/${g.family.slug}`
+		})),
+		...familyGroups.ungrouped.map((cmpType) => ({
+			icon: typeIcon(cmpType),
+			tint: 'var(--color-primary)',
+			name: cmpType.name,
+			subtitle: cmpType.description ?? '',
+			count: cmpType.item_count,
+			href: `/comparisons?filter_type=${cmpType.slug}`
+		}))
+	]);
+	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
+	let categoriesModalOpen = $state(false);
 
 	let landingSearch = $state('');
 	function submitLandingSearch() {
@@ -907,9 +949,21 @@
 	{:else if !selectedType}
 		<!-- Landing: search panel → category grid → trending → AI help -->
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)]">
-				{t('jce.compare.choose_type')}
-			</h2>
+			<div class="mb-3 flex items-center justify-between gap-3">
+				<h2 class="text-base font-semibold text-[var(--color-text)]">
+					{t('jce.compare.choose_type')}
+				</h2>
+				{#if categoryTiles.length > 0}
+					<button
+						type="button"
+						onclick={() => (categoriesModalOpen = true)}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('jce.compare.landing.all_categories', 'All categories')}
+						<ChevronDown size={14} class="text-[var(--color-muted)]" />
+					</button>
+				{/if}
+			</div>
 			<form
 				class="flex flex-col gap-3 sm:flex-row"
 				onsubmit={(e) => {
@@ -944,24 +998,16 @@
 				</div>
 			</form>
 
-			<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				{#each familyGroups.groups as g (g.family.key)}
+			<div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+				{#each visibleTiles as tile, i (tile.href)}
 					<CompareCategoryCard
-						icon={g.family.icon}
-						tint={g.family.tint}
-						name={t(`jce.compare.family.${g.family.key}`, g.family.key)}
-						subtitle={familySubtitle(g.types)}
-						href="/compare/{g.family.slug}"
-					/>
-				{/each}
-				{#each familyGroups.ungrouped as cmpType (cmpType.id)}
-					<CompareCategoryCard
-						icon={typeIcon(cmpType)}
-						tint="var(--color-primary)"
-						name={cmpType.name}
-						subtitle={cmpType.description ?? ''}
-						count={cmpType.item_count}
-						href="/comparisons?filter_type={cmpType.slug}"
+						icon={tile.icon}
+						tint={tile.tint}
+						name={tile.name}
+						subtitle={tile.subtitle}
+						count={tile.count}
+						href={tile.href}
+						class={i >= CATEGORY_TILES_MOBILE ? 'hidden sm:flex' : ''}
 					/>
 				{/each}
 			</div>
@@ -1009,6 +1055,28 @@
 				>{t('jce.compare.landing.ai_help_cta', 'Chat with Japa AI')}</button>
 			</section>
 		{/if}
+
+		<Modal
+			bind:open={categoriesModalOpen}
+			title={t('jce.compare.landing.all_categories', 'All categories')}
+			icon={LayoutGrid}
+			size="max-w-2xl"
+		>
+			{#snippet children()}
+				<div class="grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
+					{#each categoryTiles as tile (tile.href)}
+						<CompareCategoryCard
+							icon={tile.icon}
+							tint={tile.tint}
+							name={tile.name}
+							subtitle={tile.subtitle}
+							count={tile.count}
+							href={tile.href}
+						/>
+					{/each}
+				</div>
+			{/snippet}
+		</Modal>
 	{:else}
 		<!-- Workspace: step header → narrow panel → unified filter row → grid → sticky tray -->
 		<StepHeader

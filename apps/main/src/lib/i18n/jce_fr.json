@@ -258,6 +258,8 @@
   "jce.compare.landing.ai_help_title": "Besoin d'aide pour comparer ?",
   "jce.compare.landing.ai_help_body": "Je peux vous aider à trouver les bonnes options et à répondre à vos questions.",
   "jce.compare.landing.ai_help_cta": "Discuter avec Japa AI",
+  "jce.compare.landing.all_categories": "Toutes les catégories",
+  "jce.compare.landing.more_types": "+{n} autres",
   "jce.compare.category.refine": "Affiner les résultats",
   "jce.compare.category.categories": "Catégories",
   "jce.compare.category.all": "Toutes les comparaisons",

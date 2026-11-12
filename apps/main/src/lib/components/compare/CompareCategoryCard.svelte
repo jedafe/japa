@@ -10,7 +10,8 @@
 		name,
 		subtitle = '',
 		count,
-		href
+		href,
+		class: className = ''
 	}: {
 		icon: Component;
 		tint: string;
@@ -18,12 +19,13 @@
 		subtitle?: string;
 		count?: number;
 		href: string;
+		class?: string;
 	} = $props();
 </script>
 
 <a
 	{href}
-	class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+	class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)] {className}"
 >
 	<span
 		class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)]"
@@ -39,7 +41,7 @@
 			{/if}
 		</span>
 		{#if subtitle}
-			<span class="mt-0.5 line-clamp-2 block text-sm text-[var(--color-muted)]">{subtitle}</span>
+			<span class="mt-0.5 block truncate text-sm text-[var(--color-muted)]">{subtitle}</span>
 		{/if}
 	</span>
 	<ChevronRight size={16} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100" />
