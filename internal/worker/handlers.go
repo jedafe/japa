@@ -1652,7 +1652,17 @@ func templateDataFromMap(siteName string, m map[string]any) map[string]any {
 	data["SiteName"] = siteName
 
 	for k, v := range m {
-		data[snakeToPascal(k)] = pascalizeTemplateValue(v)
+		val := pascalizeTemplateValue(v)
+		// Convention: the digest_content key carries pre-rendered HTML
+		// (system-generated, never user input) — mark it template.HTML so
+		// html/template does not entity-escape the markup. All other keys
+		// stay escaped (XSS-safe by default).
+		if k == "digest_content" {
+			if s, ok := v.(string); ok {
+				val = template.HTML(s)
+			}
+		}
+		data[snakeToPascal(k)] = val
 	}
 
 	return data
@@ -3919,17 +3929,32 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 		return fmt.Errorf("rendering digest template: %w", err)
 	}
 
+	// ADR-055: resolve the daily_digest/weekly_digest DB template — the
+	// seeded layout wraps {{.DigestContent}} around the items list. The
+	// inline list above becomes the fallback body when the template is
+	// absent/inactive.
+	slug := "daily_digest"
+	if period == "weekly" {
+		slug = "weekly_digest"
+	}
+
+	subject, htmlBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
+		TemplateSlug: slug,
+		TemplateData: map[string]any{
+			"digest_content": body.String(),
+			"site_url":       resolveBaseURL(ctx),
+			"period":         period,
+		},
+	}, fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)), body.String(), true)
+
 	// Bulk subscriber digest is marketing-category mail (ADR-015/ADR-080)
 	// and must carry List-Unsubscribe headers.
 	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, email)
-	htmlBody := body.String()
 	if unsubURL != "" {
 		htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
 	}
 
-	if err := sendMarketingEmail(ctx, email,
-		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)),
-		htmlBody, true, unsubHeaders); err != nil {
+	if err := sendMarketingEmail(ctx, email, subject, htmlBody, isHTML, unsubHeaders); err != nil {
 		return fmt.Errorf("sending email: %w", err)
 	}
 
