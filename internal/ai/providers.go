@@ -152,7 +152,18 @@ func (s *ProviderStore) listProviders(ctx context.Context, pool *pgxpool.Pool) (
 
 // GetProvider returns a single AI provider config by ID, scoped to the platform.
 func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
-	row := s.read.QueryRow(ctx, `
+	return s.getProvider(ctx, s.read, id)
+}
+
+// GetProviderForUpdate reads via the write pool — see ListProvidersForUpdate.
+// Used by the test-send endpoint so a test issued right after create/update
+// sees the row it just wrote.
+func (s *ProviderStore) GetProviderForUpdate(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
+	return s.getProvider(ctx, s.write, id)
+}
+
+func (s *ProviderStore) getProvider(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (ProviderConfig, error) {
+	row := pool.QueryRow(ctx, `
 		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
 		FROM ai_providers

@@ -306,13 +306,15 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.ProviderStore.GetProvider(r.Context(), id)
+	// ForUpdate reads: a test issued right after create/update must see
+	// the row it just wrote even when the Reader pool is a lagged replica.
+	provider, err := h.ProviderStore.GetProviderForUpdate(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
 	}
 
-	apiKey, err := h.ProviderStore.GetDecryptedAPIKey(r.Context(), id)
+	apiKey, err := h.ProviderStore.GetDecryptedAPIKeyForUpdate(r.Context(), id)
 	if err != nil {
 		slog.Error("control: test ai provider: decrypt key", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")

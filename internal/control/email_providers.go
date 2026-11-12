@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -235,6 +234,8 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	// config keys (e.g. smtp→ses without region) which would otherwise only
 	// fail when a send is attempted. The row is locked FOR UPDATE inside a
 	// transaction so a concurrent PATCH can't clobber this merge.
+	var validationMsg string
+
 	provider, err := h.EmailProviderStore.UpdateProviderWithLock(r.Context(), id,
 		func(existing email.ProviderConfig, storedSecret string) (email.UpdateProviderInput, error) {
 			merged := mergedProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Config, categoriesPtr)
@@ -245,7 +246,9 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := email.ValidateProviderConfig(merged, mergedSecret); err != nil {
-				return email.UpdateProviderInput{}, fmt.Errorf("%w: %w", errProviderValidation, err)
+				validationMsg = err.Error()
+
+				return email.UpdateProviderInput{}, errProviderValidation
 			}
 
 			return email.UpdateProviderInput{
@@ -261,7 +264,7 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		})
 	if err != nil {
 		if errors.Is(err, errProviderValidation) {
-			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", strings.TrimPrefix(err.Error(), errProviderValidation.Error()+": "))
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", validationMsg)
 			return
 		}
 
@@ -357,13 +360,15 @@ func (h *Handlers) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.EmailProviderStore.GetProvider(r.Context(), id)
+	// ForUpdate reads: a test issued right after create/update must see
+	// the row it just wrote even when the Reader pool is a lagged replica.
+	provider, err := h.EmailProviderStore.GetProviderForUpdate(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
 	}
 
-	secret, err := h.EmailProviderStore.GetDecryptedSecret(r.Context(), id)
+	secret, err := h.EmailProviderStore.GetDecryptedSecretForUpdate(r.Context(), id)
 	if err != nil {
 		slog.Error("control: test email provider: decrypt secret", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt provider secret")

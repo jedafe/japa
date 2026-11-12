@@ -169,6 +169,13 @@ func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (Provid
 	return s.getProvider(ctx, s.read, id)
 }
 
+// GetProviderForUpdate reads via the write pool — see ListProvidersForUpdate.
+// Used by the test-send endpoint so a test issued right after create/update
+// sees the row it just wrote.
+func (s *ProviderStore) GetProviderForUpdate(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
+	return s.getProvider(ctx, s.write, id)
+}
+
 func (s *ProviderStore) getProvider(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (ProviderConfig, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT `+providerColumns+`
@@ -257,7 +264,9 @@ func (s *ProviderStore) UpdateProviderWithLock(ctx context.Context, id pgtype.UU
 		return ProviderConfig{}, fmt.Errorf("begin provider update tx: %w", err)
 	}
 
-	defer func() { _ = tx.Rollback(ctx) }()
+	// WithoutCancel: a canceled request ctx would make Rollback a no-op,
+	// stranding the tx on the connection until the pool destroys it.
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	existing, err := s.scanProviderConfig(tx.QueryRow(ctx, `
 		SELECT `+providerColumns+`
@@ -266,7 +275,11 @@ func (s *ProviderStore) UpdateProviderWithLock(ctx context.Context, id pgtype.UU
 		FOR UPDATE
 	`, id))
 	if err != nil {
-		return ProviderConfig{}, errors.New("not_found: provider not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProviderConfig{}, errors.New("not_found: provider not found")
+		}
+
+		return ProviderConfig{}, err
 	}
 
 	var storedSecret string

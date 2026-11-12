@@ -283,7 +283,10 @@ func serveFakeSMTP(t *testing.T, ln net.Listener) {
 }
 
 func TestSMTPProviderSendAgainstFakeServer(t *testing.T) {
-	// Not parallel: spawns a listener.
+	// Not parallel: spawns a listener. JC_ENV=production would make Send
+	// require STARTTLS the fake server doesn't offer — pin it.
+	t.Setenv("JC_ENV", "development")
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
