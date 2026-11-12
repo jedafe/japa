@@ -2387,10 +2387,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		spaceService, "attraction", "attraction",
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("program", resolver.NewSpaceTypeResolver(
-		spaceService, "program", "program",
-		resolver.WithQueries(jceReadQueries),
-	))
+	// program entities are canonical university_course_catalog rows, not
+	// spaces — the 'program' space type exists for wiki categorization only.
+	jceResolver.Register("program", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "program", Table: "university_course_catalog", IDColumn: "id",
+		TitleColumn: "title", SlugColumn: "slug", DescColumn: "description",
+		ActiveWhere: "t.deleted_at IS NULL AND t.is_published = true",
+	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("embassy", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "embassy", Table: "embassies", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "address", ActiveWhere: "t.is_active = true",
