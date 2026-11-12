@@ -508,6 +508,12 @@ func NewProviderFromConfig(cfg ProviderConfig, secret string) (EmailProvider, er
 	}
 }
 
+// EnvProvidersFlagKey is the feature_flags key gating env-fallback
+// restore. When the flag is off, callers pass a nil fallback so the
+// dispatcher runs strictly on control-plane-managed providers
+// (features.Registry: email.env_providers, default on).
+const EnvProvidersFlagKey = "email.env_providers"
+
 // LoadAndRegisterProviders rebuilds every supported category in the
 // dispatcher from the database: enabled provider configs are registered in
 // priority order (lower = tried first), and categories left without a

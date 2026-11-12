@@ -489,7 +489,15 @@ func (h *Handlers) reloadAIProviders(ctx context.Context) {
 		return
 	}
 
-	if err := ai.LoadAndRegisterProviders(ctx, h.ProviderStore, h.AIDispatcher, h.AIFallbackChains); err != nil {
+	// The ai.env_providers feature flag gates env-chain restore — off means
+	// the dispatcher runs strictly on control-plane-managed providers. A nil
+	// checker keeps the established restore behavior (tests, minimal wiring).
+	fallback := h.AIFallbackChains
+	if h.FeatureChecker != nil && !h.FeatureChecker.IsEnabled(ctx, ai.EnvProvidersFlagKey) {
+		fallback = nil
+	}
+
+	if err := ai.LoadAndRegisterProviders(ctx, h.ProviderStore, h.AIDispatcher, fallback); err != nil {
 		slog.Error("control: hot-reload ai providers", "error", err)
 	}
 }

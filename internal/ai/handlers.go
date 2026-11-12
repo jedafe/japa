@@ -89,7 +89,7 @@ type Handlers struct {
 	Perms                PermissionChecker
 	consents             ConsentChecker       // §19: ai_processing consent gate (nil = skip check)
 	preflight            *Preflight           // §20 amendment: shared admission + unified daily budget (nil = degrade to checker/Settings)
-	HTTPClient           *http.Client         // nil → http.DefaultClient (external search / HITL verify)
+	HTTPClient           *http.Client         // nil → reserved-range-guarded tools client (external search / HITL verify)
 	cache                CacheClient          // nil → ai.cache_enabled must be true to have any effect
 	costs                *CostEstimator       // estimates per-request USD cost from token usage
 	PersonaVoiceResolver                      // optional voice prompt resolver (persona_voices)
@@ -2212,14 +2212,16 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// httpClient returns the handler's HTTP client, defaulting to
-// http.DefaultClient. Used for external search calls from handlers.
+// httpClient returns the handler's HTTP client, defaulting to the guarded
+// tools client — reserved ranges (cloud metadata, link-local, multicast)
+// blocked at connect time, intranet kept. Used for external search calls
+// from handlers.
 func (h *Handlers) httpClient() *http.Client {
 	if h.HTTPClient != nil {
 		return h.HTTPClient
 	}
 
-	return http.DefaultClient
+	return defaultToolsHTTPClient
 }
 
 // ---------------------------------------------------------------------------

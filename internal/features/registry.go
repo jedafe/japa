@@ -169,6 +169,13 @@ var Registry = []Feature{
 	// Product deals surface (/products/deals) — decoupled from
 	// service_coupons.enabled which gates service-listing coupons.
 	{Key: "feature.products.deals", Label: "Product Deals", Description: "Deals and coupons attached to catalog products", Default: true, Category: "Tools", SettingsCategory: "products"},
+	// Provider env fallbacks — when enabled, env-configured providers are
+	// restored behind DB-managed providers whenever a category/model loses
+	// its last usable DB row. Disabling runs the dispatcher strictly on
+	// control-plane-managed providers. Default on: the env fallback is the
+	// established baseline; operators opt out deliberately.
+	{Key: "ai.env_providers", Label: "AI Env Providers Fallback", Description: "Environment-configured AI providers act as the fallback behind DB-managed providers — disable to run only control-plane-managed AI providers", Default: true, Category: "AI"},
+	{Key: "email.env_providers", Label: "Email Env Providers Fallback", Description: "Environment-configured SMTP acts as the fallback behind DB-managed email providers — disable to run only control-plane-managed email providers", Default: true, Category: "Platform"},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

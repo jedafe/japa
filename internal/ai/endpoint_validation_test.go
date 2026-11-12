@@ -450,6 +450,51 @@ func TestIsProxyEndpointAddr(t *testing.T) {
 	}
 }
 
+func TestIsRestrictedRemoteIP(t *testing.T) {
+	t.Parallel()
+
+	// The tools client policy: reserved ranges blocked, intranet kept.
+	cases := []struct {
+		ip      string
+		blocked bool
+	}{
+		// Blocked — never legitimate fetch targets.
+		{"169.254.169.254", true}, // cloud metadata
+		{"169.254.1.1", true},     // link-local
+		{"fe80::1", true},         // IPv6 link-local
+		{"100.64.0.1", true},      // CGNAT
+		{"0.0.0.1", true},         // current network
+		{"192.0.2.1", true},       // TEST-NET-1
+		{"198.18.0.5", true},      // benchmarking
+		{"224.0.0.1", true},       // multicast
+		{"240.0.0.1", true},       // reserved
+		{"255.255.255.255", true}, // broadcast
+		{"ff02::1", true},         // IPv6 multicast
+		// Allowed — intranet fetching is a feature, not a bug.
+		{"10.0.0.5", false},
+		{"172.16.3.4", false},
+		{"192.168.1.10", false},
+		{"127.0.0.1", false},
+		{"::1", false},
+		{"fd00::5", false}, // ULA
+		// Allowed — public.
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"2606:4700:4700::1111", false},
+	}
+
+	for _, tc := range cases {
+		ip := net.ParseIP(tc.ip)
+		if ip == nil {
+			t.Fatalf("bad test IP %q", tc.ip)
+		}
+
+		if got := isRestrictedRemoteIP(ip); got != tc.blocked {
+			t.Errorf("isRestrictedRemoteIP(%s) = %v, want %v", tc.ip, got, tc.blocked)
+		}
+	}
+}
+
 func TestValidateProviderConfig(t *testing.T) {
 	t.Parallel()
 

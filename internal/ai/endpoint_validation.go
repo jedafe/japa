@@ -482,3 +482,102 @@ func isBlockedRemoteIP(ip net.IP) bool {
 
 	return isInternalIP(ip)
 }
+
+// ---------------------------------------------------------------------------
+// Agent tools client — reserved-ranges-only egress guard
+// ---------------------------------------------------------------------------
+
+// defaultToolsHTTPClient is the fallback HTTP client for agent tools that
+// fetch external resources (web search, external fetch, source discovery)
+// when no client is injected. It shares the guarded-transport shape of the
+// provider clients but enforces a RELAXED range policy: RFC1918, ULA, and
+// loopback stay reachable — agent tools legitimately hit intranet endpoints
+// and self-hosted services (e.g. an internal SearXNG) — while the never-
+// legitimate ranges (cloud metadata 169.254.169.254, link-local, CGNAT,
+// multicast, documentation/broadcast/reserved) are still blocked at
+// connect time, immune to DNS rebinding.
+var defaultToolsHTTPClient = &http.Client{Transport: toolsTransport}
+
+var toolsTransport = &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	DialContext:           restrictedDialContext,
+	DialTLSContext:        restrictedDialTLSContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+	TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+}
+
+// isRestrictedRemoteIP reports whether a connected remote IP is reserved —
+// internal minus private minus loopback: the ranges a fetch should never
+// reach (cloud metadata, link-local, CGNAT, multicast, doc/broadcast
+// ranges) while RFC1918/ULA/loopback stay open for intranet tools.
+func isRestrictedRemoteIP(ip net.IP) bool {
+	if ip.IsPrivate() || ip.IsLoopback() {
+		return false
+	}
+
+	return isInternalIP(ip)
+}
+
+// restrictedDialContext mirrors guardedDialContext with the relaxed
+// reserved-ranges predicate; the proxy-endpoint skip is identical.
+func restrictedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if isProxyEndpointAddr(addr) {
+		return conn, nil
+	}
+
+	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isRestrictedRemoteIP(ta.IP) {
+		_ = conn.Close()
+
+		return nil, errInvalidEndpoint
+	}
+
+	return conn, nil
+}
+
+// restrictedDialTLSContext mirrors guardedDialTLSContext with the relaxed
+// predicate — private/loopback TLS targets are allowed here (intranet
+// services with valid certs), reserved ranges still blocked, proxy
+// endpoints skipped (https-proxy dials traverse this hook).
+func restrictedDialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isProxyEndpointAddr(addr) {
+		if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isRestrictedRemoteIP(ta.IP) {
+			_ = conn.Close()
+
+			return nil, errInvalidEndpoint
+		}
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"h2", "http/1.1"},
+	})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	return tlsConn, nil
+}

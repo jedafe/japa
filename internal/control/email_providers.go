@@ -487,7 +487,15 @@ func (h *Handlers) reloadEmailProviders(ctx context.Context) {
 		return
 	}
 
-	if err := email.LoadAndRegisterProviders(ctx, h.EmailProviderStore, h.EmailDispatcher, h.EmailFallbackProvider); err != nil {
+	// The email.env_providers feature flag gates env-fallback restore — off
+	// means the dispatcher runs strictly on control-plane-managed providers.
+	// A nil checker keeps the established restore behavior.
+	fallback := h.EmailFallbackProvider
+	if h.FeatureChecker != nil && !h.FeatureChecker.IsEnabled(ctx, email.EnvProvidersFlagKey) {
+		fallback = nil
+	}
+
+	if err := email.LoadAndRegisterProviders(ctx, h.EmailProviderStore, h.EmailDispatcher, fallback); err != nil {
 		slog.Error("control: hot-reload email providers", "error", err)
 	}
 }

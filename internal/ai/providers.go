@@ -554,6 +554,12 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 	}
 }
 
+// EnvProvidersFlagKey is the feature_flags key gating env-chain restore.
+// When the flag is off, callers pass a nil fallbackChains so the dispatcher
+// runs strictly on control-plane-managed providers (features.Registry:
+// ai.env_providers, default on).
+const EnvProvidersFlagKey = "ai.env_providers"
+
 // LoadAndRegisterProviders rebuilds the dispatcher's category→provider
 // chains from the database: enabled provider configs are registered in
 // priority order (lower = tried first), and categories left without a

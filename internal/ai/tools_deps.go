@@ -699,7 +699,7 @@ type ToolDeps struct {
 	Permission   PermissionChecker // nil skips permission checks in tool handlers
 	Settings     SettingsReader
 	Cache        CacheClient     // nil disables external-search caching
-	HTTPClient   *http.Client    // nil → http.DefaultClient is used
+	HTTPClient   *http.Client    // nil → reserved-range-guarded tools client is used
 	Persona      PersonaResolver // nil disables content.create_draft (Phase 8)
 	HITL         HITLStore       // nil → executor's generic createHITL is used
 
@@ -1652,13 +1652,17 @@ func (d *ToolDeps) WithRoadmap(s RoadmapService) *ToolDeps {
 	return d
 }
 
-// httpClient returns the configured HTTP client or http.DefaultClient.
+// httpClient returns the configured HTTP client or the guarded tools
+// client — reserved ranges (cloud metadata, link-local, multicast) are
+// blocked at connect time while RFC1918/loopback stay reachable for
+// intranet fetches. http.DefaultClient would leave agent-picked URLs
+// unguarded.
 func (d *ToolDeps) httpClient() *http.Client {
 	if d.HTTPClient != nil {
 		return d.HTTPClient
 	}
 
-	return http.DefaultClient
+	return defaultToolsHTTPClient
 }
 
 // ---------------------------------------------------------------------------

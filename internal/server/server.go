@@ -1808,6 +1808,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// surfaces, delete) fires the config-change hook; the roadmap service
 	// reconciles the linked item's status with the flag's phase. Runs
 	// fire-and-forget inside the Checker (context.WithoutCancel, Rule 8).
+	// reloadProviderDispatchers is assigned after the AI/email dispatchers
+	// and provider stores are constructed (much later in this function —
+	// the flag hook can't reference them directly from this scope). When
+	// the ai.env_providers/email.env_providers flags toggle, it rebuilds
+	// both dispatchers so env fallback flips without waiting for the next
+	// provider CRUD reload.
+	var reloadProviderDispatchers func(ctx context.Context)
+
 	featureChecker.SetOnConfigChanged(func(ctx context.Context, key string, cfg features.FlagConfig) {
 		if err := roadmapService.SyncFlagPhase(ctx, key, cfg); err != nil {
 			slog.Error("roadmap sync flag phase failed", "key", key, "error", err)
@@ -1819,6 +1827,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// /thread pages of the entities it gates (disabled tools, the wiki
 		// surface, gated content types) — mirrors the space-close drop.
 		commentsService.ReconcileAnchorsWithFlags(ctx)
+		// Env-provider fallback toggles take effect immediately — the
+		// dispatcher rebuilds drop or restore the env chains.
+		if reloadProviderDispatchers != nil && (key == ai.EnvProvidersFlagKey || key == email.EnvProvidersFlagKey) {
+			reloadProviderDispatchers(ctx)
+		}
 	})
 	// Same reconcile once at startup — flags already off before this hook
 	// existed leave stale threads behind; the sweep is an idempotent no-op
@@ -3711,13 +3724,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiFallbackChains := aiDispatcher.SnapshotProviders()
 	controlHandlers.SetAIFallbackChains(aiFallbackChains)
 
-	// Load DB-backed provider configs and register them with the dispatcher.
-	// This runs AFTER env-var providers are registered above, so DB configs
-	// take priority (LoadAndRegisterProviders clears and re-registers
-	// categories that have DB-backed providers). The default platform is used
-	// for the initial load; per-platform reload happens on config changes.
-	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, aiFallbackChains); err != nil {
-		slog.Warn("ai: loading db-backed providers at startup", "error", err)
+	// emailFallback bridges the concrete *SMTPProvider and the EmailProvider
+	// interface the loader/setter take: a typed-nil *SMTPProvider inside an
+	// interface is non-nil, which would register a nil-receiver provider and
+	// panic on dispatch when env SMTP is unconfigured.
+	var emailFallback email.EmailProvider
+	if smtpFallback != nil {
+		emailFallback = smtpFallback
 	}
 
 	// Email Provider management — DB-backed provider configs with hot-reload
@@ -3727,14 +3740,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	emailProviderStore := email.NewProviderStore(database.Reader, database.Writer)
 	controlHandlers.SetEmailProviderStore(emailProviderStore)
 	controlHandlers.SetEmailDispatcher(emailDispatcher)
-	controlHandlers.SetEmailFallbackProvider(smtpFallback)
+	controlHandlers.SetEmailFallbackProvider(emailFallback)
 
-	// Load DB-backed email provider configs. Each supported category is
-	// rebuilt from the DB — DB configs take priority; categories without
-	// DB rows get the env-var SMTP fallback re-registered.
-	if err := email.LoadAndRegisterProviders(context.Background(), emailProviderStore, emailDispatcher, smtpFallback); err != nil {
-		slog.Warn("email: loading db-backed providers at startup", "error", err)
+	// Load DB-backed provider configs and register them with the dispatcher.
+	// This runs AFTER env-var providers are registered above, so DB configs
+	// take priority (LoadAndRegisterProviders clears and re-registers
+	// categories that have DB-backed providers). The default platform is used
+	// for the initial load; per-platform reload happens on config changes.
+	// The ai.env_providers / email.env_providers feature flags gate env
+	// restore — off means the dispatcher runs strictly on control-plane
+	// rows (features.Registry default keeps them on).
+	loadAIProviders := func(ctx context.Context) {
+		fb := aiFallbackChains
+		if !featureChecker.IsEnabled(ctx, ai.EnvProvidersFlagKey) {
+			fb = nil
+		}
+
+		if err := ai.LoadAndRegisterProviders(ctx, providerStore, aiDispatcher, fb); err != nil {
+			slog.Warn("ai: loading db-backed providers", "error", err)
+		}
 	}
+	loadEmailProviders := func(ctx context.Context) {
+		fb := emailFallback
+		if !featureChecker.IsEnabled(ctx, email.EnvProvidersFlagKey) {
+			fb = nil
+		}
+
+		if err := email.LoadAndRegisterProviders(ctx, emailProviderStore, emailDispatcher, fb); err != nil {
+			slog.Warn("email: loading db-backed providers", "error", err)
+		}
+	}
+	// Assigned to the hook declared before SetOnConfigChanged — toggling
+	// either env-providers flag flips the fallback without waiting for the
+	// next provider CRUD reload.
+	reloadProviderDispatchers = func(ctx context.Context) {
+		loadAIProviders(ctx)
+		loadEmailProviders(ctx)
+	}
+
+	loadAIProviders(context.Background())
+	loadEmailProviders(context.Background())
 
 	// Infrastructure routes bypass platform middleware
 	r.Get("/health", h.HealthCheck)
