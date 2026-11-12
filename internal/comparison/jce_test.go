@@ -99,3 +99,29 @@ func TestParseOptionalUUID(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTypeSlugCSV(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		raw  string
+		want []string
+	}{
+		{"countries", []string{"countries"}},
+		{"countries,states,cities", []string{"countries", "states", "cities"}},
+		{" countries , states ", []string{"countries", "states"}},
+		{"", nil},
+		{"a,,b,", []string{"a", "b"}},
+	}
+	for _, tc := range cases {
+		got := parseTypeSlugCSV(tc.raw)
+		if len(got) != len(tc.want) {
+			t.Fatalf("parseTypeSlugCSV(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("parseTypeSlugCSV(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
+			}
+		}
+	}
+}

@@ -62,11 +62,11 @@ WHERE c.content_type = 'comparison'
  )
  AND ($2::uuid IS NULL OR c.space_id = $2)
  AND (
- $3::uuid IS NULL
+ $3::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = $3
+ AND ci.type_id = ANY($3::uuid[])
  AND ci.deleted_at IS NULL
  )
  )
@@ -82,15 +82,15 @@ WHERE c.content_type = 'comparison'
 `
 
 type CountComparisonsWithFiltersParams struct {
-	Deleted    *string     `json:"deleted"`
-	SpaceID    pgtype.UUID `json:"space_id"`
-	TypeID     pgtype.UUID `json:"type_id"`
-	Depth      *string     `json:"depth"`
-	Status     *string     `json:"status"`
-	Visibility *string     `json:"visibility"`
-	Mine       *bool       `json:"mine"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Q          *string     `json:"q"`
+	Deleted    *string       `json:"deleted"`
+	SpaceID    pgtype.UUID   `json:"space_id"`
+	TypeIds    []pgtype.UUID `json:"type_ids"`
+	Depth      *string       `json:"depth"`
+	Status     *string       `json:"status"`
+	Visibility *string       `json:"visibility"`
+	Mine       *bool         `json:"mine"`
+	UserID     pgtype.UUID   `json:"user_id"`
+	Q          *string       `json:"q"`
 }
 
 // Count of comparisons matching the same filters as ListComparisonsWithFilters.
@@ -98,7 +98,7 @@ func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComp
 	row := q.db.QueryRow(ctx, countComparisonsWithFilters,
 		arg.Deleted,
 		arg.SpaceID,
-		arg.TypeID,
+		arg.TypeIds,
 		arg.Depth,
 		arg.Status,
 		arg.Visibility,
@@ -1511,11 +1511,11 @@ WHERE c.content_type = 'comparison'
  )
  AND ($2::uuid IS NULL OR c.space_id = $2)
  AND (
- $3::uuid IS NULL
+ $3::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = $3
+ AND ci.type_id = ANY($3::uuid[])
  AND ci.deleted_at IS NULL
  )
  )
@@ -1536,18 +1536,18 @@ LIMIT $12 OFFSET $11
 `
 
 type ListComparisonsWithFiltersParams struct {
-	Deleted    *string     `json:"deleted"`
-	SpaceID    pgtype.UUID `json:"space_id"`
-	TypeID     pgtype.UUID `json:"type_id"`
-	Depth      *string     `json:"depth"`
-	Status     *string     `json:"status"`
-	Visibility *string     `json:"visibility"`
-	Mine       *bool       `json:"mine"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Q          *string     `json:"q"`
-	Sort       *string     `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Deleted    *string       `json:"deleted"`
+	SpaceID    pgtype.UUID   `json:"space_id"`
+	TypeIds    []pgtype.UUID `json:"type_ids"`
+	Depth      *string       `json:"depth"`
+	Status     *string       `json:"status"`
+	Visibility *string       `json:"visibility"`
+	Mine       *bool         `json:"mine"`
+	UserID     pgtype.UUID   `json:"user_id"`
+	Q          *string       `json:"q"`
+	Sort       *string       `json:"sort"`
+	PageOffset int32         `json:"page_offset"`
+	PageLimit  int32         `json:"page_limit"`
 }
 
 type ListComparisonsWithFiltersRow struct {
@@ -1598,7 +1598,7 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
 		arg.Deleted,
 		arg.SpaceID,
-		arg.TypeID,
+		arg.TypeIds,
 		arg.Depth,
 		arg.Status,
 		arg.Visibility,

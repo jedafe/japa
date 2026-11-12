@@ -92,8 +92,10 @@ type JCEComparison struct {
 
 // JCEComparisonFilter holds listing filters.
 type JCEComparisonFilter struct {
-	SpaceID    pgtype.UUID
-	TypeID     pgtype.UUID
+	SpaceID pgtype.UUID
+	// TypeIDs filters by comparison type (nil = no filter; one element =
+	// legacy single-type filter). filter_type accepts a CSV of type slugs.
+	TypeIDs    []pgtype.UUID
 	Depth      string
 	Status     string
 	Visibility string
@@ -687,7 +689,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	items, err := s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
-		TypeID:     f.TypeID,
+		TypeIds:    f.TypeIDs,
 		Depth:      depth,
 		Status:     status,
 		Visibility: visibility,
@@ -705,7 +707,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
-		TypeID:     f.TypeID,
+		TypeIds:    f.TypeIDs,
 		Depth:      depth,
 		Status:     status,
 		Visibility: visibility,

@@ -504,9 +504,14 @@ func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, 
 // strips each row to listing metadata — bodies and field values stay
 // behind the privacy-gated comparison.read tool.
 func (a *agentComparisonAdapter) ListComparisons(ctx context.Context, f ai.ComparisonListFilter) (ai.ComparisonListResult, error) {
+	var typeIDs []pgtype.UUID
+	if f.TypeID.Valid {
+		typeIDs = []pgtype.UUID{f.TypeID}
+	}
+
 	res, err := a.svc.ListJCEComparisons(ctx, comparison.JCEComparisonFilter{
 		SpaceID:    f.SpaceID,
-		TypeID:     f.TypeID,
+		TypeIDs:    typeIDs,
 		Depth:      f.Depth,
 		Status:     f.Status,
 		Visibility: f.Visibility,

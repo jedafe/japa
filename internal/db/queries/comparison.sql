@@ -293,11 +293,11 @@ WHERE c.content_type = 'comparison'
  )
  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
  AND (
- sqlc.narg(type_id)::uuid IS NULL
+ sqlc.narg(type_ids)::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = sqlc.narg(type_id)
+ AND ci.type_id = ANY(sqlc.narg(type_ids)::uuid[])
  AND ci.deleted_at IS NULL
  )
  )
@@ -331,11 +331,11 @@ WHERE c.content_type = 'comparison'
  )
  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
  AND (
- sqlc.narg(type_id)::uuid IS NULL
+ sqlc.narg(type_ids)::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = sqlc.narg(type_id)
+ AND ci.type_id = ANY(sqlc.narg(type_ids)::uuid[])
  AND ci.deleted_at IS NULL
  )
  )

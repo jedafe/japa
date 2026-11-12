@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,34 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 )
+
+// parseTypeSlugCSV splits a comma-separated filter_type/facet_scope value into
+// trimmed, non-empty slugs. Single-slug callers pass one element.
+func parseTypeSlugCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+
+	var out []string
+	for s := range strings.SplitSeq(raw, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+
+	return out
+}
+
+// firstNonEmpty returns the first non-empty string from its arguments.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+
+	return ""
+}
 
 // safeInt32 clamps an int to the int32 range, preventing overflow on
 // pagination parameter conversions (gosec G109/G115).
@@ -65,30 +94,32 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	typeSlug := q.Get("filter_type")
-	if typeSlug == "" {
-		typeSlug = q.Get("type")
-	}
+	// filter_type accepts a single slug or a CSV of slugs (family browse
+	// pages query all member types in one request). An unknown slug keeps
+	// the existing 404 contract.
+	var typeIDs []pgtype.UUID
+	if csv := parseTypeSlugCSV(firstNonEmpty(q.Get("filter_type"), q.Get("type"))); len(csv) > 0 {
+		for _, slug := range csv {
+			td, err := h.Service.GetComparisonTypeBySlug(r.Context(), slug)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
+					return
+				}
 
-	if typeSlug != "" {
-		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), typeSlug)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
+				handleServiceError(w, err)
+
 				return
 			}
 
-			handleServiceError(w, err)
-
-			return
+			typeIDs = append(typeIDs, td.ID)
 		}
-
-		typeID = td.ID
 	} else if v := q.Get("type_id"); v != "" {
 		if err := typeID.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
+		typeIDs = []pgtype.UUID{typeID}
 	}
 
 	limit := int32(DefaultPageSize)
@@ -113,7 +144,7 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 
 	filter := JCEComparisonFilter{
 		SpaceID:    spaceID,
-		TypeID:     typeID,
+		TypeIDs:    typeIDs,
 		Depth:      parseFilter("filter_depth", "depth"),
 		Status:     parseFilter("filter_status", "status"),
 		Visibility: parseFilter("filter_visibility", "visibility"),

@@ -2150,9 +2150,14 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFil
 		f.Offset = 0
 	}
 
+	var typeIDs []pgtype.UUID
+	if f.TypeID.Valid {
+		typeIDs = []pgtype.UUID{f.TypeID}
+	}
+
 	res, err := s.ListJCEComparisons(ctx, JCEComparisonFilter{
 		SpaceID:    f.SpaceID,
-		TypeID:     f.TypeID,
+		TypeIDs:    typeIDs,
 		Depth:      f.Depth,
 		Status:     f.Status,
 		Visibility: f.Visibility,
