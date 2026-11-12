@@ -438,8 +438,22 @@ func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]int
 	}
 
 	start, end := unixTs(obj, "current_period_start"), unixTs(obj, "current_period_end")
+	cancelAtEnd := boolFrom(obj, "cancel_at_period_end")
 
-	return s.store.updateSubscriptionPeriodBounds(ctx, sub.ID, start, end, boolFrom(obj, "cancel_at_period_end"))
+	if err := s.store.updateSubscriptionPeriodBounds(ctx, sub.ID, start, end, cancelAtEnd); err != nil {
+		return err
+	}
+
+	// ADR-055: provider confirms a pending-cancel → subscription_expiring.
+	// Only on the false→true transition so repeat syncs don't re-notify.
+	if cancelAtEnd && !sub.CancelAtPeriodEnd {
+		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", map[string]any{
+			"plan":        sub.Plan,
+			"expiry_date": end.Format("2006-01-02"),
+		})
+	}
+
+	return nil
 }
 
 // stripeCancelNow handles customer.subscription.deleted — the provider has
@@ -771,7 +785,20 @@ func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.S
 		}
 	}
 
-	return s.store.cancelSubscription(ctx, id)
+	updated, err := s.store.cancelSubscription(ctx, id)
+	if err != nil {
+		return updated, err
+	}
+
+	// ADR-055: user-initiated cancel-at-period-end → subscription_expiring.
+	// The provider webhook may never confirm, so the notice goes out on the
+	// local transition.
+	s.notifyPaymentEmail(ctx, updated.UserID, "subscription_expiring", map[string]any{
+		"plan":        updated.Plan,
+		"expiry_date": updated.CurrentPeriodEnd.Time.Format("2006-01-02"),
+	})
+
+	return updated, nil
 }
 
 // ReactivateSubscription undoes a pending cancel at the provider, then

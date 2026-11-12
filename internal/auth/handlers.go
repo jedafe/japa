@@ -670,13 +670,17 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// ADR-055: login_alert for a device/IP pair this account has never
 	// used before — checked before this session's refresh token row exists
 	// so the first login on a new device is detected. Fire-and-forget.
-	newDevice := true
+	// On lookup error newDevice stays false: a spurious "new device"
+	// security alert is worse than a missed one.
+	newDevice := false
 	if matched, derr := h.Queries.HasMatchingDeviceSession(r.Context(), gen.HasMatchingDeviceSessionParams{
 		UserID:     user.ID,
 		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); derr == nil {
 		newDevice = !matched
+	} else {
+		slog.Warn("login: device-history check failed", "error", derr)
 	}
 
 	if newDevice {
@@ -1902,39 +1906,6 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 			"support_url": supportURL,
 			"site_url":    baseURL,
 		}, siteName)
-}
-
-// enqueueEmail enqueues an email delivery task via Asynq. Failures are logged but not returned.
-// When isHTML is true, the worker sends the body as text/html; otherwise as text/plain.
-func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
-	enqueueEmailTask(h.AsynqClient, to, subject, body, isHTML)
-}
-
-// enqueueEmailTask is the shared fire-and-forget email enqueue used by both
-// the password auth handlers and the OAuth social-login handlers.
-func enqueueEmailTask(client *asynq.Client, to, subject, body string, isHTML bool) {
-	if client == nil {
-		slog.Warn("auth: enqueueEmail called without asynq client", "to", to)
-		return
-	}
-
-	payload, err := json.Marshal(map[string]any{
-		"to":      to,
-		"subject": subject,
-		"body":    body,
-		"html":    isHTML,
-	})
-	if err != nil {
-		slog.Error("auth: failed to marshal email payload", "error", err)
-		return
-	}
-
-	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	// TaskOpts restores the registered email:send defaults (Unique dedup,
-	// 30s timeout, MaxRetry 10, default-tier queue).
-	if _, err := client.Enqueue(task, worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
-		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
-	}
 }
 
 // enqueueTemplatedEmailTask enqueues an email:send task that resolves the

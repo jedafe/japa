@@ -734,6 +734,23 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	tokenHash := HashRefreshToken(refreshToken)
 	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 
+	// ADR-055: login_alert for OAuth sessions from an unseen device/IP —
+	// parity with the password Login path. On lookup error skip silently
+	// rather than emit a spurious security alert.
+	if matched, derr := h.Queries.HasMatchingDeviceSession(r.Context(), gen.HasMatchingDeviceSessionParams{
+		UserID:     userID,
+		DeviceName: deviceName(r),
+		IpAddress:  ipPtr(r),
+	}); derr == nil && !matched {
+		if to, eerr := h.Queries.GetUserEmailByID(r.Context(), userID); eerr == nil && to != "" {
+			enqueueTemplatedEmailTask(h.AsynqClient, to, "login_alert", "", "",
+				map[string]any{
+					"device_info": deviceName(r),
+					"ip_address":  clientIP(r),
+				}, h.SiteName)
+		}
+	}
+
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
 		UserID:     userID,
 		TokenHash:  tokenHash,
