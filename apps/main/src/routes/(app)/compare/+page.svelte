@@ -1107,6 +1107,15 @@
 			/>
 		{/if}
 
+		<!-- Workspace body: field pool rail on the start side (mockup's
+			"popular themes"), items grid in the main column -->
+		<div class="grid gap-4 {fieldPool.groups.length > 0 ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}">
+			{#if fieldPool.groups.length > 0}
+				<aside class="order-last lg:order-first lg:sticky lg:top-4 lg:self-start">
+					<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} />
+				</aside>
+			{/if}
+			<div class="min-w-0 space-y-4">
 		<!-- Unified filter row: search + source switch + sort/display popover -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="relative w-full sm:flex-1">
@@ -1266,12 +1275,8 @@
 				<PaginationControls page={effectivePage} totalPages={pageCount} onPageChange={setPage} />
 			{/if}
 		{/if}
-
-		{#if selectedType && fieldPool.groups.length > 0}
-			<div class="px-4 pb-3">
-				<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} />
 			</div>
-		{/if}
+		</div>
 
 		<!-- Sticky zone: AI quick panel + compare tray (hidden in nested browse mode) -->
 		{#if !isNestedSource}
