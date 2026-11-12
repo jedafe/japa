@@ -17,7 +17,9 @@
 		'visa_routes',
 		'banking',
 		'embassies',
-		'cost-of-living'
+		'cost-of-living',
+		'business',
+		'products'
 	];
 
 	function familyLabel(family: string): string {

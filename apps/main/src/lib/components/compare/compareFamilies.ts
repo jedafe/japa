@@ -18,7 +18,9 @@ import {
 	Building2,
 	Plane,
 	Briefcase,
-	GitCompare
+	GitCompare,
+	Store,
+	Package
 } from 'lucide-svelte';
 import type { ComparisonType } from '#lib/types/jce.js';
 
@@ -42,7 +44,9 @@ export const COMPARE_FAMILIES: CompareFamily[] = [
 	{ key: 'cost-of-living', slug: 'cost-of-living', icon: asComponent(Wallet), tint: '#f97316' },
 	{ key: 'embassies', slug: 'embassies', icon: asComponent(Building2), tint: '#ec4899' },
 	{ key: 'travel', slug: 'travel', icon: asComponent(Plane), tint: '#06b6d4' },
-	{ key: 'jobs', slug: 'jobs', icon: asComponent(Briefcase), tint: '#64748b' }
+	{ key: 'jobs', slug: 'jobs', icon: asComponent(Briefcase), tint: '#64748b' },
+	{ key: 'business', slug: 'business', icon: asComponent(Store), tint: '#0ea5e9' },
+	{ key: 'products', slug: 'products', icon: asComponent(Package), tint: '#f43f5e' }
 ];
 
 export const FALLBACK_FAMILY_ICON: Component = asComponent(GitCompare);

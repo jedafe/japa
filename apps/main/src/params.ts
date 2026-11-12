@@ -10,7 +10,9 @@ const compareCategorySlugs = new Set([
 	'cost-of-living',
 	'embassies',
 	'travel',
-	'jobs'
+	'jobs',
+	'business',
+	'products'
 ]);
 
 function slugMatcher(values: ReadonlySet<string>, message: string): ParamMatcher<string> {
