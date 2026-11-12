@@ -1009,6 +1009,60 @@ func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, content
 	return items, nil
 }
 
+const listComparisonItemPreviews = `-- name: ListComparisonItemPreviews :many
+SELECT ranked.content_id, ranked.id, ranked.title, ranked.image_id,
+ ranked.geo_space_id, ranked.item_ref, ranked.position
+FROM (
+ SELECT ci.content_id, ci.id, ci.title, ci.image_id, ci.geo_space_id,
+   ci.item_ref, ci.position,
+   ROW_NUMBER() OVER (PARTITION BY ci.content_id ORDER BY ci.position, ci.created_at) AS rn
+ FROM comparison_items ci
+ WHERE ci.content_id = ANY($1::uuid[])
+  AND ci.deleted_at IS NULL
+) ranked
+WHERE ranked.rn <= 3
+ORDER BY ranked.content_id, ranked.position
+`
+
+type ListComparisonItemPreviewsRow struct {
+	ContentID  pgtype.UUID `json:"content_id"`
+	ID         pgtype.UUID `json:"id"`
+	Title      string      `json:"title"`
+	ImageID    pgtype.UUID `json:"image_id"`
+	GeoSpaceID pgtype.UUID `json:"geo_space_id"`
+	ItemRef    []byte      `json:"item_ref"`
+	Position   int32       `json:"position"`
+}
+
+// First ≤3 live items per content row for directory card previews.
+func (q *Queries) ListComparisonItemPreviews(ctx context.Context, contentIds []pgtype.UUID) ([]ListComparisonItemPreviewsRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonItemPreviews, contentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComparisonItemPreviewsRow
+	for rows.Next() {
+		var i ListComparisonItemPreviewsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.ID,
+			&i.Title,
+			&i.ImageID,
+			&i.GeoSpaceID,
+			&i.ItemRef,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listComparisonItemsByContent = `-- name: ListComparisonItemsByContent :many
 SELECT id, content_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
 FROM comparison_items
@@ -1847,6 +1901,46 @@ func (q *Queries) ListPoolFieldsByGroupIDs(ctx context.Context, arg ListPoolFiel
 			&i.Options,
 			&i.Position,
 			&i.Section,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceGeoByIDs = `-- name: ListSpaceGeoByIDs :many
+SELECT s.id, s.geo_code, s.level, p.geo_code AS parent_geo_code
+FROM spaces s
+LEFT JOIN spaces p ON p.id = s.parent_id
+WHERE s.id = ANY($1::uuid[])
+`
+
+type ListSpaceGeoByIDsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	GeoCode       *string     `json:"geo_code"`
+	Level         string      `json:"level"`
+	ParentGeoCode *string     `json:"parent_geo_code"`
+}
+
+// id → geo code + parent (country) geo code for flag medallions.
+func (q *Queries) ListSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListSpaceGeoByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceGeoByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceGeoByIDsRow
+	for rows.Next() {
+		var i ListSpaceGeoByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GeoCode,
+			&i.Level,
+			&i.ParentGeoCode,
 		); err != nil {
 			return nil, err
 		}

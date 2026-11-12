@@ -385,6 +385,28 @@ WHERE first_type.type_id IS NOT NULL
 GROUP BY first_type.type_id
 ORDER BY count DESC;
 
+-- name: ListComparisonItemPreviews :many
+-- First ≤3 live items per content row for directory card previews.
+SELECT ranked.content_id, ranked.id, ranked.title, ranked.image_id,
+ ranked.geo_space_id, ranked.item_ref, ranked.position
+FROM (
+ SELECT ci.content_id, ci.id, ci.title, ci.image_id, ci.geo_space_id,
+   ci.item_ref, ci.position,
+   ROW_NUMBER() OVER (PARTITION BY ci.content_id ORDER BY ci.position, ci.created_at) AS rn
+ FROM comparison_items ci
+ WHERE ci.content_id = ANY(@content_ids::uuid[])
+  AND ci.deleted_at IS NULL
+) ranked
+WHERE ranked.rn <= 3
+ORDER BY ranked.content_id, ranked.position;
+
+-- name: ListSpaceGeoByIDs :many
+-- id → geo code + parent (country) geo code for flag medallions.
+SELECT s.id, s.geo_code, s.level, p.geo_code AS parent_geo_code
+FROM spaces s
+LEFT JOIN spaces p ON p.id = s.parent_id
+WHERE s.id = ANY(@ids::uuid[]);
+
 -- =====================
 -- Comparison detail / matrix helpers
 -- =====================

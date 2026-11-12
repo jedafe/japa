@@ -76,6 +76,33 @@ func (s *Store) countComparisonsByType(ctx context.Context, p gen.CountCompariso
 	return rows, nil
 }
 
+func (s *Store) listComparisonItemPreviews(ctx context.Context, contentIDs []pgtype.UUID) ([]gen.ListComparisonItemPreviewsRow, error) {
+	rows, err := s.read.ListComparisonItemPreviews(ctx, contentIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison item previews: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) listSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.ListSpaceGeoByIDsRow, error) {
+	rows, err := s.read.ListSpaceGeoByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("listing space geo codes: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) getMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.Medium, error) {
+	rows, err := s.read.GetMediaByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("getting media by ids: %w", err)
+	}
+
+	return rows, nil
+}
+
 func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slug *string) (gen.GetComparisonBySlugOrIDRow, error) {
 	row, err := s.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
 		ID:   id,

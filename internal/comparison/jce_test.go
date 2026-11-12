@@ -100,6 +100,27 @@ func TestParseOptionalUUID(t *testing.T) {
 	}
 }
 
+func TestMergePreviewItemFields(t *testing.T) {
+	t.Parallel()
+
+	p := JCEPreviewItem{Title: "Canada"}
+	mergePreviewItem(&p, previewItemParts{
+		imageURL:    "https://cdn/x.png",
+		geoCode:     "ca",
+		countryCode: "ca",
+		itemType:    "country",
+	})
+	if p.ImageURL != "https://cdn/x.png" || p.CountryCode != "ca" || p.ItemType != "country" {
+		t.Fatalf("merge failed: %+v", p)
+	}
+
+	// Explicit fields win — a second merge must not overwrite.
+	mergePreviewItem(&p, previewItemParts{imageURL: "https://cdn/y.png", countryCode: "us"})
+	if p.ImageURL != "https://cdn/x.png" || p.CountryCode != "ca" {
+		t.Fatalf("merge overwrote explicit fields: %+v", p)
+	}
+}
+
 func TestJCETypeFacetShape(t *testing.T) {
 	t.Parallel()
 

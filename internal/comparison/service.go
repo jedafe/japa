@@ -2169,7 +2169,12 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFil
 		return nil, err
 	}
 
-	return res.Items, nil
+	rows := make([]gen.ListComparisonsWithFiltersRow, len(res.Items))
+	for i, it := range res.Items {
+		rows[i] = it.ListComparisonsWithFiltersRow
+	}
+
+	return rows, nil
 }
 
 // DeleteJCEComparisonCaches deletes the JCE freshness cache for a comparison

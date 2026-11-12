@@ -123,9 +123,49 @@ type JCETypeFacet struct {
 	Count  int32  `json:"count"`
 }
 
+// JCEPreviewItem is a ≤3-item card preview embedded on list summaries.
+type JCEPreviewItem struct {
+	Title       string `json:"title"`
+	ImageURL    string `json:"image_url,omitempty"`
+	GeoCode     string `json:"geo_code,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+	ItemType    string `json:"item_type,omitempty"`
+}
+
+// JCEComparisonListItem wraps the list row with card previews. The embedded
+// sqlc row's JSON fields stay flat — the payload is additive only.
+type JCEComparisonListItem struct {
+	gen.ListComparisonsWithFiltersRow
+	PreviewItems []JCEPreviewItem `json:"preview_items,omitempty"`
+}
+
+// previewItemParts carries one resolved facet of a preview item; empty fields
+// never overwrite values already set (explicit image/geo beats resolver data).
+type previewItemParts struct {
+	imageURL    string
+	geoCode     string
+	countryCode string
+	itemType    string
+}
+
+func mergePreviewItem(p *JCEPreviewItem, parts previewItemParts) {
+	if p.ImageURL == "" {
+		p.ImageURL = parts.imageURL
+	}
+	if p.GeoCode == "" {
+		p.GeoCode = parts.geoCode
+	}
+	if p.CountryCode == "" {
+		p.CountryCode = parts.countryCode
+	}
+	if p.ItemType == "" {
+		p.ItemType = parts.itemType
+	}
+}
+
 // JCEComparisonListResult is the paged result of ListJCEComparisons.
 type JCEComparisonListResult struct {
-	Items           []gen.ListComparisonsWithFiltersRow
+	Items           []JCEComparisonListItem
 	Total           int32
 	Page            int32
 	Size            int32
@@ -717,6 +757,20 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		return JCEComparisonListResult{}, err
 	}
 
+	// Attach ≤3-item card previews (batched hydration; never fails the list).
+	contentIDs := make([]pgtype.UUID, 0, len(items))
+	for _, it := range items {
+		contentIDs = append(contentIDs, it.ID)
+	}
+	previewByContent := s.loadPreviewItems(ctx, contentIDs)
+	listItems := make([]JCEComparisonListItem, len(items))
+	for i, it := range items {
+		listItems[i] = JCEComparisonListItem{
+			ListComparisonsWithFiltersRow: it,
+			PreviewItems:                  previewByContent[it.ID],
+		}
+	}
+
 	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
@@ -790,7 +844,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 	}
 
 	return JCEComparisonListResult{
-		Items:           items,
+		Items:           listItems,
 		Total:           total,
 		Page:            page,
 		Size:            f.Limit,
