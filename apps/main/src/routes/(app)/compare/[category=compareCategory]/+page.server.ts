@@ -41,7 +41,7 @@ export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
 	const ctx = apiContext(event);
 	const family = familyForSlug(event.params.category);
-	if (!family) throw error(404, { code: 'not_found', message: 'Unknown comparison category' });
+	if (!family) throw error(404, 'Unknown comparison category', { code: 'not_found' });
 
 	let allTypes: ComparisonType[] = [];
 	try {
@@ -58,7 +58,7 @@ export const load: PageServerLoad = async (event) => {
 	if (features['mentorship.comparison'] !== true) {
 		memberTypes = memberTypes.filter((t) => t.slug !== 'mentors');
 	}
-	if (memberTypes.length === 0) throw error(404, { code: 'not_found', message: 'Unknown comparison category' });
+	if (memberTypes.length === 0) throw error(404, 'Unknown comparison category', { code: 'not_found' });
 
 	const sp = event.url.searchParams;
 	const sub = sp.get('sub') ?? '';
