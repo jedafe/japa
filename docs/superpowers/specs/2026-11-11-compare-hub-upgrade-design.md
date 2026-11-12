@@ -85,13 +85,15 @@ export interface JCEPreviewItem {
 
 ### 3.3 Type facet counts
 
-New opt-in param `facet=types` on `GET /jce/comparisons`. When present, the handler runs a new `CountComparisonsByType` query — same WHERE clause minus the type predicate, `GROUP BY` item `type_id` — and returns:
+New opt-in param `facet=types` on `GET /jce/comparisons`. When present, the handler runs a new `CountComparisonsByType` query — same WHERE clause **minus the `filter_type` item predicate** — grouped by the comparison's primary type (first item's `type_id`, same rule the list uses for `type_name`) and returns:
 
 ```json
 "meta": { "facets": { "types": [{ "type_id": "...", "slug": "countries", "count": 16 }] } }
 ```
 
-Slug/name enrichment reuses the type-definition lookup already used for `type_name`. Not requested → key absent (no extra query on hot paths like `mine`).
+Optional companion param `facet_scope=<csv-of-type-slugs>` restricts facet counting to that type set. This matters on family pages: `/compare/location?sub=countries` filters items to `countries` but the rail must still show counts for all member types (`countries=16, states=5, cities=3`), so the page sends `facet_scope=countries,states,cities`. `/comparisons` sends `facet=types` alone, yielding the all-types distribution for switching.
+
+Slug/name enrichment reuses the type-definition lookup already used for `type_name`. `facet` absent → no facet query runs (hot paths like `mine` stay cheap).
 
 ### 3.4 No new sorts needed
 
@@ -122,7 +124,7 @@ All under `apps/main/src/lib/components/compare/`:
 
 ### 5.2 `/compare/[category]` browse page
 
-- `+page.server.ts`: load types, resolve family from the matched param (404 if family unknown — unreachable in practice since the matcher pre-filters, but kept as a guard), fetch `/jce/comparisons?filter_type=<member slugs CSV>&filter_depth=detailed&filter_status=published&filter_visibility=public&sort=&q=&page=&facet=types`.
+- `+page.server.ts`: load types, resolve family from the matched param (404 if family unknown — unreachable in practice since the matcher pre-filters, but kept as a guard), fetch `/jce/comparisons?filter_type=<member slugs CSV, or single sub slug>&filter_depth=detailed&filter_status=published&filter_visibility=public&sort=&q=&page=&facet=types&facet_scope=<member slugs CSV>`. Subcategory selection rides the `?sub=<slug>` URL param.
 - Layout: breadcrumb Home › Compare › `<Family>`; icon-tile hero + description + stat chips (`{N} comparisons`, `Updated weekly` i18n strings).
 - "Can't decide?" card → **Start custom comparison** → `/compare?type=<slug>`; when the family has >1 member type it opens a small chooser listing the types.
 - `CompareRefineRail`: search box (`q`), subcategory list with `facet.types` counts (All / each member type → re-queries with single `filter_type`), themes section only if a dimension/tag facet ships (§7 — out of scope v1, section hidden).
