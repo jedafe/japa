@@ -67,6 +67,15 @@ func (s *Store) countComparisonsWithFilters(ctx context.Context, p gen.CountComp
 	return count, nil
 }
 
+func (s *Store) countComparisonsByType(ctx context.Context, p gen.CountComparisonsByTypeParams) ([]gen.CountComparisonsByTypeRow, error) {
+	rows, err := s.read.CountComparisonsByType(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("counting comparisons by type: %w", err)
+	}
+
+	return rows, nil
+}
+
 func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slug *string) (gen.GetComparisonBySlugOrIDRow, error) {
 	row, err := s.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
 		ID:   id,

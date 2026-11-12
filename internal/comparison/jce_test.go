@@ -100,6 +100,25 @@ func TestParseOptionalUUID(t *testing.T) {
 	}
 }
 
+func TestJCETypeFacetShape(t *testing.T) {
+	t.Parallel()
+
+	f := JCETypeFacet{TypeID: "uuid-1", Slug: "countries", Count: 16}
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+
+	if m["slug"] != "countries" || m["count"].(float64) != 16 {
+		t.Fatalf("unexpected facet JSON: %s", b)
+	}
+}
+
 func TestParseTypeSlugCSV(t *testing.T) {
 	t.Parallel()
 

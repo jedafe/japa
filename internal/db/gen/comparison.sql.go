@@ -48,6 +48,90 @@ func (q *Queries) CountComparisonItemsByType(ctx context.Context, typeID pgtype.
 	return column_1, err
 }
 
+const countComparisonsByType = `-- name: CountComparisonsByType :many
+SELECT first_type.type_id, count(*)::int AS count
+FROM (
+ SELECT c.id,
+  (SELECT ci.type_id FROM comparison_items ci
+   WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+   ORDER BY ci.position LIMIT 1) AS type_id
+ FROM contents c
+ JOIN comparison_content_metadata m ON m.content_id = c.id
+ WHERE c.content_type = 'comparison'
+  AND (
+  CASE $1::text
+  WHEN 'only' THEN c.deleted_at IS NOT NULL
+  WHEN 'all' THEN TRUE
+  ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+  END
+  )
+  AND ($2::uuid IS NULL OR c.space_id = $2)
+  AND ($3::text IS NULL OR m.depth = $3)
+  AND ($4::text IS NULL OR c.status = $4)
+  AND ($5::text IS NULL OR c.visibility = $5)
+  AND ($6::boolean IS NOT TRUE OR c.author_id = $7)
+  AND (
+  $8::text IS NULL OR $8 = ''
+  OR c.title ILIKE '%' || $8 || '%'
+  OR c.slug ILIKE '%' || $8 || '%'
+  )
+) first_type
+WHERE first_type.type_id IS NOT NULL
+ AND ($9::uuid[] IS NULL OR first_type.type_id = ANY($9::uuid[]))
+GROUP BY first_type.type_id
+ORDER BY count DESC
+`
+
+type CountComparisonsByTypeParams struct {
+	Deleted    *string       `json:"deleted"`
+	SpaceID    pgtype.UUID   `json:"space_id"`
+	Depth      *string       `json:"depth"`
+	Status     *string       `json:"status"`
+	Visibility *string       `json:"visibility"`
+	Mine       *bool         `json:"mine"`
+	UserID     pgtype.UUID   `json:"user_id"`
+	Q          *string       `json:"q"`
+	ScopeIds   []pgtype.UUID `json:"scope_ids"`
+}
+
+type CountComparisonsByTypeRow struct {
+	TypeID pgtype.UUID `json:"type_id"`
+	Count  int32       `json:"count"`
+}
+
+// Per-primary-type comparison counts for facet rails. Primary type = the
+// first live item's type_id (same rule as the list's type_id projection).
+// scope_ids (NULL) restricts the counted type set for family pages.
+func (q *Queries) CountComparisonsByType(ctx context.Context, arg CountComparisonsByTypeParams) ([]CountComparisonsByTypeRow, error) {
+	rows, err := q.db.Query(ctx, countComparisonsByType,
+		arg.Deleted,
+		arg.SpaceID,
+		arg.Depth,
+		arg.Status,
+		arg.Visibility,
+		arg.Mine,
+		arg.UserID,
+		arg.Q,
+		arg.ScopeIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountComparisonsByTypeRow
+	for rows.Next() {
+		var i CountComparisonsByTypeRow
+		if err := rows.Scan(&i.TypeID, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countComparisonsWithFilters = `-- name: CountComparisonsWithFilters :one
 SELECT count(*)::int
 FROM contents c

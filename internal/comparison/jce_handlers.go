@@ -169,21 +169,48 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// facet=types opts into per-type counts; facet_scope=<csv> restricts the
+	// counted type set (family pages pass their member slugs so the rail
+	// shows sibling-type counts while a sub filter is active).
+	filter.FacetTypes = q.Get("facet") == "types"
+	if filter.FacetTypes {
+		for _, slug := range parseTypeSlugCSV(q.Get("facet_scope")) {
+			td, err := h.Service.GetComparisonTypeBySlug(r.Context(), slug)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
+					return
+				}
+
+				handleServiceError(w, err)
+
+				return
+			}
+
+			filter.FacetScope = append(filter.FacetScope, td.ID)
+		}
+	}
+
 	res, err := h.Service.ListJCEComparisons(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
+	meta := map[string]any{
+		"total":             res.Total,
+		"page":              res.Page,
+		"limit":             res.Size,
+		"sort_options":      res.SortOptions,
+		"page_size_options": res.PageSizeOptions,
+	}
+	if filter.FacetTypes {
+		meta["facets"] = map[string]any{"types": res.TypeFacets}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": res.Items,
-		"meta": map[string]any{
-			"total":             res.Total,
-			"page":              res.Page,
-			"limit":             res.Size,
-			"sort_options":      res.SortOptions,
-			"page_size_options": res.PageSizeOptions,
-		},
+		"meta": meta,
 	})
 }
 

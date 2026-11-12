@@ -349,6 +349,42 @@ WHERE c.content_type = 'comparison'
  OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
  );
 
+-- name: CountComparisonsByType :many
+-- Per-primary-type comparison counts for facet rails. Primary type = the
+-- first live item's type_id (same rule as the list's type_id projection).
+-- scope_ids (NULL) restricts the counted type set for family pages.
+SELECT first_type.type_id, count(*)::int AS count
+FROM (
+ SELECT c.id,
+  (SELECT ci.type_id FROM comparison_items ci
+   WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+   ORDER BY ci.position LIMIT 1) AS type_id
+ FROM contents c
+ JOIN comparison_content_metadata m ON m.content_id = c.id
+ WHERE c.content_type = 'comparison'
+  AND (
+  CASE sqlc.narg(deleted)::text
+  WHEN 'only' THEN c.deleted_at IS NOT NULL
+  WHEN 'all' THEN TRUE
+  ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+  END
+  )
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
+  AND (sqlc.narg(mine)::boolean IS NOT TRUE OR c.author_id = @user_id)
+  AND (
+  sqlc.narg(q)::text IS NULL OR sqlc.narg(q) = ''
+  OR c.title ILIKE '%' || sqlc.narg(q) || '%'
+  OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
+  )
+) first_type
+WHERE first_type.type_id IS NOT NULL
+ AND (sqlc.narg(scope_ids)::uuid[] IS NULL OR first_type.type_id = ANY(sqlc.narg(scope_ids)::uuid[]))
+GROUP BY first_type.type_id
+ORDER BY count DESC;
+
 -- =====================
 -- Comparison detail / matrix helpers
 -- =====================

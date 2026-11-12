@@ -107,8 +107,20 @@ type JCEComparisonFilter struct {
 	// only, "all" = both. Only settable by admin list paths — public callers
 	// never populate it.
 	Deleted string
-	Limit   int32
-	Offset  int32
+	// FacetTypes requests per-type counts in meta.facets.types. FacetScope
+	// restricts the counted type set (family pages pass member types);
+	// nil/empty = all types.
+	FacetTypes bool
+	FacetScope []pgtype.UUID
+	Limit      int32
+	Offset     int32
+}
+
+// JCETypeFacet is one row of meta.facets.types on GET /jce/comparisons.
+type JCETypeFacet struct {
+	TypeID string `json:"type_id"`
+	Slug   string `json:"slug,omitempty"`
+	Count  int32  `json:"count"`
 }
 
 // JCEComparisonListResult is the paged result of ListJCEComparisons.
@@ -119,6 +131,7 @@ type JCEComparisonListResult struct {
 	Size            int32
 	SortOptions     []string `json:"sort_options,omitempty"`
 	PageSizeOptions []int32  `json:"page_size_options,omitempty"`
+	TypeFacets      []JCETypeFacet
 }
 
 // createJCEContentAndMetadata creates the content row and the metadata row inside a transaction.
@@ -738,6 +751,44 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		_ = json.Unmarshal([]byte(raw), &pageSizeOptions)
 	}
 
+	var typeFacets []JCETypeFacet
+	if f.FacetTypes {
+		rows, ferr := s.store.countComparisonsByType(ctx, gen.CountComparisonsByTypeParams{
+			Deleted:    deleted,
+			SpaceID:    f.SpaceID,
+			Depth:      depth,
+			Status:     status,
+			Visibility: visibility,
+			Mine:       &mine,
+			UserID:     userID,
+			Q:          query,
+			ScopeIds:   f.FacetScope,
+		})
+		if ferr == nil {
+			// Enrich type_id → slug via the type catalog; best-effort.
+			types, terr := s.ListComparisonTypes(ctx, 200, 0)
+			slugByID := map[string]string{}
+			if terr == nil {
+				for _, td := range types {
+					slugByID[td.ID.String()] = td.Slug
+				}
+			}
+
+			typeFacets = make([]JCETypeFacet, 0, len(rows))
+			for _, r := range rows {
+				if !r.TypeID.Valid {
+					continue
+				}
+				id := r.TypeID.String()
+				typeFacets = append(typeFacets, JCETypeFacet{
+					TypeID: id,
+					Slug:   slugByID[id],
+					Count:  r.Count,
+				})
+			}
+		}
+	}
+
 	return JCEComparisonListResult{
 		Items:           items,
 		Total:           total,
@@ -745,6 +796,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		Size:            f.Limit,
 		SortOptions:     sortOptions,
 		PageSizeOptions: pageSizeOptions,
+		TypeFacets:      typeFacets,
 	}, nil
 }
 
