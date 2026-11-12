@@ -120,16 +120,23 @@ func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, er
 // resolves to loopback fail the same way at connect time. The returned
 // conn must be past the TLS handshake (http.Transport.DialTLSContext
 // contract), so the handshake is performed here.
+//
+// HTTPS proxies (HTTPS_PROXY=https://...) ARE dialed through this hook —
+// the addr is then the proxy itself, so the same proxy-endpoint skip as
+// the plain-HTTP path applies: an internal egress proxy is deployment
+// infrastructure, not an SSRF target.
 func guardedDialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	conn, err := endpointDialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isInternalEmailIP(ta.IP) {
-		_ = conn.Close()
+	if !isProxyEndpointAddr(addr) {
+		if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isInternalEmailIP(ta.IP) {
+			_ = conn.Close()
 
-		return nil, errInvalidEndpoint
+			return nil, errInvalidEndpoint
+		}
 	}
 
 	host, _, err := net.SplitHostPort(addr)
