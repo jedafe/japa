@@ -9,9 +9,11 @@
 	import { t } from '#lib/i18n/index.js';
 	import {
 		deduplicateMatrix,
+		matrixBestCells,
 		uniqueDimensions,
 		uniqueResolvedItems
 	} from '#lib/utils/comparison.js';
+	import { flagUrl } from '#lib/utils/flags.js';
 	import { formatMoney } from '#lib/utils/currency.js';
 	import type {
 		FreshnessSummary,
@@ -23,7 +25,7 @@
 	import type { PageData } from './$types';
 	import FreshnessChip from '#lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '#lib/components/compare/RefreshButton.svelte';
-	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
+	import { ArrowLeft, Check, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
@@ -33,6 +35,7 @@
 	let comparison = $derived(data.comparison);
 	let matrix = $derived(deduplicateMatrix(data.matrix ?? []));
 	let uniqueDims = $derived(uniqueDimensions(comparison.dimensions ?? []));
+	let bestCells = $derived(matrixBestCells(matrix, uniqueDims));
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let isOwner = $derived(data.isOwner ?? false);
 	let mainOrigin = $derived(data.mainOrigin);
@@ -238,9 +241,19 @@
 		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
+				{@const flag = flagUrl((item.metadata?.geo_code ?? item.metadata?.country_code) as string | undefined)}
 				<div
 					class="space-y-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 				>
+					{#if item.image_url || flag}
+						<div class="mb-1 flex items-center">
+							{#if item.image_url}
+								<img src={item.image_url} alt="" class="h-9 w-9 rounded-full border border-[var(--color-border)] object-cover" />
+							{:else if flag}
+								<img src={flag} alt="" class="h-6 w-8 rounded-sm border border-[var(--color-border)] object-cover" />
+							{/if}
+						</div>
+					{/if}
 					<h3 class="font-medium text-[var(--color-text)]">{item.title}</h3>
 					{#if item.description}
 						<p class="text-sm text-[var(--color-muted)]">{item.description}</p>
@@ -272,7 +285,7 @@
 					{/if}
 				</div>
 			</div>
-			<div class="prose-table-wrapper">
+			<div class="prose-table-wrapper compare-matrix">
 				<table class="text-sm">
 					<thead>
 						<tr>
@@ -289,8 +302,17 @@
 							<tr>
 								<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
 								{#each matrix as item (item.id)}
-									<td class="text-[var(--color-muted)]">
+									{@const best = bestCells.has(`${item.id}:${dim.id}`)}
+									<td
+										class={best
+											? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
+											: 'text-[var(--color-muted)]'}
+									>
 										{formatValue(cellFor(item, dim))}
+										{#if best}
+											<Check size={12} class="inline-block align-[-0.1em]" aria-hidden="true" />
+											<span class="sr-only">{t('jce.compare.best_value', 'Best value')}</span>
+										{/if}
 									</td>
 								{/each}
 							</tr>
@@ -311,3 +333,15 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Sticky dimension column so wide matrices stay readable on horizontal
+	   scroll — scoped to .compare-matrix so other prose-table-wrapper
+	   tables are unaffected. */
+	.compare-matrix :is(td, th):first-child {
+		position: sticky;
+		inset-inline-start: 0;
+		background: var(--color-surface);
+		z-index: 1;
+	}
+</style>
