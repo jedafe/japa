@@ -1543,6 +1543,13 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 	}
 
 	if tmpl.PlainTextBody != "" {
+		// Render through text/template (same mechanics as subjects) — a
+		// raw return would ship literal {{.Var}} placeholders to the
+		// recipient.
+		if rendered, ok := renderSubjectTemplate(tmpl.PlainTextBody, payload); ok {
+			return subject, rendered, false
+		}
+
 		return subject, tmpl.PlainTextBody, false
 	}
 
@@ -1728,14 +1735,35 @@ func pascalizeTemplateValue(v any) any {
 	}
 }
 
+// templateInitialisms are the whole-segment names that must stay fully
+// uppercased to match the seeded templates' PascalCase variable names
+// (site_url→SiteURL, transaction_id→TransactionID, ticket_id→TicketID).
+// Naive title-casing produced SiteUrl/TransactionId — which rendered
+// blank because html/template map lookup is exact-match.
+var templateInitialisms = map[string]string{
+	"url":  "URL",
+	"id":   "ID",
+	"ip":   "IP",
+	"api":  "API",
+	"html": "HTML",
+	"sms":  "SMS",
+	"uuid": "UUID",
+}
+
 // snakeToPascal converts a snake_case key (e.g. "user_name") to PascalCase
 // (e.g. "UserName") so it matches Go template variable names ({{.UserName}}).
+// Whole-segment initialisms map to their canonical casing (url→URL, id→ID).
 func snakeToPascal(s string) string {
 	parts := strings.Split(s, "_")
 	for i, p := range parts {
-		if len(p) > 0 {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		if p == "" {
+			continue
 		}
+		if ini, ok := templateInitialisms[strings.ToLower(p)]; ok {
+			parts[i] = ini
+			continue
+		}
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
 	}
 
 	return strings.Join(parts, "")

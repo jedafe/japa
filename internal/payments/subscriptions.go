@@ -448,11 +448,14 @@ func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]int
 	// ADR-055: provider confirms a pending-cancel → subscription_expiring.
 	// Only on the false→true transition so repeat syncs don't re-notify.
 	if cancelAtEnd && !sub.CancelAtPeriodEnd {
-		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", map[string]any{
-			"plan_name":   sub.Plan,
-			"expiry_date": end.Format("2006-01-02"),
-			"site_url":    s.siteURL,
-		})
+		expiringData := map[string]any{
+			"plan_name": sub.Plan,
+			"site_url":  s.siteURL,
+		}
+		if !end.IsZero() {
+			expiringData["expiry_date"] = end.Format("2006-01-02")
+		}
+		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", expiringData)
 	}
 
 	return nil
@@ -767,11 +770,14 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 	// ADR-055: subscription_expiring — the subscription now ends at the
 	// current period boundary instead of renewing.
 	if flag {
-		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", map[string]any{
-			"plan_name":   sub.Plan,
-			"expiry_date": sub.CurrentPeriodEnd.Time.Format("2006-01-02"),
-			"site_url":    s.siteURL,
-		})
+		expiringData := map[string]any{
+			"plan_name": sub.Plan,
+			"site_url":  s.siteURL,
+		}
+		if sub.CurrentPeriodEnd.Valid {
+			expiringData["expiry_date"] = sub.CurrentPeriodEnd.Time.Format("2006-01-02")
+		}
+		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", expiringData)
 	}
 
 	return nil
@@ -803,11 +809,14 @@ func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.S
 	// ADR-055: user-initiated cancel-at-period-end → subscription_expiring.
 	// The provider webhook may never confirm, so the notice goes out on the
 	// local transition.
-	s.notifyPaymentEmail(ctx, updated.UserID, "subscription_expiring", map[string]any{
-		"plan_name":   updated.Plan,
-		"expiry_date": updated.CurrentPeriodEnd.Time.Format("2006-01-02"),
-		"site_url":    s.siteURL,
-	})
+	expiringData := map[string]any{
+		"plan_name": updated.Plan,
+		"site_url":  s.siteURL,
+	}
+	if updated.CurrentPeriodEnd.Valid {
+		expiringData["expiry_date"] = updated.CurrentPeriodEnd.Time.Format("2006-01-02")
+	}
+	s.notifyPaymentEmail(ctx, updated.UserID, "subscription_expiring", expiringData)
 
 	return updated, nil
 }
