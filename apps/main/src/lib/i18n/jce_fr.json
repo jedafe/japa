@@ -268,5 +268,9 @@
   "jce.compare.category.cant_decide_body": "Comparez jusqu'à {max} éléments côte à côte.",
   "jce.compare.category.start_custom": "Créer une comparaison",
   "jce.compare.category.create_own_title": "Créez votre propre comparaison",
-  "jce.compare.category.create_own_body": "Choisissez vos éléments et comparez les métriques qui comptent le plus pour vous."
+  "jce.compare.category.create_own_body": "Choisissez vos éléments et comparez les métriques qui comptent le plus pour vous.",
+  "jce.compare.description": "Comparez destinations, services, écoles et organisations côte à côte — fonctionnalités, coûts et avis de la communauté.",
+  "jce.comparisons.title": "Comparaisons",
+  "jce.comparisons.anonymous": "Anonyme",
+  "jce.comparisons.seo_description": "Comparez destinations, visas, écoles et bien plus côte à côte."
 }

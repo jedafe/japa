@@ -268,5 +268,9 @@
   "jce.compare.category.cant_decide_body": "Compare up to {max} entries side by side.",
   "jce.compare.category.start_custom": "Start custom comparison",
   "jce.compare.category.create_own_title": "Create your own comparison",
-  "jce.compare.category.create_own_body": "Choose your entries and compare the metrics that matter most to you."
+  "jce.compare.category.create_own_body": "Choose your entries and compare the metrics that matter most to you.",
+  "jce.compare.description": "Compare destinations, services, schools, and organisations side by side — features, costs, and community insights.",
+  "jce.comparisons.title": "Comparisons",
+  "jce.comparisons.anonymous": "Anonymous",
+  "jce.comparisons.seo_description": "Compare destinations, visas, schools and more side by side."
 }
