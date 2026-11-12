@@ -61,7 +61,7 @@ func NewPerplexityProvider(name, apiKey, baseURL, model string) *PerplexityProvi
 		baseURL:    baseURL,
 		apiKey:     apiKey,
 		model:      model,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: guardedHTTPClient(60 * time.Second),
 	}
 }
 

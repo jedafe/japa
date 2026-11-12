@@ -3,7 +3,13 @@
 // for all LLM provider HTTP calls (Phase 11 task 11.07).
 package ai
 
-import "testing"
+import (
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestValidateEndpoint_HTTPS_Valid(t *testing.T) {
 	t.Parallel()
@@ -315,5 +321,59 @@ func TestSafeInt64ToInt32(t *testing.T) {
 				t.Errorf("safeInt64ToInt32(%d) = %d, want %d", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsBlockedRemoteIP(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		ip      string
+		blocked bool
+	}{
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"127.0.0.1", false}, // loopback exempt — Ollama dev proxy
+		{"::1", false},       // loopback exempt
+		{"10.0.0.5", true},
+		{"172.16.0.1", true},
+		{"192.168.1.1", true},
+		{"169.254.169.254", true}, // link-local cloud metadata
+		{"100.64.0.1", true},      // CGNAT
+		{"0.0.0.0", true},
+		{"240.0.0.1", true},
+		{"192.0.2.1", true},  // TEST-NET-1 documentation range
+		{"198.18.0.1", true}, // benchmarking range
+		{"224.0.0.1", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ip, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isBlockedRemoteIP(net.ParseIP(tt.ip)); got != tt.blocked {
+				t.Fatalf("isBlockedRemoteIP(%s) = %v, want %v", tt.ip, got, tt.blocked)
+			}
+		})
+	}
+}
+
+func TestGuardedHTTPClient_AllowsLoopback(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	resp, err := guardedHTTPClient(5 * time.Second).Get(srv.URL)
+	if err != nil {
+		t.Fatalf("guarded client rejected loopback: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status %d", resp.StatusCode)
 	}
 }

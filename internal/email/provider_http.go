@@ -62,15 +62,14 @@ func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, er
 }
 
 // isBlockedRemoteIP reports whether a connected remote IP is internal but
-// not loopback — private ranges, link-local (incl. cloud metadata
-// 169.254.0.0/16), unspecified, and multicast. Loopback is exempt: http to
-// loopback is an allowed local-dev relay endpoint.
+// not loopback — same internal classification as isInternalEmailIP, with
+// the loopback exemption for local-dev relays.
 func isBlockedRemoteIP(ip net.IP) bool {
 	if ip.IsLoopback() {
 		return false
 	}
 
-	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()
+	return isInternalEmailIP(ip)
 }
 
 // errInvalidEndpoint is returned when a provider base URL fails validation.
@@ -120,8 +119,38 @@ func isInternalEmailHost(host string) bool {
 		return false
 	}
 
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsUnspecified() || ip.IsMulticast()
+	return isInternalEmailIP(ip)
+}
+
+// isInternalEmailIP reports whether an IP is loopback, private, link-local,
+// unspecified, multicast, or in a reserved range the stdlib predicates miss
+// (CGNAT 100.64/10, 0.x, ≥240.x, TEST-NET documentation ranges, 198.18/19
+// benchmarking). Mirrors ai.isInternalIP so both packages enforce the same
+// internal classification at URL validation and at dial.
+func isInternalEmailIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+
+	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return true
+		}
+
+		if v4[0] == 0 || v4[0] >= 240 {
+			return true
+		}
+
+		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
+			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
+			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
+			(v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // isLoopbackEmailHost reports whether host is strictly loopback.

@@ -77,7 +77,7 @@ func NewCursorProvider(name, apiKey, baseURL, model string) *CursorProvider {
 		baseURL:    baseURL,
 		apiKey:     apiKey,
 		model:      model,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: guardedHTTPClient(30 * time.Second),
 	}
 }
 

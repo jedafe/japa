@@ -29,8 +29,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // errInvalidEndpoint is returned when an endpoint URL fails validation.
@@ -133,6 +135,15 @@ func isInternalHost(host string) bool {
 		}
 	}
 
+	return isInternalIP(ip)
+}
+
+// isInternalIP reports whether an IP is loopback, private, link-local,
+// unspecified, multicast, or in a reserved range the stdlib predicates
+// miss (CGNAT 100.64/10, 0.x, ≥240.x, TEST-NET documentation ranges,
+// 198.18/19 benchmarking). Shared by the URL validator and the dial-time
+// remote-address guard so both enforce the same internal classification.
+func isInternalIP(ip net.IP) bool {
 	// Reject loopback (127.0.0.0/8, ::1), private (10.x, 172.16-31.x,
 	// 192.168.x, fc00::/7), and link-local (169.254.x, fe80::/10).
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
@@ -300,4 +311,70 @@ func newValidatedHTTPRequest(ctx context.Context, method, rawURL string, body io
 	}
 
 	return http.NewRequestWithContext(ctx, method, rawURL, body) // #nosec G704 -- rawURL validated by validateEndpointAllowHTTP above
+}
+
+// ---------------------------------------------------------------------------
+// Dial-time remote-IP guard (DNS-rebinding defense)
+// ---------------------------------------------------------------------------
+
+// guardedTransport is the shared transport for all provider HTTP clients.
+// Its DialContext inspects the connected remote address — the IP the
+// request will actually reach — so a hostname that resolves (or
+// re-resolves) to an internal IP is rejected at dial, closing the
+// validation-time vs connect-time DNS rebinding gap that isInternalHost
+// cannot see (hostnames needing DNS are decided only once connected).
+var guardedTransport = newGuardedTransport()
+
+// newGuardedTransport clones the stdlib default transport and installs the
+// remote-IP guard.
+func newGuardedTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib guarantees *http.Transport
+	transport.DialContext = guardedDialContext
+
+	return transport
+}
+
+// guardedHTTPClient returns an http.Client on the guarded transport.
+// timeout 0 is valid — streaming clients rely on request context for
+// cancellation instead of a whole-request deadline.
+func guardedHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: guardedTransport}
+}
+
+var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+
+// guardedDialContext dials then inspects the connected remote address.
+// Loopback is exempt (local dev proxies like Ollama at
+// http://localhost:11434 are a supported configuration; https+loopback is
+// already rejected at URL validation). When an egress HTTP(S)_PROXY is
+// configured the connection target is the deployment-owned proxy, whose
+// egress policy applies — the guard is skipped there.
+func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != "" {
+		return conn, nil
+	}
+
+	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isBlockedRemoteIP(ta.IP) {
+		_ = conn.Close()
+
+		return nil, errInvalidEndpoint
+	}
+
+	return conn, nil
+}
+
+// isBlockedRemoteIP reports whether a connected remote IP is internal but
+// not loopback — same internal classification as isInternalIP, with the
+// loopback exemption for local development proxies.
+func isBlockedRemoteIP(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return false
+	}
+
+	return isInternalIP(ip)
 }

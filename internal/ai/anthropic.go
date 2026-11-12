@@ -76,8 +76,8 @@ func NewAnthropicProvider(name, apiKey, baseURL, model string) *AnthropicProvide
 		baseURL:      baseURL,
 		apiKey:       apiKey,
 		model:        model,
-		httpClient:   &http.Client{Timeout: 90 * time.Second},
-		streamClient: &http.Client{},
+		httpClient:   guardedHTTPClient(90 * time.Second),
+		streamClient: guardedHTTPClient(0),
 	}
 }
 

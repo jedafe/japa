@@ -242,7 +242,10 @@ func TestIsBlockedRemoteIP(t *testing.T) {
 		{"169.254.169.254", true}, // link-local cloud metadata
 		{"0.0.0.0", true},         // unspecified
 		{"224.0.0.1", true},       // multicast
-		{"100.64.0.1", false},     // CGNAT is neither private nor link-local per net.IP
+		{"100.64.0.1", true},      // CGNAT — reserved range beyond stdlib predicates
+		{"240.0.0.1", true},       // ≥240 reserved
+		{"192.0.2.1", true},       // TEST-NET-1 documentation range
+		{"198.18.0.1", true},      // benchmarking range
 	}
 
 	for _, tt := range tests {

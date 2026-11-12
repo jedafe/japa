@@ -66,8 +66,8 @@ func NewOpenAIProvider(name, apiKey, baseURL, model string) *OpenAIProvider {
 		baseURL:      baseURL,
 		apiKey:       apiKey,
 		model:        model,
-		httpClient:   &http.Client{Timeout: 60 * time.Second},
-		streamClient: &http.Client{},
+		httpClient:   guardedHTTPClient(60 * time.Second),
+		streamClient: guardedHTTPClient(0),
 	}
 }
 
