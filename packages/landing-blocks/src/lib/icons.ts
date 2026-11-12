@@ -12,6 +12,18 @@ function pascalToKebab(name: string): string {
 	return name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 }
 
+/** Kebab candidates for an icon name, most likely first. Lucide also
+ *  hyphenates letter→digit boundaries ("Building2" → "building-2") while
+ *  keeping "NxN" units intact ("Grid2x2" → "grid-2x2") — no single transform
+ *  recovers that split, so resolveIcon tries candidates in order. */
+export function kebabCandidates(name: string): string[] {
+	const base = name.includes('-') ? name.toLowerCase() : pascalToKebab(name);
+	// Hyphenate a letter directly before a digit — unless the letter itself
+	// follows a digit (keeps the "x" in "2x2"-style groups attached).
+	const digitSplit = base.replace(/(?<![0-9])[a-z](?=[0-9])/g, '$&-');
+	return digitSplit === base ? [base] : [base, digitSplit];
+}
+
 function kebabToPascal(name: string): string {
 	return name
 		.split('-')
@@ -23,14 +35,18 @@ const cache = new Map<string, Promise<Component | undefined>>();
 
 /** Resolve a kebab-case or PascalCase lucide name to its component. */
 export function resolveIcon(name: string): Promise<Component | undefined> {
-	const kebab = name.includes('-') ? name : pascalToKebab(name);
-	let pending = cache.get(kebab);
+	const candidates = kebabCandidates(name);
+	const cacheKey = candidates.join('|');
+	let pending = cache.get(cacheKey);
 	if (!pending) {
 		pending = mapLoader().then(({ iconLoaders }) => {
-			const loader = iconLoaders[`../../node_modules/lucide-svelte/dist/icons/${kebab}.js`];
-			return loader ? loader().then((m) => m.default) : undefined;
+			for (const kebab of candidates) {
+				const loader = iconLoaders[`../../node_modules/lucide-svelte/dist/icons/${kebab}.js`];
+				if (loader) return loader().then((m) => m.default);
+			}
+			return undefined;
 		});
-		cache.set(kebab, pending);
+		cache.set(cacheKey, pending);
 	}
 	return pending;
 }
