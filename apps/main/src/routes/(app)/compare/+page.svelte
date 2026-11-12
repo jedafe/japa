@@ -89,6 +89,9 @@
 	// Sub-spec 6: dimension pool selection — defaults to the pool's
 	// is_default groups (today's Overview-only behavior).
 	let fieldPool = $derived(data.fieldPool ?? { groups: [] });
+	// Rail only makes sense when at least one pool group carries fields —
+	// e.g. product types whose bound groups are still unpopulated.
+	let hasFieldPool = $derived(fieldPool.groups.some((g) => g.fields.length > 0));
 	let selectedFieldIds = $state<Set<string>>(new Set());
 	let lastPoolTypeId = $state('');
 
@@ -1109,8 +1112,8 @@
 
 		<!-- Workspace body: field pool rail on the start side (mockup's
 			"popular themes"), items grid in the main column -->
-		<div class="grid gap-4 {fieldPool.groups.length > 0 ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}">
-			{#if fieldPool.groups.length > 0}
+		<div class="grid gap-4 {hasFieldPool ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}">
+			{#if hasFieldPool}
 				<aside class="order-last lg:order-first lg:sticky lg:top-4 lg:self-start">
 					<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} maxHeight="calc(100vh - 10rem)" />
 				</aside>

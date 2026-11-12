@@ -64,6 +64,7 @@
 	<div class="pool-groups" style:max-height={maxHeight} style:overflow-y={maxHeight ? 'auto' : undefined}>
 	{#each groups as g (g.group_id)}
 		{@const state = groupState(g)}
+		{#if g.fields.length > 0}
 		<details class="pool-group" open={g.is_default}>
 			<summary class="pool-group-head">
 				<input
@@ -97,6 +98,7 @@
 				{/each}
 			</ul>
 		</details>
+		{/if}
 	{/each}
 	</div>
 </div>
