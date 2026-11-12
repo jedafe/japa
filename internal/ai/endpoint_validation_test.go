@@ -4,9 +4,12 @@
 package ai
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -375,5 +378,24 @@ func TestGuardedHTTPClient_AllowsLoopback(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status %d", resp.StatusCode)
+	}
+}
+
+func TestGuardedDialTLSBlocksLoopback(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "https://")
+
+	// https+loopback must be rejected at dial — the URL policy forbids it,
+	// and a DNS name resolving to loopback would otherwise slip past the
+	// literal-host check.
+	_, err := guardedDialTLSContext(context.Background(), "tcp", addr)
+	if !errors.Is(err, errInvalidEndpoint) {
+		t.Fatalf("expected errInvalidEndpoint for loopback TLS dial, got %v", err)
 	}
 }

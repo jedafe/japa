@@ -460,7 +460,11 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 			chain = append(chain, fallback)
 		}
 
-		chains[cat] = chain
+		// Skip empty chains — a present-but-empty category key is
+		// indistinguishable noise for any future map iteration.
+		if len(chain) > 0 {
+			chains[cat] = chain
+		}
 	}
 
 	dispatcher.ReplaceProviders(chains)

@@ -3,6 +3,7 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,25 +32,33 @@ var httpClient = newGuardedHTTPClient()
 func newGuardedHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib guarantees *http.Transport
 	transport.DialContext = guardedDialContext
+	transport.DialTLSContext = guardedDialTLSContext
 
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
 }
 
 var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 
+// proxyConfigured reports whether an egress proxy is configured — when set,
+// the connection target is the deployment-owned proxy whose egress policy
+// applies, so the remote-IP guard is skipped (an internal proxy would
+// otherwise be misclassified as an internal endpoint).
+func proxyConfigured() bool {
+	return os.Getenv("HTTP_PROXY") != "" || os.Getenv("http_proxy") != "" ||
+		os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != ""
+}
+
 // guardedDialContext dials then inspects the connected remote address —
 // the IP the request will actually reach, immune to DNS rebinding between
-// validation and dial. When an egress HTTP(S)_PROXY is configured the
-// connection target is the proxy itself, whose egress policy is owned by
-// the deployment — the guard is skipped in that case (a corporate proxy
-// would otherwise be misclassified as an internal endpoint).
+// validation and dial. Loopback is exempt for plain HTTP (local dev relays
+// are a supported configuration).
 func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	conn, err := endpointDialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	if os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != "" {
+	if proxyConfigured() {
 		return conn, nil
 	}
 
@@ -59,6 +69,45 @@ func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, er
 	}
 
 	return conn, nil
+}
+
+// guardedDialTLSContext handles non-proxied HTTPS connections. Unlike the
+// plain-HTTP path, loopback is NOT exempt — the URL policy already rejects
+// https+loopback literal hosts, and this check makes a hostname that
+// resolves to loopback fail the same way at connect time. The returned
+// conn must be past the TLS handshake (http.Transport.DialTLSContext
+// contract), so the handshake is performed here.
+func guardedDialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isInternalEmailIP(ta.IP) {
+		_ = conn.Close()
+
+		return nil, errInvalidEndpoint
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"h2", "http/1.1"},
+	})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	return tlsConn, nil
 }
 
 // isBlockedRemoteIP reports whether a connected remote IP is internal but
@@ -99,8 +148,15 @@ func validateEmailEndpoint(rawURL string) error {
 		return errInvalidEndpoint
 	}
 
-	internal := isInternalEmailHost(host)
-	if internal && (u.Scheme == "https" || !isLoopbackEmailHost(host)) {
+	// http is permitted ONLY to loopback (local dev relays) — a public
+	// http:// base_url would send vendor credentials over cleartext.
+	// https rejects all internal hosts incl. loopback. Mirrors the AI
+	// gateway's endpoint policy.
+	if u.Scheme == "http" && !isLoopbackEmailHost(host) {
+		return errInvalidEndpoint
+	}
+
+	if u.Scheme == "https" && isInternalEmailHost(host) {
 		return errInvalidEndpoint
 	}
 
@@ -108,13 +164,19 @@ func validateEmailEndpoint(rawURL string) error {
 }
 
 // isInternalEmailHost reports whether host is loopback, private, or
-// link-local — never a valid email vendor endpoint.
+// link-local — never a valid email vendor endpoint. Alt-IP forms
+// (decimal 2130706433, hex 0x7f.0.0.1, octal 0177.0.0.1) bypass
+// net.ParseIP and are normalized first — mirrors ai.isInternalHost.
 func isInternalEmailHost(host string) bool {
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
 
 	ip := net.ParseIP(host)
+	if ip == nil {
+		ip = normalizeNumericIP(host)
+	}
+
 	if ip == nil {
 		return false
 	}
@@ -160,8 +222,77 @@ func isLoopbackEmailHost(host string) bool {
 	}
 
 	ip := net.ParseIP(host)
+	if ip == nil {
+		ip = normalizeNumericIP(host)
+	}
 
 	return ip != nil && ip.IsLoopback()
+}
+
+// normalizeNumericIP parses decimal/hex/octal IPv4 forms that net.ParseIP
+// rejects but the dialer accepts: "2130706433" (127.0.0.1),
+// "0x7f.0.0.1", "0177.0.0.1". Returns nil when the host is not a numeric
+// IPv4 form. Mirrors ai.normalizeNumericIP so both packages enforce the
+// same alt-IP policy — without it, https://2130706433 would reach the
+// loopback-exempt dialer as an unclassified "hostname".
+func normalizeNumericIP(host string) net.IP {
+	if host == "" || strings.Contains(host, ":") {
+		return nil
+	}
+
+	parts := strings.Split(host, ".")
+	if len(parts) != 1 && len(parts) != 4 {
+		return nil
+	}
+
+	parsePart := func(s string, bits int) (uint64, bool) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, false
+		}
+
+		base := 10
+		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+			base = 16
+			s = s[2:]
+		} else if len(s) > 1 && strings.HasPrefix(s, "0") {
+			base = 8
+			s = s[1:]
+		}
+
+		if s == "" {
+			return 0, false
+		}
+
+		n, err := strconv.ParseUint(s, base, bits)
+		if err != nil {
+			return 0, false
+		}
+
+		return n, true
+	}
+
+	if len(parts) == 1 {
+		n, ok := parsePart(parts[0], 32)
+		if !ok {
+			return nil
+		}
+
+		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n)) // #nosec G115 -- n is ParseUint-bounded to 32 bits
+	}
+
+	var b [4]byte
+
+	for i, p := range parts {
+		n, ok := parsePart(p, 8)
+		if !ok {
+			return nil
+		}
+
+		b[i] = byte(n) // #nosec G115 -- n is ParseUint-bounded to 8 bits
+	}
+
+	return net.IPv4(b[0], b[1], b[2], b[3])
 }
 
 // postJSON marshals body, POSTs it to rawURL with the given headers, and

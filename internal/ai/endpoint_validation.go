@@ -23,6 +23,7 @@ package ai
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"math"
@@ -326,10 +327,11 @@ func newValidatedHTTPRequest(ctx context.Context, method, rawURL string, body io
 var guardedTransport = newGuardedTransport()
 
 // newGuardedTransport clones the stdlib default transport and installs the
-// remote-IP guard.
+// remote-IP guard on both the plain-HTTP and TLS dial paths.
 func newGuardedTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib guarantees *http.Transport
 	transport.DialContext = guardedDialContext
+	transport.DialTLSContext = guardedDialTLSContext
 
 	return transport
 }
@@ -343,19 +345,25 @@ func guardedHTTPClient(timeout time.Duration) *http.Client {
 
 var endpointDialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 
+// proxyConfigured reports whether an egress proxy is configured — when set,
+// the connection target is the deployment-owned proxy whose egress policy
+// applies, so the remote-IP guard is skipped (an internal proxy would
+// otherwise be misclassified as an internal endpoint).
+func proxyConfigured() bool {
+	return os.Getenv("HTTP_PROXY") != "" || os.Getenv("http_proxy") != "" ||
+		os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != ""
+}
+
 // guardedDialContext dials then inspects the connected remote address.
-// Loopback is exempt (local dev proxies like Ollama at
-// http://localhost:11434 are a supported configuration; https+loopback is
-// already rejected at URL validation). When an egress HTTP(S)_PROXY is
-// configured the connection target is the deployment-owned proxy, whose
-// egress policy applies — the guard is skipped there.
+// Loopback is exempt for plain HTTP (local dev proxies like Ollama at
+// http://localhost:11434 are a supported configuration).
 func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	conn, err := endpointDialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	if os.Getenv("HTTPS_PROXY") != "" || os.Getenv("https_proxy") != "" {
+	if proxyConfigured() {
 		return conn, nil
 	}
 
@@ -366,6 +374,45 @@ func guardedDialContext(ctx context.Context, network, addr string) (net.Conn, er
 	}
 
 	return conn, nil
+}
+
+// guardedDialTLSContext handles non-proxied HTTPS connections. Unlike the
+// plain-HTTP path, loopback is NOT exempt — the URL policy already rejects
+// https+loopback literal hosts, and this check makes a hostname that
+// resolves to loopback fail the same way at connect time. The returned
+// conn must be past the TLS handshake (http.Transport.DialTLSContext
+// contract), so the handshake is performed here.
+func guardedDialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := endpointDialer.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok && isInternalIP(ta.IP) {
+		_ = conn.Close()
+
+		return nil, errInvalidEndpoint
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"h2", "http/1.1"},
+	})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+
+		return nil, err
+	}
+
+	return tlsConn, nil
 }
 
 // isBlockedRemoteIP reports whether a connected remote IP is internal but

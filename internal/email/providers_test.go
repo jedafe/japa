@@ -277,3 +277,56 @@ func TestPostJSONAllowsLoopbackThroughGuardedDialer(t *testing.T) {
 		t.Fatalf("unexpected response: %d %s", status, body)
 	}
 }
+
+func TestValidateEmailEndpointAltIPForms(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"decimal loopback https", "https://2130706433/", true},
+		{"decimal loopback http allowed", "http://2130706433:8080/", false},
+		{"hex loopback http", "http://0x7f.0.0.1:8080/", false},
+		{"octal loopback https", "https://0177.0.0.1/", true},
+		{"decimal metadata https", "https://2852039166/", true}, // 169.254.169.254
+		{"decimal metadata http", "http://2852039166/", true},   // non-loopback internal
+		{"public https", "https://api.resend.com/", false},
+		{"public http rejected", "http://api.resend.com/", true}, // non-loopback http
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateEmailEndpoint(tt.url)
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected %s rejected", tt.url)
+			}
+
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected %s allowed, got %v", tt.url, err)
+			}
+		})
+	}
+}
+
+func TestGuardedDialTLSBlocksLoopback(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "https://")
+
+	// https+loopback must be rejected at dial — the URL policy forbids it,
+	// and a DNS name resolving to loopback would otherwise slip past the
+	// literal-host check.
+	_, err := guardedDialTLSContext(context.Background(), "tcp", addr)
+	if !errors.Is(err, errInvalidEndpoint) {
+		t.Fatalf("expected errInvalidEndpoint for loopback TLS dial, got %v", err)
+	}
+}
