@@ -2010,6 +2010,20 @@ type EditorBlockPermission struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type EmailProvider struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	ProviderType    string             `json:"provider_type"`
+	ApiKeyEncrypted string             `json:"api_key_encrypted"`
+	BaseUrl         string             `json:"base_url"`
+	Config          []byte             `json:"config"`
+	Categories      []byte             `json:"categories"`
+	Priority        int32              `json:"priority"`
+	Enabled         bool               `json:"enabled"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type EmailTemplate struct {
 	ID            pgtype.UUID        `json:"id"`
 	Type          string             `json:"type"`
@@ -2018,7 +2032,6 @@ type EmailTemplate struct {
 	HtmlBody      string             `json:"html_body"`
 	PlainTextBody string             `json:"plain_text_body"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Slug          string             `json:"slug"`

@@ -441,11 +441,20 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 		body += "\nNote from the reviewer: " + input.ResolutionNote + "\n"
 	}
 
+	// ADR-055: template_slug routes through the DB-template chain so admins
+	// can customize the review-outcome email; subject/body remain the
+	// caller-body fallback when the template row is missing/inactive.
 	payload, err := json.Marshal(map[string]any{
-		"to":      email,
-		"subject": subject,
-		"body":    body,
-		"type":    "verification_review",
+		"to":            email,
+		"subject":       subject,
+		"body":          body,
+		"type":          "verification_review",
+		"template_slug": "verification_review",
+		"template_data": map[string]any{
+			"status":     input.Status,
+			"note":       input.ResolutionNote,
+			"action_url": link,
+		},
 	})
 	if err != nil {
 		slog.Error("verification: marshal review email payload", "error", err)

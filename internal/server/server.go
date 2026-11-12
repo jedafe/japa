@@ -3692,6 +3692,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Warn("ai: loading db-backed providers at startup", "error", err)
 	}
 
+	// Email Provider management — DB-backed provider configs with hot-reload
+	// (ADR-015). The ProviderStore reads/writes the email_providers table
+	// (migration 001121); the EmailDispatcher is injected so control-panel
+	// CRUD operations re-register providers at runtime without a restart.
+	emailProviderStore := email.NewProviderStore(database.Reader, database.Writer)
+	controlHandlers.SetEmailProviderStore(emailProviderStore)
+	controlHandlers.SetEmailDispatcher(emailDispatcher)
+
+	// Load DB-backed email provider configs. This runs AFTER the env-var
+	// SMTP provider was registered, so DB configs take priority
+	// (LoadAndRegisterProviders clears and re-registers categories that
+	// have DB-backed providers; categories without DB rows keep the
+	// env-var fallback).
+	if err := email.LoadAndRegisterProviders(context.Background(), emailProviderStore, emailDispatcher); err != nil {
+		slog.Warn("email: loading db-backed providers at startup", "error", err)
+	}
+
 	// Infrastructure routes bypass platform middleware
 	r.Get("/health", h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
@@ -9734,6 +9751,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/ai-providers/{id}", controlHandlers.DeleteAIProvider)
 			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
 				Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
+
+			// Email Providers — granular RBAC (email.providers.* nodes).
+			// Super-admin CRUD for runtime-managed email provider configs
+			// (migration 001121, ADR-015). Changes hot-reload the dispatcher.
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.view")).
+				Get("/email-providers", controlHandlers.ListEmailProviders)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.view")).
+				Get("/email-providers/types", controlHandlers.GetEmailProviderTypes)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.manage")).
+				Post("/email-providers", controlHandlers.CreateEmailProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.view")).
+				Get("/email-providers/{id}", controlHandlers.GetEmailProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.manage")).
+				Patch("/email-providers/{id}", controlHandlers.UpdateEmailProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.manage")).
+				Delete("/email-providers/{id}", controlHandlers.DeleteEmailProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "email.providers.manage")).
+				Post("/email-providers/{id}/test", controlHandlers.TestEmailProvider)
 
 			// AI BYOK provider allowlist — same ai.providers.* nodes as
 			// ai-providers. Rows are the storefront users attach keys against.

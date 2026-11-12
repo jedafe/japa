@@ -357,6 +357,8 @@ var adminCapabilityNodes = []string{
 	"widgets.manage",
 	"sidebars.manage",
 	"email.templates.manage",
+	"email.providers.view",
+	"email.providers.manage",
 	// Moderation marks an elevated identity: impersonating a moderator or
 	// reviewer confers their moderation powers, so moderation/review node
 	// holders are admin-level for §46.

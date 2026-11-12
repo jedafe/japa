@@ -24,3 +24,17 @@ WHERE campaign_id = @campaign_id AND recipient = @recipient;
 UPDATE newsletter_send_state
 SET status = 'sent', sent_at = now()
 WHERE campaign_id = @campaign_id AND recipient = @recipient;
+
+-- Digest subscriber population (§11 email:send_digest; BUG-028 — moved from
+-- raw SQL in internal/worker/handlers.go).
+
+-- name: ListDigestSubscribedUsers :many
+SELECT u.id::text AS user_id, u.email
+FROM users u
+JOIN newsletter_subscribers ns ON ns.email = u.email
+WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
+  AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL;
+
+-- name: ListDigestSubscriberEmails :many
+SELECT email FROM newsletter_subscribers
+WHERE status = 'subscribed' AND digest_enabled = true;

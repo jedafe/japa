@@ -13,8 +13,21 @@ import (
 	"strings"
 )
 
+// SMTPConfig carries the connection settings for an SMTP provider. It is
+// the non-env constructor path used by DB-backed email_providers rows
+// (ADR-015 admin-addable generic SMTP).
+type SMTPConfig struct {
+	Host string
+	Port string
+	User string
+	Pass string // secret — stored encrypted at rest, decrypted at load
+	From string
+	Name string // optional display name for logs/dashboards
+}
+
 // SMTPProvider implements EmailProvider using raw SMTP via net/smtp.
-// Configuration is read from JC_SMTP_* environment variables.
+// Configuration is read from JC_SMTP_* environment variables, or supplied
+// directly via NewSMTPProviderFromConfig for DB-backed providers.
 type SMTPProvider struct {
 	host string
 	port string
@@ -22,6 +35,7 @@ type SMTPProvider struct {
 	pass string
 	from string
 	addr string
+	name string
 }
 
 // NewSMTPProvider creates an SMTPProvider from environment variables.
@@ -32,31 +46,54 @@ func NewSMTPProvider() (*SMTPProvider, error) {
 		return nil, errors.New("SMTP not configured: JC_SMTP_HOST is empty")
 	}
 
-	port := os.Getenv("JC_SMTP_PORT")
+	return NewSMTPProviderFromConfig(SMTPConfig{
+		Host: host,
+		Port: os.Getenv("JC_SMTP_PORT"),
+		User: os.Getenv("JC_SMTP_USER"),
+		Pass: os.Getenv("JC_SMTP_PASS"),
+		From: os.Getenv("JC_SMTP_FROM"),
+	})
+}
+
+// NewSMTPProviderFromConfig creates an SMTPProvider from explicit settings.
+// Port defaults to 587; From defaults to User. Host is required.
+func NewSMTPProviderFromConfig(cfg SMTPConfig) (*SMTPProvider, error) {
+	if strings.TrimSpace(cfg.Host) == "" {
+		return nil, errors.New("SMTP not configured: host is empty")
+	}
+
+	port := cfg.Port
 	if port == "" {
 		port = "587"
 	}
 
-	user := os.Getenv("JC_SMTP_USER")
-	pass := os.Getenv("JC_SMTP_PASS")
-
-	from := os.Getenv("JC_SMTP_FROM")
+	from := cfg.From
 	if from == "" {
-		from = user
+		from = cfg.User
+	}
+
+	name := cfg.Name
+	if name == "" {
+		name = "smtp"
 	}
 
 	return &SMTPProvider{
-		host: host,
+		host: cfg.Host,
 		port: port,
-		user: user,
-		pass: pass,
+		user: cfg.User,
+		pass: cfg.Pass,
 		from: from,
-		addr: host + ":" + port,
+		addr: cfg.Host + ":" + port,
+		name: name,
 	}, nil
 }
 
 // Name returns the provider identifier.
 func (p *SMTPProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+
 	return "smtp"
 }
 

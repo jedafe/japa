@@ -32,7 +32,7 @@ func (q *Queries) CountEmailTemplates(ctx context.Context, arg CountEmailTemplat
 
 const getEmailTemplate = `-- name: GetEmailTemplate :one
 SELECT id, type, name, slug, subject, html_body, plain_text_body,
- is_active, variables, status, created_at, updated_at
+ is_active, variables, created_at, updated_at
 FROM email_templates
 WHERE id = $1
 `
@@ -47,7 +47,6 @@ type GetEmailTemplateRow struct {
 	PlainTextBody string             `json:"plain_text_body"`
 	IsActive      bool               `json:"is_active"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -65,7 +64,6 @@ func (q *Queries) GetEmailTemplate(ctx context.Context, id pgtype.UUID) (GetEmai
 		&i.PlainTextBody,
 		&i.IsActive,
 		&i.Variables,
-		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -74,7 +72,7 @@ func (q *Queries) GetEmailTemplate(ctx context.Context, id pgtype.UUID) (GetEmai
 
 const getEmailTemplateBySlug = `-- name: GetEmailTemplateBySlug :one
 SELECT id, type, name, slug, subject, html_body, plain_text_body,
- is_active, variables, status, created_at, updated_at
+ is_active, variables, created_at, updated_at
 FROM email_templates
 WHERE slug = $1 AND is_active = true
 `
@@ -89,7 +87,6 @@ type GetEmailTemplateBySlugRow struct {
 	PlainTextBody string             `json:"plain_text_body"`
 	IsActive      bool               `json:"is_active"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -107,7 +104,6 @@ func (q *Queries) GetEmailTemplateBySlug(ctx context.Context, slug string) (GetE
 		&i.PlainTextBody,
 		&i.IsActive,
 		&i.Variables,
-		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -116,7 +112,7 @@ func (q *Queries) GetEmailTemplateBySlug(ctx context.Context, slug string) (GetE
 
 const getEmailTemplateByType = `-- name: GetEmailTemplateByType :one
 SELECT id, type, name, slug, subject, html_body, plain_text_body,
- is_active, variables, status, created_at, updated_at
+ is_active, variables, created_at, updated_at
 FROM email_templates
 WHERE type = $1
 `
@@ -131,7 +127,6 @@ type GetEmailTemplateByTypeRow struct {
 	PlainTextBody string             `json:"plain_text_body"`
 	IsActive      bool               `json:"is_active"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -149,7 +144,6 @@ func (q *Queries) GetEmailTemplateByType(ctx context.Context, type_ string) (Get
 		&i.PlainTextBody,
 		&i.IsActive,
 		&i.Variables,
-		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -159,7 +153,7 @@ func (q *Queries) GetEmailTemplateByType(ctx context.Context, type_ string) (Get
 const listEmailTemplates = `-- name: ListEmailTemplates :many
 
 SELECT id, type, name, slug, subject, html_body, plain_text_body,
- is_active, variables, status, created_at, updated_at
+ is_active, variables, created_at, updated_at
 FROM email_templates
 WHERE ($1 = '' OR type = $1)
  AND ($2 = '' OR is_active = ($2 = 'true'))
@@ -184,12 +178,13 @@ type ListEmailTemplatesRow struct {
 	PlainTextBody string             `json:"plain_text_body"`
 	IsActive      bool               `json:"is_active"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Email Templates — Platform-customizable transactional emails (ADR-054)
+// BUG-020: the redundant `status` column was dropped in migration 001123;
+// `is_active` is the single activation flag.
 func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplatesParams) ([]ListEmailTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailTemplates,
 		arg.Type,
@@ -214,7 +209,6 @@ func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplates
 			&i.PlainTextBody,
 			&i.IsActive,
 			&i.Variables,
-			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -242,19 +236,18 @@ func (q *Queries) ResetEmailTemplate(ctx context.Context, id pgtype.UUID) error 
 const updateEmailTemplate = `-- name: UpdateEmailTemplate :one
 UPDATE email_templates
 SET subject = $1, html_body = $2,
- plain_text_body = $3, status = $4,
- is_active = $5,
+ plain_text_body = $3,
+ is_active = $4,
  updated_at = now()
-WHERE id = $6
+WHERE id = $5
 RETURNING id, type, name, slug, subject, html_body, plain_text_body,
- is_active, variables, status, created_at, updated_at
+ is_active, variables, created_at, updated_at
 `
 
 type UpdateEmailTemplateParams struct {
 	Subject       string      `json:"subject"`
 	HtmlBody      string      `json:"html_body"`
 	PlainTextBody string      `json:"plain_text_body"`
-	Status        string      `json:"status"`
 	IsActive      bool        `json:"is_active"`
 	ID            pgtype.UUID `json:"id"`
 }
@@ -269,7 +262,6 @@ type UpdateEmailTemplateRow struct {
 	PlainTextBody string             `json:"plain_text_body"`
 	IsActive      bool               `json:"is_active"`
 	Variables     []byte             `json:"variables"`
-	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -279,7 +271,6 @@ func (q *Queries) UpdateEmailTemplate(ctx context.Context, arg UpdateEmailTempla
 		arg.Subject,
 		arg.HtmlBody,
 		arg.PlainTextBody,
-		arg.Status,
 		arg.IsActive,
 		arg.ID,
 	)
@@ -294,7 +285,6 @@ func (q *Queries) UpdateEmailTemplate(ctx context.Context, arg UpdateEmailTempla
 		&i.PlainTextBody,
 		&i.IsActive,
 		&i.Variables,
-		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

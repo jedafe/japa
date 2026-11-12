@@ -1432,11 +1432,15 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 // ---------------------------------------------------------------------------
 
 // emailSendPayload is the payload for the task:email:send task.
+// Type carries the producer-side logical type (e.g. "welcome",
+// "password_reset") — not used for dispatch, retained in logs for
+// observability (BUG-021).
 type emailSendPayload struct {
 	To           string `json:"to"`
 	Subject      string `json:"subject"`
 	Body         string `json:"body"`
 	HTML         bool   `json:"html"`
+	Type         string `json:"type,omitempty"`
 	TemplateSlug string `json:"template_slug,omitempty"`
 
 	TemplateData     map[string]any `json:"template_data,omitempty"`
@@ -1481,11 +1485,11 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := sendEmailWithContext(ctx, payload.To, subject, body, isHTML); err != nil {
-		slog.Error("task:email:send: failed", "to", payload.To, "error", err)
+		slog.Error("task:email:send: failed", "to", payload.To, "type", payload.Type, "error", err)
 		return err
 	}
 
-	slog.Info("task:email:send: sent", "to", payload.To)
+	slog.Info("task:email:send: sent", "to", payload.To, "type", payload.Type)
 
 	return nil
 }
@@ -5025,55 +5029,26 @@ type digestRecipient struct {
 // listDigestSubscribedUsers returns verified, active users whose email is
 // also a subscribed, digest-enabled newsletter_subscribers row. This is the
 // §11 "subscribed users" population for email:send_digest — every verified
-// account is NOT the recipient set.
+// account is NOT the recipient set. (BUG-028: sqlc ListDigestSubscribedUsers.)
 func listDigestSubscribedUsers(ctx context.Context) ([]digestRecipient, error) {
-	rows, err := dbPool.Reader.Query(ctx, `SELECT u.id::text, u.email
-		FROM users u
-		JOIN newsletter_subscribers ns ON ns.email = u.email
-		WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
-		  AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL`)
+	rows, err := gen.New(dbPool.Reader).ListDigestSubscribedUsers(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var out []digestRecipient
-
-	for rows.Next() {
-		var r digestRecipient
-		if err := rows.Scan(&r.userID, &r.email); err != nil {
-			continue
-		}
-
-		out = append(out, r)
+	out := make([]digestRecipient, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, digestRecipient{userID: r.UserID, email: r.Email})
 	}
-
-	rows.Close()
 
 	return out, nil
 }
 
 // listDigestSubscribers returns the email addresses of this platform's
-// subscribers with digest_enabled = true.
+// subscribers with digest_enabled = true. (BUG-028: sqlc
+// ListDigestSubscriberEmails.)
 func listDigestSubscribers(ctx context.Context) ([]string, error) {
-	rows, err := dbPool.Reader.Query(ctx, `SELECT email FROM newsletter_subscribers WHERE status = 'subscribed' AND digest_enabled = true`)
-	if err != nil {
-		return nil, err
-	}
-
-	var subscribers []string
-
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			continue
-		}
-
-		subscribers = append(subscribers, email)
-	}
-
-	rows.Close()
-
-	return subscribers, nil
+	return gen.New(dbPool.Reader).ListDigestSubscriberEmails(ctx)
 }
 
 // buildDigestBody renders the HTML weekly-digest body listing each recent
@@ -5683,6 +5658,11 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 			Headers:  headers,
 		}
 		_, err := emailGateway.Dispatch(ctx, req)
+		// ErrNoProviders is a permanent configuration error — retrying
+		// cannot conjure a provider (ADR-015).
+		if errors.Is(err, email.ErrNoProviders) {
+			return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+		}
 
 		return err
 	}

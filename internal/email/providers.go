@@ -1,0 +1,484 @@
+// Package email — providers.go provides DB-backed email provider
+// configuration management for the Control Panel (ADR-015). Provider
+// configs (name, type, encrypted secret, base URL, non-secret config,
+// categories, priority, enabled flag) are stored in the email_providers
+// table and loaded at startup to register with the EmailDispatcher.
+// Super-admins can CRUD providers at runtime via /control/email-providers;
+// changes hot-reload the dispatcher. Secrets are encrypted at rest via
+// internal/crypto — the payment-secret pattern required by ADR-015.
+package email
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/crypto"
+)
+
+// ProviderConfig is the DB-backed representation of an email provider. The
+// secret is stored encrypted (api_key_encrypted) and never serialized —
+// the JSON response uses api_key_masked instead. Config holds non-secret
+// per-type settings (from_address, region, smtp host/port/username,
+// postmark message_stream, sendpulse client_id).
+type ProviderConfig struct {
+	ID pgtype.UUID `json:"id"`
+
+	Name            string            `json:"name"`
+	ProviderType    string            `json:"provider_type"`
+	APIKeyEncrypted string            `json:"-"`              // never serialized to JSON
+	APIKeyMasked    string            `json:"api_key_masked"` // derived, read-only
+	BaseURL         string            `json:"base_url"`
+	Config          map[string]string `json:"config"`
+	Categories      []string          `json:"categories"`
+	Priority        int               `json:"priority"`
+	Enabled         bool              `json:"enabled"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+}
+
+// ProviderStore provides DB access for the email_providers table.
+type ProviderStore struct {
+	read  *pgxpool.Pool
+	write *pgxpool.Pool
+}
+
+// NewProviderStore creates a ProviderStore backed by the given pools.
+func NewProviderStore(read, write *pgxpool.Pool) *ProviderStore {
+	return &ProviderStore{read: read, write: write}
+}
+
+// providerColumns is the shared SELECT/RETURNING column list.
+const providerColumns = `id, name, provider_type, api_key_encrypted,
+		base_url, config, categories, priority, enabled, created_at, updated_at`
+
+// maskSecret returns a masked representation of a secret for display.
+func maskSecret(key string) string {
+	if key == "" {
+		return ""
+	}
+
+	if len(key) <= 8 {
+		return "****"
+	}
+
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// scanProviderConfig scans a row into a ProviderConfig, deriving the masked
+// secret from the encrypted value (decrypted first, then masked).
+func (s *ProviderStore) scanProviderConfig(row interface {
+	Scan(dest ...any) error
+},
+) (ProviderConfig, error) {
+	var pc ProviderConfig
+
+	var configJSON, categoriesJSON []byte
+
+	var encryptedKey string
+
+	if err := row.Scan(
+		&pc.ID, &pc.Name, &pc.ProviderType,
+		&encryptedKey, &pc.BaseURL, &configJSON, &categoriesJSON,
+		&pc.Priority, &pc.Enabled, &pc.CreatedAt, &pc.UpdatedAt,
+	); err != nil {
+		return ProviderConfig{}, fmt.Errorf("scanning email_provider: %w", err)
+	}
+
+	pc.APIKeyEncrypted = encryptedKey
+
+	// Decrypt the secret for masking (best-effort — if decryption fails,
+	// show a placeholder so the UI still works).
+	if encryptedKey != "" {
+		if plain, err := crypto.Decrypt(encryptedKey); err == nil {
+			pc.APIKeyMasked = maskSecret(plain)
+		} else {
+			pc.APIKeyMasked = "****"
+		}
+	}
+
+	if len(configJSON) > 0 {
+		_ = json.Unmarshal(configJSON, &pc.Config)
+	}
+
+	if pc.Config == nil {
+		pc.Config = map[string]string{}
+	}
+
+	if len(categoriesJSON) > 0 {
+		_ = json.Unmarshal(categoriesJSON, &pc.Categories)
+	}
+
+	if pc.Categories == nil {
+		pc.Categories = []string{}
+	}
+
+	return pc, nil
+}
+
+// ListProviders returns all email provider configs, ordered by priority
+// ascending then name.
+func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, error) {
+	rows, err := s.read.Query(ctx, `
+		SELECT `+providerColumns+`
+		FROM email_providers
+		ORDER BY priority ASC, name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing email_providers: %w", err)
+	}
+	defer rows.Close()
+
+	var providers []ProviderConfig
+
+	for rows.Next() {
+		pc, err := s.scanProviderConfig(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		providers = append(providers, pc)
+	}
+
+	return providers, rows.Err()
+}
+
+// GetProvider returns a single email provider config by ID.
+func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
+	row := s.read.QueryRow(ctx, `
+		SELECT `+providerColumns+`
+		FROM email_providers
+		WHERE id = $1
+	`, id)
+
+	return s.scanProviderConfig(row)
+}
+
+// CreateProviderInput is the payload for creating a new provider config.
+type CreateProviderInput struct {
+	Name         string
+	ProviderType string
+	Secret       string // plaintext — encrypted before storage
+	BaseURL      string
+	Config       map[string]string
+	Categories   []string
+	Priority     int
+	Enabled      bool
+}
+
+// CreateProvider inserts a new provider config and returns it.
+func (s *ProviderStore) CreateProvider(ctx context.Context, input CreateProviderInput) (ProviderConfig, error) {
+	var encryptedKey string
+
+	if input.Secret != "" {
+		var err error
+		if encryptedKey, err = crypto.Encrypt(input.Secret); err != nil {
+			return ProviderConfig{}, fmt.Errorf("encrypting secret: %w", err)
+		}
+	}
+
+	configJSON, _ := json.Marshal(input.Config)
+	if input.Config == nil {
+		configJSON = []byte("{}")
+	}
+
+	categoriesJSON, _ := json.Marshal(input.Categories)
+	if input.Categories == nil {
+		categoriesJSON = []byte("[]")
+	}
+
+	row := s.write.QueryRow(ctx, `
+		INSERT INTO email_providers
+			(name, provider_type, api_key_encrypted, base_url, config, categories, priority, enabled)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+		RETURNING `+providerColumns+`
+	`, input.Name, input.ProviderType, encryptedKey, input.BaseURL, configJSON, categoriesJSON, input.Priority, input.Enabled)
+
+	return s.scanProviderConfig(row)
+}
+
+// UpdateProviderInput is the payload for updating a provider config.
+// Secret is optional — if non-nil and non-empty, re-encrypt; if nil,
+// preserve the stored secret.
+type UpdateProviderInput struct {
+	ID           pgtype.UUID
+	Name         *string
+	ProviderType *string
+	Secret       *string
+	BaseURL      *string
+	Config       *map[string]string
+	Categories   *[]string
+	Priority     *int
+	Enabled      *bool
+}
+
+// UpdateProvider updates an existing provider config and returns it.
+func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProviderInput) (ProviderConfig, error) {
+	setParts := []string{"updated_at = now()"}
+	args := []any{input.ID}
+	argIdx := 2 // $1=id, $2+
+
+	if input.Name != nil {
+		setParts = append(setParts, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, *input.Name)
+		argIdx++
+	}
+
+	if input.ProviderType != nil {
+		setParts = append(setParts, fmt.Sprintf("provider_type = $%d", argIdx))
+		args = append(args, *input.ProviderType)
+		argIdx++
+	}
+
+	if input.Secret != nil && *input.Secret != "" {
+		encrypted, err := crypto.Encrypt(*input.Secret)
+		if err != nil {
+			return ProviderConfig{}, fmt.Errorf("encrypting secret: %w", err)
+		}
+
+		setParts = append(setParts, fmt.Sprintf("api_key_encrypted = $%d", argIdx))
+		args = append(args, encrypted)
+		argIdx++
+	}
+
+	if input.BaseURL != nil {
+		setParts = append(setParts, fmt.Sprintf("base_url = $%d", argIdx))
+		args = append(args, *input.BaseURL)
+		argIdx++
+	}
+
+	if input.Config != nil {
+		configJSON, _ := json.Marshal(*input.Config)
+
+		setParts = append(setParts, fmt.Sprintf("config = $%d::jsonb", argIdx))
+		args = append(args, configJSON)
+		argIdx++
+	}
+
+	if input.Categories != nil {
+		categoriesJSON, _ := json.Marshal(*input.Categories)
+
+		setParts = append(setParts, fmt.Sprintf("categories = $%d::jsonb", argIdx))
+		args = append(args, categoriesJSON)
+		argIdx++
+	}
+
+	if input.Priority != nil {
+		setParts = append(setParts, fmt.Sprintf("priority = $%d", argIdx))
+		args = append(args, *input.Priority)
+		argIdx++
+	}
+
+	if input.Enabled != nil {
+		setParts = append(setParts, fmt.Sprintf("enabled = $%d", argIdx))
+		args = append(args, *input.Enabled)
+		argIdx++
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE email_providers SET %s
+		WHERE id = $1
+		RETURNING `+providerColumns+`
+	`, strings.Join(setParts, ", "))
+
+	row := s.write.QueryRow(ctx, query, args...)
+
+	return s.scanProviderConfig(row)
+}
+
+// DeleteProvider removes a provider config by ID.
+func (s *ProviderStore) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	tag, err := s.write.Exec(ctx, `DELETE FROM email_providers WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting email_provider: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return errors.New("not_found: provider not found")
+	}
+
+	return nil
+}
+
+// GetDecryptedSecret returns the plaintext secret for a provider. Used
+// internally by the dispatcher wiring at startup or on hot-reload.
+func (s *ProviderStore) GetDecryptedSecret(ctx context.Context, id pgtype.UUID) (string, error) {
+	var encrypted string
+
+	err := s.read.QueryRow(ctx, `
+		SELECT api_key_encrypted FROM email_providers WHERE id = $1
+	`, id).Scan(&encrypted)
+	if err != nil {
+		return "", fmt.Errorf("getting provider secret: %w", err)
+	}
+
+	if encrypted == "" {
+		return "", nil
+	}
+
+	plaintext, err := crypto.Decrypt(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("email: decrypt secret: %w", err)
+	}
+
+	return plaintext, nil
+}
+
+// configStr reads a non-secret setting from the provider's config map.
+func configStr(cfg map[string]string, key string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(cfg[key])
+}
+
+// NewProviderFromConfig constructs an EmailProvider from a ProviderConfig.
+// The secret must be the decrypted plaintext.
+//
+// Supported types (ADR-015):
+//   - "smtp":      generic SMTP — config{host,port,username,from_address};
+//     secret = password
+//   - "resend":    Resend API — config{from_address}; secret = API key
+//   - "postmark":  Postmark API — config{from_address,message_stream};
+//     secret = server token
+//   - "ses":       AWS SES v2 — config{region,access_key_id,from_address};
+//     secret = secret_access_key
+//   - "sendgrid":  SendGrid v3 — config{from_address}; secret = API key
+//   - "sendpulse": SendPulse SMTP API — config{client_id,from_address};
+//     secret = client_secret
+func NewProviderFromConfig(cfg ProviderConfig, secret string) (EmailProvider, error) {
+	if cfg.BaseURL != "" {
+		if err := validateEmailEndpoint(cfg.BaseURL); err != nil {
+			return nil, fmt.Errorf("email: invalid base URL for %s provider: %w", cfg.ProviderType, err)
+		}
+	}
+
+	switch cfg.ProviderType {
+	case "smtp":
+		return NewSMTPProviderFromConfig(SMTPConfig{
+			Host: configStr(cfg.Config, "host"),
+			Port: configStr(cfg.Config, "port"),
+			User: configStr(cfg.Config, "username"),
+			Pass: secret,
+			From: configStr(cfg.Config, "from_address"),
+			Name: cfg.Name,
+		})
+	case "resend":
+		return NewResendProvider(cfg.Name, secret, cfg.BaseURL,
+			configStr(cfg.Config, "from_address")), nil
+	case "postmark":
+		return NewPostmarkProvider(cfg.Name, secret, cfg.BaseURL,
+			configStr(cfg.Config, "from_address"),
+			configStr(cfg.Config, "message_stream")), nil
+	case "ses":
+		return NewSESProvider(cfg.Name,
+			configStr(cfg.Config, "region"),
+			configStr(cfg.Config, "access_key_id"),
+			secret, cfg.BaseURL,
+			configStr(cfg.Config, "from_address")), nil
+	case "sendgrid":
+		return NewSendGridProvider(cfg.Name, secret, cfg.BaseURL,
+			configStr(cfg.Config, "from_address")), nil
+	case "sendpulse":
+		return NewSendPulseProvider(cfg.Name,
+			configStr(cfg.Config, "client_id"),
+			secret, cfg.BaseURL,
+			configStr(cfg.Config, "from_address")), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider type %q", cfg.ProviderType)
+	}
+}
+
+// LoadAndRegisterProviders loads all enabled provider configs from the
+// database and registers them with the dispatcher, grouped by category.
+// Providers are sorted by priority within each category (lower = tried
+// first). Categories with no DB-backed providers are left untouched so the
+// env-var SMTP provider registered at startup remains as fallback.
+//
+// Called at startup (after env-var registration) and on hot-reload when a
+// provider config is created/updated/deleted.
+func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *EmailDispatcher) error {
+	providers, err := store.ListProviders(ctx)
+	if err != nil {
+		return fmt.Errorf("loading email providers from db: %w", err)
+	}
+
+	type providerEntry struct {
+		config ProviderConfig
+		secret string
+	}
+
+	byCategory := make(map[string][]providerEntry)
+
+	for _, pc := range providers {
+		if !pc.Enabled {
+			continue
+		}
+
+		secret, err := store.GetDecryptedSecret(ctx, pc.ID)
+		if err != nil {
+			slog.Warn("email: skipping provider, failed to decrypt secret", "provider", pc.Name, "error", err)
+			continue
+		}
+
+		for _, cat := range pc.Categories {
+			byCategory[cat] = append(byCategory[cat], providerEntry{config: pc, secret: secret})
+		}
+	}
+
+	for cat, entries := range byCategory {
+		var registered []EmailProvider
+
+		for _, entry := range entries {
+			p, err := NewProviderFromConfig(entry.config, entry.secret)
+			if err != nil {
+				slog.Warn("email: skipping provider, unsupported or invalid config", "provider", entry.config.Name, "error", err)
+				continue
+			}
+
+			registered = append(registered, p)
+		}
+
+		if len(registered) == 0 {
+			continue
+		}
+
+		dispatcher.ClearCategory(cat)
+
+		for _, p := range registered {
+			dispatcher.RegisterProvider(cat, p)
+		}
+	}
+
+	return nil
+}
+
+// SupportedProviderTypes returns the provider_type values that can be
+// instantiated by NewProviderFromConfig — the single source of truth the
+// control-plane validator and the factory stay in sync through.
+func SupportedProviderTypes() []string {
+	return []string{
+		"smtp",
+		"resend",
+		"postmark",
+		"ses",
+		"sendgrid",
+		"sendpulse",
+	}
+}
+
+// SupportedEmailCategories returns the canonical dispatcher categories
+// used by EmailRequest.Category and provider registration.
+func SupportedEmailCategories() []string {
+	return []string{
+		"transactional",
+		"marketing",
+	}
+}

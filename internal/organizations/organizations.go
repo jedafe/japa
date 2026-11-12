@@ -224,11 +224,20 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		orgName, role, acceptURL,
 	)
 
+	// ADR-055: template_slug routes through the DB-template chain so admins
+	// can customize the invite email; subject/body remain the caller-body
+	// fallback when the template row is missing/inactive.
 	payload, err := json.Marshal(map[string]any{
-		"to":      inviteeEmail,
-		"subject": subject,
-		"body":    body,
-		"type":    "organization_invitation",
+		"to":            inviteeEmail,
+		"subject":       subject,
+		"body":          body,
+		"type":          "organization_invitation",
+		"template_slug": "organization_invitation",
+		"template_data": map[string]any{
+			"org_name":   orgName,
+			"role":       role,
+			"action_url": acceptURL,
+		},
 	})
 	if err != nil {
 		slog.Error("organizations: marshal invitation email payload", "error", err)

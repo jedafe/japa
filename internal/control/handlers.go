@@ -29,6 +29,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/honcho"
@@ -92,25 +93,27 @@ type GeoIPHealthChecker interface {
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	DB                *db.DB
-	FeatureChecker    *features.Checker
-	SpamStore         *spam.Store
-	PublicAPI         *publicapi.Handlers
-	Inspector         *asynq.Inspector
-	Client            *asynq.Client
-	RBAC              *rbac.RBAC
-	Settings          *config.Settings
-	Valkey            valkeycompat.Cmdable
-	SearchEngine      SearchHealthChecker
-	GeoIP             GeoIPHealthChecker
-	WSHub             *websocket.Hub
-	Honcho            HonchoHealthChecker
-	AIStore           *ai.Store
-	ProviderStore     *ai.ProviderStore
-	ByokStore         *ai.ByokProviderStore
-	AIDispatcher      *ai.Dispatcher
-	StartTime         time.Time
-	DeploymentVersion string
+	DB                 *db.DB
+	FeatureChecker     *features.Checker
+	SpamStore          *spam.Store
+	PublicAPI          *publicapi.Handlers
+	Inspector          *asynq.Inspector
+	Client             *asynq.Client
+	RBAC               *rbac.RBAC
+	Settings           *config.Settings
+	Valkey             valkeycompat.Cmdable
+	SearchEngine       SearchHealthChecker
+	GeoIP              GeoIPHealthChecker
+	WSHub              *websocket.Hub
+	Honcho             HonchoHealthChecker
+	AIStore            *ai.Store
+	ProviderStore      *ai.ProviderStore
+	ByokStore          *ai.ByokProviderStore
+	AIDispatcher       *ai.Dispatcher
+	EmailProviderStore *email.ProviderStore
+	EmailDispatcher    *email.EmailDispatcher
+	StartTime          time.Time
+	DeploymentVersion  string
 	// onFlagEnabled fires when a flag transitions off→on via the extension
 	// write endpoints (enable/disable, PATCH) — mirrors the activation hook
 	// on features.Handlers so enabling e.g. wiki.enabled from /extensions
@@ -217,6 +220,20 @@ func (h *Handlers) SetProviderStore(s *ai.ProviderStore) {
 // call reloadAIProviders which re-reads configs from the DB).
 func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
 	h.AIDispatcher = d
+}
+
+// SetEmailProviderStore injects the email provider config store for the
+// Email Providers management page (CRUD /control/email-providers, ADR-015).
+// When nil, the list endpoint returns an empty array.
+func (h *Handlers) SetEmailProviderStore(s *email.ProviderStore) {
+	h.EmailProviderStore = s
+}
+
+// SetEmailDispatcher injects the email dispatcher so provider config
+// changes can hot-reload the dispatcher at runtime (create/update/delete
+// operations call reloadEmailProviders which re-reads configs from the DB).
+func (h *Handlers) SetEmailDispatcher(d *email.EmailDispatcher) {
+	h.EmailDispatcher = d
 }
 
 // SetDeploymentVersion sets the deployment version override. When empty,

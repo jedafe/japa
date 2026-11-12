@@ -30,6 +30,67 @@ func (q *Queries) GetNewsletterCampaign(ctx context.Context, id pgtype.UUID) (Ge
 	return i, err
 }
 
+const listDigestSubscribedUsers = `-- name: ListDigestSubscribedUsers :many
+
+SELECT u.id::text AS user_id, u.email
+FROM users u
+JOIN newsletter_subscribers ns ON ns.email = u.email
+WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
+  AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL
+`
+
+type ListDigestSubscribedUsersRow struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+}
+
+// Digest subscriber population (§11 email:send_digest; BUG-028 — moved from
+// raw SQL in internal/worker/handlers.go).
+func (q *Queries) ListDigestSubscribedUsers(ctx context.Context) ([]ListDigestSubscribedUsersRow, error) {
+	rows, err := q.db.Query(ctx, listDigestSubscribedUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDigestSubscribedUsersRow
+	for rows.Next() {
+		var i ListDigestSubscribedUsersRow
+		if err := rows.Scan(&i.UserID, &i.Email); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDigestSubscriberEmails = `-- name: ListDigestSubscriberEmails :many
+SELECT email FROM newsletter_subscribers
+WHERE status = 'subscribed' AND digest_enabled = true
+`
+
+func (q *Queries) ListDigestSubscriberEmails(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDigestSubscriberEmails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingNewsletterRecipients = `-- name: ListPendingNewsletterRecipients :many
 SELECT recipient FROM newsletter_send_state
 WHERE campaign_id = $1 AND status = 'pending'

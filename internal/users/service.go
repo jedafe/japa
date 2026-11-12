@@ -2674,11 +2674,16 @@ func (s *Service) enqueueVerificationEmail(ctx context.Context, userID pgtype.UU
 		return
 	}
 
+	// ADR-055: template_slug routes through the DB-template chain so admins
+	// can customize the badge emails; subject/body remain the caller-body
+	// fallback when the template row is missing/inactive. kind matches the
+	// seeded slug (verification_granted / verification_revoked).
 	payload, err := json.Marshal(map[string]any{
-		"to":      email,
-		"subject": subject,
-		"body":    body,
-		"type":    kind,
+		"to":            email,
+		"subject":       subject,
+		"body":          body,
+		"type":          kind,
+		"template_slug": kind,
 	})
 	if err != nil {
 		slog.Error("users: marshal verification email payload", "error", err)

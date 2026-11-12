@@ -73,18 +73,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, subject, h
 		}
 	}
 
-	status := "inactive"
-	if isActive {
-		status = "active"
-	}
-
 	return s.store.updateTemplate(ctx, gen.UpdateEmailTemplateParams{
 		ID: id,
 
 		Subject:       subject,
 		HtmlBody:      htmlBody,
 		PlainTextBody: plainTextBody,
-		Status:        status,
 		IsActive:      isActive,
 	})
 }
