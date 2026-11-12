@@ -440,7 +440,7 @@ export const load: PageServerLoad = async (event) => {
 		!typeSlug && !mine
 			? apiList<JCEComparisonSummary>(
 					ctx,
-					'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=6&sort=popularity'
+					'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=popularity'
 				)
 					.then((res) => res.items)
 					.catch(() => [] as JCEComparisonSummary[])

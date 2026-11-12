@@ -16,8 +16,11 @@
 	import NarrowPanel from '#lib/components/compare/NarrowPanel.svelte';
 	import CompareTray from '#lib/components/compare/CompareTray.svelte';
 	import AiQuickPanel from '#lib/components/compare/AiQuickPanel.svelte';
-	import TypeCardGrid from '#lib/components/compare/TypeCardGrid.svelte';
 	import FieldPoolPicker from '#lib/components/compare/FieldPoolPicker.svelte';
+	import { groupTypesByFamily } from '#lib/components/compare/compareFamilies.js';
+	import CompareCategoryCard from '#lib/components/compare/CompareCategoryCard.svelte';
+	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
+	import { badgeFor } from '#lib/components/compare/compareBadge.js';
 	import JceSelect from '#lib/components/ui/JceSelect.svelte';
 	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '#lib/components/ui/index.js';
 	import { Popover } from 'bits-ui';
@@ -46,7 +49,8 @@
 		Globe,
 		BookOpen,
 		Landmark,
-		Wallet
+		Wallet,
+		MessageCircle
 	} from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -222,6 +226,43 @@
 	});
 
 	let popularComparisons = $derived(data.popularComparisons ?? []);
+
+	// Landing discovery: family cards derive from the type catalog; the
+	// trending strip is seeded server-side by popularity and re-fetches only
+	// when the visitor switches to "Recently added".
+	let familyGroups = $derived(groupTypesByFamily(types));
+	let trendingSort = $state<'popularity' | 'created_at'>('popularity');
+	let trendingItems = $state<JCEComparisonSummary[] | null>(null); // null = use server seed
+	let trendingLoading = $state(false);
+
+	async function setTrendingSort(next: 'popularity' | 'created_at') {
+		if (next === trendingSort) return;
+		trendingSort = next;
+		if (next === 'popularity') {
+			trendingItems = null;
+			return;
+		}
+		trendingLoading = true;
+		const res = await api.get<JCEComparisonSummary[]>(
+			'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=created_at'
+		);
+		trendingLoading = false;
+		trendingItems = res.data ?? [];
+	}
+	let trending = $derived(trendingItems ?? popularComparisons);
+
+	// Card subtitle: member type names, else item_ref_types labels.
+	function familySubtitle(members: ComparisonType[]): string {
+		if (members.length > 1) return members.map((m) => m.name).join(', ');
+		const refs = (members[0]?.config?.item_ref_types as string[] | undefined) ?? [];
+		return refs.map(sourcePlural).join(', ');
+	}
+
+	let landingSearch = $state('');
+	function submitLandingSearch() {
+		if (!landingSearch.trim()) return;
+		goto(`/comparisons?q=${encodeURIComponent(landingSearch.trim())}`);
+	}
 	let scopeLabels = $state<Record<string, string>>({});
 	let showNarrow = $derived((data.scopeChain ?? []).length > 0);
 	let missingScope = $derived(
@@ -869,39 +910,108 @@
 			{/if}
 		</div>
 	{:else if !selectedType}
-		<!-- Landing: comparison-type cards + popular comparisons strip -->
-		<section class="space-y-3">
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
+		<!-- Landing: search panel → category grid → trending → AI help -->
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
+			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)]">
 				{t('jce.compare.choose_type')}
 			</h2>
-			<TypeCardGrid {types} iconFor={(t2: ComparisonType) => typeIcon(t2)} onSelect={selectType} />
+			<form
+				class="flex flex-col gap-3 sm:flex-row"
+				onsubmit={(e) => {
+					e.preventDefault();
+					submitLandingSearch();
+				}}
+			>
+				<div class="relative flex-1">
+					<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+					<input
+						type="text"
+						bind:value={landingSearch}
+						placeholder={t('jce.compare.landing.search_placeholder', 'Search countries, universities, visa routes, jobs...')}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2.5 ps-9 pe-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					/>
+				</div>
+				<div class="flex items-center gap-2">
+					{#each [
+						{ v: 'popularity', label: t('jce.compare.landing.sort_popular', 'Popular') },
+						{ v: 'created_at', label: t('jce.compare.landing.sort_recent', 'Recently added') }
+					] as const as pill (pill.v)}
+						<button
+							type="button"
+							onclick={() => setTrendingSort(pill.v)}
+							aria-pressed={trendingSort === pill.v}
+							class="rounded-[var(--radius)] border px-3 py-2 text-sm font-medium transition-colors
+								{trendingSort === pill.v
+									? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+									: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+						>{pill.label}</button>
+					{/each}
+				</div>
+			</form>
+
+			<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+				{#each familyGroups.groups as g (g.family.key)}
+					<CompareCategoryCard
+						icon={g.family.icon}
+						tint={g.family.tint}
+						name={t(`jce.compare.family.${g.family.key}`, g.family.key)}
+						subtitle={familySubtitle(g.types)}
+						href="/compare/{g.family.slug}"
+					/>
+				{/each}
+				{#each familyGroups.ungrouped as cmpType (cmpType.id)}
+					<CompareCategoryCard
+						icon={typeIcon(cmpType)}
+						tint="var(--color-primary)"
+						name={cmpType.name}
+						subtitle={cmpType.description ?? ''}
+						count={cmpType.item_count}
+						href="/comparisons?filter_type={cmpType.slug}"
+					/>
+				{/each}
+			</div>
 		</section>
 
-		{#if popularComparisons.length > 0}
+		{#if trending.length > 0}
 			<section class="space-y-3">
 				<div class="flex items-center justify-between">
 					<h2 class="text-sm font-semibold text-[var(--color-text)]">
-						{t('jce.compare.landing.popular')}
+						{t('jce.compare.landing.trending', 'Trending comparisons')}
+						{#if trendingLoading}
+							<span class="ms-2 text-xs font-normal text-[var(--color-muted)]">…</span>
+						{/if}
 					</h2>
 					<a href="/comparisons" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
-						{t('jce.compare.landing.see_all')}
+						{t('jce.compare.landing.view_all', 'View all comparisons')}
+						<span aria-hidden="true" class="rtl:-scale-x-100">→</span>
 					</a>
 				</div>
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-					{#each popularComparisons as item (item.id)}
-						<a
-							href="/comparisons/{item.slug}"
-							class="min-w-0 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							<p class="truncate font-medium text-[var(--color-text)]">{item.title}</p>
-							{#if item.type_name}
-								<span
-									class="mt-2 inline-block rounded bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]"
-								>{item.type_name}</span>
-							{/if}
-						</a>
+					{#each trending as item, i (item.id)}
+						<ComparisonVsCard
+							summary={item}
+							badge={trendingSort === 'popularity' ? badgeFor(item, { popularityIndex: i }) : badgeFor(item)}
+							authed={Boolean(user)}
+						/>
 					{/each}
 				</div>
+			</section>
+		{/if}
+
+		{#if aiQuickEnabled}
+			<section class="flex items-center gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<span class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
+					<MessageCircle size={22} />
+				</span>
+				<div class="min-w-0 flex-1">
+					<p class="font-semibold text-[var(--color-text)]">{t('jce.compare.landing.ai_help_title', 'Need help comparing?')}</p>
+					<p class="text-sm text-[var(--color-muted)]">{t('jce.compare.landing.ai_help_body', 'I can help you find the right options and answer your questions.')}</p>
+				</div>
+				<button
+					type="button"
+					onclick={() => (aiQuickOpen = true)}
+					class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)]"
+				>{t('jce.compare.landing.ai_help_cta', 'Chat with Japa AI')}</button>
 			</section>
 		{/if}
 	{:else}
