@@ -243,7 +243,7 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 72rem)/2))">
 	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>
 
 	<!-- Header — EntityHero directory panel -->
@@ -252,12 +252,22 @@
 		heading={t('jce.comparisons.heading')}
 		description={t('comparisons.hero_desc', 'Compare tools, universities, jobs and more side by side — see the differences that matter to your journey.')}
 		accent="var(--color-primary)"
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('jce.compare.heading'), href: '/compare' },
+			{ label: t('jce.comparisons.heading') }
+		]}
 	>
 		{#snippet actions(c)}
 			<div class="grid w-full grid-cols-2 gap-2 sm:flex">
 				<a href="/compare" class="{c.primary} flex-1 justify-center whitespace-nowrap">
 					<GitCompare size={15} /> {t('jce.comparisons.create')}
 				</a>
+				{#if user && !isMine}
+					<a href="/comparisons?mine=true" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+						{t('jce.comparisons.tab_mine', 'My comparisons')}
+					</a>
+				{/if}
 				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
 					{t('common.how_it_works', 'How it works')}
 					<ChevronRight size={14} class="rtl:-scale-x-100" />

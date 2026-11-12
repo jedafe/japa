@@ -785,7 +785,7 @@
 
 <SeoHead title={`${t('jce.compare.heading')} — ${siteName()}`} description={t('jce.compare.description', 'Compare destinations, services, schools, and organisations side by side — features, costs, and community insights.')} />
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 72rem)/2))">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 
 	<!-- Header — EntityHero directory panel -->
@@ -794,12 +794,21 @@
 		heading={t('jce.compare.heading')}
 		description={t('compare.hero_desc', 'Pick what to compare — universities, jobs, visa routes and more — and see them side by side.')}
 		accent="var(--color-primary)"
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('jce.compare.heading') }
+		]}
 	>
 		{#snippet actions(c)}
 			<div class="grid w-full grid-cols-2 gap-2 sm:flex">
 				<a href="/comparisons" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
 					<GitCompare size={15} /> {t('jce.comparisons.heading', 'Comparisons')}
 				</a>
+				{#if user && !mine}
+					<a href="/compare?mine=true" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+						{t('jce.compare.tab_mine', 'My comparisons')}
+					</a>
+				{/if}
 				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
 					{t('common.how_it_works', 'How it works')}
 					<ChevronRight size={14} class="rtl:-scale-x-100" />
@@ -822,7 +831,7 @@
 		</ListPageBar>
 	{/if}
 
-	<div class="mx-auto w-full max-w-3xl space-y-6 p-4">
+	<div class="mx-auto w-full max-w-6xl space-y-6 p-4">
 	{#if error}
 		<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 			{t(error, undefined, errorParams)}
