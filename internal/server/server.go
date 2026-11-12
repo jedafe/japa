@@ -271,6 +271,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	r.Use(geoip.Middleware(geoipReader))
 
+	// Give auth a geoip-backed "City, Country" resolver for login_alert
+	// emails. A func injection keeps the auth→geoip dependency inverted —
+	// geoip already imports auth for AuthenticatedUser, so a direct import
+	// in auth would cycle.
+	auth.SetGeoLocator(func(ctx context.Context) (string, bool) {
+		g := geoip.FromContext(ctx)
+		if !g.IsValid {
+			return "", false
+		}
+		switch {
+		case g.City != "" && g.CountryName != "":
+			return g.City + ", " + g.CountryName, true
+		case g.CountryName != "":
+			return g.CountryName, true
+		case g.Subdivision != "" && g.CountryCode != "":
+			return g.Subdivision + ", " + g.CountryCode, true
+		}
+		return "", false
+	})
+
 	// GeoIP updater for the maintenance: update_geoip_db task.
 	// Created here and registered with the worker so the Asynq handler
 	// can atomically swap in a fresh MaxMind database weekly.

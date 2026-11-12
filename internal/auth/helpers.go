@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,27 @@ func sessionDeviceName(r *http.Request) *string {
 	}
 
 	return deviceName(r)
+}
+
+// geoLocator resolves a "City, Country" location for the login_alert
+// template's {{.Location}} placeholder. Injected by server wiring (a func
+// value keeps the auth→geoip dependency inverted — geoip imports auth for
+// AuthenticatedUser, so a direct import would cycle).
+var geoLocator func(ctx context.Context) (string, bool)
+
+// SetGeoLocator wires the geoip-backed location resolver (server.go).
+func SetGeoLocator(fn func(ctx context.Context) (string, bool)) { geoLocator = fn }
+
+// loginLocation returns the request's geo-formatted location, falling back
+// to the raw IP when no geo data was resolved.
+func loginLocation(r *http.Request, ip string) string {
+	if geoLocator == nil {
+		return ip
+	}
+	if loc, ok := geoLocator(r.Context()); ok && loc != "" {
+		return loc
+	}
+	return ip
 }
 
 // writeSessionResponse writes a successful session response from the provided

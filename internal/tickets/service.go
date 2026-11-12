@@ -678,6 +678,13 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 				ticketRef = fmt.Sprintf("JC-%d", *ticket.TicketNumber)
 			}
 
+			submitterName := *ticket.SubmitterEmail
+			if ticket.SubmitterUserID.Valid {
+				if u, uerr := s.store.read.GetUserByID(ctx, ticket.SubmitterUserID); uerr == nil && u.Username != "" {
+					submitterName = u.Username
+				}
+			}
+
 			payload, _ := json.Marshal(map[string]any{
 				"to":            *ticket.SubmitterEmail,
 				"template_slug": "ticket_response",
@@ -685,6 +692,7 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 					"ticket_id": ticketRef,
 					"subject":   ticket.Subject,
 					"message":   input.Body,
+					"user_name": submitterName,
 				},
 			})
 			if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {

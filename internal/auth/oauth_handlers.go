@@ -749,7 +749,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 					"user_name":   u.Username,
 					"device_info": deviceName(r),
 					"ip_address":  ip,
-					"location":    ip,
+					"location":    loginLocation(r, ip),
 					"timestamp":   time.Now().Format("Jan 2, 2006 15:04:05 MST"),
 					"support_url": strings.TrimRight(h.FrontendBaseURL, "/") + "/support",
 				}, h.SiteName)

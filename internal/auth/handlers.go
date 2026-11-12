@@ -692,14 +692,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if supportURL == "" {
 			supportURL = h.baseURL(r) + "/support"
 		}
-		// No GeoIP lookup exists yet — the IP is the location signal the
-		// seeded template's {{.Location}} placeholder renders.
 		enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "login_alert", "", "",
 			map[string]any{
 				"user_name":   user.Username,
 				"device_info": sessionDeviceName(r),
 				"ip_address":  ip,
-				"location":    ip,
+				"location":    loginLocation(r, ip),
 				"timestamp":   time.Now().Format("Jan 2, 2006 15:04:05 MST"),
 				"support_url": supportURL,
 			}, h.SiteName)

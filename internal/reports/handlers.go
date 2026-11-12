@@ -105,9 +105,10 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		notifyPayload, _ := json.Marshal(map[string]string{
 			"report_id": report.ID.String(),
 
-			"entity_type": entityType,
-			"entity_id":   entityID.String(),
-			"reason":      body.Reason,
+			"entity_type":      entityType,
+			"entity_id":        entityID.String(),
+			"reason":           body.Reason,
+			"reporter_user_id": user.UserID.String(),
 		})
 		if err := h.enqueuer.Enqueue(worker.TypeReportNotifyAdmin, notifyPayload); err != nil {
 			slog.Warn("reports: failed to enqueue report:notify_admin", "report_id", report.ID.String(), "error", err)

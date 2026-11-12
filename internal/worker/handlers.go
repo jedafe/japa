@@ -1330,6 +1330,21 @@ func cleanupExpiredExports(ctx context.Context) {
 	}
 }
 
+// ticketSubmitterName resolves the {{.UserName}} value for ticket email
+// templates — the linked account's username when the submitter is a
+// registered user, or their raw email for anonymous submissions.
+func ticketSubmitterName(ctx context.Context, q *gen.Queries, ticket gen.GetTicketByIDRow) string {
+	if ticket.SubmitterUserID.Valid {
+		if u, err := q.GetUserByID(ctx, ticket.SubmitterUserID); err == nil && u.Username != "" {
+			return u.Username
+		}
+	}
+	if ticket.SubmitterEmail != nil {
+		return *ticket.SubmitterEmail
+	}
+	return ""
+}
+
 // HandleTicketSendConfirmation sends a confirmation email when a new ticket is created.
 func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:ticket:send_confirmation")
@@ -1398,6 +1413,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 		TemplateData: map[string]any{
 			"ticket_id": ticketRef,
 			"subject":   ticket.Subject,
+			"user_name": ticketSubmitterName(ctx, queries, ticket),
 		},
 	}, "Ticket Confirmation - "+ticket.Subject, body, true)
 
@@ -1699,6 +1715,14 @@ func pascalizeTemplateValue(v any) any {
 		}
 
 		return out
+	case *string:
+		// Producers pass nullable *string fields (device names, submitter
+		// emails) — unwrap so templates render the value, not a pointer
+		// address; nil renders as an empty string.
+		if t == nil {
+			return ""
+		}
+		return *t
 	default:
 		return v
 	}
@@ -3372,6 +3396,11 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 
 	// ADR-055: resolve the tenant-customizable ticket_status_update template;
 	// the inline body above is the hardcoded fallback.
+	statusMessage := ""
+	if ticket.ResolutionNote != nil {
+		statusMessage = *ticket.ResolutionNote
+	}
+
 	subject, resolvedBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
 		TemplateSlug: "ticket_status_update",
 		TemplateData: map[string]any{
@@ -3379,6 +3408,8 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 			"subject":    ticket.Subject,
 			"old_status": payload.OldStatus,
 			"new_status": payload.NewStatus,
+			"user_name":  ticketSubmitterName(ctx, queries, ticket),
+			"message":    statusMessage,
 		},
 	}, "Ticket Status Update - "+ticket.Subject, body, true)
 
@@ -6176,9 +6207,10 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		ReportID string `json:"report_id"`
 
-		EntityType string `json:"entity_type"`
-		EntityID   string `json:"entity_id"`
-		Reason     string `json:"reason"`
+		EntityType     string `json:"entity_type"`
+		EntityID       string `json:"entity_id"`
+		Reason         string `json:"reason"`
+		ReporterUserID string `json:"reporter_user_id"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -6193,6 +6225,15 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	// Resolve every user with the reports.review permission for this platform.
 	q := gen.New(dbPool.Reader)
+
+	// Reporter identity for the admin_content_reported email template —
+	// resolved once here rather than per recipient.
+	reporterUsername := ""
+	if rid, rerr := scanUUID(payload.ReporterUserID); rerr == nil {
+		if u, uerr := q.GetUserByID(ctx, rid); uerr == nil {
+			reporterUsername = u.Username
+		}
+	}
 
 	recipients, err := q.ListUserIDsByPermissionKey(ctx,
 
@@ -6262,10 +6303,11 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 		// ADR-055: admin_content_reported email alert for this reviewer.
 		if to, eerr := q.GetUserEmailByID(ctx, recipientID); eerr == nil && to != "" {
 			enqueueTemplatedEmail(to, "admin_content_reported", map[string]any{
-				"entity_type": payload.EntityType,
-				"reason":      payload.Reason,
-				"report_id":   payload.ReportID,
-				"content_url": resolveBaseURL(ctx) + actionURL,
+				"reporter_username": reporterUsername,
+				"entity_type":       payload.EntityType,
+				"reason":            payload.Reason,
+				"report_id":         payload.ReportID,
+				"content_url":       resolveBaseURL(ctx) + actionURL,
 			})
 		}
 	}
