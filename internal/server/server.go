@@ -2379,6 +2379,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithQueries(jceReadQueries),
 	))
+	jceResolver.Register("region", resolver.NewSpaceTypeResolver(
+		spaceService, "region", "region",
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("attraction", resolver.NewSpaceTypeResolver(
+		spaceService, "attraction", "attraction",
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("program", resolver.NewSpaceTypeResolver(
+		spaceService, "program", "program",
+		resolver.WithQueries(jceReadQueries),
+	))
 	jceResolver.Register("embassy", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "embassy", Table: "embassies", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "address", ActiveWhere: "t.is_active = true",
