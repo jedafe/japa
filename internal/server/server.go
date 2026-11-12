@@ -3417,6 +3417,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// moderation actions, content removals, and service claims; the
 	// cross-service subjects wire their domain approve paths here.
 	appealsService := appeals.NewService(database, ticketService)
+	appealsService.SetEnqueuer(taskEnqueuer)
 	appealsHandlers := appeals.NewHandlers(appealsService)
 	appealsService.SetAccessCacheInvalidator(func(ctx context.Context, uid pgtype.UUID) {
 		// InvalidateUserCache clears L1 + L2 — the package-level
@@ -9491,7 +9492,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Newsletter public routes (Section 62 — ADR-080).
 			// Unsubscribe via token (no auth) + subscriber preferences.
-			r.Delete("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			// Rate-limited: the bare ?email= path is unauthenticated and
+			// must not be abusable for mass-unsubscription.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Delete("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
 			// Provider bounce/complaint webhook (§62 Compliance, ADR-080 §4).
 			// Authenticated via X-Webhook-Secret shared secret, not user auth.
 			r.Post("/newsletter/webhook", newsletterHandlers.HandleWebhook)

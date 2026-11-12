@@ -415,6 +415,15 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 
 	s.recordRenewalPayment(ctx, sub, str(obj, "id"), int64From(obj, "amount_paid"), str(obj, "currency"))
 
+	// ADR-055: subscription renewal charge succeeded → payment_receipt.
+	s.notifyPaymentEmail(ctx, sub.UserID, "payment_receipt", map[string]any{
+		"plan":      sub.Plan,
+		"amount":    fmt.Sprintf("%.2f", float64(int64From(obj, "amount_paid"))/100),
+		"currency":  strings.ToUpper(str(obj, "currency")),
+		"order_id":  str(obj, "id"),
+		"item_name": "subscription_renewal",
+	})
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -447,6 +456,11 @@ func (s *Service) stripeCancelNow(ctx context.Context, obj map[string]interface{
 	if _, err := s.store.updateSubscriptionStatus(ctx, sub.ID, SubscriptionStatusCanceled); err != nil {
 		return err
 	}
+
+	// ADR-055: subscription_cancelled notification.
+	s.notifyPaymentEmail(ctx, sub.UserID, "subscription_cancelled", map[string]any{
+		"plan": sub.Plan,
+	})
 
 	return s.revokePlanTier(ctx, sub.UserID, sub.Plan)
 }
@@ -601,7 +615,7 @@ func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUI
 		return s.store.updateSubscriptionStatus(ctx, existing.ID, status)
 	}
 
-	return s.store.createSubscription(ctx, gen.CreateSubscriptionParams{
+	sub, err := s.store.createSubscription(ctx, gen.CreateSubscriptionParams{
 		UserID:             userID,
 		Plan:               plan,
 		Provider:           provider,
@@ -610,6 +624,18 @@ func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUI
 		CurrentPeriodStart: pgtype.Timestamptz{Time: start, Valid: true},
 		CurrentPeriodEnd:   pgtype.Timestamptz{Time: end, Valid: true},
 	})
+	if err != nil {
+		return sub, err
+	}
+
+	// ADR-055: subscription_created notification (only on row creation —
+	// the update path above covers out-of-order lifecycle events).
+	s.notifyPaymentEmail(ctx, userID, "subscription_created", map[string]any{
+		"plan":         plan,
+		"renewal_date": end.Format("2006-01-02"),
+	})
+
+	return sub, nil
 }
 
 // recordRenewalPayment writes a payments row for a subscription renewal so
@@ -689,8 +715,16 @@ func (s *Service) markSubPastDueByRef(ctx context.Context, subID string) error {
 	}
 
 	_, err = s.store.markSubscriptionPastDue(ctx, sub.ID)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// ADR-055: subscription renewal charge failed → payment_failed.
+	s.notifyPaymentEmail(ctx, sub.UserID, "payment_failed", map[string]any{
+		"plan": sub.Plan,
+	})
+
+	return nil
 }
 
 func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag bool) error {
@@ -703,7 +737,20 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 		return nil
 	}
 
-	return s.store.setSubscriptionCancelAtPeriodEnd(ctx, sub.ID, flag)
+	if err := s.store.setSubscriptionCancelAtPeriodEnd(ctx, sub.ID, flag); err != nil {
+		return err
+	}
+
+	// ADR-055: subscription_expiring — the subscription now ends at the
+	// current period boundary instead of renewing.
+	if flag {
+		s.notifyPaymentEmail(ctx, sub.UserID, "subscription_expiring", map[string]any{
+			"plan":        sub.Plan,
+			"expiry_date": sub.CurrentPeriodEnd.Time.Format("2006-01-02"),
+		})
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

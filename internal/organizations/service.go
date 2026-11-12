@@ -1128,7 +1128,7 @@ func (s *Service) enqueueVerifyGrantEmail(ctx context.Context, org gen.Organizat
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	if _, err := s.asynq.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+	if _, err := s.asynq.Enqueue(task, worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
 		slog.Error("organizations: enqueue verify-grant email", "to", email, "error", err)
 	}
 }

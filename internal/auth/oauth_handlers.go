@@ -928,8 +928,10 @@ func (h *OAuthHandlers) sendWelcomeEmail(to, username string) {
 	welcomePayload, _ := json.Marshal(map[string]interface{}{
 		"to":            to,
 		"template_slug": "welcome",
-		"template_data": map[string]string{
-			"user_name": username,
+		"template_data": map[string]any{
+			"user_name":  username,
+			"action_url": strings.TrimRight(h.FrontendBaseURL, "/"),
+			"site_url":   strings.TrimRight(h.FrontendBaseURL, "/"),
 		},
 		"template_site_name": h.SiteName,
 	})
@@ -978,11 +980,13 @@ func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype
 		siteName = "App"
 	}
 
+	actionURL := fmt.Sprintf("%s/auth/verify-email?token=%s", base, token)
+
 	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
 		SiteName:   siteName,
 		SiteURL:    base,
 		UserName:   username,
-		ActionURL:  fmt.Sprintf("%s/auth/verify-email?token=%s", base, token),
+		ActionURL:  actionURL,
 		Expiry:     "24 hours",
 		SupportURL: base + "/support",
 	})
@@ -991,7 +995,15 @@ func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype
 		return
 	}
 
-	enqueueEmailTask(h.AsynqClient, to, "Verify Your Email", htmlBody, true)
+	// ADR-055: template_slug lets the DB template override this render.
+	enqueueTemplatedEmailTask(h.AsynqClient, to, "email_verification", "Verify Your Email", htmlBody,
+		map[string]any{
+			"user_name":   username,
+			"action_url":  actionURL,
+			"expiry":      "24 hours",
+			"support_url": base + "/support",
+			"site_url":    base,
+		}, siteName)
 }
 
 // ResolveProvider exposes resolveProvider for cross-handler wiring

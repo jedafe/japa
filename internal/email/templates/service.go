@@ -3,6 +3,8 @@ package templates
 import (
 	"context"
 	"fmt"
+	"html/template"
+	texttemplate "text/template"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -56,13 +58,21 @@ func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (gen.GetEmail
 	return s.store.getTemplate(ctx, id)
 }
 
-// GetTemplateByType is an exported method.
-func (s *Service) GetTemplateByType(ctx context.Context, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
-	return s.store.getTemplateByType(ctx, templateType)
-}
-
 // UpdateTemplate is an exported method.
 func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, subject, htmlBody, plainTextBody string, isActive bool) (gen.UpdateEmailTemplateRow, error) {
+	// ADR-055: validate Go template syntax at save time. An unparseable
+	// template would otherwise persist and silently degrade to the
+	// fallback body at send time.
+	if _, err := texttemplate.New("subject").Parse(subject); err != nil {
+		return gen.UpdateEmailTemplateRow{}, fmt.Errorf("%w: invalid subject template: %v", ErrInvalidTemplate, err)
+	}
+
+	if htmlBody != "" {
+		if _, err := template.New("html_body").Parse(htmlBody); err != nil {
+			return gen.UpdateEmailTemplateRow{}, fmt.Errorf("%w: invalid html_body template: %v", ErrInvalidTemplate, err)
+		}
+	}
+
 	status := "inactive"
 	if isActive {
 		status = "active"
@@ -81,5 +91,11 @@ func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, subject, h
 
 // ResetTemplate is an exported method.
 func (s *Service) ResetTemplate(ctx context.Context, id pgtype.UUID) error {
+	// The reset query is a bare UPDATE — verify the row exists first so a
+	// nonexistent id returns 404 instead of a silent 200 no-op.
+	if _, err := s.store.getTemplate(ctx, id); err != nil {
+		return err
+	}
+
 	return s.store.resetTemplate(ctx, id)
 }

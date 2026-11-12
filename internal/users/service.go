@@ -2217,6 +2217,12 @@ type UpdateAccountResult struct {
 	EmailVerificationNeeded bool `json:"email_verification_needed"`
 	DisplayNameChanged      bool `json:"display_name_changed"`
 	PublicIdentityChanged   bool `json:"public_identity_changed"`
+
+	// OldEmail/NewEmail carry the change out of the transaction so the
+	// ADR-055 email_changed security notice can reach the address the
+	// account owner still controls.
+	OldEmail string `json:"-"`
+	NewEmail string `json:"-"`
 }
 
 // ErrNotGroupMember is returned when a user picks a public role group they do
@@ -2358,6 +2364,8 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 
 				txResult.EmailChanged = true
 				txResult.EmailVerificationNeeded = true
+				txResult.OldEmail = acct.Email
+				txResult.NewEmail = newEmail
 			}
 		}
 
@@ -2476,6 +2484,22 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 		if err := s.store.revokeAllRefreshTokens(ctx, userID); err != nil {
 			slog.Error("update-account: failed to invalidate sessions",
 				"user_id", userID.String(), "error", err)
+		}
+
+		// ADR-055: security notification to the OLD address via the
+		// email_changed template — if the change was unauthorized the
+		// victim still receives the alert at the address they control.
+		if s.enqueuer != nil && result.OldEmail != "" {
+			payload, _ := json.Marshal(map[string]any{
+				"to":            result.OldEmail,
+				"template_slug": "email_changed",
+				"template_data": map[string]any{
+					"new_email": result.NewEmail,
+				},
+			})
+			if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+				slog.Error("update-account: failed to enqueue email_changed notification", "user_id", userID.String(), "error", err)
+			}
 		}
 	}
 

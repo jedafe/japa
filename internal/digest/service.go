@@ -557,7 +557,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 			Subject:  subject,
 			Body:     body,
 			IsHTML:   true,
-			Category: "transactional",
+			Category: "marketing",
 			Headers:  headers,
 		}); err != nil {
 			slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)

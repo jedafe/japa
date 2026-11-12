@@ -453,7 +453,7 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	if _, err := s.asynq.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+	if _, err := s.asynq.Enqueue(task, worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
 		slog.Error("verification: enqueue review email", "to", email, "error", err)
 	}
 }

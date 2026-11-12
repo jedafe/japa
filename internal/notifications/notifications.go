@@ -370,9 +370,9 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.U
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	opts := []asynq.Option{
-		asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)),
-	}
+	// TaskOpts restores the registered email:send defaults (Unique dedup,
+	// 30s timeout) so notification emails cannot double-send on enqueue.
+	opts := worker.TaskOpts(worker.TypeEmailSend)
 	// BUG-004: cap retries at notifications.max_delivery_attempts (default 5).
 	if s.settings != nil {
 		maxAttempts := s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", 5)

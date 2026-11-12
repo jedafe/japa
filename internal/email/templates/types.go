@@ -7,6 +7,7 @@ var (
 	// ErrTemplateNotFound is a sentinel error: email template not found.
 	ErrTemplateNotFound = errors.New("email template not found")
 	ErrInvalidType      = errors.New("invalid email template type")
+	ErrInvalidTemplate  = errors.New("invalid template syntax")
 )
 
 // Pagination defaults.

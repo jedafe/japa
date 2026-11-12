@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"sync"
 	"time"
@@ -57,6 +58,15 @@ func (r *testEmailRateLimiter) Allow(key string, max int, window time.Duration) 
 
 	if !ok || now.After(w.expiresAt) {
 		r.windows[key] = &rateLimitWindow{count: 1, expiresAt: now.Add(window)}
+
+		// Evict expired keys so the map cannot grow unboundedly with key
+		// churn (per-user keys on a long-lived process).
+		for k, win := range r.windows {
+			if now.After(win.expiresAt) && k != key {
+				delete(r.windows, k)
+			}
+		}
+
 		return true
 	}
 
@@ -114,6 +124,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTemplateNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, ErrInvalidTemplate):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_template", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
@@ -245,8 +257,8 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Email == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
+	if _, err := mail.ParseAddress(input.Email); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email must be a valid address")
 		return
 	}
 
@@ -262,15 +274,19 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 			"to":            input.Email,
 			"template_slug": tmpl.Slug,
 
-			"template_data": map[string]string{},
+			"template_data": map[string]any{},
 		}
 		body, _ := json.Marshal(payload)
 
-		// Registered defaults (Unique, 30s timeout) plus the deliberate
-		// lower retry bound for one-off test sends.
+		// No Unique() dedup here: an admin may legitimately send the same
+		// test template to the same address repeatedly — an identical
+		// payload must not collapse into ErrDuplicateTask. Queue routing
+		// and the deliberately low retry bound are kept.
 		task := asynq.NewTask(worker.TypeEmailSend, body)
-		opts := append(worker.TaskOpts(worker.TypeEmailSend), asynq.MaxRetry(3))
-		if _, err := h.AsynqClient.Enqueue(task, opts...); err != nil {
+		if _, err := h.AsynqClient.Enqueue(task,
+			asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)),
+			asynq.Timeout(30*time.Second),
+			asynq.MaxRetry(3)); err != nil {
 			slog.Error("test_template: failed to enqueue email", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
 

@@ -666,6 +666,33 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 		slog.Error("create ticket event", "ticket_id", ticketID, "error", err)
 	}
 
+	// ADR-055: notify the submitter via the ticket_response template when a
+	// non-submitter (staff) posts a public reply. Internal notes and the
+	// submitter's own comments never trigger the email.
+	if !input.IsInternal {
+		if ticket, terr := s.store.getTicketByID(ctx, ticketID); terr == nil &&
+			ticket.SubmitterEmail != nil && *ticket.SubmitterEmail != "" &&
+			(!ticket.SubmitterUserID.Valid || ticket.SubmitterUserID != input.UserID) {
+			ticketRef := ticketID.String()
+			if ticket.TicketNumber != nil {
+				ticketRef = fmt.Sprintf("JC-%d", *ticket.TicketNumber)
+			}
+
+			payload, _ := json.Marshal(map[string]any{
+				"to":            *ticket.SubmitterEmail,
+				"template_slug": "ticket_response",
+				"template_data": map[string]any{
+					"ticket_id": ticketRef,
+					"subject":   ticket.Subject,
+					"comment":   input.Body,
+				},
+			})
+			if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+				slog.Error("tickets: enqueue ticket_response email", "ticket_id", ticketID, "error", err)
+			}
+		}
+	}
+
 	return comment, nil
 }
 

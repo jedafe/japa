@@ -604,6 +604,18 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	// 1. Anonymize user row + user_profile PII.
 	if step < deletionStepAnonymized {
+		// ADR-055: account_deletion_confirmed notice to the pre-erasure
+		// address — must be enqueued before anonymizeUser scrubs the
+		// email column. Best-effort; erasure must not block on email.
+		payload, _ := json.Marshal(map[string]any{
+			"to":            targetEmail,
+			"template_slug": "account_deletion_confirmed",
+			"template_data": map[string]any{},
+		})
+		if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+			slog.Warn("gdpr: failed to enqueue account_deletion_confirmed email", "user_id", request.UserID.String(), "error", err)
+		}
+
 		if err := s.store.anonymizeUser(ctx, request.UserID); err != nil {
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing user: %w", err)
@@ -698,7 +710,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 				if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
 					ContentType: "service_listing",
 					FieldValues: row.FieldValues,
-					OgImageURL: strFromPtr(row.OgImageUrl),
+					OgImageURL:  strFromPtr(row.OgImageUrl),
 				}); err != nil {
 					return fmt.Errorf("syncing shadow media fields: %w", err)
 				}
@@ -1126,7 +1138,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			if err := content.SyncMediaRefs(ctx, q, q, row.ID, content.MediaRefSource{
 				ContentType: "service_listing",
 				FieldValues: row.FieldValues,
-				OgImageURL: strFromPtr(row.OgImageUrl),
+				OgImageURL:  strFromPtr(row.OgImageUrl),
 			}); err != nil {
 				return fmt.Errorf("syncing shadow media fields: %w", err)
 			}

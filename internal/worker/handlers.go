@@ -1390,7 +1390,18 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 
 	body := bodyBuf.String()
 
-	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, true); err != nil {
+	// ADR-055: resolve the tenant-customizable ticket_confirmation template;
+	// the inline body above is the hardcoded fallback when the DB template
+	// is absent/inactive.
+	subject, resolvedBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
+		TemplateSlug: "ticket_confirmation",
+		TemplateData: map[string]any{
+			"ticket_id": ticketRef,
+			"subject":   ticket.Subject,
+		},
+	}, "Ticket Confirmation - "+ticket.Subject, body, true)
+
+	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, subject, resolvedBody, isHTML); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed", "ticket_id", payload.TicketID, "error", err)
 		return err
 	}
@@ -1412,8 +1423,8 @@ type emailSendPayload struct {
 	HTML         bool   `json:"html"`
 	TemplateSlug string `json:"template_slug,omitempty"`
 
-	TemplateData     map[string]string `json:"template_data,omitempty"`
-	TemplateSiteName string            `json:"template_site_name,omitempty"`
+	TemplateData     map[string]any `json:"template_data,omitempty"`
+	TemplateSiteName string         `json:"template_site_name,omitempty"`
 }
 
 // HandleEmailSend sends a single transactional email via SMTP.
@@ -1476,7 +1487,19 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 		payload.TemplateSlug,
 	)
 	if err != nil {
-		slog.Warn("task:email:send: template not found, falling back to raw body", "template_slug", payload.TemplateSlug, "error", err)
+		slog.Warn("task:email:send: template not found, falling back to builtin/raw body", "template_slug", payload.TemplateSlug, "error", err)
+
+		// ADR-055 fallback chain: DB template → hardcoded constant →
+		// caller-supplied body. The builtin leg ensures known slugs
+		// (password_reset, email_verification, welcome) still send a
+		// fully-rendered email when the DB row is missing/inactive.
+		if s, b, ok := builtinEmailFallback(payload); ok {
+			if subject == "" {
+				subject = s
+			}
+
+			return subject, b, true
+		}
 
 		return subject, body, isHTML
 	}
@@ -1506,7 +1529,67 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 		return subject, tmpl.PlainTextBody, false
 	}
 
+	if s, b, ok := builtinEmailFallback(payload); ok {
+		if subject == "" {
+			subject = s
+		}
+
+		return subject, b, true
+	}
+
 	return subject, body, isHTML
+}
+
+// builtinEmailFallback renders the hardcoded Go email templates for the
+// slugs that have compiled constants (password_reset, email_verification,
+// welcome). It is the middle leg of the ADR-055 fallback chain: DB →
+// builtin → caller body. Returns ("", "", false) for unknown slugs.
+func builtinEmailFallback(payload emailSendPayload) (string, string, bool) {
+	get := func(k string) string {
+		if v, ok := payload.TemplateData[k].(string); ok {
+			return v
+		}
+
+		return ""
+	}
+
+	siteName := payload.TemplateSiteName
+	if siteName == "" {
+		siteName = brand.Get()
+	}
+
+	td := email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    get("site_url"),
+		UserName:   get("user_name"),
+		ActionURL:  get("action_url"),
+		Expiry:     get("expiry"),
+		SupportURL: get("support_url"),
+	}
+
+	var (
+		subject string
+		render  func(email.TemplateData) (string, error)
+	)
+
+	switch payload.TemplateSlug {
+	case "password_reset":
+		subject, render = "Reset Your Password", email.RenderPasswordResetEmail
+	case "email_verification":
+		subject, render = "Verify Your Email", email.RenderEmailVerification
+	case "welcome":
+		subject, render = fmt.Sprintf("Welcome to %s", siteName), email.RenderWelcomeEmail
+	default:
+		return "", "", false
+	}
+
+	body, err := render(td)
+	if err != nil {
+		slog.Error("task:email:send: builtin template render failed", "template_slug", payload.TemplateSlug, "error", err)
+		return "", "", false
+	}
+
+	return subject, body, true
 }
 
 // renderSubjectTemplate renders a template subject with the payload's
@@ -1556,9 +1639,9 @@ func renderEmailTemplate(htmlBody string, payload emailSendPayload) (string, boo
 // converting snake_case map keys to PascalCase so all 22 template type
 // variables (SiteName, UserName, ActionURL, DeviceInfo, Amount, Currency,
 // TicketID, etc.) are resolved generically without a fixed struct.
-func templateDataFromMap(siteName string, m map[string]string) map[string]any {
+func templateDataFromMap(siteName string, m map[string]any) map[string]any {
 	if m == nil {
-		m = make(map[string]string)
+		m = make(map[string]any)
 	}
 
 	if siteName == "" {
@@ -1569,10 +1652,45 @@ func templateDataFromMap(siteName string, m map[string]string) map[string]any {
 	data["SiteName"] = siteName
 
 	for k, v := range m {
-		data[snakeToPascal(k)] = v
+		data[snakeToPascal(k)] = pascalizeTemplateValue(v)
 	}
 
 	return data
+}
+
+// pascalizeTemplateValue converts snake_case keys inside nested maps (and
+// maps inside slices, e.g. the Items list used by digest templates) to
+// PascalCase so {{range .Items}}{{.Title}}{{end}} resolves.
+func pascalizeTemplateValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[snakeToPascal(k)] = pascalizeTemplateValue(val)
+		}
+
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = pascalizeTemplateValue(val)
+		}
+
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(t))
+		for i, val := range t {
+			m := make(map[string]any, len(val))
+			for k, item := range val {
+				m[snakeToPascal(k)] = pascalizeTemplateValue(item)
+			}
+			out[i] = m
+		}
+
+		return out
+	default:
+		return v
+	}
 }
 
 // snakeToPascal converts a snake_case key (e.g. "user_name") to PascalCase
@@ -3236,7 +3354,24 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 
 	body := statusBuf.String()
 
-	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, true); err != nil {
+	ticketRef := ticketID.String()
+	if ticket.TicketNumber != nil {
+		ticketRef = fmt.Sprintf("JC-%d", *ticket.TicketNumber)
+	}
+
+	// ADR-055: resolve the tenant-customizable ticket_status_update template;
+	// the inline body above is the hardcoded fallback.
+	subject, resolvedBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
+		TemplateSlug: "ticket_status_update",
+		TemplateData: map[string]any{
+			"ticket_id":  ticketRef,
+			"subject":    ticket.Subject,
+			"old_status": payload.OldStatus,
+			"new_status": payload.NewStatus,
+		},
+	}, "Ticket Status Update - "+ticket.Subject, body, true)
+
+	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, subject, resolvedBody, isHTML); err != nil {
 		slog.Error("task:ticket:send_status_update: email failed", "ticket_id", payload.TicketID, "error", err)
 		return err
 	}
@@ -3273,6 +3408,21 @@ func HandleAcademyUpdateTrackCompletion(ctx context.Context, t *asynq.Task) erro
 	}
 
 	slog.Info("task:academy:update_track_completion: progress updated", "user_id", payload.UserID, "track_id", payload.TrackID, "progress", payload.Progress)
+
+	// ADR-055: on first 100% completion notify via the course_completed
+	// template. The email:send Unique dedup prevents repeat sends across
+	// the hourly re-dedup window; repeat completions thereafter send again
+	// which is acceptable for a rare event.
+	if payload.Progress >= 100 && dbPool != nil {
+		if uid, uerr := scanUUID(payload.UserID); uerr == nil {
+			if to, eerr := gen.New(dbPool.Reader).GetUserEmailByID(ctx, uid); eerr == nil && to != "" {
+				enqueueTemplatedEmail(to, "course_completed", map[string]any{
+					"track_id":   payload.TrackID,
+					"action_url": resolveBaseURL(ctx) + "/academy",
+				})
+			}
+		}
+	}
 
 	return nil
 }
@@ -3680,13 +3830,17 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		return sendDigestToUser(ctx, payload.UserID, payload.Email, payload.Period)
 	}
 
-	// Cron mode: iterate all active users with digest enabled.
+	// Cron mode: iterate subscribed users only. §11 catalogs this task as
+	// "periodic digest email to subscribed users" — mailing every verified
+	// account ignores per-user opt-out (CAN-SPAM/GDPR). Recipients are
+	// verified users whose email also has an active, digest-enabled
+	// newsletter subscription.
 	period := payload.Period
 	if period == "" {
 		period = "daily"
 	}
 
-	digestUsers, err := gen.New(dbPool.Reader).ListActiveUsersForDigest(ctx)
+	digestUsers, err := listDigestSubscribedUsers(ctx)
 	if err != nil {
 		slog.Error("task:email:send_digest: list users failed", "error", err)
 		return err
@@ -3695,8 +3849,8 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	sentCount := 0
 
 	for _, u := range digestUsers {
-		if err := sendDigestToUser(ctx, u.ID.String(), u.Email, period); err != nil {
-			slog.Error("task:email:send_digest: failed for user", "user_id", u.ID.String(), "error", err)
+		if err := sendDigestToUser(ctx, u.userID, u.email, period); err != nil {
+			slog.Error("task:email:send_digest: failed for user", "user_id", u.userID, "error", err)
 			continue
 		}
 
@@ -3765,9 +3919,17 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 		return fmt.Errorf("rendering digest template: %w", err)
 	}
 
-	if err := sendEmailWithContext(ctx, email,
+	// Bulk subscriber digest is marketing-category mail (ADR-015/ADR-080)
+	// and must carry List-Unsubscribe headers.
+	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, email)
+	htmlBody := body.String()
+	if unsubURL != "" {
+		htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+	}
+
+	if err := sendMarketingEmail(ctx, email,
 		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)),
-		body.String(), true); err != nil {
+		htmlBody, true, unsubHeaders); err != nil {
 		return fmt.Errorf("sending email: %w", err)
 	}
 
@@ -4598,8 +4760,39 @@ func HandleAcademyIssueCertificate(ctx context.Context, t *asynq.Task) error {
 
 			slog.Info("task:academy:issue_certificate: certificate issued", "user_id", p["user_id"], "track_id", p["track_id"], "course_name", p["course_name"])
 
+			// ADR-055: notify the recipient via the certificate_issued
+			// template. Best-effort — a lookup/enqueue failure does not
+			// fail the certificate task.
+			if uid, uerr := scanUUID(p["user_id"]); uerr == nil && dbPool != nil {
+				if to, eerr := gen.New(dbPool.Reader).GetUserEmailByID(ctx, uid); eerr == nil && to != "" {
+					enqueueTemplatedEmail(to, "certificate_issued", map[string]any{
+						"course_name": p["course_name"],
+						"action_url":  resolveBaseURL(ctx) + "/academy/certificates",
+					})
+				}
+			}
+
 			return nil
 		})
+}
+
+// enqueueTemplatedEmail enqueues an email:send task resolved through the
+// ADR-055 DB-template chain (slug + template_data). Fire-and-forget —
+// failures are logged by the enqueuer call site. No subject/body is passed:
+// the worker resolves them from the template (or its builtin fallback).
+func enqueueTemplatedEmail(to, slug string, data map[string]any) {
+	if taskEnqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"to":            to,
+		"template_slug": slug,
+		"template_data": data,
+	})
+	if err := taskEnqueuer.Enqueue(TypeEmailSend, payload); err != nil {
+		slog.Error("enqueueTemplatedEmail: failed", "slug", slug, "to", to, "error", err)
+	}
 }
 
 // HandleDBManualVacuum runs a manual VACUUM on high-churn database tables.
@@ -4714,6 +4907,43 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:newsletter:digest: digest sent", "item_count", len(digestItems), "subscribers", len(subscribers), "sent", sent, "failed", failed)
 
 	return nil
+}
+
+// digestRecipient pairs a user's ID with their email for personalized
+// digest delivery.
+type digestRecipient struct {
+	userID string
+	email  string
+}
+
+// listDigestSubscribedUsers returns verified, active users whose email is
+// also a subscribed, digest-enabled newsletter_subscribers row. This is the
+// §11 "subscribed users" population for email:send_digest — every verified
+// account is NOT the recipient set.
+func listDigestSubscribedUsers(ctx context.Context) ([]digestRecipient, error) {
+	rows, err := dbPool.Reader.Query(ctx, `SELECT u.id::text, u.email
+		FROM users u
+		JOIN newsletter_subscribers ns ON ns.email = u.email
+		WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
+		  AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []digestRecipient
+
+	for rows.Next() {
+		var r digestRecipient
+		if err := rows.Scan(&r.userID, &r.email); err != nil {
+			continue
+		}
+
+		out = append(out, r)
+	}
+
+	rows.Close()
+
+	return out, nil
 }
 
 // listDigestSubscribers returns the email addresses of this platform's
@@ -5365,11 +5595,18 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 		contentBody = wrapHTMLEmail(body)
 	}
 
+	// CWE-113: strip CR/LF from every value written into the SMTP header
+	// block, mirroring SMTPProvider's sanitization so a \r\n in a header
+	// value cannot inject additional headers.
+	sanitize := func(s string) string {
+		return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+	}
+
 	// Build the message, merging any extra headers in a stable order.
 	var hdr strings.Builder
 
 	hdr.WriteString(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n",
-		cfg.From, to, subject, contentType))
+		sanitize(cfg.From), sanitize(to), sanitize(subject), contentType))
 
 	if len(headers) > 0 {
 		keys := make([]string, 0, len(headers))
@@ -5380,7 +5617,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			hdr.WriteString(k + ": " + headers[k] + "\r\n")
+			hdr.WriteString(sanitize(k) + ": " + sanitize(headers[k]) + "\r\n")
 		}
 	}
 
@@ -5973,6 +6210,16 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 			if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
 				slog.Warn("task:report:notify_admin: failed to enqueue push", "error", err, "recipient_id", recipientID.String())
 			}
+		}
+
+		// ADR-055: admin_content_reported email alert for this reviewer.
+		if to, eerr := q.GetUserEmailByID(ctx, recipientID); eerr == nil && to != "" {
+			enqueueTemplatedEmail(to, "admin_content_reported", map[string]any{
+				"entity_type": payload.EntityType,
+				"reason":      payload.Reason,
+				"report_id":   payload.ReportID,
+				"action_url":  resolveBaseURL(ctx) + actionURL,
+			})
 		}
 	}
 

@@ -40,6 +40,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tickets"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Appeal statuses (admin resolution vocabulary — §22).
@@ -179,6 +180,19 @@ type Service struct {
 	// invalidateUserAccess clears per-user access caches (perm cache + ban
 	// cache) after a ban/suspension overturn. Wired by the server; nil-safe.
 	invalidateUserAccess func(ctx context.Context, userID pgtype.UUID)
+
+	// enqueuer dispatches Asynq tasks (admin appeal-submitted email alerts).
+	// nil-safe — submissions proceed without the email leg when unwired.
+	enqueuer interface {
+		Enqueue(taskType string, payload []byte, opts ...interface{}) error
+	}
+}
+
+// SetEnqueuer wires the Asynq enqueuer for admin alert emails.
+func (s *Service) SetEnqueuer(e interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}) {
+	s.enqueuer = e
 }
 
 // NewService builds the appeals service. tickets may be nil — submission
@@ -410,6 +424,29 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	if tk := s.createAppealTicket(ctx, userID, a, label); tk != nil {
 		a.TicketID = tk.ID.String()
 		a.TicketNumber = tk.TicketNumber
+	}
+
+	// ADR-055: admin_appeal_submitted email alert to review-inbox holders.
+	// Fire-and-forget — the appeal record stands on its own.
+	if s.enqueuer != nil {
+		if adminIDs, err := s.read.ListUserIDsByPermissionKey(ctx, "reports.review"); err == nil {
+			for _, aid := range adminIDs {
+				if to, eerr := s.read.GetUserEmailByID(ctx, aid); eerr == nil && to != "" {
+					payload, _ := json.Marshal(map[string]any{
+						"to":            to,
+						"template_slug": "admin_appeal_submitted",
+						"template_data": map[string]any{
+							"entity_type": entityType,
+							"reason":      reason,
+							"appeal_id":   a.ID,
+						},
+					})
+					if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+						slog.Warn("appeals: enqueue admin_appeal_submitted", "error", err)
+					}
+				}
+			}
+		}
 	}
 
 	return a, nil

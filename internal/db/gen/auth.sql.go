@@ -592,6 +592,30 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 	return i, err
 }
 
+const hasMatchingDeviceSession = `-- name: HasMatchingDeviceSession :one
+SELECT EXISTS(
+  SELECT 1 FROM refresh_tokens
+  WHERE user_id = $1
+    AND device_name = $2
+    AND ip_address IS NOT DISTINCT FROM $3
+) AS matched
+`
+
+type HasMatchingDeviceSessionParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	DeviceName *string     `json:"device_name"`
+	IpAddress  *string     `json:"ip_address"`
+}
+
+// ADR-055 login_alert: true when this user already has a refresh token
+// issued for the same device_name + ip_address pair (NULL-safe compare).
+func (q *Queries) HasMatchingDeviceSession(ctx context.Context, arg HasMatchingDeviceSessionParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasMatchingDeviceSession, arg.UserID, arg.DeviceName, arg.IpAddress)
+	var matched bool
+	err := row.Scan(&matched)
+	return matched, err
+}
+
 const incrementAPIKeyUsage = `-- name: IncrementAPIKeyUsage :exec
 UPDATE api_keys
 SET last_used_at = now(), request_count = request_count + 1, updated_at = now()

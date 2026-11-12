@@ -241,3 +241,13 @@ LIMIT @hash_limit;
 UPDATE email_verifications
 SET verified_at = now()
 WHERE token_hash = @token_hash AND verified_at IS NULL;
+
+-- name: HasMatchingDeviceSession :one
+-- ADR-055 login_alert: true when this user already has a refresh token
+-- issued for the same device_name + ip_address pair (NULL-safe compare).
+SELECT EXISTS(
+  SELECT 1 FROM refresh_tokens
+  WHERE user_id = @user_id
+    AND device_name = @device_name
+    AND ip_address IS NOT DISTINCT FROM @ip_address
+) AS matched;

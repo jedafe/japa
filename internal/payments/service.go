@@ -485,6 +485,40 @@ func (s *Service) emitPaymentStatusWebhook(ctx context.Context, payment gen.Paym
 		"currency":   payment.Currency,
 		"user_id":    payment.UserID,
 	})
+
+	// ADR-055: payment_receipt / payment_failed notification to the payer.
+	slug := "payment_receipt"
+	if payment.Status == PaymentStatusFailed {
+		slug = "payment_failed"
+	}
+
+	s.notifyPaymentEmail(ctx, payment.UserID, slug, map[string]any{
+		"amount":    fmt.Sprintf("%.2f", float64(payment.Amount)/100),
+		"currency":  payment.Currency,
+		"order_id":  payment.ID.String(),
+		"item_name": payment.PurposeType,
+	})
+}
+
+// notifyPaymentEmail enqueues an ADR-055 email template to the
+// payment/subscription owner. Fire-and-forget — email delivery never
+// blocks webhook processing or status updates.
+func (s *Service) notifyPaymentEmail(ctx context.Context, userID pgtype.UUID, slug string, data map[string]any) {
+	if s.enqueuer == nil || !userID.Valid {
+		return
+	}
+
+	to, err := s.store.read.GetUserEmailByID(ctx, userID)
+	if err != nil || to == "" {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"to": to, "template_slug": slug, "template_data": data,
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+		slog.Warn("payments: enqueue "+slug+" email", "error", err)
+	}
 }
 
 // ListAdminPayments lists payments with admin filters (JEOS §17).

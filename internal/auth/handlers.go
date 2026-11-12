@@ -458,11 +458,28 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			"to":            req.Email,
 			"template_slug": "welcome",
 
-			"template_data": map[string]string{
-				"user_name": req.Username,
+			"template_data": map[string]any{
+				"user_name":  req.Username,
+				"action_url": h.baseURL(r),
+				"site_url":   h.baseURL(r),
 			},
 			"template_site_name": h.SiteName,
 		})
+
+		// ADR-055: admin_new_user alert to every user with the admin review
+		// inbox permission. Best-effort; resolved per-recipient.
+		if adminIDs, aerr := h.Queries.ListUserIDsByPermissionKey(r.Context(), "reports.review"); aerr == nil {
+			for _, aid := range adminIDs {
+				if aid == userID {
+					continue
+				}
+
+				if to, eerr := h.Queries.GetUserEmailByID(r.Context(), aid); eerr == nil && to != "" {
+					enqueueTemplatedEmailTask(h.AsynqClient, to, "admin_new_user", "", "",
+						map[string]any{"user_name": req.Username, "user_email": req.Email}, h.SiteName)
+				}
+			}
+		}
 
 		// TaskOpts restores the registered email:send defaults (Unique dedup,
 		// 30s timeout, default-tier queue); the trailing MaxRetry keeps the
@@ -648,6 +665,27 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Reset brute-force counter on successful login
 	if err := ResetLoginAttempts(r.Context(), h.BruteForce, bruteKey); err != nil {
 		slog.Warn("reset login attempts", "error", err)
+	}
+
+	// ADR-055: login_alert for a device/IP pair this account has never
+	// used before — checked before this session's refresh token row exists
+	// so the first login on a new device is detected. Fire-and-forget.
+	newDevice := true
+	if matched, derr := h.Queries.HasMatchingDeviceSession(r.Context(), gen.HasMatchingDeviceSessionParams{
+		UserID:     user.ID,
+		DeviceName: sessionDeviceName(r),
+		IpAddress:  ipPtr(r),
+	}); derr == nil {
+		newDevice = !matched
+	}
+
+	if newDevice {
+		enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "login_alert", "", "",
+			map[string]any{
+				"user_name":   user.Username,
+				"device_info": sessionDeviceName(r),
+				"ip_address":  ip,
+			}, h.SiteName)
 	}
 
 	// Update last_login_at so analytics active-user counts work (§21).
@@ -1477,11 +1515,13 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		supportURL = baseURL + "/support"
 	}
 
+	actionURL := fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token)
+
 	htmlBody, err := email.RenderPasswordResetEmail(email.TemplateData{
 		SiteName:   siteName,
 		SiteURL:    baseURL,
 		UserName:   user.Username,
-		ActionURL:  fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token),
+		ActionURL:  actionURL,
 		Expiry:     "1 hour",
 		SupportURL: supportURL,
 	})
@@ -1490,8 +1530,17 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Enqueue email delivery — best effort, failures are logged.
-	h.enqueueEmail(user.Email, "Reset Your Password", htmlBody, true)
+	// Enqueue via template_slug so the ADR-055 DB template (when present)
+	// overrides this hardcoded render; the rendered body is the last
+	// fallback. Best effort — failures are logged.
+	enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "password_reset", "Reset Your Password", htmlBody,
+		map[string]any{
+			"user_name":   user.Username,
+			"action_url":  actionURL,
+			"expiry":      "1 hour",
+			"support_url": supportURL,
+			"site_url":    baseURL,
+		}, siteName)
 }
 
 // HandleResetPasswordPage handles GET /api/v1/auth/reset-password.
@@ -1829,11 +1878,13 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		supportURL = baseURL + "/support"
 	}
 
+	actionURL := fmt.Sprintf("%s/auth/verify-email?token=%s", baseURL, token)
+
 	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
 		SiteName:   siteName,
 		SiteURL:    baseURL,
 		UserName:   user.Username,
-		ActionURL:  fmt.Sprintf("%s/auth/verify-email?token=%s", baseURL, token),
+		ActionURL:  actionURL,
 		Expiry:     "24 hours",
 		SupportURL: supportURL,
 	})
@@ -1842,7 +1893,15 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	h.enqueueEmail(user.Email, "Verify Your Email", htmlBody, true)
+	// ADR-055: template_slug lets the DB template override this render.
+	enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "email_verification", "Verify Your Email", htmlBody,
+		map[string]any{
+			"user_name":   user.Username,
+			"action_url":  actionURL,
+			"expiry":      "24 hours",
+			"support_url": supportURL,
+			"site_url":    baseURL,
+		}, siteName)
 }
 
 // enqueueEmail enqueues an email delivery task via Asynq. Failures are logged but not returned.
@@ -1871,8 +1930,37 @@ func enqueueEmailTask(client *asynq.Client, to, subject, body string, isHTML boo
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	// Use QueueForTask to route to the correct tier (default for emails).
-	if _, err := client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
+	// TaskOpts restores the registered email:send defaults (Unique dedup,
+	// 30s timeout, MaxRetry 10, default-tier queue).
+	if _, err := client.Enqueue(task, worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
+		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
+	}
+}
+
+// enqueueTemplatedEmailTask enqueues an email:send task that resolves the
+// ADR-055 DB-template chain for slug (DB → builtin constant → the supplied
+// subject/body as last fallback), so admin template overrides take effect.
+func enqueueTemplatedEmailTask(client *asynq.Client, to, slug, subject, body string, data map[string]any, siteName string) {
+	if client == nil {
+		slog.Warn("auth: enqueueTemplatedEmailTask called without asynq client", "to", to)
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"to":                 to,
+		"subject":            subject,
+		"body":               body,
+		"html":               true,
+		"template_slug":      slug,
+		"template_data":      data,
+		"template_site_name": siteName,
+	})
+	if err != nil {
+		slog.Error("auth: failed to marshal email payload", "error", err)
+		return
+	}
+
+	if _, err := client.Enqueue(asynq.NewTask(worker.TypeEmailSend, payload), worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
 		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
 	}
 }

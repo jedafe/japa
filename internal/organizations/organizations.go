@@ -236,7 +236,7 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	if _, err := s.asynq.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+	if _, err := s.asynq.Enqueue(task, worker.TaskOpts(worker.TypeEmailSend)...); err != nil {
 		slog.Error("organizations: enqueue invitation email",
 			"invitee_email", inviteeEmail, "error", err)
 		return
