@@ -251,6 +251,14 @@
 	}
 	let trending = $derived(trendingItems ?? popularComparisons);
 
+	// Reseed when the server payload changes (SPA nav back to the landing) —
+	// otherwise a stale "Recently added" fetch would shadow the fresh seed.
+	$effect(() => {
+		data.popularComparisons;
+		trendingSort = 'popularity';
+		trendingItems = null;
+	});
+
 	// Card subtitle: member type names, else item_ref_types labels.
 	function familySubtitle(members: ComparisonType[]): string {
 		if (members.length > 1) return members.map((m) => m.name).join(', ');
@@ -304,34 +312,6 @@
 			narrowOpen = true;
 		}
 	});
-
-	function selectType(nextType: ComparisonType) {
-		selectedItems = [];
-		query = '';
-		sortBy = 'title';
-		scopeSelections = {};
-		narrowDismissed = false;
-		scopeLabels = {};
-		const nextOptions = (nextType.config?.page_size_options as number[] | undefined) ?? defaultPageSizeOptions;
-		pageSize = nextOptions.includes(defaultPageSize) ? defaultPageSize : (nextOptions[0] ?? defaultPageSize);
-		currentPage = 1;
-		nestedType = '';
-		const url = new URL(page.url.href);
-		url.searchParams.set('type', nextType.slug);
-		url.searchParams.delete('mine');
-		url.searchParams.delete('preselect');
-		url.searchParams.delete('q');
-		url.searchParams.delete('sort');
-		url.searchParams.delete('page_size');
-		url.searchParams.delete('page');
-		url.searchParams.delete('source');
-		url.searchParams.delete('nested_type');
-		for (const step of data.scopeChain ?? []) {
-			url.searchParams.delete(scopeParamFor(step));
-		}
-		url.searchParams.set('page', '1');
-		goto(url, { replace: true });
-	}
 
 	function selectSource(next: string) {
 		selectedItems = [];

@@ -93,9 +93,10 @@ export const load: PageServerLoad = async (event) => {
 	if (mine) params.set('mine', 'true');
 	else params.set('facet', 'types'); // powers the type rail — skipped on mine
 
-	// No q/type filter and not the mine tab → the public grid gets a trending
-	// row seeded by popularity above the paginated list.
-	const unfiltered = !q && !filterType && !mine;
+	// No q/type filter, not the mine tab, first page only → the public grid
+	// gets a trending row above the paginated list (deeper pages shouldn't
+	// repeat the same cards).
+	const unfiltered = !q && !filterType && !mine && page === 1;
 
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };

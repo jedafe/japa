@@ -260,7 +260,8 @@
 		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
-				{@const flag = flagUrl((item.metadata?.geo_code ?? item.metadata?.country_code) as string | undefined)}
+				{@const rawCode = item.metadata?.geo_code ?? item.metadata?.country_code}
+				{@const flag = flagUrl(typeof rawCode === 'string' ? rawCode : undefined)}
 				<div
 					class="space-y-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 				>
