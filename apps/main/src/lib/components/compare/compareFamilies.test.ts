@@ -50,4 +50,17 @@ describe('compareFamilies', () => {
 		]);
 		expect(groups.map((g) => g.family.key)).toEqual(['location', 'education']);
 	});
+
+	it('route matcher accepts exactly the family slugs (no drift)', async () => {
+		// src/params.ts duplicates the slug set — kit matchers can't import app
+		// modules, so this test is the guard against the two lists diverging.
+		const { params } = await import('../../../../src/params.js');
+		const matcher = params.compareCategory;
+		for (const f of COMPARE_FAMILIES) {
+			expect(matcher['~standard'].validate(f.slug)).toEqual({ value: f.slug });
+		}
+		for (const other of ['canada-vs-us', 'not-a-family', 'LOCATION', '']) {
+			expect(matcher['~standard'].validate(other)).toHaveProperty('issues');
+		}
+	});
 });

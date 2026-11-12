@@ -243,11 +243,16 @@
 			return;
 		}
 		trendingLoading = true;
-		const res = await api.get<JCEComparisonSummary[]>(
-			'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=created_at'
-		);
-		trendingLoading = false;
-		trendingItems = res.data ?? [];
+		try {
+			const res = await api.get<JCEComparisonSummary[]>(
+				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=created_at'
+			);
+			trendingItems = res.error ? [] : (res.data ?? []);
+		} catch {
+			trendingItems = []; // hide the strip rather than strand it on the seed
+		} finally {
+			trendingLoading = false;
+		}
 	}
 	let trending = $derived(trendingItems ?? popularComparisons);
 

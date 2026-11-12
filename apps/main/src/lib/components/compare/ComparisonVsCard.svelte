@@ -68,9 +68,11 @@
 	}
 </script>
 
-<a
-	{href}
-	class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+<!-- Stretched-link card: the whole surface navigates via the title anchor's
+	 ::after overlay; the bookmark button sits above it (z-10) so interactive
+	 elements are never nested inside the anchor. -->
+<div
+	class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 >
 	<!-- Split header: first two preview images, diagonal seam; falls back to
 	     a tinted placeholder when previews/images are absent. -->
@@ -111,7 +113,9 @@
 	</div>
 
 	<div class="flex flex-1 flex-col gap-2 p-4">
-		<h3 class="font-semibold leading-snug text-[var(--color-text)]">{summary.title}</h3>
+		<h3 class="font-semibold leading-snug text-[var(--color-text)]">
+			<a {href} class="after:absolute after:inset-0 after:content-['']">{summary.title}</a>
+		</h3>
 		{#if summary.excerpt}
 			<p class="line-clamp-2 text-sm text-[var(--color-muted)]">{summary.excerpt}</p>
 		{/if}
@@ -127,7 +131,7 @@
 						onclick={toggleBookmark}
 						aria-pressed={bookmarked}
 						aria-label={t('jce.compare.bookmark', 'Bookmark')}
-						class="rounded p-0.5 transition-colors hover:text-[var(--color-text)] {bookmarked ? 'text-[var(--color-primary-text)]' : ''}"
+						class="relative z-10 rounded p-0.5 transition-colors hover:text-[var(--color-text)] {bookmarked ? 'text-[var(--color-primary-text)]' : ''}"
 					>
 						<Bookmark size={14} fill={bookmarked ? 'currentColor' : 'none'} />
 					</button>
@@ -136,4 +140,4 @@
 			</span>
 		</div>
 	</div>
-</a>
+</div>

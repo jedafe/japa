@@ -40,15 +40,15 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
-				throw error(404, { code: 'feature_disabled', message: 'Comparisons are not available' });
+				throw error(404, 'Comparisons are not available', { code: 'feature_disabled' });
 			}
-			error(404, { code: 'not_found', message: 'Comparison not found' });
+			error(404, 'Comparison not found', { code: 'not_found' });
 		}
 		throw err;
 	}
 
 	if (!comparison) {
-		error(404, { code: 'not_found', message: 'Comparison not found' });
+		error(404, 'Comparison not found', { code: 'not_found' });
 	}
 
 	const isOwner = !!event.locals.user?.id && comparison.content.author_id === event.locals.user.id;

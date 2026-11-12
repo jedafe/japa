@@ -131,7 +131,7 @@ export const load: PageServerLoad = async (event) => {
 	let selectedType: ComparisonType | undefined;
 	const typeSlug = searchParams.get('type') ?? '';
 	if (typeSlug === 'mentors' && features['mentorship.comparison'] !== true) {
-		throw error(404, { code: 'feature_disabled', message: 'Mentorship comparison is not available' });
+		throw error(404, 'Mentorship comparison is not available', { code: 'feature_disabled' });
 	}
 	if (typeSlug) {
 		selectedType = types.find((t) => t.slug === typeSlug);

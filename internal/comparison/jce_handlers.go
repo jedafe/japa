@@ -36,6 +36,10 @@ func parseTypeSlugCSV(raw string) []string {
 	return out
 }
 
+// maxTypeFilterSlugs bounds each slug CSV — every entry costs a type lookup,
+// so an oversized filter_type/facet_scope would fan out into serial queries.
+const maxTypeFilterSlugs = 32
+
 // firstNonEmpty returns the first non-empty string from its arguments.
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
@@ -99,6 +103,10 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	// the existing 404 contract.
 	var typeIDs []pgtype.UUID
 	if csv := parseTypeSlugCSV(firstNonEmpty(q.Get("filter_type"), q.Get("type"))); len(csv) > 0 {
+		if len(csv) > maxTypeFilterSlugs {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter_type", "filter_type accepts at most 32 type slugs")
+			return
+		}
 		for _, slug := range csv {
 			td, err := h.Service.GetComparisonTypeBySlug(r.Context(), slug)
 			if err != nil {
@@ -174,6 +182,10 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	// shows sibling-type counts while a sub filter is active).
 	filter.FacetTypes = q.Get("facet") == "types"
 	if filter.FacetTypes {
+		if scope := parseTypeSlugCSV(q.Get("facet_scope")); len(scope) > maxTypeFilterSlugs {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_facet_scope", "facet_scope accepts at most 32 type slugs")
+			return
+		}
 		for _, slug := range parseTypeSlugCSV(q.Get("facet_scope")) {
 			td, err := h.Service.GetComparisonTypeBySlug(r.Context(), slug)
 			if err != nil {

@@ -30,6 +30,10 @@
 		if (timeout) clearTimeout(timeout);
 		timeout = setTimeout(() => onQuery(query), 300);
 	}
+	// Don't fire a stale debounced query after the rail unmounts.
+	$effect(() => () => {
+		if (timeout) clearTimeout(timeout);
+	});
 </script>
 
 <aside class="w-full shrink-0 lg:w-60">

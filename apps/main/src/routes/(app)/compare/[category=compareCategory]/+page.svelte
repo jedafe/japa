@@ -79,6 +79,14 @@
 	);
 
 	const totalPages = $derived(Math.max(1, Math.ceil((meta.total ?? 0) / (meta.limit ?? 12))));
+
+	// Max entries a creatable type allows (config.max_item_count, default 4) —
+	// the largest across member types so the "Can't decide?" copy stays honest.
+	const maxItems = $derived(
+		creatableTypes.reduce((m, mt) => Math.max(m, (mt.config?.max_item_count as number) ?? 4), 4)
+	);
+	// 'popular' badges rank within the full popularity sort, not just this page.
+	const rankOffset = $derived(((meta.page ?? 1) - 1) * (meta.limit ?? 12));
 </script>
 
 <SeoHead
@@ -126,7 +134,7 @@
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<p class="text-sm font-semibold text-[var(--color-text)]">{t('jce.compare.category.cant_decide', "Can't decide?")}</p>
 				<p class="mt-0.5 text-xs text-[var(--color-muted)]">
-					{t('jce.compare.category.cant_decide_body', 'Compare up to {max} entries side by side.', { max: '3' })}
+					{t('jce.compare.category.cant_decide_body', 'Compare up to {max} entries side by side.', { max: String(maxItems) })}
 				</p>
 				{#if creatableTypes.length === 1}
 					<a
@@ -182,7 +190,7 @@
 					{#each data.items as item, i (item.id)}
 						<ComparisonVsCard
 							summary={item}
-							badge={data.filters.sort === 'popularity' ? badgeFor(item, { popularityIndex: i }) : badgeFor(item)}
+							badge={data.filters.sort === 'popularity' ? badgeFor(item, { popularityIndex: rankOffset + i }) : badgeFor(item)}
 							authed={Boolean(data.user)}
 						/>
 					{/each}
