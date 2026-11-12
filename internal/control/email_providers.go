@@ -241,7 +241,7 @@ func (h *Handlers) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 			merged := mergedProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Config, categoriesPtr)
 
 			mergedSecret := storedSecret
-			if input.Secret != nil && *input.Secret != "" {
+			if input.Secret != nil {
 				mergedSecret = *input.Secret
 			}
 

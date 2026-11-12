@@ -38,7 +38,7 @@ type unifiedChatInput struct {
 	Prompt         string `json:"prompt"` // alias for `message`
 	ConversationID string `json:"conversation_id,omitempty"`
 	// §103 AI Projects: start the new thread inside this project.
-	ProjectID     string         `json:"project_id,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
 	// §115 AI Quick Panel: page-anchored thread find-or-create key.
 	Anchor        string         `json:"anchor,omitempty"`
 	Context       map[string]any `json:"context,omitempty"`

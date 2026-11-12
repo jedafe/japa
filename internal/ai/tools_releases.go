@@ -16,7 +16,8 @@
 //   - roadmap.entries.ingest       CI path — GitHub push-shape commits
 //
 // Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
-//      (Versioned Releases, Commit-Sourced Entries)
+//
+//	(Versioned Releases, Commit-Sourced Entries)
 package ai
 
 import (

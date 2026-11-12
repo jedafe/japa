@@ -13,9 +13,9 @@
 package ai
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"

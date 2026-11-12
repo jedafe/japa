@@ -210,7 +210,9 @@ func (s *ProviderStore) CreateProvider(ctx context.Context, input CreateProvider
 }
 
 // UpdateProviderInput is the payload for updating a provider config.
-// APIKey is optional — if empty, the existing encrypted key is preserved.
+// APIKey is optional — nil preserves the stored key; an explicit empty
+// string clears it (currently unreachable: every type requires a key);
+// any other value re-encrypts.
 type UpdateProviderInput struct {
 	ID           pgtype.UUID
 	Name         *string
@@ -312,14 +314,25 @@ func (s *ProviderStore) updateProvider(ctx context.Context, q rowQuerier, input 
 		argIdx++
 	}
 
-	if input.APIKey != nil && *input.APIKey != "" {
-		encrypted, err := crypto.Encrypt(*input.APIKey)
-		if err != nil {
-			return ProviderConfig{}, fmt.Errorf("encrypting api key: %w", err)
+	if input.APIKey != nil {
+		var stored string
+		// An explicit empty string clears the stored key. nil leaves the
+		// column untouched. Clearing is only reachable when the merged
+		// config still validates — ValidateProviderConfig requires a key
+		// for every type today, so an empty write is currently dead code,
+		// but the store must honor the contract if a keyless type is ever
+		// added.
+		if *input.APIKey != "" {
+			encrypted, err := crypto.Encrypt(*input.APIKey)
+			if err != nil {
+				return ProviderConfig{}, fmt.Errorf("encrypting api key: %w", err)
+			}
+
+			stored = encrypted
 		}
 
 		setParts = append(setParts, fmt.Sprintf("api_key_encrypted = $%d", argIdx))
-		args = append(args, encrypted)
+		args = append(args, stored)
 		argIdx++
 	}
 

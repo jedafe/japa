@@ -230,8 +230,8 @@ func (s *ProviderStore) CreateProvider(ctx context.Context, input CreateProvider
 }
 
 // UpdateProviderInput is the payload for updating a provider config.
-// Secret is optional — if non-nil and non-empty, re-encrypt; if nil,
-// preserve the stored secret.
+// Secret is optional — nil preserves the stored secret; an explicit empty
+// string clears it (passwordless SMTP); any other value re-encrypts.
 type UpdateProviderInput struct {
 	ID           pgtype.UUID
 	Name         *string
@@ -331,14 +331,21 @@ func (s *ProviderStore) updateProvider(ctx context.Context, q rowQuerier, input 
 		argIdx++
 	}
 
-	if input.Secret != nil && *input.Secret != "" {
-		encrypted, err := crypto.Encrypt(*input.Secret)
-		if err != nil {
-			return ProviderConfig{}, fmt.Errorf("encrypting secret: %w", err)
+	if input.Secret != nil {
+		var stored string
+		// An explicit empty string clears the stored secret (passwordless
+		// SMTP). nil leaves the column untouched.
+		if *input.Secret != "" {
+			encrypted, err := crypto.Encrypt(*input.Secret)
+			if err != nil {
+				return ProviderConfig{}, fmt.Errorf("encrypting secret: %w", err)
+			}
+
+			stored = encrypted
 		}
 
 		setParts = append(setParts, fmt.Sprintf("api_key_encrypted = $%d", argIdx))
-		args = append(args, encrypted)
+		args = append(args, stored)
 		argIdx++
 	}
 

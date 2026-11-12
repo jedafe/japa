@@ -252,7 +252,7 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 			merged := mergedAIProviderConfig(existing, input.Name, input.ProviderType, input.BaseURL, input.Model, categoriesPtr)
 
 			mergedKey := storedKey
-			if input.APIKey != nil && *input.APIKey != "" {
+			if input.APIKey != nil {
 				mergedKey = *input.APIKey
 			}
 
