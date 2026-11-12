@@ -65,6 +65,8 @@ export interface ListMeta {
 	has_more?: boolean;
 	sort_options?: string[];
 	page_size_options?: number[];
+	/** JCE facet counts — present only when the request asks for facet=types. */
+	facets?: { types?: { type_id: string; slug?: string; count: number }[] };
 }
 
 /* ------------------------------------------------------------------ *

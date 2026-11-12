@@ -107,6 +107,14 @@ export interface JCEComparisonDetail {
 	type_slug?: string;
 }
 
+export interface JCEPreviewItem {
+	title: string;
+	image_url?: string;
+	geo_code?: string;
+	country_code?: string;
+	item_type?: string;
+}
+
 export interface JCEComparisonSummary {
 	id: string;
 	title: string;
@@ -127,6 +135,8 @@ export interface JCEComparisonSummary {
 	share_count?: number;
 	created_at?: string;
 	updated_at?: string;
+	/** ≤3 hydrated card previews (GET /jce/comparisons list only). */
+	preview_items?: JCEPreviewItem[];
 }
 
 export interface MatrixItem {
