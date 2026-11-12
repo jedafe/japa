@@ -476,7 +476,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 				if to, eerr := h.Queries.GetUserEmailByID(r.Context(), aid); eerr == nil && to != "" {
 					enqueueTemplatedEmailTask(h.AsynqClient, to, "admin_new_user", "", "",
-						map[string]any{"user_name": req.Username, "user_email": req.Email}, h.SiteName)
+						map[string]any{
+							"new_username": req.Username,
+							"new_email":    req.Email,
+							"timestamp":    time.Now().Format("Jan 2, 2006 15:04:05 MST"),
+						}, h.SiteName)
 				}
 			}
 		}
@@ -684,11 +688,20 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newDevice {
+		supportURL := h.SupportURL
+		if supportURL == "" {
+			supportURL = h.baseURL(r) + "/support"
+		}
+		// No GeoIP lookup exists yet — the IP is the location signal the
+		// seeded template's {{.Location}} placeholder renders.
 		enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "login_alert", "", "",
 			map[string]any{
 				"user_name":   user.Username,
 				"device_info": sessionDeviceName(r),
 				"ip_address":  ip,
+				"location":    ip,
+				"timestamp":   time.Now().Format("Jan 2, 2006 15:04:05 MST"),
+				"support_url": supportURL,
 			}, h.SiteName)
 	}
 

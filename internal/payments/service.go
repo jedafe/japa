@@ -492,12 +492,18 @@ func (s *Service) emitPaymentStatusWebhook(ctx context.Context, payment gen.Paym
 		slug = "payment_failed"
 	}
 
-	s.notifyPaymentEmail(ctx, payment.UserID, slug, map[string]any{
-		"amount":    fmt.Sprintf("%.2f", float64(payment.Amount)/100),
-		"currency":  payment.Currency,
-		"order_id":  payment.ID.String(),
-		"item_name": payment.PurposeType,
-	})
+	data := map[string]any{
+		"amount":         fmt.Sprintf("%.2f", float64(payment.Amount)/100),
+		"currency":       payment.Currency,
+		"transaction_id": payment.ID.String(),
+		"description":    payment.PurposeType,
+		"payment_method": payment.Provider,
+	}
+	if payment.Status == PaymentStatusFailed {
+		data["failure_reason"] = "The payment could not be completed."
+	}
+
+	s.notifyPaymentEmail(ctx, payment.UserID, slug, data)
 }
 
 // notifyPaymentEmail enqueues an ADR-055 email template to the
@@ -508,13 +514,14 @@ func (s *Service) notifyPaymentEmail(ctx context.Context, userID pgtype.UUID, sl
 		return
 	}
 
-	to, err := s.store.read.GetUserEmailByID(ctx, userID)
-	if err != nil || to == "" {
+	u, err := s.store.read.GetUserByID(ctx, userID)
+	if err != nil || u.Email == "" {
 		return
 	}
+	data["user_name"] = u.Username
 
 	payload, _ := json.Marshal(map[string]any{
-		"to": to, "template_slug": slug, "template_data": data,
+		"to": u.Email, "template_slug": slug, "template_data": data,
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
 		slog.Warn("payments: enqueue "+slug+" email", "error", err)

@@ -1504,11 +1504,12 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 		return subject, body, isHTML
 	}
 
-	// Use template subject if the caller didn't override it. Subjects carry
-	// the same {{.Var}} placeholders as bodies, so render them too — with
+	// The DB template's subject wins over the caller's — admin edits to
+	// tmpl.Subject must take effect (ADR-055). Subjects carry the same
+	// {{.Var}} placeholders as bodies, so render them too — with
 	// text/template, since html/template entity-escapes plain-text subjects
 	// (& → &amp; etc.).
-	if subject == "" {
+	if tmpl.Subject != "" {
 		if rendered, ok := renderSubjectTemplate(tmpl.Subject, payload); ok {
 			subject = rendered
 		} else {
@@ -3425,11 +3426,18 @@ func HandleAcademyUpdateTrackCompletion(ctx context.Context, t *asynq.Task) erro
 	// which is acceptable for a rare event.
 	if payload.Progress >= 100 && dbPool != nil {
 		if uid, uerr := scanUUID(payload.UserID); uerr == nil {
-			if to, eerr := gen.New(dbPool.Reader).GetUserEmailByID(ctx, uid); eerr == nil && to != "" {
-				enqueueTemplatedEmail(to, "course_completed", map[string]any{
-					"track_id":   payload.TrackID,
-					"action_url": resolveBaseURL(ctx) + "/academy",
-				})
+			q := gen.New(dbPool.Reader)
+			if u, eerr := q.GetUserByID(ctx, uid); eerr == nil && u.Email != "" {
+				data := map[string]any{
+					"user_name": u.Username,
+					"site_url":  resolveBaseURL(ctx) + "/academy",
+				}
+				if tid, terr := scanUUID(payload.TrackID); terr == nil {
+					if tr, gerr := q.GetAcademyTrackByID(ctx, tid); gerr == nil {
+						data["course_name"] = tr.Title
+					}
+				}
+				enqueueTemplatedEmail(u.Email, "course_completed", data)
 			}
 		}
 	}
@@ -3938,20 +3946,33 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 		slug = "weekly_digest"
 	}
 
+	templateVars := map[string]any{
+		"digest_content": body.String(),
+		"site_url":       resolveBaseURL(ctx),
+		"period":         period,
+	}
+	if uid, uerr := scanUUID(userID); uerr == nil && dbPool != nil {
+		if u, gerr := gen.New(dbPool.Reader).GetUserByID(ctx, uid); gerr == nil {
+			templateVars["user_name"] = u.Username
+		}
+	}
+
 	subject, htmlBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
 		TemplateSlug: slug,
-		TemplateData: map[string]any{
-			"digest_content": body.String(),
-			"site_url":       resolveBaseURL(ctx),
-			"period":         period,
-		},
+		TemplateData: templateVars,
 	}, fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)), body.String(), true)
 
 	// Bulk subscriber digest is marketing-category mail (ADR-015/ADR-080)
-	// and must carry List-Unsubscribe headers.
+	// and must carry List-Unsubscribe headers. The HTML <a> footer only
+	// applies to HTML bodies; a plain-text template override gets a bare
+	// URL line instead.
 	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, email)
 	if unsubURL != "" {
-		htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+		if isHTML {
+			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+		} else {
+			htmlBody += "\n\nUnsubscribe: " + unsubURL + "\n"
+		}
 	}
 
 	if err := sendMarketingEmail(ctx, email, subject, htmlBody, isHTML, unsubHeaders); err != nil {
@@ -4789,10 +4810,11 @@ func HandleAcademyIssueCertificate(ctx context.Context, t *asynq.Task) error {
 			// template. Best-effort — a lookup/enqueue failure does not
 			// fail the certificate task.
 			if uid, uerr := scanUUID(p["user_id"]); uerr == nil && dbPool != nil {
-				if to, eerr := gen.New(dbPool.Reader).GetUserEmailByID(ctx, uid); eerr == nil && to != "" {
-					enqueueTemplatedEmail(to, "certificate_issued", map[string]any{
-						"course_name": p["course_name"],
-						"action_url":  resolveBaseURL(ctx) + "/academy/certificates",
+				if u, eerr := gen.New(dbPool.Reader).GetUserByID(ctx, uid); eerr == nil && u.Email != "" {
+					enqueueTemplatedEmail(u.Email, "certificate_issued", map[string]any{
+						"user_name":       u.Username,
+						"course_name":     p["course_name"],
+						"certificate_url": resolveBaseURL(ctx) + "/academy/certificates",
 					})
 				}
 			}
@@ -6243,7 +6265,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 				"entity_type": payload.EntityType,
 				"reason":      payload.Reason,
 				"report_id":   payload.ReportID,
-				"action_url":  resolveBaseURL(ctx) + actionURL,
+				"content_url": resolveBaseURL(ctx) + actionURL,
 			})
 		}
 	}

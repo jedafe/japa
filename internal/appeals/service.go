@@ -429,6 +429,10 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 	// ADR-055: admin_appeal_submitted email alert to review-inbox holders.
 	// Fire-and-forget — the appeal record stands on its own.
 	if s.enqueuer != nil {
+		appellant := ""
+		if u, uerr := s.read.GetUserByID(ctx, userID); uerr == nil {
+			appellant = u.Username
+		}
 		if adminIDs, err := s.read.ListUserIDsByPermissionKey(ctx, "reports.review"); err == nil {
 			for _, aid := range adminIDs {
 				if to, eerr := s.read.GetUserEmailByID(ctx, aid); eerr == nil && to != "" {
@@ -436,9 +440,10 @@ func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, entityType, en
 						"to":            to,
 						"template_slug": "admin_appeal_submitted",
 						"template_data": map[string]any{
-							"entity_type": entityType,
-							"reason":      reason,
-							"appeal_id":   a.ID,
+							"appellant_username": appellant,
+							"action_type":        entityType,
+							"reason":             reason,
+							"appeal_id":          a.ID,
 						},
 					})
 					if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {

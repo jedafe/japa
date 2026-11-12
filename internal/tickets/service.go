@@ -684,7 +684,7 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 				"template_data": map[string]any{
 					"ticket_id": ticketRef,
 					"subject":   ticket.Subject,
-					"comment":   input.Body,
+					"message":   input.Body,
 				},
 			})
 			if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {

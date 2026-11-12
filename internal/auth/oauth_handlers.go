@@ -742,11 +742,16 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		DeviceName: deviceName(r),
 		IpAddress:  ipPtr(r),
 	}); derr == nil && !matched {
-		if to, eerr := h.Queries.GetUserEmailByID(r.Context(), userID); eerr == nil && to != "" {
-			enqueueTemplatedEmailTask(h.AsynqClient, to, "login_alert", "", "",
+		if u, eerr := h.Queries.GetUserByID(r.Context(), userID); eerr == nil && u.Email != "" {
+			ip := clientIP(r)
+			enqueueTemplatedEmailTask(h.AsynqClient, u.Email, "login_alert", "", "",
 				map[string]any{
+					"user_name":   u.Username,
 					"device_info": deviceName(r),
-					"ip_address":  clientIP(r),
+					"ip_address":  ip,
+					"location":    ip,
+					"timestamp":   time.Now().Format("Jan 2, 2006 15:04:05 MST"),
+					"support_url": strings.TrimRight(h.FrontendBaseURL, "/") + "/support",
 				}, h.SiteName)
 		}
 	}

@@ -607,10 +607,14 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// ADR-055: account_deletion_confirmed notice to the pre-erasure
 		// address — must be enqueued before anonymizeUser scrubs the
 		// email column. Best-effort; erasure must not block on email.
+		userName := ""
+		if u, uerr := s.store.read.GetUserByID(ctx, request.UserID); uerr == nil {
+			userName = u.Username
+		}
 		payload, _ := json.Marshal(map[string]any{
 			"to":            targetEmail,
 			"template_slug": "account_deletion_confirmed",
-			"template_data": map[string]any{},
+			"template_data": map[string]any{"user_name": userName},
 		})
 		if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
 			slog.Warn("gdpr: failed to enqueue account_deletion_confirmed email", "user_id", request.UserID.String(), "error", err)

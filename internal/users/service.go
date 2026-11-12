@@ -2223,6 +2223,9 @@ type UpdateAccountResult struct {
 	// account owner still controls.
 	OldEmail string `json:"-"`
 	NewEmail string `json:"-"`
+
+	// Username personalizes the ADR-055 email_changed notice ({{.UserName}}).
+	Username string `json:"-"`
 }
 
 // ErrNotGroupMember is returned when a user picks a public role group they do
@@ -2366,6 +2369,7 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 				txResult.EmailVerificationNeeded = true
 				txResult.OldEmail = acct.Email
 				txResult.NewEmail = newEmail
+				txResult.Username = acct.Username
 			}
 		}
 
@@ -2494,6 +2498,7 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 				"to":            result.OldEmail,
 				"template_slug": "email_changed",
 				"template_data": map[string]any{
+					"user_name": result.Username,
 					"new_email": result.NewEmail,
 				},
 			})
