@@ -44,13 +44,11 @@ JOIN (VALUES
     ('family-visas',     'family_visa'),
     ('tourist-visas',    'tourist_visa'),
     ('business-visas',   'business_visa'),
-    ('pr-pathways',      'pr_pathway'),
-    ('cost_of_living',   'city'),
-    ('col-transportation','city'),
-    ('col-restaurants',  'city'),
-    ('col-food-groceries','city'),
-    ('col-utilities',    'city'),
-    ('col-lifestyle',    'city')
+    ('pr-pathways',      'pr_pathway')
+    -- NB: col-* subtypes are intentionally NOT mapped to 'city' — their
+    -- subject is a single prices group (restaurants/utilities/…), so the
+    -- pool stays bound-group-only via step 2 below. 001125 trims the
+    -- over-seeded rows this mapping previously produced.
 ) AS m(type_slug, space_slug) ON m.type_slug = td.slug
 JOIN space_types st ON st.slug = m.space_slug
 JOIN wiki_type_categories wtc ON wtc.space_type_id = st.id
