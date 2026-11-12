@@ -1112,7 +1112,7 @@
 		<div class="grid gap-4 {fieldPool.groups.length > 0 ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}">
 			{#if fieldPool.groups.length > 0}
 				<aside class="order-last lg:order-first lg:sticky lg:top-4 lg:self-start">
-					<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} />
+					<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} maxHeight="calc(100vh - 10rem)" />
 				</aside>
 			{/if}
 			<div class="min-w-0 space-y-4">

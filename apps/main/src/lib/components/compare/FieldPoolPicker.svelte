@@ -5,8 +5,16 @@
 
 	let {
 		groups,
-		selected = $bindable(new Set<string>())
-	}: { groups: JCEFieldPoolGroup[]; selected: Set<string> } = $props();
+		selected = $bindable(new Set<string>()),
+		maxHeight
+	}: { groups: JCEFieldPoolGroup[]; selected: Set<string>; maxHeight?: string } = $props();
+
+	// Group/field labels may carry a `{name}` template token intended for
+	// per-item context ("{name} Attractions" → "Lagos Attractions"). At type
+	// level there is no item — strip it so labels read plainly.
+	function cleanLabel(label: string): string {
+		return label.replace(/\{name\}\s*/g, '').trim();
+	}
 
 	function comparableIds(g: JCEFieldPoolGroup) {
 		return g.fields.filter((f) => f.comparable).map((f) => f.id);
@@ -53,6 +61,7 @@
 		</button>
 	</div>
 
+	<div class="pool-groups" style:max-height={maxHeight} style:overflow-y={maxHeight ? 'auto' : undefined}>
 	{#each groups as g (g.group_id)}
 		{@const state = groupState(g)}
 		<details class="pool-group" open={g.is_default}>
@@ -67,7 +76,7 @@
 						toggleGroup(g);
 					}}
 				/>
-				<span class="pool-group-label">{g.label}</span>
+				<span class="pool-group-label">{cleanLabel(g.label)}</span>
 			</summary>
 			<ul class="pool-fields">
 				{#each g.fields as f (f.id)}
@@ -79,7 +88,7 @@
 								disabled={!f.comparable}
 								onchange={() => toggleField(f.id)}
 							/>
-							{f.label}
+							{cleanLabel(f.label)}
 							{#if !f.comparable}
 								<span class="hint">{t('jce.compare.fields.non_comparable', 'not comparable')}</span>
 							{/if}
@@ -89,6 +98,7 @@
 			</ul>
 		</details>
 	{/each}
+	</div>
 </div>
 
 <style>
@@ -121,6 +131,13 @@
 		cursor: pointer;
 		font-size: 0.875rem;
 		font-weight: 500;
+	}
+	.pool-groups {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		/* Breathing room for the scrollbar + focus rings when capped. */
+		padding-right: 0.25rem;
 	}
 	.pool-fields {
 		list-style: none;
