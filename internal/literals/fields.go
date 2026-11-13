@@ -540,6 +540,15 @@ func resolveRawJSONStrings(ctx context.Context, raw []byte, rc RenderContext, to
 		return nil, false
 	}
 
+	// In-place substitution preserves key order and formatting; use it when
+	// the resolved payload stays valid JSON. Resolved values containing
+	// JSON-significant chars (quotes, backslashes) would corrupt the
+	// structure — those take the decode/re-marshal path below, which
+	// escapes them correctly.
+	if resolved := resolveWithMap(ctx, string(raw), rc.ToEnv(), tokenMap, nil); json.Valid([]byte(resolved)) {
+		return []byte(resolved), true
+	}
+
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil, false
