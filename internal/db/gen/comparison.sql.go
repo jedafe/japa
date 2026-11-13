@@ -2052,8 +2052,8 @@ func (q *Queries) ListPoolFieldsByGroupIDs(ctx context.Context, arg ListPoolFiel
 }
 
 const listSpaceGeoByIDs = `-- name: ListSpaceGeoByIDs :many
-SELECT s.id, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
- p.geo_code AS parent_geo_code, p.level AS parent_level
+SELECT s.id, s.name, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
+ p.geo_code AS parent_geo_code, p.level AS parent_level, p.name AS parent_name
 FROM spaces s
 LEFT JOIN spaces p ON p.id = s.parent_id
 WHERE s.id = ANY($1::uuid[])
@@ -2061,19 +2061,22 @@ WHERE s.id = ANY($1::uuid[])
 
 type ListSpaceGeoByIDsRow struct {
 	ID            pgtype.UUID `json:"id"`
+	Name          string      `json:"name"`
 	GeoCode       *string     `json:"geo_code"`
 	Level         string      `json:"level"`
 	LogoMediaID   pgtype.UUID `json:"logo_media_id"`
 	HeaderImageID pgtype.UUID `json:"header_image_id"`
 	ParentGeoCode *string     `json:"parent_geo_code"`
 	ParentLevel   *string     `json:"parent_level"`
+	ParentName    *string     `json:"parent_name"`
 }
 
 // id → geo code + parent geo info + the space's logo (avatar) and header
 // (cover) media ids for directory cards. geo_code stores the ISO country
 // code at every level except state (region codes); a city's parent is a
 // state, so the parent's code is only usable as the country when parent
-// IS country.
+// IS country. Space/parent names feed the matrix header's location label
+// (e.g. a university's parent city → "Accra" under a GH flag).
 func (q *Queries) ListSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListSpaceGeoByIDsRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceGeoByIDs, ids)
 	if err != nil {
@@ -2085,12 +2088,14 @@ func (q *Queries) ListSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]L
 		var i ListSpaceGeoByIDsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Name,
 			&i.GeoCode,
 			&i.Level,
 			&i.LogoMediaID,
 			&i.HeaderImageID,
 			&i.ParentGeoCode,
 			&i.ParentLevel,
+			&i.ParentName,
 		); err != nil {
 			return nil, err
 		}

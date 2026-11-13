@@ -1733,6 +1733,21 @@ func jceMatrixResponse(matrix []ComparisonMatrixItem) []map[string]any {
 			item["description"] = *it.Description
 		}
 
+		// Column-header visuals — hydrated best-effort by the assembler
+		// (entity anchor name, logo avatar, flag code, locality label).
+		if row.Visual.EntityName != "" {
+			item["entity_name"] = row.Visual.EntityName
+		}
+		if row.Visual.AvatarURL != "" {
+			item["avatar_url"] = row.Visual.AvatarURL
+		}
+		if row.Visual.GeoCode != "" {
+			item["geo_code"] = row.Visual.GeoCode
+		}
+		if row.Visual.GeoLabel != "" {
+			item["geo_label"] = row.Visual.GeoLabel
+		}
+
 		out = append(out, item)
 	}
 

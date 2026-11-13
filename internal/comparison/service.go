@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/media"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1640,6 +1641,19 @@ func (s *Service) GetComparisonValue(ctx context.Context, dimensionID, itemID pg
 type ComparisonMatrixItem struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Item       gen.ListComparisonItemsByContentRow `json:"item"`
 	Dimensions []ComparisonMatrixDimension         `json:"dimensions"`
+	Visual     ComparisonMatrixItemVisual          `json:"-"`
+}
+
+// ComparisonMatrixItemVisual carries the column-header visuals the matrix
+// detail table renders per item — entity display name, logo avatar, flag
+// code, and a locality label for the "City, Country" subtitle. Hydrated
+// best-effort from the item's image/geo columns and its item_ref entity;
+// empty fields fall back to the plain item title client-side.
+type ComparisonMatrixItemVisual struct {
+	EntityName string `json:"entity_name,omitempty"`
+	AvatarURL  string `json:"avatar_url,omitempty"`
+	GeoCode    string `json:"geo_code,omitempty"`
+	GeoLabel   string `json:"geo_label,omitempty"`
 }
 
 // ComparisonMatrixDimension represents a dimension value for an item in the matrix.
@@ -1902,7 +1916,168 @@ func (s *Service) assembleComparisonMatrix(
 		matrix = append(matrix, mi)
 	}
 
+	s.hydrateMatrixItemVisuals(ctx, matrix, resolveItem)
+
 	return matrix, nil
+}
+
+// hydrateMatrixItemVisuals fills each matrix item's header visuals — entity
+// display name, logo avatar, ISO geo code, and locality label — using the
+// same sources as the directory card previews (explicit item image/geo →
+// geo space logo/label → resolved item_ref metadata). Batched: one spaces
+// query and one media query for the whole matrix; entity resolutions reuse
+// the assembler's deduped lazy cache. Best-effort: failures leave fields
+// empty and the frontend falls back to the plain item title.
+func (s *Service) hydrateMatrixItemVisuals(
+	ctx context.Context,
+	matrix []ComparisonMatrixItem,
+	resolveItem func(gen.ListComparisonItemsByContentRow) *resolver.ResolvedItem,
+) {
+	if len(matrix) == 0 {
+		return
+	}
+
+	// Collect the geo-space each item resolves to — explicit geo_space_id
+	// first, then the resolved entity's geo_space_id / university_id (the
+	// preview path treats both as the item's anchor space).
+	spaceByIdx := make(map[int]pgtype.UUID, len(matrix))
+	spaceSeen := map[[16]byte]bool{}
+	var spaceIDs []pgtype.UUID
+
+	queueSpace := func(idx int, id pgtype.UUID) {
+		if !id.Valid {
+			return
+		}
+		if _, taken := spaceByIdx[idx]; taken {
+			return
+		}
+		spaceByIdx[idx] = id
+		if !spaceSeen[id.Bytes] {
+			spaceSeen[id.Bytes] = true
+			spaceIDs = append(spaceIDs, id)
+		}
+	}
+
+	for i := range matrix {
+		item := matrix[i].Item
+		if item.GeoSpaceID.Valid {
+			queueSpace(i, item.GeoSpaceID)
+		}
+		if resolved := resolveItem(item); resolved != nil && resolved.Metadata != nil {
+			for _, key := range []string{"geo_space_id", "university_id"} {
+				raw, _ := resolved.Metadata[key].(string)
+				if raw == "" {
+					continue
+				}
+				var sid pgtype.UUID
+				if err := sid.Scan(raw); err == nil && sid.Valid {
+					queueSpace(i, sid)
+					break
+				}
+			}
+		}
+	}
+
+	// Geo batch: space → ISO code, locality label, logo media id.
+	type geoParts struct {
+		code, label string
+		logo        pgtype.UUID
+	}
+	geoBySpace := map[[16]byte]geoParts{}
+	if len(spaceIDs) > 0 {
+		if rows, err := s.store.listSpaceGeoByIDs(ctx, spaceIDs); err == nil {
+			for _, g := range rows {
+				code := ""
+				if g.GeoCode != nil {
+					code = *g.GeoCode
+				}
+				// Locality for the "City, Country" subtitle: geo-level
+				// spaces (city/state/country) use their own name; anchored
+				// spaces (university, institution) use the parent locality.
+				label := g.Name
+				switch g.Level {
+				case "country", "state", "city":
+				default:
+					if g.ParentName != nil && *g.ParentName != "" {
+						label = *g.ParentName
+					}
+				}
+				geoBySpace[g.ID.Bytes] = geoParts{code: code, label: label, logo: g.LogoMediaID}
+			}
+		}
+	}
+
+	// Media batch: avatar candidates in precedence order — explicit item
+	// image → anchor space logo → resolved entity's image_id. First set
+	// wins per item.
+	mediaIdxByItem := make([][]pgtype.UUID, len(matrix))
+	mediaSeen := map[[16]byte]bool{}
+	var mediaIDs []pgtype.UUID
+	queueMedia := func(idx int, id pgtype.UUID) {
+		if !id.Valid {
+			return
+		}
+		mediaIdxByItem[idx] = append(mediaIdxByItem[idx], id)
+		if !mediaSeen[id.Bytes] {
+			mediaSeen[id.Bytes] = true
+			mediaIDs = append(mediaIDs, id)
+		}
+	}
+
+	for i := range matrix {
+		item := matrix[i].Item
+		queueMedia(i, item.ImageID)
+		if gp, ok := geoBySpace[spaceByIdx[i].Bytes]; ok {
+			queueMedia(i, gp.logo)
+		}
+		if resolved := resolveItem(item); resolved != nil && resolved.Metadata != nil {
+			if raw, _ := resolved.Metadata["image_id"].(string); raw != "" {
+				var mid pgtype.UUID
+				if err := mid.Scan(raw); err == nil {
+					queueMedia(i, mid)
+				}
+			}
+		}
+	}
+
+	urlByMedia := map[[16]byte]string{}
+	if len(mediaIDs) > 0 {
+		if rows, err := s.store.getMediaByIDs(ctx, mediaIDs); err == nil {
+			for _, m := range rows {
+				urlByMedia[m.ID.Bytes] = media.MediaURL(m.StorageBucket, m.StoragePath, media.ImageProxyOpts{})
+			}
+		}
+	}
+
+	for i := range matrix {
+		item := matrix[i].Item
+		v := &matrix[i].Visual
+
+		if resolved := resolveItem(item); resolved != nil && resolved.Metadata != nil {
+			// Anchor entity name — course items name their host university;
+			// other entities display under their own title.
+			if name, _ := resolved.Metadata["university_name"].(string); name != "" {
+				v.EntityName = name
+			} else {
+				v.EntityName = resolved.Title
+			}
+			if c, _ := resolved.Metadata["geo_code"].(string); c != "" {
+				v.GeoCode = c
+			}
+		}
+		if gp, ok := geoBySpace[spaceByIdx[i].Bytes]; ok {
+			if v.GeoCode == "" {
+				v.GeoCode = gp.code
+			}
+			v.GeoLabel = gp.label
+		}
+		for _, mid := range mediaIdxByItem[i] {
+			if u := urlByMedia[mid.Bytes]; u != "" {
+				v.AvatarURL = u
+				break
+			}
+		}
+	}
 }
 
 // hydrateMatrixCell fills an empty matrix cell from the resolved item's

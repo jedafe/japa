@@ -484,9 +484,10 @@ ORDER BY ranked.content_id, ranked.position;
 -- (cover) media ids for directory cards. geo_code stores the ISO country
 -- code at every level except state (region codes); a city's parent is a
 -- state, so the parent's code is only usable as the country when parent
--- IS country.
-SELECT s.id, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
- p.geo_code AS parent_geo_code, p.level AS parent_level
+-- IS country. Space/parent names feed the matrix header's location label
+-- (e.g. a university's parent city → "Accra" under a GH flag).
+SELECT s.id, s.name, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
+ p.geo_code AS parent_geo_code, p.level AS parent_level, p.name AS parent_name
 FROM spaces s
 LEFT JOIN spaces p ON p.id = s.parent_id
 WHERE s.id = ANY(@ids::uuid[]);
