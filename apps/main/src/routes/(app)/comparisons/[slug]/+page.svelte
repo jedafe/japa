@@ -562,6 +562,16 @@
 		min-width: 11rem;
 	}
 
+	/* Cap item-column preferred width so long entity names/URLs wrap to
+	   multiple lines instead of stretching the column to its unbroken
+	   content width — in auto layout the column otherwise grows to fit
+	   the widest unwrapped cell. `anywhere` also lets long tokens (URLs)
+	   break mid-word during intrinsic sizing. */
+	.compare-matrix table :is(td, th):not(:first-child) {
+		max-width: 14rem;
+		overflow-wrap: anywhere;
+	}
+
 	/* Pinned dimension column — sticky on a child element, not the cell:
 	   Chromium under-paints sticky cell backgrounds beneath scrolled
 	   siblings, but a positioned child stacks reliably (same mechanism
