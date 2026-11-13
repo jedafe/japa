@@ -28,8 +28,9 @@
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
-	import { ArrowLeft, Check, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Check, ChevronDown, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { api } from '#lib/api/client.js';
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
@@ -47,9 +48,18 @@
 	let matrix = $derived(deduplicateMatrix(data.matrix ?? []));
 	let uniqueDims = $derived(uniqueDimensions(comparison.dimensions ?? []));
 	// §30 Sub-spec 6: when the comparison's dimensions span more than one
-	// field-pool group, the matrix renders one table per group instead of a
-	// single long table. Empty pool → one unlabeled group = single table.
+	// field-pool group, the matrix renders as a single-header accordion —
+	// one shared table head, collapsible group sections, only one open at a
+	// time. Empty pool → one unlabeled group = plain table.
 	let dimGroups = $derived(groupDimensionsByPool(uniqueDims, data.fieldPoolGroups ?? []));
+	// "Overview" expanded by default; falls back to the first group. One-time
+	// snapshot — manual toggles own the state afterwards.
+	let openGroupKey = $state<string | null>(
+		untrack(() => dimGroups.find((g) => g.label.toLowerCase() === 'overview')?.key ?? dimGroups[0]?.key ?? null)
+	);
+	function toggleGroup(key: string) {
+		openGroupKey = openGroupKey === key ? null : key;
+	}
 	let bestCells = $derived(matrixBestCells(matrix, uniqueDims));
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let user = $derived(data.user ?? null);
@@ -309,12 +319,7 @@
 					{/if}
 				</div>
 			</div>
-			{#each dimGroups as group, gi (group.key)}
-				{#if dimGroups.length > 1}
-					<h3 class="mb-2 text-sm font-semibold text-[var(--color-text)] {gi > 0 ? 'mt-6' : ''}">
-						{group.label || t('jce.compare.family.other', 'Other')}
-					</h3>
-				{/if}
+			{#if dimGroups.length > 0}
 				<div class="prose-table-wrapper compare-matrix">
 					<table class="text-sm">
 						<thead>
@@ -325,32 +330,64 @@
 								{/each}
 							</tr>
 						</thead>
-						<tbody>
-							{#each group.dims as dim (dim.id)}
-								<tr>
-									<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
-									{#each matrix as item (item.id)}
-										{@const best = bestCells.has(`${item.id}:${dim.id}`)}
-										<td
-											class={best
-												? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
-												: 'text-[var(--color-muted)]'}
-										>
-											{formatValue(cellFor(item, dim))}
-											{#if best}
-												<Check size={12} class="inline-block align-[-0.1em]" aria-hidden="true" />
-												<span class="sr-only">{t('jce.compare.best_value', 'Best value')}</span>
-											{/if}
-										</td>
-									{/each}
-								</tr>
+						{#if dimGroups.length > 1}
+							{#each dimGroups as group (group.key)}
+								<tbody>
+									<tr>
+										<th colspan={matrix.length + 1} class="text-start" style="background-color: var(--color-surface-subtle)">
+											<button
+												type="button"
+												onclick={() => toggleGroup(group.key)}
+												aria-expanded={openGroupKey === group.key}
+												class="flex w-full items-center justify-between gap-2 text-start text-sm font-semibold text-[var(--color-text)]"
+											>
+												{group.label || t('jce.compare.family.other', 'Other')}
+												<ChevronDown
+													size={15}
+													class="shrink-0 text-[var(--color-muted)] motion-safe:transition-transform {openGroupKey === group.key ? 'rotate-180' : ''}"
+												/>
+											</button>
+										</th>
+									</tr>
+									{#if openGroupKey === group.key}
+										{#each group.dims as dim (dim.id)}
+											{@render dimRow(dim)}
+										{/each}
+									{/if}
+								</tbody>
 							{/each}
-						</tbody>
+						{:else}
+							<tbody>
+								{#each dimGroups[0].dims as dim (dim.id)}
+									{@render dimRow(dim)}
+								{/each}
+							</tbody>
+						{/if}
 					</table>
 				</div>
-			{/each}
+			{/if}
 		</section>
 	{/if}
+
+	{#snippet dimRow(dim: JCEDimension)}
+		<tr>
+			<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
+			{#each matrix as item (item.id)}
+				{@const best = bestCells.has(`${item.id}:${dim.id}`)}
+				<td
+					class={best
+						? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
+						: 'text-[var(--color-muted)]'}
+				>
+					{formatValue(cellFor(item, dim))}
+					{#if best}
+						<Check size={12} class="inline-block align-[-0.1em]" aria-hidden="true" />
+						<span class="sr-only">{t('jce.compare.best_value', 'Best value')}</span>
+					{/if}
+				</td>
+			{/each}
+		</tr>
+	{/snippet}
 
 	<!-- Reaction/action bar: fixed bottom bar on mobile (this route is an
 	     ADR-058 exception, so the shell's mobile tab bar is absent), falling
