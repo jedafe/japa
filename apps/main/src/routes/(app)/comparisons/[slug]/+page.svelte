@@ -496,6 +496,11 @@
 		</tr>
 	{/snippet}
 
+	<div class="mt-6 flex items-center justify-between gap-4">
+		<a href="/comparisons" class="text-sm text-[var(--color-text)] underline">← {t('jce.comparisons.back')}</a>
+		<a href="/compare" class="text-sm text-[var(--color-muted)] underline">{t('jce.comparisons.create_your_own')}</a>
+	</div>
+
 	<!-- Reaction/action bar: fixed bottom bar on mobile (this route is an
 	     ADR-058 exception, so the shell's mobile tab bar is absent), falling
 	     back to the horizontal strip under the body on sm+. -->
@@ -527,11 +532,6 @@
 	<!-- Same-type recommendations, ranked by embedding similarity. -->
 	<div class="mt-8">
 		<RecommendedContentCard items={data.recommendedContent ?? []} contentType="comparison" />
-	</div>
-
-	<div class="mt-6 flex gap-4">
-		<a href="/comparisons" class="text-sm text-[var(--color-text)] underline">← {t('jce.comparisons.back')}</a>
-		<a href="/compare" class="text-sm text-[var(--color-muted)] underline">{t('jce.comparisons.create_your_own')}</a>
 	</div>
 </article>
 
