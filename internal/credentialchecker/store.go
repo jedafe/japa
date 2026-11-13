@@ -428,6 +428,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode,
 			&r.RegulatoryBody, &r.RegulatoryBodyURL, &r.PathwayType,
 			&r.TimelineEstimate, &r.CostEstimateUSD, &r.PathwayDescription,
+			&r.PathwaySteps,
 			&r.OfficialApplicationURL, &r.SourceURLLastChecked,
 			&r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,

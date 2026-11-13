@@ -53,6 +53,9 @@ var resolvableFields = map[string]bool{
 	"Note": false,
 	// JobTitle covers job-application rows that join the listing title.
 	"JobTitle": false,
+	// PathwaySteps covers the jsonb ordered-step arrays on credential
+	// pathways and ECA guides — user-facing prose inside a RawMessage payload.
+	"PathwaySteps": false,
 }
 
 // resolvableSuffixes extend coverage to composed field names without
