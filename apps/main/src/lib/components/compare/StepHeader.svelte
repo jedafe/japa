@@ -12,6 +12,8 @@
 		/** Opens the "All categories" modal — the landing's tile grid reused
 		 *  as the in-workspace type picker. */
 		onAllCategories?: () => void;
+		/** Opens the type-picker modal; falls back to onAllCategories. */
+		onPickType?: () => void;
 	}
 
 	let {
@@ -20,8 +22,11 @@
 		browseOnly,
 		selectSummary,
 		onChangeType,
-		onAllCategories
+		onAllCategories,
+		onPickType
 	}: Props = $props();
+
+	let onTypeClick = $derived(onPickType ?? onAllCategories);
 </script>
 
 <nav
@@ -39,11 +44,11 @@
 		</button>
 	{/if}
 
-	<!-- Step 1: type — opens the categories modal, same as "All categories" -->
-	{#if onAllCategories}
+	<!-- Step 1: type — opens the type-picker modal -->
+	{#if onTypeClick}
 		<button
 			type="button"
-			onclick={onAllCategories}
+			onclick={onTypeClick}
 			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface)]"
 			aria-label={t('jce.compare.step.switch_type')}
 		>

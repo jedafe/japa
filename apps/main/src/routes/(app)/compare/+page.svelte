@@ -334,11 +334,13 @@
 	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
 	let categoriesModalOpen = $state(false);
 	let sortModalOpen = $state(false);
+	let typeModalOpen = $state(false);
 	// Tile clicks inside the modal are plain anchors — a successful
 	// client-side navigation must dismiss it or it lingers over the new
 	// type's workspace.
 	afterNavigate(() => {
 		categoriesModalOpen = false;
+		typeModalOpen = false;
 	});
 
 	let landingSearch = $state('');
@@ -1033,6 +1035,7 @@
 			{selectSummary}
 			onChangeType={backToLanding}
 			onAllCategories={() => (categoriesModalOpen = true)}
+			onPickType={() => (typeModalOpen = true)}
 		/>
 
 		<!-- Workspace body: field pool rail on the start side (mockup's
@@ -1250,6 +1253,53 @@
 					href={tile.href}
 				/>
 			{/each}
+		</div>
+	{/snippet}
+</Modal>
+
+{#snippet typeRow(cmpType: ComparisonType)}
+	{@const TIcon = typeIcon(cmpType)}
+	<a
+		href="/compare?type={cmpType.slug}"
+		aria-current={cmpType.slug === selectedType?.slug ? 'page' : undefined}
+		class="flex items-center gap-2 rounded-[var(--radius)] px-2 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]
+			{cmpType.slug === selectedType?.slug ? 'bg-[var(--color-surface-subtle)] font-medium' : ''}"
+	>
+		<TIcon size={14} class="shrink-0 text-[var(--color-muted)]" />
+		<span class="min-w-0 flex-1 truncate">{cmpType.name}</span>
+		{#if cmpType.slug === selectedType?.slug}
+			<Check size={14} class="shrink-0 text-[var(--color-primary)]" />
+		{/if}
+	</a>
+{/snippet}
+
+<Modal
+	bind:open={typeModalOpen}
+	title={t('jce.compare.step.switch_type', 'Switch type')}
+	icon={GitCompare}
+	size="max-w-md"
+>
+	{#snippet children()}
+		<div class="max-h-[65vh] space-y-4 overflow-y-auto">
+			{#each familyGroups.groups as group (group.family.key)}
+				{@const FamIcon = group.family.icon}
+				<div class="space-y-1">
+					<div class="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+						<FamIcon size={12} />
+						{t(`jce.compare.family.${group.family.key}`, group.family.key)}
+					</div>
+					{#each group.types as cmpType (cmpType.slug)}
+						{@render typeRow(cmpType)}
+					{/each}
+				</div>
+			{/each}
+			{#if familyGroups.ungrouped.length > 0}
+				<div class="space-y-1">
+					{#each familyGroups.ungrouped as cmpType (cmpType.slug)}
+						{@render typeRow(cmpType)}
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{/snippet}
 </Modal>
