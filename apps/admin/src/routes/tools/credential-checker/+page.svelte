@@ -8,7 +8,7 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
-	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Pencil, XCircle } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { credentialCheckerAdminApi, apiFetch, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
@@ -186,6 +186,23 @@
 		}
 	}
 
+	async function rejectItem(item: CredentialCheckerItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await credentialCheckerAdminApi.reject(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Status filter options (HITL review queue) ───────────────────────────
 	const statusFilter = $derived<FilterDef>({
 		key: 'status',
@@ -213,6 +230,13 @@
 					icon: CheckCircle,
 					onclick: approveItem,
 					show: (row: CredentialCheckerItem) => row.status !== 'published'
+				},
+				{
+					label: t('common.reject', 'Reject'),
+					icon: XCircle,
+					variant: 'destructive',
+					onclick: rejectItem,
+					show: (row: CredentialCheckerItem) => ['draft', 'ai_draft', 'pending'].includes(row.status)
 				}
 			);
 		}

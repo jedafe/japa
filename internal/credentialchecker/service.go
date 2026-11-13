@@ -76,7 +76,7 @@ type PathwayDTO struct {
 type CommunityNoteDTO struct {
 	ID                   string `json:"id"`
 	PathwayID            string `json:"pathway_id"`
-	UserID               string `json:"user_id"`
+	UserID               string `json:"user_id,omitempty"`
 	UserName             string `json:"user_name,omitempty"`
 	Note                 string `json:"note"`
 	Upvotes              int32  `json:"upvotes"`
@@ -349,7 +349,12 @@ func (s *Service) GetPathway(ctx context.Context, id pgtype.UUID) (PathwayDetail
 
 	noteDTOs := make([]CommunityNoteDTO, 0, len(notes))
 	for _, n := range notes {
-		noteDTOs = append(noteDTOs, noteRowToDTO(n))
+		d := noteRowToDTO(n)
+		// Public readers get the display name only — the author's internal
+		// user UUID must not leak on the public detail (GDPR minimization;
+		// ECA's UpdateDTO already omits it).
+		d.UserID = ""
+		noteDTOs = append(noteDTOs, d)
 	}
 
 	return PathwayDetailDTO{
@@ -519,6 +524,21 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 	s.enqueueIndex(id)
 
 	return pathwayRowToDTO(row), nil
+}
+
+// RejectPathway marks a pathway rejected after HITL review. Mirrors
+// ecaguide.RejectGuide — reviewers need a dispose path for bad drafts or
+// the queue fills with unresolvable items.
+func (s *Service) RejectPathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
+	if err := s.store.RejectPathway(ctx, id, reviewerID, notes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("credentialchecker: reject pathway: %w", err)
+	}
+
+	return nil
 }
 
 // DeletePathway deletes a credential pathway by id for the platform.

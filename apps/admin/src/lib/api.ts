@@ -2501,6 +2501,8 @@ export const credentialCheckerAdminApi = {
 		api<unknown>(`/admin/credentials/${id}`, { method: 'PATCH', body }),
 	approve: (id: string) =>
 		api<unknown>(`/admin/credentials/${id}/approve`, { method: 'PATCH', body: {} }),
+	reject: (id: string) =>
+		api<unknown>(`/admin/credentials/${id}/reject`, { method: 'PATCH', body: {} }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/credentials/generate`, { method: 'POST', body }),
 	listNotes: (params?: string) =>

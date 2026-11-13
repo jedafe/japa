@@ -9344,6 +9344,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Patch("/admin/credentials/{id}/approve", credentialCheckerHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Patch("/admin/credentials/{id}/reject", credentialCheckerHandlers.HandleAdminReject)
 			})
 
 			// §107 — Express Entry CRS Calculator (ADR-118)

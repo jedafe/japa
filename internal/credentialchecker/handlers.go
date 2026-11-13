@@ -524,6 +524,43 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
 
+// HandleAdminReject handles PATCH /admin/credentials/:id/reject — HITL
+// reject. Admin-only. Mirrors ecaguide.HandleAdminReject.
+func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	var body ApprovePathwayRequest
+	// Body is optional; decode best-effort.
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if err := h.service.RejectPathway(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			return
+		}
+
+		slog.Error("credentialchecker: admin reject failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject pathway")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}
+
 // HandleAdminApprove handles PATCH /admin/credentials/:id/approve — HITL
 // approve a credential pathway. Admin-only (credential_checker.manage
 // permission checked at route registration). Sets hitl_reviewed_by,

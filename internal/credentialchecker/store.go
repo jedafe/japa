@@ -298,14 +298,14 @@ type ListPathwaysFilter struct {
 	// IncludeInactive bypasses the is_active default for admin callers —
 	// AI drafts are created with is_active=false and must stay visible in
 	// the review queue.
-	IncludeInactive    bool
+	IncludeInactive bool
 	// AllStatuses bypasses the status='published' default for admin
 	// callers — the review queue must see drafts and pending rows.
-	AllStatuses        bool
-	Q                  string      // optional ILIKE on profession name / regulatory body
-	Sort               string      // "key:dir" — admin list; whitelist only
-	Limit              int32
-	Offset             int32
+	AllStatuses bool
+	Q           string // optional ILIKE on profession name / regulatory body
+	Sort        string // "key:dir" — admin list; whitelist only
+	Limit       int32
+	Offset      int32
 }
 
 // ListPathways returns a paginated, filtered list of credential pathways.
@@ -523,6 +523,7 @@ JOIN credential_pathways p ON p.id = n.pathway_id
 LEFT JOIN users u ON u.id = n.user_id
 WHERE n.pathway_id = $1 AND n.status = 'published' AND n.deleted_at IS NULL
 ORDER BY n.upvotes DESC, n.created_at DESC
+LIMIT 200
 `
 
 	rows, err := s.pool.Reader.Query(ctx, q, pathwayID)
@@ -722,6 +723,33 @@ WHERE id = $1
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: approve pathway: %w", err)
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// RejectPathway marks a pathway rejected with HITL reviewer attribution.
+// Mirrors ecaguide.RejectGuide — the reviewer who rejected is recorded so
+// the queue keeps an audit trail (ADR-088).
+func (s *Store) RejectPathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
+	const q = `
+UPDATE credential_pathways
+SET hitl_reviewed_by = $2,
+    hitl_reviewed_at = now(),
+    hitl_review_notes = $3,
+    status = 'rejected',
+    is_active = false,
+    updated_at = now()
+WHERE id = $1
+`
+
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
+	if err != nil {
+		return fmt.Errorf("credentialchecker: reject pathway: %w", err)
 	}
 
 	if cmd.RowsAffected() == 0 {

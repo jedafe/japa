@@ -243,6 +243,8 @@ func (s *Store) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, prov
 }
 
 // ListApprovedUpdates returns approved community updates for a guide.
+// Bounded — a heavily-reported guide must not grow the public detail
+// payload without limit.
 func (s *Store) ListApprovedUpdates(ctx context.Context, guideID pgtype.UUID) ([]UpdateRow, error) {
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
@@ -250,7 +252,8 @@ func (s *Store) ListApprovedUpdates(ctx context.Context, guideID pgtype.UUID) ([
 		FROM eca_community_updates u
 		LEFT JOIN user_profiles up ON up.user_id = u.user_id
 		WHERE u.guide_id = $1 AND u.status = 'approved' AND u.deleted_at IS NULL
-		ORDER BY u.created_at DESC`, guideID)
+		ORDER BY u.created_at DESC
+		LIMIT 200`, guideID)
 	if err != nil {
 		return nil, err
 	}

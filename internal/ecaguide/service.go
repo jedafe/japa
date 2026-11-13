@@ -318,6 +318,14 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 		return nil, fmt.Errorf("%w: destination_space_id, provider_id, purpose and pathway_steps are required", errpkg.ErrInvalid)
 	}
 
+	if !validPurpose(in.Purpose) {
+		return nil, fmt.Errorf("%w: purpose must be one of immigration, study, employment, professional_licensure", errpkg.ErrInvalid)
+	}
+
+	if !isJSONArray(*in.PathwaySteps) {
+		return nil, fmt.Errorf("%w: pathway_steps must be a JSON array", errpkg.ErrInvalid)
+	}
+
 	// Direct-publish on create would skip the HITL stamps and the search
 	// index enqueue — publication must go through approve (ADR-088).
 	if in.Status == StatusPublished {
@@ -371,6 +379,14 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideRequest) error {
 	if in.Status == StatusPublished {
 		return fmt.Errorf("%w: publishing requires POST /admin/eca-guides/{id}/approve", errpkg.ErrInvalid)
+	}
+
+	if in.Purpose != "" && !validPurpose(in.Purpose) {
+		return fmt.Errorf("%w: purpose must be one of immigration, study, employment, professional_licensure", errpkg.ErrInvalid)
+	}
+
+	if in.PathwaySteps != nil && !isJSONArray(*in.PathwaySteps) {
+		return fmt.Errorf("%w: pathway_steps must be a JSON array", errpkg.ErrInvalid)
 	}
 
 	row := GuideRow{
@@ -569,6 +585,25 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 	return out
 }
 
+// validPurposes is the §109 purpose enum — guides outside this set are
+// unreachable via the public purpose filter and the admin form options.
+var validPurposes = map[string]bool{
+	"immigration":            true,
+	"study":                  true,
+	"employment":             true,
+	"professional_licensure": true,
+}
+
+func validPurpose(p string) bool { return validPurposes[p] }
+
+// isJSONArray reports whether raw is a JSON array — pathway_steps drives
+// the public step list and the step_index bound on community updates, so
+// a non-array value would silently break both.
+func isJSONArray(raw json.RawMessage) bool {
+	var arr []json.RawMessage
+	return json.Unmarshal(raw, &arr) == nil
+}
+
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
@@ -739,11 +774,20 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 		return errors.New("ecaguide: generate draft: AI output missing required fields")
 	}
 
+	if !isJSONArray(*out.PathwaySteps) {
+		return errors.New("ecaguide: generate draft: pathway_steps is not a JSON array")
+	}
+
 	// An explicit purpose param overrides the model's choice — admins use it
-	// to target a specific (dest × provider × purpose) slot.
+	// to target a specific (dest × provider × purpose) slot. Whichever source
+	// wins, it must be a §109 purpose value or the guide lands in no filter.
 	purpose := out.Purpose
 	if params["purpose"] != "" {
 		purpose = params["purpose"]
+	}
+
+	if !validPurpose(purpose) {
+		return fmt.Errorf("ecaguide: generate draft: invalid purpose %q", purpose)
 	}
 
 	row := GuideRow{
