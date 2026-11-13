@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import { apiContext, apiList } from '#lib/server/api.js';
 import type {
 	GeoCountry,
 	CredentialProfession,
@@ -32,26 +32,17 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
-	// A 404 or credential_checker_disabled code means the tool is turned off.
-	// Professions (the second selector axis) is independent, so it rides the
-	// same wave and is dropped when the tool reports disabled.
-	let destinations: GeoCountry[] = [];
-	let disabled = false;
-	const [destinationsRes, professionsRes] = await Promise.all([
+	// The feature flag gate above throws 404 before this point when the tool
+	// is off, so fetches only have to degrade to empty lists on API errors.
+	const [destinations, professionsRes] = await Promise.all([
 		apiList<GeoCountry>(ctx, '/geo/countries')
 			.then((r) => r.items)
-			.catch((e) => {
-				if (e instanceof ApiError && (e.status === 404 || e.code === 'credential_checker_disabled')) {
-					disabled = true;
-				}
-				return [] as GeoCountry[];
-			}),
+			.catch(() => [] as GeoCountry[]),
 		apiList<CredentialProfession>(ctx, '/credentials/professions')
 			.then((r) => r.items)
 			.catch(() => [] as CredentialProfession[])
 	]);
-	destinations = destinationsRes;
-	const professions: CredentialProfession[] = disabled ? [] : professionsRes;
+	const professions: CredentialProfession[] = professionsRes;
 
 	// Optional SSR pre-fetch of pathways when ?dest= and ?profession= are
 	// present in the URL — improves first paint for deep links.
@@ -83,7 +74,6 @@ export const load: PageServerLoad = async (event) => {
 		pathways,
 		initialDestId,
 		initialProfessionId,
-		disabled,
 		authed
 	};
 };

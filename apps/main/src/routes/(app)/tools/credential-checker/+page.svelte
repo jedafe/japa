@@ -13,8 +13,7 @@
 		MapPin,
 		ChevronDown,
 		ChevronUp,
-		ExternalLink,
-		Lock
+		ExternalLink
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
@@ -229,15 +228,7 @@
 		</p>
 	</div>
 
-	{#if data.disabled}
-		<div class="p-4">
-			<EmptyState
-				icon={Lock}
-				title={t('tools.disabled_title', 'This tool is currently unavailable')}
-				body={t('tools.disabled_body', 'Check back soon or contact support.')}
-			/>
-		</div>
-	{:else if destinations.length === 0 || professions.length === 0}
+	{#if destinations.length === 0 || professions.length === 0}
 		<div class="p-4">
 			<EmptyState
 				icon={BadgeCheck}
