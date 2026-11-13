@@ -1673,6 +1673,10 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 	// the resolved item's field_values metadata via the dimension's
 	// source_field_key (§30 Sub-spec 5 entity-field hydration).
 	HydratedFrom string `json:"hydrated_from,omitempty"`
+	// SourceFieldKey binds the dimension to an entity custom field. Internal
+	// only — the refresh path uses it as the cell's field_values lookup key
+	// (CFV as a first-class source); the API shape stays unchanged.
+	SourceFieldKey *string `json:"-"`
 	// Normalized marks currency cells whose ValueRating was converted from
 	// the item's local currency into CurrencyCode (the fx display base).
 	Normalized bool `json:"normalized,omitempty"`
@@ -1875,9 +1879,10 @@ func (s *Service) assembleComparisonMatrix(
 
 		for _, dim := range dedupedDimensions {
 			md := ComparisonMatrixDimension{
-				DimensionID: dim.ID,
-				Label:       dim.Label,
-				Type:        dim.DimensionType,
+				DimensionID:    dim.ID,
+				Label:          dim.Label,
+				Type:           dim.DimensionType,
+				SourceFieldKey: dim.SourceFieldKey,
 			}
 			if dim.DimensionType == DimensionTypeCurrency {
 				md.CurrencyCode = customfields.CurrencyCodeFromOptions(dim.SourceFieldOptions)

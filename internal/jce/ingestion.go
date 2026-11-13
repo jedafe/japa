@@ -405,6 +405,31 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 		itemRef, _ := parseItemRef(item.Item.ItemRef)
 		entityType, entityID, _ := resolveItemEntityFromRef(item.Item.ItemRef)
 
+		// Resolve the item's metadata lazily and share it across every
+		// dimension cell — metadata_path and CFV-bound dimensions read the
+		// same resolved entity, so a per-cell Resolve would redo N queries.
+		var itemMeta map[string]any
+		var metaErr error
+		var metaTried bool
+		itemMetaOnce := func() (map[string]any, error) {
+			if metaTried {
+				return itemMeta, metaErr
+			}
+
+			metaTried = true
+
+			if s.r != nil && len(itemRef) > 0 {
+				resolved, err := s.r.Resolve(ctx, itemRef)
+				if err != nil {
+					metaErr = err
+				} else {
+					itemMeta = resolved.Metadata
+				}
+			}
+
+			return itemMeta, metaErr
+		}
+
 		for _, dim := range item.Dimensions {
 			key := valueKey{item.Item.ID.Bytes, dim.DimensionID.Bytes}
 			v := valueIndex[key]
@@ -436,7 +461,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 				continue
 			}
 
-			val, ok, rerr := s.resolveValue(ctx, item, dim, itemRef, source, now)
+			val, ok, rerr := s.resolveValue(ctx, item, dim, itemMetaOnce, source, now)
 			if rerr != nil {
 				procErrs = append(procErrs, fmt.Sprintf("resolve %s/%s: %v", item.Item.ID.String(), dim.DimensionID.String(), rerr))
 				continue
@@ -546,14 +571,16 @@ func (s *Service) resolveRefreshSource(
 }
 
 // resolveValue extracts the new value for a cell from a data source.
-// The priority is: static value in Config, metadata path via the resolver
-// registry, then an AI estimate when the dispatcher is wired.
+// The priority is: static value in Config, resolved item metadata (an
+// explicit metadata_path, else the dimension's own source-field binding —
+// §30 Sub-spec 5 treats CFV as a first-class source), then an AI estimate
+// when the dispatcher is wired.
 func (s *Service) resolveValue(
 	ctx context.Context,
 
 	item comparison.ComparisonMatrixItem,
 	dim comparison.ComparisonMatrixDimension,
-	itemRef map[string]any,
+	itemMeta func() (map[string]any, error),
 	source *DataSource,
 	now time.Time,
 ) (any, bool, error) {
@@ -563,21 +590,18 @@ func (s *Service) resolveValue(
 	}
 
 	// Resolver-backed value extracted from resolved item metadata.
-	if path, ok := source.Config["metadata_path"].(string); ok && path != "" {
-		if s.r == nil || len(itemRef) == 0 {
-			return nil, false, nil
-		}
+	path, _ := source.Config["metadata_path"].(string)
+	if path == "" && dim.SourceFieldKey != nil {
+		path = *dim.SourceFieldKey
+	}
 
-		resolved, err := s.r.Resolve(ctx, itemRef)
+	if path != "" {
+		md, err := itemMeta()
 		if err != nil {
 			return nil, false, err
 		}
 
-		if resolved.Metadata == nil {
-			return nil, false, nil
-		}
-
-		v, ok := resolved.Metadata[path]
+		v, ok := metadataPathLookup(md, path)
 		if !ok || v == nil {
 			return nil, false, nil
 		}
@@ -604,6 +628,82 @@ func (s *Service) resolveValue(
 	}
 
 	return nil, false, nil
+}
+
+// metadataPathLookup resolves a data source's metadata_path against resolved
+// item metadata. Order: exact top-level key, then the field_values bag — the
+// common case, since paths are usually custom-field keys (CFV is the canonical
+// field store) — then a dotted path walked through nested maps
+// ("field_values.x", "score_inputs.y"). Nested maps themselves can never be a
+// cell value, so they report no match.
+func metadataPathLookup(md map[string]any, path string) (any, bool) {
+	if v, ok := md[path]; ok {
+		return scalarCellValue(v)
+	}
+
+	if fv, ok := md["field_values"].(map[string]any); ok {
+		if v, hit := fv[path]; hit {
+			return scalarCellValue(v)
+		}
+	}
+
+	if !strings.Contains(path, ".") {
+		return nil, false
+	}
+
+	var cur any = md
+
+	for _, seg := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+
+		cur, ok = m[seg]
+		if !ok {
+			return nil, false
+		}
+	}
+
+	return scalarCellValue(cur)
+}
+
+// scalarCellValue normalizes a resolved value for a comparison cell. String
+// arrays join "a, b, c" like the display path's matrixCellString; maps and
+// mixed arrays are structural — not valid cell values — so they report no
+// match rather than persisting "map[...]" garbage.
+func scalarCellValue(v any) (any, bool) {
+	switch x := v.(type) {
+	case nil:
+		return nil, false
+	case map[string]any:
+		return nil, false
+	case []string:
+		if len(x) == 0 {
+			return nil, false
+		}
+
+		return strings.Join(x, ", "), true
+	case []any:
+		parts := make([]string, 0, len(x))
+
+		for _, el := range x {
+			s, ok := el.(string)
+			if !ok {
+				return nil, false
+			}
+
+			parts = append(parts, s)
+		}
+
+		if len(parts) == 0 {
+			return nil, false
+		}
+
+		return strings.Join(parts, ", "), true
+	}
+
+	return v, true
 }
 
 // buildProvenance assembles the metadata JSON for a freshly filled value.
