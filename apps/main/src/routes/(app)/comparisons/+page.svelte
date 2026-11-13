@@ -17,7 +17,7 @@
 	import { excerptText } from '#lib/utils/comparison.js';
 	import type { JCEComparisonSummary } from '#lib/types/jce.js';
 
-	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// "How it works" slide-over — editable via comparisons.guide (admins).
@@ -395,7 +395,7 @@
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
 			{#if refineOpen && !useFiltersModal && !isMine}
-				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} initialOpen />
+				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} />
 			{/if}
 
 			<main class="min-w-0 flex-1 space-y-6 {isMine ? 'mx-auto w-full max-w-3xl' : ''}">

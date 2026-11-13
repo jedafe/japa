@@ -26,20 +26,34 @@
 	let scroller = $state<HTMLDivElement>();
 	let canPrev = $state(false);
 	let canNext = $state(false);
+	let rtl = false;
 
+	// scrollLeft is direction-dependent: negative in RTL on Chrome/Firefox,
+	// positive-reversed on legacy Safari. Normalize to distance-from-start so
+	// the edge gates work in either convention. (raw === 0 alone can't tell
+	// negative-start from reverse-end; treated as start — the common case.)
 	function update() {
 		if (!scroller) return;
-		canPrev = scroller.scrollLeft > 4;
-		canNext = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4;
+		const max = scroller.scrollWidth - scroller.clientWidth;
+		const raw = scroller.scrollLeft;
+		const fromStart = !rtl ? raw : raw <= 0 ? -raw : max - raw;
+		canPrev = fromStart > 4;
+		canNext = fromStart < max - 4;
 	}
 
+	// Both RTL conventions move *toward* the visual end on a negative delta,
+	// so a single sign flip covers prev/next in either one.
 	function scrollBy(dir: 1 | -1) {
-		scroller?.scrollBy({ left: dir * (scroller.clientWidth * 0.8), behavior: 'smooth' });
+		scroller?.scrollBy({
+			left: dir * (rtl ? -1 : 1) * scroller.clientWidth * 0.8,
+			behavior: 'smooth'
+		});
 	}
 
 	// Re-measure when the item set or the scroller's size changes.
 	$effect(() => {
 		items;
+		rtl = getComputedStyle(scroller!).direction === 'rtl';
 		update();
 		const ro = new ResizeObserver(update);
 		if (scroller) ro.observe(scroller);
@@ -47,7 +61,7 @@
 	});
 </script>
 
-<section class="space-y-3" aria-label={heading}>
+<section class="space-y-3">
 	<div class="flex items-center justify-between gap-3">
 		<h2 class="text-sm font-semibold text-[var(--color-text)]">{heading}</h2>
 		<div class="flex items-center gap-1.5">
