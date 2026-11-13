@@ -746,8 +746,19 @@ func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 // Ticket Type Management Handlers
 // ---------------------------------------------------------------------------
 
-// ListTicketTypes handles GET /api/v1/admin/ticket-types.
+// ListTicketTypes handles GET /api/v1/ticket-types (public).
 func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
+	h.listTicketTypes(w, r, true)
+}
+
+// AdminListTicketTypes handles GET /api/v1/admin/ticket-types. Same listing
+// but literals stay unresolved — admin surfaces must round-trip raw {{...}}
+// syntax (public keeps resolution).
+func (h *Handlers) AdminListTicketTypes(w http.ResponseWriter, r *http.Request) {
+	h.listTicketTypes(w, r, false)
+}
+
+func (h *Handlers) listTicketTypes(w http.ResponseWriter, r *http.Request, resolve bool) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -769,7 +780,9 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &types)
+	if resolve {
+		h.resolveLiterals(r, &types)
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }

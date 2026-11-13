@@ -425,9 +425,17 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 	return nil
 }
 
+// maxReviewNotesLen bounds hitl_review_notes — audit-trail text stored and
+// re-echoed in admin views, so it gets a real bound like note bodies.
+const maxReviewNotesLen = 2000
+
 // ApproveGuide publishes a guide after HITL review and enqueues it for
 // Meilisearch indexing.
 func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	if len(notes) > maxReviewNotesLen {
+		return fmt.Errorf("%w: review_notes is too long (max %d chars)", errpkg.ErrInvalid, maxReviewNotesLen)
+	}
+
 	if err := s.store.ApproveGuide(ctx, id, reviewerID, notes); err != nil {
 		return err
 	}
@@ -625,6 +633,10 @@ func uuidStr(u pgtype.UUID) string {
 // RejectGuide marks a pending/draft guide rejected (HITL reject from the
 // unified moderation queue).
 func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
+	if len(notes) > maxReviewNotesLen {
+		return fmt.Errorf("%w: review_notes is too long (max %d chars)", errpkg.ErrInvalid, maxReviewNotesLen)
+	}
+
 	return s.store.RejectGuide(ctx, id, reviewerID, notes)
 }
 

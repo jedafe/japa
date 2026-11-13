@@ -157,6 +157,7 @@ type CreatePathwayInput struct {
 type UpdatePathwayInput struct {
 	ProfessionID           *pgtype.UUID
 	IssuingSpaceID         *pgtype.UUID
+	ClearIssuingSpaceID    bool
 	DestinationSpaceID     *pgtype.UUID
 	RegulatoryBody         *string
 	RegulatoryBodyURL      *string
@@ -625,7 +626,9 @@ func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, input UpdateP
 		addSet("profession_id", *input.ProfessionID)
 	}
 
-	if input.IssuingSpaceID != nil {
+	if input.ClearIssuingSpaceID {
+		addSet("issuing_space_id", nil)
+	} else if input.IssuingSpaceID != nil {
 		addSet("issuing_space_id", *input.IssuingSpaceID)
 	}
 

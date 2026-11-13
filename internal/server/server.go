@@ -6001,7 +6001,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				// Ticket type management
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
-					Get("/admin/ticket-types", ticketHandlers.ListTicketTypes)
+					Get("/admin/ticket-types", ticketHandlers.AdminListTicketTypes)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 					Post("/admin/ticket-types", ticketHandlers.CreateTicketType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).

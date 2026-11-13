@@ -550,6 +550,11 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+
 		slog.Error("credentialchecker: admin reject failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject pathway")
 
@@ -588,6 +593,11 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			return
+		}
+
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
 			return
 		}
 

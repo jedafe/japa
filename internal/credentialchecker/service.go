@@ -121,7 +121,7 @@ type CreatePathwayRequest struct {
 // column computed from status + is_active and cannot be updated directly.
 type UpdatePathwayRequest struct {
 	ProfessionID           *pgtype.UUID     `json:"profession_id"`
-	IssuingSpaceID         *string          `json:"issuing_space_id"`
+	IssuingSpaceID         json.RawMessage  `json:"issuing_space_id"`
 	DestinationSpaceID     *string          `json:"destination_space_id"`
 	RegulatoryBody         *string          `json:"regulatory_body"`
 	RegulatoryBodyURL      *string          `json:"regulatory_body_url"`
@@ -145,6 +145,14 @@ type CreateNoteRequest struct {
 // /admin/credentials/:id/approve.
 type ApprovePathwayRequest struct {
 	ReviewNotes *string `json:"review_notes"`
+}
+
+// maxReviewNotesLen bounds hitl_review_notes — audit-trail text stored and
+// re-echoed in admin views, so it gets a real bound like note bodies.
+const maxReviewNotesLen = 2000
+
+func reviewNotesTooLong(notes *string) bool {
+	return notes != nil && len(*notes) > maxReviewNotesLen
 }
 
 // ModerateNoteRequest is the body for PATCH /admin/credentials/notes/:id.
@@ -493,13 +501,25 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 		IsActive:               req.IsActive,
 	}
 
-	if req.IssuingSpaceID != nil && *req.IssuingSpaceID != "" {
-		var sid pgtype.UUID
-		if err := sid.Scan(*req.IssuingSpaceID); err != nil {
-			return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
-		}
+	// issuing_space_id is tri-state: key absent leaves the column unchanged,
+	// explicit null/"" clears it to NULL, a UUID string sets it.
+	if len(req.IssuingSpaceID) > 0 {
+		raw := strings.TrimSpace(string(req.IssuingSpaceID))
+		if raw == "null" || raw == `""` {
+			input.ClearIssuingSpaceID = true
+		} else {
+			var uuidStr string
+			if err := json.Unmarshal(req.IssuingSpaceID, &uuidStr); err != nil {
+				return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+			}
 
-		input.IssuingSpaceID = &sid
+			var sid pgtype.UUID
+			if err := sid.Scan(uuidStr); err != nil {
+				return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+			}
+
+			input.IssuingSpaceID = &sid
+		}
 	}
 
 	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
@@ -543,6 +563,10 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 // ecaguide.RejectGuide — reviewers need a dispose path for bad drafts or
 // the queue fills with unresolvable items.
 func (s *Service) RejectPathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
+	if reviewNotesTooLong(notes) {
+		return fmt.Errorf("%w: review_notes is too long (max %d chars)", errpkg.ErrInvalid, maxReviewNotesLen)
+	}
+
 	if err := s.store.RejectPathway(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -568,6 +592,10 @@ func (s *Service) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 // level). Sets hitl_reviewed_by, hitl_reviewed_at = now(), status =
 // 'published'.
 func (s *Service) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) (PathwayDTO, error) {
+	if reviewNotesTooLong(notes) {
+		return PathwayDTO{}, fmt.Errorf("%w: review_notes is too long (max %d chars)", errpkg.ErrInvalid, maxReviewNotesLen)
+	}
+
 	if err := s.store.ApprovePathway(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows

@@ -231,6 +231,17 @@ func resolveStructFields(ctx context.Context, rv reflect.Value, rc RenderContext
 		fv := rv.Field(i)
 
 		if res, isMeta := fieldResolvable(sf.Name); res {
+			// RawMessage fields holding valid JSON resolve inside the decoded
+			// payload and re-marshal, so resolved values stay quote-escaped —
+			// raw substitution could corrupt the structure.
+			if raw, isBytes := rawJSONFieldBytes(fv); isBytes {
+				if resolved, ok := resolveRawJSONStrings(ctx, raw, itemRC, tokenMap); ok {
+					setRawJSONFieldBytes(fv, resolved)
+
+					continue
+				}
+			}
+
 			if original, ok := stringFieldValue(fv); ok {
 				setStringField(fv, resolveStr(original), isMeta)
 
@@ -491,6 +502,59 @@ func toCountryCode(v string) string {
 // byte-slice kind (Body []byte, Content json.RawMessage, and pointer
 // variants like *json.RawMessage). Nil pointers to non-string types report
 // false so setStringField never attempts an incompatible reflect.Set.
+// rawJSONFieldBytes returns the bytes of a []byte/json.RawMessage field,
+// direct or behind a pointer, so resolvable-named fields carrying JSON
+// payloads can take the structure-aware resolution path.
+func rawJSONFieldBytes(fv reflect.Value) ([]byte, bool) {
+	if fv.Kind() == reflect.Pointer {
+		if fv.IsNil() {
+			return nil, false
+		}
+
+		fv = fv.Elem()
+	}
+
+	if fv.Kind() == reflect.Slice && fv.Type().Elem().Kind() == reflect.Uint8 && !fv.IsNil() {
+		return fv.Bytes(), true
+	}
+
+	return nil, false
+}
+
+func setRawJSONFieldBytes(fv reflect.Value, b []byte) {
+	if fv.Kind() == reflect.Pointer {
+		fv.Elem().SetBytes(b)
+
+		return
+	}
+
+	fv.SetBytes(b)
+}
+
+// resolveRawJSONStrings resolves {{...}} markers inside a JSON payload by
+// walking the decoded structure in all-strings mode, then re-marshaling.
+// Returns false when the payload has no markers or isn't valid JSON — the
+// caller then falls back to plain string substitution.
+func resolveRawJSONStrings(ctx context.Context, raw []byte, rc RenderContext, tokenMap map[string]TemplateLiteral) ([]byte, bool) {
+	if !strings.Contains(string(raw), "{{") {
+		return nil, false
+	}
+
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, false
+	}
+
+	resolveValue(ctx, reflect.ValueOf(v), rc, tokenMap, 0, true)
+
+	out, err := json.Marshal(v)
+	if err != nil {
+		return nil, false
+	}
+
+	return out, true
+}
+
 func stringFieldValue(fv reflect.Value) (string, bool) {
 	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {

@@ -468,6 +468,11 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+
 		slog.Error("ecaguide: approve failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
 
@@ -604,6 +609,11 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.RejectGuide(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
+			return
+		}
+
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
 			return
 		}
 
