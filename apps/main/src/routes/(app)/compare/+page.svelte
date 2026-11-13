@@ -332,6 +332,15 @@
 		}))
 	]);
 	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
+	// Type picker scope: the workspace's "category" is the selected type's
+	// family — picking a category tile enters the family through its first
+	// type, and the picker lists just that family's types.
+	let pickerGroup = $derived.by(() => {
+		const family = selectedType?.config?.family;
+		if (typeof family !== 'string' || !family) return null;
+		return familyGroups.groups.find((g) => g.family.key === family) ?? null;
+	});
+	let pickerTypes = $derived(pickerGroup ? pickerGroup.types : familyGroups.ungrouped);
 	let categoriesModalOpen = $state(false);
 	let sortModalOpen = $state(false);
 	let typeModalOpen = $state(false);
@@ -1280,26 +1289,33 @@
 	size="max-w-md"
 >
 	{#snippet children()}
-		<div class="max-h-[65vh] space-y-4 overflow-y-auto">
-			{#each familyGroups.groups as group (group.family.key)}
-				{@const FamIcon = group.family.icon}
-				<div class="space-y-1">
-					<div class="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-						<FamIcon size={12} />
-						{t(`jce.compare.family.${group.family.key}`, group.family.key)}
-					</div>
-					{#each group.types as cmpType (cmpType.slug)}
-						{@render typeRow(cmpType)}
-					{/each}
-				</div>
-			{/each}
-			{#if familyGroups.ungrouped.length > 0}
-				<div class="space-y-1">
-					{#each familyGroups.ungrouped as cmpType (cmpType.slug)}
-						{@render typeRow(cmpType)}
-					{/each}
+		<div class="max-h-[65vh] overflow-y-auto">
+			{#if pickerGroup}
+				{@const FamIcon = pickerGroup.family.icon}
+				<div class="mb-1 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+					<FamIcon size={12} />
+					{t(`jce.compare.family.${pickerGroup.family.key}`, pickerGroup.family.key)}
 				</div>
 			{/if}
+			<div class="space-y-1">
+				{#each pickerTypes as cmpType (cmpType.slug)}
+					{@render typeRow(cmpType)}
+				{:else}
+					<p class="px-2 py-3 text-sm text-[var(--color-muted)]">
+						{t('jce.compare.no_types_in_category', 'No other types in this category.')}
+					</p>
+				{/each}
+			</div>
+			<button
+				type="button"
+				onclick={() => {
+					typeModalOpen = false;
+					categoriesModalOpen = true;
+				}}
+				class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('jce.compare.landing.all_categories', 'All categories')}
+			</button>
 		</div>
 	{/snippet}
 </Modal>
