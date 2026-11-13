@@ -127,9 +127,6 @@
 		</div>
 
 		<nav class="space-y-1" aria-label={t('jce.compare.category.categories', 'Categories')}>
-			<p class="pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-				{t('jce.compare.category.categories', 'Categories')}
-			</p>
 			{#each categories as cat (cat.href)}
 				{@render catLink(cat)}
 			{/each}
@@ -139,7 +136,7 @@
 						type="button"
 						onclick={() => toggleGroup(group.key)}
 						aria-expanded={openGroup === group.key}
-						class="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]/80 transition-colors hover:text-[var(--color-muted)]"
+						class="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-text)] transition-colors hover:text-[var(--color-muted)]"
 					>
 						{group.label}
 						<ChevronDown size={12} class="motion-safe:transition-transform {openGroup === group.key ? 'rotate-180' : ''}" />
@@ -211,7 +208,7 @@
 		class="flex items-center justify-between rounded-[var(--radius)] px-3 py-2 text-sm transition-colors
 			{cat.active
 				? 'bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary-text)]'
-				: 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
+				: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
 	>
 		<span>{cat.label}</span>
 		{#if cat.count !== undefined}
