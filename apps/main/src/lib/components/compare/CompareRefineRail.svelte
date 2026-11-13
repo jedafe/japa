@@ -136,7 +136,7 @@
 						type="button"
 						onclick={() => toggleGroup(group.key)}
 						aria-expanded={openGroup === group.key}
-						class="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-text)] transition-colors hover:text-[var(--color-muted)]"
+						class="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text)] transition-colors hover:text-[var(--color-muted)]"
 					>
 						{group.label}
 						<ChevronDown size={12} class="motion-safe:transition-transform {openGroup === group.key ? 'rotate-180' : ''}" />
