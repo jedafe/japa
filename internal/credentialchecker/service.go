@@ -401,12 +401,12 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id", errpkg.ErrInvalid)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	input := CreatePathwayInput{
@@ -510,12 +510,12 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 		} else {
 			var uuidStr string
 			if err := json.Unmarshal(req.IssuingSpaceID, &uuidStr); err != nil {
-				return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+				return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id", errpkg.ErrInvalid)
 			}
 
 			var sid pgtype.UUID
 			if err := sid.Scan(uuidStr); err != nil {
-				return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+				return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id", errpkg.ErrInvalid)
 			}
 
 			input.IssuingSpaceID = &sid
@@ -525,7 +525,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(*req.DestinationSpaceID); err != nil {
-			return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+			return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 		}
 
 		input.DestinationSpaceID = &sid
@@ -533,9 +533,11 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 
 	if req.SourceURLLastChecked != nil && *req.SourceURLLastChecked != "" {
 		var d pgtype.Date
-		if err := d.Scan(*req.SourceURLLastChecked); err == nil {
-			input.SourceURLLastChecked = &d
+		if err := d.Scan(*req.SourceURLLastChecked); err != nil {
+			return PathwayDTO{}, fmt.Errorf("%w: invalid source_url_last_checked", errpkg.ErrInvalid)
 		}
+
+		input.SourceURLLastChecked = &d
 	}
 
 	if err := s.store.UpdatePathway(ctx, id, input); err != nil {
@@ -721,12 +723,12 @@ func (s *Service) ModerateNote(ctx context.Context, id pgtype.UUID, status strin
 func (s *Service) GeneratePathwayDraft(ctx context.Context, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
-		return GeneratePathwayResponse{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+		return GeneratePathwayResponse{}, fmt.Errorf("%w: invalid issuing_space_id", errpkg.ErrInvalid)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
-		return GeneratePathwayResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GeneratePathwayResponse{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	// Fetch profession and space names to build a rich prompt.
