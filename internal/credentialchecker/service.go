@@ -884,6 +884,7 @@ func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpa
 		Sort:               sort,
 		Q:                  q,
 		IncludeInactive:    true,
+		AllStatuses:        true,
 		Limit:              limit,
 		Offset:             offset,
 	})

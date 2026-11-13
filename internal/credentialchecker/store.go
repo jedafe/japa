@@ -299,6 +299,9 @@ type ListPathwaysFilter struct {
 	// AI drafts are created with is_active=false and must stay visible in
 	// the review queue.
 	IncludeInactive    bool
+	// AllStatuses bypasses the status='published' default for admin
+	// callers — the review queue must see drafts and pending rows.
+	AllStatuses        bool
 	Q                  string      // optional ILIKE on profession name / regulatory body
 	Sort               string      // "key:dir" — admin list; whitelist only
 	Limit              int32
@@ -319,7 +322,7 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		conditions = append(conditions, fmt.Sprintf("p.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
-	} else {
+	} else if !f.AllStatuses {
 		conditions = append(conditions, "p.status = 'published'")
 	}
 
