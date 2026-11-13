@@ -1751,6 +1751,12 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  ORDER BY ci.position LIMIT 1) AS type_id
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
+LEFT JOIN trending_snapshots ts
+ ON ts.entity_type = 'content'
+ AND ts.entity_id = c.id
+ AND ts."window" = '7d'
+ AND ts.geo_code IS NULL
+ AND ts.expires_at > now()
 WHERE c.content_type = 'comparison'
  AND (
  CASE $1::text
@@ -1791,6 +1797,9 @@ WHERE c.content_type = 'comparison'
 ORDER BY
  CASE WHEN $11::text = 'title' THEN c.title END ASC,
  CASE WHEN $11::text = 'popularity' THEN c.view_count END DESC,
+ -- Unsnapshotted comparisons (no velocity data yet) must sort last, not
+ -- first — DESC defaults to NULLS FIRST in Postgres.
+ CASE WHEN $11::text = 'trending' THEN ts.score END DESC NULLS LAST,
  c.created_at DESC, c.id DESC
 LIMIT $13 OFFSET $12
 `
@@ -1855,6 +1864,9 @@ type ListComparisonsWithFiltersRow struct {
 // Comparison list with filters (JCE /api/v1/jce/comparisons)
 // =====================
 // Supports public directory, mine=true, depth filters, status, visibility, q, sort.
+// sort=trending reads the worker-maintained velocity snapshots (§53, HN
+// gravity over the 7d window). The window+geo filter keeps the join ≤1 row
+// per content — the PK is (entity_type, entity_id, window, geo_code).
 func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListComparisonsWithFiltersParams) ([]ListComparisonsWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
 		arg.Deleted,

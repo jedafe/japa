@@ -283,6 +283,15 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  ORDER BY ci.position LIMIT 1) AS type_id
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
+-- sort=trending reads the worker-maintained velocity snapshots (§53, HN
+-- gravity over the 7d window). The window+geo filter keeps the join ≤1 row
+-- per content — the PK is (entity_type, entity_id, window, geo_code).
+LEFT JOIN trending_snapshots ts
+ ON ts.entity_type = 'content'
+ AND ts.entity_id = c.id
+ AND ts."window" = '7d'
+ AND ts.geo_code IS NULL
+ AND ts.expires_at > now()
 WHERE c.content_type = 'comparison'
  AND (
  CASE sqlc.narg(deleted)::text
@@ -323,6 +332,9 @@ WHERE c.content_type = 'comparison'
 ORDER BY
  CASE WHEN sqlc.narg(sort)::text = 'title' THEN c.title END ASC,
  CASE WHEN sqlc.narg(sort)::text = 'popularity' THEN c.view_count END DESC,
+ -- Unsnapshotted comparisons (no velocity data yet) must sort last, not
+ -- first — DESC defaults to NULLS FIRST in Postgres.
+ CASE WHEN sqlc.narg(sort)::text = 'trending' THEN ts.score END DESC NULLS LAST,
  c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 

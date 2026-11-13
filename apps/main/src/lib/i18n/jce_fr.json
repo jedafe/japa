@@ -197,6 +197,7 @@
   "jce.comparisons.sort.created_at": "Plus récent d’abord",
   "jce.comparisons.sort.popularity": "Les plus vues",
   "jce.comparisons.sort.title": "Titre A–Z",
+  "jce.comparisons.sort.trending": "Tendances",
   "jce.comparisons.tab_mine": "Mes comparaisons",
   "jce.comparisons.tab_public": "Public",
   "jce.error.fallback": "Une erreur s’est produite",

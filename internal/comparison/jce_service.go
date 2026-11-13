@@ -825,10 +825,10 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		page = f.Offset/f.Limit + 1
 	}
 
-	sortOptions := []string{"created_at", "title", "popularity"}
+	sortOptions := []string{"created_at", "title", "popularity", "trending"}
 
 	if s.settingsSvc != nil {
-		raw := s.settingsSvc.GetStringOr(ctx, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
+		raw := s.settingsSvc.GetStringOr(ctx, "jce.comparisons.sort_options", `["created_at","title","popularity","trending"]`)
 		_ = json.Unmarshal([]byte(raw), &sortOptions)
 	}
 

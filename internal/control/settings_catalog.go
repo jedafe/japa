@@ -872,7 +872,7 @@ var settingsCatalog = map[string]settingMeta{
 	"gdpr.policy_version":                     {Type: "string", DefaultValue: "1.0", Description: "Current privacy policy version stamped on consent records (BUG-GDPR-005)", Panel: "admin"},
 	"geo_personalization.default_country":     {Type: "string", DefaultValue: "NG", Description: "Fallback ISO 3166-1 alpha-2 code for visitors with no resolvable geo signal (GeoIP, preference, or archetype)", Panel: "control"},
 	"jce.comparisons.page_size_options":       {Type: "json", DefaultValue: `[12,24,48,96]`, Description: "Allowed page-size options for JCE comparison lists.", Panel: "control"},
-	"jce.comparisons.sort_options":            {Type: "json", DefaultValue: `["created_at","title","popularity"]`, Description: "Allowed sort fields for JCE comparison lists.", Panel: "control"},
+	"jce.comparisons.sort_options":            {Type: "json", DefaultValue: `["created_at","title","popularity","trending"]`, Description: "Allowed sort fields for JCE comparison lists.", Panel: "control"},
 	"jce.freshness_ai_estimate_weight":        {Type: "int", DefaultValue: "50", Description: "Weight numerator for AI-estimate sources in freshness scoring.", Panel: "control"},
 	"jce.freshness_cache_ttl_minutes":         {Type: "int", DefaultValue: "10", Description: "Freshness summary Valkey TTL in minutes.", Panel: "control"},
 	"jce.freshness_decay_per_hour":            {Type: "int", DefaultValue: "2", Description: "Freshness score decay per hour after a value becomes stale.", Panel: "control"},

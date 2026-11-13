@@ -130,7 +130,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	if (unfiltered) {
-		// Trending slider = newest first (mirrors badgeFor's recency window);
+		// Trending slider = velocity score (trending_snapshots, 7d window —
+		// falls back to newest-first while a comparison has no snapshot);
 		// popular slider = most viewed. Independent fetches — either may fail
 		// without taking the other down.
 		const sliderParams = (sort: string) =>
@@ -142,7 +143,7 @@ export const load: PageServerLoad = async (event) => {
 				page_size: '8'
 			});
 		const [trendingRes, popularRes] = await Promise.allSettled([
-			apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${sliderParams('created_at')}`),
+			apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${sliderParams('trending')}`),
 			apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${sliderParams('popularity')}`)
 		]);
 		if (trendingRes.status === 'fulfilled') {
