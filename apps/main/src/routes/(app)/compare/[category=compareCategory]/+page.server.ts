@@ -63,6 +63,7 @@ export const load: PageServerLoad = async (event) => {
 	const sp = event.url.searchParams;
 	const sub = sp.get('sub') ?? '';
 	const q = sp.get('q') ?? '';
+	const theme = sp.get('theme') ?? '';
 	const sort = sp.get('sort') ?? 'popularity';
 	const page = Math.max(1, parseInt(sp.get('page') ?? '1', 10) || 1);
 	const pageSize = Math.min(96, Math.max(1, parseInt(sp.get('page_size') ?? '12', 10) || 12));
@@ -78,10 +79,11 @@ export const load: PageServerLoad = async (event) => {
 		sort,
 		page: String(page),
 		page_size: String(pageSize),
-		facet: 'types',
+		facet: 'types,themes',
 		facet_scope: memberTypes.map((t) => t.slug).join(',')
 	});
 	if (q) params.set('q', q);
+	if (theme) params.set('filter_theme', theme);
 
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };
@@ -103,7 +105,7 @@ export const load: PageServerLoad = async (event) => {
 		items: mapComparisonTypes(items, allTypes),
 		meta,
 		sub: validSub,
-		filters: { q, sort, page, page_size: pageSize },
+		filters: { q, theme, sort, page, page_size: pageSize },
 		loadError,
 		user: event.locals.user
 	};

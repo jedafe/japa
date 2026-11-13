@@ -76,6 +76,24 @@ func (s *Store) countComparisonsByType(ctx context.Context, p gen.CountCompariso
 	return rows, nil
 }
 
+func (s *Store) countComparisonGroups(ctx context.Context, p gen.CountComparisonGroupsParams) ([]gen.CountComparisonGroupsRow, error) {
+	rows, err := s.read.CountComparisonGroups(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("counting comparisons by field group: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) getCustomFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error) {
+	row, err := s.read.GetCustomFieldGroupBySlug(ctx, slug)
+	if err != nil {
+		return gen.CustomFieldGroup{}, fmt.Errorf("getting field group by slug: %w", err)
+	}
+
+	return row, nil
+}
+
 func (s *Store) listComparisonItemPreviews(ctx context.Context, contentIDs []pgtype.UUID) ([]gen.ListComparisonItemPreviewsRow, error) {
 	rows, err := s.read.ListComparisonItemPreviews(ctx, contentIDs)
 	if err != nil {

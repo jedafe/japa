@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -112,6 +113,12 @@ type JCEComparisonFilter struct {
 	// nil/empty = all types.
 	FacetTypes bool
 	FacetScope []pgtype.UUID
+	// FacetThemes requests per-field-group counts in meta.facets.themes.
+	// Counts use FacetScope when set (family-wide), else TypeIDs.
+	FacetThemes bool
+	// ThemeGroupIds filters to comparisons whose live dimensions draw from
+	// any of these field groups (theme checkboxes in the refine rail).
+	ThemeGroupIds []pgtype.UUID
 	// Previews hydrates ≤3-item card previews per row (batched queries plus
 	// resolver calls). Only the public HTTP list sets this — admin and agent
 	// callers strip rows and shouldn't pay the hydration cost.
@@ -125,6 +132,16 @@ type JCETypeFacet struct {
 	TypeID string `json:"type_id"`
 	Slug   string `json:"slug,omitempty"`
 	Count  int32  `json:"count"`
+}
+
+// JCEThemeFacet is one row of meta.facets.themes on GET /jce/comparisons —
+// a field group the comparisons' dimensions draw from. Label strips the
+// "(scope)" suffix group names carry (e.g. "Cost of Living (city)").
+type JCEThemeFacet struct {
+	GroupID string `json:"group_id"`
+	Slug    string `json:"slug"`
+	Label   string `json:"label"`
+	Count   int32  `json:"count"`
 }
 
 // JCEPreviewItem is a ≤3-item card preview embedded on list summaries.
@@ -176,6 +193,7 @@ type JCEComparisonListResult struct {
 	SortOptions     []string `json:"sort_options,omitempty"`
 	PageSizeOptions []int32  `json:"page_size_options,omitempty"`
 	TypeFacets      []JCETypeFacet
+	ThemeFacets     []JCEThemeFacet
 }
 
 // createJCEContentAndMetadata creates the content row and the metadata row inside a transaction.
@@ -747,6 +765,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeIds:    f.TypeIDs,
+		GroupIds:   f.ThemeGroupIds,
 		Depth:      depth,
 		Status:     status,
 		Visibility: visibility,
@@ -782,6 +801,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		Deleted:    deleted,
 		SpaceID:    f.SpaceID,
 		TypeIds:    f.TypeIDs,
+		GroupIds:   f.ThemeGroupIds,
 		Depth:      depth,
 		Status:     status,
 		Visibility: visibility,
@@ -826,25 +846,64 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 			ScopeIds:   f.FacetScope,
 		})
 		if ferr == nil {
-			// Enrich type_id → slug via the type catalog; best-effort.
-			types, terr := s.ListComparisonTypes(ctx, 200, 0)
-			slugByID := map[string]string{}
-			if terr == nil {
-				for _, td := range types {
-					slugByID[td.ID.String()] = td.Slug
-				}
-			}
-
 			typeFacets = make([]JCETypeFacet, 0, len(rows))
 			for _, r := range rows {
 				if !r.TypeID.Valid {
 					continue
 				}
-				id := r.TypeID.String()
-				typeFacets = append(typeFacets, JCETypeFacet{
-					TypeID: id,
-					Slug:   slugByID[id],
+				facet := JCETypeFacet{
+					TypeID: r.TypeID.String(),
 					Count:  r.Count,
+				}
+				if r.Slug != nil {
+					facet.Slug = *r.Slug
+				}
+				typeFacets = append(typeFacets, facet)
+			}
+		}
+	}
+
+	var themeFacets []JCEThemeFacet
+	if f.FacetThemes {
+		// Facet counts span the family (FacetScope) when set so theme
+		// numbers stay stable while a sub/theme filter narrows the list.
+		scope := f.FacetScope
+		if len(scope) == 0 {
+			scope = f.TypeIDs
+		}
+		rows, gerr := s.store.countComparisonGroups(ctx, gen.CountComparisonGroupsParams{
+			Deleted:    deleted,
+			SpaceID:    f.SpaceID,
+			TypeIds:    scope,
+			Depth:      depth,
+			Status:     status,
+			Visibility: visibility,
+			Mine:       &mine,
+			UserID:     userID,
+			Q:          query,
+		})
+		if gerr == nil {
+			// Strip " (scope)" suffixes for clean labels — but when two
+			// groups strip to the same label ("Overview" from university
+			// and course pools), keep the suffix on all of them so rail
+			// checkboxes stay distinguishable.
+			stripped := make([]string, len(rows))
+			collisions := map[string]int{}
+			for i, r := range rows {
+				stripped[i] = themeLabel(r.Name)
+				collisions[stripped[i]]++
+			}
+			themeFacets = make([]JCEThemeFacet, 0, len(rows))
+			for i, r := range rows {
+				label := stripped[i]
+				if collisions[label] > 1 {
+					label = r.Name
+				}
+				themeFacets = append(themeFacets, JCEThemeFacet{
+					GroupID: r.ID.String(),
+					Slug:    r.Slug,
+					Label:   label,
+					Count:   r.Count,
 				})
 			}
 		}
@@ -858,6 +917,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter)
 		SortOptions:     sortOptions,
 		PageSizeOptions: pageSizeOptions,
 		TypeFacets:      typeFacets,
+		ThemeFacets:     themeFacets,
 	}, nil
 }
 
@@ -1551,6 +1611,14 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 	_ = s.vk.Del(ctx, selectionTokenKey(token)).Err()
 
 	return result, nil
+}
+
+// scopeSuffixRe matches a trailing " (scope)" on wiki group names —
+// "Cost of Living (city)" → "Cost of Living" for theme facet labels.
+var scopeSuffixRe = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
+
+func themeLabel(groupName string) string {
+	return strings.TrimSpace(scopeSuffixRe.ReplaceAllString(groupName, ""))
 }
 
 // toNullableString returns a pointer for non-empty strings.

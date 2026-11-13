@@ -125,6 +125,12 @@ func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string) (gen
 	return s.store.getComparisonTypeBySlug(ctx, slug)
 }
 
+// GetFieldGroupBySlug resolves a custom field group by slug — used to
+// validate filter_theme params on the comparisons list endpoint.
+func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error) {
+	return s.store.getCustomFieldGroupBySlug(ctx, slug)
+}
+
 // ComparisonTypeDimension is the dimension (custom field) projection shown in
 // the admin Comparison Type detail view. Each field in the type's field group
 // becomes one comparison dimension (Section 30).

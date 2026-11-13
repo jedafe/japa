@@ -301,6 +301,16 @@ WHERE c.content_type = 'comparison'
  AND ci.deleted_at IS NULL
  )
  )
+ AND (
+ sqlc.narg(group_ids)::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_dimensions d
+ JOIN custom_fields f ON f.id = d.source_field_id
+ WHERE d.content_id = c.id
+ AND f.group_id = ANY(sqlc.narg(group_ids)::uuid[])
+ AND d.deleted_at IS NULL
+ )
+ )
  AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
  AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
@@ -339,6 +349,16 @@ WHERE c.content_type = 'comparison'
  AND ci.deleted_at IS NULL
  )
  )
+ AND (
+ sqlc.narg(group_ids)::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_dimensions d
+ JOIN custom_fields f ON f.id = d.source_field_id
+ WHERE d.content_id = c.id
+ AND f.group_id = ANY(sqlc.narg(group_ids)::uuid[])
+ AND d.deleted_at IS NULL
+ )
+ )
  AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
  AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
@@ -353,7 +373,9 @@ WHERE c.content_type = 'comparison'
 -- Per-primary-type comparison counts for facet rails. Primary type = the
 -- first live item's type_id (same rule as the list's type_id projection).
 -- scope_ids (NULL) restricts the counted type set for family pages.
-SELECT first_type.type_id, count(*)::int AS count
+-- Slug is joined here so callers never re-resolve ids through the
+-- paginated type catalog (which clamps page size and silently misses).
+SELECT first_type.type_id, td.slug, count(*)::int AS count
 FROM (
  SELECT c.id,
   (SELECT ci.type_id FROM comparison_items ci
@@ -380,10 +402,52 @@ FROM (
   OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
   )
 ) first_type
+LEFT JOIN comparison_type_definitions td ON td.id = first_type.type_id
 WHERE first_type.type_id IS NOT NULL
  AND (sqlc.narg(scope_ids)::uuid[] IS NULL OR first_type.type_id = ANY(sqlc.narg(scope_ids)::uuid[]))
-GROUP BY first_type.type_id
+GROUP BY first_type.type_id, td.slug
 ORDER BY count DESC;
+
+-- name: CountComparisonGroups :many
+-- Theme facet: per-field-group comparison counts, driven by the field
+-- groups the comparisons' live dimensions actually draw from. type_ids
+-- scopes the counted set (family pages pass member types so theme
+-- counts stay family-wide while a sub/theme filter is active).
+SELECT g.id, g.slug, g.name, count(DISTINCT c.id)::int AS count
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id
+JOIN comparison_dimensions d ON d.content_id = c.id AND d.deleted_at IS NULL
+JOIN custom_fields f ON f.id = d.source_field_id
+JOIN custom_field_groups g ON g.id = f.group_id
+WHERE c.content_type = 'comparison'
+ AND (
+ CASE sqlc.narg(deleted)::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
+ AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+ AND (
+ sqlc.narg(type_ids)::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_items ci
+ WHERE ci.content_id = c.id
+ AND ci.type_id = ANY(sqlc.narg(type_ids)::uuid[])
+ AND ci.deleted_at IS NULL
+ )
+ )
+ AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
+ AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
+ AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
+ AND (sqlc.narg(mine)::boolean IS NOT TRUE OR c.author_id = @user_id)
+ AND (
+ sqlc.narg(q)::text IS NULL OR sqlc.narg(q) = ''
+ OR c.title ILIKE '%' || sqlc.narg(q) || '%'
+ OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
+ )
+GROUP BY g.id, g.slug, g.name
+ORDER BY count DESC, g.name;
 
 -- name: ListComparisonItemPreviews :many
 -- First ≤3 live items per content row for directory card previews.

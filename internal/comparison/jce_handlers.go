@@ -181,11 +181,17 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	// this so they skip the hydration queries entirely.
 	filter.Previews = true
 
-	// facet=types opts into per-type counts; facet_scope=<csv> restricts the
-	// counted type set (family pages pass their member slugs so the rail
-	// shows sibling-type counts while a sub filter is active).
-	filter.FacetTypes = q.Get("facet") == "types"
-	if filter.FacetTypes {
+	// facet=<csv> opts into facet counts: "types" (per-type) and "themes"
+	// (per field group used by live dimensions). facet_scope=<csv> restricts
+	// the counted type set (family pages pass their member slugs so the
+	// rail shows sibling-type counts while a sub filter is active).
+	requestedFacets := map[string]bool{}
+	for _, f := range parseTypeSlugCSV(q.Get("facet")) {
+		requestedFacets[f] = true
+	}
+	filter.FacetTypes = requestedFacets["types"]
+	filter.FacetThemes = requestedFacets["themes"]
+	if filter.FacetTypes || filter.FacetThemes {
 		if scope := parseTypeSlugCSV(q.Get("facet_scope")); len(scope) > maxTypeFilterSlugs {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_facet_scope", "facet_scope accepts at most 32 type slugs")
 			return
@@ -207,6 +213,30 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// filter_theme=<csv of field-group slugs> keeps comparisons whose live
+	// dimensions draw from any listed group (theme checkboxes in the rail).
+	if themeSlugs := parseTypeSlugCSV(q.Get("filter_theme")); len(themeSlugs) > 0 {
+		if len(themeSlugs) > maxTypeFilterSlugs {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter_theme", "filter_theme accepts at most 32 group slugs")
+			return
+		}
+		for _, slug := range themeSlugs {
+			g, err := h.Service.GetFieldGroupBySlug(r.Context(), slug)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					errpkg.WriteError(w, http.StatusNotFound, "theme_not_found", "Field group not found")
+					return
+				}
+
+				handleServiceError(w, err)
+
+				return
+			}
+
+			filter.ThemeGroupIds = append(filter.ThemeGroupIds, g.ID)
+		}
+	}
+
 	res, err := h.Service.ListJCEComparisons(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
@@ -220,8 +250,15 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		"sort_options":      res.SortOptions,
 		"page_size_options": res.PageSizeOptions,
 	}
+	facets := map[string]any{}
 	if filter.FacetTypes {
-		meta["facets"] = map[string]any{"types": res.TypeFacets}
+		facets["types"] = res.TypeFacets
+	}
+	if filter.FacetThemes {
+		facets["themes"] = res.ThemeFacets
+	}
+	if len(facets) > 0 {
+		meta["facets"] = facets
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

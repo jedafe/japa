@@ -37,6 +37,102 @@ func (q *Queries) CountComparisonDimensionsByType(ctx context.Context, typeID pg
 	return column_1, err
 }
 
+const countComparisonGroups = `-- name: CountComparisonGroups :many
+SELECT g.id, g.slug, g.name, count(DISTINCT c.id)::int AS count
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id
+JOIN comparison_dimensions d ON d.content_id = c.id AND d.deleted_at IS NULL
+JOIN custom_fields f ON f.id = d.source_field_id
+JOIN custom_field_groups g ON g.id = f.group_id
+WHERE c.content_type = 'comparison'
+ AND (
+ CASE $1::text
+ WHEN 'only' THEN c.deleted_at IS NOT NULL
+ WHEN 'all' THEN TRUE
+ ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
+ END
+ )
+ AND ($2::uuid IS NULL OR c.space_id = $2)
+ AND (
+ $3::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_items ci
+ WHERE ci.content_id = c.id
+ AND ci.type_id = ANY($3::uuid[])
+ AND ci.deleted_at IS NULL
+ )
+ )
+ AND ($4::text IS NULL OR m.depth = $4)
+ AND ($5::text IS NULL OR c.status = $5)
+ AND ($6::text IS NULL OR c.visibility = $6)
+ AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
+ AND (
+ $9::text IS NULL OR $9 = ''
+ OR c.title ILIKE '%' || $9 || '%'
+ OR c.slug ILIKE '%' || $9 || '%'
+ )
+GROUP BY g.id, g.slug, g.name
+ORDER BY count DESC, g.name
+`
+
+type CountComparisonGroupsParams struct {
+	Deleted    *string       `json:"deleted"`
+	SpaceID    pgtype.UUID   `json:"space_id"`
+	TypeIds    []pgtype.UUID `json:"type_ids"`
+	Depth      *string       `json:"depth"`
+	Status     *string       `json:"status"`
+	Visibility *string       `json:"visibility"`
+	Mine       *bool         `json:"mine"`
+	UserID     pgtype.UUID   `json:"user_id"`
+	Q          *string       `json:"q"`
+}
+
+type CountComparisonGroupsRow struct {
+	ID    pgtype.UUID `json:"id"`
+	Slug  string      `json:"slug"`
+	Name  string      `json:"name"`
+	Count int32       `json:"count"`
+}
+
+// Theme facet: per-field-group comparison counts, driven by the field
+// groups the comparisons' live dimensions actually draw from. type_ids
+// scopes the counted set (family pages pass member types so theme
+// counts stay family-wide while a sub/theme filter is active).
+func (q *Queries) CountComparisonGroups(ctx context.Context, arg CountComparisonGroupsParams) ([]CountComparisonGroupsRow, error) {
+	rows, err := q.db.Query(ctx, countComparisonGroups,
+		arg.Deleted,
+		arg.SpaceID,
+		arg.TypeIds,
+		arg.Depth,
+		arg.Status,
+		arg.Visibility,
+		arg.Mine,
+		arg.UserID,
+		arg.Q,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountComparisonGroupsRow
+	for rows.Next() {
+		var i CountComparisonGroupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countComparisonItemsByType = `-- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND deleted_at IS NULL
 `
@@ -49,7 +145,7 @@ func (q *Queries) CountComparisonItemsByType(ctx context.Context, typeID pgtype.
 }
 
 const countComparisonsByType = `-- name: CountComparisonsByType :many
-SELECT first_type.type_id, count(*)::int AS count
+SELECT first_type.type_id, td.slug, count(*)::int AS count
 FROM (
  SELECT c.id,
   (SELECT ci.type_id FROM comparison_items ci
@@ -76,9 +172,10 @@ FROM (
   OR c.slug ILIKE '%' || $8 || '%'
   )
 ) first_type
+LEFT JOIN comparison_type_definitions td ON td.id = first_type.type_id
 WHERE first_type.type_id IS NOT NULL
  AND ($9::uuid[] IS NULL OR first_type.type_id = ANY($9::uuid[]))
-GROUP BY first_type.type_id
+GROUP BY first_type.type_id, td.slug
 ORDER BY count DESC
 `
 
@@ -96,12 +193,15 @@ type CountComparisonsByTypeParams struct {
 
 type CountComparisonsByTypeRow struct {
 	TypeID pgtype.UUID `json:"type_id"`
+	Slug   *string     `json:"slug"`
 	Count  int32       `json:"count"`
 }
 
 // Per-primary-type comparison counts for facet rails. Primary type = the
 // first live item's type_id (same rule as the list's type_id projection).
 // scope_ids (NULL) restricts the counted type set for family pages.
+// Slug is joined here so callers never re-resolve ids through the
+// paginated type catalog (which clamps page size and silently misses).
 func (q *Queries) CountComparisonsByType(ctx context.Context, arg CountComparisonsByTypeParams) ([]CountComparisonsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, countComparisonsByType,
 		arg.Deleted,
@@ -121,7 +221,7 @@ func (q *Queries) CountComparisonsByType(ctx context.Context, arg CountCompariso
 	var items []CountComparisonsByTypeRow
 	for rows.Next() {
 		var i CountComparisonsByTypeRow
-		if err := rows.Scan(&i.TypeID, &i.Count); err != nil {
+		if err := rows.Scan(&i.TypeID, &i.Slug, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -154,14 +254,24 @@ WHERE c.content_type = 'comparison'
  AND ci.deleted_at IS NULL
  )
  )
- AND ($4::text IS NULL OR m.depth = $4)
- AND ($5::text IS NULL OR c.status = $5)
- AND ($6::text IS NULL OR c.visibility = $6)
- AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
  AND (
- $9::text IS NULL OR $9 = ''
- OR c.title ILIKE '%' || $9 || '%'
- OR c.slug ILIKE '%' || $9 || '%'
+ $4::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_dimensions d
+ JOIN custom_fields f ON f.id = d.source_field_id
+ WHERE d.content_id = c.id
+ AND f.group_id = ANY($4::uuid[])
+ AND d.deleted_at IS NULL
+ )
+ )
+ AND ($5::text IS NULL OR m.depth = $5)
+ AND ($6::text IS NULL OR c.status = $6)
+ AND ($7::text IS NULL OR c.visibility = $7)
+ AND ($8::boolean IS NOT TRUE OR c.author_id = $9)
+ AND (
+ $10::text IS NULL OR $10 = ''
+ OR c.title ILIKE '%' || $10 || '%'
+ OR c.slug ILIKE '%' || $10 || '%'
  )
 `
 
@@ -169,6 +279,7 @@ type CountComparisonsWithFiltersParams struct {
 	Deleted    *string       `json:"deleted"`
 	SpaceID    pgtype.UUID   `json:"space_id"`
 	TypeIds    []pgtype.UUID `json:"type_ids"`
+	GroupIds   []pgtype.UUID `json:"group_ids"`
 	Depth      *string       `json:"depth"`
 	Status     *string       `json:"status"`
 	Visibility *string       `json:"visibility"`
@@ -183,6 +294,7 @@ func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComp
 		arg.Deleted,
 		arg.SpaceID,
 		arg.TypeIds,
+		arg.GroupIds,
 		arg.Depth,
 		arg.Status,
 		arg.Visibility,
@@ -1657,26 +1769,37 @@ WHERE c.content_type = 'comparison'
  AND ci.deleted_at IS NULL
  )
  )
- AND ($4::text IS NULL OR m.depth = $4)
- AND ($5::text IS NULL OR c.status = $5)
- AND ($6::text IS NULL OR c.visibility = $6)
- AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
  AND (
- $9::text IS NULL OR $9 = ''
- OR c.title ILIKE '%' || $9 || '%'
- OR c.slug ILIKE '%' || $9 || '%'
+ $4::uuid[] IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_dimensions d
+ JOIN custom_fields f ON f.id = d.source_field_id
+ WHERE d.content_id = c.id
+ AND f.group_id = ANY($4::uuid[])
+ AND d.deleted_at IS NULL
+ )
+ )
+ AND ($5::text IS NULL OR m.depth = $5)
+ AND ($6::text IS NULL OR c.status = $6)
+ AND ($7::text IS NULL OR c.visibility = $7)
+ AND ($8::boolean IS NOT TRUE OR c.author_id = $9)
+ AND (
+ $10::text IS NULL OR $10 = ''
+ OR c.title ILIKE '%' || $10 || '%'
+ OR c.slug ILIKE '%' || $10 || '%'
  )
 ORDER BY
- CASE WHEN $10::text = 'title' THEN c.title END ASC,
- CASE WHEN $10::text = 'popularity' THEN c.view_count END DESC,
+ CASE WHEN $11::text = 'title' THEN c.title END ASC,
+ CASE WHEN $11::text = 'popularity' THEN c.view_count END DESC,
  c.created_at DESC, c.id DESC
-LIMIT $12 OFFSET $11
+LIMIT $13 OFFSET $12
 `
 
 type ListComparisonsWithFiltersParams struct {
 	Deleted    *string       `json:"deleted"`
 	SpaceID    pgtype.UUID   `json:"space_id"`
 	TypeIds    []pgtype.UUID `json:"type_ids"`
+	GroupIds   []pgtype.UUID `json:"group_ids"`
 	Depth      *string       `json:"depth"`
 	Status     *string       `json:"status"`
 	Visibility *string       `json:"visibility"`
@@ -1737,6 +1860,7 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 		arg.Deleted,
 		arg.SpaceID,
 		arg.TypeIds,
+		arg.GroupIds,
 		arg.Depth,
 		arg.Status,
 		arg.Visibility,

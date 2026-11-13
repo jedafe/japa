@@ -303,5 +303,10 @@
   "jce.comparisons.anonymous": "Anonyme",
   "jce.comparisons.seo_description": "Comparez destinations, visas, écoles et bien plus côte à côte.",
   "jce.compare.step.switch_type": "Changer de type",
-  "jce.compare.step.all_types": "Tous les types de comparaison"
+  "jce.compare.step.all_types": "Tous les types de comparaison",
+  "jce.compare.category.type_comparisons": "Comparaisons : {name}",
+  "jce.compare.category.themes": "Thèmes populaires",
+  "jce.compare.category.themes_info": "Filtrer par les sujets couverts par ces comparaisons",
+  "jce.compare.category.show_more": "Voir plus",
+  "jce.compare.category.show_less": "Voir moins"
 }

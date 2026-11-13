@@ -67,6 +67,37 @@
 		}))
 	]);
 
+	// Theme facets — field groups the family comparisons' dimensions draw
+	// from (Cost of Living, Safety, Jobs...). Toggling rides the `theme`
+	// URL param → filter_theme on the API; facets stay family-scoped.
+	const activeThemes = $derived(new Set((data.filters.theme ?? '').split(',').filter(Boolean)));
+	const railThemes = $derived(
+		(meta.facets?.themes ?? []).map((th) => ({
+			slug: th.slug,
+			label: th.label,
+			count: th.count,
+			active: activeThemes.has(th.slug)
+		}))
+	);
+
+	function onToggleTheme(slug: string) {
+		const next = new Set(activeThemes);
+		if (next.has(slug)) next.delete(slug);
+		else next.add(slug);
+		goto(url({ theme: next.size ? [...next].join(',') : null, page: null }), { replace: true });
+	}
+
+	// Grid heading mirrors the mockup: "<item_label> comparisons" + count
+	// badge when a subtype is active, else the flat total label.
+	const activeType = $derived(memberTypes.find((mt) => mt.slug === data.sub));
+	const gridHeading = $derived(
+		activeType
+			? t('jce.compare.category.type_comparisons', '{name} comparisons', {
+					name: activeType.item_label || activeType.name
+				})
+			: t('jce.compare.category.comparisons_count', '{n} comparisons', { n: String(meta.total ?? 0) })
+	);
+
 	function onQuery(q: string) {
 		goto(url({ q: q || null, page: null }), { replace: true, reset: false });
 	}
@@ -158,12 +189,15 @@
 	</header>
 
 	<div class="flex flex-col gap-6 lg:flex-row">
-		<CompareRefineRail bind:query categories={railCategories} {onQuery} />
+		<CompareRefineRail bind:query categories={railCategories} themes={railThemes} {onQuery} {onToggleTheme} />
 
 		<main class="min-w-0 flex-1 space-y-4">
 			<div class="flex items-center justify-between gap-3">
-				<p class="text-sm font-medium text-[var(--color-text)]">
-					{t('jce.compare.category.comparisons_count', '{n} comparisons', { n: String(meta.total ?? 0) })}
+				<p class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+					{gridHeading}
+					{#if activeType}
+						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">{meta.total ?? 0}</span>
+					{/if}
 				</p>
 				<JceSelect
 					options={sortOptions}
