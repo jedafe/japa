@@ -570,6 +570,14 @@
 		border-bottom: 0;
 	}
 
+	/* The wrapper's ::after scroll-fade is absolutely positioned inside the
+	   scroller, so it scrolls with the content and lands as a stray
+	   vertical band mid-table once scrolled. The pinned column already
+	   signals scrollability — drop it. */
+	.compare-matrix::after {
+		display: none;
+	}
+
 	/* Mockup zebra — a faint cool-lavender stripe (≈ #f9f9fc on white)
 	   rather than the neutral surface-subtle; translucent so it adapts to
 	   the dark theme too. The sticky first column needs the opaque
