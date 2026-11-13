@@ -320,7 +320,9 @@
 				</div>
 			</div>
 			{#if dimGroups.length > 0}
-				<div class="prose-table-wrapper compare-matrix">
+				<div
+					class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
+				>
 					<table class="text-sm">
 						<thead>
 							<tr>
@@ -332,24 +334,36 @@
 						</thead>
 						{#if dimGroups.length > 1}
 							{#each dimGroups as group (group.key)}
+								{@const open = openGroupKey === group.key}
 								<tbody>
 									<tr>
-										<th colspan={matrix.length + 1} class="text-start" style="background-color: var(--color-surface-subtle)">
+										<th
+											colspan={matrix.length + 1}
+											class="text-start"
+											style="padding: 0; border-top-width: 2px;{open
+												? ' background-color: var(--color-surface-subtle); box-shadow: inset 3px 0 0 var(--color-primary);'
+												: ' background-color: var(--color-surface);'}"
+										>
 											<button
 												type="button"
 												onclick={() => toggleGroup(group.key)}
-												aria-expanded={openGroupKey === group.key}
-												class="flex w-full items-center justify-between gap-2 text-start text-sm font-semibold text-[var(--color-text)]"
+												aria-expanded={open}
+												class="flex w-full items-center gap-2 px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-[var(--color-surface-subtle)] {open
+													? 'text-[var(--color-text)]'
+													: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 											>
-												{group.label || t('jce.compare.family.other', 'Other')}
 												<ChevronDown
-													size={15}
-													class="shrink-0 text-[var(--color-muted)] motion-safe:transition-transform {openGroupKey === group.key ? 'rotate-180' : ''}"
+													size={14}
+													class="shrink-0 motion-safe:transition-transform {open ? 'rotate-180' : ''}"
 												/>
+												{group.label || t('jce.compare.family.other', 'Other')}
+												<span class="font-medium normal-case tracking-normal text-[var(--color-muted)]">
+													· {group.dims.length}
+												</span>
 											</button>
 										</th>
 									</tr>
-									{#if openGroupKey === group.key}
+									{#if open}
 										{#each group.dims as dim (dim.id)}
 											{@render dimRow(dim)}
 										{/each}
