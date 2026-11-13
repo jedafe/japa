@@ -305,7 +305,8 @@
 				? `${names.join(', ')} ${t('jce.compare.landing.more_types', '+{n} more', { n: extra })}`
 				: names.join(', ');
 		}
-		const refs = (members[0]?.config?.item_ref_types as string[] | undefined) ?? [];
+		const refs = ((members[0]?.config?.item_ref_types as string[] | undefined) ?? [])
+			.filter((r) => r !== 'comparison');
 		return refs.map(sourcePlural).join(', ');
 	}
 

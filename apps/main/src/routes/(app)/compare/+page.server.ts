@@ -147,10 +147,16 @@ export const load: PageServerLoad = async (event) => {
 
 	const configuredItemRefTypes = selectedType?.config?.item_ref_types as string[] | undefined;
 	const defaultItemRefTypes = parseDefaultItemRefTypes();
-	const itemRefTypes = configuredItemRefTypes ??
+	const resolvedItemRefTypes = configuredItemRefTypes ??
 		(selectedType?.config?.default_item_ref_type
 		? [String(selectedType.config.default_item_ref_type)]
 		: defaultItemRefTypes);
+	// The 'comparison' source ("Existing comparison") is no longer offered in
+	// the picker — dropped unless it is the type's only source, which would
+	// otherwise strand comparison-only types with no resolver.
+	const itemRefTypes = resolvedItemRefTypes.length > 1
+		? resolvedItemRefTypes.filter((t) => t !== 'comparison')
+		: resolvedItemRefTypes;
 	const allowNestedComparisons = Boolean(selectedType?.config?.allow_nested_comparisons);
 	const allowedNestedTypes = selectedType?.config?.allowed_nested_types as string[] ?? [];
 
@@ -163,7 +169,10 @@ export const load: PageServerLoad = async (event) => {
 
 	let source = searchParams.get('source') ?? '';
 	if (!itemRefTypes.includes(source)) {
-		source = selectedType?.config?.default_item_ref_type as string ?? itemRefTypes[0] ?? 'space';
+		const configuredDefault = (selectedType?.config?.default_item_ref_type as string) ?? '';
+		source = itemRefTypes.includes(configuredDefault)
+			? configuredDefault
+			: (itemRefTypes[0] ?? 'space');
 	}
 
 	const q = searchParams.get('q') ?? '';
