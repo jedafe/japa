@@ -336,8 +336,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &guides)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       guides,
 		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
@@ -502,8 +500,6 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.resolveLiterals(r, &updates)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       updates,
 		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
@@ -642,8 +638,6 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 		return
 	}
-
-	h.resolveLiterals(r, &providers)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       providers,

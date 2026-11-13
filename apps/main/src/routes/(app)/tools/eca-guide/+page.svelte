@@ -277,13 +277,14 @@
 			<div>
 				<label
 					class="mb-1 block text-sm font-medium text-[var(--color-text)]"
-					for="dest"
+					for="dest-selector"
 				>{t('eca_guide.destination', 'Destination')}</label>
 
 				<DestinationSelector
 					destinations={destinations}
 					bind:selectedId={selectedDest}
 					onchange={onDestChange}
+					hideLabel
 				/>
 			</div>
 			<div>

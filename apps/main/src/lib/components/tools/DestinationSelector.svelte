@@ -15,11 +15,13 @@
 	let {
 		destinations,
 		selectedId = $bindable(),
-		onchange
+		onchange,
+		hideLabel = false
 	}: {
 		destinations: GeoSpaceOption[];
 		selectedId: string;
 		onchange?: (id: string) => void;
+		hideLabel?: boolean;
 	} = $props();
 
 	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
@@ -40,9 +42,11 @@
 </script>
 
 <div class="flex items-center gap-3">
-	<label for="dest-selector" class="whitespace-nowrap text-sm font-medium text-[var(--color-text)]">
-		{t('geo.destination', 'Destination:')}
-	</label>
+	{#if !hideLabel}
+		<label for="dest-selector" class="whitespace-nowrap text-sm font-medium text-[var(--color-text)]">
+			{t('geo.destination', 'Destination:')}
+		</label>
+	{/if}
 	<Autocomplete
 		id="dest-selector"
 		placeholder={t('geo.select_destination', 'Select a country…')}
