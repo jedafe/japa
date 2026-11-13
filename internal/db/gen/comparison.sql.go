@@ -2037,7 +2037,8 @@ func (q *Queries) ListPoolFieldsByGroupIDs(ctx context.Context, arg ListPoolFiel
 }
 
 const listSpaceGeoByIDs = `-- name: ListSpaceGeoByIDs :many
-SELECT s.id, s.geo_code, s.level, p.geo_code AS parent_geo_code, p.level AS parent_level
+SELECT s.id, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
+ p.geo_code AS parent_geo_code, p.level AS parent_level
 FROM spaces s
 LEFT JOIN spaces p ON p.id = s.parent_id
 WHERE s.id = ANY($1::uuid[])
@@ -2047,13 +2048,17 @@ type ListSpaceGeoByIDsRow struct {
 	ID            pgtype.UUID `json:"id"`
 	GeoCode       *string     `json:"geo_code"`
 	Level         string      `json:"level"`
+	LogoMediaID   pgtype.UUID `json:"logo_media_id"`
+	HeaderImageID pgtype.UUID `json:"header_image_id"`
 	ParentGeoCode *string     `json:"parent_geo_code"`
 	ParentLevel   *string     `json:"parent_level"`
 }
 
-// id → geo code + parent geo info. geo_code stores the ISO country code at
-// every level except state (region codes); a city's parent is a state, so
-// the parent's code is only usable as the country when parent IS country.
+// id → geo code + parent geo info + the space's logo (avatar) and header
+// (cover) media ids for directory cards. geo_code stores the ISO country
+// code at every level except state (region codes); a city's parent is a
+// state, so the parent's code is only usable as the country when parent
+// IS country.
 func (q *Queries) ListSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListSpaceGeoByIDsRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceGeoByIDs, ids)
 	if err != nil {
@@ -2067,6 +2072,8 @@ func (q *Queries) ListSpaceGeoByIDs(ctx context.Context, ids []pgtype.UUID) ([]L
 			&i.ID,
 			&i.GeoCode,
 			&i.Level,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
 			&i.ParentGeoCode,
 			&i.ParentLevel,
 		); err != nil {

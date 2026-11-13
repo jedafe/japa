@@ -182,6 +182,12 @@ func resolveSpaceBase(ctx context.Context, deps *scoreDeps, entityType string, b
 		"member_count": base.MemberCount,
 		"score_inputs": spaceScoreInputs(ctx, deps, entityType, base, cfv),
 	}
+	// Cover stays a separate key — directory cards put the header image on
+	// the split banner and the logo (image_id) on the avatar medallion, so
+	// collapsing both into one id loses which is which.
+	if base.HeaderImageID.Valid {
+		meta["cover_media_id"] = base.HeaderImageID.String()
+	}
 
 	// §30 Sub-spec 5: expose the entity's custom field values so matrix cells
 	// can hydrate from them when no comparison_values row exists. The caller

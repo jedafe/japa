@@ -145,9 +145,12 @@ type JCEThemeFacet struct {
 }
 
 // JCEPreviewItem is a ≤3-item card preview embedded on list summaries.
+// ImageURL is the header/cover visual (split banner); AvatarURL is the
+// entity logo for the vs medallion — cards fall back to flag codes.
 type JCEPreviewItem struct {
 	Title       string `json:"title"`
 	ImageURL    string `json:"image_url,omitempty"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
 	GeoCode     string `json:"geo_code,omitempty"`
 	CountryCode string `json:"country_code,omitempty"`
 	ItemType    string `json:"item_type,omitempty"`
@@ -164,6 +167,7 @@ type JCEComparisonListItem struct {
 // never overwrite values already set (explicit image/geo beats resolver data).
 type previewItemParts struct {
 	imageURL    string
+	avatarURL   string
 	geoCode     string
 	countryCode string
 	itemType    string
@@ -172,6 +176,9 @@ type previewItemParts struct {
 func mergePreviewItem(p *JCEPreviewItem, parts previewItemParts) {
 	if p.ImageURL == "" {
 		p.ImageURL = parts.imageURL
+	}
+	if p.AvatarURL == "" {
+		p.AvatarURL = parts.avatarURL
 	}
 	if p.GeoCode == "" {
 		p.GeoCode = parts.geoCode

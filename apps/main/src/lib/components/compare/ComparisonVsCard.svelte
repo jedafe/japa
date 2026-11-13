@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
 	 * ComparisonVsCard — the hub's signature card: diagonal split header from
-	 * the first two preview_items images (tinted fallback), a flag-pair "vs"
-	 * medallion when the items carry geo codes, badge chip, title, excerpt,
-	 * "Compare now →" and a viewer-state bookmark + compact view count.
+	 * the first two preview_items covers (tinted fallback), a "vs" medallion
+	 * from the items' space avatars (flags when absent), badge chip, title,
+	 * excerpt, "Compare now →" and a viewer-state bookmark + view count.
 	 */
 	import { Bookmark, Eye } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
@@ -27,9 +27,13 @@
 
 	const codeOf = (item: JCEPreviewItem): string =>
 		(item.country_code ?? item.geo_code ?? '').toLowerCase();
-	// The medallion shows when ≥2 previews resolve an actual flag asset.
-	const flagPair = $derived.by(() => {
-		const urls = previews.map((p) => flagUrl(codeOf(p))).filter((u): u is string => Boolean(u));
+	// The medallion prefers each item's space avatar (entity logo); flag
+	// assets remain the fallback for items without one. Shows when ≥2
+	// previews resolve either visual.
+	const medallionPair = $derived.by(() => {
+		const urls = previews
+			.map((p) => p.avatar_url ?? flagUrl(codeOf(p)))
+			.filter((u): u is string => Boolean(u));
 		return urls.length >= 2 ? urls.slice(0, 2) : null;
 	});
 
@@ -98,11 +102,11 @@
 			<img src={previews[0].image_url} alt="" class="absolute inset-0 h-full w-full object-cover" />
 		{/if}
 
-		{#if flagPair}
+		{#if medallionPair}
 			<div class="absolute inset-x-0 bottom-2 flex items-center justify-center gap-1" aria-hidden="true">
-				<img src={flagPair[0]} alt="" class="h-7 w-7 rounded-full border-2 border-[var(--color-surface)] object-cover shadow-sm" />
+				<img src={medallionPair[0]} alt="" class="h-7 w-7 rounded-full border-2 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover shadow-sm" />
 				<span class="rounded-full bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-muted)] shadow-sm">{t('jce.compare.vs', 'vs')}</span>
-				<img src={flagPair[1]} alt="" class="h-7 w-7 rounded-full border-2 border-[var(--color-surface)] object-cover shadow-sm" />
+				<img src={medallionPair[1]} alt="" class="h-7 w-7 rounded-full border-2 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover shadow-sm" />
 			</div>
 		{/if}
 

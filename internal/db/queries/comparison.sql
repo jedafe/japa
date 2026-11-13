@@ -465,10 +465,13 @@ WHERE ranked.rn <= 3
 ORDER BY ranked.content_id, ranked.position;
 
 -- name: ListSpaceGeoByIDs :many
--- id → geo code + parent geo info. geo_code stores the ISO country code at
--- every level except state (region codes); a city's parent is a state, so
--- the parent's code is only usable as the country when parent IS country.
-SELECT s.id, s.geo_code, s.level, p.geo_code AS parent_geo_code, p.level AS parent_level
+-- id → geo code + parent geo info + the space's logo (avatar) and header
+-- (cover) media ids for directory cards. geo_code stores the ISO country
+-- code at every level except state (region codes); a city's parent is a
+-- state, so the parent's code is only usable as the country when parent
+-- IS country.
+SELECT s.id, s.geo_code, s.level, s.logo_media_id, s.header_image_id,
+ p.geo_code AS parent_geo_code, p.level AS parent_level
 FROM spaces s
 LEFT JOIN spaces p ON p.id = s.parent_id
 WHERE s.id = ANY(@ids::uuid[]);

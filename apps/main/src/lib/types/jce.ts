@@ -109,7 +109,10 @@ export interface JCEComparisonDetail {
 
 export interface JCEPreviewItem {
 	title: string;
+	/** Header/cover visual for the card's split banner. */
 	image_url?: string;
+	/** Entity logo for the vs medallion — cards fall back to flag codes. */
+	avatar_url?: string;
 	geo_code?: string;
 	country_code?: string;
 	item_type?: string;
