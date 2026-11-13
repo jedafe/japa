@@ -389,7 +389,11 @@
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
 			{#if !useFiltersModal && !isMine}
-				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} />
+				<!-- hidden below lg so SSR doesn't flash the rail on mobile before
+				     hydration unmounts it; lg:contents lets the aside join the flex row. -->
+				<div class="hidden lg:contents">
+					<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} />
+				</div>
 			{/if}
 
 			<main class="min-w-0 flex-1 space-y-6 {isMine ? 'mx-auto w-full max-w-3xl' : ''}">
