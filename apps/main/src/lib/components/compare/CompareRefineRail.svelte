@@ -3,7 +3,7 @@
 	 *  checkboxes (mockup 2 left column). Mobile collapses behind a toggle;
 	 *  desktop shows the full rail. The themes block only renders when the
 	 *  caller supplies real facets — never hardcoded placeholders. */
-	import { untrack } from 'svelte';
+	import { untrack, type Component } from 'svelte';
 	import { ChevronDown, ChevronUp, Info, Search } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 
@@ -25,6 +25,9 @@
 		/** Stable key for accordion state (labels are localized). */
 		key: string;
 		label: string;
+		/** Family icon + tint, matching the hub's category cards. */
+		icon?: Component;
+		tint?: string;
 		categories: RailCategory[];
 		/** Initial open state — only one group may carry this. */
 		expanded?: boolean;
@@ -138,25 +141,38 @@
 						aria-expanded={openGroup === group.key}
 						class="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text)] transition-colors hover:text-[var(--color-muted)]"
 					>
-						{group.label}
+						<span class="flex items-center gap-2">
+							{#if group.icon}
+								{@const GroupIcon = group.icon}
+								<span
+									class="flex h-5 w-5 items-center justify-center rounded-[calc(var(--radius)*0.6)]"
+									style="background: color-mix(in srgb, {group.tint ?? 'var(--color-muted)'} 14%, transparent); color: {group.tint ?? 'var(--color-muted)'}"
+								>
+									<GroupIcon size={11} />
+								</span>
+							{/if}
+							{group.label}
+						</span>
 						<ChevronDown size={12} class="motion-safe:transition-transform {openGroup === group.key ? 'rotate-180' : ''}" />
 					</button>
 					{#if openGroup === group.key}
-						{#each groupCats(group) as cat (cat.href)}
-							{@render catLink(cat)}
-						{/each}
-						{#if group.categories.length > VISIBLE_GROUP_CATS}
-							<button
-								type="button"
-								onclick={() => toggleOverflow(group.key)}
-								class="flex items-center gap-1 px-3 pt-0.5 text-xs font-medium text-[var(--color-primary-text)]"
-							>
-								{overflowGroups.has(group.key)
-									? t('jce.compare.category.show_less', 'Show less')
-									: t('jce.compare.category.show_more', 'Show more')}
-								{#if overflowGroups.has(group.key)}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
-							</button>
-						{/if}
+						<div class="ms-7">
+							{#each groupCats(group) as cat (cat.href)}
+								{@render catLink(cat)}
+							{/each}
+							{#if group.categories.length > VISIBLE_GROUP_CATS}
+								<button
+									type="button"
+									onclick={() => toggleOverflow(group.key)}
+									class="flex items-center gap-1 px-3 pt-0.5 text-xs font-medium text-[var(--color-primary-text)]"
+								>
+									{overflowGroups.has(group.key)
+										? t('jce.compare.category.show_less', 'Show less')
+										: t('jce.compare.category.show_more', 'Show more')}
+									{#if overflowGroups.has(group.key)}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
+								</button>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/each}

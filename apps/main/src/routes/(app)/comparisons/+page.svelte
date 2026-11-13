@@ -12,7 +12,7 @@
 	import CompareRefineRail from '#lib/components/compare/CompareRefineRail.svelte';
 	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
-	import { groupTypesByFamily } from '#lib/components/compare/compareFamilies.js';
+	import { FALLBACK_FAMILY_ICON, groupTypesByFamily } from '#lib/components/compare/compareFamilies.js';
 	import { excerptText } from '#lib/utils/comparison.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
@@ -232,6 +232,8 @@
 		const out = groups.map((g) => ({
 			key: g.family.key,
 			label: t(`jce.compare.family.${g.family.key}`, g.family.key),
+			icon: g.family.icon,
+			tint: g.family.tint,
 			expanded: g.family.key === activeKey,
 			categories: g.types.map(catOf)
 		}));
@@ -239,6 +241,8 @@
 			out.push({
 				key: 'other',
 				label: t('jce.compare.family.other', 'Other'),
+				icon: FALLBACK_FAMILY_ICON,
+				tint: 'var(--color-muted)',
 				expanded: activeKey === 'other',
 				categories: ungrouped.map(catOf)
 			});
