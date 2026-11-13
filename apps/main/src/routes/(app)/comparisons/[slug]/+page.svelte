@@ -358,7 +358,7 @@
 					<table class="text-sm">
 						<thead>
 							<tr>
-								<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
+								<th class="text-[var(--color-text)]"><span class="compare-pin compare-pin-head">{t('jce.compare.matrix_dimension')}</span></th>
 								{#each matrix as item (item.id)}
 									<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
 								{/each}
@@ -381,14 +381,16 @@
 												aria-expanded={open}
 												class="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 											>
-												<span
-													class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
-													style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
-												>
-													<gv.icon size={15} />
-												</span>
-												<span class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
-													{group.label || t('jce.compare.family.other', 'Other')}
+												<span class="sticky start-0 flex min-w-0 items-center gap-3">
+													<span
+														class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
+														style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
+													>
+														<gv.icon size={15} />
+													</span>
+													<span class="truncate text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
+														{group.label || t('jce.compare.family.other', 'Other')}
+													</span>
 												</span>
 												<span class="ms-auto flex shrink-0 items-center gap-2.5">
 													<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
@@ -449,7 +451,7 @@
 
 	{#snippet dimRow(dim: JCEDimension)}
 		<tr>
-			<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
+			<td class="font-medium text-[var(--color-text)]"><span class="compare-pin">{dim.label}</span></td>
 			{#each matrix as item (item.id)}
 				{@const best = bestCells.has(`${item.id}:${dim.id}`)}
 				<td
@@ -517,14 +519,45 @@
 </div>
 
 <style>
-	/* Sticky dimension column so wide matrices stay readable on horizontal
-	   scroll — scoped to .compare-matrix so other prose-table-wrapper
-	   tables are unaffected. */
-	.compare-matrix :is(td, th):first-child {
+	/* border-collapse: collapse + sticky cells mis-stack in Chromium —
+	   scrolled cells paint through the pinned column. separate + zero
+	   spacing keeps the single-row separators while fixing occlusion. */
+	.compare-matrix table {
+		border-collapse: separate;
+		border-spacing: 0;
+	}
+
+	/* Give columns a real minimum so the table overflows the card and
+	   scrolls horizontally instead of squishing cells to fit. */
+	.compare-matrix table :is(td, th) {
+		min-width: 12rem;
+	}
+	.compare-matrix table :is(td, th):first-child {
+		min-width: 11rem;
+	}
+
+	/* Pinned dimension column — sticky on a child element, not the cell:
+	   Chromium under-paints sticky cell backgrounds beneath scrolled
+	   siblings, but a positioned child stacks reliably (same mechanism
+	   as the band label/pill pins). Cell padding moves onto the pin so
+	   it covers the full column. */
+	.compare-matrix table :is(td, th):first-child {
+		padding: 0;
+	}
+	.compare-pin {
+		display: block;
 		position: sticky;
 		inset-inline-start: 0;
-		background: var(--color-surface);
 		z-index: 1;
+		height: 100%;
+		padding: 0.75rem;
+		background: var(--color-surface);
+	}
+	.compare-pin-head {
+		background: var(--color-surface-subtle);
+	}
+	.compare-matrix tbody tr:nth-child(even) td:first-child .compare-pin {
+		background: color-mix(in srgb, rgb(135 135 195) 5%, var(--color-surface));
 	}
 
 	/* Horizontal row separators only — vertical cell borders would grid the
