@@ -43,7 +43,8 @@
 		themes = [],
 		onQuery,
 		onToggleTheme,
-		initialOpen = false
+		initialOpen = false,
+		bare = false
 	}: {
 		query?: string;
 		categories: RailCategory[];
@@ -56,6 +57,9 @@
 		/** Mount with the mobile accordion already expanded — used when an
 		 *  external toggle (e.g. /comparisons' Filter button) gates the rail. */
 		initialOpen?: boolean;
+		/** Chrome-free rendering for embedding in a modal: no mobile toggle
+		 *  button and the body is always shown. */
+		bare?: boolean;
 	} = $props();
 
 	let open = $state(untrack(() => initialOpen));
@@ -107,18 +111,22 @@
 
 <aside class="w-full shrink-0 lg:w-60">
 	<!-- Mobile toggle: aria-expanded mirrors visual state; hidden on lg where
-		 the rail body is always shown via lg:block below. -->
-	<button
-		type="button"
-		aria-expanded={open}
-		onclick={() => (open = !open)}
-		class="flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--color-text)] lg:hidden"
-	>
-		{t('jce.compare.category.refine', 'Refine results')}
-		<ChevronDown size={16} class="motion-safe:transition-transform {open ? 'rotate-180' : ''}" />
-	</button>
+		 the rail body is always shown via lg:block below. Omitted in `bare`
+		 mode (e.g. inside the mobile filters modal) where the body is
+		 unconditionally visible. -->
+	{#if !bare}
+		<button
+			type="button"
+			aria-expanded={open}
+			onclick={() => (open = !open)}
+			class="flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--color-text)] lg:hidden"
+		>
+			{t('jce.compare.category.refine', 'Refine results')}
+			<ChevronDown size={16} class="motion-safe:transition-transform {open ? 'rotate-180' : ''}" />
+		</button>
+	{/if}
 
-	<div class="{open ? 'block' : 'hidden'} space-y-5 pt-4 lg:block lg:pt-0">
+	<div class="{open || bare ? 'block' : 'hidden'} space-y-5 {bare ? '' : 'pt-4 lg:block lg:pt-0'}">
 		<h2 class="hidden text-sm font-semibold text-[var(--color-text)] lg:block">
 			{t('jce.compare.category.refine', 'Refine results')}
 		</h2>

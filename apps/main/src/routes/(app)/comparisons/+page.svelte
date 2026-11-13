@@ -2,10 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { Eye, MessageCircle, Share2, GitCompare, Filter, ChevronRight } from 'lucide-svelte';
+	import { Eye, MessageCircle, Share2, GitCompare, Filter, ChevronRight, LoaderCircle } from 'lucide-svelte';
 	import { i18n, t, siteName} from '#lib/i18n/index.js';
 	import JceSelect from '#lib/components/ui/JceSelect.svelte';
-	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type UrlTab } from '#lib/components/ui/index.js';
+	import { EmptyState, EntityHero, ListPageBar, Modal, UrlTabs, GuideSlideOver, type GuideContent, type UrlTab } from '#lib/components/ui/index.js';
 	import type { PageData } from './$types';
 	import { api } from '#lib/api/client.js';
 	import HeroArtCompare from '#lib/components/heroes/HeroArtCompare.svelte';
@@ -15,6 +15,7 @@
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
 	import { FALLBACK_FAMILY_ICON, groupTypesByFamily } from '#lib/components/compare/compareFamilies.js';
 	import { excerptText } from '#lib/utils/comparison.js';
+	import type { JCEComparisonSummary } from '#lib/types/jce.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
@@ -65,8 +66,6 @@
 		sortValues.map((value) => ({ value, label: t(`jce.comparisons.sort.${value}`) }))
 	);
 
-	let pageSizeOptions = $derived(data.meta?.page_size_options ?? []);
-
 	let tabOptions = $derived<UrlTab[]>([
 		{ value: 'public', label: t('jce.comparisons.tab_public') },
 		{ value: 'mine', label: t('jce.comparisons.tab_mine') }
@@ -81,12 +80,22 @@
 	const initiallyRefined = untrack(() => Boolean(data.filters?.filter_type || data.filters?.q));
 	let refineOpen = $state(initiallyRefined);
 
-	let pageSizeSelectOptions = $derived(
-		pageSizeOptions.map((size) => ({
-			value: String(size),
-			label: `${size} ${t('jce.common.per_page')}`
-		}))
-	);
+	// Viewport gate: below lg (mobile + iPad) the Filter button opens the
+	// Refine Results content in a modal instead of the inline left rail.
+	let isDesktop = $state(true);
+	$effect(() => {
+		const mq = window.matchMedia('(min-width: 1024px)');
+		isDesktop = mq.matches;
+		const onChange = (e: MediaQueryListEvent) => (isDesktop = e.matches);
+		mq.addEventListener('change', onChange);
+		return () => mq.removeEventListener('change', onChange);
+	});
+	let filtersModalOpen = $state(false);
+	// A modal left open across a resize into desktop must not linger.
+	$effect(() => {
+		if (isDesktop) filtersModalOpen = false;
+	});
+	const refineActive = $derived(isDesktop ? refineOpen : filtersModalOpen);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL(page.url.href);
@@ -102,14 +111,6 @@
 
 	function setSort(sort: string) {
 		goto(buildURL({ sort, page: 1 }), { replace: true });
-	}
-
-	function setPageSize(size: number) {
-		goto(buildURL({ page_size: size, page: 1 }), { replace: true });
-	}
-
-	function setPage(pageNum: number) {
-		goto(buildURL({ page: pageNum }), { replace: true });
 	}
 
 	function detailURL(item: (typeof items)[number]): string {
@@ -141,6 +142,54 @@
 	// Global popularity rank across pages — 'popular' badges score against
 	// the sort-wide top-3, not the current page's.
 	const rankOffset = $derived(((meta.page ?? 1) - 1) * (meta.limit ?? 12));
+
+	// Load more — the SSR list carries the requested page (?page=N, default
+	// 12 rows); the button appends subsequent pages via the same list endpoint
+	// and params, and hides once the fetched pages cover meta.total.
+	let extraItems = $state<JCEComparisonSummary[]>([]);
+	let loadedPages = $state(0);
+	let loadingMore = $state(false);
+	$effect(() => {
+		data.items; // any SSR list change (filter/sort/tab nav) resets appends
+		extraItems = [];
+		loadedPages = 0;
+	});
+	const gridItems = $derived([...items, ...extraItems]);
+	const hasMore = $derived((currentPage + loadedPages) * (meta.limit || 1) < (meta.total || 0));
+	const typesById = $derived(new Map(types.map((ty) => [ty.id, ty])));
+
+	async function loadMore() {
+		if (loadingMore || !hasMore) return;
+		loadingMore = true;
+		try {
+			const p = new URLSearchParams({
+				page: String(currentPage + loadedPages + 1),
+				page_size: String(meta.limit || defaultPageSize)
+			});
+			if (filters.sort) p.set('sort', filters.sort);
+			if (filters.q) p.set('q', filters.q);
+			if (filters.filter_type) p.set('filter_type', filters.filter_type);
+			if (filters.filter_depth) p.set('filter_depth', filters.filter_depth);
+			if (filters.filter_status) p.set('filter_status', filters.filter_status);
+			if (filters.filter_visibility) p.set('filter_visibility', filters.filter_visibility);
+			if (isMine) p.set('mine', 'true');
+			const res = await api.get<JCEComparisonSummary[]>(`/jce/comparisons?${p}`);
+			// Data can shift between the SSR fetch and this one — drop rows the
+			// grid already has so keyed rendering never sees a duplicate id.
+			const seen = new Set([...items, ...extraItems].map((c) => c.id));
+			const fresh = (res.data ?? []).filter((c) => !seen.has(c.id));
+			extraItems = [
+				...extraItems,
+				...fresh.map((c) => {
+					const ty = c.type_id ? typesById.get(c.type_id) : undefined;
+					return ty ? { ...c, type_slug: ty.slug, type_name: ty.name } : c;
+				})
+			];
+			loadedPages += 1;
+		} finally {
+			loadingMore = false;
+		}
+	}
 	// List head: title/description, self-referencing canonical on the clean
 	// path, and rel=prev/next on numbered pages (same pattern as /blog).
 	const listTitle = $derived(t('jce.comparisons.heading', 'Comparisons') + ` — ${siteName()}`);
@@ -307,9 +356,9 @@
 			{#if !isMine}
 				<button
 					type="button"
-					onclick={() => (refineOpen = !refineOpen)}
-					aria-expanded={refineOpen}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {refineOpen ? 'border-[var(--color-primary)]/50 text-[var(--color-primary-text)]' : ''}"
+					onclick={() => { if (isDesktop) refineOpen = !refineOpen; else filtersModalOpen = true; }}
+					aria-expanded={refineActive}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {refineActive ? 'border-[var(--color-primary)]/50 text-[var(--color-primary-text)]' : ''}"
 				>
 					{t('common.filters', 'Filters')}
 					{#if hasActiveFilters}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
@@ -321,31 +370,26 @@
 
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
-			{#if refineOpen && !isMine}
+			{#if refineOpen && isDesktop && !isMine}
 				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} initialOpen />
 			{/if}
 
 			<main class="min-w-0 flex-1 space-y-6 {isMine ? 'mx-auto w-full max-w-3xl' : ''}">
 				{#if unfiltered && trendingItems.length > 0}
-					<section class="space-y-3">
-						<h2 class="text-sm font-semibold text-[var(--color-text)]">
-							{t('jce.compare.landing.trending', 'Trending comparisons')}
-						</h2>
-						<ComparisonCardRail items={trendingItems} authed={Boolean(user)} />
-					</section>
+					<ComparisonCardRail
+						heading={t('jce.compare.landing.trending', 'Trending comparisons')}
+						items={trendingItems}
+						authed={Boolean(user)}
+					/>
 				{/if}
 
 				{#if unfiltered && popularItems.length > 0}
-					<section class="space-y-3">
-						<h2 class="text-sm font-semibold text-[var(--color-text)]">
-							{t('jce.compare.landing.popular', 'Popular comparisons')}
-						</h2>
-						<ComparisonCardRail
-							items={popularItems}
-							authed={Boolean(user)}
-							badgeOf={(item, i) => badgeFor(item, { popularityIndex: i })}
-						/>
-					</section>
+					<ComparisonCardRail
+						heading={t('jce.compare.landing.popular', 'Popular comparisons')}
+						items={popularItems}
+						authed={Boolean(user)}
+						badgeOf={(item, i) => badgeFor(item, { popularityIndex: i })}
+					/>
 				{/if}
 
 				<section class="space-y-4">
@@ -381,8 +425,8 @@
 							: { label: t('jce.comparisons.create_one'), href: '/compare' }}
 					/>
 				{:else}
-					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : refineOpen ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
-						{#each items as item, i (item.id)}
+					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : refineOpen && isDesktop ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
+						{#each gridItems as item, i (item.id)}
 							{#if !isMine}
 								<ComparisonVsCard summary={item} badge={filters.sort === 'popularity' ? badgeFor(item, { popularityIndex: rankOffset + i }) : badgeFor(item)} authed={Boolean(user)} />
 							{:else}
@@ -420,21 +464,38 @@
 						{/each}
 					</div>
 
-					<div class="flex flex-col items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4 sm:flex-row">
-						<JceSelect
-							options={pageSizeSelectOptions}
-							value={String(filters.page_size || meta.limit || pageSizeOptions[0] || defaultPageSize)}
-							onchange={(value) => setPageSize(parseInt(value, 10))}
-							class="w-auto min-w-[6rem] py-1"
-						/>
-						<PaginationControls page={currentPage} {totalPages} onPageChange={setPage} />
-					</div>
+					{#if hasMore}
+						<div class="flex justify-center border-t border-[var(--color-border)] pt-4">
+							<button
+								type="button"
+								onclick={loadMore}
+								disabled={loadingMore}
+								class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+							>
+								{#if loadingMore}<LoaderCircle size={15} class="animate-spin" />{/if}
+								{loadingMore ? t('common.loading', 'Loading') : t('common.load_more', 'Load more')}
+							</button>
+						</div>
+					{/if}
 				{/if}
 				</section>
 			</main>
 		</div>
 	</div>
 </div>
+
+{#if !isDesktop && !isMine}
+	<Modal
+		bind:open={filtersModalOpen}
+		title={t('jce.compare.category.refine', 'Refine results')}
+		icon={Filter}
+		size="sm"
+	>
+		{#snippet children()}
+			<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} bare />
+		{/snippet}
+	</Modal>
+{/if}
 
 <GuideSlideOver
 	bind:open={guideOpen}

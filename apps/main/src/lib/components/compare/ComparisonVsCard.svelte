@@ -17,8 +17,14 @@
 	let {
 		summary,
 		badge = '',
-		authed = false
-	}: { summary: JCEComparisonSummary; badge?: CompareBadgeKind; authed?: boolean } = $props();
+		authed = false,
+		class: className = ''
+	}: {
+		summary: JCEComparisonSummary;
+		badge?: CompareBadgeKind;
+		authed?: boolean;
+		class?: string;
+	} = $props();
 
 	const previews = $derived((summary.preview_items ?? []).slice(0, 3));
 	const href = $derived(
@@ -80,7 +86,7 @@
 	 ::after overlay; the bookmark button sits above it (z-10) so interactive
 	 elements are never nested inside the anchor. -->
 <div
-	class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+	class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)] {className}"
 >
 	<!-- Split header: first two preview images, diagonal seam; falls back to
 	     a tinted placeholder when previews/images are absent. -->
