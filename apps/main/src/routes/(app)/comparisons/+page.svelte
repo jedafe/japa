@@ -214,10 +214,14 @@
 		}
 	]);
 
-	// Group the type list by comparison family (Location, Education…) so
-	// 40+ types scan as labelled sub-sections instead of one flat column.
-	// Types with no catalogued family fall into "Other".
+	// Group the type list by comparison family (Location, Education…) as a
+	// rail accordion — one family open at a time, collapsed by default. The
+	// open family is the active type filter's family when set (so the rail
+	// reflects the URL), else Location. Uncatalogued types sit in "Other".
 	const railGroups = $derived.by(() => {
+		const activeKey = filters.filter_type
+			? (types.find((ty) => ty.slug === filters.filter_type)?.config?.family ?? 'other')
+			: 'location';
 		const catOf = (type: (typeof types)[number]) => ({
 			label: type.name,
 			count: facetCountBySlug[type.slug] as number | undefined,
@@ -226,11 +230,18 @@
 		});
 		const { groups, ungrouped } = groupTypesByFamily(types);
 		const out = groups.map((g) => ({
+			key: g.family.key,
 			label: t(`jce.compare.family.${g.family.key}`, g.family.key),
+			expanded: g.family.key === activeKey,
 			categories: g.types.map(catOf)
 		}));
 		if (ungrouped.length > 0) {
-			out.push({ label: t('jce.compare.family.other', 'Other'), categories: ungrouped.map(catOf) });
+			out.push({
+				key: 'other',
+				label: t('jce.compare.family.other', 'Other'),
+				expanded: activeKey === 'other',
+				categories: ungrouped.map(catOf)
+			});
 		}
 		return out;
 	});

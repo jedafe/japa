@@ -3,6 +3,7 @@
 	 *  checkboxes (mockup 2 left column). Mobile collapses behind a toggle;
 	 *  desktop shows the full rail. The themes block only renders when the
 	 *  caller supplies real facets — never hardcoded placeholders. */
+	import { untrack } from 'svelte';
 	import { ChevronDown, ChevronUp, Info, Search } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 
@@ -21,8 +22,12 @@
 	}
 
 	interface RailCategoryGroup {
+		/** Stable key for accordion state (labels are localized). */
+		key: string;
 		label: string;
 		categories: RailCategory[];
+		/** Initial open state — only one group may carry this. */
+		expanded?: boolean;
 	}
 
 	const VISIBLE_THEMES = 5;
@@ -47,18 +52,38 @@
 	} = $props();
 
 	let open = $state(false);
-	let categoriesOpen = $state(true);
 	let themesExpanded = $state(false);
 	const visibleThemes = $derived(themesExpanded ? themes : themes.slice(0, VISIBLE_THEMES));
-	let expandedGroups = $state<Set<string>>(new Set());
+	// Accordion — one family open at a time; groups arrive collapsed and
+	// the caller marks at most one `expanded` (e.g. the active filter's
+	// family, else a sensible default like Location). untrack: the prop
+	// read is an intentional initial snapshot, not a subscription.
+	const initialOpenKey = untrack(() => groups.find((g) => g.expanded)?.key ?? null);
+	let openGroup = $state<string | null>(initialOpenKey);
+	// Re-sync when the caller's expanded mark changes (URL-driven filter
+	// moves to another family) — manual toggles don't touch the prop, so
+	// they never fight this.
+	let expandedPropKey = $state(initialOpenKey);
+	$effect(() => {
+		const next = groups.find((g) => g.expanded)?.key ?? null;
+		if (next !== expandedPropKey) {
+			expandedPropKey = next;
+			openGroup = next;
+		}
+	});
+	let overflowGroups = $state<Set<string>>(new Set());
 	const groupCats = (g: RailCategoryGroup) =>
-		expandedGroups.has(g.label) ? g.categories : g.categories.slice(0, VISIBLE_GROUP_CATS);
+		overflowGroups.has(g.key) ? g.categories : g.categories.slice(0, VISIBLE_GROUP_CATS);
 
-	function toggleGroup(label: string) {
-		const next = new Set(expandedGroups);
-		if (next.has(label)) next.delete(label);
-		else next.add(label);
-		expandedGroups = next;
+	function toggleGroup(key: string) {
+		openGroup = openGroup === key ? null : key;
+	}
+
+	function toggleOverflow(key: string) {
+		const next = new Set(overflowGroups);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		overflowGroups = next;
 	}
 
 	let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -102,42 +127,42 @@
 		</div>
 
 		<nav class="space-y-1" aria-label={t('jce.compare.category.categories', 'Categories')}>
-			<button
-				type="button"
-				onclick={() => (categoriesOpen = !categoriesOpen)}
-				aria-expanded={categoriesOpen}
-				class="flex w-full items-center justify-between pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
-			>
+			<p class="pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 				{t('jce.compare.category.categories', 'Categories')}
-				{#if categoriesOpen}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
-			</button>
-			{#if categoriesOpen}
-				{#each categories as cat (cat.href)}
-					{@render catLink(cat)}
-				{/each}
-				{#each groups as group (group.label)}
-					<div class="pt-2">
-						<p class="px-3 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]/80">
-							{group.label}
-						</p>
+			</p>
+			{#each categories as cat (cat.href)}
+				{@render catLink(cat)}
+			{/each}
+			{#each groups as group (group.key)}
+				<div class="pt-1">
+					<button
+						type="button"
+						onclick={() => toggleGroup(group.key)}
+						aria-expanded={openGroup === group.key}
+						class="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]/80 transition-colors hover:text-[var(--color-muted)]"
+					>
+						{group.label}
+						<ChevronDown size={12} class="motion-safe:transition-transform {openGroup === group.key ? 'rotate-180' : ''}" />
+					</button>
+					{#if openGroup === group.key}
 						{#each groupCats(group) as cat (cat.href)}
 							{@render catLink(cat)}
 						{/each}
 						{#if group.categories.length > VISIBLE_GROUP_CATS}
 							<button
 								type="button"
-								onclick={() => toggleGroup(group.label)}
+								onclick={() => toggleOverflow(group.key)}
 								class="flex items-center gap-1 px-3 pt-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 							>
-								{expandedGroups.has(group.label)
+								{overflowGroups.has(group.key)
 									? t('jce.compare.category.show_less', 'Show less')
 									: t('jce.compare.category.show_more', 'Show more')}
-								{#if expandedGroups.has(group.label)}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
+								{#if overflowGroups.has(group.key)}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
 							</button>
 						{/if}
-					</div>
-				{/each}
-			{/if}
+					{/if}
+				</div>
+			{/each}
 		</nav>
 
 		{#if themes.length > 0 && onToggleTheme}
