@@ -79,6 +79,20 @@
 
 	let types = $derived(data.types ?? []);
 	let selectedType = $derived(data.selectedType ?? null);
+	// Hero breadcrumb — the workspace and "mine" views trail back to the
+	// /compare landing; the plain landing keeps its unlinked current crumb.
+	let heroCrumbs = $derived.by(() => {
+		const base = [
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('jce.compare.heading'), href: '/compare' }
+		];
+		if (data.selectedType) return [...base, { label: data.selectedType.name }];
+		if (data.mine) return [...base, { label: t('jce.compare.tab_mine', 'My comparisons') }];
+		return [
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('jce.compare.heading') }
+		];
+	});
 	let source = $derived(data.source ?? 'space');
 	let itemRefTypes = $derived(data.itemRefTypes ?? []);
 	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
@@ -869,10 +883,7 @@
 		heading={t('jce.compare.heading')}
 		description={t('compare.hero_desc', 'Pick what to compare — universities, jobs, visa routes and more — and see them side by side.')}
 		accent="var(--color-primary)"
-		crumbs={[
-			{ label: t('common.home', 'Home'), href: '/' },
-			{ label: t('jce.compare.heading') }
-		]}
+		crumbs={heroCrumbs}
 		class="mt-4"
 	>
 		{#snippet actions(c)}
