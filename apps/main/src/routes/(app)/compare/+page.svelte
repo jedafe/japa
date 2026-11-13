@@ -86,8 +86,8 @@
 			{ label: t('common.home', 'Home'), href: '/' },
 			{ label: t('jce.compare.heading'), href: '/compare' }
 		];
-		if (data.selectedType) return [...base, { label: data.selectedType.name }];
 		if (data.mine) return [...base, { label: t('jce.compare.tab_mine', 'My comparisons') }];
+		if (data.selectedType) return [...base, { label: data.selectedType.name }];
 		return [
 			{ label: t('common.home', 'Home'), href: '/' },
 			{ label: t('jce.compare.heading') }
@@ -226,6 +226,24 @@
 	let sortOptions = $derived(
 		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`, value) }))
 	);
+
+	// Type switches (sibling picker row, category tile, back/forward between
+	// two ?type= URLs) must drop the tray — create() posts the new type_id
+	// and stale picks would mint a wrong-typed comparison. Landing detours
+	// keep the tray (tid only toggles ''→id), and this .pre runs before the
+	// preselect effect below so a same-nav ?preselect can restage into the
+	// emptied tray.
+	let lastItemsTypeId = $state('');
+	$effect.pre(() => {
+		const tid = selectedType?.id ?? '';
+		if (tid === lastItemsTypeId) return;
+		const typeSwitch = Boolean(lastItemsTypeId && tid);
+		lastItemsTypeId = tid;
+		if (typeSwitch) {
+			selectedItems = [];
+			scopeLabels = {};
+		}
+	});
 
 	let lastPreselect = $state<ResolvedItem[] | null>(null);
 	$effect.pre(() => {
