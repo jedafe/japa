@@ -127,9 +127,11 @@
 	{/if}
 
 	<div class="{open || bare ? 'block' : 'hidden'} space-y-5 {bare ? '' : 'pt-4 lg:block lg:pt-0'}">
-		<h2 class="hidden text-sm font-semibold text-[var(--color-text)] lg:block">
-			{t('jce.compare.category.refine', 'Refine results')}
-		</h2>
+		{#if !bare}
+			<h2 class="hidden text-sm font-semibold text-[var(--color-text)] lg:block">
+				{t('jce.compare.category.refine', 'Refine results')}
+			</h2>
+		{/if}
 		<div class="relative">
 			<Search size={15} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input

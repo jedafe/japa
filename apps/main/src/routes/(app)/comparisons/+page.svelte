@@ -80,22 +80,34 @@
 	const initiallyRefined = untrack(() => Boolean(data.filters?.filter_type || data.filters?.q));
 	let refineOpen = $state(initiallyRefined);
 
-	// Viewport gate: below lg (mobile + iPad) the Filter button opens the
-	// Refine Results content in a modal instead of the inline left rail.
+	// Viewport gate: the Filter button opens the Refine Results content in a
+	// modal on small screens and touch-primary devices (mobile + iPad —
+	// pointer:coarse is the established codebase check for touch), as an
+	// inline left rail on desktop.
 	let isDesktop = $state(true);
+	let touchPrimary = $state(false);
 	$effect(() => {
-		const mq = window.matchMedia('(min-width: 1024px)');
-		isDesktop = mq.matches;
-		const onChange = (e: MediaQueryListEvent) => (isDesktop = e.matches);
-		mq.addEventListener('change', onChange);
-		return () => mq.removeEventListener('change', onChange);
+		const mqWide = window.matchMedia('(min-width: 1024px)');
+		const mqCoarse = window.matchMedia('(pointer: coarse)');
+		isDesktop = mqWide.matches;
+		touchPrimary = mqCoarse.matches;
+		const onWide = (e: MediaQueryListEvent) => (isDesktop = e.matches);
+		const onCoarse = (e: MediaQueryListEvent) => (touchPrimary = e.matches);
+		mqWide.addEventListener('change', onWide);
+		mqCoarse.addEventListener('change', onCoarse);
+		return () => {
+			mqWide.removeEventListener('change', onWide);
+			mqCoarse.removeEventListener('change', onCoarse);
+		};
 	});
+	const useFiltersModal = $derived(touchPrimary || !isDesktop);
 	let filtersModalOpen = $state(false);
-	// A modal left open across a resize into desktop must not linger.
+	// A modal left open across a resize into desktop or a switch to the Mine
+	// tab (no refine there) must not linger.
 	$effect(() => {
-		if (isDesktop) filtersModalOpen = false;
+		if (!useFiltersModal || isMine) filtersModalOpen = false;
 	});
-	const refineActive = $derived(isDesktop ? refineOpen : filtersModalOpen);
+	const refineActive = $derived(useFiltersModal ? filtersModalOpen : refineOpen);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL(page.url.href);
@@ -146,18 +158,25 @@
 	let extraItems = $state<JCEComparisonSummary[]>([]);
 	let loadedPages = $state(0);
 	let loadingMore = $state(false);
+	let reachedEnd = $state(false);
+	let loadGen = 0;
 	$effect(() => {
 		data.items; // any SSR list change (filter/sort/tab nav) resets appends
 		extraItems = [];
 		loadedPages = 0;
+		reachedEnd = false;
+		loadGen += 1; // invalidate an in-flight append for the previous list
 	});
 	const gridItems = $derived([...items, ...extraItems]);
-	const hasMore = $derived((currentPage + loadedPages) * (meta.limit || 1) < (meta.total || 0));
+	const hasMore = $derived(
+		!reachedEnd && (currentPage + loadedPages) * (meta.limit || 1) < (meta.total || 0)
+	);
 	const typesById = $derived(new Map(types.map((ty) => [ty.id, ty])));
 
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
+		const gen = loadGen;
 		try {
 			const p = new URLSearchParams({
 				page: String(currentPage + loadedPages + 1),
@@ -171,10 +190,18 @@
 			if (filters.filter_visibility) p.set('filter_visibility', filters.filter_visibility);
 			if (isMine) p.set('mine', 'true');
 			const res = await api.get<JCEComparisonSummary[]>(`/jce/comparisons?${p}`);
+			// Leave loadedPages untouched on failure — a retry refetches the
+			// same page instead of silently skipping it.
+			if (res.error) return;
+			// The list changed mid-fetch (filter/sort nav) — drop the stale page.
+			if (gen !== loadGen) return;
+			const rows = res.data ?? [];
+			// A short page is the last page, even if meta.total is stale.
+			if (rows.length < (meta.limit || defaultPageSize)) reachedEnd = true;
 			// Data can shift between the SSR fetch and this one — drop rows the
 			// grid already has so keyed rendering never sees a duplicate id.
 			const seen = new Set([...items, ...extraItems].map((c) => c.id));
-			const fresh = (res.data ?? []).filter((c) => !seen.has(c.id));
+			const fresh = rows.filter((c) => !seen.has(c.id));
 			extraItems = [
 				...extraItems,
 				...fresh.map((c) => {
@@ -353,7 +380,7 @@
 			{#if !isMine}
 				<button
 					type="button"
-					onclick={() => { if (isDesktop) refineOpen = !refineOpen; else filtersModalOpen = true; }}
+					onclick={() => { if (useFiltersModal) filtersModalOpen = true; else refineOpen = !refineOpen; }}
 					aria-expanded={refineActive}
 					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {refineActive ? 'border-[var(--color-primary)]/50 text-[var(--color-primary-text)]' : ''}"
 				>
@@ -367,7 +394,7 @@
 
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
-			{#if refineOpen && isDesktop && !isMine}
+			{#if refineOpen && !useFiltersModal && !isMine}
 				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} initialOpen />
 			{/if}
 
@@ -422,7 +449,7 @@
 							: { label: t('jce.comparisons.create_one'), href: '/compare' }}
 					/>
 				{:else}
-					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : refineOpen && isDesktop ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
+					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : refineOpen && !useFiltersModal ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
 						{#each gridItems as item (item.id)}
 							{#if !isMine}
 								<ComparisonVsCard summary={item} authed={Boolean(user)} />
@@ -481,7 +508,7 @@
 	</div>
 </div>
 
-{#if !isDesktop && !isMine}
+{#if useFiltersModal && !isMine}
 	<Modal
 		bind:open={filtersModalOpen}
 		title={t('jce.compare.category.refine', 'Refine results')}
