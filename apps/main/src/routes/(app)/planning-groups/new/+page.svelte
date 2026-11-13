@@ -10,7 +10,7 @@
 	import { api } from '#lib/api/client.js';
 	import { Users, Plus, ArrowLeft } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -121,16 +121,11 @@
 				/>
 			</div>
 
-			<AiBodyField
+			<BodyField
 				id="pg-desc"
 				label={t('planning_groups.field_description', 'Description')}
-				contentType="planning_group"
-				title={name}
 				body={description}
 				onBody={(v) => (description = v)}
-				onTitle={(v) => (name = v)}
-				user={data.user}
-				features={data.features ?? {}}
 				placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
 				rows={4}
 			/>

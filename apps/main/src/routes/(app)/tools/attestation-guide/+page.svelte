@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { t, siteName, i18n } from '#lib/i18n/index.js';
@@ -557,17 +557,13 @@
 												</div>
 											</div>
 											<div>
-												<AiBodyField
+												<BodyField
 													id="upd-note"
 													label={t('attestation_guide.note', 'Note')}
-													contentType="attestation_guide"
-													title={pathway.document_type}
 													body={updateNote}
 													onBody={(v) => updateNote = v}
 													placeholder={t('attestation_guide.note_placeholder', 'Share your experience with this step...')}
 													rows={3}
-													user={data.user}
-													features={data.features ?? {}}
 												/>
 											</div>
 											<div class="flex items-center gap-2">

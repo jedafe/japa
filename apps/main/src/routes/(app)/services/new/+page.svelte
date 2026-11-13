@@ -14,7 +14,7 @@
 	import type { ServiceCategory, ServiceListing, Space } from '#lib/types/index.js';
 	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import CoverUploader from '#lib/components/create/CoverUploader.svelte';
 	import ServiceTierEditor from '#lib/components/services/ServiceTierEditor.svelte';
 	import ServiceContentEditor from '#lib/components/services/ServiceContentEditor.svelte';
@@ -386,16 +386,11 @@
 			</div>
 
 			<!-- Body -->
-			<AiBodyField
+			<BodyField
 				id="body"
 				label={t('services.field_description', 'Description')}
-				contentType="service"
-				{title}
 				body={body}
 				onBody={(v) => (body = v)}
-				onTitle={(v) => (title = v)}
-				user={data.user}
-				features={data.features ?? {}}
 				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
 				rows={5}
 			/>

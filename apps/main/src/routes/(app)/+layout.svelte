@@ -190,12 +190,7 @@
 	// Hidden on all /ai pages (self-link). Guests can click — the route
 	// redirects to login.
 	const showChatFab = $derived(
-		data.features?.['feature.japabot'] === true &&
-			!page.route.id?.startsWith('/(app)/ai') &&
-			// The service-create form embeds its own AI assist fields
-			// (AiBodyField); the floating JapaAI panel competes for the same
-			// controls, so it's suppressed on /services/new.
-			!page.route.id?.startsWith('/(app)/services/new')
+		data.features?.['feature.japabot'] === true && !page.route.id?.startsWith('/(app)/ai')
 	);
 
 	// /studio renders its own mobile chrome (bottom tab bar + composer

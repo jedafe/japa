@@ -12,6 +12,7 @@ export { default as PaginationControls } from './PaginationControls.svelte';
 export { default as DirectoryCard } from './DirectoryCard.svelte';
 export type { CardMetaItem } from './DirectoryCard.svelte';
 export { default as SelectField } from './SelectField.svelte';
+export { default as BodyField } from './BodyField.svelte';
 export { default as AutocompleteSelect } from './AutocompleteSelect.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export type { SearchSuggestion } from './SearchInput.svelte';

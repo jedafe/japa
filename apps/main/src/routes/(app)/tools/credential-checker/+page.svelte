@@ -18,7 +18,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import type {
 		GeoCountry,
 		CredentialProfession,
@@ -499,11 +499,9 @@
 													</p>
 												{/if}
 												<div class="space-y-2">
-													<AiBodyField
+													<BodyField
 														id="cc-note"
 														label={t('credential_checker.note', 'Note')}
-														contentType="credential_checker"
-														title={detailPathway?.profession_name ?? ''}
 														body={noteText}
 														onBody={(v) => (noteText = v)}
 														rows={3}
@@ -512,8 +510,6 @@
 															'credential_checker.note_placeholder',
 															'Share your experience with this credential pathway…'
 														)}
-														user={data.user}
-														features={data.features ?? {}}
 													/>
 													<button
 														type="button"

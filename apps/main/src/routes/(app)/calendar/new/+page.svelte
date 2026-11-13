@@ -14,7 +14,7 @@
 	import type { CalendarCategory } from '#lib/types/index.js';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -262,16 +262,11 @@
 			</div>
 
 			<!-- Description -->
-			<AiBodyField
+			<BodyField
 				id="description"
 				label={t('calendar.new.label_description', 'Description')}
-				contentType="calendar"
-				{title}
 				body={description}
 				onBody={(v) => (description = v)}
-				onTitle={(v) => (title = v)}
-				user={data.user}
-				features={data.features ?? {}}
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>

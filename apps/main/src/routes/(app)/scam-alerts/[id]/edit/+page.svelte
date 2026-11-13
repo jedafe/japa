@@ -14,7 +14,7 @@
 	import type { ScamType, ScamPlatform } from '#lib/types/index.js';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -250,15 +250,11 @@
 		</div>
 
 		<!-- Description -->
-		<AiBodyField
+		<BodyField
 			id="description"
 			label={t('scam_alerts.field_description', 'Description')}
-			contentType="scam_alert"
-			title=""
 			body={description}
 			onBody={(v) => (description = v)}
-			user={data.user}
-			features={data.features ?? {}}
 			required
 			maxlength={10000}
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}

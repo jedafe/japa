@@ -35,7 +35,7 @@
 			title?: string;
 			fieldValues?: Record<string, unknown>;
 			// §20 assist actions write back to meta/tag fields too (CreateShell
-			// handles these; plain AiBodyField consumers ignore them).
+			// handles these).
 			metaTitle?: string;
 			metaDescription?: string;
 			tags?: string[];

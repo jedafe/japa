@@ -23,7 +23,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import type {
 		LanguageTest,
 		LanguageTestRequirementWithAi,
@@ -532,17 +532,13 @@
 								</div>
 							</div>
 							<div>
-								<AiBodyField
+								<BodyField
 									id="story-advice"
 									label={t('language_test.advice', 'Advice')}
-									contentType="language_test"
-									title={testDetail.name}
 									body={storyAdvice}
 									onBody={(v) => storyAdvice = v}
 									placeholder={t('language_test.advice_placeholder', 'Share your prep advice for others...')}
 									rows={3}
-									user={data.user}
-									features={data.features ?? {}}
 								/>
 							</div>
 							<div class="flex items-center gap-3">

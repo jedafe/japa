@@ -16,7 +16,7 @@
 	import { milestoneOptions } from '#lib/achievement.js';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -203,16 +203,11 @@
 			/>
 		</div>
 
-		<AiBodyField
+		<BodyField
 			id="body"
 			label={t('achievements.field_body', 'Story')}
-			contentType="achievement"
-			{title}
 			body={body}
 			onBody={(v) => (body = v)}
-			onTitle={(v) => (title = v)}
-			user={data.user}
-			features={data.features ?? {}}
 			required
 			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
 			rows={6}

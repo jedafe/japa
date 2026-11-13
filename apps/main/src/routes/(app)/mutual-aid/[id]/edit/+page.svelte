@@ -11,7 +11,7 @@
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -121,16 +121,11 @@
 		</div>
 
 		<!-- Description -->
-		<AiBodyField
+		<BodyField
 			id="description"
 			label={t('mutual_aid.field_description', 'Description')}
-			contentType="mutual_aid"
-			{title}
 			body={description}
 			onBody={(v) => (description = v)}
-			onTitle={(v) => (title = v)}
-			user={data.user}
-			features={data.features ?? {}}
 			required
 			placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 			rows={6}

@@ -8,7 +8,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import { decodeTipTapDoc, tiptapToText, encodeTiptapDoc } from '#lib/tiptap/serialize.js';
 
 	let { data }: { data: PageData } = $props();
@@ -113,16 +113,11 @@
 		</div>
 
 		<!-- Body / intro -->
-		<AiBodyField
+		<BodyField
 			id="body"
 			label={t('ama.field_intro', 'Introduction')}
-			contentType="ama"
-			{title}
 			body={body}
 			onBody={(v) => (body = v)}
-			onTitle={(v) => (title = v)}
-			user={data.user}
-			features={data.features ?? {}}
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>
