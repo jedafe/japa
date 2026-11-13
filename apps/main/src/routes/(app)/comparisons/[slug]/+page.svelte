@@ -413,7 +413,7 @@
 									aria-expanded="true"
 									class="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 								>
-									<span class="sticky start-0 flex min-w-0 items-center gap-3">
+									<span class="sticky start-4 flex min-w-0 items-center gap-3">
 										<span
 											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
 											style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
@@ -424,7 +424,7 @@
 											{group.label || t('jce.compare.family.other', 'Other')}
 										</span>
 									</span>
-									<span class="sticky end-0 ms-auto flex shrink-0 items-center gap-2.5">
+									<span class="sticky end-4 ms-auto flex shrink-0 items-center gap-2.5">
 										<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
 											{t('jce.compare.group_items', '{count} items', { count: group.dims.length })}
 										</span>
