@@ -464,8 +464,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &achievements)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": achievements,
 		"pagination": map[string]any{
@@ -515,8 +513,6 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 
 		return
 	}
-
-	h.resolveLiterals(r, &achievement)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }

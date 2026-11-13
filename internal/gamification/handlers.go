@@ -445,8 +445,6 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	h.resolveLiterals(r, &badges)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
 		"pagination": map[string]any{
@@ -489,8 +487,6 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-
-	h.resolveLiterals(r, &badge)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": badge,
@@ -535,8 +531,6 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-
-	h.resolveLiterals(r, &badge)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badge,
@@ -599,8 +593,6 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	h.resolveLiterals(r, &badge)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badge,
 	})
@@ -658,8 +650,6 @@ func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.resolveLiterals(r, &challenges)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": challenges,
 		"pagination": map[string]any{
@@ -704,8 +694,6 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	h.resolveLiterals(r, &challenge)
-
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": challenge,
 	})
@@ -749,8 +737,6 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 
 		return
 	}
-
-	h.resolveLiterals(r, &challenge)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": challenge,

@@ -702,7 +702,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Geo-aware tool pattern response envelope: { data, meta: { page, per_page, total, total_pages } }
-	h.resolveLiterals(r, &entries)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,

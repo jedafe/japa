@@ -419,8 +419,6 @@ func (h *Handlers) HandleAdminListTemplates(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	h.resolveLiterals(r, &templates)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       templates,
 		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
@@ -653,8 +651,6 @@ func (h *Handlers) HandleAdminListSamples(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-
-	h.resolveLiterals(r, &samples)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       samples,

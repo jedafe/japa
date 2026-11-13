@@ -187,8 +187,6 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + pageSize - 1) / pageSize
 	}
 
-	h.resolveLiterals(r, &items)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": QueueResponse{
 			Items:      items,

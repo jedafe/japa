@@ -819,8 +819,6 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &results)
-
 	// Include listing status distribution for the admin dashboard.
 	dist, _ := h.service.AdminJobStatusDistribution(r.Context())
 

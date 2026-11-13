@@ -781,8 +781,6 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &conns)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": conns,
 		"meta": map[string]any{"page": offset/limit + 1, "page_size": limit, "total": total},

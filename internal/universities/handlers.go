@@ -505,8 +505,6 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 		totalPages++
 	}
 
-	h.resolveLiterals(r, &universities)
-
 	// Attach the resolved logo URL (imgproxy-signed via Section 34 media) so the
 	// admin edit form + view modal can preview the existing logo — the raw
 	// response only carries logo_media_id.

@@ -251,7 +251,5 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &resp)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }

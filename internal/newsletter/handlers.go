@@ -458,8 +458,6 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		totalPages = int32((total + int64(limit) - 1) / int64(limit))
 	}
 
-	h.resolveLiterals(r, &campaigns)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       campaigns,

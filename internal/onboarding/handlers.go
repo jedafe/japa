@@ -207,8 +207,6 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &templates)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 

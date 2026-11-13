@@ -802,8 +802,6 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.resolveLiterals(r, &rows)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{

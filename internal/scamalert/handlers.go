@@ -672,8 +672,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &reports)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": reports,
 		"pagination": map[string]any{

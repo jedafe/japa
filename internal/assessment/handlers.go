@@ -841,8 +841,6 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	h.resolveLiterals(r, &items)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"pagination": map[string]any{
@@ -889,8 +887,6 @@ func (h *Handlers) HandleAdminGetResult(w http.ResponseWriter, r *http.Request) 
 	} else {
 		shaped["submission_values"] = map[string]any{}
 	}
-
-	h.resolveLiterals(r, &shaped)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shaped})
 }

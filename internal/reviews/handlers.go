@@ -424,8 +424,6 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &reviews)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"reviews": reviews, "total": total}})
 }
 
@@ -677,8 +675,6 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	h.resolveLiterals(r, &review)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }

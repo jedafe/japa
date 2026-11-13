@@ -341,8 +341,6 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.resolveLiterals(r, &rows)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"pagination": map[string]any{
@@ -374,8 +372,6 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 
 		return
 	}
-
-	h.resolveLiterals(r, &stats)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stats,

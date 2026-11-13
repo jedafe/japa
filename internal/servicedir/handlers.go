@@ -1014,8 +1014,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &services)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
 		"meta": map[string]any{

@@ -575,8 +575,6 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &tracks)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
@@ -1760,8 +1758,6 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.resolveLiterals(r, &academy_enrollments)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": academy_enrollments})
 }
 
@@ -1773,8 +1769,6 @@ func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &modules)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": modules})
 }
 
@@ -1785,8 +1779,6 @@ func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list lessons")
 		return
 	}
-
-	h.resolveLiterals(r, &lessons)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lessons})
 }
@@ -1807,8 +1799,6 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
 		return
 	}
-
-	h.resolveLiterals(r, &modules)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": modules})
 }

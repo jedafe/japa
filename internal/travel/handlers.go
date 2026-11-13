@@ -615,8 +615,6 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	h.resolveLiterals(r, &providers)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": providers,
 	})

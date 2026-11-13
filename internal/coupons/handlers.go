@@ -396,8 +396,6 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &providers)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
 }
 
@@ -536,8 +534,6 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	h.resolveLiterals(r, &coupons)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": coupons, "total": total, "page": page, "page_size": pageSize,
@@ -761,8 +757,6 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	h.resolveLiterals(r, &results)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
@@ -863,8 +857,6 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 			"author_commission_pct": pctF.Float64, "credited": row.Credited, "created_at": row.CreatedAt.Time,
 		})
 	}
-
-	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }

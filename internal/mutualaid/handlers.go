@@ -760,7 +760,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	// Geo-aware tool pattern admin list envelope: { data, meta: { page,
 	// per_page, total, total_pages } }. The admin EntityPage reads
 	// `meta.total` / `meta.total_pages` for pagination. BUG-007.
-	h.resolveLiterals(r, &posts)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": posts,

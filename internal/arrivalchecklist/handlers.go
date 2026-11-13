@@ -374,8 +374,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
 
-	h.resolveLiterals(r, &guides)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
 		"meta": map[string]any{

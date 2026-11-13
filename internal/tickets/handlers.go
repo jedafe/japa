@@ -403,8 +403,6 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &tickets)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
 
@@ -441,14 +439,6 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing ticket events", "ticket_id", id, "error", err)
 	}
-
-	h.resolveLiterals(r, &ticket)
-
-	h.resolveLiterals(r, &comments)
-
-	h.resolveLiterals(r, &attachments)
-
-	h.resolveLiterals(r, &events)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -496,8 +486,6 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.resolveLiterals(r, &ticket)
-
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
 		return
@@ -515,8 +503,6 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.resolveLiterals(r, &ticket)
-
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
 		return
@@ -532,8 +518,6 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
-
-		h.resolveLiterals(r, &ticket)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
@@ -556,8 +540,6 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
-
-		h.resolveLiterals(r, &ticket)
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 
@@ -620,8 +602,6 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &comment)
-
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -677,8 +657,6 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &comment)
-
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -707,8 +685,6 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	h.resolveLiterals(r, &events)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": events})
 }
@@ -747,8 +723,6 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	h.resolveLiterals(r, &ticket)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ticket})
 }

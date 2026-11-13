@@ -355,8 +355,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &pathways)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
@@ -395,8 +393,6 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-
-	h.resolveLiterals(r, &updates)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": updates,

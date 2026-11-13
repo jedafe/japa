@@ -597,8 +597,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &timelines)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": timelines,
 		"pagination": map[string]any{

@@ -1035,8 +1035,6 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	h.resolveLiterals(r, &items)
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]any{
@@ -1093,8 +1091,6 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
 	h.enqueueSearchIndex("index", result.ID)
-
-	h.resolveLiterals(r, &result)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
