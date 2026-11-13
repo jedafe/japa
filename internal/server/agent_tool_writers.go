@@ -161,6 +161,17 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"travel_provider":     svc.travelProviderStore,
 	}
 
+	// agentHitlTools lists tool types whose content must pass HITL before
+	// it can go live (ADR-088): an agent create always lands as an ai_draft
+	// with ai_generated=true, and an agent update can never write the
+	// status column — publication happens only through the human approve
+	// endpoint. Without the clamp an agent call could write
+	// status='published' directly and bypass the review queue.
+	agentHitlTools := map[string]bool{
+		"credential_pathway": true,
+		"eca_guide":          true,
+	}
+
 	writers := make(map[string]*toolWriter)
 
 	for toolType, service := range serviceByTool {
@@ -180,8 +191,28 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 			assignGeoName = updateName
 		}
 
+		createFunc := reflectCreateFunc(v, resolveWriteMethod(v, names.create, "Create"))
 		updateFunc := reflectUpdateFunc(v, updateName, names.updateUserArg)
 		assignGeoFunc := reflectUpdateFunc(v, assignGeoName, names.updateUserArg)
+
+		if agentHitlTools[toolType] {
+			if createFunc != nil {
+				base := createFunc
+				createFunc = func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+					payload["status"] = "ai_draft"
+					payload["ai_generated"] = true
+					return base(ctx, userID, payload)
+				}
+			}
+
+			if updateFunc != nil {
+				base := updateFunc
+				updateFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+					delete(payload, "status")
+					return base(ctx, userID, id, payload)
+				}
+			}
+		}
 
 		// Full-row update inputs need read-modify-write. When a mergeGetter
 		// is declared but cannot be resolved, fail closed: better no update
@@ -205,7 +236,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		}
 
 		writers[toolType] = &toolWriter{
-			create:    reflectCreateFunc(v, resolveWriteMethod(v, names.create, "Create")),
+			create:    createFunc,
 			update:    updateFunc,
 			delete:    reflectDeleteFunc(v, resolveDeleteMethod(v, names.delete)),
 			assignGeo: assignGeoFunc,

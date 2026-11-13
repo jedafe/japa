@@ -27,10 +27,22 @@
 		ai_generated: boolean;
 		ai_model?: string | null;
 		hitl_reviewed_by?: string | null;
+		hitl_reviewed_by_name?: string | null;
 		ai_generated_at?: string | null;
 		is_active: boolean;
 		updated_at?: string;
 		created_at?: string;
+	};
+
+	type CommunityNote = {
+		id: string;
+		pathway_id: string;
+		user_name?: string;
+		note: string;
+		status: string;
+		created_at?: string;
+		profession_name?: string;
+		destination_space_name?: string;
 	};
 
 	type ProfessionOption = { id: string; slug: string; name: string; category?: string };
@@ -67,6 +79,35 @@
 
 	let pageError = $state('');
 	let acting = $state(false);
+
+	// ── Community note moderation queue ─────────────────────────────────
+	let pendingNotes = $state<CommunityNote[]>([]);
+	let notesLoaded = $state(false);
+	let moderatingNote = $state<string | null>(null);
+
+	async function loadPendingNotes() {
+		const res = await credentialCheckerAdminApi.listNotes('status=pending&limit=50');
+		if (res.ok && res.data) {
+			pendingNotes = (res.data.data as CommunityNote[]) ?? [];
+			notesLoaded = true;
+		}
+	}
+
+	async function moderateNote(note: CommunityNote, status: 'published' | 'rejected') {
+		moderatingNote = note.id;
+		pageError = '';
+		const res = await credentialCheckerAdminApi.moderateNote(note.id, status);
+		moderatingNote = null;
+		if (res.ok) {
+			pendingNotes = pendingNotes.filter((n) => n.id !== note.id);
+		} else {
+			pageError = res.error ?? t('common.error', 'An error occurred');
+		}
+	}
+
+	$effect(() => {
+		if (canManage && !notesLoaded) loadPendingNotes();
+	});
 
 	// ── Generate modal state ────────────────────────────────────────────────
 	let showGenerateModal = $state(false);
@@ -124,11 +165,6 @@
 	}
 
 	async function approveItem(item: CredentialCheckerItem) {
-		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
-		if (item.ai_generated && !item.hitl_reviewed_by) {
-			pageError = t('app.credential_checker.hitl_required', 'Cannot approve AI-generated content without HITL review');
-			return;
-		}
 		acting = true;
 		pageError = '';
 		try {
@@ -296,6 +332,36 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
+<!-- ── Community note moderation queue ─────────────────────────────────── -->
+{#if canManage && pendingNotes.length > 0}
+	<section class="mt-8">
+		<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide" style="color: var(--color-muted)">
+			{t('app.tools.notes_queue', 'Community notes pending review')} ({pendingNotes.length})
+		</h2>
+		<div class="space-y-2">
+			{#each pendingNotes as note (note.id)}
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-surface)">
+					<p class="text-sm" style="color: var(--color-foreground)">{note.note}</p>
+					<div class="mt-1 text-xs" style="color: var(--color-muted)">
+						{note.profession_name ?? '—'}
+						{#if note.destination_space_name}· {note.destination_space_name}{/if}
+						{#if note.user_name}· {note.user_name}{/if}
+						{#if note.created_at}· {new Date(note.created_at).toLocaleDateString()}{/if}
+					</div>
+					<div class="mt-2 flex gap-2">
+						<Button size="sm" disabled={moderatingNote === note.id} onclick={() => moderateNote(note, 'published')}>
+							{t('common.approve', 'Approve')}
+						</Button>
+						<Button size="sm" variant="ghost" disabled={moderatingNote === note.id} onclick={() => moderateNote(note, 'rejected')}>
+							{t('common.reject', 'Reject')}
+						</Button>
+					</div>
+				</div>
+			{/each}
+		</div>
+	</section>
+{/if}
+
 <!-- ── Generate modal ────────────────────────────────────────────────────── -->
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_credential_guide', 'Generate Credential Guide')}>
 	<div class="space-y-4">
@@ -390,10 +456,10 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
 			</div>
 		{/if}
-		{#if row.hitl_reviewed_by}
+		{#if row.hitl_reviewed_by || row.hitl_reviewed_by_name}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by_name ?? row.hitl_reviewed_by}</p>
 			</div>
 		{/if}
 	</div>

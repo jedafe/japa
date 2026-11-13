@@ -33,6 +33,8 @@ type SearchIndexer interface {
 	IndexPofRequirement(ctx context.Context, reqID [16]byte) error
 	IndexEcaGuide(ctx context.Context, guideID [16]byte) error
 	IndexSopSample(ctx context.Context, sampleID [16]byte) error
+	// §94 Professional Credential Checker (ADR-102) — JapaBot RAG document.
+	IndexCredentialPathway(ctx context.Context, pathwayID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
 	// ReindexAll bulk-resyncs every managed entity type; the return is the
 	// indexer's summary struct exposed as `any` so this seam stays free of

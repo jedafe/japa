@@ -326,7 +326,9 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	guides, total, err := h.service.AdminListGuides(r.Context(), dest, r.URL.Query().Get("status"), page, limit)
+	guides, total, err := h.service.AdminListGuides(r.Context(), dest,
+		r.URL.Query().Get("status"), r.URL.Query().Get("sort"), r.URL.Query().Get("q"),
+		page, limit)
 	if err != nil {
 		slog.Error("ecaguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list guides")
@@ -617,8 +619,8 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
 }
 
-// HandleAdminListProviders handles GET /admin/eca-providers — all
-// providers including inactive. Admin-only.
+// HandleAdminListProviders handles GET /admin/eca-providers — providers
+// including inactive, paginated. Admin-only.
 func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -629,7 +631,9 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	providers, err := h.service.AdminListProviders(r.Context())
+	page, limit := parsePageParams(r)
+
+	providers, total, err := h.service.AdminListProviders(r.Context(), page, limit)
 	if err != nil {
 		slog.Error("ecaguide: list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list providers")
@@ -639,7 +643,10 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 	h.resolveLiterals(r, &providers)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":       providers,
+		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
+	})
 }
 
 // HandleAdminCreateProvider handles POST /admin/eca-providers. Admin-only.

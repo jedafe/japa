@@ -15,19 +15,20 @@ import (
 
 // Meilisearch index UIDs — one per searchable entity type.
 const (
-	IndexPosts             = "posts"                      // blog posts, discussions, pages (contents table)
-	IndexForumThreads      = "forum_threads"              // Q&A threads
-	IndexSpaces            = "spaces"                     // geo-first community spaces
-	IndexUsers             = "users"                      // user profiles
-	IndexTags              = "tags"                       // forum tags
-	IndexKnowledgeArticles = "knowledge_articles"         // academy articles (§13, ADR-069)
-	IndexAcademyTracks     = "academy_tracks"             // Japa Academy marketplace courses (ADR-063)
-	IndexDocPages          = "doc_pages"                  // documentation pages (SEARCH-001)
-	IndexOrganizations     = "organizations"              // verified orgs/businesses (Section 54)
-	IndexLanguageTestReqs  = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
-	IndexPofRequirements   = "pof_requirements"           // §108 POF requirement rows (JapaBot RAG)
-	IndexEcaGuides         = "eca_guides"                 // §109 ECA guides (JapaBot RAG)
-	IndexSopSamples        = "sop_samples"                // §110 published SOP samples (JapaBot RAG)
+	IndexPosts              = "posts"                      // blog posts, discussions, pages (contents table)
+	IndexForumThreads       = "forum_threads"              // Q&A threads
+	IndexSpaces             = "spaces"                     // geo-first community spaces
+	IndexUsers              = "users"                      // user profiles
+	IndexTags               = "tags"                       // forum tags
+	IndexKnowledgeArticles  = "knowledge_articles"         // academy articles (§13, ADR-069)
+	IndexAcademyTracks      = "academy_tracks"             // Japa Academy marketplace courses (ADR-063)
+	IndexDocPages           = "doc_pages"                  // documentation pages (SEARCH-001)
+	IndexOrganizations      = "organizations"              // verified orgs/businesses (Section 54)
+	IndexLanguageTestReqs   = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
+	IndexPofRequirements    = "pof_requirements"           // §108 POF requirement rows (JapaBot RAG)
+	IndexEcaGuides          = "eca_guides"                 // §109 ECA guides (JapaBot RAG)
+	IndexSopSamples         = "sop_samples"                // §110 published SOP samples (JapaBot RAG)
+	IndexCredentialPathways = "credential_pathways"        // §94 credential pathways (JapaBot RAG)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -49,24 +50,26 @@ var allIndexes = []string{
 	IndexPofRequirements,
 	IndexEcaGuides,
 	IndexSopSamples,
+	IndexCredentialPathways,
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
 // for filtering.
 var filterableAttributesByIndex = map[string][]string{
-	IndexPosts:             {"content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
-	IndexForumThreads:      {"space_id", "solved"},
-	IndexSpaces:            {"level", "status"},
-	IndexUsers:             {"status"},
-	IndexTags:              {},
-	IndexKnowledgeArticles: {"status"},
-	IndexAcademyTracks:     {"difficulty", "category", "language", "relevant_countries", "is_free"},
-	IndexDocPages:          {"audience", "review_status"},
-	IndexOrganizations:     {"org_type", "verified", "status", "country_code"},
-	IndexLanguageTestReqs:  {"test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
-	IndexPofRequirements:   {"destination_space_id", "visa_type", "is_japabot_indexed"},
-	IndexEcaGuides:         {"destination_space_id", "provider_slug", "purpose", "is_japabot_indexed"},
-	IndexSopSamples:        {"destination_space_id", "program_level", "field_of_study", "is_japabot_indexed"},
+	IndexPosts:              {"content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
+	IndexForumThreads:       {"space_id", "solved"},
+	IndexSpaces:             {"level", "status"},
+	IndexUsers:              {"status"},
+	IndexTags:               {},
+	IndexKnowledgeArticles:  {"status"},
+	IndexAcademyTracks:      {"difficulty", "category", "language", "relevant_countries", "is_free"},
+	IndexDocPages:           {"audience", "review_status"},
+	IndexOrganizations:      {"org_type", "verified", "status", "country_code"},
+	IndexLanguageTestReqs:   {"test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
+	IndexPofRequirements:    {"destination_space_id", "visa_type", "is_japabot_indexed"},
+	IndexEcaGuides:          {"destination_space_id", "provider_slug", "purpose", "is_japabot_indexed"},
+	IndexSopSamples:         {"destination_space_id", "program_level", "field_of_study", "is_japabot_indexed"},
+	IndexCredentialPathways: {"destination_space_id", "issuing_space_id", "profession_slug", "is_japabot_indexed"},
 }
 
 // sortableAttributesByIndex declares which attributes each index exposes for
@@ -74,19 +77,20 @@ var filterableAttributesByIndex = map[string][]string{
 // works universally. engagement_score is sortable on the posts index so
 // "top" works for content.
 var sortableAttributesByIndex = map[string][]string{
-	IndexPosts:             {"created_at", "engagement_score"},
-	IndexForumThreads:      {"created_at"},
-	IndexSpaces:            {"created_at"},
-	IndexUsers:             {"created_at"},
-	IndexTags:              {"created_at"},
-	IndexKnowledgeArticles: {"created_at"},
-	IndexAcademyTracks:     {"created_at"},
-	IndexDocPages:          {"created_at"},
-	IndexOrganizations:     {"created_at"},
-	IndexLanguageTestReqs:  {"created_at"},
-	IndexPofRequirements:   {"created_at"},
-	IndexEcaGuides:         {"created_at"},
-	IndexSopSamples:        {"created_at"},
+	IndexPosts:              {"created_at", "engagement_score"},
+	IndexForumThreads:       {"created_at"},
+	IndexSpaces:             {"created_at"},
+	IndexUsers:              {"created_at"},
+	IndexTags:               {"created_at"},
+	IndexKnowledgeArticles:  {"created_at"},
+	IndexAcademyTracks:      {"created_at"},
+	IndexDocPages:           {"created_at"},
+	IndexOrganizations:      {"created_at"},
+	IndexLanguageTestReqs:   {"created_at"},
+	IndexPofRequirements:    {"created_at"},
+	IndexEcaGuides:          {"created_at"},
+	IndexSopSamples:         {"created_at"},
+	IndexCredentialPathways: {"created_at"},
 }
 
 // NewEngine creates the configured search engine and ensures every search

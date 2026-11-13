@@ -1737,7 +1737,7 @@ func (ix *Indexer) IndexEcaGuide(ctx context.Context, guideID [16]byte) error {
 		Purpose:            purpose,
 		Status:             status,
 		IsJapabotIndexed:   true,
-		URL:                "/eca-guide",
+		URL:                "/tools/eca-guide",
 	}
 	if destName != nil {
 		doc.DestinationName = *destName
@@ -1846,6 +1846,111 @@ func (ix *Indexer) IndexSopSample(ctx context.Context, sampleID [16]byte) error 
 	}
 
 	slog.Info("search:index: sop_sample indexed", "id", doc.ID)
+
+	return nil
+}
+
+// credentialPathwayDocument is the document shape stored in the
+// credential_pathways index.
+type credentialPathwayDocument struct {
+	ID                   string `json:"id"`
+	ProfessionID         string `json:"profession_id"`
+	ProfessionSlug       string `json:"profession_slug"`
+	ProfessionName       string `json:"profession_name"`
+	IssuingSpaceID       string `json:"issuing_space_id"`
+	IssuingSpaceName     string `json:"issuing_space_name,omitempty"`
+	DestinationSpaceID   string `json:"destination_space_id"`
+	DestinationSpaceName string `json:"destination_space_name"`
+	RegulatoryBody       string `json:"regulatory_body"`
+	PathwayType          string `json:"pathway_type"`
+	TimelineEstimate     string `json:"timeline_estimate,omitempty"`
+	Status               string `json:"status"`
+	IsJapabotIndexed     bool   `json:"is_japabot_indexed"`
+	URL                  string `json:"url"`
+}
+
+// IndexCredentialPathway fetches a credential_pathways row and upserts it
+// into the credential_pathways index. Only published + is_active rows are
+// indexed; anything else removes the document (§94 JapaBot RAG).
+func (ix *Indexer) IndexCredentialPathway(ctx context.Context, pathwayID [16]byte) error {
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
+		return nil
+	}
+
+	if ix.pool == nil {
+		return errors.New("search:index: no database pool for credential_pathways fetch")
+	}
+
+	var (
+		id, profID, issID, destID string
+		profSlug, profName        string
+		issName, destName         *string
+		regBody, pathType         string
+		timeline                  *string
+		status                    string
+		indexable                 bool
+	)
+
+	err := ix.pool.Reader.QueryRow(ctx, `
+		SELECT p.id, p.profession_id, pr.slug, pr.name,
+		       p.issuing_space_id, iss.name,
+		       p.destination_space_id, dst.name,
+		       p.regulatory_body, p.pathway_type, p.timeline_estimate,
+		       p.status,
+		       (p.status = 'published' AND p.is_active)
+		FROM credential_pathways p
+		JOIN credential_professions pr ON pr.id = p.profession_id
+		LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+		LEFT JOIN spaces dst ON dst.id = p.destination_space_id
+		WHERE p.id = $1`, pathwayID).Scan(
+		&id, &profID, &profSlug, &profName,
+		&issID, &issName,
+		&destID, &destName,
+		&regBody, &pathType, &timeline,
+		&status, &indexable)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexCredentialPathways, pathwayID)
+		}
+
+		return fmt.Errorf("fetching credential_pathway for index: %w", err)
+	}
+
+	if !indexable {
+		return ix.DeleteDocument(ctx, IndexCredentialPathways, pathwayID)
+	}
+
+	doc := credentialPathwayDocument{
+		ID:                 id,
+		ProfessionID:       profID,
+		ProfessionSlug:     profSlug,
+		ProfessionName:     profName,
+		IssuingSpaceID:     issID,
+		DestinationSpaceID: destID,
+		RegulatoryBody:     regBody,
+		PathwayType:        pathType,
+		Status:             status,
+		IsJapabotIndexed:   true,
+		URL:                "/tools/credential-checker",
+	}
+	if issName != nil {
+		doc.IssuingSpaceName = *issName
+	}
+
+	if destName != nil {
+		doc.DestinationSpaceName = *destName
+	}
+
+	if timeline != nil {
+		doc.TimelineEstimate = *timeline
+	}
+
+	if err := ix.engine.UpsertDocuments(ctx, IndexCredentialPathways, []credentialPathwayDocument{doc}); err != nil {
+		return fmt.Errorf("indexing credential_pathway %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: credential_pathway indexed", "id", doc.ID)
 
 	return nil
 }

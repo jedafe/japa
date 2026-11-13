@@ -2019,6 +2019,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}
 		for _, tbl := range []string{
 			"crs_rulesets", "pof_requirements", "eca_guides", "sop_samples",
+			"credential_pathways",
 		} {
 			if _, err := s.db.Writer.Exec(ctx, fmt.Sprintf(
 				`UPDATE %s SET hitl_reviewed_by = $2 WHERE hitl_reviewed_by = $1`, tbl),

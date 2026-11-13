@@ -2503,6 +2503,12 @@ export const credentialCheckerAdminApi = {
 		api<unknown>(`/admin/credentials/${id}/approve`, { method: 'PATCH', body: {} }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/credentials/generate`, { method: 'POST', body }),
+	listNotes: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination?: { page: number; limit: number; total: number } }>(
+			`/admin/credentials/notes${params ? `?${params}` : ''}`
+		),
+	moderateNote: (id: string, status: 'published' | 'rejected') =>
+		api<unknown>(`/admin/credentials/notes/${id}`, { method: 'PATCH', body: { status } }),
 };
 
 export const housingGuideAdminApi = {

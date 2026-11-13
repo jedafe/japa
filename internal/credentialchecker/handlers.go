@@ -9,9 +9,11 @@
 //	POST  /api/v1/credentials/:id/notes          — submit community note (auth, credential_checker.note)
 //	GET   /api/v1/admin/credentials              — manage pathways (admin, credential_checker.manage)
 //	POST  /api/v1/admin/credentials              — create pathway (admin, credential_checker.manage)
-//	POST  /api/v1/admin/credentials/generate     — Content Agent draft placeholder (admin, credential_checker.manage)
+//	POST  /api/v1/admin/credentials/generate     — queue Content Agent draft via tool:generate_draft (admin)
+//	GET   /api/v1/admin/credentials/notes        — community note moderation queue (admin)
 //	PATCH /api/v1/admin/credentials/:id          — update pathway (admin, credential_checker.manage)
 //	PATCH /api/v1/admin/credentials/:id/approve  — HITL approve (admin, credential_checker.manage)
+//	PATCH /api/v1/admin/credentials/notes/:id    — approve/reject a note (admin, credential_checker.manage)
 //
 // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
 //
@@ -249,6 +251,11 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+
 		slog.Error("credentialchecker: create note failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to submit note")
 
@@ -291,13 +298,15 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	professionID := parseProfessionID(r.URL.Query().Get("profession"))
 	status := r.URL.Query().Get("status")
+	sort := r.URL.Query().Get("sort")
+	q := r.URL.Query().Get("q")
 
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	pathways, total, err := h.service.AdminListPathways(r.Context(), destSpaceID, issuingSpaceID, professionID, status, page, limit)
+	pathways, total, err := h.service.AdminListPathways(r.Context(), destSpaceID, issuingSpaceID, professionID, status, sort, q, page, limit)
 	if err != nil {
 		slog.Error("credentialchecker: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list pathways")
@@ -362,8 +371,9 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pathway})
 }
 
-// HandleAdminGenerate handles POST /admin/credentials/generate — Content
-// Agent draft placeholder. Returns 202 Accepted. Admin-only
+// HandleAdminGenerate handles POST /admin/credentials/generate — queues a
+// Content Agent draft via the tool:generate_draft Asynq task (same pipeline
+// as the other geo-aware tools, ADR-088). Returns 202 Accepted. Admin-only
 // (credential_checker.manage permission checked at route registration).
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
@@ -375,36 +385,102 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input GeneratePathwayRequest
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	var body map[string]string
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("credentialchecker: admin generate failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+		"data": map[string]any{"status": "queued"},
+	})
+}
+
+// HandleAdminListNotes handles GET /admin/credentials/notes — the community
+// note moderation queue. Admin-only (credential_checker.manage permission
+// checked at route registration). Supports ?status=&page=&limit=.
+func (h *Handlers) HandleAdminListNotes(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	page, limit := parsePageParams(r)
+
+	notes, total, err := h.service.AdminListNotes(r.Context(), status, page, limit)
+	if err != nil {
+		slog.Error("credentialchecker: admin list notes failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list notes")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": notes,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleAdminModerateNote handles PATCH /admin/credentials/notes/:id —
+// approve ('published') or reject ('rejected') a community note. Admin-only
+// (credential_checker.manage permission checked at route registration).
+func (h *Handlers) HandleAdminModerateNote(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	var body ModerateNoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
-	if !input.ProfessionID.Valid {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_profession_id", "profession_id is required")
-		return
-	}
+	if err := h.service.ModerateNote(r.Context(), id, body.Status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "note_not_found", "Note not found")
+			return
+		}
 
-	if input.IssuingSpaceID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
-		return
-	}
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
 
-	if input.DestinationSpaceID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
-		return
-	}
-
-	resp, err := h.service.GeneratePathwayDraft(r.Context(), input)
-	if err != nil {
-		slog.Error("credentialchecker: admin generate failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		slog.Error("credentialchecker: moderate note failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "moderate_failed", "Failed to moderate note")
 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": body.Status}})
 }
 
 // HandleAdminUpdate handles PATCH /admin/credentials/:id — update a

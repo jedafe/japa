@@ -1,7 +1,8 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
-	import { untrack, onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
@@ -13,7 +14,6 @@
 		ChevronDown,
 		ChevronUp,
 		ExternalLink,
-		ThumbsUp,
 		Lock
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
@@ -52,8 +52,9 @@
 
 	let selectedDest = $state(untrack(() => data.initialDestId ?? ''));
 	let selectedProfession = $state(untrack(() => data.initialProfessionId ?? ''));
-	let selectedIssuing = $state('');
+	let selectedIssuing = $state(untrack(() => page.url.searchParams.get('issuing') ?? ''));
 	let loadingPathways = $state(false);
+	let pathwaysError = $state('');
 	let hasSearched = $state(untrack(() => data.pathways.length > 0));
 
 	// Expanded detail state
@@ -65,6 +66,8 @@
 	// Note submission state
 	let noteText = $state('');
 	let submittingNote = $state(false);
+	let noteError = $state('');
+	let notePending = $state(false);
 
 	// Group professions by category for the selector.
 	const professionGroups = $derived.by(() => {
@@ -105,8 +108,25 @@
 			`/credentials?${params.toString()}`
 		);
 		loadingPathways = false;
-		if (!res.error) pathways = res.data ?? [];
-		else pathways = [];
+		if (res.error) {
+			pathways = [];
+			pathwaysError =
+				res.error.message ||
+				t('credential_checker.load_failed', 'Could not load pathways. Please try again.');
+		} else {
+			pathways = res.data ?? [];
+			pathwaysError = '';
+		}
+		syncUrl();
+	}
+
+	// Keep the URL in sync so searches are shareable (shallow — no reload).
+	function syncUrl() {
+		const url = new URL(page.url.href);
+		if (selectedDest) url.searchParams.set('dest', selectedDest); else url.searchParams.delete('dest');
+		if (selectedProfession) url.searchParams.set('profession', selectedProfession); else url.searchParams.delete('profession');
+		if (selectedIssuing) url.searchParams.set('issuing', selectedIssuing); else url.searchParams.delete('issuing');
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function onSearch(e: Event) {
@@ -146,14 +166,25 @@
 		if (!expandedId || !noteText.trim()) return;
 		if (!authed) return;
 		submittingNote = true;
+		noteError = '';
 		const res = await api.post<CredentialCommunityNote>(
 			`/credentials/${expandedId}/notes`,
 			{ note: noteText.trim() }
 		);
 		submittingNote = false;
 		if (!res.error && res.data) {
-			detailNotes = [...detailNotes, res.data];
+			// Notes are created with status 'pending' and must pass moderation
+			// before they appear publicly — don't append to the visible list.
+			if (res.data.status === 'published') {
+				detailNotes = [...detailNotes, res.data];
+			} else {
+				notePending = true;
+			}
 			noteText = '';
+		} else {
+			noteError =
+				res.error?.message ||
+				t('credential_checker.note_failed', 'Could not submit your note. Please try again.');
 		}
 	}
 
@@ -169,10 +200,8 @@
 		}
 	}
 
-	onMount(() => {
-		// If SSR pre-fetched pathways (deep link with ?dest=&profession=),
-		// the selectors are already synced from data.initial*; nothing to do.
-	});
+	// If SSR pre-fetched pathways (deep link with ?dest=&profession=), the
+	// selectors are already synced from data.initial* — nothing else needed.
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title}
@@ -182,6 +211,13 @@
 <div class="mx-auto w-full max-w-3xl">
 	<div class="px-4 pt-4">
 		<ToolHeader icon={BadgeCheck} title={title} description={description} />
+		<!-- ADR-102: orientation-only disclaimer — this is not a regulatory decision -->
+		<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
+			{t(
+				'credential_checker.disclaimer',
+				'For orientation only — this is not a regulatory decision or legal advice. Always verify requirements with the official regulatory body.'
+			)}
+		</p>
 	</div>
 
 	{#if data.disabled}
@@ -278,6 +314,9 @@
 
 		<!-- Pathway list -->
 		<div class="p-4">
+			{#if pathwaysError}
+				<p class="mb-3 text-sm text-[var(--color-danger)]">{pathwaysError}</p>
+			{/if}
 			{#if loadingPathways}
 				<div class="space-y-3">
 					{#each Array(3) as _}
@@ -411,10 +450,6 @@
 																	<span>{note.user_name}</span>
 																{/if}
 																<span>· {fmtDate(note.created_at)}</span>
-																<span class="flex items-center gap-0.5">
-																	<ThumbsUp size={12} />
-																	{note.upvotes}
-																</span>
 															</div>
 														</div>
 													{/each}
@@ -427,6 +462,14 @@
 
 											<!-- Note submission -->
 											{#if authed}
+												{#if notePending}
+													<p class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
+														{t(
+															'credential_checker.note_pending',
+															'Thanks — your note is pending review and will appear once approved.'
+														)}
+													</p>
+												{/if}
 												<div class="space-y-2">
 													<AiBodyField
 														id="cc-note"
@@ -436,6 +479,7 @@
 														body={noteText}
 														onBody={(v) => (noteText = v)}
 														rows={3}
+														maxlength={1000}
 														placeholder={t(
 															'credential_checker.note_placeholder',
 															'Share your experience with this credential pathway…'
@@ -453,10 +497,13 @@
 															? t('common.submitting', 'Submitting…')
 															: t('credential_checker.submit_note', 'Submit note')}
 													</button>
+													{#if noteError}
+														<p class="text-xs text-[var(--color-danger)]">{noteError}</p>
+													{/if}
 												</div>
 											{:else}
 												<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
-													{t('credential_checker.notes_signin', 'Sign in to save your progress.')}
+													{t('credential_checker.notes_signin', 'Sign in to share your experience.')}
 												</div>
 											{/if}
 										</div>
@@ -476,6 +523,14 @@
 					)}
 				/>
 			{/if}
+		</div>
+
+		<!-- Cross-link to ECA guide (academic assessments ≠ professional licensure) -->
+		<div class="m-4 mt-0 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]">
+			{t('credential_checker.eca_hint', 'Looking for academic credential assessment (ECA) instead?')}
+			<a href="/tools/eca-guide" class="font-medium underline text-[var(--color-primary-text)]">
+				{t('credential_checker.eca_link', 'ECA Guide')}
+			</a>
 		</div>
 	{/if}
 </div>

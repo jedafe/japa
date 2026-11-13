@@ -52,6 +52,9 @@
 		note?: string;
 		status: string;
 		created_at: string;
+		destination_space_name?: string;
+		provider_name?: string;
+		guide_purpose?: string;
 	};
 
 	const canManage = $derived(hasPermission('eca_guide.manage'));
@@ -84,33 +87,42 @@
 	let providerController = $state<EntityPageController | undefined>(undefined);
 
 	const providerFields: FieldDef[] = [
-		{ key: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'wes|iqas|ces' },
-		{ key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'World Education Services' },
-		{ key: 'website', label: 'Website', type: 'url', placeholder: 'https://wes.org' },
-		{ key: 'is_active', label: 'Active', type: 'checkbox' },
+		{ key: 'slug', label: t('eca.col_slug', 'Slug'), type: 'text', required: true, placeholder: 'wes|iqas|ces' },
+		{ key: 'name', label: t('eca.col_name', 'Name'), type: 'text', required: true, placeholder: 'World Education Services' },
+		{ key: 'website', label: t('eca.col_website', 'Website'), type: 'url', placeholder: 'https://wes.org' },
+		{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox' },
 	];
 
 	async function loadProviders(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
-		const res = await api<Provider[]>(`/admin/eca-providers`);
+		const params = new URLSearchParams();
+		params.set('page', String(p.page + 1));
+		params.set('limit', String(p.pageSize));
+		if (p.q) params.set('q', p.q);
+		if (p.sort) params.set('sort', p.sort);
+		// apiRaw keeps the { data, pagination } envelope for server pagination.
+		const res = await apiRaw<{ data?: Provider[]; pagination?: { total: number } }>(
+			`/admin/eca-providers?${params}`
+		);
 		if (res.ok) {
-			const data = res.data ?? [];
-			return { data, total: data.length, totalPages: 1 };
+			const data = res.data?.data ?? [];
+			const total = res.data?.pagination?.total ?? data.length;
+			return { data, total, totalPages: Math.max(1, Math.ceil(total / p.pageSize)) };
 		}
 		throw new Error(res.error ?? 'Failed to load providers');
 	}
 
 	const providerConfig: EntityPageConfig = {
-		title: 'ECA Providers',
-		description: 'Credential-assessment organisations (WES, IQAS, CES, etc.)',
+		title: t('eca.providers_title', 'ECA Providers'),
+		description: t('eca.providers_desc', 'Credential-assessment organisations (WES, IQAS, CES, etc.)'),
 		createPermission: 'eca_guide.manage',
 		editPermission: 'eca_guide.manage',
 		deletePermission: 'eca_guide.manage',
 		fields: providerFields,
 		columns: [
-			{ key: 'name', label: 'Name', sortable: true },
-			{ key: 'slug', label: 'Slug' },
-			{ key: 'website', label: 'Website', render: (v?: string) => v ? `<a href="${v}" target="_blank" rel="noopener noreferrer" style="color:var(--color-primary)">${v}</a>` : '—' },
-			{ key: 'is_active', label: 'Active', render: (v?: boolean) => v === false ? '—' : '✓' },
+			{ key: 'name', label: t('eca.col_name', 'Name'), sortable: true },
+			{ key: 'slug', label: t('eca.col_slug', 'Slug') },
+			{ key: 'website', label: t('eca.col_website', 'Website'), render: (v?: string) => v ? `<a href="${v}" target="_blank" rel="noopener noreferrer" style="color:var(--color-primary)">${v}</a>` : '—' },
+			{ key: 'is_active', label: t('common.active', 'Active'), render: (v?: boolean) => v === false ? '—' : '✓' },
 		],
 		load: loadProviders,
 		create: async (body) => {
@@ -134,26 +146,26 @@
 
 	const guideFields = $derived<FieldDef[]>([
 		geoOptions.length > 0
-			? { key: 'destination_space_id', label: 'Destination', type: 'select', required: true,
+			? { key: 'destination_space_id', label: t('eca.destination', 'Destination'), type: 'select', required: true,
 				options: geoOptions.map((g) => ({ value: g.id, label: g.name })) }
-			: { key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true },
+			: { key: 'destination_space_id', label: t('eca.destination_id', 'Destination space ID'), type: 'text', required: true },
 		providerOptions.length > 0
-			? { key: 'provider_id', label: 'Provider', type: 'select', required: true,
+			? { key: 'provider_id', label: t('eca.provider', 'Provider'), type: 'select', required: true,
 				options: providerOptions.map((p) => ({ value: p.id, label: p.name })) }
-			: { key: 'provider_id', label: 'Provider ID', type: 'text', required: true },
-		{ key: 'purpose', label: 'Purpose', type: 'select', required: true, options: [
-			{ value: 'immigration', label: 'Immigration' }, { value: 'study', label: 'Study' },
-			{ value: 'employment', label: 'Employment' }, { value: 'professional_licensure', label: 'Professional licensure' },
+			: { key: 'provider_id', label: t('eca.provider_id', 'Provider ID'), type: 'text', required: true },
+		{ key: 'purpose', label: t('eca.purpose', 'Purpose'), type: 'select', required: true, options: [
+			{ value: 'immigration', label: t('eca.purpose_immigration', 'Immigration') }, { value: 'study', label: t('eca.purpose_study', 'Study') },
+			{ value: 'employment', label: t('eca.purpose_employment', 'Employment') }, { value: 'professional_licensure', label: t('eca.purpose_licensure', 'Professional licensure') },
 		]},
-		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'json', required: true },
-		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'json' },
-		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'json' },
-		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text' },
+		{ key: 'pathway_steps', label: t('eca.field_pathway_steps', 'Pathway steps (JSON)'), type: 'json', required: true },
+		{ key: 'documents_required', label: t('eca.field_documents', 'Documents required (JSON)'), type: 'json' },
+		{ key: 'accepted_for', label: t('eca.field_accepted', 'Accepted for (JSON)'), type: 'json' },
+		{ key: 'fee_estimate', label: t('eca.field_fee', 'Fee estimate'), type: 'text' },
 		currencies.length > 0
-			? { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions(currencies) }
-			: { key: 'currency', label: 'Currency', type: 'text' },
-		{ key: 'timeline_estimate', label: 'Timeline estimate', type: 'text' },
-		{ key: 'official_url', label: 'Official URL', type: 'url' },
+			? { key: 'currency', label: t('eca.col_currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
+			: { key: 'currency', label: t('eca.col_currency', 'Currency'), type: 'text' },
+		{ key: 'timeline_estimate', label: t('eca.field_timeline', 'Timeline estimate'), type: 'text' },
+		{ key: 'official_url', label: t('eca.field_official_url', 'Official URL'), type: 'url' },
 	]);
 
 	// pathway_steps / documents_required / accepted_for are jsonb columns —
@@ -176,6 +188,8 @@
 		const params = new URLSearchParams();
 		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
+		if (p.q) params.set('q', p.q);
+		if (p.sort) params.set('sort', p.sort);
 		if (p.filter?.status) params.set('status', p.filter.status);
 		if (p.filter?.dest) params.set('dest', p.filter.dest);
 		// apiRaw keeps the { data, pagination } envelope — api() would strip
@@ -210,11 +224,21 @@
 	}
 
 	// POST /admin/eca-guides/generate requires destination_space_id +
-	// provider_id — the draft form collects them before enqueueing.
+	// provider_id (+ optional purpose) — the draft form collects them
+	// before enqueueing.
 	let showGenerateForm = $state(false);
 	let genDestId = $state('');
 	let genProviderId = $state('');
+	let genPurpose = $state('');
 	let generating = $state(false);
+
+	const purposeOptions = [
+		{ value: '', label: t('eca.purpose_any', 'Any purpose') },
+		{ value: 'immigration', label: t('eca.purpose_immigration', 'Immigration') },
+		{ value: 'study', label: t('eca.purpose_study', 'Study') },
+		{ value: 'employment', label: t('eca.purpose_employment', 'Employment') },
+		{ value: 'professional_licensure', label: t('eca.purpose_licensure', 'Professional licensure') }
+	];
 
 	async function generateGuideDraft() {
 		if (!genDestId || !genProviderId || generating) return;
@@ -222,7 +246,11 @@
 		pageError = '';
 		const res = await api('/admin/eca-guides/generate', {
 			method: 'POST',
-			body: { destination_space_id: genDestId, provider_id: genProviderId }
+			body: {
+				destination_space_id: genDestId,
+				provider_id: genProviderId,
+				...(genPurpose ? { purpose: genPurpose } : {})
+			}
 		});
 		generating = false;
 		if (res.ok) {
@@ -234,17 +262,17 @@
 	}
 
 	const guideConfig = $derived<EntityPageConfig>({
-		title: 'ECA Guides',
-		description: 'Step-by-step credential-assessment guides per provider + destination',
+		title: t('eca.guides_title', 'ECA Guides'),
+		description: t('eca.guides_desc', 'Step-by-step credential-assessment guides per provider + destination'),
 		createPermission: 'eca_guide.manage',
 		editPermission: 'eca_guide.manage',
 		deletePermission: 'eca_guide.manage',
 		fields: guideFields,
 		columns: [
-			{ key: 'destination_space_name', label: 'Destination', sortable: true },
-			{ key: 'provider_name', label: 'Provider', sortable: true },
-			{ key: 'purpose', label: 'Purpose' },
-			{ key: 'fee_estimate', label: 'Fee', render: (v: string, row: Guide) => {
+			{ key: 'destination_space_name', label: t('eca.destination', 'Destination'), sortable: true },
+			{ key: 'provider_name', label: t('eca.provider', 'Provider'), sortable: true },
+			{ key: 'purpose', label: t('eca.purpose', 'Purpose') },
+			{ key: 'fee_estimate', label: t('eca.col_fee', 'Fee'), render: (v: string, row: Guide) => {
 				const fee = v ?? '';
 				if (!fee) return '—';
 				const sym = currencySymbol(row.currency, currencies);
@@ -252,17 +280,17 @@
 				if (!sym || (row.currency && fee.toUpperCase().includes(row.currency.toUpperCase()))) return fee;
 				return `${sym} ${fee}`;
 			} },
-			{ key: 'currency', label: 'Currency', render: (v: string) => currencyLabel(v, currencies) },
+			{ key: 'currency', label: t('eca.col_currency', 'Currency'), render: (v: string) => currencyLabel(v, currencies) },
 			{
-				key: 'status', label: 'Status',
+				key: 'status', label: t('common.status', 'Status'),
 				render: (v: string) => v === 'published' ? '<span style="color:var(--color-success)">published</span>' : v === 'ai_draft' ? '<span style="color:var(--color-warning)">ai_draft</span>' : v
 			},
 		],
 		filters: [
-			{ key: 'status', label: 'Status', options: [
-				{ value: 'draft', label: 'Draft' }, { value: 'ai_draft', label: 'AI Draft' },
-				{ value: 'pending', label: 'Pending' }, { value: 'published', label: 'Published' },
-				{ value: 'rejected', label: 'Rejected' },
+			{ key: 'status', label: t('common.status', 'Status'), options: [
+				{ value: 'draft', label: t('common.draft', 'Draft') }, { value: 'ai_draft', label: t('common.ai_draft', 'AI Draft') },
+				{ value: 'pending', label: t('common.pending', 'Pending') }, { value: 'published', label: t('common.published', 'Published') },
+				{ value: 'rejected', label: t('common.rejected', 'Rejected') },
 			]},
 		],
 		load: loadGuides,
@@ -280,19 +308,26 @@
 		},
 		isDeleted: (row: Guide) => row.status === 'rejected',
 		actions: [
-			{ label: 'View', icon: Eye, onclick: (row: Guide, ctx?: any) => ctx?.openView(row) },
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Guide, ctx?: any) => ctx?.openView(row) },
 			{
-				label: 'Approve → Published',
+				label: t('eca.approve_published', 'Approve → Published'),
 				icon: CheckCircle,
 				show: (row: Guide) => ['draft', 'ai_draft', 'pending'].includes(row.status),
 				onclick: (row: Guide) => approveGuide(row),
 			},
 			{
-				label: 'Reject',
+				label: t('common.reject', 'Reject'),
 				icon: XCircle,
 				variant: 'destructive',
 				show: (row: Guide) => ['draft', 'ai_draft', 'pending'].includes(row.status),
 				onclick: (row: Guide) => rejectGuide(row),
+			},
+			{
+				label: t('common.delete', 'Delete'),
+				icon: XCircle,
+				variant: 'destructive',
+				show: (_row: Guide) => canManage,
+				onclick: (row: Guide, ctx?: any) => ctx?.openDelete(row),
 			},
 		],
 	});
@@ -305,6 +340,8 @@
 		const params = new URLSearchParams();
 		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
+		if (p.q) params.set('q', p.q);
+		if (p.sort) params.set('sort', p.sort);
 		if (p.filter?.status) params.set('status', p.filter.status);
 		// apiRaw keeps the { data, pagination } envelope — api() would strip
 		// to body.data and lose the total needed for pagination.
@@ -324,38 +361,44 @@
 	}
 
 	const updateConfig: EntityPageConfig = {
-		title: 'Community Updates',
-		description: 'Fee/turnaround reports submitted by members — moderate before publishing',
+		title: t('eca.updates_title', 'Community Updates'),
+		description: t('eca.updates_desc', 'Fee/turnaround reports submitted by members — moderate before publishing'),
 		readonly: true,
 		fields: [],
 		columns: [
-			{ key: 'guide_id', label: 'Guide' },
-			{ key: 'user_name', label: 'Reporter' },
-			{ key: 'step_index', label: 'Step' },
-			{ key: 'fee_estimate', label: 'Fee' },
-			{ key: 'turnaround_days', label: 'Days' },
 			{
-				key: 'status', label: 'Status',
+				key: 'destination_space_name',
+				label: t('eca.col_guide', 'Guide'),
+				render: (_v: string, row: CommunityUpdate) =>
+					[row.provider_name, row.destination_space_name].filter(Boolean).join(' — ') || row.guide_id
+			},
+			{ key: 'guide_purpose', label: t('eca.purpose', 'Purpose'), render: (v: string) => v || '—' },
+			{ key: 'user_name', label: t('eca.col_reporter', 'Reporter') },
+			{ key: 'step_index', label: t('eca.col_step', 'Step'), render: (v?: number) => v == null ? '—' : String(v) },
+			{ key: 'fee_estimate', label: t('eca.col_fee', 'Fee') },
+			{ key: 'turnaround_days', label: t('eca.col_days', 'Days') },
+			{
+				key: 'status', label: t('common.status', 'Status'),
 				render: (v: string) => v === 'approved' ? '<span style="color:var(--color-success)">approved</span>' : v === 'pending' ? '<span style="color:var(--color-warning)">pending</span>' : v
 			},
 		],
 		filters: [
-			{ key: 'status', label: 'Status', options: [
-				{ value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' },
-				{ value: 'rejected', label: 'Rejected' },
+			{ key: 'status', label: t('common.status', 'Status'), options: [
+				{ value: 'pending', label: t('common.pending', 'Pending') }, { value: 'approved', label: t('common.approved', 'Approved') },
+				{ value: 'rejected', label: t('common.rejected', 'Rejected') },
 			]},
 		],
 		load: loadUpdates,
 		actions: [
-			{ label: 'View', icon: Eye, onclick: (row: CommunityUpdate, ctx?: any) => ctx?.openView(row) },
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: CommunityUpdate, ctx?: any) => ctx?.openView(row) },
 			{
-				label: 'Approve',
+				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
 				show: (row: CommunityUpdate) => row.status === 'pending',
 				onclick: (row: CommunityUpdate) => moderateUpdate(row, 'approved'),
 			},
 			{
-				label: 'Reject',
+				label: t('common.reject', 'Reject'),
 				icon: XCircle,
 				variant: 'destructive',
 				show: (row: CommunityUpdate) => row.status === 'pending',
@@ -376,11 +419,11 @@
 {/if}
 
 <div class="mb-4 flex flex-wrap gap-2">
-	{#each ['providers','guides','updates'] as tab}
-		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'white':'var(--color-foreground)'}" onclick={() => activeTab=tab as any}>{tab}</button>
+	{#each ECA_TABS as tab}
+		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'var(--color-primary-contrast)':'var(--color-foreground)'}" onclick={() => activeTab=tab}>{t(`eca.tab_${tab}`, tab)}</button>
 	{/each}
 	{#if canManage && activeTab === 'guides'}
-		<button class="ms-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={() => (showGenerateForm = !showGenerateForm)}>Generate AI Draft</button>
+		<button class="ms-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:var(--color-primary-contrast)" onclick={() => (showGenerateForm = !showGenerateForm)}>{t('eca.generate_draft', 'Generate AI Draft')}</button>
 	{/if}
 </div>
 
@@ -404,13 +447,22 @@
 				placeholder={t('eca.provider_ph', 'Select provider…')}
 			/>
 		</div>
+		<div class="min-w-52 flex-1">
+			<label class="mb-1 block text-xs font-medium" for="gen-purpose">{t('eca.purpose', 'Purpose')}</label>
+			<AutocompleteSelect
+				id="gen-purpose"
+				bind:value={genPurpose}
+				options={purposeOptions}
+				placeholder={t('eca.purpose_ph', 'Any purpose')}
+			/>
+		</div>
 		<button
-			class="rounded px-3 py-2 text-sm font-medium text-white"
+			class="rounded px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)]"
 			style="background:var(--color-primary);opacity:{!genDestId || !genProviderId || generating ? 0.5 : 1}"
 			disabled={!genDestId || !genProviderId || generating}
 			onclick={generateGuideDraft}
 		>
-			{generating ? 'Queueing…' : 'Queue draft'}
+			{generating ? t('eca.queueing', 'Queueing…') : t('eca.queue_draft', 'Queue draft')}
 		</button>
 	</div>
 {/if}

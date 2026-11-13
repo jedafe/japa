@@ -11,6 +11,7 @@ package ecaguide
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,6 +70,8 @@ type GuideRow struct {
 	Status               string
 	IsActive             pgtype.Bool
 	AIGenerated          bool
+	AIModel              *string
+	AIPromptHash         *string
 	HITLReviewedAt       pgtype.Timestamptz
 	IsJapabotIndexed     bool
 	CreatedAt            pgtype.Timestamptz
@@ -76,17 +79,22 @@ type GuideRow struct {
 }
 
 // UpdateRow is a single eca_community_updates row.
+// DestinationSpaceName/ProviderName/GuidePurpose are populated only on the
+// admin moderation list so reviewers see the guide's context.
 type UpdateRow struct {
-	ID             pgtype.UUID
-	GuideID        pgtype.UUID
-	UserID         pgtype.UUID
-	UserName       *string
-	StepIndex      pgtype.Int4
-	FeeEstimate    *string
-	TurnaroundDays pgtype.Int4
-	Note           *string
-	Status         string
-	CreatedAt      pgtype.Timestamptz
+	ID                   pgtype.UUID
+	GuideID              pgtype.UUID
+	UserID               pgtype.UUID
+	UserName             *string
+	StepIndex            pgtype.Int4
+	DestinationSpaceName *string
+	ProviderName         *string
+	GuidePurpose         *string
+	FeeEstimate          *string
+	TurnaroundDays       pgtype.Int4
+	Note                 *string
+	Status               string
+	CreatedAt            pgtype.Timestamptz
 }
 
 const guideSelect = `
@@ -96,7 +104,7 @@ const guideSelect = `
 	       g.timeline_estimate, g.documents_required, g.accepted_for,
 	       g.official_url, g.source_url_last_checked, g.status, g.is_active,
 	       g.ai_generated, g.hitl_reviewed_at, g.is_japabot_indexed,
-	       g.created_at, g.updated_at
+	       g.created_at, g.updated_at, g.ai_model, g.ai_prompt_hash
 	FROM eca_guides g
 	LEFT JOIN spaces s ON s.id = g.destination_space_id
 	LEFT JOIN eca_providers p ON p.id = g.provider_id`
@@ -112,7 +120,7 @@ func scanGuides(rows pgx.Rows) ([]GuideRow, error) {
 			&g.TimelineEstimate, &g.DocumentsRequired, &g.AcceptedFor,
 			&g.OfficialURL, &g.SourceURLLastChecked, &g.Status, &g.IsActive,
 			&g.AIGenerated, &g.HITLReviewedAt, &g.IsJapabotIndexed,
-			&g.CreatedAt, &g.UpdatedAt); err != nil {
+			&g.CreatedAt, &g.UpdatedAt, &g.AIModel, &g.AIPromptHash); err != nil {
 			return nil, err
 		}
 
@@ -284,8 +292,10 @@ func (s *Store) CreateCommunityUpdate(ctx context.Context, guideID, userID pgtyp
 	return id, err
 }
 
-// AdminListGuides returns guides in any status (admin).
-func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]GuideRow, int64, error) {
+// AdminListGuides returns guides in any status (admin). sort is the admin
+// "key:dir" param resolved through guideSortColumns only; q is a free-text
+// ILIKE on purpose/provider/destination.
+func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, status, sort, q string, page, limit int32) ([]GuideRow, int64, error) {
 	where := ` WHERE true`
 
 	args := []any{}
@@ -299,15 +309,30 @@ func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, st
 		where += ` AND g.status = $` + itoa(len(args))
 	}
 
+	if q != "" {
+		args = append(args, "%"+q+"%")
+		where += ` AND (g.purpose ILIKE $` + itoa(len(args)) +
+			` OR p.name ILIKE $` + itoa(len(args)) +
+			` OR s.name ILIKE $` + itoa(len(args)) + `)`
+	}
+
 	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, `SELECT count(*) FROM eca_guides g`+where, args...).Scan(&total); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx,
+		`SELECT count(*) FROM eca_guides g
+		 LEFT JOIN eca_providers p ON p.id = g.provider_id
+		 LEFT JOIN spaces s ON s.id = g.destination_space_id`+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
+	}
+
+	orderBy := "g.updated_at DESC"
+	if col, dir, ok := parseGuideSort(sort); ok {
+		orderBy = col + " " + dir
 	}
 
 	args = append(args, limit, (page-1)*limit)
 
 	rows, err := s.pool.Reader.Query(ctx,
-		guideSelect+where+` ORDER BY g.updated_at DESC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
+		guideSelect+where+` ORDER BY `+orderBy+` LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -326,12 +351,13 @@ func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error
 		INSERT INTO eca_guides
 		  (destination_space_id, provider_id, purpose, pathway_steps,
 		   fee_estimate, currency, timeline_estimate, documents_required,
-		   accepted_for, official_url, status, ai_generated)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12)
+		   accepted_for, official_url, status, ai_generated, ai_model, ai_prompt_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14)
 		RETURNING id`,
 		g.DestinationSpaceID, g.ProviderID, g.Purpose, g.PathwaySteps,
 		g.FeeEstimate, g.Currency, g.TimelineEstimate, g.DocumentsRequired,
-		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated).Scan(&id)
+		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated,
+		g.AIModel, g.AIPromptHash).Scan(&id)
 
 	return id, err
 }
@@ -404,9 +430,13 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
-		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at
+		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at,
+		       s.name AS destination_space_name, p.name AS provider_name, g.purpose
 		FROM eca_community_updates u
-		LEFT JOIN user_profiles up ON up.user_id = u.user_id`+
+		LEFT JOIN user_profiles up ON up.user_id = u.user_id
+		LEFT JOIN eca_guides g ON g.id = u.guide_id
+		LEFT JOIN eca_providers p ON p.id = g.provider_id
+		LEFT JOIN spaces s ON s.id = g.destination_space_id`+
 		where+` ORDER BY u.created_at DESC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
@@ -414,9 +444,24 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 
 	defer rows.Close()
 
-	updates, err := scanUpdates(rows)
+	var updates []UpdateRow
 
-	return updates, total, err
+	for rows.Next() {
+		var u UpdateRow
+		if err := rows.Scan(&u.ID, &u.GuideID, &u.UserID, &u.UserName,
+			&u.StepIndex, &u.FeeEstimate, &u.TurnaroundDays, &u.Note, &u.Status, &u.CreatedAt,
+			&u.DestinationSpaceName, &u.ProviderName, &u.GuidePurpose); err != nil {
+			return nil, 0, err
+		}
+
+		updates = append(updates, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return updates, total, nil
 }
 
 // ModerateUpdate approves or rejects a community update (admin).
@@ -506,13 +551,21 @@ func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// AdminListProviders returns all providers including inactive (admin).
-func (s *Store) AdminListProviders(ctx context.Context) ([]ProviderRow, error) {
+// AdminListProviders returns providers including inactive, paginated
+// (admin). The catalog is small but the contract matches the other admin
+// list endpoints.
+func (s *Store) AdminListProviders(ctx context.Context, page, limit int32) ([]ProviderRow, int64, error) {
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, `SELECT count(*) FROM eca_providers`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT id, slug, name, website, is_active
-		FROM eca_providers ORDER BY name`)
+		FROM eca_providers ORDER BY name
+		LIMIT $1 OFFSET $2`, limit, (page-1)*limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -521,13 +574,46 @@ func (s *Store) AdminListProviders(ctx context.Context) ([]ProviderRow, error) {
 	for rows.Next() {
 		var p ProviderRow
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Website, &p.IsActive); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		out = append(out, p)
 	}
 
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return out, total, nil
+}
+
+// guideSortColumns maps admin sortable column keys to safe SQL
+// expressions — anything not in the map falls back to updated_at DESC so
+// user input can never inject into ORDER BY.
+var guideSortColumns = map[string]string{
+	"destination_space_name": "s.name",
+	"provider_name":          "p.name",
+	"purpose":                "g.purpose",
+	"status":                 "g.status",
+	"created_at":             "g.created_at",
+	"updated_at":             "g.updated_at",
+}
+
+// parseGuideSort parses the admin "key:dir" sort param into a whitelisted
+// column + direction.
+func parseGuideSort(param string) (string, string, bool) {
+	key, dir, _ := strings.Cut(param, ":")
+
+	col, ok := guideSortColumns[key]
+	if !ok {
+		return "", "", false
+	}
+
+	if dir != "asc" {
+		dir = "desc"
+	}
+
+	return col, dir, true
 }
 
 // CreateProvider inserts a provider (admin).

@@ -103,6 +103,7 @@ type PathwayRow struct {
 	AIModel                *string
 	AIPromptHash           *string
 	HITLReviewedBy         pgtype.UUID
+	HITLReviewedByName     *string
 	HITLReviewedAt         pgtype.Timestamptz
 	HITLReviewNotes        *string
 	IsJapabotIndexed       bool
@@ -112,15 +113,19 @@ type PathwayRow struct {
 
 // CommunityNoteRow is a single credential_community_notes row joined
 // with the submitting user's display name.
+// ProfessionName/DestinationSpaceName are populated only on the admin
+// moderation list so reviewers see pathway context without a second query.
 type CommunityNoteRow struct {
-	ID        pgtype.UUID
-	PathwayID pgtype.UUID
-	UserID    pgtype.UUID
-	UserName  *string
-	Note      string
-	Upvotes   int32
-	Status    string
-	CreatedAt pgtype.Timestamptz
+	ID                   pgtype.UUID
+	PathwayID            pgtype.UUID
+	UserID               pgtype.UUID
+	UserName             *string
+	Note                 string
+	Upvotes              int32
+	Status               string
+	CreatedAt            pgtype.Timestamptz
+	ProfessionName       *string
+	DestinationSpaceName *string
 }
 
 // CreatePathwayInput holds the fields for inserting a new pathway.
@@ -290,6 +295,8 @@ type ListPathwaysFilter struct {
 	IssuingSpaceID     pgtype.UUID // optional
 	Status             string      // default: published
 	IsActive           *bool       // default: true
+	Q                  string      // optional ILIKE on profession name / regulatory body
+	Sort               string      // "key:dir" — admin list; whitelist only
 	Limit              int32
 	Offset             int32
 }
@@ -338,9 +345,20 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		argIdx++
 	}
 
+	if f.Q != "" {
+		conditions = append(conditions, fmt.Sprintf("(pr.name ILIKE $%d OR p.regulatory_body ILIKE $%d)", argIdx, argIdx))
+		args = append(args, "%"+f.Q+"%")
+		argIdx++
+	}
+
 	whereClause := strings.Join(conditions, " AND ")
 	if whereClause == "" {
 		whereClause = "TRUE"
+	}
+
+	orderBy := "p.updated_at DESC"
+	if col, dir, ok := parsePathwaySort(f.Sort); ok {
+		orderBy = col + " " + dir
 	}
 
 	limit := f.Limit
@@ -367,15 +385,17 @@ SELECT p.id, p.profession_id,
        p.official_application_url, p.source_url_last_checked,
        p.status, p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
-       p.is_japabot_indexed, p.created_at, p.updated_at
+       p.is_japabot_indexed, p.created_at, p.updated_at,
+       rev.username AS hitl_reviewed_by_name
 FROM credential_pathways p
 JOIN credential_professions pr ON pr.id = p.profession_id
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces dst ON dst.id = p.destination_space_id
+LEFT JOIN users rev ON rev.id = p.hitl_reviewed_by
 WHERE %s
-ORDER BY p.updated_at DESC
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderBy, argIdx, argIdx+1)
 
 	args = append(args, limit, offset)
 
@@ -400,6 +420,7 @@ LIMIT $%d OFFSET $%d
 			&r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
 			&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
+			&r.HITLReviewedByName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("credentialchecker: scan pathway row: %w", err)
 		}
@@ -411,10 +432,17 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, fmt.Errorf("credentialchecker: iterate pathway rows: %w", err)
 	}
 
+	// The professions join is only needed by the q filter — skip it in the
+	// count when unused so the count stays cheap.
+	countJoin := ""
+	if f.Q != "" {
+		countJoin = " JOIN credential_professions pr ON pr.id = p.profession_id"
+	}
+
 	countQuery := fmt.Sprintf(`
-SELECT COUNT(*) FROM credential_pathways p
+SELECT COUNT(*) FROM credential_pathways p%s
 WHERE %s
-`, whereClause)
+`, countJoin, whereClause)
 	countArgs := args[:len(args)-2]
 
 	var total int64
@@ -439,11 +467,13 @@ SELECT p.id, p.profession_id,
        p.official_application_url, p.source_url_last_checked,
        p.status, p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
-       p.is_japabot_indexed, p.created_at, p.updated_at
+       p.is_japabot_indexed, p.created_at, p.updated_at,
+       rev.username AS hitl_reviewed_by_name
 FROM credential_pathways p
 JOIN credential_professions pr ON pr.id = p.profession_id
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces dst ON dst.id = p.destination_space_id
+LEFT JOIN users rev ON rev.id = p.hitl_reviewed_by
 WHERE p.id = $1
 LIMIT 1
 `
@@ -461,6 +491,7 @@ LIMIT 1
 		&r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
 		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
+		&r.HITLReviewedByName,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -690,12 +721,13 @@ WHERE id = $1
 	return nil
 }
 
-// CreateNote inserts a new credential_community_notes row and returns the
-// inserted id and created_at timestamp.
-func (s *Store) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note string) (pgtype.UUID, pgtype.Timestamptz, error) {
+// CreateNote inserts a community note with an explicit status — new
+// submissions are 'pending' so they only appear publicly after admin
+// moderation flips them to 'published'.
+func (s *Store) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note, status string) (pgtype.UUID, pgtype.Timestamptz, error) {
 	const q = `
-INSERT INTO credential_community_notes (pathway_id, user_id, note)
-VALUES ($1, $2, $3)
+INSERT INTO credential_community_notes (pathway_id, user_id, note, status)
+VALUES ($1, $2, $3, $4)
 RETURNING id, created_at
 `
 
@@ -703,7 +735,7 @@ RETURNING id, created_at
 
 	var createdAt pgtype.Timestamptz
 
-	err := s.pool.Writer.QueryRow(ctx, q, pathwayID, userID, note).Scan(&id, &createdAt)
+	err := s.pool.Writer.QueryRow(ctx, q, pathwayID, userID, note, status).Scan(&id, &createdAt)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.Timestamptz{}, fmt.Errorf("credentialchecker: create note: %w", err)
 	}
@@ -801,6 +833,128 @@ func (s *Store) DeleteProfession(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM credential_professions WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: delete profession: %w", err)
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+// pathwaySortColumns maps admin sortable column keys to safe SQL
+// expressions — anything not in the map falls back to updated_at DESC so
+// user input can never inject into ORDER BY.
+var pathwaySortColumns = map[string]string{
+	"profession_name":        "pr.name",
+	"destination_space_name": "dst.name",
+	"issuing_space_name":     "iss.name",
+	"status":                 "p.status",
+	"created_at":             "p.created_at",
+	"updated_at":             "p.updated_at",
+}
+
+// parsePathwaySort parses the admin "key:dir" sort param (e.g.
+// "profession_name:asc") into a whitelisted column + direction.
+func parsePathwaySort(param string) (string, string, bool) {
+	key, dir, _ := strings.Cut(param, ":")
+
+	col, ok := pathwaySortColumns[key]
+	if !ok {
+		return "", "", false
+	}
+
+	if dir != "asc" {
+		dir = "desc"
+	}
+
+	return col, dir, true
+}
+
+// AdminListNotes returns community notes for the admin moderation queue,
+// joined with the author username and pathway context (profession +
+// destination) so reviewers can judge the note without a second query.
+func (s *Store) AdminListNotes(ctx context.Context, status string, limit, offset int32) ([]CommunityNoteRow, int64, error) {
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	conditions = append(conditions, "n.deleted_at IS NULL")
+
+	if status != "" {
+		conditions = append(conditions, fmt.Sprintf("n.status = $%d", argIdx))
+		args = append(args, status)
+		argIdx++
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	listQuery := fmt.Sprintf(`
+SELECT n.id, n.pathway_id, n.user_id, u.username AS user_name,
+       n.note, n.upvotes, n.status, n.created_at,
+       pr.name AS profession_name, dst.name AS destination_space_name
+FROM credential_community_notes n
+JOIN credential_pathways p ON p.id = n.pathway_id
+JOIN credential_professions pr ON pr.id = p.profession_id
+LEFT JOIN spaces dst ON dst.id = p.destination_space_id
+LEFT JOIN users u ON u.id = n.user_id
+WHERE %s
+ORDER BY n.created_at DESC
+LIMIT $%d OFFSET $%d
+`, whereClause, argIdx, argIdx+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: admin list notes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CommunityNoteRow
+
+	for rows.Next() {
+		var r CommunityNoteRow
+		if err := rows.Scan(
+			&r.ID, &r.PathwayID, &r.UserID, &r.UserName,
+			&r.Note, &r.Upvotes, &r.Status, &r.CreatedAt,
+			&r.ProfessionName, &r.DestinationSpaceName,
+		); err != nil {
+			return nil, 0, fmt.Errorf("credentialchecker: scan admin note row: %w", err)
+		}
+
+		out = append(out, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: iterate admin note rows: %w", err)
+	}
+
+	var total int64
+
+	countQuery := fmt.Sprintf(
+		`SELECT COUNT(*) FROM credential_community_notes n WHERE %s`, whereClause)
+
+	if err := s.pool.Reader.QueryRow(ctx, countQuery, args[:len(args)-2]...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: count admin notes: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// ModerateNote sets a community note's status ('published' to approve,
+// 'rejected' to reject). Returns pgx.ErrNoRows when the note does not
+// exist or is already deleted.
+func (s *Store) ModerateNote(ctx context.Context, id pgtype.UUID, status string) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE credential_community_notes
+SET status = $2
+WHERE id = $1 AND deleted_at IS NULL
+`, id, status)
+	if err != nil {
+		return fmt.Errorf("credentialchecker: moderate note: %w", err)
 	}
 
 	if cmd.RowsAffected() == 0 {

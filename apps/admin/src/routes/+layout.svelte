@@ -247,6 +247,7 @@
 		'/tools/language-test-hub': 'language_test_hub.manage',
 		'/tools/tax-calculator': 'tax_calculator.manage',
 		'/tools/community-locator': 'community_locator.manage',
+		'/eca-guide': 'eca_guide.manage',
 		// Intelligence review queue
 		'/intelligence/review': 'intel.review.view'
 	};

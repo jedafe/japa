@@ -20,9 +20,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ProfessionDTO is the API response shape for a single profession.
@@ -60,6 +62,7 @@ type PathwayDTO struct {
 	AIModel                string      `json:"ai_model,omitempty"`
 	AIPromptHash           string      `json:"ai_prompt_hash,omitempty"`
 	HITLReviewedBy         string      `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedByName     string      `json:"hitl_reviewed_by_name,omitempty"`
 	HITLReviewedAt         string      `json:"hitl_reviewed_at,omitempty"`
 	HITLReviewNotes        string      `json:"hitl_review_notes,omitempty"`
 	IsJapabotIndexed       bool        `json:"is_japabot_indexed"`
@@ -68,15 +71,19 @@ type PathwayDTO struct {
 }
 
 // CommunityNoteDTO is the API response shape for a single community note.
+// ProfessionName/DestinationSpaceName are populated on the admin
+// moderation list only.
 type CommunityNoteDTO struct {
-	ID        string `json:"id"`
-	PathwayID string `json:"pathway_id"`
-	UserID    string `json:"user_id"`
-	UserName  string `json:"user_name,omitempty"`
-	Note      string `json:"note"`
-	Upvotes   int32  `json:"upvotes"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID                   string `json:"id"`
+	PathwayID            string `json:"pathway_id"`
+	UserID               string `json:"user_id"`
+	UserName             string `json:"user_name,omitempty"`
+	Note                 string `json:"note"`
+	Upvotes              int32  `json:"upvotes"`
+	Status               string `json:"status"`
+	CreatedAt            string `json:"created_at"`
+	ProfessionName       string `json:"profession_name,omitempty"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
 }
 
 // PathwayDetailDTO is the response for GET /credentials/:id — a pathway
@@ -137,8 +144,13 @@ type ApprovePathwayRequest struct {
 	ReviewNotes *string `json:"review_notes"`
 }
 
+// ModerateNoteRequest is the body for PATCH /admin/credentials/notes/:id.
+type ModerateNoteRequest struct {
+	Status string `json:"status"` // published|rejected
+}
+
 // GeneratePathwayRequest is the request body for POST
-// /admin/credentials/generate — the Content Agent draft placeholder.
+// /admin/credentials/generate — queued via tool:generate_draft.
 type GeneratePathwayRequest struct {
 	ProfessionID       pgtype.UUID `json:"profession_id"`
 	IssuingSpaceID     string      `json:"issuing_space_id"`
@@ -157,11 +169,20 @@ type GeneratePathwayResponse struct {
 	DestinationSpaceID string      `json:"destination_space_id,omitempty"`
 }
 
+// TaskEnqueuer is the Asynq seam used to queue search:index_entity after
+// HITL approval and tool:generate_draft for Content Agent drafts. The
+// server wires the concrete enqueuer after NewService (same pattern as
+// ecaguide.Service).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
 // Service holds the business logic for the Credential Checker.
 type Service struct {
 	store        *Store
 	settings     *config.Settings
 	aiDispatcher AIDispatcher
+	enqueuer     TaskEnqueuer
 }
 
 // NewService creates a credential checker service.
@@ -171,6 +192,10 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetEnqueuer injects the Asynq enqueuer used to queue search:index_entity
+// after HITL approval and tool:generate_draft for AI pathway drafts.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // SetAIDispatcher injects the AI Gateway dispatcher used by
 // GeneratePathwayDraft to call the Content Agent (§20, ADR-088).
@@ -311,7 +336,7 @@ func (s *Service) GetPathway(ctx context.Context, id pgtype.UUID) (PathwayDetail
 		return PathwayDetailDTO{}, fmt.Errorf("credentialchecker: get pathway: %w", err)
 	}
 
-	if row.Status != StatusPublished {
+	if row.Status != StatusPublished || !row.IsActive {
 		return PathwayDetailDTO{}, pgx.ErrNoRows
 	}
 
@@ -505,7 +530,26 @@ func (s *Service) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch approved pathway: %w", err)
 	}
 
+	s.enqueueIndex(id)
+
 	return pathwayRowToDTO(row), nil
+}
+
+// enqueueIndex fires search:index_entity so JapaBot/Meilisearch picks up
+// the newly published pathway (§94 RAG, same pattern as ecaguide).
+func (s *Service) enqueueIndex(id pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"entity_type": "credential_pathway",
+		"entity_id":   id.String(),
+	})
+
+	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+		slog.Warn("credentialchecker: search:index_entity enqueue failed", "pathway_id", id.String(), "error", err)
+	}
 }
 
 // CreateNote submits a community note on a pathway. Auth required
@@ -515,6 +559,10 @@ func (s *Service) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID
 func (s *Service) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
 	if note == "" {
 		return CommunityNoteDTO{}, errors.New("note is required")
+	}
+
+	if len(note) > 1000 {
+		return CommunityNoteDTO{}, fmt.Errorf("%w: note is too long (max 1000 chars)", errpkg.ErrInvalid)
 	}
 
 	pathway, err := s.store.GetPathwayByID(ctx, pathwayID)
@@ -530,7 +578,7 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID,
 		return CommunityNoteDTO{}, pgx.ErrNoRows
 	}
 
-	id, createdAt, err := s.store.CreateNote(ctx, pathwayID, userID, note)
+	id, createdAt, err := s.store.CreateNote(ctx, pathwayID, userID, note, StatusPending)
 	if err != nil {
 		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: create note: %w", err)
 	}
@@ -541,20 +589,56 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID,
 		UserID:    userID.String(),
 		Note:      note,
 		Upvotes:   0,
-		Status:    StatusPublished,
+		Status:    StatusPending,
 		CreatedAt: formatTs(createdAt),
 	}, nil
+}
+
+// AdminListNotes returns community notes (any status) for the admin
+// moderation queue. Admin-only (credential_checker.manage permission
+// checked at route level).
+func (s *Service) AdminListNotes(ctx context.Context, status string, page, limit int32) ([]CommunityNoteDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+
+	rows, total, err := s.store.AdminListNotes(ctx, status, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("credentialchecker: admin list notes: %w", err)
+	}
+
+	dtos := make([]CommunityNoteDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, noteRowToDTO(r))
+	}
+
+	return dtos, total, nil
+}
+
+// ModerateNote approves ('published') or rejects ('rejected') a community
+// note. Admin-only (credential_checker.manage permission checked at route
+// level).
+func (s *Service) ModerateNote(ctx context.Context, id pgtype.UUID, status string) error {
+	if status != StatusPublished && status != StatusRejected {
+		return fmt.Errorf("%w: status must be 'published' or 'rejected'", errpkg.ErrInvalid)
+	}
+
+	return s.store.ModerateNote(ctx, id, status)
 }
 
 // GeneratePathwayDraft creates an AI-drafted credential pathway in
 // 'ai_draft' status via the AI Gateway Content Agent (§20, ADR-088).
 // The draft is marked ai_generated=true with ai_model and ai_prompt_hash
 // set from the generation call. It requires HITL approval (ApprovePathway)
-// before publication. Admin-only (credential_checker.manage permission
-// checked at route level). Ref: §20, ADR-088, geo-aware-tool-pattern.md.
-// // If no AI provider is registered for the "content_generation" category,
-// the method gracefully falls back to placeholder content so the draft
-// can still be created and reviewed manually (§21 stub-degradation).
+// before publication. Ref: §20, ADR-088, geo-aware-tool-pattern.md.
+//
+// The method fails rather than inventing placeholder content stamped
+// ai_generated=true — a draft claiming content_agent provenance for text
+// AI never produced would corrupt the ADR-088 provenance chain.
 func (s *Service) GeneratePathwayDraft(ctx context.Context, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
@@ -594,44 +678,42 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 	promptForHash := systemPrompt + "\n" + userPrompt
 	promptHash := computePromptHash(promptForHash)
 
-	// Defaults — used when no AI provider is registered (graceful fallback).
-	aiModel := "content_agent_v1"
-	regulatoryBody := "AI-generated — pending review"
+	// Let the gateway report ErrNoProviders itself — the tool:generate_draft
+	// adapter maps it to asynq.SkipRetry (permanent gap, not transient).
+	if s.aiDispatcher == nil {
+		return GeneratePathwayResponse{}, errors.New("credentialchecker: AI dispatcher not configured")
+	}
+
+	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
+	})
+	if err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: AI dispatch: %w", err)
+	}
+
+	if strings.TrimSpace(resp.Text) == "" {
+		return GeneratePathwayResponse{}, errors.New("credentialchecker: generate draft: empty AI response")
+	}
+
+	parsed, ok := parseAIPathwayResponse(resp.Text)
+	if !ok || parsed.PathwayDescription == "" {
+		return GeneratePathwayResponse{}, errors.New("credentialchecker: generate draft: unparseable AI output")
+	}
+
+	regulatoryBody := parsed.RegulatoryBody
+	if regulatoryBody == "" {
+		regulatoryBody = "Unknown — pending review"
+	}
+
 	pathwayType := PathwayDirect
-	pathwayDescription := "AI-generated pathway description — pending HITL review."
+	if parsed.PathwayType != "" {
+		pathwayType = parsed.PathwayType
+	}
 
-	// Call the AI Gateway if a content_generation provider is registered.
-	if s.aiDispatcher != nil && s.aiDispatcher.HasCategory("content_generation") {
-		resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-			SystemPrompt: systemPrompt,
-			UserPrompt:   userPrompt,
-		})
-		if err != nil {
-			slog.Warn("credentialchecker: AI dispatch failed, using placeholder", "error", err, "profession_id", req.ProfessionID)
-		} else if resp.Text != "" {
-			// Try to parse the JSON response; fall back to raw text as description.
-			if parsed, ok := parseAIPathwayResponse(resp.Text); ok {
-				if parsed.RegulatoryBody != "" {
-					regulatoryBody = parsed.RegulatoryBody
-				}
-
-				if parsed.PathwayType != "" {
-					pathwayType = parsed.PathwayType
-				}
-
-				if parsed.PathwayDescription != "" {
-					pathwayDescription = parsed.PathwayDescription
-				}
-			} else {
-				pathwayDescription = resp.Text
-			}
-
-			if resp.Model != "" {
-				aiModel = resp.Model
-			}
-		}
-	} else {
-		slog.Info("credentialchecker: no content_generation provider, using placeholder draft", "profession_id", req.ProfessionID)
+	var aiModel *string
+	if resp.Model != "" {
+		aiModel = &resp.Model
 	}
 
 	input := CreatePathwayInput{
@@ -640,20 +722,44 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		DestinationSpaceID: destSpaceID,
 		RegulatoryBody:     regulatoryBody,
 		PathwayType:        pathwayType,
-		PathwayDescription: pathwayDescription,
+		PathwayDescription: parsed.PathwayDescription,
 		Status:             StatusAIDraft,
 		IsActive:           false,
 		AIGenerated:        true,
-		AIModel:            &aiModel,
+		AIModel:            aiModel,
 		AIPromptHash:       &promptHash,
+	}
+	if parsed.TimelineEstimate != "" {
+		input.TimelineEstimate = &parsed.TimelineEstimate
+	}
+	if parsed.CostEstimateUSD != "" {
+		input.CostEstimateUSD = &parsed.CostEstimateUSD
 	}
 
 	id, err := s.store.CreatePathway(ctx, input)
 	if err != nil {
+		// A pathway already exists for this (profession, issuing, dest) —
+		// treat regeneration as idempotent rather than a hard failure so
+		// retried tool:generate_draft tasks succeed.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			slog.Info("credentialchecker: draft skipped — pathway already exists",
+				"profession_id", req.ProfessionID, "issuing_space_id", issuingSpaceID.String(),
+				"destination_space_id", destSpaceID.String())
+
+			return GeneratePathwayResponse{
+				Status:             "skipped",
+				Message:            "A pathway already exists for this combination — no duplicate draft created.",
+				ProfessionID:       req.ProfessionID,
+				IssuingSpaceID:     req.IssuingSpaceID,
+				DestinationSpaceID: req.DestinationSpaceID,
+			}, nil
+		}
+
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
 	}
 
-	slog.Info("credentialchecker: content agent draft created", "pathway_id", id.String(), "profession_id", req.ProfessionID, "ai_model", aiModel)
+	slog.Info("credentialchecker: content agent draft created", "pathway_id", id.String(), "profession_id", req.ProfessionID)
 
 	return GeneratePathwayResponse{
 		Status:             "accepted",
@@ -663,6 +769,49 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		IssuingSpaceID:     req.IssuingSpaceID,
 		DestinationSpaceID: req.DestinationSpaceID,
 	}, nil
+}
+
+// EnqueueGenerate validates the admin generate request and queues a
+// tool:generate_draft Asynq task — the worker calls back into
+// GeneratePathwayDraftFromParams. Same contract as ecaguide.EnqueueGenerate.
+func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string) error {
+	if s.enqueuer == nil {
+		return errors.New("credentialchecker: task enqueuer not configured")
+	}
+
+	if params["profession_id"] == "" || params["issuing_space_id"] == "" || params["destination_space_id"] == "" {
+		return fmt.Errorf("%w: profession_id, issuing_space_id and destination_space_id are required", errpkg.ErrInvalid)
+	}
+
+	payload := map[string]string{"entity_type": "credential_pathway"}
+	for k, v := range params {
+		payload[k] = v
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	return s.enqueuer.Enqueue("tool:generate_draft", raw)
+}
+
+// GeneratePathwayDraftFromParams is the tool:generate_draft worker branch —
+// params carry profession_id / issuing_space_id / destination_space_id as
+// strings, mirroring the admin request body.
+func (s *Service) GeneratePathwayDraftFromParams(ctx context.Context, params map[string]string) error {
+	var professionID pgtype.UUID
+	if err := professionID.Scan(params["profession_id"]); err != nil {
+		return fmt.Errorf("credentialchecker: invalid profession_id param: %w", err)
+	}
+
+	_, err := s.GeneratePathwayDraft(ctx, GeneratePathwayRequest{
+		ProfessionID:       professionID,
+		IssuingSpaceID:     params["issuing_space_id"],
+		DestinationSpaceID: params["destination_space_id"],
+	})
+
+	return err
 }
 
 // computePromptHash returns the hex-encoded SHA-256 of the prompt string
@@ -716,7 +865,7 @@ func cleanJSONResponse(text string) string {
 // AdminListPathways returns all pathways (any status) for the admin
 // management view. Admin-only (credential_checker.manage permission
 // checked at route level).
-func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpaceID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpaceID, professionID pgtype.UUID, status, sort, q string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -732,6 +881,8 @@ func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpa
 		ProfessionID:       professionID,
 		IssuingSpaceID:     issuingSpaceID,
 		Status:             status,
+		Sort:               sort,
+		Q:                  q,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -837,6 +988,10 @@ func pathwayRowToDTO(r PathwayRow) PathwayDTO {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
 
+	if r.HITLReviewedByName != nil {
+		dto.HITLReviewedByName = *r.HITLReviewedByName
+	}
+
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
@@ -857,6 +1012,14 @@ func noteRowToDTO(r CommunityNoteRow) CommunityNoteDTO {
 	}
 	if r.UserName != nil {
 		dto.UserName = *r.UserName
+	}
+
+	if r.ProfessionName != nil {
+		dto.ProfessionName = *r.ProfessionName
+	}
+
+	if r.DestinationSpaceName != nil {
+		dto.DestinationSpaceName = *r.DestinationSpaceName
 	}
 
 	return dto

@@ -6,18 +6,21 @@ package ecaguide
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jedafe/japa/internal/brand"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/brand"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ProviderDTO is the API shape for an ECA provider.
@@ -49,20 +52,27 @@ type GuideDTO struct {
 	Status               string          `json:"status"`
 	IsActive             bool            `json:"is_active"`
 	AIGenerated          bool            `json:"ai_generated"`
+	AIModel              string          `json:"ai_model,omitempty"`
+	AIPromptHash         string          `json:"ai_prompt_hash,omitempty"`
 	IsJapabotIndexed     bool            `json:"is_japabot_indexed"`
 }
 
 // UpdateDTO is the API shape for a community update.
+// DestinationSpaceName/ProviderName/GuidePurpose are populated on the
+// admin moderation list only.
 type UpdateDTO struct {
-	ID             string `json:"id"`
-	GuideID        string `json:"guide_id"`
-	UserName       string `json:"user_name,omitempty"`
-	StepIndex      *int32 `json:"step_index,omitempty"`
-	FeeEstimate    string `json:"fee_estimate,omitempty"`
-	TurnaroundDays *int32 `json:"turnaround_days,omitempty"`
-	Note           string `json:"note,omitempty"`
-	Status         string `json:"status"`
-	CreatedAt      string `json:"created_at"`
+	ID                   string `json:"id"`
+	GuideID              string `json:"guide_id"`
+	UserName             string `json:"user_name,omitempty"`
+	StepIndex            *int32 `json:"step_index,omitempty"`
+	FeeEstimate          string `json:"fee_estimate,omitempty"`
+	TurnaroundDays       *int32 `json:"turnaround_days,omitempty"`
+	Note                 string `json:"note,omitempty"`
+	Status               string `json:"status"`
+	CreatedAt            string `json:"created_at"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	ProviderName         string `json:"provider_name,omitempty"`
+	GuidePurpose         string `json:"guide_purpose,omitempty"`
 }
 
 // GuideDetailDTO is GET /eca/guides/:id — guide + approved updates.
@@ -85,6 +95,7 @@ type GuideRequest struct {
 	OfficialURL        *string          `json:"official_url"`
 	Status             string           `json:"status"`
 	IsActive           *bool            `json:"is_active"`
+	AIGenerated        *bool            `json:"ai_generated"`
 }
 
 // UpdateRequest is the community-update submission body.
@@ -246,23 +257,41 @@ func (s *Service) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, pr
 // CreateCommunityUpdate queues a member-submitted fee/timeline report.
 func (s *Service) CreateCommunityUpdate(ctx context.Context, guideID, userID pgtype.UUID, in UpdateRequest) (string, error) {
 	if in.FeeEstimate == "" && in.TurnaroundDays == nil && in.Note == "" {
-		return "", errors.New("at least one of fee_estimate, turnaround_days or note is required")
+		return "", fmt.Errorf("%w: at least one of fee_estimate, turnaround_days or note is required", errpkg.ErrInvalid)
 	}
 
 	if in.StepIndex != nil && *in.StepIndex < 0 {
-		return "", errors.New("step_index must be >= 0")
+		return "", fmt.Errorf("%w: step_index must be >= 0", errpkg.ErrInvalid)
 	}
 
 	if in.TurnaroundDays != nil && *in.TurnaroundDays < 0 {
-		return "", errors.New("turnaround_days must be >= 0")
+		return "", fmt.Errorf("%w: turnaround_days must be >= 0", errpkg.ErrInvalid)
 	}
 
 	if len(in.FeeEstimate) > 100 {
-		return "", errors.New("fee_estimate is too long (max 100 chars)")
+		return "", fmt.Errorf("%w: fee_estimate is too long (max 100 chars)", errpkg.ErrInvalid)
 	}
 
 	if len(in.Note) > 500 {
-		return "", errors.New("note is too long (max 500 chars)")
+		return "", fmt.Errorf("%w: note is too long (max 500 chars)", errpkg.ErrInvalid)
+	}
+
+	// step_index must reference a real step in the target guide — bound it
+	// against the published guide's pathway_steps length.
+	if in.StepIndex != nil {
+		guide, err := s.store.GetGuide(ctx, guideID)
+		if err != nil {
+			return "", err
+		}
+
+		var steps []json.RawMessage
+		if len(guide.PathwaySteps) > 0 {
+			_ = json.Unmarshal(guide.PathwaySteps, &steps)
+		}
+
+		if int(*in.StepIndex) >= len(steps) {
+			return "", fmt.Errorf("%w: step_index out of range for this guide", errpkg.ErrInvalid)
+		}
 	}
 
 	id, err := s.store.CreateCommunityUpdate(ctx, guideID, userID, in.StepIndex, in.FeeEstimate, in.TurnaroundDays, in.Note)
@@ -274,8 +303,8 @@ func (s *Service) CreateCommunityUpdate(ctx context.Context, guideID, userID pgt
 }
 
 // AdminListGuides returns guides in any status (admin).
-func (s *Service) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, status string, page, limit int32) ([]GuideDTO, int64, error) {
-	rows, total, err := s.store.AdminListGuides(ctx, destSpaceID, status, page, limit)
+func (s *Service) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, status, sort, q string, page, limit int32) ([]GuideDTO, int64, error) {
+	rows, total, err := s.store.AdminListGuides(ctx, destSpaceID, status, sort, q, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -314,6 +343,9 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 	row.Currency = in.Currency
 	row.TimelineEstimate = in.TimelineEstimate
 	row.OfficialURL = in.OfficialURL
+	if in.AIGenerated != nil {
+		row.AIGenerated = *in.AIGenerated
+	}
 
 	id, err := s.store.CreateGuide(ctx, row)
 	if err != nil {
@@ -451,6 +483,14 @@ func guideDTO(g GuideRow) GuideDTO {
 		d.SourceURLLastChecked = g.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
 
+	if g.AIModel != nil {
+		d.AIModel = *g.AIModel
+	}
+
+	if g.AIPromptHash != nil {
+		d.AIPromptHash = *g.AIPromptHash
+	}
+
 	return d
 }
 
@@ -489,6 +529,18 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 			d.CreatedAt = u.CreatedAt.Time.Format(time.RFC3339)
 		}
 
+		if u.DestinationSpaceName != nil {
+			d.DestinationSpaceName = *u.DestinationSpaceName
+		}
+
+		if u.ProviderName != nil {
+			d.ProviderName = *u.ProviderName
+		}
+
+		if u.GuidePurpose != nil {
+			d.GuidePurpose = *u.GuidePurpose
+		}
+
 		out = append(out, d)
 	}
 
@@ -519,11 +571,20 @@ func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, n
 	return s.store.RejectGuide(ctx, id, reviewerID, notes)
 }
 
-// AdminListProviders returns all providers including inactive (admin).
-func (s *Service) AdminListProviders(ctx context.Context) ([]ProviderDTO, error) {
-	rows, err := s.store.AdminListProviders(ctx)
+// AdminListProviders returns providers including inactive, paginated
+// (admin).
+func (s *Service) AdminListProviders(ctx context.Context, page, limit int32) ([]ProviderDTO, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+
+	rows, total, err := s.store.AdminListProviders(ctx, page, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	out := make([]ProviderDTO, 0, len(rows))
@@ -531,7 +592,7 @@ func (s *Service) AdminListProviders(ctx context.Context) ([]ProviderDTO, error)
 		out = append(out, providerDTOAdmin(p))
 	}
 
-	return out, nil
+	return out, total, nil
 }
 
 // CreateProvider inserts a provider (admin).
@@ -617,15 +678,21 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 		return errors.New("ecaguide: provider_id param is required")
 	}
 
+	systemPrompt := "You are the " + brand.Get() + " Content Agent. Produce an ECA guide as " +
+		"STRICT JSON (no markdown fences): " +
+		`{"purpose":"immigration|study|employment|professional_licensure",` +
+		`"pathway_steps":[{"step":1,"title":"...","detail":"...","duration":"..."}],` +
+		`"fee_estimate":"...","currency":"ISO-4217","timeline_estimate":"...",` +
+		`"documents_required":["..."],"accepted_for":["..."],"official_url":"https://..."}. ` +
+		"pathway_steps must cover account creation through report delivery."
+	userPrompt := formatParams(params)
+
+	// ai_prompt_hash = SHA256(prompt) for ADR-088 audit reproducibility.
+	promptHash := sha256Hex(systemPrompt + "\n" + userPrompt)
+
 	resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
-		SystemPrompt: "You are the " + brand.Get() + " Content Agent. Produce an ECA guide as " +
-			"STRICT JSON (no markdown fences): " +
-			`{"purpose":"immigration|study|employment|professional_licensure",` +
-			`"pathway_steps":[{"step":1,"title":"...","detail":"...","duration":"..."}],` +
-			`"fee_estimate":"...","currency":"ISO-4217","timeline_estimate":"...",` +
-			`"documents_required":["..."],"accepted_for":["..."],"official_url":"https://..."}. ` +
-			"pathway_steps must cover account creation through report delivery.",
-		UserPrompt: formatParams(params),
+		SystemPrompt: systemPrompt,
+		UserPrompt:   userPrompt,
 	})
 	if err != nil {
 		return fmt.Errorf("ecaguide: generate draft: AI dispatch: %w", err)
@@ -650,10 +717,17 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 		return errors.New("ecaguide: generate draft: AI output missing required fields")
 	}
 
+	// An explicit purpose param overrides the model's choice — admins use it
+	// to target a specific (dest × provider × purpose) slot.
+	purpose := out.Purpose
+	if params["purpose"] != "" {
+		purpose = params["purpose"]
+	}
+
 	row := GuideRow{
 		DestinationSpaceID: dest,
 		ProviderID:         provider,
-		Purpose:            out.Purpose,
+		Purpose:            purpose,
 		PathwaySteps:       *out.PathwaySteps,
 		FeeEstimate:        out.FeeEstimate,
 		Currency:           out.Currency,
@@ -661,6 +735,10 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 		OfficialURL:        out.OfficialURL,
 		Status:             StatusAIDraft,
 		AIGenerated:        true,
+		AIPromptHash:       &promptHash,
+	}
+	if resp.Model != "" {
+		row.AIModel = &resp.Model
 	}
 	if out.DocumentsRequired != nil {
 		row.DocumentsRequired = *out.DocumentsRequired
@@ -671,8 +749,27 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 	}
 
 	_, err = s.store.CreateGuide(ctx, row)
+	if err != nil {
+		// (dest × provider × purpose) already exists — treat regeneration
+		// as idempotent rather than a hard failure so retried
+		// tool:generate_draft tasks succeed.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			slog.Info("ecaguide: draft skipped — guide already exists",
+				"destination_space_id", dest.String(), "provider_id", provider.String(), "purpose", purpose)
+			return nil
+		}
 
-	return err
+		return err
+	}
+
+	return nil
+}
+
+// sha256Hex returns the hex-encoded SHA-256 of s (ADR-088 prompt hash).
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 // extractJSON strips markdown fences around a model's JSON response.

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/ecaguide"
 	"github.com/jedafe/japa/internal/pofcalculator"
@@ -132,10 +133,11 @@ func (a *toolReviewAdapter) HandleToolReview(ctx context.Context, id, reviewerID
 // tool:generate_draft task to the §§107–110 service matching entity_type.
 // Unknown entity types are an error so a typo doesn't silently no-op.
 type toolDraftAdapter struct {
-	crs *crscalculator.Service
-	pof *pofcalculator.Service
-	eca *ecaguide.Service
-	sop *sopgenerator.Service
+	crs  *crscalculator.Service
+	pof  *pofcalculator.Service
+	eca  *ecaguide.Service
+	sop  *sopgenerator.Service
+	cred *credentialchecker.Service
 }
 
 func (a *toolDraftAdapter) GenerateDraft(ctx context.Context, entityType string, params map[string]string) error {
@@ -150,6 +152,8 @@ func (a *toolDraftAdapter) GenerateDraft(ctx context.Context, entityType string,
 		err = a.eca.GenerateGuideDraft(ctx, params)
 	case "sop_template":
 		err = a.sop.GenerateTemplateDraft(ctx, params)
+	case "credential_pathway":
+		err = a.cred.GeneratePathwayDraftFromParams(ctx, params)
 	default:
 		return errors.New("toolreview: unknown entity_type " + entityType)
 	}

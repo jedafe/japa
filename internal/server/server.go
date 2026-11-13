@@ -2021,6 +2021,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	credentialCheckerStore := credentialchecker.NewStore(database)
 	credentialCheckerService := credentialchecker.NewService(credentialCheckerStore, settingsService)
+	credentialCheckerService.SetEnqueuer(taskEnqueuer)
 	credentialCheckerHandlers := credentialchecker.NewHandlers(credentialCheckerService, settingsService)
 	credentialCheckerHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in credentialchecker responses
 
@@ -2950,10 +2951,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	pofCalculatorService.SetAIDispatcher(&pofAIDispatcher{dispatcher: aiDispatcher})
 	ecaGuideService.SetAIDispatcher(&ecaAIDispatcher{dispatcher: aiDispatcher})
 	worker.RegisterToolDraftProcessor(&toolDraftAdapter{
-		crs: crsCalculatorService,
-		pof: pofCalculatorService,
-		eca: ecaGuideService,
-		sop: sopGeneratorService,
+		crs:  crsCalculatorService,
+		pof:  pofCalculatorService,
+		eca:  ecaGuideService,
+		sop:  sopGeneratorService,
+		cred: credentialCheckerService,
 	})
 
 	// §§107–110 — plug the tool entities into the unified moderation
@@ -9320,7 +9322,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
 				r.Get("/credentials", credentialCheckerHandlers.HandleListPathways)
 				r.Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.note")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), rbac.RequirePermission(rbacResolver, "credential_checker.note")).
 					Post("/credentials/{id}/notes", credentialCheckerHandlers.HandleCreateNote)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Get("/admin/credentials", credentialCheckerHandlers.HandleAdminList)
@@ -9328,6 +9330,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/credentials", credentialCheckerHandlers.HandleAdminCreate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Post("/admin/credentials/generate", credentialCheckerHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Get("/admin/credentials/notes", credentialCheckerHandlers.HandleAdminListNotes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Patch("/admin/credentials/notes/{id}", credentialCheckerHandlers.HandleAdminModerateNote)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
@@ -9397,7 +9403,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/eca/guides", ecaGuideHandlers.HandleListGuides)
 				r.Get("/eca/guides/{id}", ecaGuideHandlers.HandleGetGuide)
 				r.Get("/eca/compare", ecaGuideHandlers.HandleCompare)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.update")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), rbac.RequirePermission(rbacResolver, "eca_guide.update")).
 					Post("/eca/guides/{id}/updates", ecaGuideHandlers.HandleCreateUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
 					Get("/admin/eca-guides", ecaGuideHandlers.HandleAdminList)
