@@ -244,6 +244,18 @@ func (s *Service) RefreshComparison(ctx context.Context, contentID, userID pgtyp
 // and ScheduleStaleRefresh. It returns the existing pending job when a lock is
 // already held, preventing duplicate work.
 func (s *Service) enqueueRefresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string, queue string) (IngestionJob, error) {
+	// A refresh can never do work without registered data sources — every job
+	// ends "failed: no data sources registered". Fail fast so callers get a
+	// clear error and no doomed job/lock churn is created.
+	sources, _, err := s.dataSources.list(ctx, nil, nil, 1, 0)
+	if err != nil {
+		return IngestionJob{}, fmt.Errorf("listing data sources: %w", err)
+	}
+
+	if len(sources) == 0 {
+		return IngestionJob{}, fmt.Errorf("%w: no data sources registered for platform", errpkg.ErrInvalid)
+	}
+
 	lockKey := refreshLockKey(contentID)
 	lockDur := s.refreshLockDuration(ctx)
 

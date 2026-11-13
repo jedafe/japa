@@ -96,14 +96,15 @@ export async function getFreshness(comparisonID: string): Promise<FreshnessSumma
 	return res.data ?? null;
 }
 
-export async function refreshComparison(
+// Returns the full ClientResult — refresh can be rejected (e.g. no data
+// sources registered) and res.error.message carries the reason.
+export function refreshComparison(
 	comparisonID: string,
 	sourceKind?: string
-): Promise<IngestionJob | null> {
+): Promise<ClientResult<IngestionJob>> {
 	const body: Record<string, unknown> = {};
 	if (sourceKind) body.source_kind = sourceKind;
-	const res = await api.post<IngestionJob>(`/jce/comparisons/${comparisonID}/refresh`, body);
-	return res.data ?? null;
+	return api.post<IngestionJob>(`/jce/comparisons/${comparisonID}/refresh`, body);
 }
 
 export async function listIngestionJobs(comparisonID: string): Promise<IngestionJob[]> {

@@ -48,13 +48,13 @@
 		error = '';
 		refreshing = true;
 		try {
-			const job = await refreshComparison(comparisonID, sourceKind);
-			if (job) {
-				lastJob = job;
+			const res = await refreshComparison(comparisonID, sourceKind);
+			if (res.data) {
+				lastJob = res.data;
 				poll();
 			} else {
 				refreshing = false;
-				error = t('jce.refresh.error', 'Could not start refresh');
+				error = res.error?.message ?? t('jce.refresh.error', 'Could not start refresh');
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('jce.refresh.error', 'Could not start refresh');
@@ -70,6 +70,9 @@
 		{t('jce.refresh.status', 'Status: {status}', { status: lastJob.status })}
 		{#if lastJob.refreshed_count > 0}({lastJob.refreshed_count}){/if}
 	</p>
+	{#if lastJob.error}
+		<p class="text-xs text-[var(--color-danger)]">{lastJob.error}</p>
+	{/if}
 {/if}
 {#if error}
 	<p class="text-xs text-[var(--color-danger)]">{error}</p>
