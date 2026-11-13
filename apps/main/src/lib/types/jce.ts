@@ -156,6 +156,13 @@ export interface MatrixItem {
 	/** The entity reference backing this row (when the item is entity-linked)
 	 *  — part of the client dedup key alongside position + title. */
 	item_ref?: Record<string, unknown> | null;
+	/** Column-header visuals hydrated by the matrix assembler (§30 Sub-spec 6):
+	 *  the anchor entity's display name (a course item shows its university),
+	 *  logo avatar, ISO flag code, and locality label for "City, Country". */
+	entity_name?: string;
+	avatar_url?: string;
+	geo_code?: string;
+	geo_label?: string;
 	dimensions: MatrixDimension[];
 }
 

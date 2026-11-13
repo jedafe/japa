@@ -35,6 +35,10 @@ export function uniqueDimensions(dimensions: JCEDimension[]): JCEDimension[] {
 export interface DimensionGroup {
 	key: string;
 	label: string;
+	/** Pool group's semantic category (e.g. "entry-requirements") — drives
+	 *  the accordion card's icon/tint. Undefined for the trailing 'other'
+	 *  bucket and ad-hoc groups. */
+	category?: string;
 	dims: JCEDimension[];
 }
 
@@ -61,7 +65,7 @@ export function groupDimensionsByPool(dims: JCEDimension[], pool: JCEFieldPoolGr
 
 	const buckets = new Map<string, DimensionGroup>();
 	for (const g of pool) {
-		buckets.set(g.group_id, { key: g.group_id, label: fieldGroupLabel(g.label), dims: [] });
+		buckets.set(g.group_id, { key: g.group_id, label: fieldGroupLabel(g.label), category: g.category ?? undefined, dims: [] });
 	}
 	const other: DimensionGroup = { key: 'other', label: '', dims: [] };
 

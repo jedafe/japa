@@ -68,6 +68,7 @@
   "jce.compare.login_to_compare": "Connectez-vous pour comparer",
   "jce.compare.matrix_dimension": "Dimension",
   "jce.compare.matrix_heading": "Matrice de comparaison",
+  "jce.compare.group_items": "{count} éléments",
   "jce.compare.narrow.done": "Terminé",
   "jce.compare.narrow.required_prompt": "Choisissez {step} pour voir {label}.",
   "jce.compare.narrow.skip": "Ignorer",

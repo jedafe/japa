@@ -28,7 +28,8 @@
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
-	import { ArrowLeft, Check, ChevronDown, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, BookOpen, Briefcase, CalendarClock, Check, ChevronDown, CircleDollarSign, Clock, Ellipsis, Eye, ExternalLink, FileText, GraduationCap, LayoutList, Pencil } from 'lucide-svelte';
+	import type { Component } from 'svelte';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { api } from '#lib/api/client.js';
@@ -59,6 +60,37 @@
 	);
 	function toggleGroup(key: string) {
 		openGroupKey = openGroupKey === key ? null : key;
+	}
+
+	// Accordion card visuals keyed by the pool group's semantic category —
+	// keyword fallbacks keep unknown/type-specific categories on a generic icon.
+	type GroupVisual = { icon: Component; tint: string };
+	const asComponent = (icon: unknown): Component => icon as Component;
+	const GROUP_VISUALS: [RegExp, GroupVisual][] = [
+		[/overview|general/i, { icon: asComponent(LayoutList), tint: '#14b8a6' }],
+		[/entry|requirement|admission/i, { icon: asComponent(FileText), tint: '#10b981' }],
+		[/tuition|fee|cost|financ|price/i, { icon: asComponent(CircleDollarSign), tint: '#f59e0b' }],
+		[/career|outcome|job|employ/i, { icon: asComponent(Briefcase), tint: '#8b5cf6' }],
+		[/curriculum|course|academ|program|module/i, { icon: asComponent(BookOpen), tint: '#0ea5e9' }],
+		[/universit|school|institut/i, { icon: asComponent(GraduationCap), tint: '#6366f1' }],
+		[/deliver|study|schedule|mode|duration|format/i, { icon: asComponent(CalendarClock), tint: '#f43f5e' }]
+	];
+	const DEFAULT_GROUP_VISUAL: GroupVisual = { icon: asComponent(Ellipsis), tint: '#71717a' };
+	function groupVisual(category?: string): GroupVisual {
+		if (!category) return DEFAULT_GROUP_VISUAL;
+		return GROUP_VISUALS.find(([re]) => re.test(category))?.[1] ?? DEFAULT_GROUP_VISUAL;
+	}
+
+	// Country display name for the "City, Country" header subtitle — the API
+	// emits an ISO geo_code; Intl.DisplayNames localizes it.
+	let regionNames = $derived(new Intl.DisplayNames([i18n.locale || 'en'], { type: 'region' }));
+	function countryName(code?: string): string {
+		if (!code) return '';
+		try {
+			return regionNames.of(code.toUpperCase()) ?? '';
+		} catch {
+			return '';
+		}
 	}
 	let bestCells = $derived(matrixBestCells(matrix, uniqueDims));
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
@@ -320,68 +352,119 @@
 				</div>
 			</div>
 			{#if dimGroups.length > 0}
-				<div
-					class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
-				>
-					<table class="text-sm">
-						<thead>
-							<tr>
-								<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
-								{#each matrix as item (item.id)}
-									<th class="text-[var(--color-text)]">{item.title}</th>
-								{/each}
-							</tr>
-						</thead>
-						{#if dimGroups.length > 1}
-							{#each dimGroups as group (group.key)}
-								{@const open = openGroupKey === group.key}
-								<tbody>
-									<tr>
-										<th
-											colspan={matrix.length + 1}
-											class="text-start"
-											style="padding: 0; border-top-width: 2px;{open
-												? ' background-color: var(--color-surface-subtle); box-shadow: inset 3px 0 0 var(--color-primary);'
-												: ' background-color: var(--color-surface);'}"
-										>
-											<button
-												type="button"
-												onclick={() => toggleGroup(group.key)}
-												aria-expanded={open}
-												class="flex w-full items-center gap-2 px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-[var(--color-surface-subtle)] {open
-													? 'text-[var(--color-text)]'
-													: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-											>
-												<ChevronDown
-													size={14}
-													class="shrink-0 motion-safe:transition-transform {open ? 'rotate-180' : ''}"
-												/>
-												{group.label || t('jce.compare.family.other', 'Other')}
-												<span class="font-medium normal-case tracking-normal text-[var(--color-muted)]">
-													· {group.dims.length}
-												</span>
-											</button>
-										</th>
-									</tr>
-									{#if open}
-										{#each group.dims as dim (dim.id)}
-											{@render dimRow(dim)}
-										{/each}
-									{/if}
-								</tbody>
-							{/each}
-						{:else}
+				{#if dimGroups.length > 1}
+					<div class="space-y-3">
+						{#each dimGroups as group (group.key)}
+							{@const open = openGroupKey === group.key}
+							{#if open}
+								<div
+									class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
+								>
+									<table class="text-sm">
+										<thead>
+											<tr>
+												<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
+												{#each matrix as item (item.id)}
+													<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
+												{/each}
+											</tr>
+										</thead>
+										<tbody>
+											<tr>
+												<th colspan={matrix.length + 1} class="text-start" style="padding: 0; background-color: var(--color-surface-subtle)">
+													<button
+														type="button"
+														onclick={() => toggleGroup(group.key)}
+														aria-expanded="true"
+														class="flex w-full items-center gap-2 px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]"
+													>
+														<ChevronDown size={14} class="shrink-0 rotate-180" />
+														{group.label || t('jce.compare.family.other', 'Other')}
+													</button>
+												</th>
+											</tr>
+											{#each group.dims as dim (dim.id)}
+												{@render dimRow(dim)}
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else}
+								{@const gv = groupVisual(group.category)}
+								<button
+									type="button"
+									onclick={() => toggleGroup(group.key)}
+									aria-expanded="false"
+									class="flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									<span
+										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
+										style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
+									>
+										<gv.icon size={15} />
+									</span>
+									<span class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
+										{group.label || t('jce.compare.family.other', 'Other')}
+									</span>
+									<span class="ms-auto flex shrink-0 items-center gap-2.5">
+										<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+											{t('jce.compare.group_items', '{count} items', { count: group.dims.length })}
+										</span>
+										<ChevronDown size={15} class="text-[var(--color-muted)]" />
+									</span>
+								</button>
+							{/if}
+						{/each}
+					</div>
+				{:else}
+					<div
+						class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
+					>
+						<table class="text-sm">
+							<thead>
+								<tr>
+									<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
+									{#each matrix as item (item.id)}
+										<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
+									{/each}
+								</tr>
+							</thead>
 							<tbody>
 								{#each dimGroups[0].dims as dim (dim.id)}
 									{@render dimRow(dim)}
 								{/each}
 							</tbody>
-						{/if}
-					</table>
-				</div>
+						</table>
+					</div>
+				{/if}
 			{/if}
 		</section>
 	{/if}
+
+	{#snippet itemHeader(item: MatrixItem)}
+		{@const flag = flagUrl(item.geo_code)}
+		{@const subtitle = [...new Set([item.geo_label, countryName(item.geo_code)].filter(Boolean))].join(', ')}
+		<div class="flex items-center gap-3 py-1">
+			{#if item.avatar_url}
+				<img
+					src={item.avatar_url}
+					alt=""
+					class="h-10 w-10 shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover"
+				/>
+			{/if}
+			<div class="min-w-0">
+				<div class="font-semibold normal-case tracking-normal">{item.entity_name || item.title}</div>
+				{#if subtitle}
+					<div class="flex items-center gap-1.5 text-xs font-normal text-[var(--color-muted)]">
+						{#if flag}
+							<img src={flag} alt="" class="h-3 w-4 shrink-0 rounded-[2px] object-cover" />
+						{/if}
+						<span class="truncate">{subtitle}</span>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/snippet}
 
 	{#snippet dimRow(dim: JCEDimension)}
 		<tr>
@@ -460,5 +543,15 @@
 		inset-inline-start: 0;
 		background: var(--color-surface);
 		z-index: 1;
+	}
+
+	/* Horizontal row separators only — vertical cell borders would grid the
+	   matrix; the card's own border supplies the frame. */
+	.compare-matrix :is(td, th) {
+		border: 0;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.compare-matrix tbody tr:last-child :is(td, th) {
+		border-bottom: 0;
 	}
 </style>
