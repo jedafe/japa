@@ -352,91 +352,72 @@
 				</div>
 			</div>
 			{#if dimGroups.length > 0}
-				{#if dimGroups.length > 1}
-					<div class="space-y-3">
-						{#each dimGroups as group (group.key)}
-							{@const open = openGroupKey === group.key}
-							{#if open}
-								<div
-									class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
-								>
-									<table class="text-sm">
-										<thead>
-											<tr>
-												<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
-												{#each matrix as item (item.id)}
-													<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
-												{/each}
-											</tr>
-										</thead>
-										<tbody>
-											<tr>
-												<th colspan={matrix.length + 1} class="text-start" style="padding: 0; background-color: var(--color-surface-subtle)">
-													<button
-														type="button"
-														onclick={() => toggleGroup(group.key)}
-														aria-expanded="true"
-														class="flex w-full items-center gap-2 px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]"
-													>
-														<ChevronDown size={14} class="shrink-0 rotate-180" />
-														{group.label || t('jce.compare.family.other', 'Other')}
-													</button>
-												</th>
-											</tr>
-											{#each group.dims as dim (dim.id)}
-												{@render dimRow(dim)}
-											{/each}
-										</tbody>
-									</table>
-								</div>
-							{:else}
+				<div
+					class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
+				>
+					<table class="text-sm">
+						<thead>
+							<tr>
+								<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
+								{#each matrix as item (item.id)}
+									<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
+								{/each}
+							</tr>
+						</thead>
+						{#if dimGroups.length > 1}
+							{#each dimGroups as group (group.key)}
+								{@const open = openGroupKey === group.key}
 								{@const gv = groupVisual(group.category)}
-								<button
-									type="button"
-									onclick={() => toggleGroup(group.key)}
-									aria-expanded="false"
-									class="flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
-								>
-									<span
-										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
-										style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
-									>
-										<gv.icon size={15} />
-									</span>
-									<span class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
-										{group.label || t('jce.compare.family.other', 'Other')}
-									</span>
-									<span class="ms-auto flex shrink-0 items-center gap-2.5">
-										<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
-											{t('jce.compare.group_items', '{count} items', { count: group.dims.length })}
-										</span>
-										<ChevronDown size={15} class="text-[var(--color-muted)]" />
-									</span>
-								</button>
-							{/if}
-						{/each}
-					</div>
-				{:else}
-					<div
-						class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
-					>
-						<table class="text-sm">
-							<thead>
-								<tr>
-									<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
-									{#each matrix as item (item.id)}
-										<th class="text-[var(--color-text)]">{@render itemHeader(item)}</th>
-									{/each}
-								</tr>
-							</thead>
+								<tbody>
+									<tr>
+										<th
+											colspan={matrix.length + 1}
+											class="text-start"
+											style="padding: 0; background-color: {open ? 'var(--color-surface-subtle)' : 'var(--color-surface)'}"
+										>
+											<button
+												type="button"
+												onclick={() => toggleGroup(group.key)}
+												aria-expanded={open}
+												class="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
+											>
+												<span
+													class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
+													style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
+												>
+													<gv.icon size={15} />
+												</span>
+												<span class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
+													{group.label || t('jce.compare.family.other', 'Other')}
+												</span>
+												<span class="ms-auto flex shrink-0 items-center gap-2.5">
+													<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+														{t('jce.compare.group_items', '{count} items', { count: group.dims.length })}
+													</span>
+													<ChevronDown
+														size={15}
+														class="text-[var(--color-muted)] motion-safe:transition-transform {open ? 'rotate-180' : ''}"
+													/>
+												</span>
+											</button>
+										</th>
+									</tr>
+									{#if open}
+										{#each group.dims as dim (dim.id)}
+											{@render dimRow(dim)}
+										{/each}
+									{/if}
+								</tbody>
+							{/each}
+						{:else}
 							<tbody>
 								{#each dimGroups[0].dims as dim (dim.id)}
 									{@render dimRow(dim)}
 								{/each}
 							</tbody>
-						</table>
-					</div>
-				{/if}
+						{/if}
+					</table>
+				</div>
 			{/if}
 		</section>
 	{/if}
@@ -551,7 +532,7 @@
 		border: 0;
 		border-bottom: 1px solid var(--color-border);
 	}
-	.compare-matrix tbody tr:last-child :is(td, th) {
+	.compare-matrix tbody:last-child tr:last-child :is(td, th) {
 		border-bottom: 0;
 	}
 </style>
