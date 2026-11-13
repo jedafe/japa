@@ -185,12 +185,14 @@ INSERT INTO credential_pathways (
 	profession_id, issuing_space_id, destination_space_id,
 	regulatory_body, regulatory_body_url, pathway_type,
 	timeline_estimate, cost_estimate_usd, pathway_description,
+	pathway_steps,
 	official_application_url, source_url_last_checked,
 	status, is_active, ai_generated, ai_model, ai_prompt_hash
 )
 SELECT pr.id, si.id, sd.id,
 	v.body, v.body_url, v.ptype,
 	v.timeline, v.cost, v.descr,
+	v.steps::jsonb,
 	v.app_url, CURRENT_DATE,
 	v.status, v.active, v.ai, v.model, v.hash
 FROM (VALUES
@@ -199,6 +201,12 @@ FROM (VALUES
 	 'https://www.nnas.ca', 'bridging_exam',
 	 '12–24 months', '~$2,500–4,000 (NNAS + exams + bridging)',
 	 'Nurses trained in Nigeria complete an NNAS advisory report, then apply to a provincial regulator. Most are asked to pass the NCLEX-RN and may need bridging courses or a supervised-practice period before licensure.',
+	 '[
+	   {"step":1,"title":"NNAS advisory report","detail":"Create an NNAS account, submit credentials and documents for the advisory report.","duration":"~3–6 months"},
+	   {"step":2,"title":"Apply to the provincial college","detail":"Submit your NNAS report to the provincial regulator (e.g., College of Nurses of Ontario).","duration":"~1–2 months"},
+	   {"step":3,"title":"NCLEX-RN exam","detail":"Sit the NCLEX-RN licensing exam at an approved test centre.","duration":"exam day + ~6 weeks results"},
+	   {"step":4,"title":"Bridging/supervised practice (if required)","detail":"Complete assigned competency-bridging courses or a supervised-practice period.","duration":"3–12 months (if assigned)"}
+	 ]',
 	 'https://www.nnas.ca/apply/',
 	 'published', true, false, NULL, NULL),
 	('physician', 'nigeria', 'united-kingdom',
@@ -206,6 +214,12 @@ FROM (VALUES
 	 'https://www.gmc-uk.org', 'bridging_exam',
 	 '12–18 months', '~$3,000–5,000 (PLAB 1+2, GMC registration, visa)',
 	 'Internationally trained doctors register with the GMC via the PLAB route: PLAB 1 (written), PLAB 2 (OSCE in Manchester), then GMC registration. A recognised primary medical qualification and internship completion are required; supervised practice applies on first registration.',
+	 '[
+	   {"step":1,"title":"Verify your primary medical qualification","detail":"Confirm your MBBCh/MD is on the GMC-recognised list and complete EPIC primary-source verification.","duration":"4–8 weeks"},
+	   {"step":2,"title":"PLAB 1 (written)","detail":"Book and sit PLAB 1 — UK centres fill months ahead.","duration":"exam day + ~4 weeks results"},
+	   {"step":3,"title":"PLAB 2 (OSCE, Manchester)","detail":"Clinical assessment held only in Manchester.","duration":"exam day + ~4 weeks results"},
+	   {"step":4,"title":"GMC registration","detail":"Apply for registration with licence to practise; first registration is supervised.","duration":"~4–6 weeks"}
+	 ]',
 	 'https://www.gmc-uk.org/registration-and-licensing/join-the-register/plab',
 	 'published', true, false, NULL, NULL),
 	('civil-engineer', 'nigeria', 'canada',
@@ -213,6 +227,12 @@ FROM (VALUES
 	 'https://engineerscanada.ca', 'supervised_practice',
 	 '18–36 months', '~$1,500–3,000 (assessment + exams + EIT period)',
 	 'Nigerian engineering degrees are assessed by the provincial regulator (academic review). Most applicants are assigned confirmatory/technical exams, then complete a supervised Engineering-in-Training (EIT) period plus the Professional Practice Examination before P.Eng licensure.',
+	 '[
+	   {"step":1,"title":"Academic assessment","detail":"Submit degree + transcripts to the provincial association for equivalency review.","duration":"~3–6 months"},
+	   {"step":2,"title":"Confirmatory/technical exams","detail":"Sit any assigned exams from the academic review.","duration":"3–12 months (if assigned)"},
+	   {"step":3,"title":"EIT supervised experience","detail":"Accumulate 48 months of engineering experience (up to 12 months of international experience may count).","duration":"up to 48 months total"},
+	   {"step":4,"title":"Professional Practice Examination","detail":"Ethics + law exam, then P.Eng licensure.","duration":"~3 months"}
+	 ]',
 	 'https://engineerscanada.ca/become-an-engineer',
 	 'published', true, false, NULL, NULL),
 	('chartered-accountant', 'nigeria', 'united-kingdom',
@@ -220,6 +240,12 @@ FROM (VALUES
 	 'https://www.icaew.com', 'direct',
 	 '3–9 months', '~$500–1,500 (membership + assessment fees)',
 	 'ICAN members in good standing can seek UK chartered membership through reciprocal agreements (ICAEW/ICAN MOU) or ACCA pathways. Where full reciprocity is unavailable, exemptions cover most papers; the remainder plus professional-level assessments complete the route.',
+	 '[
+	   {"step":1,"title":"Confirm ICAN standing","detail":"Obtain a letter of good standing from ICAN covering membership and CPD.","duration":"2–6 weeks"},
+	   {"step":2,"title":"Map exemptions","detail":"Apply to ICAEW/ACCA for the reciprocal route and confirm which papers are exempted.","duration":"~1–2 months"},
+	   {"step":3,"title":"Complete remaining assessments","detail":"Sit any non-exempt professional-level papers.","duration":"3–6 months"},
+	   {"step":4,"title":"Membership & practising certificate","detail":"Apply for UK membership; separate practising certificate if offering public practice.","duration":"~1 month"}
+	 ]',
 	 'https://www.icaew.com/membership/become-a-member',
 	 'published', true, false, NULL, NULL),
 	('secondary-teacher', 'nigeria', 'canada',
@@ -227,9 +253,15 @@ FROM (VALUES
 	 'https://www.oct.ca', 'supervised_practice',
 	 '12–24 months', '~$1,000–2,500 (certification + bridging)',
 	 'Internationally educated teachers apply to the provincial college of teachers for evaluation. Outcomes typically require additional teacher-education coursework and a supervised practicum before full certification.',
+	 '[
+	   {"step":1,"title":"Credential evaluation","detail":"Submit transcripts and teaching qualifications to the provincial college for assessment.","duration":"~2–4 months"},
+	   {"step":2,"title":"Bridging coursework","detail":"Complete assigned teacher-education courses at an accredited provider.","duration":"6–12 months (if assigned)"},
+	   {"step":3,"title":"Supervised practicum","detail":"Classroom practicum under a certified mentor teacher.","duration":"~1 term"},
+	   {"step":4,"title":"Certification","detail":"College issues the teaching certificate on successful review.","duration":"~1–2 months"}
+	 ]',
 	 'https://www.oct.ca/becoming-a-teacher/internationally-educated-teachers',
 	 'ai_draft', false, true, 'content_agent_v1', 'demo-seed-prompt-hash-teacher')
-) AS v(prof, issuing, dest, body, body_url, ptype, timeline, cost, descr, app_url, status, active, ai, model, hash)
+) AS v(prof, issuing, dest, body, body_url, ptype, timeline, cost, descr, steps, app_url, status, active, ai, model, hash)
 JOIN credential_professions pr ON pr.slug = v.prof
 JOIN spaces si ON si.slug = v.issuing
 JOIN spaces sd ON sd.slug = v.dest
@@ -240,6 +272,7 @@ ON CONFLICT (profession_id, issuing_space_id, destination_space_id) DO UPDATE SE
 	timeline_estimate = EXCLUDED.timeline_estimate,
 	cost_estimate_usd = EXCLUDED.cost_estimate_usd,
 	pathway_description = EXCLUDED.pathway_description,
+	pathway_steps = EXCLUDED.pathway_steps,
 	official_application_url = EXCLUDED.official_application_url,
 	source_url_last_checked = EXCLUDED.source_url_last_checked,
 	status = EXCLUDED.status,

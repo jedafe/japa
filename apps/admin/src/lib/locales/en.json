@@ -1285,6 +1285,7 @@
   "app.tools.col_summary": "Summary",
   "credential_checker.application_url": "Official application URL",
   "credential_checker.cost_usd": "Cost estimate (USD)",
+  "credential_checker.field_pathway_steps": "Pathway steps (JSON)",
   "credential_checker.regulatory_url": "Regulatory body URL",
   "credential_checker.select_profession": "Select a profession…",
   "credential_checker.timeline": "Timeline estimate",

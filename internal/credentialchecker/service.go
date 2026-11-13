@@ -37,37 +37,38 @@ type ProfessionDTO struct {
 
 // PathwayDTO is the API response shape for a single credential pathway.
 type PathwayDTO struct {
-	ID                     string      `json:"id"`
-	ProfessionID           pgtype.UUID `json:"profession_id"`
-	ProfessionSlug         string      `json:"profession_slug"`
-	ProfessionName         string      `json:"profession_name"`
-	ProfessionCategory     string      `json:"profession_category,omitempty"`
-	IssuingSpaceID         string      `json:"issuing_space_id"`
-	IssuingSpaceName       string      `json:"issuing_space_name,omitempty"`
-	IssuingSpaceCode       string      `json:"issuing_space_code,omitempty"`
-	DestinationSpaceID     string      `json:"destination_space_id"`
-	DestinationSpaceName   string      `json:"destination_space_name,omitempty"`
-	DestinationSpaceCode   string      `json:"destination_space_code,omitempty"`
-	RegulatoryBody         string      `json:"regulatory_body"`
-	RegulatoryBodyURL      string      `json:"regulatory_body_url,omitempty"`
-	PathwayType            string      `json:"pathway_type"`
-	TimelineEstimate       string      `json:"timeline_estimate,omitempty"`
-	CostEstimateUSD        string      `json:"cost_estimate_usd,omitempty"`
-	PathwayDescription     string      `json:"pathway_description"`
-	OfficialApplicationURL string      `json:"official_application_url,omitempty"`
-	SourceURLLastChecked   string      `json:"source_url_last_checked,omitempty"`
-	Status                 string      `json:"status"`
-	IsActive               bool        `json:"is_active"`
-	AIGenerated            bool        `json:"ai_generated"`
-	AIModel                string      `json:"ai_model,omitempty"`
-	AIPromptHash           string      `json:"ai_prompt_hash,omitempty"`
-	HITLReviewedBy         string      `json:"hitl_reviewed_by,omitempty"`
-	HITLReviewedByName     string      `json:"hitl_reviewed_by_name,omitempty"`
-	HITLReviewedAt         string      `json:"hitl_reviewed_at,omitempty"`
-	HITLReviewNotes        string      `json:"hitl_review_notes,omitempty"`
-	IsJapabotIndexed       bool        `json:"is_japabot_indexed"`
-	CreatedAt              string      `json:"created_at"`
-	UpdatedAt              string      `json:"updated_at"`
+	ID                     string          `json:"id"`
+	ProfessionID           pgtype.UUID     `json:"profession_id"`
+	ProfessionSlug         string          `json:"profession_slug"`
+	ProfessionName         string          `json:"profession_name"`
+	ProfessionCategory     string          `json:"profession_category,omitempty"`
+	IssuingSpaceID         string          `json:"issuing_space_id"`
+	IssuingSpaceName       string          `json:"issuing_space_name,omitempty"`
+	IssuingSpaceCode       string          `json:"issuing_space_code,omitempty"`
+	DestinationSpaceID     string          `json:"destination_space_id"`
+	DestinationSpaceName   string          `json:"destination_space_name,omitempty"`
+	DestinationSpaceCode   string          `json:"destination_space_code,omitempty"`
+	RegulatoryBody         string          `json:"regulatory_body"`
+	RegulatoryBodyURL      string          `json:"regulatory_body_url,omitempty"`
+	PathwayType            string          `json:"pathway_type"`
+	TimelineEstimate       string          `json:"timeline_estimate,omitempty"`
+	CostEstimateUSD        string          `json:"cost_estimate_usd,omitempty"`
+	PathwayDescription     string          `json:"pathway_description"`
+	PathwaySteps           json.RawMessage `json:"pathway_steps,omitempty"`
+	OfficialApplicationURL string          `json:"official_application_url,omitempty"`
+	SourceURLLastChecked   string          `json:"source_url_last_checked,omitempty"`
+	Status                 string          `json:"status"`
+	IsActive               bool            `json:"is_active"`
+	AIGenerated            bool            `json:"ai_generated"`
+	AIModel                string          `json:"ai_model,omitempty"`
+	AIPromptHash           string          `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy         string          `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedByName     string          `json:"hitl_reviewed_by_name,omitempty"`
+	HITLReviewedAt         string          `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes        string          `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed       bool            `json:"is_japabot_indexed"`
+	CreatedAt              string          `json:"created_at"`
+	UpdatedAt              string          `json:"updated_at"`
 }
 
 // CommunityNoteDTO is the API response shape for a single community note.
@@ -95,22 +96,23 @@ type PathwayDetailDTO struct {
 
 // CreatePathwayRequest is the request body for POST /admin/credentials.
 type CreatePathwayRequest struct {
-	ProfessionID           pgtype.UUID `json:"profession_id"`
-	IssuingSpaceID         string      `json:"issuing_space_id"`
-	DestinationSpaceID     string      `json:"destination_space_id"`
-	RegulatoryBody         string      `json:"regulatory_body"`
-	RegulatoryBodyURL      string      `json:"regulatory_body_url"`
-	PathwayType            string      `json:"pathway_type"`
-	TimelineEstimate       string      `json:"timeline_estimate"`
-	CostEstimateUSD        string      `json:"cost_estimate_usd"`
-	PathwayDescription     string      `json:"pathway_description"`
-	OfficialApplicationURL string      `json:"official_application_url"`
-	SourceURLLastChecked   string      `json:"source_url_last_checked"`
-	Status                 string      `json:"status"`
-	IsActive               *bool       `json:"is_active"`
-	AIGenerated            *bool       `json:"ai_generated"`
-	AIModel                string      `json:"ai_model"`
-	AIPromptHash           string      `json:"ai_prompt_hash"`
+	ProfessionID           pgtype.UUID     `json:"profession_id"`
+	IssuingSpaceID         string          `json:"issuing_space_id"`
+	DestinationSpaceID     string          `json:"destination_space_id"`
+	RegulatoryBody         string          `json:"regulatory_body"`
+	RegulatoryBodyURL      string          `json:"regulatory_body_url"`
+	PathwayType            string          `json:"pathway_type"`
+	TimelineEstimate       string          `json:"timeline_estimate"`
+	CostEstimateUSD        string          `json:"cost_estimate_usd"`
+	PathwayDescription     string          `json:"pathway_description"`
+	PathwaySteps           json.RawMessage `json:"pathway_steps"`
+	OfficialApplicationURL string          `json:"official_application_url"`
+	SourceURLLastChecked   string          `json:"source_url_last_checked"`
+	Status                 string          `json:"status"`
+	IsActive               *bool           `json:"is_active"`
+	AIGenerated            *bool           `json:"ai_generated"`
+	AIModel                string          `json:"ai_model"`
+	AIPromptHash           string          `json:"ai_prompt_hash"`
 }
 
 // UpdatePathwayRequest is the request body for PATCH /admin/credentials/:id.
@@ -118,19 +120,20 @@ type CreatePathwayRequest struct {
 // is_japabot_indexed is intentionally absent — it is a GENERATED ALWAYS AS
 // column computed from status + is_active and cannot be updated directly.
 type UpdatePathwayRequest struct {
-	ProfessionID           *pgtype.UUID `json:"profession_id"`
-	IssuingSpaceID         *string      `json:"issuing_space_id"`
-	DestinationSpaceID     *string      `json:"destination_space_id"`
-	RegulatoryBody         *string      `json:"regulatory_body"`
-	RegulatoryBodyURL      *string      `json:"regulatory_body_url"`
-	PathwayType            *string      `json:"pathway_type"`
-	TimelineEstimate       *string      `json:"timeline_estimate"`
-	CostEstimateUSD        *string      `json:"cost_estimate_usd"`
-	PathwayDescription     *string      `json:"pathway_description"`
-	OfficialApplicationURL *string      `json:"official_application_url"`
-	SourceURLLastChecked   *string      `json:"source_url_last_checked"`
-	Status                 *string      `json:"status"`
-	IsActive               *bool        `json:"is_active"`
+	ProfessionID           *pgtype.UUID     `json:"profession_id"`
+	IssuingSpaceID         *string          `json:"issuing_space_id"`
+	DestinationSpaceID     *string          `json:"destination_space_id"`
+	RegulatoryBody         *string          `json:"regulatory_body"`
+	RegulatoryBodyURL      *string          `json:"regulatory_body_url"`
+	PathwayType            *string          `json:"pathway_type"`
+	TimelineEstimate       *string          `json:"timeline_estimate"`
+	CostEstimateUSD        *string          `json:"cost_estimate_usd"`
+	PathwayDescription     *string          `json:"pathway_description"`
+	PathwaySteps           *json.RawMessage `json:"pathway_steps"`
+	OfficialApplicationURL *string          `json:"official_application_url"`
+	SourceURLLastChecked   *string          `json:"source_url_last_checked"`
+	Status                 *string          `json:"status"`
+	IsActive               *bool            `json:"is_active"`
 }
 
 // CreateNoteRequest is the request body for POST /credentials/:id/notes.
@@ -378,6 +381,10 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 		return PathwayDTO{}, errors.New("pathway_type is required")
 	}
 
+	if len(req.PathwaySteps) > 0 && !isJSONArray(req.PathwaySteps) {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", errpkg.ErrInvalid)
+	}
+
 	// Direct-publish on create would skip the HITL stamps and the search
 	// index enqueue — publication must go through approve (ADR-088).
 	if req.Status == StatusPublished {
@@ -401,6 +408,7 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 		RegulatoryBody:     req.RegulatoryBody,
 		PathwayType:        req.PathwayType,
 		PathwayDescription: req.PathwayDescription,
+		PathwaySteps:       req.PathwaySteps,
 		Status:             req.Status,
 		IsActive:           true,
 	}
@@ -467,6 +475,10 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 		return PathwayDTO{}, fmt.Errorf("%w: publishing requires POST /admin/credentials/{id}/approve", errpkg.ErrInvalid)
 	}
 
+	if req.PathwaySteps != nil && !isJSONArray(*req.PathwaySteps) {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", errpkg.ErrInvalid)
+	}
+
 	input := UpdatePathwayInput{
 		ProfessionID:           req.ProfessionID,
 		RegulatoryBody:         req.RegulatoryBody,
@@ -475,6 +487,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 		TimelineEstimate:       req.TimelineEstimate,
 		CostEstimateUSD:        req.CostEstimateUSD,
 		PathwayDescription:     req.PathwayDescription,
+		PathwaySteps:           req.PathwaySteps,
 		OfficialApplicationURL: req.OfficialApplicationURL,
 		Status:                 req.Status,
 		IsActive:               req.IsActive,
@@ -703,9 +716,9 @@ func (s *Service) GeneratePathwayDraft(ctx context.Context, req GeneratePathwayR
 	systemPrompt := `You are a Content Agent for a professional credential recognition checker.
 Generate a concise, factual pathway description for recognizing a professional credential
 in the destination country. Include the regulatory body name, recognition pathway type,
-timeline estimate, cost estimate, and a step-by-step description.
+timeline estimate, cost estimate, a step-by-step description, and an ordered steps array.
 Respond with ONLY a JSON object (no markdown fences) in this format:
-{"regulatory_body": "...", "pathway_type": "...", "pathway_description": "...", "timeline_estimate": "...", "cost_estimate_usd": "..."}`
+{"regulatory_body": "...", "pathway_type": "...", "pathway_description": "...", "pathway_steps": [{"step": 1, "title": "...", "detail": "...", "duration": "..."}], "timeline_estimate": "...", "cost_estimate_usd": "..."}`
 
 	userPrompt := fmt.Sprintf(
 		"Profession: %s\nIssuing country: %s\nDestination country: %s\n\nGenerate the credential recognition pathway.",
@@ -766,6 +779,9 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		AIGenerated:        true,
 		AIModel:            aiModel,
 		AIPromptHash:       &promptHash,
+	}
+	if len(parsed.PathwaySteps) > 0 && isJSONArray(parsed.PathwaySteps) {
+		input.PathwaySteps = parsed.PathwaySteps
 	}
 	if parsed.TimelineEstimate != "" {
 		input.TimelineEstimate = &parsed.TimelineEstimate
@@ -861,11 +877,12 @@ func computePromptHash(prompt string) string {
 
 // aiPathwayResponse is the JSON shape the Content Agent is asked to return.
 type aiPathwayResponse struct {
-	RegulatoryBody     string `json:"regulatory_body"`
-	PathwayType        string `json:"pathway_type"`
-	PathwayDescription string `json:"pathway_description"`
-	TimelineEstimate   string `json:"timeline_estimate"`
-	CostEstimateUSD    string `json:"cost_estimate_usd"`
+	RegulatoryBody     string          `json:"regulatory_body"`
+	PathwayType        string          `json:"pathway_type"`
+	PathwayDescription string          `json:"pathway_description"`
+	PathwaySteps       json.RawMessage `json:"pathway_steps"`
+	TimelineEstimate   string          `json:"timeline_estimate"`
+	CostEstimateUSD    string          `json:"cost_estimate_usd"`
 }
 
 // parseAIPathwayResponse attempts to parse the AI response as JSON.
@@ -881,6 +898,13 @@ func parseAIPathwayResponse(text string) (aiPathwayResponse, bool) {
 	}
 
 	return r, true
+}
+
+// isJSONArray reports whether raw is a JSON array — pathway_steps drives
+// the public step-by-step renderer, so non-array values are rejected.
+func isJSONArray(raw json.RawMessage) bool {
+	var arr []json.RawMessage
+	return json.Unmarshal(raw, &arr) == nil
 }
 
 // cleanJSONResponse strips markdown code fences from an AI response
@@ -968,6 +992,7 @@ func pathwayRowToDTO(r PathwayRow) PathwayDTO {
 		RegulatoryBody:     r.RegulatoryBody,
 		PathwayType:        r.PathwayType,
 		PathwayDescription: r.PathwayDescription,
+		PathwaySteps:       r.PathwaySteps,
 		Status:             r.Status,
 		IsActive:           r.IsActive,
 		AIGenerated:        r.AIGenerated,

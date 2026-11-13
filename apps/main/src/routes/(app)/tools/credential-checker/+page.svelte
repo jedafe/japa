@@ -13,7 +13,8 @@
 		MapPin,
 		ChevronDown,
 		ChevronUp,
-		ExternalLink
+		ExternalLink,
+		Timer
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
@@ -399,6 +400,33 @@
 												<p class="text-sm leading-relaxed text-[var(--color-text)]">
 													{detailPathway.pathway_description}
 												</p>
+											</div>
+										{/if}
+
+										<!-- Recognition steps (structured pathway_steps) -->
+										{#if detailPathway.pathway_steps?.length}
+											<div>
+												<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+													{t('credential_checker.steps', 'Steps')}
+												</h4>
+												<div class="space-y-3">
+													{#each detailPathway.pathway_steps as step (step.step)}
+														<div class="flex gap-3">
+															<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">
+																{step.step}
+															</div>
+															<div>
+																<div class="text-sm font-medium text-[var(--color-text)]">{step.title}</div>
+																{#if step.detail}
+																	<div class="mt-0.5 text-xs text-[var(--color-muted)]">{step.detail}</div>
+																{/if}
+																{#if step.duration}
+																	<div class="mt-0.5 flex items-center gap-1 text-xs text-[var(--color-muted)]"><Timer size={11} class="rtl:-scale-x-100" />{step.duration}</div>
+																{/if}
+															</div>
+														</div>
+													{/each}
+												</div>
 											</div>
 										{/if}
 

@@ -1285,6 +1285,7 @@
   "app.tools.col_summary": "Résumé",
   "credential_checker.application_url": "URL de candidature officielle",
   "credential_checker.cost_usd": "Coût estimé (USD)",
+  "credential_checker.field_pathway_steps": "Étapes du parcours (JSON)",
   "credential_checker.regulatory_url": "URL de l'organisme de réglementation",
   "credential_checker.select_profession": "Sélectionnez une profession…",
   "credential_checker.timeline": "Délai estimé",

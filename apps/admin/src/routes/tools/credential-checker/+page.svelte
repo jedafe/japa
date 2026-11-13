@@ -29,6 +29,7 @@
 		timeline_estimate?: string;
 		cost_estimate_usd?: string;
 		pathway_description: string;
+		pathway_steps?: unknown;
 		official_application_url?: string;
 		status: string;
 		ai_generated: boolean;
@@ -260,9 +261,21 @@
 			{ key: 'timeline_estimate', label: t('credential_checker.timeline', 'Timeline estimate'), type: 'text' },
 			{ key: 'cost_estimate_usd', label: t('credential_checker.cost_usd', 'Cost estimate (USD)'), type: 'text' },
 			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' },
+			{ key: 'pathway_steps', label: t('credential_checker.field_pathway_steps', 'Pathway steps (JSON)'), type: 'json' },
 			{ key: 'official_application_url', label: t('credential_checker.application_url', 'Official application URL'), type: 'url' }
 		];
 	});
+
+	// pathway_steps arrives stringified (load maps it for the json editor).
+	function stepsOf(row: CredentialCheckerItem): { step?: number; title?: string; detail?: string }[] {
+		const raw = row.pathway_steps;
+		try {
+			const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+			return Array.isArray(v) ? v : [];
+		} catch {
+			return [];
+		}
+	}
 
 	const config = $derived.by<EntityPageConfig>(() => {
 		countryByIdReady; // re-derive once the 250 primary geo space countries load
@@ -325,7 +338,13 @@
 			const result = await credentialCheckerAdminApi.list(queryParts.join('&'));
 			if (result.ok) {
 				const body = result.data;
-				const data = (body.data as CredentialCheckerItem[]) ?? [];
+				// pathway_steps is jsonb — stringify so the json editor seeds
+				// editable JSON instead of "[object Object]" (parseJsonFields
+				// converts back on save).
+				const data = ((body.data as CredentialCheckerItem[]) ?? []).map((row) => ({
+					...row,
+					pathway_steps: row.pathway_steps ? JSON.stringify(row.pathway_steps, null, 2) : ''
+				}));
 				const total = body.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / params.pageSize));
 				return { data, total, totalPages };
@@ -333,6 +352,21 @@
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
 		update: async (id, body) => {
+			// The json editor submits pathway_steps as a JSON string — parse it
+			// back before the API call (invalid JSON passes through and backend
+			// validation reports it).
+			if (typeof body.pathway_steps === 'string') {
+				const s = body.pathway_steps.trim();
+				if (!s) {
+					delete body.pathway_steps;
+				} else {
+					try {
+						body.pathway_steps = JSON.parse(s);
+					} catch {
+						/* leave as-is — backend validation reports it */
+					}
+				}
+			}
 			const res = await credentialCheckerAdminApi.update(id, body);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -483,6 +517,19 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_summary', 'Pathway Description')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.pathway_description || '—'}</p>
 		</div>
+		{#if stepsOf(row).length}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('credential_checker.field_pathway_steps', 'Pathway Steps')}</p>
+				<ol class="mt-1 list-decimal space-y-1 pl-5 text-sm" style="color: var(--color-foreground)">
+					{#each stepsOf(row) as s, i (i)}
+						<li>
+							<span class="font-medium">{s.title || '—'}</span>
+							{#if s.detail}<span class="text-xs" style="color: var(--color-muted)"> — {s.detail}</span>{/if}
+						</li>
+					{/each}
+				</ol>
+			</div>
+		{/if}
 		{#if row.ai_generated}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>

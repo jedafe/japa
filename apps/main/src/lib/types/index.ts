@@ -4956,6 +4956,7 @@ export interface CredentialPathway {
 	timeline_estimate?: string | null;
 	cost_estimate_usd?: string | null;
 	pathway_description: string;
+	pathway_steps?: EcaPathwayStep[];
 	official_application_url?: string | null;
 	source_url_last_checked?: string | null;
 	status: string;

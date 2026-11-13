@@ -15,6 +15,7 @@ package credentialchecker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -95,6 +96,7 @@ type PathwayRow struct {
 	TimelineEstimate       *string
 	CostEstimateUSD        *string
 	PathwayDescription     string
+	PathwaySteps           json.RawMessage
 	OfficialApplicationURL *string
 	SourceURLLastChecked   pgtype.Date
 	Status                 string
@@ -139,6 +141,7 @@ type CreatePathwayInput struct {
 	TimelineEstimate       *string
 	CostEstimateUSD        *string
 	PathwayDescription     string
+	PathwaySteps           json.RawMessage
 	OfficialApplicationURL *string
 	SourceURLLastChecked   pgtype.Date
 	Status                 string
@@ -161,6 +164,7 @@ type UpdatePathwayInput struct {
 	TimelineEstimate       *string
 	CostEstimateUSD        *string
 	PathwayDescription     *string
+	PathwaySteps           *json.RawMessage
 	OfficialApplicationURL *string
 	SourceURLLastChecked   *pgtype.Date
 	Status                 *string
@@ -389,6 +393,7 @@ SELECT p.id, p.profession_id,
        p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
        p.regulatory_body, p.regulatory_body_url, p.pathway_type,
        p.timeline_estimate, p.cost_estimate_usd, p.pathway_description,
+       p.pathway_steps,
        p.official_application_url, p.source_url_last_checked,
        p.status, p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -471,6 +476,7 @@ SELECT p.id, p.profession_id,
        p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
        p.regulatory_body, p.regulatory_body_url, p.pathway_type,
        p.timeline_estimate, p.cost_estimate_usd, p.pathway_description,
+       p.pathway_steps,
        p.official_application_url, p.source_url_last_checked,
        p.status, p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -494,6 +500,7 @@ LIMIT 1
 		&r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode,
 		&r.RegulatoryBody, &r.RegulatoryBodyURL, &r.PathwayType,
 		&r.TimelineEstimate, &r.CostEstimateUSD, &r.PathwayDescription,
+		&r.PathwaySteps,
 		&r.OfficialApplicationURL, &r.SourceURLLastChecked,
 		&r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -567,11 +574,17 @@ INSERT INTO credential_pathways (
     profession_id, issuing_space_id, destination_space_id,
     regulatory_body, regulatory_body_url, pathway_type,
     timeline_estimate, cost_estimate_usd, pathway_description,
+    pathway_steps,
     official_application_url, source_url_last_checked,
     status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id
 `
+
+	steps := input.PathwaySteps
+	if len(steps) == 0 {
+		steps = json.RawMessage("[]")
+	}
 
 	var id pgtype.UUID
 
@@ -580,6 +593,7 @@ RETURNING id
 		input.ProfessionID, input.IssuingSpaceID, input.DestinationSpaceID,
 		input.RegulatoryBody, input.RegulatoryBodyURL, input.PathwayType,
 		input.TimelineEstimate, input.CostEstimateUSD, input.PathwayDescription,
+		steps,
 		input.OfficialApplicationURL, input.SourceURLLastChecked,
 		status, input.IsActive, input.AIGenerated, input.AIModel, input.AIPromptHash,
 	).Scan(&id)
@@ -640,6 +654,10 @@ func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, input UpdateP
 
 	if input.PathwayDescription != nil {
 		addSet("pathway_description", *input.PathwayDescription)
+	}
+
+	if input.PathwaySteps != nil {
+		addSet("pathway_steps", *input.PathwaySteps)
 	}
 
 	if input.OfficialApplicationURL != nil {
