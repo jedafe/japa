@@ -453,6 +453,7 @@
 			{#each matrix as item (item.id)}
 				{@const best = bestCells.has(`${item.id}:${dim.id}`)}
 				<td
+					data-best={best || undefined}
 					class={best
 						? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
 						: 'text-[var(--color-muted)]'}
@@ -534,5 +535,16 @@
 	}
 	.compare-matrix tbody:last-child tr:last-child :is(td, th) {
 		border-bottom: 0;
+	}
+
+	/* Mockup zebra — a faint cool-lavender stripe (≈ #f9f9fc on white)
+	   rather than the neutral surface-subtle; translucent so it adapts to
+	   the dark theme too. The sticky first column needs the opaque
+	   composite so scrolled cells don't show through it. */
+	.compare-matrix tbody tr:nth-child(even) td:not([data-best]) {
+		background: rgb(135 135 195 / 0.05);
+	}
+	.compare-matrix tbody tr:nth-child(even) td:first-child:not([data-best]) {
+		background: color-mix(in srgb, rgb(135 135 195) 5%, var(--color-surface));
 	}
 </style>
