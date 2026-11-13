@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
 	import { DropdownMenu } from 'bits-ui';
-	import { ChevronDown, ChevronRight, SlidersHorizontal, X } from 'lucide-svelte';
+	import { ChevronDown, X } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 
 	interface SiblingType {
@@ -14,15 +14,10 @@
 		typeName: string;
 		typeIcon?: Component;
 		siblings?: SiblingType[];
-		showNarrow: boolean;
-		narrowOpen: boolean;
-		narrowSummary: string;
-		narrowRequired: boolean;
 		browseOnly: boolean;
 		selectSummary: string;
 		onChangeType: () => void;
 		onSwitchType?: (slug: string) => void;
-		onToggleNarrow: () => void;
 		/** Opens the "All categories" modal — the landing's tile grid reused
 		 *  as the in-workspace type picker. */
 		onAllCategories?: () => void;
@@ -32,22 +27,12 @@
 		typeName,
 		typeIcon: TypeIcon,
 		siblings = [],
-		showNarrow,
-		narrowOpen,
-		narrowSummary,
-		narrowRequired,
 		browseOnly,
 		selectSummary,
 		onChangeType,
 		onSwitchType,
-		onToggleNarrow,
 		onAllCategories
 	}: Props = $props();
-
-	let narrowChipLabel = $derived(
-		narrowSummary ||
-			(narrowRequired ? t('jce.compare.step.narrow') : t('jce.compare.step.narrow_optional'))
-	);
 </script>
 
 <nav
@@ -121,25 +106,9 @@
 		</span>
 	{/if}
 
-	{#if showNarrow}
-		<ChevronRight size={14} class="text-[var(--color-muted)] rtl:-scale-x-100" />
-		<!-- Step 2: narrow -->
-		<button
-			type="button"
-			onclick={onToggleNarrow}
-			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors {narrowOpen ? 'bg-[var(--color-surface-subtle)]' : 'bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
-			aria-expanded={narrowOpen}
-			aria-label={t('jce.compare.step.edit_narrow')}
-		>
-			<SlidersHorizontal size={13} />
-			{narrowChipLabel}
-		</button>
-	{/if}
-
-	<ChevronRight size={14} class="text-[var(--color-muted)] rtl:-scale-x-100" />
-	<!-- Step 3: select / browse -->
+	<!-- Step 2: select / browse — pushed to the end of the row -->
 	<span
-		class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)]"
+		class="ms-auto inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)]"
 	>
 		{#if browseOnly}
 			{t('jce.compare.step.browse')}

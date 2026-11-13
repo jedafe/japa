@@ -26,7 +26,6 @@
 	import { Popover } from 'bits-ui';
 	import {
 		missingRequiredScope,
-		scopeSummary,
 		sourceOptions
 	} from '#lib/components/compare/compareFlow.js';
 	import type { PageData } from './$types';
@@ -362,9 +361,6 @@
 		missingRequiredScope(source, data.scopeChain ?? [], scopeSelections)
 	);
 	let requiredScopeMissing = $derived(missingScope !== null);
-	let narrowSummary = $derived(
-		scopeSummary(data.scopeChain ?? [], scopeSelections, scopeLabels)
-	);
 	let isNestedSource = $derived(source === 'comparison');
 	let refTypeOptions = $derived(sourceOptions(itemRefTypes, sourceLabel));
 	let trayHint = $derived(
@@ -379,31 +375,11 @@
 		})
 	);
 
-	let narrowDismissed = $state(false);
-	// Open immediately when the type is scoped and no scope params are set —
-	// this is also the SSR/first-render state (no collapsed→open flash). The
-	// initializer intentionally captures the props' initial value only.
-	function initialNarrowOpen() {
-		return (data.scopeChain ?? []).length > 0 && Object.keys(data.scopeParams ?? {}).length === 0;
-	}
-	let narrowOpen = $state(initialNarrowOpen());
-
-	// Open-only effect: auto-opens the narrow panel on client-side navigations
-	// when the type is scoped and nothing is picked yet. It must never
-	// force-close — a mid-chain pick would otherwise collapse the panel after
-	// the first selection.
-	$effect(() => {
-		if (showNarrow && !narrowDismissed && Object.keys(scopeSelections).length === 0) {
-			narrowOpen = true;
-		}
-	});
-
 	function selectSource(next: string) {
 		selectedItems = [];
 		query = '';
 		sortBy = 'title';
 		scopeSelections = {};
-		narrowDismissed = false;
 		scopeLabels = {};
 		pageSize = pageSizeOptions.includes(defaultPageSize) ? defaultPageSize : (pageSizeOptions[0] ?? defaultPageSize);
 		currentPage = 1;
@@ -472,24 +448,6 @@
 		}
 		url.searchParams.set('page', '1');
 		goto(url, { replace: true });
-	}
-
-	function doneNarrow() {
-		narrowDismissed = true;
-		narrowOpen = false;
-	}
-
-	function toggleNarrow() {
-		narrowOpen = !narrowOpen;
-		if (!narrowOpen) narrowDismissed = true;
-	}
-
-	function narrowChange(step: string, value: string) {
-		setScopeSelection(step, value);
-		const chain = data.scopeChain ?? [];
-		// Collapse only on the deepest step pick — intermediate picks (e.g.
-		// country→state→city) keep the panel open so the chain can be completed.
-		if (value && step === chain[chain.length - 1]) doneNarrow();
 	}
 
 	function backToLanding() {
@@ -1085,20 +1043,15 @@
 			</section>
 		{/if}
 	{:else}
-		<!-- Workspace: step header → narrow panel → unified filter row → grid → sticky tray -->
+		<!-- Workspace: step header → unified filter row → grid → sticky tray -->
 		<StepHeader
 			typeName={selectedType.name}
 			typeIcon={typeIcon(selectedType)}
-			{showNarrow}
-			{narrowOpen}
-			{narrowSummary}
-			narrowRequired={requiredScopeMissing}
 			browseOnly={isNestedSource}
 			{selectSummary}
 			onChangeType={backToLanding}
 			siblings={siblingTypes}
 			onSwitchType={switchType}
-			onToggleNarrow={toggleNarrow}
 			onAllCategories={() => (categoriesModalOpen = true)}
 		/>
 
@@ -1113,13 +1066,13 @@
 			<div class="min-w-0 space-y-4">
 		<!-- Unified filter row: narrow-by-location fields → search → source switch + sort/display popover -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-			{#if showNarrow && narrowOpen}
+			{#if showNarrow}
 				<div class="min-w-0 sm:flex-[2]">
 					<ScopeChain
 						chain={data.scopeChain ?? []}
 						selections={scopeSelections}
 						bind:labels={scopeLabels}
-						onChange={narrowChange}
+						onChange={setScopeSelection}
 					/>
 				</div>
 			{/if}
