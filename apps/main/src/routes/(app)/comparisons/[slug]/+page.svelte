@@ -7,7 +7,8 @@
 		groupDimensionsByPool,
 		matrixBestCells,
 		uniqueDimensions,
-		uniqueResolvedItems
+		uniqueResolvedItems,
+		type DimensionGroup
 	} from '#lib/utils/comparison.js';
 	import { flagUrl } from '#lib/utils/flags.js';
 	import type {
@@ -392,12 +393,47 @@
 		</section>
 	{/if}
 
-	{#snippet matrixTable(group: { key: string; label: string; dims: JCEDimension[] }, banded: boolean)}
+	{#snippet matrixTable(group: DimensionGroup, banded: boolean)}
+		{@const gv = groupVisual(group.category)}
 		<div
 			class="prose-table-wrapper compare-matrix rounded-[var(--radius-card)] border border-[var(--color-border)]"
 		>
 			<table class="text-sm">
 				<thead>
+					{#if banded}
+						<tr>
+							<th
+								colspan={matrix.length + 1}
+								class="text-start"
+								style="padding: 0; background-color: var(--color-surface)"
+							>
+								<button
+									type="button"
+									onclick={() => toggleGroup(group.key)}
+									aria-expanded="true"
+									class="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									<span class="sticky start-0 flex min-w-0 items-center gap-3">
+										<span
+											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[calc(var(--radius)*0.8)]"
+											style="background: color-mix(in srgb, {gv.tint} 14%, transparent); color: {gv.tint}"
+										>
+											<gv.icon size={15} />
+										</span>
+										<span class="truncate text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]">
+											{group.label || t('jce.compare.family.other', 'Other')}
+										</span>
+									</span>
+									<span class="sticky end-0 ms-auto flex shrink-0 items-center gap-2.5">
+										<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+											{t('jce.compare.group_items', '{count} items', { count: group.dims.length })}
+										</span>
+										<ChevronDown size={15} class="rotate-180 text-[var(--color-muted)]" />
+									</span>
+								</button>
+							</th>
+						</tr>
+					{/if}
 					<tr>
 						<th class="text-[var(--color-text)]"><span class="compare-pin compare-pin-head">{t('jce.compare.matrix_dimension')}</span></th>
 						{#each matrix as item (item.id)}
@@ -406,27 +442,6 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#if banded}
-						<tr>
-							<th
-								colspan={matrix.length + 1}
-								class="text-start"
-								style="padding: 0; background-color: var(--color-surface-subtle)"
-							>
-								<button
-									type="button"
-									onclick={() => toggleGroup(group.key)}
-									aria-expanded="true"
-									class="flex w-full items-center gap-2 px-3 py-2.5 text-start text-xs font-semibold uppercase tracking-wide text-[var(--color-text)]"
-								>
-									<span class="sticky start-0 flex min-w-0 items-center gap-2">
-										<ChevronDown size={14} class="shrink-0 rotate-180" />
-										<span class="truncate">{group.label || t('jce.compare.family.other', 'Other')}</span>
-									</span>
-								</button>
-							</th>
-						</tr>
-					{/if}
 					{#each group.dims as dim (dim.id)}
 						{@render dimRow(dim)}
 					{/each}
