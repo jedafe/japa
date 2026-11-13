@@ -235,11 +235,14 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		// HITL clamp runs last so it wraps the final funcs — including a
 		// mergeGetter-produced update and the assign_geo forwarder, both of
 		// which could otherwise carry status='published' straight through.
+		// is_active is stripped too: toggling it would hide/show the row
+		// publicly without review — the same bypass class as status.
 		if agentHitlTools[toolType] {
 			if updateFunc != nil {
 				base := updateFunc
 				updateFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
 					delete(payload, "status")
+					delete(payload, "is_active")
 					return base(ctx, userID, id, payload)
 				}
 			}
@@ -248,6 +251,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 				base := assignGeoFunc
 				assignGeoFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
 					delete(payload, "status")
+					delete(payload, "is_active")
 					return base(ctx, userID, id, payload)
 				}
 			}

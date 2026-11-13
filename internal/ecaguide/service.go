@@ -400,8 +400,8 @@ func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, 
 }
 
 // AdminListUpdates returns community updates for moderation.
-func (s *Service) AdminListUpdates(ctx context.Context, status string, page, limit int32) ([]UpdateDTO, int64, error) {
-	rows, total, err := s.store.AdminListUpdates(ctx, status, page, limit)
+func (s *Service) AdminListUpdates(ctx context.Context, status, sort, q string, page, limit int32) ([]UpdateDTO, int64, error) {
+	rows, total, err := s.store.AdminListUpdates(ctx, status, sort, q, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}

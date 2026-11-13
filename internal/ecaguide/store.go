@@ -412,7 +412,14 @@ func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, no
 }
 
 // AdminListUpdates returns community updates for moderation (admin).
-func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit int32) ([]UpdateRow, int64, error) {
+// Supports status filter, free-text q (note/fee/reporter/guide context)
+// and whitelisted "key:dir" sort — same contract as AdminListGuides.
+func (s *Store) AdminListUpdates(ctx context.Context, status, sort, q string, page, limit int32) ([]UpdateRow, int64, error) {
+	from := ` FROM eca_community_updates u
+		LEFT JOIN user_profiles up ON up.user_id = u.user_id
+		LEFT JOIN eca_guides g ON g.id = u.guide_id
+		LEFT JOIN eca_providers p ON p.id = g.provider_id
+		LEFT JOIN spaces s ON s.id = g.destination_space_id`
 	where := ` WHERE u.deleted_at IS NULL`
 
 	args := []any{}
@@ -421,10 +428,22 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 		where += ` AND u.status = $` + itoa(len(args))
 	}
 
+	if q != "" {
+		args = append(args, "%"+q+"%")
+		ph := `$` + itoa(len(args))
+		where += ` AND (u.note ILIKE ` + ph + ` OR u.fee_estimate ILIKE ` + ph +
+			` OR up.display_name ILIKE ` + ph + ` OR p.name ILIKE ` + ph + ` OR s.name ILIKE ` + ph + `)`
+	}
+
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx,
-		`SELECT count(*) FROM eca_community_updates u`+where, args...).Scan(&total); err != nil {
+		`SELECT count(*)`+from+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
+	}
+
+	orderBy := ` ORDER BY u.created_at DESC`
+	if col, dir, ok := parseUpdateSort(sort); ok {
+		orderBy = ` ORDER BY ` + col + ` ` + dir
 	}
 
 	args = append(args, limit, (page-1)*limit)
@@ -432,13 +451,8 @@ func (s *Store) AdminListUpdates(ctx context.Context, status string, page, limit
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
 		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at,
-		       s.name AS destination_space_name, p.name AS provider_name, g.purpose
-		FROM eca_community_updates u
-		LEFT JOIN user_profiles up ON up.user_id = u.user_id
-		LEFT JOIN eca_guides g ON g.id = u.guide_id
-		LEFT JOIN eca_providers p ON p.id = g.provider_id
-		LEFT JOIN spaces s ON s.id = g.destination_space_id`+
-		where+` ORDER BY u.created_at DESC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
+		       s.name AS destination_space_name, p.name AS provider_name, g.purpose`+
+		from+where+orderBy+` LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -625,6 +639,36 @@ var providerSortColumns = map[string]string{
 	"website":    "website",
 	"is_active":  "is_active",
 	"created_at": "created_at",
+}
+
+// updateSortColumns maps admin sortable community-update column keys to
+// safe SQL expressions — anything not in the map falls back to
+// created_at DESC.
+var updateSortColumns = map[string]string{
+	"created_at":       "u.created_at",
+	"status":           "u.status",
+	"step_index":       "u.step_index",
+	"turnaround_days":  "u.turnaround_days",
+	"user_name":        "up.display_name",
+	"provider_name":    "p.name",
+	"destination_space_name": "s.name",
+}
+
+// parseUpdateSort parses the admin "key:dir" sort param into a whitelisted
+// column + direction.
+func parseUpdateSort(param string) (string, string, bool) {
+	key, dir, _ := strings.Cut(param, ":")
+
+	col, ok := updateSortColumns[key]
+	if !ok {
+		return "", "", false
+	}
+
+	if dir != "asc" {
+		dir = "desc"
+	}
+
+	return col, dir, true
 }
 
 // parseProviderSort parses the admin "key:dir" sort param into a whitelisted

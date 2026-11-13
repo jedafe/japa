@@ -493,7 +493,8 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 
 	page, limit := parsePageParams(r)
 
-	updates, total, err := h.service.AdminListUpdates(r.Context(), r.URL.Query().Get("status"), page, limit)
+	updates, total, err := h.service.AdminListUpdates(r.Context(),
+		r.URL.Query().Get("status"), r.URL.Query().Get("sort"), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		slog.Error("ecaguide: admin updates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list updates")

@@ -679,12 +679,14 @@ WHERE id = $%d
 	return nil
 }
 
-// DeletePathway deletes a credential_pathways row by id and .
-// Returns pgx.ErrNoRows if the row does not exist for the platform.
+// DeletePathway removes a non-published pathway. Published pathways are
+// protected — deactivate them instead (is_active=false), same guard as
+// eca_guides: agent and admin callers can't hard-delete live content.
+// Returns pgx.ErrNoRows if the row does not exist or is published.
 func (s *Store) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM credential_pathways
-WHERE id = $1
+WHERE id = $1 AND status IN ('draft','ai_draft','pending','rejected')
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id)
