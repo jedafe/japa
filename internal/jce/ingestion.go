@@ -591,7 +591,7 @@ func (s *Service) resolveValue(
 
 	// Resolver-backed value extracted from resolved item metadata.
 	path, _ := source.Config["metadata_path"].(string)
-	if path == "" && dim.SourceFieldKey != nil {
+	if path == "" && dim.SourceFieldKey != nil && *dim.SourceFieldKey != "" {
 		path = *dim.SourceFieldKey
 	}
 
