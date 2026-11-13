@@ -3,8 +3,8 @@
 
 BEGIN;
 
-INSERT INTO comparison_type_field_groups (type_id, group_id, position, category, label)
-SELECT t.id, '4dfd79c2-d087-4e5c-80b1-bb10b5f90b89', -1, NULL, 'Geo Fields'
+INSERT INTO comparison_type_field_groups (type_id, group_id, position, category, label, is_default)
+SELECT t.id, '4dfd79c2-d087-4e5c-80b1-bb10b5f90b89', -1, NULL, 'Geo Fields', true
 FROM comparison_type_definitions t WHERE t.slug IN ('cities', 'countries', 'states');
 
 INSERT INTO custom_fields (id, group_id, label, key, field_type, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, config, section)
