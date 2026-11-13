@@ -1,4 +1,4 @@
-import type { JCEDimension, MatrixDimension, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
+import type { JCEDimension, JCEFieldPoolGroup, MatrixDimension, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
 
 /**
  * Plain-text excerpt for list cards — the list row has no excerpt column,
@@ -30,6 +30,50 @@ export function uniqueResolvedItems(items: ResolvedItem[]): ResolvedItem[] {
 /** Deduplicate comparison dimensions by position + label, preserving the first. */
 export function uniqueDimensions(dimensions: JCEDimension[]): JCEDimension[] {
 	return uniqueBy(dimensions, (d) => `${d.position ?? ''}:${d.label}`);
+}
+
+export interface DimensionGroup {
+	key: string;
+	label: string;
+	dims: JCEDimension[];
+}
+
+const GROUP_SCOPE_SUFFIX_RE = /\s*\([^()]*\)\s*$/;
+
+/** Pool group label for matrix headings — strips the "{name}" item token
+ *  and the trailing "(scope)" suffix wiki group names carry (mirrors the
+ *  backend's themeLabel). */
+export function fieldGroupLabel(label: string): string {
+	return label.replace(/\{name\}\s*/g, '').replace(GROUP_SCOPE_SUFFIX_RE, '').trim();
+}
+
+/**
+ * Bucket comparison dimensions by the field-pool group their
+ * source_field_id belongs to. Buckets keep pool order; dims keep their own
+ * order inside a bucket. Dimensions with no source field (manual picks or
+ * fields outside the type's pool) land in a trailing 'other' bucket.
+ */
+export function groupDimensionsByPool(dims: JCEDimension[], pool: JCEFieldPoolGroup[]): DimensionGroup[] {
+	const groupOfField = new Map<string, JCEFieldPoolGroup>();
+	for (const g of pool) {
+		for (const f of g.fields) groupOfField.set(f.id, g);
+	}
+
+	const buckets = new Map<string, DimensionGroup>();
+	for (const g of pool) {
+		buckets.set(g.group_id, { key: g.group_id, label: fieldGroupLabel(g.label), dims: [] });
+	}
+	const other: DimensionGroup = { key: 'other', label: '', dims: [] };
+
+	for (const dim of dims) {
+		const g = dim.source_field_id ? groupOfField.get(dim.source_field_id) : undefined;
+		if (g) buckets.get(g.group_id)!.dims.push(dim);
+		else other.dims.push(dim);
+	}
+
+	const filled = [...buckets.values()].filter((b) => b.dims.length > 0);
+	if (other.dims.length > 0) filled.push(other);
+	return filled;
 }
 
 /** Deduplicate matrix rows by position + item_ref + title and merge any

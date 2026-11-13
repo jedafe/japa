@@ -55,9 +55,14 @@ export interface JCEItem {
 export interface JCEDimension {
 	id: string;
 	content_id?: string;
+	/** Comparison type the dimension was auto-created under (Sub-spec 5/6). */
+	type_id?: string | null;
 	label: string;
 	dimension_type?: string;
 	position?: number;
+	/** Field-pool field this dimension derives from — drives matrix grouping. */
+	source_field_id?: string | null;
+	source_field_key?: string | null;
 }
 
 export interface JCEComparisonContent {

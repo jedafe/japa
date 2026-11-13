@@ -4,6 +4,7 @@
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import {
 		deduplicateMatrix,
+		groupDimensionsByPool,
 		matrixBestCells,
 		uniqueDimensions,
 		uniqueResolvedItems
@@ -45,6 +46,10 @@
 	let comparison = $derived(data.comparison);
 	let matrix = $derived(deduplicateMatrix(data.matrix ?? []));
 	let uniqueDims = $derived(uniqueDimensions(comparison.dimensions ?? []));
+	// §30 Sub-spec 6: when the comparison's dimensions span more than one
+	// field-pool group, the matrix renders one table per group instead of a
+	// single long table. Empty pool → one unlabeled group = single table.
+	let dimGroups = $derived(groupDimensionsByPool(uniqueDims, data.fieldPoolGroups ?? []));
 	let bestCells = $derived(matrixBestCells(matrix, uniqueDims));
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let user = $derived(data.user ?? null);
@@ -304,39 +309,46 @@
 					{/if}
 				</div>
 			</div>
-			<div class="prose-table-wrapper compare-matrix">
-				<table class="text-sm">
-					<thead>
-						<tr>
-							<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
-							{#each matrix as item (item.id)}
-								<th class="text-[var(--color-text)]">{item.title}</th>
-							{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each uniqueDims as dim (dim.id)}
+			{#each dimGroups as group, gi (group.key)}
+				{#if dimGroups.length > 1}
+					<h3 class="mb-2 text-sm font-semibold text-[var(--color-text)] {gi > 0 ? 'mt-6' : ''}">
+						{group.label || t('jce.compare.family.other', 'Other')}
+					</h3>
+				{/if}
+				<div class="prose-table-wrapper compare-matrix">
+					<table class="text-sm">
+						<thead>
 							<tr>
-								<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
+								<th class="text-[var(--color-text)]">{t('jce.compare.matrix_dimension')}</th>
 								{#each matrix as item (item.id)}
-									{@const best = bestCells.has(`${item.id}:${dim.id}`)}
-									<td
-										class={best
-											? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
-											: 'text-[var(--color-muted)]'}
-									>
-										{formatValue(cellFor(item, dim))}
-										{#if best}
-											<Check size={12} class="inline-block align-[-0.1em]" aria-hidden="true" />
-											<span class="sr-only">{t('jce.compare.best_value', 'Best value')}</span>
-										{/if}
-									</td>
+									<th class="text-[var(--color-text)]">{item.title}</th>
 								{/each}
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+						</thead>
+						<tbody>
+							{#each group.dims as dim (dim.id)}
+								<tr>
+									<td class="font-medium text-[var(--color-text)]">{dim.label}</td>
+									{#each matrix as item (item.id)}
+										{@const best = bestCells.has(`${item.id}:${dim.id}`)}
+										<td
+											class={best
+												? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
+												: 'text-[var(--color-muted)]'}
+										>
+											{formatValue(cellFor(item, dim))}
+											{#if best}
+												<Check size={12} class="inline-block align-[-0.1em]" aria-hidden="true" />
+												<span class="sr-only">{t('jce.compare.best_value', 'Best value')}</span>
+											{/if}
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/each}
 		</section>
 	{/if}
 

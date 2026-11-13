@@ -42,7 +42,8 @@
 		groups = [],
 		themes = [],
 		onQuery,
-		onToggleTheme
+		onToggleTheme,
+		initialOpen = false
 	}: {
 		query?: string;
 		categories: RailCategory[];
@@ -52,9 +53,12 @@
 		themes?: RailTheme[];
 		onQuery: (q: string) => void;
 		onToggleTheme?: (slug: string) => void;
+		/** Mount with the mobile accordion already expanded — used when an
+		 *  external toggle (e.g. /comparisons' Filter button) gates the rail. */
+		initialOpen?: boolean;
 	} = $props();
 
-	let open = $state(false);
+	let open = $state(untrack(() => initialOpen));
 	let themesExpanded = $state(false);
 	const visibleThemes = $derived(themesExpanded ? themes : themes.slice(0, VISIBLE_THEMES));
 	// Accordion — one family open at a time; groups arrive collapsed and

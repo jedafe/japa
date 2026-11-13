@@ -94,13 +94,14 @@ export const load: PageServerLoad = async (event) => {
 	else params.set('facet', 'types'); // powers the type rail — skipped on mine
 
 	// No q/type filter, not the mine tab, first page only → the public grid
-	// gets a trending row above the paginated list (deeper pages shouldn't
-	// repeat the same cards).
+	// gets trending + popular sliders above the paginated list (deeper pages
+	// shouldn't repeat the same cards).
 	const unfiltered = !q && !filterType && !mine && page === 1;
 
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };
 	let trendingItems: JCEComparisonSummary[] = [];
+	let popularItems: JCEComparisonSummary[] = [];
 
 	try {
 		const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${params}`);
@@ -129,18 +130,26 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	if (unfiltered) {
-		try {
-			const tp = new URLSearchParams({
+		// Trending slider = newest first (mirrors badgeFor's recency window);
+		// popular slider = most viewed. Independent fetches — either may fail
+		// without taking the other down.
+		const sliderParams = (sort: string) =>
+			new URLSearchParams({
 				filter_depth: 'detailed',
 				filter_status: 'published',
 				filter_visibility: 'public',
-				sort: 'popularity',
-				page_size: '3'
+				sort,
+				page_size: '8'
 			});
-			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${tp}`);
-			trendingItems = mapComparisonTypes(res.items, types);
-		} catch {
-			trendingItems = [];
+		const [trendingRes, popularRes] = await Promise.allSettled([
+			apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${sliderParams('created_at')}`),
+			apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${sliderParams('popularity')}`)
+		]);
+		if (trendingRes.status === 'fulfilled') {
+			trendingItems = mapComparisonTypes(trendingRes.value.items, types);
+		}
+		if (popularRes.status === 'fulfilled') {
+			popularItems = mapComparisonTypes(popularRes.value.items, types);
 		}
 	}
 
@@ -151,6 +160,7 @@ export const load: PageServerLoad = async (event) => {
 		meta,
 		types,
 		trendingItems,
+		popularItems,
 		unfiltered,
 		defaultPageSize,
 		maxPageSize,

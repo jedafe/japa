@@ -191,6 +191,7 @@
   "jce.comparisons.errors.not_found": "Aucune comparaison publique trouvée.",
   "jce.comparisons.errors.unexpected": "Une erreur inattendue s’est produite lors du chargement des comparaisons.",
   "jce.comparisons.heading": "Comparaisons",
+  "jce.comparisons.more": "Plus de comparaisons",
   "jce.comparisons.search_placeholder": "Rechercher des comparaisons…",
   "jce.comparisons.sort_placeholder": "Trier par",
   "jce.comparisons.sort.created_at": "Plus récent d’abord",

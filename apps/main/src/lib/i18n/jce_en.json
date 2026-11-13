@@ -191,6 +191,7 @@
   "jce.comparisons.errors.not_found": "No public comparisons found.",
   "jce.comparisons.errors.unexpected": "An unexpected error occurred while loading comparisons.",
   "jce.comparisons.heading": "Comparisons",
+  "jce.comparisons.more": "More comparisons",
   "jce.comparisons.search_placeholder": "Search comparisons...",
   "jce.comparisons.sort_placeholder": "Sort by",
   "jce.comparisons.sort.created_at": "Newest first",

@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
-import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
+import type { JCEComparisonDetail, JCEFieldPoolGroup, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
 import type { ContentArticle } from '#lib/types/content.js';
 import type { PageServerLoad } from './$types';
 
@@ -81,9 +81,24 @@ export const load: PageServerLoad = async (event) => {
 		.then((r) => r ?? [])
 		.catch(() => [] as ContentArticle[]);
 
-	const [isFollowing, recommendedContent] = await Promise.all([
+	// Field pool for matrix grouping (§30 Sub-spec 6): dimensions carry
+	// source_field_id → each resolves to a pool group so the matrix can
+	// render one table per selected group. Best-effort — failure degrades
+	// to the single-table layout.
+	const typeId =
+		comparison.items.find((i) => i.type_id)?.type_id ??
+		comparison.dimensions.find((d) => d.type_id)?.type_id ??
+		null;
+	const fieldPoolPromise = typeId
+		? apiGet<{ groups: JCEFieldPoolGroup[] }>(ctx, `/jce/comparison-types/${typeId}/fields`)
+				.then((r) => r?.groups ?? [])
+				.catch(() => [] as JCEFieldPoolGroup[])
+		: Promise.resolve([] as JCEFieldPoolGroup[]);
+
+	const [isFollowing, recommendedContent, fieldPoolGroups] = await Promise.all([
 		followingPromise,
-		recommendedPromise
+		recommendedPromise,
+		fieldPoolPromise
 	]);
 
 	// §30 edit affordance: the author or a comparison moderator can jump
@@ -106,6 +121,7 @@ export const load: PageServerLoad = async (event) => {
 		comparison,
 		indexable,
 		matrix,
+		fieldPoolGroups,
 		resolvedItems: resolvedItems(comparison),
 		canEdit,
 		authed,
