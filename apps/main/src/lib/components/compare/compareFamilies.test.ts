@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	COMPARE_FAMILIES,
-	familyForSlug,
-	familyKeyFromSlug,
-	familySlug,
+	familyForKey,
 	groupTypesByFamily
 } from './compareFamilies.js';
 import type { ComparisonType } from '#lib/types/jce.js';
@@ -12,23 +10,11 @@ const t = (id: string, slug: string, family?: string): ComparisonType =>
 	({ id, slug, name: slug, config: family ? { family } : null }) as unknown as ComparisonType;
 
 describe('compareFamilies', () => {
-	it('maps family keys to URL slugs', () => {
-		expect(familySlug('visa_routes')).toBe('visa-routes');
-		expect(familySlug('location')).toBe('location');
-		// cost-of-living is hyphenated in config.family already — no transform.
-		expect(familySlug('cost-of-living')).toBe('cost-of-living');
-	});
-
-	it('maps slugs back to keys, honoring hyphenated keys', () => {
-		expect(familyKeyFromSlug('visa-routes')).toBe('visa_routes');
-		expect(familyKeyFromSlug('cost-of-living')).toBe('cost-of-living');
-	});
-
-	it('matcher set covers every family slug', () => {
+	it('catalog keys are unique and lookup-able', () => {
 		for (const f of COMPARE_FAMILIES) {
-			expect(familyForSlug(f.slug)?.key).toBe(f.key);
+			expect(familyForKey(f.key)?.key).toBe(f.key);
 		}
-		expect(familyForSlug('not-a-family')).toBeUndefined();
+		expect(familyForKey('not-a-family')).toBeUndefined();
 	});
 
 	it('groups types under their family, unknown families last into ungrouped', () => {
@@ -49,18 +35,5 @@ describe('compareFamilies', () => {
 			t('2', 'countries', 'location')
 		]);
 		expect(groups.map((g) => g.family.key)).toEqual(['location', 'education']);
-	});
-
-	it('route matcher accepts exactly the family slugs (no drift)', async () => {
-		// src/params.ts duplicates the slug set — kit matchers can't import app
-		// modules, so this test is the guard against the two lists diverging.
-		const { params } = await import('../../../../src/params.js');
-		const matcher = params.compareCategory;
-		for (const f of COMPARE_FAMILIES) {
-			expect(matcher['~standard'].validate(f.slug)).toEqual({ value: f.slug });
-		}
-		for (const other of ['canada-vs-us', 'not-a-family', 'LOCATION', '']) {
-			expect(matcher['~standard'].validate(other)).toHaveProperty('issues');
-		}
 	});
 });

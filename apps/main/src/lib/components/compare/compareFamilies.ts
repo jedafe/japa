@@ -1,12 +1,11 @@
 /**
  * Comparison-type families — the hub's category model. `key` is the admin-set
- * `config.family` value on a comparison type; `slug` is its URL form for
- * /compare/<slug>. Note family keys mix conventions already in the data
- * (`visa_routes` vs `cost-of-living`) so slug ↔ key mapping always goes
- * through the catalog, never a string transform.
+ * `config.family` value on a comparison type. Family tiles on /compare enter
+ * the picker workspace through the family's first member type (?type=), and
+ * the in-workspace sibling switcher covers the rest.
  *
  * Mirrors FAMILY_ORDER in TypeCardGrid.svelte: a new admin family needs a
- * one-line entry here to get a /compare/<slug> browse page.
+ * one-line entry here to get a landing tile.
  */
 import type { Component } from 'svelte';
 import {
@@ -31,40 +30,27 @@ const asComponent = (icon: unknown): Component => icon as Component;
 
 export interface CompareFamily {
 	key: string;
-	slug: string;
 	icon: Component;
 	tint: string;
 }
 
 export const COMPARE_FAMILIES: CompareFamily[] = [
-	{ key: 'location', slug: 'location', icon: asComponent(Globe), tint: '#4f7cff' },
-	{ key: 'education', slug: 'education', icon: asComponent(GraduationCap), tint: '#22a06b' },
-	{ key: 'visa_routes', slug: 'visa-routes', icon: asComponent(Stamp), tint: '#8b5cf6' },
-	{ key: 'banking', slug: 'banking', icon: asComponent(Landmark), tint: '#e8a13a' },
-	{ key: 'cost-of-living', slug: 'cost-of-living', icon: asComponent(Wallet), tint: '#f97316' },
-	{ key: 'embassies', slug: 'embassies', icon: asComponent(Building2), tint: '#ec4899' },
-	{ key: 'travel', slug: 'travel', icon: asComponent(Plane), tint: '#06b6d4' },
-	{ key: 'jobs', slug: 'jobs', icon: asComponent(Briefcase), tint: '#64748b' },
-	{ key: 'business', slug: 'business', icon: asComponent(Store), tint: '#0ea5e9' },
-	{ key: 'products', slug: 'products', icon: asComponent(Package), tint: '#f43f5e' }
+	{ key: 'location', icon: asComponent(Globe), tint: '#4f7cff' },
+	{ key: 'education', icon: asComponent(GraduationCap), tint: '#22a06b' },
+	{ key: 'visa_routes', icon: asComponent(Stamp), tint: '#8b5cf6' },
+	{ key: 'banking', icon: asComponent(Landmark), tint: '#e8a13a' },
+	{ key: 'cost-of-living', icon: asComponent(Wallet), tint: '#f97316' },
+	{ key: 'embassies', icon: asComponent(Building2), tint: '#ec4899' },
+	{ key: 'travel', icon: asComponent(Plane), tint: '#06b6d4' },
+	{ key: 'jobs', icon: asComponent(Briefcase), tint: '#64748b' },
+	{ key: 'business', icon: asComponent(Store), tint: '#0ea5e9' },
+	{ key: 'products', icon: asComponent(Package), tint: '#f43f5e' }
 ];
 
 export const FALLBACK_FAMILY_ICON: Component = asComponent(GitCompare);
 
-export function familySlug(key: string): string {
-	return familyForKey(key)?.slug ?? key.replace(/_/g, '-');
-}
-
-export function familyKeyFromSlug(slug: string): string {
-	return familyForSlug(slug)?.key ?? slug;
-}
-
 export function familyForKey(key: string): CompareFamily | undefined {
 	return COMPARE_FAMILIES.find((f) => f.key === key);
-}
-
-export function familyForSlug(slug: string): CompareFamily | undefined {
-	return COMPARE_FAMILIES.find((f) => f.slug === slug);
 }
 
 export interface FamilyGroup {

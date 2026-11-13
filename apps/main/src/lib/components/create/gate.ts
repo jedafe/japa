@@ -68,7 +68,6 @@ const NO_RIGHT_SIDEBAR_ROUTES = new Set([
 	// Compare hub directory pages — the discovery grids use the widened
 	// center column like the readiness workbench.
 	'/(app)/compare',
-	'/(app)/compare/[category=compareCategory]',
 	'/(app)/comparisons',
 	// Published Page Builder pages (root /{slug} catch-all) — the blocks
 	// self-center via their max-w containers, so dropping the right rail

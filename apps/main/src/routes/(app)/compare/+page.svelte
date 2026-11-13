@@ -246,13 +246,13 @@
 
 	// Landing discovery: family cards derive from the type catalog; the
 	// trending strip is seeded server-side by popularity and re-fetches only
-	// when the visitor switches to "Recently added".
+	// when the visitor switches to "Trending".
 	let familyGroups = $derived(groupTypesByFamily(types));
-	let trendingSort = $state<'popularity' | 'created_at'>('popularity');
+	let trendingSort = $state<'popularity' | 'trending'>('popularity');
 	let trendingItems = $state<JCEComparisonSummary[] | null>(null); // null = use server seed
 	let trendingLoading = $state(false);
 
-	async function setTrendingSort(next: 'popularity' | 'created_at') {
+	async function setTrendingSort(next: 'popularity' | 'trending') {
 		if (next === trendingSort) return;
 		trendingSort = next;
 		if (next === 'popularity') {
@@ -262,7 +262,7 @@
 		trendingLoading = true;
 		try {
 			const res = await api.get<JCEComparisonSummary[]>(
-				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=created_at'
+				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=trending'
 			);
 			trendingItems = res.error ? [] : (res.data ?? []);
 		} catch {
@@ -274,7 +274,7 @@
 	let trending = $derived(trendingItems ?? popularComparisons);
 
 	// Reseed when the server payload changes (SPA nav back to the landing) —
-	// otherwise a stale "Recently added" fetch would shadow the fresh seed.
+	// otherwise a stale "Trending" fetch would shadow the fresh seed.
 	$effect(() => {
 		data.popularComparisons;
 		trendingSort = 'popularity';
@@ -295,8 +295,10 @@
 		return refs.map(sourcePlural).join(', ');
 	}
 
-	// Unified category tiles — family cards first, then ungrouped types. The
-	// grid shows exactly two rows (4 tiles mobile / 8 desktop); the "All
+	// Unified category tiles — family cards first, then ungrouped types. Every
+	// tile opens the picker workspace (?type=): a family enters through its
+	// first member type and the in-workspace sibling switcher covers the rest.
+	// The grid shows exactly two rows (4 tiles mobile / 8 desktop); the "All
 	// categories" dialog lists everything in a scrollable view.
 	interface CategoryTile {
 		icon: Component;
@@ -314,7 +316,7 @@
 			tint: g.family.tint,
 			name: t(`jce.compare.family.${g.family.key}`, g.family.key),
 			subtitle: familySubtitle(g.types),
-			href: `/compare/${g.family.slug}`
+			href: `/compare?type=${g.types[0].slug}`
 		})),
 		...familyGroups.ungrouped.map((cmpType) => ({
 			icon: typeIcon(cmpType),
@@ -322,7 +324,7 @@
 			name: cmpType.name,
 			subtitle: cmpType.description ?? '',
 			count: cmpType.item_count,
-			href: `/comparisons?filter_type=${cmpType.slug}`
+			href: `/compare?type=${cmpType.slug}`
 		}))
 	]);
 	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
@@ -1008,7 +1010,7 @@
 				<div class="flex items-center gap-2">
 					{#each [
 						{ v: 'popularity', label: t('jce.compare.landing.sort_popular', 'Popular') },
-						{ v: 'created_at', label: t('jce.compare.landing.sort_recent', 'Recently added') }
+						{ v: 'trending', label: t('jce.compare.landing.sort_trending', 'Trending') }
 					] as const as pill (pill.v)}
 						<button
 							type="button"
