@@ -397,6 +397,7 @@ func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, no
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE eca_guides
 		SET status = 'published', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
+		    is_active = true,
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
 		WHERE id = $1`, id, reviewerID, notes)
 	if err != nil {

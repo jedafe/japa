@@ -709,6 +709,7 @@ SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     hitl_review_notes = $3,
     status = 'published',
+    is_active = true,
     updated_at = now()
 WHERE id = $1
 `

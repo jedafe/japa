@@ -54,6 +54,7 @@ var seedDefaultOverrides = map[string]string{
 	"language_test_hub.enabled":  "V2 tool — opt-in for fresh installs",
 	"tax_calculator.enabled":     "V2 tool — opt-in for fresh installs",
 	"community_locator.enabled":  "V2 tool — opt-in for fresh installs",
+	"eca_guide.enabled":          "V2 tool — §109 default false, opt-in for fresh installs",
 	// Commerce/AI/integrations enabled in production but off for fresh
 	// installs — they require credentials or operator setup to be useful.
 	"feature.affiliate_program": "requires affiliate configuration",

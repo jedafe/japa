@@ -130,7 +130,7 @@ var Registry = []Feature{
 	// V2 SEO growth tools (§§107–110, ADR-118..121) — Tools surface
 	{Key: "crs_calculator.enabled", Label: "CRS Calculator", Description: "Calculate your Comprehensive Ranking System score against the live IRCC ruleset, see the full factor breakdown, and track recent draw cut-offs", Default: true, Category: "Tools", SettingsCategory: "crs_calculator"},
 	{Key: "pof_calculator.enabled", Label: "Proof of Funds Calculator", Description: "Work out the proof-of-funds requirement for your destination and family size — with live NGN and USD equivalents", Default: true, Category: "Tools", SettingsCategory: "pof_calculator"},
-	{Key: "eca_guide.enabled", Label: "ECA Evaluation Guide", Description: "Compare credential evaluation providers, follow the step-by-step guide for your destination, and read real fee and timeline reports from members", Default: true, Category: "Tools", SettingsCategory: "eca_guide"},
+	{Key: "eca_guide.enabled", Label: "ECA Evaluation Guide", Description: "Compare credential evaluation providers, follow the step-by-step guide for your destination, and read real fee and timeline reports from members", Default: false, Category: "Tools", SettingsCategory: "eca_guide"},
 	{Key: "sop_generator.enabled", Label: "AI SOP Generator", Description: "Generate a tailored statement of purpose draft from proven templates, browse real samples, and refine until it is ready", Default: true, Category: "Tools", SettingsCategory: "sop_generator"},
 	// V1 Tools — originally toggled via system_settings, now unified under
 	// feature_flags so the Control Panel Extensions page and the frontend

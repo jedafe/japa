@@ -201,6 +201,11 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 				createFunc = func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 					payload["status"] = "ai_draft"
 					payload["ai_generated"] = true
+					if toolType == "credential_pathway" {
+						// Credential AI drafts are created inactive and only
+						// activated on HITL approve — agent creates mirror that.
+						payload["is_active"] = false
+					}
 					return base(ctx, userID, payload)
 				}
 			}
