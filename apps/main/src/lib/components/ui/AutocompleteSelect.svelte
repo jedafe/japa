@@ -9,6 +9,7 @@
 		noResultsLabel,
 		clearLabel,
 		loadingLabel,
+		closeLabel,
 		...rest
 	}: ComponentProps<typeof AutocompleteSelect> = $props();
 </script>
@@ -19,4 +20,5 @@
 	noResultsLabel={noResultsLabel ?? t('common.no_results', 'No results found')}
 	clearLabel={clearLabel ?? t('common.clear', 'Clear')}
 	loadingLabel={loadingLabel ?? t('common.loading', 'Loading...')}
+	closeLabel={closeLabel ?? t('common.close', 'Close')}
 />

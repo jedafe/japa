@@ -12,6 +12,7 @@
 	let {
 		clearLabel,
 		loadingLabel,
+		closeLabel,
 		...rest
 	}: ComponentProps<typeof Autocomplete> = $props();
 </script>
@@ -20,4 +21,5 @@
 	{...rest}
 	clearLabel={clearLabel ?? t('common.clear', 'Clear')}
 	loadingLabel={loadingLabel ?? t('common.loading', 'Loading...')}
+	closeLabel={closeLabel ?? t('common.close', 'Close')}
 />

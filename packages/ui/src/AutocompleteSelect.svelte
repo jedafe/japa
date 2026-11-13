@@ -42,6 +42,8 @@
 		clearLabel?: string;
 		/** Accessible label for the loading spinner (forwarded to Autocomplete). */
 		loadingLabel?: string;
+		/** Accessible label for the desktop modal's close button (forwarded to Autocomplete). */
+		closeLabel?: string;
 		/** Open the dropdown above the field instead of below (forwarded to Autocomplete). */
 		openUp?: boolean;
 		/** Compact density for tight inline controls (forwarded to Autocomplete). */
@@ -66,6 +68,7 @@
 		noResultsLabel = 'No results found',
 		clearLabel,
 		loadingLabel,
+		closeLabel,
 		openUp = false,
 		compact = false,
 		modal = false
@@ -120,6 +123,7 @@
 	{inputClass}
 	{clearLabel}
 	{loadingLabel}
+	{closeLabel}
 	{openUp}
 	{compact}
 	{modal}

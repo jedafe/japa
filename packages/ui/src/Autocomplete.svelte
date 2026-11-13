@@ -89,6 +89,8 @@
 		clearLabel?: string;
 		/** Accessible/text label shown while loading. */
 		loadingLabel?: string;
+		/** Accessible label for the desktop modal's close button. */
+		closeLabel?: string;
 		/** Open the dropdown above the field instead of below — for controls
 		 * sitting near the bottom edge of a fixed-height pane. */
 		openUp?: boolean;
@@ -125,6 +127,7 @@
 		class: wrapperClass = '',
 		clearLabel = 'Clear',
 		loadingLabel = 'Loading...',
+		closeLabel = 'Close',
 		openUp = false,
 		compact = false,
 		modal = false
@@ -692,10 +695,12 @@
 {/snippet}
 
 {#if sheetMode}
-	<!-- Mobile: a bottom-sheet Dialog with its own search field, matching
-	     the UrlTabs mobile picker. Kept mounted + bound so bits-ui runs its
-	     normal close cleanup (focus restore, scroll lock); dismissal goes
-	     through closeSheet so free-text commits mirror the blur path. -->
+	<!-- Sheet Dialog with its own search field: bottom-anchored on mobile
+	     (matching the UrlTabs mobile picker), a centered Modal-style card
+	     on desktop when `modal` is set. Kept mounted + bound so bits-ui
+	     runs its normal close cleanup (focus restore, scroll lock);
+	     dismissal goes through closeSheet so free-text commits mirror the
+	     blur path. -->
 	<Dialog.Root bind:open onOpenChange={(o) => { if (!o) closeSheet(); }}>
 		<Dialog.Portal>
 			<Dialog.Overlay
@@ -703,12 +708,28 @@
 				style="z-index: 99998"
 			/>
 			<Dialog.Content
-				class="fixed inset-x-0 flex flex-col rounded-t-[12px] border border-b-0 border-[var(--color-border)] bg-[var(--color-surface,var(--background))] p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-xl"
-				style="z-index: 99999; bottom: {keyboardOffset}px; max-height: {sheetMaxH > 0
-					? `${sheetMaxH}px`
-					: '70vh'};"
+				class="fixed flex flex-col border border-[var(--color-border)] bg-[var(--color-surface,var(--background))] shadow-xl {isMobile
+					? 'inset-x-0 rounded-t-[12px] border-b-0 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]'
+					: 'start-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card,var(--radius-md,12px))] p-4 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95'}"
+				style="z-index: 99999; {isMobile
+					? `bottom: ${keyboardOffset}px; max-height: ${sheetMaxH > 0 ? `${sheetMaxH}px` : '70vh'};`
+					: 'max-height: 70vh;'}"
 			>
-				<Dialog.Title class="sr-only">{ariaLabel ?? placeholder}</Dialog.Title>
+				{#if isMobile}
+					<Dialog.Title class="sr-only">{ariaLabel ?? placeholder}</Dialog.Title>
+				{:else}
+					<div class="mb-3 flex items-center justify-between gap-3">
+						<Dialog.Title class="text-base font-medium text-[var(--color-text,var(--foreground))]">
+							{ariaLabel ?? placeholder}
+						</Dialog.Title>
+						<Dialog.Close
+							class="rounded-full p-1 text-[var(--color-muted,var(--muted-foreground))] transition-colors hover:bg-[var(--color-surface-subtle,var(--muted))] hover:text-[var(--color-text,var(--foreground))]"
+							aria-label={closeLabel}
+						>
+							<X size={16} />
+						</Dialog.Close>
+					</div>
+				{/if}
 				<div class="autocomplete-sheet-field">
 					<input
 						type="text"
