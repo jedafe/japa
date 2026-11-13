@@ -301,5 +301,7 @@
   "jce.compare.description": "Compare destinations, services, schools, and organisations side by side — features, costs, and community insights.",
   "jce.comparisons.title": "Comparisons",
   "jce.comparisons.anonymous": "Anonymous",
-  "jce.comparisons.seo_description": "Compare destinations, visas, schools and more side by side."
+  "jce.comparisons.seo_description": "Compare destinations, visas, schools and more side by side.",
+  "jce.compare.step.switch_type": "Switch type",
+  "jce.compare.step.all_types": "All comparison types"
 }

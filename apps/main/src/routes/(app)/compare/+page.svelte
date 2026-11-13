@@ -95,6 +95,18 @@
 	let selectedFieldIds = $state<Set<string>>(new Set());
 	let lastPoolTypeId = $state('');
 
+	// Sibling types in the same family — powers the in-workspace type
+	// switcher so users can hop between e.g. cities/states/countries
+	// without returning to the landing page.
+	let siblingTypes = $derived.by(() => {
+		const family = selectedType?.config?.family;
+		if (!selectedType || !family) return [];
+		return types
+			.filter((c) => c.slug !== selectedType.slug && c.config?.family === family)
+			.map((c) => ({ slug: c.slug, name: c.name, icon: typeIcon(c) }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	});
+
 	$effect(() => {
 		const tid = selectedType?.id ?? '';
 		if (tid === lastPoolTypeId) return;
@@ -486,6 +498,16 @@
 		for (const step of data.scopeChain ?? []) {
 			url.searchParams.delete(scopeParamFor(step));
 		}
+		goto(url, { replace: true });
+	}
+
+	// Sibling-type switch: everything in the query is type-scoped (scope
+	// filters, picked items/fields, nested source), so the switch starts
+	// the new workspace from a clean slate.
+	function switchType(slug: string) {
+		const url = new URL(page.url.href);
+		url.search = '';
+		url.searchParams.set('type', slug);
 		goto(url, { replace: true });
 	}
 
@@ -1092,6 +1114,8 @@
 			browseOnly={isNestedSource}
 			{selectSummary}
 			onChangeType={backToLanding}
+			siblings={siblingTypes}
+			onSwitchType={switchType}
 			onToggleNarrow={toggleNarrow}
 		/>
 
