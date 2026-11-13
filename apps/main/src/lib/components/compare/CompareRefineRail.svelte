@@ -109,7 +109,7 @@
 	});
 </script>
 
-<aside class="w-full shrink-0 lg:w-60">
+<aside class="w-full shrink-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:w-60">
 	<!-- Mobile toggle: aria-expanded mirrors visual state; hidden on lg where
 		 the rail body is always shown via lg:block below. Omitted in `bare`
 		 mode (e.g. inside the mobile filters modal) where the body is

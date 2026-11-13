@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { untrack } from 'svelte';
 	import { Eye, MessageCircle, Share2, GitCompare, Filter, ChevronRight, LoaderCircle } from 'lucide-svelte';
 	import { i18n, t, siteName} from '#lib/i18n/index.js';
 	import JceSelect from '#lib/components/ui/JceSelect.svelte';
@@ -71,14 +70,10 @@
 		{ value: 'mine', label: t('jce.comparisons.tab_mine') }
 	]);
 
-	// The Filter button shows/hides the "Refine results" rail — hidden by
-	// default, but auto-opens when the URL already carries a rail-owned
-	// filter (type facet or q) so the active state is never invisible.
+	// The Filter button opens the "Refine results" content — a modal on
+	// touch/small screens. On desktop the rail is always visible, so the
+	// button is hidden there (no toggle).
 	const hasActiveFilters = $derived(!!filters.filter_type || !!filters.q);
-	// One-time URL snapshot (same pattern as initialQuery above), not a
-	// subscription — SPA nav keeps the user's manual toggle state.
-	const initiallyRefined = untrack(() => Boolean(data.filters?.filter_type || data.filters?.q));
-	let refineOpen = $state(initiallyRefined);
 
 	// Viewport gate: the Filter button opens the Refine Results content in a
 	// modal on small screens and touch-primary devices (mobile + iPad —
@@ -107,7 +102,6 @@
 	$effect(() => {
 		if (!useFiltersModal || isMine) filtersModalOpen = false;
 	});
-	const refineActive = $derived(useFiltersModal ? filtersModalOpen : refineOpen);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL(page.url.href);
@@ -377,12 +371,12 @@
 			</span>
 		{/if}
 		{#snippet actions()}
-			{#if !isMine}
+			{#if !isMine && useFiltersModal}
 				<button
 					type="button"
-					onclick={() => { if (useFiltersModal) filtersModalOpen = true; else refineOpen = !refineOpen; }}
-					aria-expanded={refineActive}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {refineActive ? 'border-[var(--color-primary)]/50 text-[var(--color-primary-text)]' : ''}"
+					onclick={() => (filtersModalOpen = true)}
+					aria-expanded={filtersModalOpen}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					{t('common.filters', 'Filters')}
 					{#if hasActiveFilters}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
@@ -394,7 +388,7 @@
 
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
-			{#if refineOpen && !useFiltersModal && !isMine}
+			{#if !useFiltersModal && !isMine}
 				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} />
 			{/if}
 
@@ -449,7 +443,7 @@
 							: { label: t('jce.comparisons.create_one'), href: '/compare' }}
 					/>
 				{:else}
-					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : refineOpen && !useFiltersModal ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
+					<div class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 {isMine ? '' : !useFiltersModal ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}">
 						{#each gridItems as item (item.id)}
 							{#if !isMine}
 								<ComparisonVsCard summary={item} authed={Boolean(user)} />
