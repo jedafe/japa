@@ -21,6 +21,8 @@
 		disabled?: boolean;
 		class?: string;
 		id?: string;
+		/** Open the option list in a modal sheet on every viewport. */
+		modal?: boolean;
 		onchange?: (value: string) => void;
 	}
 
@@ -31,6 +33,7 @@
 		disabled = false,
 		class: className = '',
 		id,
+		modal = false,
 		onchange
 	}: Props = $props();
 
@@ -44,5 +47,6 @@
 	{disabled}
 	{id}
 	class={className}
+	{modal}
 	onValueChange={(v) => onchange?.(v)}
 />

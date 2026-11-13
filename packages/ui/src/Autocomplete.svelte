@@ -95,6 +95,9 @@
 		/** Compact density — smaller height/padding for tight inline controls
 		 * (e.g. a comment-sort dropdown inside a section header row). */
 		compact?: boolean;
+		/** Force the bottom-sheet Dialog presentation on every viewport —
+		 * the anchored dropdown never renders. */
+		modal?: boolean;
 	}
 
 	let {
@@ -123,7 +126,8 @@
 		clearLabel = 'Clear',
 		loadingLabel = 'Loading...',
 		openUp = false,
-		compact = false
+		compact = false,
+		modal = false
 	}: Props = $props();
 
 	let open = $state(false);
@@ -140,8 +144,10 @@
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 
-	// Mobile mode — matches the `sm:` breakpoint used by UrlTabs.
+	// Mobile mode — matches the `sm:` breakpoint used by UrlTabs. `modal`
+	// forces the same sheet presentation on every viewport.
 	let isMobile = $state(false);
+	let sheetMode = $derived(isMobile || modal);
 	let sheetInputEl = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
@@ -155,7 +161,7 @@
 	// Focus the sheet's search field once the dialog mounts — keeps the
 	// on-screen keyboard anchored to the input inside the sheet.
 	$effect(() => {
-		if (isMobile && open && sheetInputEl) sheetInputEl.focus();
+		if (sheetMode && open && sheetInputEl) sheetInputEl.focus();
 	});
 
 	// Keep the sheet above the on-screen keyboard: keyboards shrink the
@@ -165,7 +171,7 @@
 	let keyboardOffset = $state(0);
 	let sheetMaxH = $state(0);
 	$effect(() => {
-		if (!open || !isMobile) return;
+		if (!open || !sheetMode) return;
 		const vv = window.visualViewport;
 		if (!vv) return;
 		const update = () => {
@@ -221,7 +227,7 @@
 	function onWindowClick(e: MouseEvent) {
 		if (!focused) return;
 		// The bottom-sheet Dialog manages its own dismissal on mobile.
-		if (isMobile && open) return;
+		if (sheetMode && open) return;
 		const target = e.target as Node;
 		// Check if the click is inside the field or the teleported dropdown.
 		if (fieldEl?.contains(target) || dropdownEl?.contains(target)) return;
@@ -270,7 +276,7 @@
 	// Reposition the dropdown on scroll/resize while open. The mobile sheet
 	// is viewport-anchored — no tracking needed.
 	$effect(() => {
-		if (!open || isMobile) return;
+		if (!open || sheetMode) return;
 		updateDropdownPosition();
 		const onScroll = () => updateDropdownPosition();
 		window.addEventListener('scroll', onScroll, true);
@@ -341,7 +347,7 @@
 		// Mobile: the sheet opens from the wrapper tap or keyboard
 		// (Enter/Space/arrows), never implicitly on focus — bits-ui
 		// restores focus here when the sheet closes and must not reopen.
-		if (isMobile) return;
+		if (sheetMode) return;
 		open_();
 	}
 
@@ -361,7 +367,7 @@
 		setTimeout(() => {
 			// On mobile the blur is focus moving into the open sheet —
 			// keep it alive; the Dialog's own dismissal closes it.
-			if (!focused && !(isMobile && open)) {
+			if (!focused && !(sheetMode && open)) {
 				// Allow free-text entry when no option was selected.
 				if (allowFreeText && !selectedId && query.trim()) {
 					onSelect({ id: query.trim(), label: query.trim() });
@@ -492,7 +498,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		// Mobile keyboard entry — opens the sheet explicitly; plain focus
 		// must stay inert so bits-ui's focus-restore can't reopen it.
-		if (isMobile && !open) {
+		if (sheetMode && !open) {
 			if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 				e.preventDefault();
 				open_();
@@ -562,7 +568,7 @@
 				// Mobile opens the bottom sheet directly — focusing the
 				// (readonly) input would just make bits-ui's focus-restore
 				// bounce it open again on dismiss.
-				if (isMobile) {
+				if (sheetMode) {
 					open_();
 					return;
 				}
@@ -594,17 +600,17 @@
 			placeholder={selectedId && !focused ? '' : placeholder}
 			aria-label={ariaLabel ?? placeholder}
 			{disabled}
-			readonly={isMobile}
+			readonly={sheetMode}
 			bind:this={inputEl}
 			bind:value={query}
 			onfocus={onFocus}
 			onblur={onBlur}
 			onkeydown={handleKeydown}
 			role="combobox"
-			aria-expanded={isMobile ? open : showDropdown}
+			aria-expanded={sheetMode ? open : showDropdown}
 			aria-autocomplete="list"
 			aria-controls={listId}
-			aria-haspopup={isMobile ? 'dialog' : 'listbox'}
+			aria-haspopup={sheetMode ? 'dialog' : 'listbox'}
 		/>
 
 		{#if loading || loadingInitial}
@@ -685,7 +691,7 @@
 	{/if}
 {/snippet}
 
-{#if isMobile}
+{#if sheetMode}
 	<!-- Mobile: a bottom-sheet Dialog with its own search field, matching
 	     the UrlTabs mobile picker. Kept mounted + bound so bits-ui runs its
 	     normal close cleanup (focus restore, scroll lock); dismissal goes

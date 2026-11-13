@@ -18,11 +18,14 @@
 		chain,
 		selections = $bindable({}),
 		labels = $bindable({}),
+		modal = false,
 		onChange
 	}: {
 		chain: string[];
 		selections: Record<string, string>;
 		labels?: Record<string, string>;
+		/** Open each step's option list in a modal sheet on every viewport. */
+		modal?: boolean;
 		onChange: (key: string, value: string) => void;
 	} = $props();
 
@@ -187,6 +190,7 @@
 				]}
 				onValueChange={(v) => onChange(step, v)}
 				{disabled}
+				{modal}
 			/>
 		{:else}
 			<Autocomplete
@@ -200,6 +204,7 @@
 				onSelect={(item) => selectItem(step, item)}
 				onClear={() => clearItem(step)}
 				{disabled}
+				{modal}
 			/>
 		{/if}
 	{/each}

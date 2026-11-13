@@ -46,6 +46,8 @@
 		openUp?: boolean;
 		/** Compact density for tight inline controls (forwarded to Autocomplete). */
 		compact?: boolean;
+		/** Open the option list in a modal sheet on every viewport (forwarded to Autocomplete). */
+		modal?: boolean;
 	}
 
 	let {
@@ -65,7 +67,8 @@
 		clearLabel,
 		loadingLabel,
 		openUp = false,
-		compact = false
+		compact = false,
+		modal = false
 	}: Props = $props();
 
 	// '' is not a usable Autocomplete item id (falsy = "no selection"), so
@@ -119,6 +122,7 @@
 	{loadingLabel}
 	{openUp}
 	{compact}
+	{modal}
 />
 {#if name}
 	<input type="hidden" {name} value={value ?? ''} />

@@ -23,7 +23,7 @@
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
 	import JceSelect from '#lib/components/ui/JceSelect.svelte';
 	import { EmptyState, EntityHero, ListPageBar, Modal, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '#lib/components/ui/index.js';
-	import { Popover } from 'bits-ui';
+
 	import {
 		missingRequiredScope,
 		sourceOptions
@@ -51,7 +51,8 @@
 		BookOpen,
 		Landmark,
 		Wallet,
-		MessageCircle
+		MessageCircle,
+		SlidersHorizontal
 	} from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -108,17 +109,6 @@
 	let selectedFieldIds = $state<Set<string>>(new Set());
 	let lastPoolTypeId = $state('');
 
-	// Sibling types in the same family — powers the in-workspace type
-	// switcher so users can hop between e.g. cities/states/countries
-	// without returning to the landing page.
-	let siblingTypes = $derived.by(() => {
-		const family = selectedType?.config?.family;
-		if (!selectedType || !family) return [];
-		return types
-			.filter((c) => c.slug !== selectedType.slug && c.config?.family === family)
-			.map((c) => ({ slug: c.slug, name: c.name, icon: typeIcon(c) }))
-			.sort((a, b) => a.name.localeCompare(b.name));
-	});
 
 	$effect(() => {
 		const tid = selectedType?.id ?? '';
@@ -343,6 +333,7 @@
 	]);
 	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
 	let categoriesModalOpen = $state(false);
+	let sortModalOpen = $state(false);
 	// Tile clicks inside the modal are plain anchors — a successful
 	// client-side navigation must dismiss it or it lingers over the new
 	// type's workspace.
@@ -466,15 +457,6 @@
 		goto(url, { replace: true });
 	}
 
-	// Sibling-type switch: everything in the query is type-scoped (scope
-	// filters, picked items/fields, nested source), so the switch starts
-	// the new workspace from a clean slate.
-	function switchType(slug: string) {
-		const url = new URL(page.url.href);
-		url.search = '';
-		url.searchParams.set('type', slug);
-		goto(url, { replace: true });
-	}
 
 	// navigateURL triggers a SvelteKit client-side navigation so the +page.server.ts load re-runs
 	// with the updated query (search, page, page-size, nested-type filters, etc.).
@@ -1050,8 +1032,6 @@
 			browseOnly={isNestedSource}
 			{selectSummary}
 			onChangeType={backToLanding}
-			siblings={siblingTypes}
-			onSwitchType={switchType}
 			onAllCategories={() => (categoriesModalOpen = true)}
 		/>
 
@@ -1064,7 +1044,7 @@
 				</aside>
 			{/if}
 			<div class="min-w-0 space-y-4">
-		<!-- Unified filter row: narrow-by-location fields → search → source switch + sort/display popover -->
+		<!-- Unified filter row: narrow-by-location fields → search → source switch + sort/display modal -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			{#if showNarrow}
 				<div class="min-w-0 sm:flex-[2]">
@@ -1073,6 +1053,7 @@
 						selections={scopeSelections}
 						bind:labels={scopeLabels}
 						onChange={setScopeSelection}
+						modal
 					/>
 				</div>
 			{/if}
@@ -1094,37 +1075,17 @@
 						value={source}
 						onchange={(value) => selectSource(value)}
 						class="w-full sm:w-auto"
+						modal
 					/>
 				{/if}
 
-				<Popover.Root>
-					<Popover.Trigger
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						{t('jce.compare.filters.sort_display')}
-					</Popover.Trigger>
-					<Popover.Portal>
-						<Popover.Content
-							class="z-50 w-56 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
-							sideOffset={6}
-						>
-							<div class="space-y-1.5">
-								<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.comparisons.sort_placeholder')}</span>
-								<JceSelect options={sortOptions} value={sortBy} onchange={(v) => setSort(v)} class="w-full" />
-							</div>
-							{#if isNestedSource && allowNestedComparisons && nestedTypeOptions.length > 1}
-								<div class="space-y-1.5">
-									<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.compare.sources.comparison.label')}</span>
-									<JceSelect options={nestedTypeOptions} value={nestedType} onchange={(v) => setNestedType(v)} class="w-full" />
-								</div>
-							{/if}
-							<div class="space-y-1.5">
-								<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.common.per_page')}</span>
-								<JceSelect options={pageSizeSelectOptions} value={String(pageSize)} onchange={(v) => setPageSize(parseInt(v, 10))} class="w-full" />
-							</div>
-						</Popover.Content>
-					</Popover.Portal>
-				</Popover.Root>
+				<button
+					type="button"
+					onclick={() => (sortModalOpen = true)}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('jce.compare.filters.sort_display')}
+				</button>
 			</div>
 		</div>
 
@@ -1289,6 +1250,32 @@
 					href={tile.href}
 				/>
 			{/each}
+		</div>
+	{/snippet}
+</Modal>
+
+<Modal
+	bind:open={sortModalOpen}
+	title={t('jce.compare.filters.sort_display')}
+	icon={SlidersHorizontal}
+	size="max-w-md"
+>
+	{#snippet children()}
+		<div class="space-y-3">
+			<div class="space-y-1.5">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.comparisons.sort_placeholder')}</span>
+				<JceSelect options={sortOptions} value={sortBy} onchange={(v) => setSort(v)} class="w-full" modal />
+			</div>
+			{#if isNestedSource && allowNestedComparisons && nestedTypeOptions.length > 1}
+				<div class="space-y-1.5">
+					<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.compare.sources.comparison.label')}</span>
+					<JceSelect options={nestedTypeOptions} value={nestedType} onchange={(v) => setNestedType(v)} class="w-full" modal />
+				</div>
+			{/if}
+			<div class="space-y-1.5">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('jce.common.per_page')}</span>
+				<JceSelect options={pageSizeSelectOptions} value={String(pageSize)} onchange={(v) => setPageSize(parseInt(v, 10))} class="w-full" modal />
+			</div>
 		</div>
 	{/snippet}
 </Modal>
