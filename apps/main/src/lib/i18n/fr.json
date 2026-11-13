@@ -2224,6 +2224,7 @@
 	"eca_guide.turnaround_fmt": "{days} j de délai",
 	"eca_guide.update_failed": "Impossible d'envoyer votre rapport.",
 	"eca_guide.update_thanks": "Merci — votre rapport est en attente de validation.",
+	"eca_guide.detail_failed": "Impossible de charger les détails du guide. Réessayez.",
 	"embassy_alerter.booking_page": "Page de réservation",
 	"embassy_alerter.create_alert": "Créer une alerte",
 	"embassy_alerter.create_alert_for": "Créer une alerte pour",

@@ -6,7 +6,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { ChevronDown, ChevronUp, FileBadge, ExternalLink } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, FileBadge, ExternalLink, Timer } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '#lib/components/ui/index.js';
 	import DestinationSelector from '#lib/components/tools/DestinationSelector.svelte';
 	import { currencySymbol } from '#lib/utils/currency.js';
@@ -68,6 +68,7 @@
 	let submittingUpdate = $state(false);
 	let updateSuccess = $state(false);
 	let updateError = $state('');
+	let detailError = $state('');
 
 	const purposeOptions = $derived([
 		{ value: '', label: t('eca_guide.all_purposes', 'All purposes') },
@@ -216,12 +217,15 @@
 		loadingDetail = true;
 		updateSuccess = false;
 		updateError = '';
+		detailError = '';
 		const res = await api.get<EcaGuideDetail>(`/eca/guides/${guide.id}`);
 		loadingDetail = false;
 		if (!res.error && res.data) {
 			detail = res.data;
 		} else {
 			detail = { guide, updates: [] };
+			detailError = res.error?.message
+				|| t('eca_guide.detail_failed', 'Could not load the guide details. Please try again.');
 		}
 	}
 
@@ -453,6 +457,9 @@
 							{#if loadingDetail}
 								<LoadingSkeleton variant="lines" />
 							{:else if detail}
+								{#if detailError}
+									<p class="mb-3 text-xs text-[var(--color-danger)]">{detailError}</p>
+								{/if}
 								<!-- Pathway steps -->
 								{#if detail.guide.pathway_steps?.length}
 									<div class="mb-4 space-y-3">
@@ -467,7 +474,7 @@
 														<div class="mt-0.5 text-xs text-[var(--color-muted)]">{step.detail}</div>
 													{/if}
 													{#if step.duration}
-														<div class="mt-0.5 text-xs text-[var(--color-muted)]">⏱ {step.duration}</div>
+														<div class="mt-0.5 flex items-center gap-1 text-xs text-[var(--color-muted)]"><Timer size={11} class="rtl:-scale-x-100" />{step.duration}</div>
 													{/if}
 												</div>
 											</div>

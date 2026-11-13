@@ -2288,6 +2288,7 @@
 	"eca_guide.turnaround_fmt": "{days}d turnaround",
 	"eca_guide.update_failed": "Could not submit your report.",
 	"eca_guide.update_thanks": "Thanks — your report is pending review.",
+	"eca_guide.detail_failed": "Could not load the guide details. Please try again.",
 	"embassy_alerter.booking_page": "Booking page",
 	"embassy_alerter.create_alert": "Create alert",
 	"embassy_alerter.create_alert_for": "Create alert for",
