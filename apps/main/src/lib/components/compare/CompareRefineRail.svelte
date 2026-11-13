@@ -20,17 +20,27 @@
 		active: boolean;
 	}
 
+	interface RailCategoryGroup {
+		label: string;
+		categories: RailCategory[];
+	}
+
 	const VISIBLE_THEMES = 5;
+	const VISIBLE_GROUP_CATS = 4;
 
 	let {
 		query = $bindable(''),
 		categories,
+		groups = [],
 		themes = [],
 		onQuery,
 		onToggleTheme
 	}: {
 		query?: string;
 		categories: RailCategory[];
+		/** Optional grouped rendering — each entry becomes a labelled
+		 *  sub-section under CATEGORIES (e.g. comparison families). */
+		groups?: RailCategoryGroup[];
 		themes?: RailTheme[];
 		onQuery: (q: string) => void;
 		onToggleTheme?: (slug: string) => void;
@@ -40,6 +50,16 @@
 	let categoriesOpen = $state(true);
 	let themesExpanded = $state(false);
 	const visibleThemes = $derived(themesExpanded ? themes : themes.slice(0, VISIBLE_THEMES));
+	let expandedGroups = $state<Set<string>>(new Set());
+	const groupCats = (g: RailCategoryGroup) =>
+		expandedGroups.has(g.label) ? g.categories : g.categories.slice(0, VISIBLE_GROUP_CATS);
+
+	function toggleGroup(label: string) {
+		const next = new Set(expandedGroups);
+		if (next.has(label)) next.delete(label);
+		else next.add(label);
+		expandedGroups = next;
+	}
 
 	let timeout: ReturnType<typeof setTimeout> | null = null;
 	function input(e: Event) {
@@ -93,19 +113,29 @@
 			</button>
 			{#if categoriesOpen}
 				{#each categories as cat (cat.href)}
-					<a
-						href={cat.href}
-						aria-current={cat.active ? 'page' : undefined}
-						class="flex items-center justify-between rounded-[var(--radius)] px-3 py-2 text-sm transition-colors
-							{cat.active
-								? 'bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary-text)]'
-								: 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						<span>{cat.label}</span>
-						{#if cat.count !== undefined}
-							<span class="text-xs text-[var(--color-muted)]">{cat.count}</span>
+					{@render catLink(cat)}
+				{/each}
+				{#each groups as group (group.label)}
+					<div class="pt-2">
+						<p class="px-3 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]/80">
+							{group.label}
+						</p>
+						{#each groupCats(group) as cat (cat.href)}
+							{@render catLink(cat)}
+						{/each}
+						{#if group.categories.length > VISIBLE_GROUP_CATS}
+							<button
+								type="button"
+								onclick={() => toggleGroup(group.label)}
+								class="flex items-center gap-1 px-3 pt-0.5 text-xs font-medium text-[var(--color-primary-text)]"
+							>
+								{expandedGroups.has(group.label)
+									? t('jce.compare.category.show_less', 'Show less')
+									: t('jce.compare.category.show_more', 'Show more')}
+								{#if expandedGroups.has(group.label)}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
+							</button>
 						{/if}
-					</a>
+					</div>
 				{/each}
 			{/if}
 		</nav>
@@ -148,3 +178,19 @@
 		{/if}
 	</div>
 </aside>
+
+{#snippet catLink(cat: RailCategory)}
+	<a
+		href={cat.href}
+		aria-current={cat.active ? 'page' : undefined}
+		class="flex items-center justify-between rounded-[var(--radius)] px-3 py-2 text-sm transition-colors
+			{cat.active
+				? 'bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary-text)]'
+				: 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
+	>
+		<span>{cat.label}</span>
+		{#if cat.count !== undefined}
+			<span class="text-xs text-[var(--color-muted)]">{cat.count}</span>
+		{/if}
+	</a>
+{/snippet}

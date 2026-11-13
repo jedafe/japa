@@ -12,6 +12,7 @@
 	import CompareRefineRail from '#lib/components/compare/CompareRefineRail.svelte';
 	import ComparisonVsCard from '#lib/components/compare/ComparisonVsCard.svelte';
 	import { badgeFor } from '#lib/components/compare/compareBadge.js';
+	import { groupTypesByFamily } from '#lib/components/compare/compareFamilies.js';
 	import { excerptText } from '#lib/utils/comparison.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
@@ -210,14 +211,29 @@
 			count: allCount,
 			href: hrefOf({ filter_type: null, page: 1 }),
 			active: !filters.filter_type
-		},
-		...types.map((type) => ({
+		}
+	]);
+
+	// Group the type list by comparison family (Location, Education…) so
+	// 40+ types scan as labelled sub-sections instead of one flat column.
+	// Types with no catalogued family fall into "Other".
+	const railGroups = $derived.by(() => {
+		const catOf = (type: (typeof types)[number]) => ({
 			label: type.name,
 			count: facetCountBySlug[type.slug] as number | undefined,
 			href: hrefOf({ filter_type: type.slug, page: 1 }),
 			active: filters.filter_type === type.slug
-		}))
-	]);
+		});
+		const { groups, ungrouped } = groupTypesByFamily(types);
+		const out = groups.map((g) => ({
+			label: t(`jce.compare.family.${g.family.key}`, g.family.key),
+			categories: g.types.map(catOf)
+		}));
+		if (ungrouped.length > 0) {
+			out.push({ label: t('jce.compare.family.other', 'Other'), categories: ungrouped.map(catOf) });
+		}
+		return out;
+	});
 </script>
 
 <svelte:head>
@@ -344,7 +360,7 @@
 	<div class="mx-auto w-full max-w-6xl p-4">
 		<div class="flex flex-col gap-6 lg:flex-row">
 			{#if !isMine}
-				<CompareRefineRail bind:query categories={railCategories} {onQuery} />
+				<CompareRefineRail bind:query categories={railCategories} groups={railGroups} {onQuery} />
 			{/if}
 
 			<main class="min-w-0 flex-1 space-y-4 {isMine ? 'mx-auto w-full max-w-3xl' : ''}">
