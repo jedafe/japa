@@ -8,7 +8,7 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
-	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { credentialCheckerAdminApi, apiFetch, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
@@ -16,13 +16,20 @@
 
 	type CredentialCheckerItem = {
 		id: string;
+		profession_id?: string;
 		profession_name: string;
 		profession_slug: string;
+		destination_space_id?: string;
 		destination_space_name: string;
+		issuing_space_id?: string;
 		issuing_space_name: string;
 		regulatory_body: string;
+		regulatory_body_url?: string;
 		pathway_type: string;
+		timeline_estimate?: string;
+		cost_estimate_usd?: string;
 		pathway_description: string;
+		official_application_url?: string;
 		status: string;
 		ai_generated: boolean;
 		ai_model?: string | null;
@@ -50,11 +57,9 @@
 	const canManage = $derived(hasPermission('credential_checker.manage'));
 
 	// ── Country selectors (250 primary geo space countries) ──────────────────
-	// Fields use country *name*; filter and generate modal use space *id*.
-	const countryUtilsByName = useCountries('name');
+	// Filter, generate modal, and the edit form all use geo space *id*.
 	const countryUtilsById = useCountries('id');
 	$effect(() => {
-		countryUtilsByName.load();
 		countryUtilsById.load();
 	});
 
@@ -197,51 +202,51 @@
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: CredentialCheckerItem, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
-			acts.push({
-				label: t('common.approve', 'Approve'),
-				icon: CheckCircle,
-				onclick: approveItem,
-				show: (row: CredentialCheckerItem) => row.status !== 'published'
-			});
+			acts.push(
+				{
+					label: t('common.edit', 'Edit'),
+					icon: Pencil,
+					onclick: (row: CredentialCheckerItem, ctx) => ctx?.openEdit(row)
+				},
+				{
+					label: t('common.approve', 'Approve'),
+					icon: CheckCircle,
+					onclick: approveItem,
+					show: (row: CredentialCheckerItem) => row.status !== 'published'
+				}
+			);
 		}
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (250 primary geo space countries) ─────────
-	// Field values are country *names* (destination_space_name / issuing_space_name).
-	const countryByNameReady = $derived(countryUtilsByName.ready);
+	const countryByIdReady = $derived(countryUtilsById.ready);
 
-	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return countryUtilsByName.fetcher(q);
-	}
-
-	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return countryUtilsByName.initialFetcher();
-	}
-
-	function getCountryNameLabel(id: string): string {
-		return countryUtilsByName.getSelectedLabel(id);
-	}
-
-	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
+	// Edit form — reviewers correct draft fields before approving (CC-18).
+	// Keys match UpdatePathwayRequest; profession/status stay immutable here
+	// (a wrong-profession draft should be rejected + regenerated, and only
+	// the approve endpoint may publish — the backend enforces both).
 	const fields = $derived.by<FieldDef[]>(() => {
-		countryByNameReady; // re-derive once the 250 primary geo space countries load
+		countryByIdReady; // re-derive once the 250 primary geo space countries load
 		return [
-			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), type: 'text' },
-			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-			{ key: 'issuing_space_name', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', required: true, placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsById.fetcher, initialFetcher: countryUtilsById.initialFetcher, getSelectedLabel: countryUtilsById.getSelectedLabel },
+			{ key: 'issuing_space_id', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsById.fetcher, initialFetcher: countryUtilsById.initialFetcher, getSelectedLabel: countryUtilsById.getSelectedLabel },
+			{ key: 'regulatory_body', label: t('app.tools.col_regulatory_body', 'Regulatory Body'), type: 'text' },
+			{ key: 'regulatory_body_url', label: t('credential_checker.regulatory_url', 'Regulatory body URL'), type: 'url' },
+			{ key: 'pathway_type', label: t('app.tools.col_pathway_type', 'Pathway Type'), type: 'text' },
+			{ key: 'timeline_estimate', label: t('credential_checker.timeline', 'Timeline estimate'), type: 'text' },
+			{ key: 'cost_estimate_usd', label: t('credential_checker.cost_usd', 'Cost estimate (USD)'), type: 'text' },
+			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' },
+			{ key: 'official_application_url', label: t('credential_checker.application_url', 'Official application URL'), type: 'url' }
 		];
 	});
-
-	const countryByIdReady = $derived(countryUtilsById.ready);
 
 	const config = $derived.by<EntityPageConfig>(() => {
 		countryByIdReady; // re-derive once the 250 primary geo space countries load
 		return {
 			title: t('app.tools.credential_checker_heading', 'Credential Checker Review Queue'),
 			description: t('app.tools.credential_checker_desc', 'Review and approve AI-generated credential checker guides'),
-			readonly: true,
+			hideCreate: true,
+			editPermission: 'credential_checker.manage',
 			pageSize: 25,
 			filters: [statusFilter,
 				{
@@ -302,6 +307,10 @@
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+		},
+		update: async (id, body) => {
+			const res = await credentialCheckerAdminApi.update(id, body);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: CredentialCheckerView
 	};

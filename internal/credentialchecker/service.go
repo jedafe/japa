@@ -373,6 +373,12 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 		return PathwayDTO{}, errors.New("pathway_type is required")
 	}
 
+	// Direct-publish on create would skip the HITL stamps and the search
+	// index enqueue — publication must go through approve (ADR-088).
+	if req.Status == StatusPublished {
+		return PathwayDTO{}, fmt.Errorf("%w: publishing requires the approve endpoint", errpkg.ErrInvalid)
+	}
+
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
 		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
@@ -448,7 +454,14 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 // UpdatePathway updates the mutable fields on a credential pathway.
 // Admin-only (credential_checker.manage permission checked at route
 // level). Only provided (non-nil) fields are updated.
+// Publishing is rejected here — the approve endpoint stamps the
+// hitl_reviewed_* columns and enqueues search indexing; a bare PATCH
+// must not be able to bypass that lifecycle (ADR-088).
 func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdatePathwayRequest) (PathwayDTO, error) {
+	if req.Status != nil && *req.Status == StatusPublished {
+		return PathwayDTO{}, fmt.Errorf("%w: publishing requires POST /admin/credentials/{id}/approve", errpkg.ErrInvalid)
+	}
+
 	input := UpdatePathwayInput{
 		ProfessionID:           req.ProfessionID,
 		RegulatoryBody:         req.RegulatoryBody,
@@ -499,6 +512,11 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch updated pathway: %w", err)
 	}
+
+	// Re-sync the search doc — a published pathway edited by an admin must
+	// not go stale in Meilisearch; non-indexable rows are dropped by the
+	// indexer's is_indexable check, so this is a no-op for drafts.
+	s.enqueueIndex(id)
 
 	return pathwayRowToDTO(row), nil
 }

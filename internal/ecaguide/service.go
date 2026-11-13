@@ -318,6 +318,12 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 		return nil, fmt.Errorf("%w: destination_space_id, provider_id, purpose and pathway_steps are required", errpkg.ErrInvalid)
 	}
 
+	// Direct-publish on create would skip the HITL stamps and the search
+	// index enqueue — publication must go through approve (ADR-088).
+	if in.Status == StatusPublished {
+		return nil, fmt.Errorf("%w: publishing requires the approve endpoint", errpkg.ErrInvalid)
+	}
+
 	row := GuideRow{
 		Purpose: in.Purpose,
 		Status:  orDefault(in.Status, StatusDraft),
@@ -359,7 +365,14 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 }
 
 // UpdateGuide applies a partial update (admin).
+// Publishing is rejected here — the approve endpoint stamps the
+// hitl_reviewed_* columns and enqueues search indexing; a bare PATCH
+// must not be able to bypass that lifecycle (ADR-088).
 func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideRequest) error {
+	if in.Status == StatusPublished {
+		return fmt.Errorf("%w: publishing requires POST /admin/eca-guides/{id}/approve", errpkg.ErrInvalid)
+	}
+
 	row := GuideRow{
 		Purpose:          in.Purpose,
 		FeeEstimate:      in.FeeEstimate,
@@ -384,7 +397,16 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 		row.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
 
-	return s.store.UpdateGuide(ctx, id, row)
+	if err := s.store.UpdateGuide(ctx, id, row); err != nil {
+		return err
+	}
+
+	// Re-sync the search doc — a published guide edited by an admin must
+	// not go stale in Meilisearch; non-indexable rows are dropped by the
+	// indexer's is_indexable check, so this is a no-op for drafts.
+	s.enqueueIndex(id)
+
+	return nil
 }
 
 // ApproveGuide publishes a guide after HITL review and enqueues it for

@@ -9319,9 +9319,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// §94 — Professional Credential Checker (ADR-102)
 			r.With(features.Gate(featureChecker, "credential_checker.enabled")).Group(func(r chi.Router) {
-				r.Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
-				r.Get("/credentials", credentialCheckerHandlers.HandleListPathways)
-				r.Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
+				// Public reads stay open per §94; credential_checker.view is
+				// applied as an optional node so a revoked group still 403s
+				// for authed members (same pattern as directory.spaces.view).
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "credential_checker.view")).
+					Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "credential_checker.view")).
+					Get("/credentials", credentialCheckerHandlers.HandleListPathways)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "credential_checker.view")).
+					Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), rbac.RequirePermission(rbacResolver, "credential_checker.note")).
 					Post("/credentials/{id}/notes", credentialCheckerHandlers.HandleCreateNote)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
@@ -9399,10 +9405,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// §109 — ECA Guide (ADR-120)
 			r.With(features.Gate(featureChecker, "eca_guide.enabled")).Group(func(r chi.Router) {
-				r.Get("/eca/providers", ecaGuideHandlers.HandleListProviders)
-				r.Get("/eca/guides", ecaGuideHandlers.HandleListGuides)
-				r.Get("/eca/guides/{id}", ecaGuideHandlers.HandleGetGuide)
-				r.Get("/eca/compare", ecaGuideHandlers.HandleCompare)
+				// Public reads stay open per §109; eca_guide.view is applied
+				// as an optional node so a revoked group still 403s for
+				// authed members (same pattern as directory.spaces.view).
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "eca_guide.view")).
+					Get("/eca/providers", ecaGuideHandlers.HandleListProviders)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "eca_guide.view")).
+					Get("/eca/guides", ecaGuideHandlers.HandleListGuides)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "eca_guide.view")).
+					Get("/eca/guides/{id}", ecaGuideHandlers.HandleGetGuide)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "eca_guide.view")).
+					Get("/eca/compare", ecaGuideHandlers.HandleCompare)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), rbac.RequirePermission(rbacResolver, "eca_guide.update")).
 					Post("/eca/guides/{id}/updates", ecaGuideHandlers.HandleCreateUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "eca_guide.manage")).
