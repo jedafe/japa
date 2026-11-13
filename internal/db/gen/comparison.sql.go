@@ -1757,54 +1757,56 @@ LEFT JOIN trending_snapshots ts
  AND ts."window" = '7d'
  AND ts.geo_code IS NULL
  AND ts.expires_at > now()
+ AND $1::text = 'trending'
 WHERE c.content_type = 'comparison'
  AND (
- CASE $1::text
+ CASE $2::text
  WHEN 'only' THEN c.deleted_at IS NOT NULL
  WHEN 'all' THEN TRUE
  ELSE (c.deleted_at IS NULL AND c.auto_hidden = false)
  END
  )
- AND ($2::uuid IS NULL OR c.space_id = $2)
+ AND ($3::uuid IS NULL OR c.space_id = $3)
  AND (
- $3::uuid[] IS NULL
+ $4::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_items ci
  WHERE ci.content_id = c.id
- AND ci.type_id = ANY($3::uuid[])
+ AND ci.type_id = ANY($4::uuid[])
  AND ci.deleted_at IS NULL
  )
  )
  AND (
- $4::uuid[] IS NULL
+ $5::uuid[] IS NULL
  OR EXISTS (
  SELECT 1 FROM comparison_dimensions d
  JOIN custom_fields f ON f.id = d.source_field_id
  WHERE d.content_id = c.id
- AND f.group_id = ANY($4::uuid[])
+ AND f.group_id = ANY($5::uuid[])
  AND d.deleted_at IS NULL
  )
  )
- AND ($5::text IS NULL OR m.depth = $5)
- AND ($6::text IS NULL OR c.status = $6)
- AND ($7::text IS NULL OR c.visibility = $7)
- AND ($8::boolean IS NOT TRUE OR c.author_id = $9)
+ AND ($6::text IS NULL OR m.depth = $6)
+ AND ($7::text IS NULL OR c.status = $7)
+ AND ($8::text IS NULL OR c.visibility = $8)
+ AND ($9::boolean IS NOT TRUE OR c.author_id = $10)
  AND (
- $10::text IS NULL OR $10 = ''
- OR c.title ILIKE '%' || $10 || '%'
- OR c.slug ILIKE '%' || $10 || '%'
+ $11::text IS NULL OR $11 = ''
+ OR c.title ILIKE '%' || $11 || '%'
+ OR c.slug ILIKE '%' || $11 || '%'
  )
 ORDER BY
- CASE WHEN $11::text = 'title' THEN c.title END ASC,
- CASE WHEN $11::text = 'popularity' THEN c.view_count END DESC,
+ CASE WHEN $1::text = 'title' THEN c.title END ASC,
+ CASE WHEN $1::text = 'popularity' THEN c.view_count END DESC,
  -- Unsnapshotted comparisons (no velocity data yet) must sort last, not
  -- first — DESC defaults to NULLS FIRST in Postgres.
- CASE WHEN $11::text = 'trending' THEN ts.score END DESC NULLS LAST,
+ CASE WHEN $1::text = 'trending' THEN ts.score END DESC NULLS LAST,
  c.created_at DESC, c.id DESC
 LIMIT $13 OFFSET $12
 `
 
 type ListComparisonsWithFiltersParams struct {
+	Sort       *string       `json:"sort"`
 	Deleted    *string       `json:"deleted"`
 	SpaceID    pgtype.UUID   `json:"space_id"`
 	TypeIds    []pgtype.UUID `json:"type_ids"`
@@ -1815,7 +1817,6 @@ type ListComparisonsWithFiltersParams struct {
 	Mine       *bool         `json:"mine"`
 	UserID     pgtype.UUID   `json:"user_id"`
 	Q          *string       `json:"q"`
-	Sort       *string       `json:"sort"`
 	PageOffset int32         `json:"page_offset"`
 	PageLimit  int32         `json:"page_limit"`
 }
@@ -1866,9 +1867,12 @@ type ListComparisonsWithFiltersRow struct {
 // Supports public directory, mine=true, depth filters, status, visibility, q, sort.
 // sort=trending reads the worker-maintained velocity snapshots (§53, HN
 // gravity over the 7d window). The window+geo filter keeps the join ≤1 row
-// per content — the PK is (entity_type, entity_id, window, geo_code).
+// per content — the unique key is (entity_type, entity_id, window, geo_code)
+// NULLS NOT DISTINCT. The sort guard in the ON clause makes the join a
+// no-match constant for non-trending sorts instead of a per-row probe.
 func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListComparisonsWithFiltersParams) ([]ListComparisonsWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
+		arg.Sort,
 		arg.Deleted,
 		arg.SpaceID,
 		arg.TypeIds,
@@ -1879,7 +1883,6 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 		arg.Mine,
 		arg.UserID,
 		arg.Q,
-		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

@@ -285,13 +285,16 @@ FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 -- sort=trending reads the worker-maintained velocity snapshots (§53, HN
 -- gravity over the 7d window). The window+geo filter keeps the join ≤1 row
--- per content — the PK is (entity_type, entity_id, window, geo_code).
+-- per content — the unique key is (entity_type, entity_id, window, geo_code)
+-- NULLS NOT DISTINCT. The sort guard in the ON clause makes the join a
+-- no-match constant for non-trending sorts instead of a per-row probe.
 LEFT JOIN trending_snapshots ts
  ON ts.entity_type = 'content'
  AND ts.entity_id = c.id
  AND ts."window" = '7d'
  AND ts.geo_code IS NULL
  AND ts.expires_at > now()
+ AND sqlc.narg(sort)::text = 'trending'
 WHERE c.content_type = 'comparison'
  AND (
  CASE sqlc.narg(deleted)::text
