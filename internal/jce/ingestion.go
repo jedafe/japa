@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -353,12 +354,15 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 
 	var refreshedCount int
 
+	// procErrs are real processing failures; unresolved counts cells where the
+	// matched source simply had no data — benign, reported but never failing.
 	var procErrs []string
+	var unresolved int
 
 	usedSources := make(map[string]DataSource)
 
 	defer func() {
-		finalErr := s.finalizeRefresh(ctx, contentID, jobID, startedAt, refreshedCount, usedSources, procErrs)
+		finalErr := s.finalizeRefresh(ctx, contentID, jobID, startedAt, refreshedCount, usedSources, procErrs, unresolved)
 		if finalErr != nil && err == nil {
 			err = finalErr
 		}
@@ -468,7 +472,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgt
 			}
 
 			if !ok {
-				procErrs = append(procErrs, fmt.Sprintf("no value resolved for %s/%s", item.Item.ID.String(), dim.DimensionID.String()))
+				unresolved++
 				continue
 			}
 
@@ -591,8 +595,10 @@ func (s *Service) resolveValue(
 
 	// Resolver-backed value extracted from resolved item metadata.
 	path, _ := source.Config["metadata_path"].(string)
+	bound := false
 	if path == "" && dim.SourceFieldKey != nil && *dim.SourceFieldKey != "" {
 		path = *dim.SourceFieldKey
+		bound = true
 	}
 
 	if path != "" {
@@ -601,7 +607,21 @@ func (s *Service) resolveValue(
 			return nil, false, err
 		}
 
-		v, ok := metadataPathLookup(md, path)
+		raw, ok := metadataPathLookup(md, path)
+		if !ok {
+			return nil, false, nil
+		}
+
+		// Bound-field lookups go through the source field's option schema —
+		// composite fields like price_parts project to their declared
+		// primary_part, mirroring hydrateMatrixCell on the display path.
+		if bound {
+			if raw, ok = applyFieldProjection(raw, dim.SourceFieldOptions); !ok {
+				return nil, false, nil
+			}
+		}
+
+		v, ok := scalarCellValue(raw)
 		if !ok || v == nil {
 			return nil, false, nil
 		}
@@ -634,16 +654,17 @@ func (s *Service) resolveValue(
 // item metadata. Order: exact top-level key, then the field_values bag — the
 // common case, since paths are usually custom-field keys (CFV is the canonical
 // field store) — then a dotted path walked through nested maps
-// ("field_values.x", "score_inputs.y"). Nested maps themselves can never be a
-// cell value, so they report no match.
+// ("field_values.x", "score_inputs.y"). Returns the raw value; callers decide
+// what shapes are usable (composite values go through field projection, then
+// scalarCellValue).
 func metadataPathLookup(md map[string]any, path string) (any, bool) {
 	if v, ok := md[path]; ok {
-		return scalarCellValue(v)
+		return v, true
 	}
 
 	if fv, ok := md["field_values"].(map[string]any); ok {
 		if v, hit := fv[path]; hit {
-			return scalarCellValue(v)
+			return v, true
 		}
 	}
 
@@ -665,7 +686,39 @@ func metadataPathLookup(md map[string]any, path string) (any, bool) {
 		}
 	}
 
-	return scalarCellValue(cur)
+	return cur, true
+}
+
+// applyFieldProjection mirrors the display path's composite-field handling
+// (hydrateMatrixCell): a price_parts-bound field's value is {"parts":{...}}
+// and only the declared primary_part is a comparable cell — the whole map or
+// a non-primary part is never persisted.
+func applyFieldProjection(v any, fieldOpts []byte) (any, bool) {
+	if customfields.PricePartsOptionsFromJSON(fieldOpts) == nil {
+		return v, true
+	}
+
+	m, isMap := v.(map[string]any)
+	if !isMap {
+		return v, true
+	}
+
+	parts, hasParts := m["parts"].(map[string]any)
+	if !hasParts {
+		return v, true
+	}
+
+	pp := customfields.PrimaryPartFromOptions(fieldOpts)
+	if pp == "" {
+		return nil, false
+	}
+
+	pv, ok := parts[pp]
+	if !ok || pv == nil {
+		return nil, false
+	}
+
+	return pv, true
 }
 
 // scalarCellValue normalizes a resolved value for a comparison cell. String
@@ -837,19 +890,25 @@ func resolveItemEntityFromRef(itemRef []byte) (entityType *string, entityID *pgt
 // finalizeRefresh writes the final job status, updates data-source bookkeeping
 // for every source that contributed a value, deletes the freshness cache, and
 // releases the distributed lock.
-func (s *Service) finalizeRefresh(ctx context.Context, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, usedSources map[string]DataSource, procErrs []string) error {
+func (s *Service) finalizeRefresh(ctx context.Context, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, usedSources map[string]DataSource, procErrs []string, unresolved int) error {
 	// The CHECK constraint only allows completed/failed; record partial errors
-	// in the error column with a completed status.
+	// in the error column with a completed status. Cells the source simply had
+	// no data for are benign — reported, never a failure on their own.
 	status := "completed"
 
 	var errMsg *string
 
-	if len(procErrs) > 0 {
-		if refreshedCount == 0 {
-			status = "failed"
-		}
+	if len(procErrs) > 0 && refreshedCount == 0 {
+		status = "failed"
+	}
 
-		summary := strings.Join(procErrs, "; ")
+	notes := procErrs
+	if unresolved > 0 {
+		notes = append(notes, fmt.Sprintf("%d cell(s) had no resolvable value", unresolved))
+	}
+
+	if len(notes) > 0 {
+		summary := strings.Join(notes, "; ")
 		if len(summary) > 1024 {
 			summary = summary[:1024]
 		}

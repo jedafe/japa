@@ -1677,6 +1677,9 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 	// only — the refresh path uses it as the cell's field_values lookup key
 	// (CFV as a first-class source); the API shape stays unchanged.
 	SourceFieldKey *string `json:"-"`
+	// SourceFieldOptions is the bound field's option schema — refresh uses it
+	// to project composite values (price_parts primary_part) before persisting.
+	SourceFieldOptions []byte `json:"-"`
 	// Normalized marks currency cells whose ValueRating was converted from
 	// the item's local currency into CurrencyCode (the fx display base).
 	Normalized bool `json:"normalized,omitempty"`
@@ -1879,10 +1882,11 @@ func (s *Service) assembleComparisonMatrix(
 
 		for _, dim := range dedupedDimensions {
 			md := ComparisonMatrixDimension{
-				DimensionID:    dim.ID,
-				Label:          dim.Label,
-				Type:           dim.DimensionType,
-				SourceFieldKey: dim.SourceFieldKey,
+				DimensionID:        dim.ID,
+				Label:              dim.Label,
+				Type:               dim.DimensionType,
+				SourceFieldKey:     dim.SourceFieldKey,
+				SourceFieldOptions: dim.SourceFieldOptions,
 			}
 			if dim.DimensionType == DimensionTypeCurrency {
 				md.CurrencyCode = customfields.CurrencyCodeFromOptions(dim.SourceFieldOptions)

@@ -560,6 +560,7 @@
 	}
 	.compare-matrix table :is(td, th):first-child {
 		min-width: 11rem;
+		max-width: 14rem;
 	}
 
 	/* Cap item-column preferred width so long entity names/URLs wrap to
