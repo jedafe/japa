@@ -23,6 +23,9 @@
 		onChangeType: () => void;
 		onSwitchType?: (slug: string) => void;
 		onToggleNarrow: () => void;
+		/** Opens the "All categories" modal — the landing's tile grid reused
+		 *  as the in-workspace type picker. */
+		onAllCategories?: () => void;
 	}
 
 	let {
@@ -37,7 +40,8 @@
 		selectSummary,
 		onChangeType,
 		onSwitchType,
-		onToggleNarrow
+		onToggleNarrow,
+		onAllCategories
 	}: Props = $props();
 
 	let narrowChipLabel = $derived(
@@ -132,4 +136,15 @@
 			{selectSummary || t('jce.compare.step.browse')}
 		{/if}
 	</span>
+
+	{#if onAllCategories}
+		<button
+			type="button"
+			onclick={onAllCategories}
+			class="ms-auto inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			{t('jce.compare.landing.all_categories', 'All categories')}
+			<ChevronDown size={13} class="text-[var(--color-muted)]" />
+		</button>
+	{/if}
 </nav>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
 	import type { Component } from 'svelte';
 	import { onDestroy } from 'svelte';
 	import {
@@ -329,6 +329,12 @@
 	]);
 	let visibleTiles = $derived(categoryTiles.slice(0, CATEGORY_TILES_DESKTOP));
 	let categoriesModalOpen = $state(false);
+	// Tile clicks inside the modal are plain anchors — a successful
+	// client-side navigation must dismiss it or it lingers over the new
+	// type's workspace.
+	afterNavigate(() => {
+		categoriesModalOpen = false;
+	});
 
 	let landingSearch = $state('');
 	function submitLandingSearch() {
@@ -1082,28 +1088,6 @@
 				>{t('jce.compare.landing.ai_help_cta', 'Chat with Japa AI')}</button>
 			</section>
 		{/if}
-
-		<Modal
-			bind:open={categoriesModalOpen}
-			title={t('jce.compare.landing.all_categories', 'All categories')}
-			icon={LayoutGrid}
-			size="max-w-2xl"
-		>
-			{#snippet children()}
-				<div class="grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
-					{#each categoryTiles as tile (tile.href)}
-						<CompareCategoryCard
-							icon={tile.icon}
-							tint={tile.tint}
-							name={tile.name}
-							subtitle={tile.subtitle}
-							count={tile.count}
-							href={tile.href}
-						/>
-					{/each}
-				</div>
-			{/snippet}
-		</Modal>
 	{:else}
 		<!-- Workspace: step header → narrow panel → unified filter row → grid → sticky tray -->
 		<StepHeader
@@ -1119,6 +1103,7 @@
 			siblings={siblingTypes}
 			onSwitchType={switchType}
 			onToggleNarrow={toggleNarrow}
+			onAllCategories={() => (categoriesModalOpen = true)}
 		/>
 
 		{#if showNarrow && narrowOpen}
@@ -1341,6 +1326,28 @@
 	{/if}
 	</div>
 </div>
+
+<Modal
+	bind:open={categoriesModalOpen}
+	title={t('jce.compare.landing.all_categories', 'All categories')}
+	icon={LayoutGrid}
+	size="max-w-2xl"
+>
+	{#snippet children()}
+		<div class="grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
+			{#each categoryTiles as tile (tile.href)}
+				<CompareCategoryCard
+					icon={tile.icon}
+					tint={tile.tint}
+					name={tile.name}
+					subtitle={tile.subtitle}
+					count={tile.count}
+					href={tile.href}
+				/>
+			{/each}
+		</div>
+	{/snippet}
+</Modal>
 
 <GuideSlideOver
 	bind:open={guideOpen}
