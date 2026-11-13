@@ -127,6 +127,7 @@
 		hasSearched = true;
 		expandedId = null;
 		detail = null;
+		guidesError = '';
 		loadingGuides = true;
 		const params = new URLSearchParams({ dest: selectedDest });
 		if (selectedPurpose) params.set('purpose', selectedPurpose);
@@ -354,7 +355,7 @@
 							<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 								{purposeLabel(purpose)}
 							</div>
-							<div class="grid grid-cols-1 gap-2 sm:grid-cols-{Math.min(guidesForPurpose.length, 4)}">
+							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 								{#each guidesForPurpose as g (g.id)}
 									<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 										<div class="text-sm font-medium text-[var(--color-text)]">
@@ -558,7 +559,7 @@
 											<button
 												class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] disabled:opacity-50"
 												onclick={submitUpdate}
-												disabled={submittingUpdate || !updateFee && updateDays === '' && !updateNote && updateStep === ''}
+												disabled={submittingUpdate || (!updateFee && updateDays === '' && !updateNote)}
 											>
 												{submittingUpdate ? t('eca_guide.submitting', 'Submitting…') : t('eca_guide.submit', 'Submit report')}
 											</button>

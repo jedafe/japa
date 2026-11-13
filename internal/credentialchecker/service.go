@@ -574,7 +574,7 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID,
 		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: note: get pathway: %w", err)
 	}
 
-	if pathway.Status != StatusPublished {
+	if pathway.Status != StatusPublished || !pathway.IsActive {
 		return CommunityNoteDTO{}, pgx.ErrNoRows
 	}
 
@@ -883,6 +883,7 @@ func (s *Service) AdminListPathways(ctx context.Context, destSpaceID, issuingSpa
 		Status:             status,
 		Sort:               sort,
 		Q:                  q,
+		IncludeInactive:    true,
 		Limit:              limit,
 		Offset:             offset,
 	})

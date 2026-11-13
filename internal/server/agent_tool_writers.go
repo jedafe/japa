@@ -204,14 +204,6 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 					return base(ctx, userID, payload)
 				}
 			}
-
-			if updateFunc != nil {
-				base := updateFunc
-				updateFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
-					delete(payload, "status")
-					return base(ctx, userID, id, payload)
-				}
-			}
 		}
 
 		// Full-row update inputs need read-modify-write. When a mergeGetter
@@ -231,6 +223,27 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 
 				if assignGeoName != "" {
 					assignGeoFunc = merged
+				}
+			}
+		}
+
+		// HITL clamp runs last so it wraps the final funcs — including a
+		// mergeGetter-produced update and the assign_geo forwarder, both of
+		// which could otherwise carry status='published' straight through.
+		if agentHitlTools[toolType] {
+			if updateFunc != nil {
+				base := updateFunc
+				updateFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+					delete(payload, "status")
+					return base(ctx, userID, id, payload)
+				}
+			}
+
+			if assignGeoFunc != nil {
+				base := assignGeoFunc
+				assignGeoFunc = func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+					delete(payload, "status")
+					return base(ctx, userID, id, payload)
 				}
 			}
 		}

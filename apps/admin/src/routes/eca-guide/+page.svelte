@@ -77,7 +77,7 @@
 		api<GeoOption[]>('/geo/countries').then((res) => {
 			if (res.ok) geoOptions = res.data ?? [];
 		});
-		api<Provider[]>('/admin/eca-providers').then((res) => {
+		api<Provider[]>('/admin/eca-providers?limit=100').then((res) => {
 			if (res.ok) providerOptions = res.data ?? [];
 		});
 	});

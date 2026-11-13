@@ -633,7 +633,8 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 	page, limit := parsePageParams(r)
 
-	providers, total, err := h.service.AdminListProviders(r.Context(), page, limit)
+	providers, total, err := h.service.AdminListProviders(r.Context(),
+		r.URL.Query().Get("sort"), r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		slog.Error("ecaguide: list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list providers")

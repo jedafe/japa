@@ -1,7 +1,7 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
@@ -98,6 +98,7 @@
 		expandedId = null;
 		detailPathway = null;
 		detailNotes = [];
+		pathwaysError = '';
 		loadingPathways = true;
 		const params = new URLSearchParams({
 			dest: selectedDest,
@@ -148,6 +149,8 @@
 			return;
 		}
 		expandedId = pathway.id;
+		notePending = false;
+		noteError = '';
 		loadingDetail = true;
 		// /credentials/{id} returns { pathway, notes } — non-standard envelope.
 		const res = await api.get<CredentialPathwayDetail>(`/credentials/${pathway.id}`);
@@ -201,7 +204,13 @@
 	}
 
 	// If SSR pre-fetched pathways (deep link with ?dest=&profession=), the
-	// selectors are already synced from data.initial* — nothing else needed.
+	// selectors are already synced from data.initial* — except ?issuing=,
+	// which SSR does not apply, so re-run the search to match the URL.
+	onMount(() => {
+		if (data.initialDestId && data.initialProfessionId && selectedIssuing) {
+			loadPathways();
+		}
+	});
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title}

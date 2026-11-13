@@ -554,16 +554,33 @@ func (s *Store) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
 // AdminListProviders returns providers including inactive, paginated
 // (admin). The catalog is small but the contract matches the other admin
 // list endpoints.
-func (s *Store) AdminListProviders(ctx context.Context, page, limit int32) ([]ProviderRow, int64, error) {
+func (s *Store) AdminListProviders(ctx context.Context, sort, q string, page, limit int32) ([]ProviderRow, int64, error) {
+	where := ` WHERE true`
+	args := []any{}
+	if q != "" {
+		args = append(args, "%"+q+"%")
+		ph := `$` + itoa(len(args))
+		where += ` AND (name ILIKE ` + ph + ` OR slug ILIKE ` + ph + ` OR website ILIKE ` + ph + `)`
+	}
+
 	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, `SELECT count(*) FROM eca_providers`).Scan(&total); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, `SELECT count(*) FROM eca_providers`+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
+	orderBy := ` ORDER BY name`
+	if col, dir, ok := parseProviderSort(sort); ok {
+		orderBy = ` ORDER BY ` + col + ` ` + dir
+	}
+
+	args = append(args, limit, (page-1)*limit)
+	limitPh := `$` + itoa(len(args)-1)
+	offsetPh := `$` + itoa(len(args))
+
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT id, slug, name, website, is_active
-		FROM eca_providers ORDER BY name
-		LIMIT $1 OFFSET $2`, limit, (page-1)*limit)
+		FROM eca_providers`+where+orderBy+`
+		LIMIT `+limitPh+` OFFSET `+offsetPh, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -597,6 +614,33 @@ var guideSortColumns = map[string]string{
 	"status":                 "g.status",
 	"created_at":             "g.created_at",
 	"updated_at":             "g.updated_at",
+}
+
+// providerSortColumns maps admin sortable provider column keys to safe SQL
+// expressions — anything not in the map falls back to name ASC.
+var providerSortColumns = map[string]string{
+	"name":       "name",
+	"slug":       "slug",
+	"website":    "website",
+	"is_active":  "is_active",
+	"created_at": "created_at",
+}
+
+// parseProviderSort parses the admin "key:dir" sort param into a whitelisted
+// column + direction.
+func parseProviderSort(param string) (string, string, bool) {
+	key, dir, _ := strings.Cut(param, ":")
+
+	col, ok := providerSortColumns[key]
+	if !ok {
+		return "", "", false
+	}
+
+	if dir != "asc" {
+		dir = "desc"
+	}
+
+	return col, dir, true
 }
 
 // parseGuideSort parses the admin "key:dir" sort param into a whitelisted

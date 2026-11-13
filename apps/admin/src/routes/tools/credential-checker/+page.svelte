@@ -378,7 +378,7 @@
 			<label for="gen-issuing-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_issuing_country', 'Issuing Country')}</label>
 			<Autocomplete
 				id="gen-issuing-country"
-				placeholder={t('geo.select_destination', 'Select a country…')}
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={countryUtilsById.fetcher}
 				initialFetcher={countryUtilsById.initialFetcher}
@@ -392,7 +392,7 @@
 			<label for="gen-dest-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
 			<Autocomplete
 				id="gen-dest-country"
-				placeholder={t('geo.select_destination', 'Select a country…')}
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={countryUtilsById.fetcher}
 				initialFetcher={countryUtilsById.initialFetcher}

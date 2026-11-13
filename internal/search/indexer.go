@@ -1883,13 +1883,14 @@ func (ix *Indexer) IndexCredentialPathway(ctx context.Context, pathwayID [16]byt
 	}
 
 	var (
-		id, profID, issID, destID string
-		profSlug, profName        string
-		issName, destName         *string
-		regBody, pathType         string
-		timeline                  *string
-		status                    string
-		indexable                 bool
+		id, profID, destID string
+		issID              *string
+		profSlug, profName string
+		issName, destName  *string
+		regBody, pathType  string
+		timeline           *string
+		status             string
+		indexable          bool
 	)
 
 	err := ix.pool.Reader.QueryRow(ctx, `
@@ -1898,7 +1899,7 @@ func (ix *Indexer) IndexCredentialPathway(ctx context.Context, pathwayID [16]byt
 		       p.destination_space_id, dst.name,
 		       p.regulatory_body, p.pathway_type, p.timeline_estimate,
 		       p.status,
-		       (p.status = 'published' AND p.is_active)
+		       (p.is_japabot_indexed AND p.status = 'published' AND p.is_active)
 		FROM credential_pathways p
 		JOIN credential_professions pr ON pr.id = p.profession_id
 		LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
@@ -1926,13 +1927,15 @@ func (ix *Indexer) IndexCredentialPathway(ctx context.Context, pathwayID [16]byt
 		ProfessionID:       profID,
 		ProfessionSlug:     profSlug,
 		ProfessionName:     profName,
-		IssuingSpaceID:     issID,
 		DestinationSpaceID: destID,
 		RegulatoryBody:     regBody,
 		PathwayType:        pathType,
 		Status:             status,
 		IsJapabotIndexed:   true,
 		URL:                "/tools/credential-checker",
+	}
+	if issID != nil {
+		doc.IssuingSpaceID = *issID
 	}
 	if issName != nil {
 		doc.IssuingSpaceName = *issName

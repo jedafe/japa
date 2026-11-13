@@ -295,6 +295,10 @@ type ListPathwaysFilter struct {
 	IssuingSpaceID     pgtype.UUID // optional
 	Status             string      // default: published
 	IsActive           *bool       // default: true
+	// IncludeInactive bypasses the is_active default for admin callers —
+	// AI drafts are created with is_active=false and must stay visible in
+	// the review queue.
+	IncludeInactive    bool
 	Q                  string      // optional ILIKE on profession name / regulatory body
 	Sort               string      // "key:dir" — admin list; whitelist only
 	Limit              int32
@@ -323,7 +327,7 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		conditions = append(conditions, fmt.Sprintf("p.is_active = $%d", argIdx))
 		args = append(args, *f.IsActive)
 		argIdx++
-	} else {
+	} else if !f.IncludeInactive {
 		conditions = append(conditions, "p.is_active = true")
 	}
 

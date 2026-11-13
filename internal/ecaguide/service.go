@@ -573,7 +573,7 @@ func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, n
 
 // AdminListProviders returns providers including inactive, paginated
 // (admin).
-func (s *Service) AdminListProviders(ctx context.Context, page, limit int32) ([]ProviderDTO, int64, error) {
+func (s *Service) AdminListProviders(ctx context.Context, sort, q string, page, limit int32) ([]ProviderDTO, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -582,7 +582,7 @@ func (s *Service) AdminListProviders(ctx context.Context, page, limit int32) ([]
 		page = 1
 	}
 
-	rows, total, err := s.store.AdminListProviders(ctx, page, limit)
+	rows, total, err := s.store.AdminListProviders(ctx, sort, q, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}
