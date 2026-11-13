@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -3742,6 +3743,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetEmailDispatcher(emailDispatcher)
 	controlHandlers.SetEmailFallbackProvider(emailFallback)
 
+	// Reconciler state: each load records the flag state it applied so the
+	// background poll can rebuild only on drift — flag writes made by OTHER
+	// instances never reach this instance's config-changed hook.
+	var aiEnvFallbackApplied, emailEnvFallbackApplied atomic.Bool
+
 	// Load DB-backed provider configs and register them with the dispatcher.
 	// This runs AFTER env-var providers are registered above, so DB configs
 	// take priority (LoadAndRegisterProviders clears and re-registers
@@ -3751,8 +3757,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// restore — off means the dispatcher runs strictly on control-plane
 	// rows (features.Registry default keeps them on).
 	loadAIProviders := func(ctx context.Context) {
+		enabled := featureChecker.IsEnabled(ctx, ai.EnvProvidersFlagKey)
+		aiEnvFallbackApplied.Store(enabled)
+
 		fb := aiFallbackChains
-		if !featureChecker.IsEnabled(ctx, ai.EnvProvidersFlagKey) {
+		if !enabled {
 			fb = nil
 		}
 
@@ -3761,8 +3770,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		}
 	}
 	loadEmailProviders := func(ctx context.Context) {
+		enabled := featureChecker.IsEnabled(ctx, email.EnvProvidersFlagKey)
+		emailEnvFallbackApplied.Store(enabled)
+
 		fb := emailFallback
-		if !featureChecker.IsEnabled(ctx, email.EnvProvidersFlagKey) {
+		if !enabled {
 			fb = nil
 		}
 
@@ -3780,6 +3792,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	loadAIProviders(context.Background())
 	loadEmailProviders(context.Background())
+
+	// Flag writes on OTHER instances don't fire this instance's config-
+	// changed hook — poll the flags and rebuild on drift so every instance
+	// converges within roughly one interval. IsEnabled reads mostly hit the
+	// L1 cache, so the tick is cheap; the worst-case lag is one interval
+	// plus a cache TTL.
+	const envProviderReconcileInterval = 60 * time.Second
+
+	go func() {
+		t := time.NewTicker(envProviderReconcileInterval)
+		defer t.Stop()
+
+		for range t.C {
+			ctx := context.Background()
+
+			if featureChecker.IsEnabled(ctx, ai.EnvProvidersFlagKey) != aiEnvFallbackApplied.Load() {
+				loadAIProviders(ctx)
+			}
+
+			if featureChecker.IsEnabled(ctx, email.EnvProvidersFlagKey) != emailEnvFallbackApplied.Load() {
+				loadEmailProviders(ctx)
+			}
+		}
+	}()
 
 	// Infrastructure routes bypass platform middleware
 	r.Get("/health", h.HealthCheck)
