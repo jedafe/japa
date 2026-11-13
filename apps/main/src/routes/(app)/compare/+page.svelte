@@ -13,7 +13,7 @@
 	import { compareEntities, type CompareEntitiesResult } from '#lib/ai/compareApi.js';
 	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '#lib/types/jce.js';
 	import StepHeader from '#lib/components/compare/StepHeader.svelte';
-	import NarrowPanel from '#lib/components/compare/NarrowPanel.svelte';
+	import ScopeChain from '#lib/components/compare/ScopeChain.svelte';
 	import CompareTray from '#lib/components/compare/CompareTray.svelte';
 	import AiQuickPanel from '#lib/components/compare/AiQuickPanel.svelte';
 	import FieldPoolPicker from '#lib/components/compare/FieldPoolPicker.svelte';
@@ -472,22 +472,6 @@
 		}
 		url.searchParams.set('page', '1');
 		goto(url, { replace: true });
-	}
-
-	function clearScope() {
-		scopeSelections = {};
-		currentPage = 1;
-		const url = new URL(page.url.href);
-		for (const step of data.scopeChain ?? []) {
-			url.searchParams.delete(scopeParamFor(step));
-		}
-		url.searchParams.set('page', '1');
-		goto(url, { replace: true });
-	}
-
-	function skipNarrow() {
-		narrowDismissed = true;
-		narrowOpen = false;
 	}
 
 	function doneNarrow() {
@@ -1118,21 +1102,6 @@
 			onAllCategories={() => (categoriesModalOpen = true)}
 		/>
 
-		{#if showNarrow && narrowOpen}
-			<NarrowPanel
-				chain={data.scopeChain ?? []}
-				selections={scopeSelections}
-				bind:labels={scopeLabels}
-				required={requiredScopeMissing}
-				requiredStepLabel={missingScope ? sourceLabel(missingScope) : ''}
-				requiredItemLabel={sourcePlural(source)}
-				onChange={narrowChange}
-				onSkip={skipNarrow}
-				onDone={doneNarrow}
-				onClear={clearScope}
-			/>
-		{/if}
-
 		<!-- Workspace body: field pool rail on the start side (mockup's
 			"popular themes"), items grid in the main column -->
 		<div class="grid gap-4 {hasFieldPool ? 'lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}">
@@ -1142,8 +1111,18 @@
 				</aside>
 			{/if}
 			<div class="min-w-0 space-y-4">
-		<!-- Unified filter row: search + source switch + sort/display popover -->
+		<!-- Unified filter row: narrow-by-location fields → search → source switch + sort/display popover -->
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+			{#if showNarrow && narrowOpen}
+				<div class="min-w-0 sm:flex-[2]">
+					<ScopeChain
+						chain={data.scopeChain ?? []}
+						selections={scopeSelections}
+						bind:labels={scopeLabels}
+						onChange={narrowChange}
+					/>
+				</div>
+			{/if}
 			<div class="relative w-full sm:flex-1">
 				<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 				<input

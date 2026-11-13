@@ -54,6 +54,17 @@
 	class="flex flex-wrap items-center gap-1.5 text-sm"
 	aria-label={t('jce.compare.heading')}
 >
+	{#if onAllCategories}
+		<button
+			type="button"
+			onclick={onAllCategories}
+			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			{t('jce.compare.landing.all_categories', 'All categories')}
+			<ChevronDown size={13} class="text-[var(--color-muted)]" />
+		</button>
+	{/if}
+
 	<!-- Step 1: type -->
 	{#if siblings.length > 0 && onSwitchType}
 		<!-- Same-family switcher: pick a sibling type inline; the footer
@@ -137,14 +148,4 @@
 		{/if}
 	</span>
 
-	{#if onAllCategories}
-		<button
-			type="button"
-			onclick={onAllCategories}
-			class="ms-auto inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-		>
-			{t('jce.compare.landing.all_categories', 'All categories')}
-			<ChevronDown size={13} class="text-[var(--color-muted)]" />
-		</button>
-	{/if}
 </nav>
