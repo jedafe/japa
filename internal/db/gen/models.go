@@ -1564,6 +1564,7 @@ type CredentialPathway struct {
 	FreshnessScore         int32              `json:"freshness_score"`
 	OverrideSource         string             `json:"override_source"`
 	EditorialOverrides     []byte             `json:"editorial_overrides"`
+	PathwaySteps           []byte             `json:"pathway_steps"`
 }
 
 type CredentialProfession struct {

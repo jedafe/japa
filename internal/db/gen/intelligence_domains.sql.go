@@ -286,7 +286,7 @@ func (q *Queries) CreateComparisonItemIntel(ctx context.Context, arg CreateCompa
 
 const createCredentialPathwayIntel = `-- name: CreateCredentialPathwayIntel :one
 
-INSERT INTO credential_pathways (profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO credential_pathways (profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, pathway_steps
 `
 
 type CreateCredentialPathwayIntelParams struct {
@@ -382,6 +382,7 @@ func (q *Queries) CreateCredentialPathwayIntel(ctx context.Context, arg CreateCr
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.PathwaySteps,
 	)
 	return i, err
 }
@@ -1077,7 +1078,7 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, intelRecor
 }
 
 const getCredentialPathwayByIntelRecord = `-- name: GetCredentialPathwayByIntelRecord :one
-SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways WHERE intel_record_id = $1
+SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, pathway_steps FROM credential_pathways WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetCredentialPathwayByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (CredentialPathway, error) {
@@ -1114,6 +1115,7 @@ func (q *Queries) GetCredentialPathwayByIntelRecord(ctx context.Context, intelRe
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.PathwaySteps,
 	)
 	return i, err
 }
@@ -1980,7 +1982,7 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 }
 
 const listCredentialPathwaysIntelKeyset = `-- name: ListCredentialPathwaysIntelKeyset :many
-SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways
+SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, pathway_steps FROM credential_pathways
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -2035,6 +2037,7 @@ func (q *Queries) ListCredentialPathwaysIntelKeyset(ctx context.Context, arg Lis
 			&i.FreshnessScore,
 			&i.OverrideSource,
 			&i.EditorialOverrides,
+			&i.PathwaySteps,
 		); err != nil {
 			return nil, err
 		}
