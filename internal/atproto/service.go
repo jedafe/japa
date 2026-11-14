@@ -178,7 +178,7 @@ var idRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 // Cached 10m at jc:atp:did:{id}.
 func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, error) {
 	if !idRe.MatchString(id) {
-		return nil, ErrInvalidHandle
+		return nil, ErrInvalidID
 	}
 	cacheKey := "jc:atp:did:" + strings.ToLower(id)
 	if doc, ok := s.cacheGet(ctx, cacheKey); ok {

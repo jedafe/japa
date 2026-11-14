@@ -28,6 +28,7 @@ const (
 var (
 	ErrNotFound      = errors.New("atproto account not found")
 	ErrInvalidHandle = errors.New("invalid atproto handle")
+	ErrInvalidID     = errors.New("invalid atproto account id")
 	ErrHandleTaken   = errors.New("atproto handle already claimed")
 )
 
@@ -88,14 +89,6 @@ func (c Config) pdsHost() string {
 		u = u[:i]
 	}
 	return strings.ToLower(strings.TrimSuffix(u, "/"))
-}
-
-// relayURL resolves the requestCrawl target (A3).
-func (c Config) relayURL() string {
-	if c.RelayURL != "" {
-		return c.RelayURL
-	}
-	return "https://bsky.network"
 }
 
 // didFor derives the did:web identifier for an account:

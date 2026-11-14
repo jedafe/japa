@@ -31,18 +31,25 @@ func generateSigningKey() (privHex, pubMultibase string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("atproto: keygen: %w", err)
 	}
-	return hex.EncodeToString(priv.Serialize()), publicKeyMultibase(priv.PubKey()), nil
+	pub, err := publicKeyMultibase(priv.PubKey())
+	if err != nil {
+		return "", "", err
+	}
+	return hex.EncodeToString(priv.Serialize()), pub, nil
 }
 
 // publicKeyMultibase encodes a secp256k1 public key as
 // multibase(base58btc, uvarint(secp256k1-pub) || compressed33).
-func publicKeyMultibase(pub *secp.PublicKey) string {
+func publicKeyMultibase(pub *secp.PublicKey) (string, error) {
 	prefix := make([]byte, 0, binary.MaxVarintLen64)
 	var buf [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(buf[:], secp256k1PubMulticodec)
 	prefix = append(prefix, buf[:n]...)
-	encoded, _ := multibase.Encode(multibase.Base58BTC, append(prefix, pub.SerializeCompressed()...))
-	return encoded
+	encoded, err := multibase.Encode(multibase.Base58BTC, append(prefix, pub.SerializeCompressed()...))
+	if err != nil {
+		return "", fmt.Errorf("atproto: multibase encode: %w", err)
+	}
+	return encoded, nil
 }
 
 // parsePrivateKeyHex restores a stored scalar for signing (A2 commits).

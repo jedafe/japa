@@ -46,7 +46,11 @@ func TestGenerateSigningKeyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse priv: %v", err)
 	}
-	if publicKeyMultibase(priv.PubKey()) != pubMB {
+	reDerived, err := publicKeyMultibase(priv.PubKey())
+	if err != nil {
+		t.Fatalf("publicKeyMultibase: %v", err)
+	}
+	if reDerived != pubMB {
 		t.Error("re-derived publicKeyMultibase differs from stored value")
 	}
 
@@ -100,10 +104,6 @@ func TestHandleDomainFallbacks(t *testing.T) {
 	cfg = Config{APIBase: "https://api.japa.to"}
 	if got := cfg.pdsURL(); got != "https://api.japa.to" {
 		t.Errorf("pdsURL fallback = %q", got)
-	}
-	// Relay default
-	if got := (Config{}).relayURL(); got != "https://bsky.network" {
-		t.Errorf("relayURL default = %q", got)
 	}
 }
 

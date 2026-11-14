@@ -29,6 +29,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
 	case errors.Is(err, ErrInvalidHandle):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_handle", "Invalid handle")
+	case errors.Is(err, ErrInvalidID):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid account id")
 	case errors.Is(err, ErrHandleTaken):
 		errpkg.WriteError(w, http.StatusConflict, "handle_taken", "Handle already claimed")
 	default:
