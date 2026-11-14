@@ -261,19 +261,29 @@ const getAtprotoStats = `-- name: GetAtprotoStats :one
 SELECT
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'active')::bigint AS active_accounts,
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'disabled')::bigint AS disabled_accounts,
-    (SELECT COUNT(*) FROM atproto_accounts)::bigint AS total_accounts
+    (SELECT COUNT(*) FROM atproto_accounts)::bigint AS total_accounts,
+    (SELECT COUNT(*) FROM atproto_records)::bigint AS total_records,
+    (SELECT COUNT(*) FROM atproto_repo_commits)::bigint AS total_commits
 `
 
 type GetAtprotoStatsRow struct {
 	ActiveAccounts   int64 `json:"active_accounts"`
 	DisabledAccounts int64 `json:"disabled_accounts"`
 	TotalAccounts    int64 `json:"total_accounts"`
+	TotalRecords     int64 `json:"total_records"`
+	TotalCommits     int64 `json:"total_commits"`
 }
 
 func (q *Queries) GetAtprotoStats(ctx context.Context) (GetAtprotoStatsRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoStats)
 	var i GetAtprotoStatsRow
-	err := row.Scan(&i.ActiveAccounts, &i.DisabledAccounts, &i.TotalAccounts)
+	err := row.Scan(
+		&i.ActiveAccounts,
+		&i.DisabledAccounts,
+		&i.TotalAccounts,
+		&i.TotalRecords,
+		&i.TotalCommits,
+	)
 	return i, err
 }
 

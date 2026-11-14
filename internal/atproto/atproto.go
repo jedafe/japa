@@ -95,6 +95,10 @@ func stripPort(hostport string) string {
 	return hostport
 }
 
+// siteBase returns the canonical site origin — page links in records
+// (post text, canonical_url anchors) hang off it.
+func (c Config) siteBase() string { return strings.TrimRight(c.SiteBase, "/") }
+
 // pdsHost returns the host component of the PDS URL — the did:web
 // method-specific-id's leading segment.
 func (c Config) pdsHost() string {

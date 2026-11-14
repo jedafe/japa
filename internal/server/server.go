@@ -722,6 +722,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		JetstreamURL: cfg.ATProtoJetstreamURL,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
+	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP
+	worker.RegisterAtprotoService(atprotoService)
 	atprotoHandlers := atproto.NewHandlers(atprotoService)
 
 	// BUG-003: wire the space posting-permission checker into the content

@@ -148,6 +148,16 @@ var contentRoutePrefix = map[string]string{
 	"list":            "/list/",  // §14 list amendment
 }
 
+// federatableTypes is the shared AP/atproto content-type allowlist —
+// §127 requires the mini-PDS's record eligibility to mirror ActivityPub
+// exactly, so both projections consume this one list.
+var federatableTypes = []string{"blog_post", "guide", "discussion", "forum_thread", "story"}
+
+// FederatableTypes returns a copy of the federatable content-type
+// allowlist (contents.content_type values eligible for AP + atproto
+// projection before flag gating).
+func FederatableTypes() []string { return append([]string(nil), federatableTypes...) }
+
 // LinkPathFor returns the canonical route prefix (with trailing slash) for a
 // content_type so feed item <link>s emit canonical URLs instead of the
 // redirect-shim /content/{slug} path.

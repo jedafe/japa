@@ -211,6 +211,10 @@ const (
 	TypeIntelPruneRejectedRecords = "intel:prune_rejected_records" // low (daily retention sweep)
 	TypeIntelHarvestOutbound      = "intel:harvest_outbound"       // low (intel-channels Phase 4)
 	TypeIntelReprobeDeadChannels  = "intel:reprobe_dead_channels"  // low (intel bot-wall hardening cron)
+
+	// ---- Native AT Protocol mini-PDS (§127, ADR-139) ----.
+
+	TypeAtprotoPublishRecord = "atproto:publish_record" // default (§127 A2)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -441,6 +445,8 @@ var handlerRegistry = []struct {
 	{TypeIntelPruneRejectedRecords, HandleIntelPruneRejectedRecords},
 	{TypeIntelHarvestOutbound, HandleIntelHarvestOutbound},
 	{TypeIntelReprobeDeadChannels, HandleIntelReprobeDeadChannels},
+	// §127 AT Protocol
+	{TypeAtprotoPublishRecord, HandleAtprotoPublishRecord},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

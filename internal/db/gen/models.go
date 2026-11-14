@@ -711,6 +711,43 @@ type AtprotoAccount struct {
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
 }
 
+type AtprotoBlob struct {
+	AccountID pgtype.UUID        `json:"account_id"`
+	Cid       string             `json:"cid"`
+	Mime      string             `json:"mime"`
+	Size      int64              `json:"size"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AtprotoRecord struct {
+	Uri        string             `json:"uri"`
+	AccountID  pgtype.UUID        `json:"account_id"`
+	Collection string             `json:"collection"`
+	Rkey       string             `json:"rkey"`
+	Cid        string             `json:"cid"`
+	ContentID  pgtype.UUID        `json:"content_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AtprotoRepoBlock struct {
+	AccountID pgtype.UUID        `json:"account_id"`
+	Cid       string             `json:"cid"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AtprotoRepoCommit struct {
+	AccountID pgtype.UUID        `json:"account_id"`
+	Seq       int64              `json:"seq"`
+	Cid       string             `json:"cid"`
+	Rev       string             `json:"rev"`
+	PrevCid   *string            `json:"prev_cid"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type AttestationCommunityUpdate struct {
 	ID             pgtype.UUID        `json:"id"`
 	PathwayID      pgtype.UUID        `json:"pathway_id"`

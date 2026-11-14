@@ -1,0 +1,95 @@
+-- Native AT Protocol mini-PDS (§127, ADR-139) — A2 repo engine queries.
+-- Repo state lives in three tables: signed commit chain
+-- (atproto_repo_commits), content-addressed blocks (atproto_repo_blocks),
+-- and the at:// URI projection index (atproto_records). atproto_blobs is
+-- the media blob store A4's uploadBlob/getBlob surface serves.
+--
+-- Write path is transactional: LockAtprotoAccount serializes same-repo
+-- writers (FOR UPDATE), blocks+commit+records-index+repo_seq persist in
+-- one commit.
+
+-- name: LockAtprotoAccountForRepo :one
+SELECT id, did, repo_seq, signing_key_enc, status
+FROM atproto_accounts
+WHERE id = @id
+FOR UPDATE;
+
+-- name: GetAtprotoRepoHead :one
+SELECT * FROM atproto_repo_commits
+WHERE account_id = @account_id
+ORDER BY seq DESC
+LIMIT 1;
+
+-- name: ListAtprotoRepoBlocks :many
+SELECT * FROM atproto_repo_blocks
+WHERE account_id = @account_id;
+
+-- name: InsertAtprotoRepoBlock :exec
+-- blocks are content-addressed and immutable; a conflicting row holds the
+-- same bytes, so retries/idempotent writes are safe.
+INSERT INTO atproto_repo_blocks (account_id, cid, data)
+VALUES (@account_id, @cid, @data)
+ON CONFLICT (account_id, cid) DO NOTHING;
+
+-- name: InsertAtprotoRepoCommit :one
+INSERT INTO atproto_repo_commits (account_id, seq, cid, rev, prev_cid, data)
+VALUES (@account_id, @seq, @cid, @rev, @prev_cid, @data)
+RETURNING *;
+
+-- name: BumpAtprotoRepoSeq :exec
+UPDATE atproto_accounts
+SET repo_seq = @repo_seq, updated_at = now()
+WHERE id = @id;
+
+-- name: UpsertAtprotoRecord :one
+INSERT INTO atproto_records (uri, account_id, collection, rkey, cid, content_id)
+VALUES (@uri, @account_id, @collection, @rkey, @cid, @content_id)
+ON CONFLICT (uri) DO UPDATE
+SET cid = @cid, content_id = @content_id, updated_at = now()
+RETURNING *;
+
+-- name: DeleteAtprotoRecord :exec
+DELETE FROM atproto_records
+WHERE account_id = @account_id AND collection = @collection AND rkey = @rkey;
+
+-- name: GetAtprotoRecord :one
+SELECT * FROM atproto_records
+WHERE uri = @uri;
+
+-- name: ListAtprotoRecords :many
+SELECT * FROM atproto_records
+WHERE account_id = @account_id
+ORDER BY collection, rkey;
+
+-- name: CountAtprotoRecords :one
+SELECT COUNT(*)::bigint FROM atproto_records
+WHERE account_id = @account_id;
+
+-- name: InsertAtprotoBlob :one
+INSERT INTO atproto_blobs (account_id, cid, mime, size, data)
+VALUES (@account_id, @cid, @mime, @size, @data)
+ON CONFLICT (account_id, cid) DO UPDATE SET mime = @mime
+RETURNING *;
+
+-- name: GetAtprotoBlob :one
+SELECT * FROM atproto_blobs
+WHERE account_id = @account_id AND cid = @cid;
+
+-- name: GetAtprotoProjectableContent :one
+-- Eligibility mirrors federation's GetFederatableContentByID: published +
+-- public + not deleted + federatable type (§127 Security: "same
+-- eligibility as AP"). Also returns body (markdown) — feed.post text is
+-- projected from the plain-text strip, not body_html.
+SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body,
+       c.canonical_url, c.published_at, c.updated_at, c.created_at
+FROM contents c
+WHERE c.id = @id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.content_type = ANY(@content_types::text[]);
+
+-- name: GetAtprotoUserProfile :one
+SELECT display_name, bio, avatar_media_id, banner_media_id
+FROM user_profiles
+WHERE user_id = @user_id;

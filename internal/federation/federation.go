@@ -11,7 +11,11 @@
 // Ref: japaconnect-engineering/sections/126-activitypub-federation.md
 package federation
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/jedafe/japa/internal/rss/model"
+)
 
 // ErrNotFound is returned when no active federated actor, federatable
 // content object, or remote entity exists for the requested identifier.
@@ -30,7 +34,10 @@ var ErrInvalidDomain = errors.New("federation: invalid domain")
 // everything else as Note. Flag-gated types are pruned per request by
 // features.GatedContentTypes — a disabled feature's content never
 // federates (same rule RSS/search apply).
-var federatableTypes = []string{"blog_post", "guide", "discussion", "forum_thread", "story"}
+// federatableTypes re-exports the shared allowlist — canonical home is
+// rss/model (leaf package) so both federation and the mini-PDS consume
+// the same list without an import cycle (§127: same eligibility as AP).
+var federatableTypes = model.FederatableTypes()
 
 // apObjectType maps a contents.content_type to its ActivityStreams type.
 func apObjectType(contentType string) string {

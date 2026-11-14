@@ -16,20 +16,24 @@ import (
 	jcrypto "github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Service holds the mini-PDS identity business logic.
 type Service struct {
 	cfg   Config
+	db    *db.DB
 	store *store
 	vk    valkeycompat.Cmdable
+	flags features.FlagEvaluator
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB, cfg Config) *Service {
 	return &Service{
 		cfg:   cfg,
+		db:    database,
 		store: newStore(gen.New(database.Writer)),
 	}
 }
@@ -37,6 +41,11 @@ func NewService(database *db.DB, cfg Config) *Service {
 // SetValkey wires the Valkey client for DID doc caching.
 // Optional — nil disables caching (tests/development).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetFlags wires the feature-flag evaluator used to prune flag-gated
+// content types (§42) from record projections — the same eligibility set
+// federation applies (§127: "same eligibility as AP").
+func (s *Service) SetFlags(c features.FlagEvaluator) { s.flags = c }
 
 // ---------------------------------------------------------------------------
 // Caching (jc:atp:* — valkey-keys-catalog)
@@ -318,6 +327,9 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
 		}
 		existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, user.Username)
+		if err := s.ensureRepoInitialized(ctx, &existing); err != nil {
+			return AccountStatus{}, err
+		}
 		return s.statusFor(existing), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -360,7 +372,24 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	}
 
 	slog.Info("atproto account enabled", "user_id", userID.String(), "did", account.Did, "handle", handle)
+	// §127: opt-in mints the repo root commit — repo init + the
+	// app.bsky.actor.profile record land in one signed commit.
+	if err := s.ensureRepoInitialized(ctx, &account); err != nil {
+		return AccountStatus{}, err
+	}
 	return s.statusFor(account), nil
+}
+
+// ensureRepoInitialized writes the member's first repo commit — an
+// app.bsky.actor.profile record — when the account has none yet. A
+// repo_seq of 0 marks either a fresh opt-in or a previously-interrupted
+// bootstrap; the write is idempotent (same record, same MST) and runs
+// the normal locked commit path.
+func (s *Service) ensureRepoInitialized(ctx context.Context, account *gen.AtprotoAccount) error {
+	if account.RepoSeq > 0 {
+		return nil
+	}
+	return s.publishProfile(ctx, account)
 }
 
 // DisableAccount deactivates the caller's account. The row is kept so a

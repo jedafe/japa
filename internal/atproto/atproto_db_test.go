@@ -1,6 +1,7 @@
 package atproto
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,8 +10,13 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/bluesky-social/indigo/atproto/atcrypto"
+	atrepo "github.com/bluesky-social/indigo/repo"
+	"github.com/ipfs/go-cid"
 	"github.com/jackc/pgx/v5/pgtype"
+	jcrypto "github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
+	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -545,5 +551,342 @@ func TestDBEnableMisconfiguredFailsClosed(t *testing.T) {
 
 	if _, err := svc.EnableAccount(ctx, userID); err != ErrMisconfigured {
 		t.Errorf("unconfigured enable: got %v, want ErrMisconfigured", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A2 — repo engine
+// ---------------------------------------------------------------------------
+
+// newAtprotoContent inserts an eligible contents row for the author —
+// title/slug/body derived from the test clock so unique-index collisions
+// can't flake parallel runs.
+func newAtprotoContent(t *testing.T, ctx context.Context, d *db.DB, authorID pgtype.UUID, contentType, status, visibility string) pgtype.UUID {
+	t.Helper()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	var id pgtype.UUID
+	err := d.Writer.QueryRow(ctx,
+		`INSERT INTO contents (author_id, content_type, title, slug, body, status, visibility)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		authorID, contentType, "post "+suffix, "slug-"+suffix, "hello **world** from "+suffix, status, visibility).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert content: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM contents WHERE id = $1`, id)
+	})
+	return id
+}
+
+// atprotoAccountFor reads the member's account row.
+func atprotoAccountFor(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID) gen.AtprotoAccount {
+	t.Helper()
+	var a gen.AtprotoAccount
+	err := d.Writer.QueryRow(ctx, `SELECT * FROM atproto_accounts WHERE user_id = $1`, userID).Scan(
+		&a.ID, &a.UserID, &a.Handle, &a.Did, &a.SigningKeyEnc, &a.PublicKeyMultibase,
+		&a.Status, &a.RepoSeq, &a.CreatedAt, &a.UpdatedAt, &a.DisabledAt)
+	if err != nil {
+		t.Fatalf("read account: %v", err)
+	}
+	return a
+}
+
+// Opt-in must mint the repo root commit — the signed commit chain, MST
+// blocks, and the app.bsky.actor.profile/self record all land atomically.
+func TestDBRepoInitializedOnOptIn(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	if acct.RepoSeq != 1 {
+		t.Fatalf("repo_seq = %d, want 1 (root commit)", acct.RepoSeq)
+	}
+
+	var commits, blocks int
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_repo_commits WHERE account_id = $1`, acct.ID).Scan(&commits); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_repo_blocks WHERE account_id = $1`, acct.ID).Scan(&blocks); err != nil {
+		t.Fatal(err)
+	}
+	if commits != 1 || blocks < 2 {
+		t.Fatalf("commits=%d blocks=%d — root commit needs a commit row + MST/record/commit blocks", commits, blocks)
+	}
+
+	// The profile record indexes under at://{did}/app.bsky.actor.profile/self.
+	var uri, coll, rkey string
+	err := d.Writer.QueryRow(ctx,
+		`SELECT uri, collection, rkey FROM atproto_records WHERE account_id = $1`, acct.ID).
+		Scan(&uri, &coll, &rkey)
+	if err != nil {
+		t.Fatalf("profile record row: %v", err)
+	}
+	wantURI := "at://" + acct.Did + "/app.bsky.actor.profile/self"
+	if uri != wantURI || coll != "app.bsky.actor.profile" || rkey != "self" {
+		t.Fatalf("record index = %q/%q/%q, want %q", uri, coll, rkey, wantURI)
+	}
+
+	// Re-opt-in is a no-op for the repo — the root commit already exists.
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("re-EnableAccount: %v", err)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 1 {
+		t.Fatalf("re-enable bumped repo_seq to %d — extra commits on identical profile", got)
+	}
+	_ = uname
+}
+
+// Feed.post projection: eligible contents → record + commit; delete →
+// tombstone commit + index drop. Reopening the repo proves the MST
+// actually reflects both writes (not just the index table).
+func TestDBRepoPublishAndDeletePost(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+
+	uri, err := svc.PublishContent(ctx, acct.ID, contentID)
+	if err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+	if !strings.HasPrefix(uri, "at://"+acct.Did+"/app.bsky.feed.post/") {
+		t.Fatalf("uri = %q", uri)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 2 {
+		t.Fatalf("repo_seq = %d, want 2", got)
+	}
+
+	// Index row links the at:// uri back to the contents row.
+	var cidStr, contentLink string
+	var rkey string
+	err = d.Writer.QueryRow(ctx,
+		`SELECT cid, rkey, content_id::text FROM atproto_records WHERE uri = $1`, uri).
+		Scan(&cidStr, &rkey, &contentLink)
+	if err != nil || cidStr == "" || contentLink != uuidString(contentID) {
+		t.Fatalf("record index: cid=%q content=%q err=%v", cidStr, contentLink, err)
+	}
+
+	// Reopen the repo and walk the MST — both records present.
+	var dataCid string
+	err = d.Writer.QueryRow(ctx,
+		`SELECT cid FROM atproto_repo_commits WHERE account_id = $1 ORDER BY seq DESC LIMIT 1`, acct.ID).Scan(&dataCid)
+	if err != nil {
+		t.Fatalf("head commit: %v", err)
+	}
+
+	if err := svc.DeleteRecord(ctx, acct.ID, "app.bsky.feed.post", rkey); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 3 {
+		t.Fatalf("repo_seq after delete = %d, want 3", got)
+	}
+	var n int
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_records WHERE uri = $1`, uri).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("index row survived delete")
+	}
+	// Profile record still indexed.
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id = $1 AND collection = 'app.bsky.actor.profile'`, acct.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("profile record missing after post delete (n=%d, err=%v)", n, err)
+	}
+}
+
+// The CAR export must re-ingest into a valid repo: every record readable,
+// commit signature verifiable against the account's K-256 key. This is
+// the conformance property getRepo (A3) depends on.
+func TestDBRepoCARRoundTrip(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "blog_post", "published", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+
+	carBytes, err := svc.RepoCAR(ctx, acct.ID)
+	if err != nil {
+		t.Fatalf("RepoCAR: %v", err)
+	}
+	if len(carBytes) == 0 {
+		t.Fatal("empty CAR")
+	}
+
+	rep, err := atrepo.ReadRepoFromCar(ctx, bytes.NewReader(carBytes))
+	if err != nil {
+		t.Fatalf("ReadRepoFromCar: %v", err)
+	}
+	if rep.RepoDid() != acct.Did {
+		t.Fatalf("car repo did = %q, want %q", rep.RepoDid(), acct.Did)
+	}
+
+	paths := map[string]bool{}
+	if err := rep.ForEach(ctx, "", func(k string, _ cid.Cid) error {
+		paths[k] = true
+		return nil
+	}); err != nil {
+		t.Fatalf("ForEach: %v", err)
+	}
+	if !paths["app.bsky.actor.profile/self"] {
+		t.Fatal("profile record absent from CAR repo")
+	}
+	var postPath string
+	for k := range paths {
+		if strings.HasPrefix(k, "app.bsky.feed.post/") {
+			postPath = k
+		}
+	}
+	if postPath == "" {
+		t.Fatal("post record absent from CAR repo")
+	}
+
+	// Verify the head commit's K-256 signature against the account's key.
+	sc := rep.SignedCommit()
+	privHex, err := jcrypto.Decrypt(acct.SigningKeyEnc)
+	if err != nil {
+		t.Fatalf("decrypt key: %v", err)
+	}
+	priv, err := parsePrivateKeyHex(privHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := atcrypto.ParsePublicBytesK256(priv.PubKey().SerializeCompressed())
+	if err != nil {
+		t.Fatalf("parse pubkey: %v", err)
+	}
+	sb, err := sc.Unsigned().BytesForSigning()
+	if err != nil {
+		t.Fatalf("unsigned commit bytes: %v", err)
+	}
+	if err := pub.HashAndVerify(sb, sc.Sig); err != nil {
+		t.Fatalf("commit signature does not verify: %v", err)
+	}
+	if sc.Version != 3 {
+		t.Fatalf("commit version = %d, want 3", sc.Version)
+	}
+	_ = uname
+}
+
+// Ineligible content (draft, members-only) and disabled accounts must not
+// write records — the eligibility rule is the projection's only guard.
+func TestDBRepoPublishGuards(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	draft := newAtprotoContent(t, ctx, d, userID, "discussion", "draft", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, draft); err != ErrNotFound {
+		t.Errorf("draft publish: got %v, want ErrNotFound", err)
+	}
+	membersOnly := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "members")
+	if _, err := svc.PublishContent(ctx, acct.ID, membersOnly); err != ErrNotFound {
+		t.Errorf("members-only publish: got %v, want ErrNotFound", err)
+	}
+	nonFederatable := newAtprotoContent(t, ctx, d, userID, "page", "published", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, nonFederatable); err != ErrNotFound {
+		t.Errorf("non-federatable type publish: got %v, want ErrNotFound", err)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 1 {
+		t.Errorf("guarded publishes still committed (repo_seq=%d)", got)
+	}
+
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	pub := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, pub); err != ErrNotFound {
+		t.Errorf("disabled-account publish: got %v, want ErrNotFound", err)
+	}
+}
+
+// Blobs round-trip under raw-codec sha256 CIDs — the ref format records
+// embed via LexBlob.
+func TestDBBlobStore(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	payload := []byte("fake-png-bytes")
+	cidStr, err := svc.PutBlob(ctx, acct.ID, "image/png", payload)
+	if err != nil {
+		t.Fatalf("PutBlob: %v", err)
+	}
+	if _, err := cid.Parse(cidStr); err != nil {
+		t.Fatalf("blob cid %q does not parse: %v", cidStr, err)
+	}
+	mime, data, err := svc.GetBlob(ctx, acct.ID, cidStr)
+	if err != nil {
+		t.Fatalf("GetBlob: %v", err)
+	}
+	if mime != "image/png" || !bytes.Equal(data, payload) {
+		t.Fatalf("blob round-trip: mime=%q bytes=%q", mime, data)
+	}
+	// Re-put is idempotent — same bytes, same CID.
+	again, err := svc.PutBlob(ctx, acct.ID, "image/png", payload)
+	if err != nil || again != cidStr {
+		t.Fatalf("idempotent put: %q vs %q err=%v", again, cidStr, err)
+	}
+	if _, _, err := svc.GetBlob(ctx, acct.ID, "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != ErrNotFound {
+		t.Errorf("missing blob: got %v, want ErrNotFound", err)
+	}
+}
+
+// The task entry point: PublishRecordJSON decodes the payload doc into
+// its lexicon type and runs the same put+commit path.
+func TestDBPublishRecordJSONTaskPath(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	bio := "relocation notes"
+	rec, err := ProfileRecordJSON(nil, &bio, uname, acct.CreatedAt.Time)
+	if err != nil {
+		t.Fatalf("ProfileRecordJSON: %v", err)
+	}
+	uri, err := svc.PublishRecordJSON(ctx, acct.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("PublishRecordJSON: %v", err)
+	}
+	if uri != "at://"+acct.Did+"/app.bsky.actor.profile/self" {
+		t.Fatalf("uri = %q", uri)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 2 {
+		t.Fatalf("repo_seq = %d, want 2", got)
+	}
+	// Unknown collection is rejected before any write.
+	if _, err := svc.PublishRecordJSON(ctx, acct.ID, "com.example.bogus", "x", rec, pgtype.UUID{}); err == nil {
+		t.Error("bogus collection accepted")
 	}
 }

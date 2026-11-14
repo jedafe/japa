@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/atproto"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
@@ -802,7 +803,56 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 		s.enqueueUserSearchIndex(userID)
 	}
 
+	// §127 A2: re-project app.bsky.actor.profile into the member's repo
+	// when the fields the record carries change — same fire-and-forget
+	// pattern as search (Rule 8). Avatar/banner land with A4's blob
+	// pipeline, so media-only updates don't enqueue yet.
+	if req.DisplayName != nil || req.Bio != nil {
+		s.enqueueAtprotoProfile(ctx, userID)
+	}
+
 	return nil
+}
+
+// enqueueAtprotoProfile fires atproto:publish_record with the member's
+// fresh profile record. Skipped unless the member holds an active
+// mini-PDS account — opt-in members only (§127).
+func (s *Service) enqueueAtprotoProfile(ctx context.Context, userID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	// Read off Writer so the just-committed profile is visible
+	// (read-your-writes — Reader can be a replica).
+	q := gen.New(s.db.Writer)
+	acct, err := q.GetAtprotoAccountByUserID(ctx, userID)
+	if err != nil || acct.Status != atproto.AccountStatusActive {
+		return // no active mini-PDS account — nothing to re-project
+	}
+	user, err := q.GetUserByID(ctx, userID)
+	if err != nil {
+		return
+	}
+	profile, err := q.GetAtprotoUserProfile(ctx, userID)
+	if err != nil {
+		// No user_profiles row yet — project username-only defaults.
+		profile = gen.GetAtprotoUserProfileRow{}
+	}
+
+	record, err := atproto.ProfileRecordJSON(profile.DisplayName, profile.Bio, user.Username, acct.CreatedAt.Time)
+	if err != nil {
+		slog.Warn("users: marshal atproto profile record", "user_id", userID.String(), "error", err)
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"account_id": acct.ID.String(),
+		"collection": atproto.CollectionProfile,
+		"rkey":       atproto.ProfileRkey,
+		"record":     record,
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeAtprotoPublishRecord, payload); err != nil {
+		slog.Warn("users: failed to enqueue atproto:publish_record for profile", "user_id", userID.String(), "error", err)
+	}
 }
 
 // avatarExtMIME maps the extension tokens allowed by

@@ -101,4 +101,6 @@ WHERE (@q::text = '' OR a.handle ILIKE '%' || @q || '%' OR u.username ILIKE '%' 
 SELECT
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'active')::bigint AS active_accounts,
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'disabled')::bigint AS disabled_accounts,
-    (SELECT COUNT(*) FROM atproto_accounts)::bigint AS total_accounts;
+    (SELECT COUNT(*) FROM atproto_accounts)::bigint AS total_accounts,
+    (SELECT COUNT(*) FROM atproto_records)::bigint AS total_records,
+    (SELECT COUNT(*) FROM atproto_repo_commits)::bigint AS total_commits;
