@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/atproto"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -808,6 +809,9 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			"actor_id":   content.AuthorID,
 		})
 		s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
+		if content.Visibility == VisibilityPublic {
+			s.emitAtproto(ctx, content.AuthorID, content.ID, true) // §127 A2
+		}
 	}
 
 	return content, nil
@@ -1245,9 +1249,9 @@ type UpdateContentInput struct {
 	GuideCategory        *string
 	// ClearGuideCategory writes NULL to guide_category — restores the
 	// "uncategorized" state a JSON null or empty string requests (§14).
-	ClearGuideCategory   bool
-	AIGeneratedAt        pgtype.Timestamptz
-	AIModel              *string
+	ClearGuideCategory bool
+	AIGeneratedAt      pgtype.Timestamptz
+	AIModel            *string
 	// BypassSpaceCheck lets admins update the primary space without the
 	// per-space membership/permission gate.
 	BypassSpaceCheck bool
@@ -1756,6 +1760,15 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		s.maybeDeleteThreadAnchor(ctx, existing.ContentType, content.ID)
 	}
 
+	// §127 A2: the mini-PDS repo mirrors public-live state — while public,
+	// upsert refreshes the post (text/canonical URL may have changed);
+	// leaving public removes the record.
+	if isPublic {
+		s.emitAtproto(ctx, content.AuthorID, content.ID, true)
+	} else if wasPublic {
+		s.emitAtproto(ctx, content.AuthorID, content.ID, false)
+	}
+
 	return content, nil
 }
 
@@ -1780,29 +1793,29 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 //     pointed-at value so callers can both set and unset.
 func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing gen.GetContentByIDRow, newSlug string, primarySpaceID pgtype.UUID) gen.UpdateContentParams {
 	params := gen.UpdateContentParams{
-		ID:              id,
-		AuthorID:        input.AuthorID,
-		Title:           input.Title,
-		Slug:            newSlug,
-		Body:            input.Body,
-		BodyHtml:        input.BodyHtml,
-		ContentHash:     input.ContentHash,
-		GeoSpaceID:      primarySpaceID,
-		VideoSourceID:   input.VideoSourceID,
-		SeoIndexable:    input.SeoIndexable,
-		Status:          input.Status,
-		Visibility:      input.Visibility,
-		ReadTimeMinutes: ComputeReadTime(input.Body),
-		GuideCategory:   input.GuideCategory,
+		ID:                 id,
+		AuthorID:           input.AuthorID,
+		Title:              input.Title,
+		Slug:               newSlug,
+		Body:               input.Body,
+		BodyHtml:           input.BodyHtml,
+		ContentHash:        input.ContentHash,
+		GeoSpaceID:         primarySpaceID,
+		VideoSourceID:      input.VideoSourceID,
+		SeoIndexable:       input.SeoIndexable,
+		Status:             input.Status,
+		Visibility:         input.Visibility,
+		ReadTimeMinutes:    ComputeReadTime(input.Body),
+		GuideCategory:      input.GuideCategory,
 		ClearGuideCategory: input.ClearGuideCategory,
-		AiGeneratedAt:   input.AIGeneratedAt,
-		AiModel:         input.AIModel,
-		JourneyStage:    input.JourneyStage,
-		VisaRoute:       input.VisaRoute,
-		SourceCountry:   input.SourceCountry,
-		TargetCountry:   input.TargetCountry,
-		IntelSourceID:   input.IntelSourceID,
-		IntelRecordID:   input.IntelRecordID,
+		AiGeneratedAt:      input.AIGeneratedAt,
+		AiModel:            input.AIModel,
+		JourneyStage:       input.JourneyStage,
+		VisaRoute:          input.VisaRoute,
+		SourceCountry:      input.SourceCountry,
+		TargetCountry:      input.TargetCountry,
+		IntelSourceID:      input.IntelSourceID,
+		IntelRecordID:      input.IntelRecordID,
 
 		// Preserve-on-omit seeds.
 		FieldValues:     input.FieldValues,
@@ -2041,7 +2054,34 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 	// the cached copy just as publishing refreshes it (ADR-134).
 	s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
 
+	// §127 A2: mirror the transition in the author's mini-PDS repo —
+	// publish upserts app.bsky.feed.post (the task re-checks public
+	// visibility at write time), leaving published deletes the record.
+	if status == StatusPublished && content.Visibility == VisibilityPublic {
+		s.emitAtproto(ctx, content.AuthorID, content.ID, true)
+	} else if row.Status == StatusPublished && row.Visibility == VisibilityPublic {
+		s.emitAtproto(ctx, content.AuthorID, content.ID, false)
+	}
+
 	return content, nil
+}
+
+// emitAtproto projects a publish/unpublish transition into the author's
+// atproto repo via the task queue (§127 A2, Rule 8): publish=true
+// enqueues the feed.post upsert, publish=false enqueues the delete of
+// the record's content-keyed URI. Authors without an active mini-PDS
+// account get nothing — a disabled account's repo stays frozen by
+// design, so its records are deliberately left alone too.
+func (s *Service) emitAtproto(ctx context.Context, authorID, contentID pgtype.UUID, publish bool) {
+	acct, err := s.read.GetAtprotoAccountByUserID(ctx, authorID)
+	if err != nil || acct.Status != atproto.AccountStatusActive {
+		return
+	}
+	if publish {
+		worker.EnqueueAtprotoPublishContent(ctx, acct.ID, contentID)
+		return
+	}
+	worker.EnqueueAtprotoDeleteRecord(ctx, acct.ID, atproto.ContentPostURI(acct.Did, contentID))
 }
 
 // ScheduleContent sets status='scheduled' and publish_at for a future publish
@@ -2352,6 +2392,11 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	})
 
 	s.purgeEdgeContent(ctx, id, existing.ContentType, existing.Slug)
+
+	// §127 A2: a live repo record must not outlive its canonical row.
+	if existing.Status == StatusPublished && existing.Visibility == VisibilityPublic {
+		s.emitAtproto(ctx, existing.AuthorID, id, false)
+	}
 
 	// Unified-discussion spec: the canonical discussion thread dies with
 	// its content row — /thread/{slug} 404s and drops out of listings.

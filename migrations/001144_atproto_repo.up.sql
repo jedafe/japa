@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS atproto_repo_commits (
     PRIMARY KEY (account_id, seq)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_atproto_repo_commits_cid ON atproto_repo_commits (cid);
--- head lookup: latest commit per account (getLatestCommit, repo open)
-CREATE INDEX IF NOT EXISTS idx_atproto_repo_commits_head ON atproto_repo_commits (account_id, seq DESC);
+-- (no head index: PK (account_id, seq) already serves "latest seq per
+-- account" via backward scan)
 
 CREATE TABLE IF NOT EXISTS atproto_repo_blocks (
     account_id  uuid NOT NULL REFERENCES atproto_accounts(id) ON DELETE CASCADE,

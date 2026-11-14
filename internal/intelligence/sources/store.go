@@ -328,7 +328,7 @@ type ProposedSource struct {
 
 // ListProposed returns a page of sources with status='proposed' for admin
 // review; search (” disables) narrows by name/domain/source_url/category,
-// origin (''|'user'|'system') narrows by who proposed the row.
+// origin (”|'user'|'system') narrows by who proposed the row.
 // Platform-scoped.
 func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search, origin string) ([]ProposedSource, error) {
 	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{

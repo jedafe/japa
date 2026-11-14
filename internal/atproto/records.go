@@ -17,6 +17,8 @@ import (
 	"unicode"
 
 	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/atproto/syntax"
+	indmst "github.com/bluesky-social/indigo/mst"
 	atrepo "github.com/bluesky-social/indigo/repo"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,6 +36,30 @@ const (
 
 // ProfileRkey is the canonical rkey for the member's profile record.
 const ProfileRkey = "self"
+
+// permanentError marks failures no retry can fix — malformed payloads,
+// ineligible content, inactive accounts, unparsable URIs. The worker
+// maps Permanent() to asynq.SkipRetry through a structural interface so
+// it never needs to import this package (auth import cycle).
+type permanentError struct{ err error }
+
+func (e permanentError) Error() string   { return e.err.Error() }
+func (e permanentError) Unwrap() error   { return e.err }
+func (e permanentError) Permanent() bool { return true }
+
+// permanent wraps err so errors.Is still matches the inner sentinel
+// while worker-side errors.As sees Permanent(). Already-permanent
+// errors pass through unwrapped.
+func permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	var p interface{ Permanent() bool }
+	if errors.As(err, &p) && p.Permanent() {
+		return err
+	}
+	return permanentError{err}
+}
 
 // postTextRunes caps feed.post text. The lexicon limit is 300 grapheme
 // clusters; a rune cap is a strict upper bound since every grapheme is
@@ -135,29 +161,88 @@ func (s *Service) postRecord(row gen.GetAtprotoProjectableContentRow) *bsky.Feed
 	}
 }
 
-// PostRecordJSON marshals a feed.post record for task payloads.
-func (s *Service) PostRecordJSON(row gen.GetAtprotoProjectableContentRow) (json.RawMessage, error) {
-	return json.Marshal(s.postRecord(row))
+// contentRkey is the feed.post record key for a contents row — the
+// content UUID itself (a legal record key), so republishing upserts the
+// same record instead of duplicating posts, and the URI is derivable
+// anywhere the content ID is known.
+func contentRkey(contentID pgtype.UUID) string { return contentID.String() }
+
+// ContentPostURI is the canonical at:// URI of a content's feed.post
+// record — used by unpublish/delete enqueues that must name the record
+// without a DB lookup.
+func ContentPostURI(did string, contentID pgtype.UUID) string {
+	return "at://" + did + "/" + CollectionPost + "/" + contentRkey(contentID)
 }
 
 // PublishContent projects an eligible contents row into the author's
-// repo as app.bsky.feed.post under a fresh TID rkey. Content that has
-// left the federatable set (unpublished, visibility tightened, deleted)
-// resolves ErrNotFound — callers translate that to "nothing to project".
+// repo as app.bsky.feed.post, keyed by the content UUID — republishes
+// are upserts, never duplicates. Content that has left the federatable
+// set (unpublished, visibility tightened, deleted, flag-gated) resolves
+// permanent(ErrNotFound) — retrying can never make it eligible. The
+// feature.atproto kill-switch freezes new projections but never blocks
+// deletes, so tombstones still drain the repo while the feature is off.
 // Returns the record's at:// URI.
 func (s *Service) PublishContent(ctx context.Context, accountID, contentID pgtype.UUID) (string, error) {
+	if !s.featureOn(ctx) {
+		return "", permanent(fmt.Errorf("atproto: feature.atproto disabled"))
+	}
 	row, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 		ID:           contentID,
 		ContentTypes: s.federatableTypesFor(ctx),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrNotFound
+		return "", permanent(ErrNotFound)
 	}
 	if err != nil {
 		return "", fmt.Errorf("atproto: projectable content: %w", err)
 	}
-	uri, _, err := s.CreateRecord(ctx, accountID, CollectionPost, s.postRecord(row), contentID)
+	uri, err := s.PutRecord(ctx, accountID, CollectionPost, contentRkey(contentID), s.postRecord(row), contentID)
+	if errors.Is(err, ErrNotFound) {
+		return "", permanent(err)
+	}
 	return uri, err
+}
+
+// DeleteRecordURI removes the record addressed by an at:// URI —
+// the atproto:delete_record task path (§11: tombstone/unpublish). The
+// URI's DID must match the account's own repo (a mismatched authority
+// would delete nothing and mask a caller bug). An absent rpath is a
+// no-op — no commit, no seq bump — so retried unpublishes stay
+// idempotent. Permanent on bad URI, DID mismatch, or an inactive
+// account (ErrNotFound).
+func (s *Service) DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error {
+	parsed, err := syntax.ParseATURI(uri)
+	if err != nil {
+		return permanent(fmt.Errorf("atproto: delete uri %q: %w", uri, err))
+	}
+	collection := parsed.Collection().String()
+	rkey := parsed.RecordKey().String()
+	if rkey == "" {
+		return permanent(fmt.Errorf("atproto: delete uri %q: missing record key", uri))
+	}
+	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+		if parsed.Authority().String() != rep.RepoDid() {
+			return nil, permanent(fmt.Errorf("atproto: delete uri %q: authority is not this repo", uri))
+		}
+		rpath := collection + "/" + rkey
+		if _, _, gerr := rep.GetRecordBytes(ctx, rpath); errors.Is(gerr, indmst.ErrNotFound) {
+			return nil, errRepoNoop
+		} else if gerr != nil {
+			return nil, fmt.Errorf("atproto: stat %s: %w", rpath, gerr)
+		}
+		if err := rep.DeleteRecord(ctx, rpath); err != nil {
+			return nil, fmt.Errorf("atproto: delete %s/%s: %w", collection, rkey, err)
+		}
+		return []indexWrite{{del: true, collection: collection, rkey: rkey}}, nil
+	})
+	switch {
+	case errors.Is(err, errRepoNoop):
+		return nil
+	case errors.Is(err, ErrNotFound):
+		return permanent(err)
+	default:
+		return err
+	}
 }
 
 // decodeRecord unmarshals a task-payload record doc into its lexicon
@@ -183,20 +268,37 @@ func decodeRecord(collection string, raw json.RawMessage) (atrepo.CborMarshaler,
 	}
 }
 
+// featureOn reports whether the mini-PDS surface is live — nil
+// evaluator means ungated (tests, single-process dev), matching the
+// features.GatedContentTypes convention.
+func (s *Service) featureOn(ctx context.Context) bool {
+	return s.flags == nil || s.flags.IsEnabled(ctx, "feature.atproto")
+}
+
 // PublishRecordJSON is the Asynq atproto:publish_record entry point:
 // decode the payload's record doc, then run the standard put+commit path.
 // An empty rkey creates under a fresh TID (feed.post); an explicit rkey
-// upserts (app.bsky.actor.profile/self).
+// upserts (app.bsky.actor.profile/self). Decode failures, a disabled
+// feature flag, and inactive accounts are permanent — retrying cannot
+// change the outcome.
 func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, collection, rkey string, raw json.RawMessage, contentID pgtype.UUID) (string, error) {
+	if !s.featureOn(ctx) {
+		return "", permanent(fmt.Errorf("atproto: feature.atproto disabled"))
+	}
 	rec, err := decodeRecord(collection, raw)
 	if err != nil {
-		return "", err
+		return "", permanent(err)
 	}
+	var uri string
 	if rkey == "" {
-		uri, _, err := s.CreateRecord(ctx, accountID, collection, rec, contentID)
-		return uri, err
+		uri, _, err = s.CreateRecord(ctx, accountID, collection, rec, contentID)
+	} else {
+		uri, err = s.PutRecord(ctx, accountID, collection, rkey, rec, contentID)
 	}
-	return s.PutRecord(ctx, accountID, collection, rkey, rec, contentID)
+	if errors.Is(err, ErrNotFound) {
+		return "", permanent(err)
+	}
+	return uri, err
 }
 
 // pageURL resolves the human-facing content URL — same rule as

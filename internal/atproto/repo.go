@@ -107,6 +107,12 @@ func (bs *repoBlockstore) AllKeysChan(ctx context.Context) (<-chan cid.Cid, erro
 
 func (bs *repoBlockstore) HashOnRead(bool) {}
 
+// errRepoNoop aborts a repo write that changed nothing — the tx rolls
+// back untouched (no commit row, no seq bump, no index writes) and the
+// caller maps it to nil. Deletes of absent rpaths use it so retried
+// unpublishes stay free (indigo's DeleteRecord errors on missing keys).
+var errRepoNoop = errors.New("atproto: repo write noop")
+
 // indexWrite is one atproto_records index mutation produced by a repo op.
 type indexWrite struct {
 	del        bool
@@ -326,15 +332,26 @@ func (s *Service) CreateRecord(ctx context.Context, accountID pgtype.UUID, colle
 }
 
 // DeleteRecord removes collection/rkey, commits the tombstoned repo, and
-// drops the index row. A missing rpath is a no-op in the MST (delete is
-// idempotent), so retried unpublishes do not strand a commit.
+// drops the index row. An absent rpath is a true no-op — no commit, no
+// seq bump — so retried unpublishes stay idempotent (indigo's
+// DeleteRecord errors on missing keys, so existence is checked first).
 func (s *Service) DeleteRecord(ctx context.Context, accountID pgtype.UUID, collection, rkey string) error {
-	return s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
-		if err := rep.DeleteRecord(ctx, collection+"/"+rkey); err != nil {
+	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+		rpath := collection + "/" + rkey
+		if _, _, gerr := rep.GetRecordBytes(ctx, rpath); errors.Is(gerr, indmst.ErrNotFound) {
+			return nil, errRepoNoop
+		} else if gerr != nil {
+			return nil, fmt.Errorf("atproto: stat %s: %w", rpath, gerr)
+		}
+		if err := rep.DeleteRecord(ctx, rpath); err != nil {
 			return nil, fmt.Errorf("atproto: delete %s/%s: %w", collection, rkey, err)
 		}
 		return []indexWrite{{del: true, collection: collection, rkey: rkey}}, nil
 	})
+	if errors.Is(err, errRepoNoop) {
+		return nil
+	}
+	return err
 }
 
 // RepoCAR serializes the account's repo (commit root + every block) to a

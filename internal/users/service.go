@@ -835,6 +835,12 @@ func (s *Service) enqueueAtprotoProfile(ctx context.Context, userID pgtype.UUID)
 	}
 	profile, err := q.GetAtprotoUserProfile(ctx, userID)
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			// Transient read failure — abort rather than overwrite a
+			// good record with a degraded username-only one.
+			slog.Warn("users: atproto profile read failed", "user_id", userID.String(), "error", err)
+			return
+		}
 		// No user_profiles row yet — project username-only defaults.
 		profile = gen.GetAtprotoUserProfileRow{}
 	}

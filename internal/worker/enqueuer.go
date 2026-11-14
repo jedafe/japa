@@ -431,6 +431,7 @@ var taskTypeCatalog = []struct {
 	{TypeEmailSend, "default", "Send transactional email"},
 	{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
 	{TypeAtprotoPublishRecord, "default", "Write one record into an atproto repo (MST + signed commit, §127 A2)"},
+	{TypeAtprotoDeleteRecord, "default", "Delete one atproto record by at:// URI (tombstone/unpublish, §127 A2)"},
 	{TypeSearchReindexAll, "low", "Full bulk resync of every managed Meilisearch index (optional purge-first)"},
 	{TypeSearchReindexSpaceEntities, "default", "Resync all threads + content in one space after a visibility/status change"},
 	{TypeSearchReindexEngagementScores, "default", "Batched re-index of content whose engagement_score changed (§13)"},

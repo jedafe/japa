@@ -3,6 +3,8 @@ package atproto
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -797,15 +799,15 @@ func TestDBRepoPublishGuards(t *testing.T) {
 	acct := atprotoAccountFor(t, ctx, d, userID)
 
 	draft := newAtprotoContent(t, ctx, d, userID, "discussion", "draft", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, draft); err != ErrNotFound {
+	if _, err := svc.PublishContent(ctx, acct.ID, draft); !errors.Is(err, ErrNotFound) {
 		t.Errorf("draft publish: got %v, want ErrNotFound", err)
 	}
 	membersOnly := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "members")
-	if _, err := svc.PublishContent(ctx, acct.ID, membersOnly); err != ErrNotFound {
+	if _, err := svc.PublishContent(ctx, acct.ID, membersOnly); !errors.Is(err, ErrNotFound) {
 		t.Errorf("members-only publish: got %v, want ErrNotFound", err)
 	}
 	nonFederatable := newAtprotoContent(t, ctx, d, userID, "page", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, nonFederatable); err != ErrNotFound {
+	if _, err := svc.PublishContent(ctx, acct.ID, nonFederatable); !errors.Is(err, ErrNotFound) {
 		t.Errorf("non-federatable type publish: got %v, want ErrNotFound", err)
 	}
 	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 1 {
@@ -816,7 +818,7 @@ func TestDBRepoPublishGuards(t *testing.T) {
 		t.Fatalf("DisableAccount: %v", err)
 	}
 	pub := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, pub); err != ErrNotFound {
+	if _, err := svc.PublishContent(ctx, acct.ID, pub); !errors.Is(err, ErrNotFound) {
 		t.Errorf("disabled-account publish: got %v, want ErrNotFound", err)
 	}
 }
@@ -888,5 +890,124 @@ func TestDBPublishRecordJSONTaskPath(t *testing.T) {
 	// Unknown collection is rejected before any write.
 	if _, err := svc.PublishRecordJSON(ctx, acct.ID, "com.example.bogus", "x", rec, pgtype.UUID{}); err == nil {
 		t.Error("bogus collection accepted")
+	}
+}
+
+// Republishing the same content must upsert the one record — the
+// content-keyed rkey exists precisely so retries/edits never mint
+// duplicate feed.post entries.
+func TestDBRepublishUpsertsPost(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+
+	uri, err := svc.PublishContent(ctx, acct.ID, contentID)
+	if err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+	wantURI := ContentPostURI(acct.Did, contentID)
+	if uri != wantURI {
+		t.Fatalf("uri = %q, want content-keyed %q", uri, wantURI)
+	}
+
+	// Second publish of the same content: one new commit, no new row.
+	uri2, err := svc.PublishContent(ctx, acct.ID, contentID)
+	if err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if uri2 != uri {
+		t.Fatalf("republish changed URI: %q vs %q", uri2, uri)
+	}
+	var n int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id = $1 AND collection = 'app.bsky.feed.post'`,
+		acct.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("post records = %d, want 1 (republish must upsert)", n)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 3 {
+		t.Fatalf("repo_seq = %d, want 3 (init + publish + republish)", got)
+	}
+}
+
+// The atproto:delete_record path: DeleteRecordURI parses the URI,
+// checks the authority matches the repo, deletes, and commits —
+// while bad URIs and foreign authorities are permanent failures.
+func TestDBDeleteRecordURIPath(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "blog_post", "published", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+
+	uri := ContentPostURI(acct.Did, contentID)
+	if err := svc.DeleteRecordURI(ctx, acct.ID, uri); err != nil {
+		t.Fatalf("DeleteRecordURI: %v", err)
+	}
+	var n int
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_records WHERE uri = $1`, uri).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("record index row survived delete (n=%d)", n)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 3 {
+		t.Fatalf("repo_seq = %d, want 3 (tombstone commit)", got)
+	}
+
+	// Retried delete of the same URI is a no-op (idempotent unpublish).
+	if err := svc.DeleteRecordURI(ctx, acct.ID, uri); err != nil {
+		t.Fatalf("idempotent re-delete: %v", err)
+	}
+
+	// Unparseable URI and foreign-authority URI are permanent failures.
+	var pe interface{ Permanent() bool }
+	if err := svc.DeleteRecordURI(ctx, acct.ID, "not-an-at-uri"); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Errorf("bad uri: got %v, want permanent", err)
+	}
+	foreign := strings.Replace(uri, acct.Did, "did:web:example.com", 1)
+	if err := svc.DeleteRecordURI(ctx, acct.ID, foreign); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Errorf("foreign-authority uri: got %v, want permanent", err)
+	}
+}
+
+// Task-facing permanence: ineligible content, bogus collections, and
+// inactive accounts must report Permanent() so the worker maps them to
+// SkipRetry instead of burning retries into the dead-letter queue.
+func TestDBPublishPermanentClassification(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	var pe interface{ Permanent() bool }
+
+	draft := newAtprotoContent(t, ctx, d, userID, "discussion", "draft", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, draft); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Errorf("ineligible content: got %v, want permanent", err)
+	}
+
+	if _, err := svc.PublishRecordJSON(ctx, acct.ID, "com.example.bogus", "x", json.RawMessage(`{}`), pgtype.UUID{}); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Errorf("bogus collection: got %v, want permanent", err)
+	}
+
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	pub := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, acct.ID, pub); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Errorf("disabled account: got %v, want permanent", err)
 	}
 }
