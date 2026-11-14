@@ -14,6 +14,11 @@
 		onAllCategories?: () => void;
 		/** Opens the type-picker modal; falls back to onAllCategories. */
 		onPickType?: () => void;
+		/** Selected category (the type's family) shown on the pill in place
+		 *  of the generic "All categories" label. */
+		categoryName?: string;
+		categoryIcon?: Component;
+		categoryTint?: string;
 	}
 
 	let {
@@ -23,7 +28,10 @@
 		selectSummary,
 		onChangeType,
 		onAllCategories,
-		onPickType
+		onPickType,
+		categoryName,
+		categoryIcon: CategoryIcon,
+		categoryTint
 	}: Props = $props();
 
 	let onTypeClick = $derived(onPickType ?? onAllCategories);
@@ -39,8 +47,13 @@
 			onclick={onAllCategories}
 			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
-			<LayoutGrid size={13} class="text-[var(--color-muted)]" />
-			{t('jce.compare.landing.all_categories', 'All categories')}
+			{#if categoryName}
+				{#if CategoryIcon}<CategoryIcon size={13} style={categoryTint ? `color: ${categoryTint}` : undefined} />{/if}
+				{categoryName}
+			{:else}
+				<LayoutGrid size={13} class="text-[var(--color-muted)]" />
+				{t('jce.compare.landing.all_categories', 'All categories')}
+			{/if}
 			<ChevronDown size={13} class="text-[var(--color-muted)]" />
 		</button>
 	{/if}

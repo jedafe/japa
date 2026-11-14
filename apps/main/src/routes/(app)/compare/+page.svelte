@@ -1070,6 +1070,9 @@
 			onChangeType={backToLanding}
 			onAllCategories={() => (categoriesModalOpen = true)}
 			onPickType={() => (typeModalOpen = true)}
+			categoryName={pickerGroup ? t(`jce.compare.family.${pickerGroup.family.key}`, pickerGroup.family.key) : undefined}
+			categoryIcon={pickerGroup?.family.icon}
+			categoryTint={pickerGroup?.family.tint}
 		/>
 
 		<!-- Workspace body: field pool rail on the start side (mockup's
