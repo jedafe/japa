@@ -406,13 +406,16 @@
 	let tocAnchorEl = $state<HTMLElement | null>(null);
 	// Sidebar "On this page" renders whenever the list is non-empty — keep
 	// the caller's ≥2 gate so single-anchor pages don't sprout a one-link
-	// TOC they didn't have before.
+	// TOC they didn't have before. While editing, every anchor (prose AND
+	// the structured panels) unmounts — an empty list beats dead links.
 	const sidebarToc = $derived(
-		wikiTocHidden
-			? toc
-			: mergedToc.length >= 2
-				? mergedToc.map((m) => ({ id: m.id, label: m.text }))
-				: []
+		editing
+			? []
+			: wikiTocHidden
+				? toc
+				: mergedToc.length >= 2
+					? mergedToc.map((m) => ({ id: m.id, label: m.text }))
+					: []
 	);
 
 	$effect(() => {

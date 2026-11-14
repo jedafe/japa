@@ -91,7 +91,10 @@ export function slugifyHeading(text: string): string {
 const PREFIX_RE = /^\s*(?:[-*•·▪◦‣»–—]|\d{1,2}[.)]|[a-zA-Z][.)]|[ivxIVX]{2,4}[.)])\s+/;
 
 export function stripItemPrefix(text: string): string {
-	return text.replace(PREFIX_RE, '').trim();
+	let t = text.trim();
+	// Repeat — chained enumerators ("1. a. Foo") collapse to the label.
+	while (PREFIX_RE.test(t)) t = t.replace(PREFIX_RE, '').trim();
+	return t;
 }
 
 function headingText(inner: string): string {
@@ -158,6 +161,10 @@ export function scanDomToc(root: HTMLElement, levels = [2, 3]): TocItem[] {
 	for (const el of root.querySelectorAll<HTMLElement>(sel)) {
 		const text = stripItemPrefix((el.textContent ?? '').replace(/\s+/g, ' ').trim());
 		if (!text) continue;
+		// display:none headings (e.g. blocks hidden by responsive-visibility
+		// rules) have no box — a TOC link to them can never scroll, so they
+		// don't get listed. content-visibility boxes still report rects.
+		if (el.getClientRects().length === 0) continue;
 		const level = Number(el.tagName[1]);
 		let id = el.id;
 		if (!id) {
@@ -201,7 +208,9 @@ export function tocHidden(source: unknown): boolean {
 export function scrollToTocItem(id: string): void {
 	const el = document.getElementById(id);
 	if (!el) return;
-	el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	const reduce =
+		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+	el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
 	goto(`#${id}`, { replace: true, shallow: true, state: page.state });
 }
 
@@ -234,7 +243,10 @@ export function watchTocSpy(ids: string[], onActive: (id: string) => void): () =
 			}
 			if (!active) {
 				for (const el of els) {
-					if (el.getBoundingClientRect().top < 96) active = el.id;
+					// display:none (and otherwise zero-size) headings report a
+					// zeroed rect — top 0 would fake "above the band" forever.
+					const r = el.getBoundingClientRect();
+					if (r.height > 0 && r.top < 96) active = el.id;
 				}
 			}
 			onActive(active);

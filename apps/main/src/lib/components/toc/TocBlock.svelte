@@ -12,6 +12,7 @@
 	let { items }: { items: TocItem[] } = $props();
 
 	let open = $state(false);
+	const panelId = $props.id();
 </script>
 
 <nav
@@ -22,6 +23,7 @@
 		type="button"
 		class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-start"
 		aria-expanded={open}
+		aria-controls={panelId}
 		onclick={() => (open = !open)}
 	>
 		<span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
@@ -35,7 +37,7 @@
 		/>
 	</button>
 	{#if open}
-		<div class="border-t border-[var(--color-border)] px-4 py-3">
+		<div id={panelId} class="border-t border-[var(--color-border)] px-4 py-3">
 			<TocItems {items} />
 		</div>
 	{/if}

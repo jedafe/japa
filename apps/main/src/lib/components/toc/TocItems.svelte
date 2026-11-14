@@ -54,7 +54,7 @@
 							: 'h-2 w-2 bg-[var(--color-primary)]'}"
 					></span>
 				</span>
-				<span class="min-w-0 truncate">{item.text}</span>
+				<span class="min-w-0 truncate" title={item.text}>{item.text}</span>
 			</a>
 		</li>
 	{/each}
