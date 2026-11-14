@@ -339,7 +339,7 @@
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap || isAi ? [] : data.leftSidebarWidgets}
 
-		composeEnabled={!exception && !!data.user}
+		composeEnabled={!isCreateRoute && !!data.user}
 		features={data.features}
 	>
 		<NextActionBar />

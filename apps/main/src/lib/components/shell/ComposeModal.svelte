@@ -164,4 +164,9 @@
 			inset-inline-start: 0;
 		}
 	}
+	/* Exception #1 content singles (blog/CPT) hide the right sidebar entirely —
+	   there is no rail to clear, so the sheet spans to the viewport edge. */
+	:global(.shell.hide-sidebar) .composer-sheet {
+		inset-inline-end: 0;
+	}
 </style>
