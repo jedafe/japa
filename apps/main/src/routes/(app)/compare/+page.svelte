@@ -269,6 +269,7 @@
 	// trending strip is seeded server-side by popularity and re-fetches only
 	// when the visitor switches to "Trending".
 	let familyGroups = $derived(groupTypesByFamily(types));
+	const TRENDING_TILES = 6;
 	let trendingSort = $state<'popularity' | 'trending'>('popularity');
 	let trendingItems = $state<JCEComparisonSummary[] | null>(null); // null = use server seed
 	let trendingLoading = $state(false);
@@ -283,7 +284,7 @@
 		trendingLoading = true;
 		try {
 			const res = await api.get<JCEComparisonSummary[]>(
-				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=9&sort=trending'
+				`/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=${TRENDING_TILES}&sort=trending`
 			);
 			trendingItems = res.error ? [] : (res.data ?? []);
 		} catch {
@@ -292,7 +293,7 @@
 			trendingLoading = false;
 		}
 	}
-	let trending = $derived(trendingItems ?? popularComparisons);
+	let trending = $derived((trendingItems ?? popularComparisons).slice(0, TRENDING_TILES));
 
 	// Reseed when the server payload changes (SPA nav back to the landing) —
 	// otherwise a stale "Trending" fetch would shadow the fresh seed.
@@ -320,8 +321,8 @@
 	// Unified category tiles — family cards first, then ungrouped types. Every
 	// tile opens the picker workspace (?type=): a family enters through its
 	// first member type and the in-workspace sibling switcher covers the rest.
-	// The grid shows exactly two rows (4 tiles mobile / 8 desktop); the "All
-	// categories" dialog lists everything in a scrollable view.
+	// The grid shows exactly three rows (6 tiles mobile / 12 desktop); the
+	// "All categories" dialog lists everything in a scrollable view.
 	interface CategoryTile {
 		icon: Component;
 		tint: string;
@@ -330,8 +331,8 @@
 		count?: number;
 		href: string;
 	}
-	const CATEGORY_TILES_DESKTOP = 8;
-	const CATEGORY_TILES_MOBILE = 4;
+	const CATEGORY_TILES_DESKTOP = 12;
+	const CATEGORY_TILES_MOBILE = 6;
 	let categoryTiles = $derived<CategoryTile[]>([
 		...familyGroups.groups.map((g) => ({
 			icon: g.family.icon,
