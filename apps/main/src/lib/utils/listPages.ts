@@ -138,6 +138,29 @@ export function listPageCount(itemCount: number, itemsPerPage: number): number {
 	return Math.ceil(itemCount / itemsPerPage);
 }
 
+/**
+ * Pager number window. Up to 9 pages renders every number; beyond that we
+ * show first, last, and current±2 with 'gap' ellipsis entries between the
+ * runs — a 40-page list never renders a wall of buttons.
+ */
+export function listPageWindow(current: number, pageCount: number): (number | 'gap')[] {
+	if (pageCount <= 9) return Array.from({ length: pageCount }, (_, i) => i + 1);
+	const set = new Set<number>([1, pageCount]);
+	for (let d = -2; d <= 2; d++) {
+		const p = current + d;
+		if (p > 1 && p < pageCount) set.add(p);
+	}
+	const nums = [...set].sort((a, b) => a - b);
+	const out: (number | 'gap')[] = [];
+	let prev = 0;
+	for (const n of nums) {
+		if (n - prev > 1) out.push('gap');
+		out.push(n);
+		prev = n;
+	}
+	return out;
+}
+
 /** Clamp an arbitrary ?page= param into a valid 1-based page number. */
 export function clampListPage(raw: number, pageCount: number): number {
 	if (pageCount < 1) return 1;

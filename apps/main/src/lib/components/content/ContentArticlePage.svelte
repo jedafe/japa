@@ -25,7 +25,8 @@
 		splitListItems,
 		clampListPage,
 		listItemIndexByDomId,
-		listPageCount as listPageCount_
+		listPageCount as listPageCount_,
+		listPageWindow
 	} from '#lib/utils/listPages.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
@@ -157,6 +158,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	});
 	const listPageCount = $derived(listPageCount_(listBody.items.length, listItemsPerPage));
 	const listPageNo = $derived(clampListPage(parseInt(page.url.searchParams.get('page') ?? '1', 10), listPageCount));
+	// Number buttons window for large lists — see listPageWindow.
+	const listPageNums = $derived(listPageWindow(listPageNo, listPageCount));
 	// Suffix for title/meta on ?page=N>1 — each structural page is a
 	// distinct document for crawlers, so the title must differ too.
 	const listPageSuffix = $derived(listPageNo > 1 ? ` — ${t('common.page')} ${listPageNo}` : '');
@@ -198,13 +201,15 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		`${page.url.origin}${contentHref(article)}` + (n > 1 ? `?page=${n}` : '');
 	const canonical = $derived(listPageUrl(listPageNo));
 	// Pager links keep unrelated query params (utm etc.) but normalize
-	// page=1 away so it shares the clean canonical.
+	// page=1 away so it shares the clean canonical. When no params remain
+	// the href must still carry the path — a bare '#list-items' keeps the
+	// current ?page=N and would never leave the page.
 	const listPageHref = (n: number): string => {
 		const params = new URLSearchParams(page.url.search);
 		if (n === 1) params.delete('page');
 		else params.set('page', String(n));
 		const q = params.toString();
-		return `${q ? `?${q}` : ''}#list-items`;
+		return `${q ? `?${q}` : page.url.pathname}#list-items`;
 	};
 
 	// Series part links route into this article's own route family
@@ -513,17 +518,20 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							{t('common.previous', 'Previous')}
 						</a>
 					{/if}
-					{#each { length: listPageCount } as _, p (p)}
-						{@const n = p + 1}
-						<a
-							href={listPageHref(n)}
-							aria-current={n === listPageNo ? 'page' : undefined}
-							class="rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {n === listPageNo
-								? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-								: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]'}"
-						>
-							{n}
-						</a>
+					{#each listPageNums as entry, i (i)}
+						{#if entry === 'gap'}
+							<span class="px-1 text-sm text-[var(--color-muted)]" aria-hidden="true">…</span>
+						{:else}
+							<a
+								href={listPageHref(entry)}
+								aria-current={entry === listPageNo ? 'page' : undefined}
+								class="rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {entry === listPageNo
+									? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]'}"
+							>
+								{entry}
+							</a>
+						{/if}
 					{/each}
 					{#if listPageNo < listPageCount}
 						<a

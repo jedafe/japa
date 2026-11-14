@@ -4,6 +4,7 @@ import {
 	flattenListPageWrappers,
 	listItemIndexByDomId,
 	listPageCount,
+	listPageWindow,
 	splitListItems
 } from './listPages';
 
@@ -139,6 +140,25 @@ describe('listPageCount', () => {
 		expect(listPageCount(7, 2)).toBe(4);
 		expect(listPageCount(6, 3)).toBe(2);
 		expect(listPageCount(7, 1)).toBe(7);
+	});
+});
+
+describe('listPageWindow', () => {
+	it('returns all numbers at 9 pages and under', () => {
+		expect(listPageWindow(1, 9)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+		expect(listPageWindow(4, 4)).toEqual([1, 2, 3, 4]);
+	});
+
+	it('windows first, last, and current±2 with gaps', () => {
+		expect(listPageWindow(1, 15)).toEqual([1, 2, 3, 'gap', 15]);
+		expect(listPageWindow(8, 15)).toEqual([1, 'gap', 6, 7, 8, 9, 10, 'gap', 15]);
+		expect(listPageWindow(15, 15)).toEqual([1, 'gap', 13, 14, 15]);
+	});
+
+	it('merges the window into the edges near the ends', () => {
+		expect(listPageWindow(2, 15)).toEqual([1, 2, 3, 4, 'gap', 15]);
+		expect(listPageWindow(4, 15)).toEqual([1, 2, 3, 4, 5, 6, 'gap', 15]);
+		expect(listPageWindow(13, 15)).toEqual([1, 'gap', 11, 12, 13, 14, 15]);
 	});
 });
 
