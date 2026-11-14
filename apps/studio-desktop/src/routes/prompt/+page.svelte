@@ -224,7 +224,8 @@
 				!voiceRes.ok && `voices: ${voiceRes.error?.message}`,
 				!spaceRes.ok && `spaces: ${spaceRes.error?.message}`,
 				!statusRes.ok && `status options: ${statusRes.error?.message}`,
-				!visibilityRes.ok && `visibility options: ${visibilityRes.error?.message}`
+				!visibilityRes.ok && `visibility options: ${visibilityRes.error?.message}`,
+				!permsRes.ok && `permissions: ${permsRes.error?.message}`
 			].filter(Boolean) as string[];
 
 			if (messages.length > 0) {
@@ -256,7 +257,7 @@
 
 	function handleGuideCategoryChange(guideCategory: string) {
 		promptStore.setValue('guide_category', guideCategory);
-		if (isHighStakesCategory(guideCategory)) {
+		if (isHighStakesCategory(guideCategory) && !canSkipHitl) {
 			promptStore.setValue('status', 'in_review');
 		}
 	}

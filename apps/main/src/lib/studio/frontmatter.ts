@@ -14,14 +14,18 @@ export interface ParsedMarkdown {
 }
 
 export function parseFrontmatter(text: string): ParsedMarkdown {
-	const match = text.match(FRONTMATTER_RE);
+	// Tolerate a leading BOM and blank lines — files saved by some editors
+	// or produced via heredoc can prepend them, and a shifted opening ---
+	// would otherwise read the whole file as body with empty frontmatter.
+	const normalized = text.trimStart();
+	const match = normalized.match(FRONTMATTER_RE);
 	if (!match) {
 		return { frontmatter: {}, body: text };
 	}
 
 	try {
 		const frontmatter = (yaml.load(match[1]) as Record<string, unknown>) || {};
-		const body = text.slice(match[0].length);
+		const body = normalized.slice(match[0].length);
 		return { frontmatter, body };
 	} catch {
 		return { frontmatter: {}, body: text };

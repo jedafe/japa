@@ -117,6 +117,8 @@ async function setupMockApi(
 				);
 			case '/api/v1/spaces':
 				return route.fulfill(okJson([{ id: 'space-1', name: 'Main Space' }]));
+			case '/api/v1/me/permissions':
+				return route.fulfill(okJson({ permissions: [] }));
 			case '/api/v1/content/status-options':
 				return route.fulfill(okJson([{ value: 'draft', label: 'Draft' }]));
 			case '/api/v1/content/visibility-options':

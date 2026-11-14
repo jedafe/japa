@@ -250,7 +250,14 @@ export const actions: Actions = {
 			visOpts.map((o) => o.value),
 			canSkipHitl
 		);
-		const bodyError = validateBody(getStr(fm, 'body'), status);
+		// content.min_length comes from system_settings (hot-reloadable) —
+		// the client applies the same minimum so both sides agree.
+		const minLen = event.locals.siteSettings?.['content.min_length'];
+		const bodyError = validateBody(
+			getStr(fm, 'body'),
+			status,
+			typeof minLen === 'number' ? minLen : undefined
+		);
 		if (Object.keys(fieldErrors).length > 0 || bodyError) {
 			return {
 				error: 'validation_failed',

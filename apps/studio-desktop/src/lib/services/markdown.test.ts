@@ -15,6 +15,20 @@ describe('parseFrontmatter', () => {
 		expect(parsed.frontmatter).toEqual({});
 		expect(parsed.body).toBe('# Hello');
 	});
+
+	it('parses frontmatter after a BOM', () => {
+		const text = '﻿---\ntitle: "BOM"\n---\n\nbody';
+		const parsed = parseFrontmatter(text);
+		expect(parsed.frontmatter).toEqual({ title: 'BOM' });
+		expect(parsed.body.trim()).toBe('body');
+	});
+
+	it('parses frontmatter after leading blank lines', () => {
+		const text = '\n\n---\ntitle: "Padded"\n---\n\nbody';
+		const parsed = parseFrontmatter(text);
+		expect(parsed.frontmatter).toEqual({ title: 'Padded' });
+		expect(parsed.body.trim()).toBe('body');
+	});
 });
 
 describe('buildMarkdown', () => {

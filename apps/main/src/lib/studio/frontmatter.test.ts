@@ -25,6 +25,20 @@ describe('parseFrontmatter', () => {
 		expect(parsed.frontmatter).toEqual({});
 		expect(parsed.body).toBe(text);
 	});
+
+	it('parses frontmatter after a BOM', () => {
+		const text = '﻿---\ntitle: "BOM"\n---\n\nbody';
+		const parsed = parseFrontmatter(text);
+		expect(parsed.frontmatter).toEqual({ title: 'BOM' });
+		expect(parsed.body.trim()).toBe('body');
+	});
+
+	it('parses frontmatter after leading blank lines', () => {
+		const text = '\n\n---\ntitle: "Padded"\n---\n\nbody';
+		const parsed = parseFrontmatter(text);
+		expect(parsed.frontmatter).toEqual({ title: 'Padded' });
+		expect(parsed.body.trim()).toBe('body');
+	});
 });
 
 describe('buildMarkdown', () => {
@@ -71,5 +85,13 @@ describe('markdownToHtml', () => {
 		const html = markdownToHtml('# Title\n\n<script>alert(1)</script>', { sanitize: true });
 		expect(html).not.toContain('<script>');
 		expect(html).toContain('>Title</h1>');
+	});
+
+	it('strips unsafe link and image URL schemes', () => {
+		const html = markdownToHtml('[x](javascript:alert(1)) ![y](data:text/html;base64,AA==)');
+		expect(html).not.toContain('javascript:');
+		expect(html).not.toContain('data:');
+		expect(html).toContain('href="#"');
+		expect(html).toContain('src="#"');
 	});
 });

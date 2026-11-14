@@ -28,9 +28,12 @@
 		/** Actor holds agent.skip_hitl (§103) — high-stakes categories may keep
 		 *  published/scheduled instead of being forced to in_review. */
 		canSkipHitl?: boolean;
+		/** system_settings content.min_length — the same floor the API
+		 *  enforces server-side; falls back to the validator default. */
+		contentMinLength?: number;
 	}
 
-	let { contentTypes, spaces, drafts, visibilityOptions, statusOptions, canSkipHitl = false }: Props = $props();
+	let { contentTypes, spaces, drafts, visibilityOptions, statusOptions, canSkipHitl = false, contentMinLength }: Props = $props();
 
 	let raw = $state('');
 	let parsed = $state(false);
@@ -118,7 +121,7 @@
 			visibilityOptions.map((v) => v.value),
 			canSkipHitl
 		);
-		bodyError = validateBody(body, status) ?? '';
+		bodyError = validateBody(body, status, contentMinLength) ?? '';
 	}
 
 	function onFile(e: Event) {

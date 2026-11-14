@@ -92,9 +92,13 @@ function getJourneyField(
 
 function normalisePublishAt(value: string): string | undefined {
 	if (!value) return undefined;
-	// datetime-local values lack seconds/zone; normalise to RFC3339-ish.
+	// A bare `YYYY-MM-DDTHH:mm` is machine-local wall time (datetime-local
+	// input or hand-written frontmatter) — convert to a real UTC instant
+	// rather than naively tagging it 'Z', which would shift the schedule
+	// by the operator's UTC offset.
 	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
-		return `${value}:00Z`;
+		const d = new Date(value);
+		return isNaN(d.getTime()) ? undefined : d.toISOString();
 	}
 	return value;
 }

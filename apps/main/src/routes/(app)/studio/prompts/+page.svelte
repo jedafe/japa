@@ -73,6 +73,11 @@
 			? (data.siteSettings['content.max_tags'] as number)
 			: 5
 	);
+	const contentMinLength = $derived(
+		typeof data.siteSettings?.['content.min_length'] === 'number'
+			? (data.siteSettings['content.min_length'] as number)
+			: undefined
+	);
 </script>
 
 <SeoHead title={`${t('studio.tabs.prompts', 'Prompts')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.prompts_description', 'Reusable generation prompts for your content pipeline.')} />
@@ -101,6 +106,7 @@
 			visibilityOptions={data.visibilityOptions}
 			statusOptions={data.statusOptions}
 			{canSkipHitl}
+			{contentMinLength}
 		/>
 	</div>
 
