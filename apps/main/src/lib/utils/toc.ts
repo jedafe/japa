@@ -27,13 +27,15 @@ export interface TocItem {
 	level: number;
 }
 
-const HEADING_RE = /<(h[2-4])([^>]*)>([\s\S]*?)<\/\1>/gi;
+// Attr scan is quote-aware: `>` inside a quoted attribute value can't end
+// the tag early, and unquoted values are accepted.
+const HEADING_RE = /<(h[2-4])((?:"[^"]*"|'[^']*'|[^'">])*)>([\s\S]*?)<\/\1>/gi;
 // `(?:^|\s)` — plain \b would match the "id" inside `data-id="…"` and treat
 // a heading as pre-anchored, producing a dead TOC entry.
-const ID_ATTR_RE = /(?:^|\s)id\s*=\s*(["'])([^"']*)\1/i;
+const ID_ATTR_RE = /(?:^|\s)id\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 // Looser variant for the reserve pass — over-collecting ids (data-id etc.)
 // is safe; it only means a slug gets a `-2` suffix.
-const ANY_ID_RE = /\bid\s*=\s*(["'])([^"']*)\1/gi;
+const ANY_ID_RE = /\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 const TAG_RE = /<[^>]*>/g;
 
 const ENTITIES: Record<string, string> = {
@@ -128,13 +130,14 @@ export function extractToc(
 	const levels = new Set(opts?.levels ?? [2, 3]);
 	const items: TocItem[] = [];
 	const used = new Set<string>(opts?.reserved ?? []);
-	for (const m of html.matchAll(ANY_ID_RE)) used.add(m[2]);
+	for (const m of html.matchAll(ANY_ID_RE)) used.add(m[1] ?? m[2] ?? m[3]);
 	const out = html.replace(HEADING_RE, (whole: string, tag: string, attrs: string, inner: string) => {
 		const level = Number(tag[1]);
 		if (!levels.has(level)) return whole;
 		const text = headingText(inner);
 		if (!text) return whole;
-		let id = attrs.match(ID_ATTR_RE)?.[2] ?? '';
+		const idMatch = attrs.match(ID_ATTR_RE);
+		let id = idMatch?.[1] ?? idMatch?.[2] ?? idMatch?.[3] ?? '';
 		if (id) {
 			used.add(id);
 			items.push({ id, text, level });
@@ -161,10 +164,9 @@ export function scanDomToc(root: HTMLElement, levels = [2, 3]): TocItem[] {
 	for (const el of root.querySelectorAll<HTMLElement>(sel)) {
 		const text = stripItemPrefix((el.textContent ?? '').replace(/\s+/g, ' ').trim());
 		if (!text) continue;
-		// display:none headings (e.g. blocks hidden by responsive-visibility
-		// rules) have no box — a TOC link to them can never scroll, so they
-		// don't get listed. content-visibility boxes still report rects.
-		if (el.getClientRects().length === 0) continue;
+		// display:none headings are still extracted — they're pre-id'd so a
+		// later visibility flip (responsive rules, resize) makes them
+		// linkable immediately; TocItems filters what's currently shown.
 		const level = Number(el.tagName[1]);
 		let id = el.id;
 		if (!id) {
@@ -207,7 +209,10 @@ export function tocHidden(source: unknown): boolean {
  */
 export function scrollToTocItem(id: string): void {
 	const el = document.getElementById(id);
-	if (!el) return;
+	// A zero-rect target (display:none ancestor) can't be scrolled to —
+	// don't scroll or lie the hash. Stale entries are filtered by TocItems,
+	// so this is a last-line guard.
+	if (!el || el.getClientRects().length === 0) return;
 	const reduce =
 		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 	el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });

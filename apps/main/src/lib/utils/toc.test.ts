@@ -95,6 +95,18 @@ describe('extractToc', () => {
 		const { items } = extractToc('<h2>Costs &mdash; what&rsquo;s real</h2>');
 		expect(items).toEqual([{ id: 'costs-what-s-real', text: 'Costs — what’s real', level: 2 }]);
 	});
+
+	it('handles > inside quoted attribute values', () => {
+		const { html: out, items } = extractToc('<h2 title="a > b" class="x">Head</h2>');
+		expect(items).toEqual([{ id: 'head', text: 'Head', level: 2 }]);
+		expect(out).toContain('<h2 id="head" title="a > b" class="x">Head</h2>');
+	});
+
+	it('recognizes unquoted existing ids', () => {
+		const { html: out, items } = extractToc('<h2 id=plain-x>Head</h2>');
+		expect(items).toEqual([{ id: 'plain-x', text: 'Head', level: 2 }]);
+		expect(out).toBe('<h2 id=plain-x>Head</h2>');
+	});
 });
 
 describe('stripItemPrefix', () => {

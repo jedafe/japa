@@ -20,6 +20,30 @@
 	let activeId = $state('');
 	$effect(() => watchTocSpy(items.map((i) => i.id), (id) => (activeId = id)));
 
+	// Live visibility filter — a TOC entry whose target has no box
+	// (display:none ancestor, responsive-visibility rule) is a dead link,
+	// so it's hidden rather than listed. ResizeObserver fires on the
+	// targets' box changes — including ancestor display flips and the
+	// container-query visibility rules Page Builder blocks use — so a
+	// resize re-shows entries without needing a rescan.
+	let hiddenIds = $state<ReadonlySet<string>>(new Set());
+	$effect(() => {
+		if (typeof ResizeObserver === 'undefined') return;
+		const els = items
+			.map((i) => document.getElementById(i.id))
+			.filter((el): el is HTMLElement => el instanceof HTMLElement);
+		const recheck = () => {
+			const h = new Set<string>();
+			for (const el of els) if (el.getClientRects().length === 0) h.add(el.id);
+			hiddenIds = h;
+		};
+		const ro = new ResizeObserver(recheck);
+		for (const el of els) ro.observe(el);
+		recheck();
+		return () => ro.disconnect();
+	});
+	const visibleItems = $derived(items.filter((i) => !hiddenIds.has(i.id)));
+
 	function handleClick(e: MouseEvent, id: string) {
 		if (onjump) {
 			onjump(e, id);
@@ -36,7 +60,7 @@
 <ul
 	class="relative list-none space-y-1 before:absolute before:bottom-2 before:start-[11.5px] before:top-2 before:w-px before:bg-[var(--color-border)] before:content-['']"
 >
-	{#each items as item (item.id)}
+	{#each visibleItems as item (item.id)}
 		{@const active = item.id === activeId}
 		<li class={item.level >= 3 ? 'ms-4' : ''}>
 			<a
