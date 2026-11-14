@@ -1,3 +1,4 @@
+import * as yaml from 'js-yaml';
 import { describe, it, expect } from 'vitest';
 import { slugify, buildProjectInstruction, buildPrompt } from './prompt';
 import { promptFromDefaults, DEFAULT_PROMPT_VALUES, type PromptFormValues } from '#lib/types/prompt.js';
@@ -163,5 +164,59 @@ describe('buildPrompt', () => {
 		expect(prompt).not.toContain('persona_id:');
 		expect(prompt).not.toContain('voice_id:');
 		expect(prompt).toContain('Japa.to member writing under your own profile');
+	});
+});
+
+describe('generated frontmatter block', () => {
+	// Regression: frontmatterLine() emits no trailing newline, so two calls on
+	// one template line concatenate ("a: 1b: 2"). Parse the emitted block with
+	// a real YAML loader instead of substring checks.
+	const lookups: PromptLookups = {
+		contentTypeName: 'Guide',
+		guideCategoryName: 'Visa',
+		personaName: 'Ada',
+		voiceName: 'Warm',
+		voicePrompt: '',
+		spaceName: ''
+	};
+
+	function emittedFrontmatter(prompt: string): Record<string, unknown> {
+		const m = prompt.match(/```yaml\n---\n([\s\S]*?)\n---\n```/);
+		expect(m).toBeTruthy();
+		return yaml.load(m![1]) as Record<string, unknown>;
+	}
+
+	it('keeps guide_category and source_country on separate lines', () => {
+		const prompt = buildPrompt(
+			{ ...DEFAULT_PROMPT_VALUES, title: 'T', content_type: 'guide', guide_category: 'visa', source_country: 'ng', status: 'in_review' },
+			lookups,
+			'operator',
+			true
+		);
+		const fm = emittedFrontmatter(prompt);
+		expect(fm.guide_category).toBe('visa');
+		expect(fm.source_country).toBe('ng');
+	});
+
+	it('keeps persona_id, voice_id and status on separate lines (operator mode)', () => {
+		const prompt = buildPrompt(
+			{ ...DEFAULT_PROMPT_VALUES, title: 'T', content_type: 'guide', persona_id: 'p1', voice_id: 'v1', status: 'in_review' },
+			lookups,
+			'operator'
+		);
+		const fm = emittedFrontmatter(prompt);
+		expect(fm.persona_id).toBe('p1');
+		expect(fm.voice_id).toBe('v1');
+		expect(fm.status).toBe('in_review');
+	});
+
+	it('round-trips titles containing backslashes and quotes', () => {
+		const prompt = buildPrompt(
+			{ ...DEFAULT_PROMPT_VALUES, title: 'C:\\new "quoted" path', content_type: 'guide', status: 'in_review' },
+			lookups,
+			'operator'
+		);
+		const fm = emittedFrontmatter(prompt);
+		expect(fm.title).toBe('C:\\new "quoted" path');
 	});
 });

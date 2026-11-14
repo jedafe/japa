@@ -24,13 +24,17 @@ export interface PromptLookups {
 }
 
 export function slugify(text: string): string {
-	return text
+	// Match internal/content Slugify: invalid chars (incl. underscores) become
+	// hyphens rather than being stripped, and empty input yields "untitled" —
+	// the emitted slug must satisfy the backend's [a-z0-9-] constraint.
+	const slug = text
 		.toLowerCase()
 		.trim()
-		.replace(/[^\w\s-]/g, '')
+		.replace(/[^a-z0-9\s-]+/g, '-')
 		.replace(/\s+/g, '-')
 		.replace(/-+/g, '-')
 		.replace(/^-+|-+$/g, '');
+	return slug || 'untitled';
 }
 
 /**
@@ -51,7 +55,10 @@ function yamlMultiline(value: string): string {
 	if (value.includes('\n')) {
 		return `|\n    ${value.replace(/\n/g, '\n    ')}`;
 	}
-	return `"${value.replace(/"/g, '\\"')}"`;
+	// Backslash must be escaped before the quote — otherwise "a\b" parses
+	// as a YAML escape (backspace) and a trailing backslash eats the
+	// closing quote, producing unterminated garbage.
+	return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function frontmatterLine(key: string, value: unknown): string {
@@ -186,12 +193,12 @@ Required frontmatter (fill in real values; do not leave placeholders empty):
 ${frontmatterLine('title', values.title || values.topic || '')}
 ${frontmatterLine('slug', slug)}
 ${frontmatterLine('content_type', values.content_type)}
-${values.guide_category ? frontmatterLine('guide_category', values.guide_category) : ''}${frontmatterLine('source_country', values.source_country)}
+${values.guide_category ? `${frontmatterLine('guide_category', values.guide_category)}\n` : ''}${frontmatterLine('source_country', values.source_country)}
 ${frontmatterLine('target_country', values.target_country)}
 ${frontmatterLine('journey_stage', values.journey_stage)}
 ${frontmatterLine('visa_route', values.visa_route)}
 ${frontmatterLine('space_id', values.space_id)}
-${isMember ? '' : frontmatterLine('persona_id', values.persona_id)}${isMember ? '' : frontmatterLine('voice_id', values.voice_id)}${frontmatterLine('status', status)}
+${isMember ? '' : frontmatterLine('persona_id', values.persona_id) + (values.persona_id ? '\n' : '')}${isMember ? '' : frontmatterLine('voice_id', values.voice_id) + (values.voice_id ? '\n' : '')}${frontmatterLine('status', status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
 ${fieldValuesYaml(values.field_values)}${frontmatterLine('header_image_id', values.header_image_id)}
