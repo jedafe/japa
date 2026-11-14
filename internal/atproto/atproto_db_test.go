@@ -387,6 +387,67 @@ func TestDBStaleClaimReclaimed(t *testing.T) {
 	}
 }
 
+// Stale-claim release on read: when an existing account holder renames
+// onto a handle stale-claimed by another account's row, accountByHandle's
+// live-username preference shadows the stale row — the claim would never
+// be released and the true holder locked out of the handle permanently.
+// syncHandle must release the stale claim and land the sync in one read.
+func TestDBStaleClaimReleasedOnRead(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+	base := fmt.Sprintf("atpdl%d", time.Now().UnixNano())
+
+	// B holds "b-<base>", opts in, then renames away — the stored handle
+	// goes stale but still claims b-<base>.test.dev.
+	bID, _ := newAtprotoNamedUser(t, ctx, d, "b-"+base, "active")
+	if _, err := svc.EnableAccount(ctx, bID); err != nil {
+		t.Fatalf("enable B: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, "bmoved-"+base, bID); err != nil {
+		t.Fatalf("rename B: %v", err)
+	}
+
+	// A already holds an account under "a-<base>" and renames onto the
+	// contested handle — A never hits the create-path reclaim because
+	// the account row already exists.
+	aID, _ := newAtprotoNamedUser(t, ctx, d, "a-"+base, "active")
+	aSt, err := svc.EnableAccount(ctx, aID)
+	if err != nil {
+		t.Fatalf("enable A: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, "b-"+base, aID); err != nil {
+		t.Fatalf("rename A: %v", err)
+	}
+
+	contested := "b-" + base + ".test.dev"
+
+	// First read: the stale claim is released and A's sync lands — the
+	// handle resolves to A's permanent DID immediately.
+	did, err := svc.ResolveHandleDID(ctx, contested)
+	if err != nil || did != aSt.DID {
+		t.Fatalf("contested handle: did=%q err=%v, want %q", did, err, aSt.DID)
+	}
+
+	// Both stored handles settled: A claims the contested handle, B's
+	// row tracks B's live username.
+	var handle string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT handle FROM atproto_accounts WHERE user_id = $1`, aID).Scan(&handle); err != nil {
+		t.Fatalf("select A handle: %v", err)
+	}
+	if handle != contested {
+		t.Errorf("A stored handle = %q, want %q", handle, contested)
+	}
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT handle FROM atproto_accounts WHERE user_id = $1`, bID).Scan(&handle); err != nil {
+		t.Fatalf("select B handle: %v", err)
+	}
+	if want := "bmoved-" + base + ".test.dev"; handle != want {
+		t.Errorf("B stored handle = %q, want synced %q", handle, want)
+	}
+}
+
 func TestDBAdminListHidesKey(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

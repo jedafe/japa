@@ -160,12 +160,46 @@ func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID,
 		return storedHandle
 	}
 	if err := s.store.setAccountHandle(ctx, accountID, want); err != nil {
-		return storedHandle
+		// The wanted handle is claimed by another row. When that claim is
+		// stale — the holder renamed away — release it and retry once.
+		// Without the release, accountByHandle's live-username preference
+		// always picks the claimant-shadowed row and the stale row is
+		// never synced: the claim never frees and the true holder is
+		// locked out of the handle permanently.
+		s.releaseStaleClaim(ctx, want, accountID)
+		if rerr := s.store.setAccountHandle(ctx, accountID, want); rerr != nil {
+			slog.Warn("atproto: handle sync blocked", "account_id", accountID.String(), "handle", want, "error", rerr)
+			return storedHandle
+		}
 	}
 	id := uuidString(userID)
 	s.invalidateAccount(ctx, storedHandle, id)
 	s.invalidateAccount(ctx, want, id)
 	return want
+}
+
+// releaseStaleClaim frees a contested handle when its holder's live
+// username no longer derives to it (a rename left the stored claim
+// behind). A live-aligned claim is left alone — the handle is genuinely
+// taken. accountID is the account currently syncing; the claim row is
+// never itself. One level deep by design — chained stale claims resolve
+// through each row's own read path.
+func (s *Service) releaseStaleClaim(ctx context.Context, handle string, accountID pgtype.UUID) {
+	claimed, err := s.store.handleClaim(ctx, handle)
+	if err != nil || claimed.ID == accountID || claimed.LiveUsername == "" {
+		return
+	}
+	live := s.cfg.handleFor(claimed.LiveUsername)
+	if strings.EqualFold(live, handle) {
+		return // live-aligned claim — the handle is genuinely held
+	}
+	if err := s.store.setAccountHandle(ctx, claimed.ID, live); err != nil {
+		slog.Warn("atproto: stale claim release failed", "account_id", claimed.ID.String(), "handle", handle, "error", err)
+		return
+	}
+	id := uuidString(claimed.UserID)
+	s.invalidateAccount(ctx, claimed.Handle, id)
+	s.invalidateAccount(ctx, live, id)
 }
 
 // uuidString renders a pgtype.UUID in canonical lowercase hyphenated

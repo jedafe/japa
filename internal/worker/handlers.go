@@ -2471,6 +2471,14 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// post becomes searchable. Fire-and-forget; failure is logged.
 	EnqueueSearchIndexSync(ctx, entityTypeContent, contentID)
 
+	// §127 A2: this path bypasses content.Service.UpdateContentStatus
+	// (raw PublishScheduledContent), so the mini-PDS projection must be
+	// emitted here — otherwise a scheduled post goes live without ever
+	// reaching the author's repo (the schedule transition had already
+	// tombstoned any prior record). The task re-checks eligibility at
+	// write time, so ineligible rows cost only a skipped task.
+	EnqueueAtprotoPublishContent(ctx, contentID)
+
 	return nil
 }
 
@@ -5414,6 +5422,10 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 
 		// §73: keep the scholarship finder in sync for scheduled scholarship guides.
 		scheduleScholarshipSyncFromGuide(ctx, pc, pc.String())
+
+		// §127 A2: same bypass as HandleScheduledPublish — the sweep's raw
+		// PublishScheduledContent skips UpdateContentStatus's atproto emit.
+		EnqueueAtprotoPublishContent(ctx, pc)
 
 		slog.Info("task:content:publish_sweep: content published", "content_id", pc.String())
 	}

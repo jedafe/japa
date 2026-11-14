@@ -21,8 +21,22 @@ import (
 // PutBlob stores media bytes under their raw-codec sha256 CID for the
 // account. Content-addressing makes calls idempotent — re-uploading the
 // same bytes returns the same CID. Returns the CID string records
-// reference via LexBlob.Ref.
+// reference via LexBlob.Ref. Write-side like record projections: the
+// feature.atproto kill-switch and inactive accounts refuse new blobs.
 func (s *Service) PutBlob(ctx context.Context, accountID pgtype.UUID, mime string, data []byte) (string, error) {
+	if !s.featureOn(ctx) {
+		return "", fmt.Errorf("atproto: feature.atproto disabled")
+	}
+	status, err := s.store.q.GetAtprotoAccountStatusByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("atproto: account status: %w", err)
+	}
+	if status != AccountStatusActive {
+		return "", ErrNotFound
+	}
 	sum, err := multihash.Sum(data, multihash.SHA2_256, -1)
 	if err != nil {
 		return "", fmt.Errorf("atproto: blob hash: %w", err)

@@ -189,9 +189,9 @@ func Load() (Config, error) {
 		FederationDomain:         os.Getenv("JC_FEDERATION_DOMAIN"),
 		ATProtoHandleDomain:      os.Getenv("JC_ATPROTO_HANDLE_DOMAIN"),
 		ATProtoPDSURL:            os.Getenv("JC_ATPROTO_PDS_URL"),
-		ATProtoRelayURL:          os.Getenv("JC_ATPROTO_RELAY_URL"),
-		ATProtoPLCURL:            os.Getenv("JC_ATPROTO_PLC_URL"),
-		ATProtoJetstreamURL:      os.Getenv("JC_ATPROTO_JETSTREAM_URL"),
+		ATProtoRelayURL:          getEnvDefault("JC_ATPROTO_RELAY_URL", "https://bsky.network"),
+		ATProtoPLCURL:            getEnvDefault("JC_ATPROTO_PLC_URL", "https://plc.directory"),
+		ATProtoJetstreamURL:      getEnvDefault("JC_ATPROTO_JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network/subscribe"),
 		EncryptionKey:            os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:        os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),
@@ -369,6 +369,15 @@ func (c Config) BlocksIndexing() bool {
 	}
 
 	return false
+}
+
+// getEnvDefault returns the env var's value, or the fallback when unset
+// or empty — the string analogue of getEnvInt.
+func getEnvDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 // getEnvWithFallback returns the value of the first env var that is set.

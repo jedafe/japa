@@ -77,6 +77,20 @@ func (q *Queries) GetAtprotoAccountIDByContent(ctx context.Context, contentID pg
 	return id, err
 }
 
+const getAtprotoAccountStatusByID = `-- name: GetAtprotoAccountStatusByID :one
+SELECT status FROM atproto_accounts WHERE id = $1
+`
+
+// Lightweight status read for write-paths that must refuse inactive
+// accounts without taking the FOR UPDATE repo lock (blob puts — the
+// blobs aren't signed repo data, so the repo lock is unnecessary).
+func (q *Queries) GetAtprotoAccountStatusByID(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountStatusByID, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const getAtprotoBlob = `-- name: GetAtprotoBlob :one
 SELECT account_id, cid, mime, size, data, created_at FROM atproto_blobs
 WHERE account_id = $1 AND cid = $2

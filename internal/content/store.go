@@ -1777,12 +1777,15 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// upsert refreshes the post (text/canonical URL may have changed);
 	// leaving public removes the record. An author reassignment while
 	// public additionally tombstones the outgoing repo's copy — the index
-	// row still resolves the old account's URI.
-	if isPublic {
-		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
-	}
+	// row still resolves the old account's URI. The delete emits FIRST:
+	// it resolves targets by reading the record index at emit time, and
+	// emitting the publish first lets a fast worker land the new author's
+	// index row inside that read — tombstoning the record just projected.
 	if wasPublic && (!isPublic || existing.AuthorID != content.AuthorID) {
 		s.emitAtprotoDelete(ctx, content.ID)
+	}
+	if isPublic {
+		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
 	}
 
 	return content, nil
