@@ -58,6 +58,22 @@ function apiHeadersPlugin(): Plugin {
 
 const dev = process.argv.includes('dev') || process.argv.includes('serve');
 
+// Vitest-only: component <style> virtual modules are irrelevant in jsdom, and
+// in the vitest pipeline @sveltejs/vite-plugin-svelte's load hook misses them,
+// so the raw .svelte source falls through to @tailwindcss/vite, whose CSS
+// parser dies on the first `import { ... }` line ("Invalid declaration").
+// Upstream: sveltejs/vite-plugin-svelte#1143, tailwindlabs/tailwindcss#20000.
+// Return empty CSS for these modules under test — dev/build are unaffected.
+function componentStyleTestGuard(): Plugin {
+	return {
+		name: 'jc-component-style-test-guard',
+		enforce: 'pre',
+		load(id) {
+			if (id.includes('.svelte?svelte&type=style')) return '';
+		}
+	};
+}
+
 // PUBLIC_* vars live in .env files — Vite injects them into
 // import.meta.env for client code, but they are NOT in process.env when
 // this config file is evaluated. loadEnv reads .env/.env.local/
@@ -100,6 +116,7 @@ export default defineConfig({
 	plugins: [
 		tailwindcss(),
 		apiHeadersPlugin(),
+		...(process.env.VITEST ? [componentStyleTestGuard()] : []),
 		sveltekit({
 			preprocess: vitePreprocess(),
 			// Public-facing community app is SSR via adapter-node + Bun (port 3000).
