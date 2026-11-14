@@ -23,8 +23,11 @@ CREATE TABLE IF NOT EXISTS atproto_accounts (
     disabled_at           timestamptz,
     CONSTRAINT atproto_accounts_status_check CHECK (status IN ('active','disabled','tombstone'))
 );
--- handle lookups (atproto-did well-known, did:web docs) compare under lower()
-CREATE INDEX IF NOT EXISTS idx_atproto_accounts_handle ON atproto_accounts (lower(handle));
+-- handle lookups (atproto-did well-known, did:web docs) compare under
+-- lower(); handles are case-insensitive in atproto, so uniqueness is
+-- enforced case-insensitively at the DB level too — users 'Alice' and
+-- 'alice' are distinct accounts but cannot both claim alice.japa.to
+CREATE UNIQUE INDEX IF NOT EXISTS idx_atproto_accounts_handle ON atproto_accounts (lower(handle));
 CREATE INDEX IF NOT EXISTS idx_atproto_accounts_user ON atproto_accounts (user_id);
 
 -- RBAC nodes (BE-005 — seed completely):

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,6 +165,47 @@ func TestDBSuspendedUserNotFederated(t *testing.T) {
 	// Suspended user can't re-enable through the upsert path either.
 	if _, err := svc.EnableAccount(ctx, userID); err != ErrNotFound {
 		t.Errorf("suspended enable: %v", err)
+	}
+}
+
+// Case-insensitive handle claims: users 'Alice' and 'alice' are distinct
+// (users.username is case-sensitively unique) but the normalized handle
+// alice.test.dev can only belong to one account — first come, first
+// served; the loser gets ErrHandleTaken.
+func TestDBHandleClaimCaseInsensitive(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+
+	// Two users whose usernames differ only by case — legal under
+	// users.username's case-sensitive uniqueness.
+	base := fmt.Sprintf("atpTwin%d", time.Now().UnixNano())
+	var upperID, lowerID pgtype.UUID
+	if err := d.Writer.QueryRow(ctx,
+		`INSERT INTO users (username, email, status) VALUES ($1, $2, 'active') RETURNING id`,
+		strings.ToUpper(base), strings.ToUpper(base)+"@test.dev").Scan(&upperID); err != nil {
+		t.Fatalf("insert upper user: %v", err)
+	}
+	if err := d.Writer.QueryRow(ctx,
+		`INSERT INTO users (username, email, status) VALUES ($1, $2, 'active') RETURNING id`,
+		strings.ToLower(base), strings.ToLower(base)+"@test.dev").Scan(&lowerID); err != nil {
+		t.Fatalf("insert lower user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM users WHERE id IN ($1,$2)`, upperID, lowerID)
+	})
+
+	st, err := svc.EnableAccount(ctx, upperID)
+	if err != nil {
+		t.Fatalf("EnableAccount (upper): %v", err)
+	}
+	wantHandle := strings.ToLower(base) + ".test.dev" // normalized lowercase
+	if st.Handle != wantHandle {
+		t.Fatalf("handle = %q, want lowercase %q", st.Handle, wantHandle)
+	}
+
+	if _, err := svc.EnableAccount(ctx, lowerID); err != ErrHandleTaken {
+		t.Errorf("lowercase twin enable: got %v, want ErrHandleTaken", err)
 	}
 }
 

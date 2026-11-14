@@ -28,6 +28,7 @@ const (
 var (
 	ErrNotFound      = errors.New("atproto account not found")
 	ErrInvalidHandle = errors.New("invalid atproto handle")
+	ErrHandleTaken   = errors.New("atproto handle already claimed")
 )
 
 // Config carries the JC_ATPROTO_* deployment values (internal/config),
@@ -100,11 +101,18 @@ func (c Config) relayURL() string {
 // didFor derives the did:web identifier for a username:
 // did:web:{pds_host}:atproto:u:{username} — resolves at
 // {PDSURL}/atproto/u/{username}/did.json per the did:web spec.
+// did:web requires percent-encoding of ':' in the host segment —
+// dev PDS hosts like localhost:8080 produce did:web:localhost%3A8080:…
 func (c Config) didFor(username string) string {
-	return "did:web:" + c.pdsHost() + ":atproto:u:" + username
+	host := strings.ReplaceAll(c.pdsHost(), ":", "%3A")
+	return "did:web:" + host + ":atproto:u:" + username
 }
 
-// handleFor derives the member handle: {username}.{handle_domain}.
+// handleFor derives the member handle: {username}.{handle_domain},
+// lowercased — atproto handles are case-insensitive and normalized
+// lowercase; storing canonical-lowercase prevents 'Alice' and 'alice'
+// (distinct users under case-sensitive users.username) colliding into
+// ambiguous lower() matches.
 func (c Config) handleFor(username string) string {
-	return username + "." + c.handleDomain()
+	return strings.ToLower(username + "." + c.handleDomain())
 }

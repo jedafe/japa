@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/multiformats/go-multibase"
@@ -165,21 +166,18 @@ func TestDIDDocumentShape(t *testing.T) {
 // --- private key never serializes ----------------------------------------------
 
 func TestAccountStatusNeverSerializesKey(t *testing.T) {
-	st := AccountStatus{SigningKey: "HEXSECRET"}
+	st := AccountStatus{}
 	raw, err := json.Marshal(st)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
-	}
-	if string(raw) == "" {
-		t.Fatal("empty marshal")
 	}
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	for k := range m {
-		if k == "signing_key" || k == "SigningKey" {
-			t.Errorf("key field %q leaked into JSON", k)
+		if strings.Contains(strings.ToLower(k), "key") {
+			t.Errorf("key-like field %q present on member status view", k)
 		}
 	}
 }

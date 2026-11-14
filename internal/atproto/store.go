@@ -15,8 +15,11 @@ type store struct {
 
 func newStore(q *gen.Queries) *store { return &store{q: q} }
 
-func (s *store) accountByHandle(ctx context.Context, handle string) (gen.AtprotoAccount, error) {
-	return s.q.GetAtprotoAccountByHandle(ctx, handle)
+func (s *store) accountByHandle(ctx context.Context, handle, username string) (gen.AtprotoAccount, error) {
+	return s.q.GetAtprotoAccountByHandle(ctx, gen.GetAtprotoAccountByHandleParams{
+		Handle:   handle,
+		Username: username,
+	})
 }
 
 func (s *store) accountByUserID(ctx context.Context, userID pgtype.UUID) (gen.AtprotoAccount, error) {

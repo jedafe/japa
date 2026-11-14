@@ -105,16 +105,26 @@ const getAtprotoAccountByHandle = `-- name: GetAtprotoAccountByHandle :one
 SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE lower(a.handle) = lower($1)
+WHERE (lower(a.handle) = lower($1) OR u.username = $2)
   AND a.status = 'active'
   AND u.status = 'active'
+ORDER BY (u.username = $2) DESC
+LIMIT 1
 `
+
+type GetAtprotoAccountByHandleParams struct {
+	Handle   string `json:"handle"`
+	Username string `json:"username"`
+}
 
 // Handle resolution for /.well-known/atproto-did + did:web docs. Only
 // active accounts of active users resolve — suspended/deleted members
 // and disabled accounts don't exist on the atproto network.
-func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, handle string) (AtprotoAccount, error) {
-	row := q.db.QueryRow(ctx, getAtprotoAccountByHandle, handle)
+// The live u.username match outranks the stored handle: after a rename
+// the member's new subdomain resolves to their permanent DID (mirrors
+// the federated_actors precedence pattern).
+func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoAccountByHandleParams) (AtprotoAccount, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountByHandle, arg.Handle, arg.Username)
 	var i AtprotoAccount
 	err := row.Scan(
 		&i.ID,

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	jcrypto "github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
@@ -95,29 +97,58 @@ func (s *Service) HandleFromHost(host string) string {
 	return host
 }
 
+// handleUsername extracts the username localpart from a member handle —
+// alice.japa.to → alice. Anything nested or malformed yields "".
+func (s *Service) handleUsername(handle string) string {
+	suffix := "." + s.cfg.handleDomain()
+	local := strings.TrimSuffix(strings.ToLower(handle), suffix)
+	if local == "" || local == strings.ToLower(handle) || strings.Contains(local, ".") {
+		return ""
+	}
+	return local
+}
+
 // ResolveHandleDID returns the member's DID string for the atproto-did
 // well-known (text/plain body). Active accounts of active users only.
+// Cached 10m at jc:atp:account:* — the appview hits this endpoint on
+// every handle verification.
 func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, error) {
-	account, err := s.store.accountByHandle(ctx, handle)
+	cacheKey := "jc:atp:account:" + strings.ToLower(handle)
+	if s.vk != nil {
+		if did, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && did != "" {
+			return did, nil
+		}
+	}
+	account, err := s.store.accountByHandle(ctx, handle, s.handleUsername(handle))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrNotFound
 		}
 		return "", fmt.Errorf("atproto: handle lookup: %w", err)
 	}
+	if s.vk != nil {
+		_ = s.vk.Set(ctx, cacheKey, account.Did, 10*time.Minute).Err()
+	}
 	return account.Did, nil
 }
+
+// usernameRe matches the platform username charset (ValidateUsername) —
+// did:web path params outside it can't name a member account.
+var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 // DIDDocument serves the did:web resolution document for
 // {PDSURL}/atproto/u/{username}/did.json. Cached 10m at jc:atp:did:*.
 func (s *Service) DIDDocument(ctx context.Context, username string) (map[string]any, error) {
+	if !usernameRe.MatchString(username) {
+		return nil, ErrInvalidHandle
+	}
 	handle := s.cfg.handleFor(username)
 	cacheKey := "jc:atp:did:" + strings.ToLower(handle)
 	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
 		return doc, nil
 	}
 
-	account, err := s.store.accountByHandle(ctx, handle)
+	account, err := s.store.accountByHandle(ctx, handle, username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -134,15 +165,14 @@ func (s *Service) DIDDocument(ctx context.Context, username string) (map[string]
 // Member opt-in
 // ---------------------------------------------------------------------------
 
-// AccountStatus is the member-facing account view; the signing key is
-// never serialized (json:"-", same contract as federation statusFor).
+// AccountStatus is the member-facing account view — the signing key
+// has no field here by design (it never leaves the store/crypto layer).
 type AccountStatus struct {
-	Enabled    bool   `json:"enabled"`
-	Status     string `json:"status"`
-	DID        string `json:"did,omitempty"`
-	Handle     string `json:"handle,omitempty"`
-	SigningKey string `json:"-"`
-	CreatedAt  string `json:"created_at,omitempty"`
+	Enabled   bool   `json:"enabled"`
+	Status    string `json:"status"`
+	DID       string `json:"did,omitempty"`
+	Handle    string `json:"handle,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 func (s *Service) statusFor(a gen.AtprotoAccount) AccountStatus {
@@ -207,6 +237,14 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		return AccountStatus{}, fmt.Errorf("atproto: encrypt key: %w", err)
 	}
 
+	// First-come-first-served on the case-insensitive handle: another
+	// member's account already holding {username}.{domain} blocks this
+	// opt-in with a 409 (e.g. users 'Alice' and 'alice' — both resolve to
+	// the same normalized handle).
+	if claimed, err := s.store.accountByHandle(ctx, handle, ""); err == nil && claimed.UserID != userID {
+		return AccountStatus{}, ErrHandleTaken
+	}
+
 	account, err := s.store.createAccount(ctx, gen.CreateAtprotoAccountParams{
 		UserID:             userID,
 		Handle:             handle,
@@ -215,6 +253,10 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		PublicKeyMultibase: pubMultibase,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return AccountStatus{}, ErrHandleTaken
+		}
 		return AccountStatus{}, fmt.Errorf("atproto: create account: %w", err)
 	}
 
