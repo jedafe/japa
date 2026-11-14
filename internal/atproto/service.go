@@ -204,7 +204,7 @@ func (s *Service) releaseStaleClaim(ctx context.Context, handle string, accountI
 	id := uuidString(claimed.UserID)
 	s.invalidateAccount(ctx, claimed.Handle, id)
 	s.invalidateAccount(ctx, live, id)
-	s.emitIdentityEvent(ctx, s.cfg.didFor(id), live)
+	s.emitIdentityEvent(ctx, claimed.Did, live)
 }
 
 // uuidString renders a pgtype.UUID in canonical lowercase hyphenated

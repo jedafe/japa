@@ -30,10 +30,11 @@ const carMediaType = "application/vnd.ipld.car"
 
 // accountForDID resolves a sync-endpoint `did`/`repo` param to its
 // account row — active accounts of active users only (suspended members
-// and disabled accounts don't exist on the network).
+// and disabled accounts don't exist on the network). An absent param is
+// InvalidRequest, not RepoNotFound — the request never named a repo.
 func (s *Service) accountForDID(ctx context.Context, did string) (gen.GetAtprotoAccountByDIDRow, error) {
 	if did == "" {
-		return gen.GetAtprotoAccountByDIDRow{}, ErrNotFound
+		return gen.GetAtprotoAccountByDIDRow{}, ErrInvalidID
 	}
 	account, err := s.store.accountByDID(ctx, did)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -121,6 +122,17 @@ func (s *Service) RepoCARSince(ctx context.Context, did, since string) ([]byte, 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("atproto: slice blocks: %w", err)
+	}
+	// A commit_blocks row pointing at a missing repo_blocks row is
+	// corruption (both insert in the same tx, nothing ever deletes
+	// blocks) — but an under-shipped diff is worse than a fat answer:
+	// same full-CAR fallback as uncovered commits.
+	distinct := make(map[string]struct{}, len(cids))
+	for _, c := range cids {
+		distinct[c] = struct{}{}
+	}
+	if len(blocks) != len(distinct) {
+		return s.RepoCAR(ctx, account.ID)
 	}
 	blockData := make(map[string][]byte, len(blocks)+1)
 	for _, b := range blocks {
@@ -215,6 +227,13 @@ func (s *Service) BlocksCAR(ctx context.Context, did string, cids []string) ([]b
 	}
 	if len(cids) == 0 {
 		return nil, ErrInvalidID
+	}
+	// An account without a head commit has no repo on the network —
+	// same RepoNotFound contract as getRepo.
+	if _, err := s.store.q.GetAtprotoRepoHead(ctx, account.ID); errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("atproto: repo head: %w", err)
 	}
 	seen := make(map[cid.Cid]struct{}, len(cids))
 	valid := make([]cid.Cid, 0, len(cids))
@@ -347,6 +366,9 @@ func (s *Service) RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
 	relay := strings.TrimRight(s.cfg.RelayURL, "/")
 	if relay == "" {
 		return permanent(fmt.Errorf("atproto: JC_ATPROTO_RELAY_URL not configured"))
+	}
+	if s.cfg.pdsHost() == "" {
+		return permanent(ErrMisconfigured)
 	}
 	if !s.featureOn(ctx) {
 		return permanent(fmt.Errorf("atproto: feature.atproto disabled"))

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
@@ -222,10 +223,16 @@ func diffCAR(root cid.Cid, bs *repoBlockstore) (lexutil.LexBytes, error) {
 			return nil, fmt.Errorf("atproto: diff car commit block: %w", err)
 		}
 	}
+	rest := make([]cid.Cid, 0, len(bs.dirty))
 	for c := range bs.dirty {
-		if c == root {
-			continue
+		if c != root {
+			rest = append(rest, c)
 		}
+	}
+	// Deterministic section order — map iteration is random, and a
+	// reproducible diff stream is cheaper to diff/debug downstream.
+	sort.Slice(rest, func(i, j int) bool { return rest[i].String() < rest[j].String() })
+	for _, c := range rest {
 		if err := carutil.LdWrite(&buf, c.Bytes(), bs.blocks[c].RawData()); err != nil {
 			return nil, fmt.Errorf("atproto: diff car block %s: %w", c, err)
 		}
