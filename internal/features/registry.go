@@ -159,6 +159,7 @@ var Registry = []Feature{
 	{Key: "campaign.enabled", Label: "AI Content Campaigns", Description: "Admin-run AI content campaign planning and execution (§104)", Default: true, Category: "AI"},
 	{Key: "intel.enabled", Label: "Intelligence System", Description: "Global toggle for the intelligence pipeline — radar feeds, source crawling, and promotion", Default: true, Category: "AI"},
 	{Key: "webhooks.enabled", Label: "Webhooks", Description: "Outgoing webhook delivery system", Default: false, Category: "Integrations"},
+	{Key: "feature.federation", Label: "Fediverse (ActivityPub)", Description: "Open social web federation — members publish to Mastodon, Threads, Ghost and more via per-user opt-in actors (§126)", Default: false, Category: "Integrations"},
 	// Japa Comparison Engine (JCE) — Sub-spec 1
 	{Key: "feature.jce", Label: "Japa Comparison Engine", Description: "Generic comparison engine powering side-by-side entity comparisons", Default: true, Category: "Tools", SettingsCategory: "jce"},
 	{Key: "feature.jce.nested_items", Label: "JCE Nested Item References", Description: "Allow comparison items to reference nested sub-entities", Default: true, Category: "Tools", SettingsCategory: "jce"},

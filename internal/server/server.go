@@ -76,6 +76,7 @@ import (
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
 	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/federation"
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
@@ -693,6 +694,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceHandlers.SetFollowToggleService(followService)
 	spaceHandlers.SetPermCacheInvalidator(rbacResolver)
 	spaceHandlers.SetPermissionChecker(rbacResolver)
+
+	// ActivityPub Federation subsystem (Section 126 — ActivityPub
+	// Federation, ADR-138). Public AP surface lives at root under
+	// /federation/* and /.well-known/*; member opt-in + admin management
+	// under /api/v1. feature.federation gates the whole surface.
+	federationService := federation.NewService(database, federation.Config{
+		APIBase:      cfg.APIPublicURL,
+		SiteBase:     cfg.SiteURL,
+		HandleDomain: cfg.FederationDomain,
+		Version:      cfg.DeploymentVersion,
+	})
+	federationService.SetSettings(settingsService)
+	federationService.SetValkey(vkClient.Redis())
+	federationHandlers := federation.NewHandlers(federationService)
 
 	// BUG-003: wire the space posting-permission checker into the content
 	// handler so CreateContent enforces the space's posting_perm axis
@@ -3962,6 +3977,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.With(mcp.PublicCORS).Options("/oauth/userinfo", mcp.NoContent)
 	})
 
+	// §126 ActivityPub public surface (ADR-138 — M1 identity + read-only).
+	// Unversioned at root: actor/object @id URLs are permanent. PublicCORS
+	// because remote instances and proxies fetch cross-origin; the whole
+	// surface 404s when feature.federation is off (ADR-042).
+	r.Group(func(r chi.Router) {
+		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose"), features.Gate(featureChecker, "feature.federation"))
+		r.Get("/.well-known/webfinger", federationHandlers.GetWebfinger)
+		r.Get("/.well-known/nodeinfo", federationHandlers.GetWellKnownNodeInfo)
+		r.Get("/federation/nodeinfo/2.1", federationHandlers.GetNodeInfo)
+		r.Get("/federation/actors/{username}", federationHandlers.GetActor)
+		r.Get("/federation/actors/{username}/outbox", federationHandlers.GetOutbox)
+		r.Get("/federation/actors/{username}/followers", federationHandlers.GetFollowers)
+		r.Get("/federation/actors/{username}/following", federationHandlers.GetFollowing)
+		r.Get("/federation/objects/contents/{id}", federationHandlers.GetObject)
+	})
+
 	// API routes go through platform resolution
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
@@ -4796,6 +4827,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.view")).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
+			})
+
+			// Section 126 — ActivityPub Federation (ADR-138). Member opt-in +
+			// admin management; the public AP surface itself is at root.
+			// /api/v1/federation/webfinger + nodeinfo/2.1 exist as proxy
+			// targets for the apex SvelteKit well-known endpoints.
+			r.With(features.Gate(featureChecker, "feature.federation")).Group(func(r chi.Router) {
+				r.With(mcp.PublicCORS).Get("/federation/webfinger", federationHandlers.GetWebfinger)
+				r.With(mcp.PublicCORS).Get("/federation/nodeinfo/2.1", federationHandlers.GetNodeInfo)
+
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation", federationHandlers.GetMyFederation)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation", federationHandlers.EnableMyFederation)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/federation", federationHandlers.DisableMyFederation)
+
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/actors", federationHandlers.ListActors)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/stats", federationHandlers.GetStats)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Get("/admin/federation/instances", federationHandlers.ListBlocks)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Post("/admin/federation/instances", federationHandlers.CreateBlock)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Delete("/admin/federation/instances/{id}", federationHandlers.DeleteBlock)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)

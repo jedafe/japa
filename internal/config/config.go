@@ -79,6 +79,7 @@ type Config struct {
 	OAuthFacebookAppSecret   string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
 	OAuthRedirectBase        string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
 	MCPPublicURL             string // JC_MCP_PUBLIC_URL — public base URL of the API host serving MCP/OAuth (e.g. https://api.example.com); §120 issuer
+	FederationDomain         string // JC_FEDERATION_DOMAIN — ActivityPub acct handle domain (e.g. japa.to); default: host of JC_SITE_URL (§126)
 	EncryptionKey            string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
 	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
 	StripeSecretKey          string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
@@ -180,6 +181,7 @@ func Load() (Config, error) {
 		OAuthFacebookAppSecret:   os.Getenv("JC_OAUTH_FACEBOOK_APP_SECRET"),
 		OAuthRedirectBase:        os.Getenv("JC_OAUTH_REDIRECT_BASE"),
 		MCPPublicURL:             os.Getenv("JC_MCP_PUBLIC_URL"),
+		FederationDomain:         os.Getenv("JC_FEDERATION_DOMAIN"),
 		EncryptionKey:            os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:        os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),

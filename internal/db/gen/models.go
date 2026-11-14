@@ -2084,6 +2084,71 @@ type FeatureFlag struct {
 	UpdatedBy pgtype.UUID        `json:"updated_by"`
 }
 
+type FederatedActor struct {
+	ID                        pgtype.UUID        `json:"id"`
+	UserID                    pgtype.UUID        `json:"user_id"`
+	ActorUrl                  string             `json:"actor_url"`
+	PreferredUsername         string             `json:"preferred_username"`
+	PublicKeyPem              string             `json:"public_key_pem"`
+	PrivateKeyEnc             string             `json:"private_key_enc"`
+	PublicKeyID               string             `json:"public_key_id"`
+	Status                    string             `json:"status"`
+	InboxUrl                  string             `json:"inbox_url"`
+	OutboxUrl                 string             `json:"outbox_url"`
+	FollowersUrl              string             `json:"followers_url"`
+	FollowingUrl              string             `json:"following_url"`
+	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FederationDelivery struct {
+	ID            pgtype.UUID        `json:"id"`
+	ActivityApID  string             `json:"activity_ap_id"`
+	ActivityType  string             `json:"activity_type"`
+	ActivityJson  []byte             `json:"activity_json"`
+	LocalActorID  pgtype.UUID        `json:"local_actor_id"`
+	InboxUrl      string             `json:"inbox_url"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	Status        string             `json:"status"`
+	Attempts      int32              `json:"attempts"`
+	NextRetryAt   pgtype.Timestamptz `json:"next_retry_at"`
+	LastError     *string            `json:"last_error"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	DeliveredAt   pgtype.Timestamptz `json:"delivered_at"`
+}
+
+type FederationFollow struct {
+	ID            pgtype.UUID        `json:"id"`
+	LocalActorID  pgtype.UUID        `json:"local_actor_id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ApActivityID  *string            `json:"ap_activity_id"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FederationInbound struct {
+	ID             pgtype.UUID        `json:"id"`
+	ActivityApID   *string            `json:"activity_ap_id"`
+	ActivityType   string             `json:"activity_type"`
+	ActorUrl       *string            `json:"actor_url"`
+	KeyID          *string            `json:"key_id"`
+	SignatureValid bool               `json:"signature_valid"`
+	Payload        []byte             `json:"payload"`
+	Status         string             `json:"status"`
+	Error          *string            `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type FederationInstanceBlock struct {
+	ID        pgtype.UUID        `json:"id"`
+	Domain    string             `json:"domain"`
+	Reason    *string            `json:"reason"`
+	BlockedBy pgtype.UUID        `json:"blocked_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type Feed struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -3620,6 +3685,25 @@ type RemittanceRateAlert struct {
 	IsActive        bool               `json:"is_active"`
 	LastTriggeredAt pgtype.Timestamptz `json:"last_triggered_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type RemoteActor struct {
+	ID                pgtype.UUID        `json:"id"`
+	ActorUrl          string             `json:"actor_url"`
+	Acct              *string            `json:"acct"`
+	Domain            string             `json:"domain"`
+	InboxUrl          *string            `json:"inbox_url"`
+	SharedInboxUrl    *string            `json:"shared_inbox_url"`
+	OutboxUrl         *string            `json:"outbox_url"`
+	PublicKeyPem      *string            `json:"public_key_pem"`
+	PublicKeyID       *string            `json:"public_key_id"`
+	PreferredUsername *string            `json:"preferred_username"`
+	DisplayName       *string            `json:"display_name"`
+	AvatarUrl         *string            `json:"avatar_url"`
+	Status            string             `json:"status"`
+	FetchedAt         pgtype.Timestamptz `json:"fetched_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ReplyView struct {
