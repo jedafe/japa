@@ -34,7 +34,7 @@
      runs at inset-inline-start 11.5px. Nested (h3+) rows indent, taking
      their markers off the rail — reads as hierarchy. -->
 <ul
-	class="relative space-y-1 before:absolute before:bottom-2 before:start-[11.5px] before:top-2 before:w-px before:bg-[var(--color-border)] before:content-['']"
+	class="relative list-none space-y-1 before:absolute before:bottom-2 before:start-[11.5px] before:top-2 before:w-px before:bg-[var(--color-border)] before:content-['']"
 >
 	{#each items as item (item.id)}
 		{@const active = item.id === activeId}

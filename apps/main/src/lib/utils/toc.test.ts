@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractToc, slugifyHeading, tocHidden } from './toc';
+import { extractToc, slugifyHeading, stripItemPrefix, tocHidden } from './toc';
 
 describe('slugifyHeading', () => {
 	it('lowercases and hyphenates', () => {
@@ -60,6 +60,33 @@ describe('extractToc', () => {
 		const { html: out, items } = extractToc('<h2></h2><h2>Real</h2>');
 		expect(items).toHaveLength(1);
 		expect(out).toContain('<h2></h2>');
+	});
+
+	it('strips prepended enumerators from item text and slug', () => {
+		const { html: out, items } = extractToc('<h2>1. Introduction</h2><h2>• Notes</h2><h2>2) Fees</h2>');
+		expect(items).toEqual([
+			{ id: 'introduction', text: 'Introduction', level: 2 },
+			{ id: 'notes', text: 'Notes', level: 2 },
+			{ id: 'fees', text: 'Fees', level: 2 }
+		]);
+		expect(out).toContain('<h2 id="introduction">1. Introduction</h2>');
+	});
+});
+
+describe('stripItemPrefix', () => {
+	it('removes numeric, bullet, and lettered prefixes', () => {
+		expect(stripItemPrefix('1. Intro')).toBe('Intro');
+		expect(stripItemPrefix('12) Fees')).toBe('Fees');
+		expect(stripItemPrefix('- Dash')).toBe('Dash');
+		expect(stripItemPrefix('• Bullet')).toBe('Bullet');
+		expect(stripItemPrefix('A. Lettered')).toBe('Lettered');
+	});
+
+	it('leaves non-enumerator text alone', () => {
+		expect(stripItemPrefix('2024 Outlook')).toBe('2024 Outlook');
+		expect(stripItemPrefix('U.S. Relations')).toBe('U.S. Relations');
+		expect(stripItemPrefix('Section 2: Costs')).toBe('Section 2: Costs');
+		expect(stripItemPrefix('Étape 1')).toBe('Étape 1');
 	});
 });
 

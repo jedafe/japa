@@ -59,8 +59,22 @@ export function slugifyHeading(text: string): string {
 		.replace(/^-+|-+$/g, '');
 }
 
+/**
+ * Leading enumerator authors bake into headings — "1. Foo", "2) Bar",
+ * "• Baz", "- Qux", "A. Lettered" — is redundant next to the TOC's own
+ * dot marker, so it's stripped from the item label (and thus the slug).
+ * Deliberately narrow: requires trailing whitespace and won't touch
+ * "2024 outlook" (>2 digits), "U.S. relations" (no space after `U.`),
+ * or "Section 2: things" (word first).
+ */
+const PREFIX_RE = /^\s*(?:[-*•·▪◦‣»–—]|\d{1,2}[.)]|[a-zA-Z][.)])\s+/;
+
+export function stripItemPrefix(text: string): string {
+	return text.replace(PREFIX_RE, '').trim();
+}
+
 function headingText(inner: string): string {
-	return decodeEntities(inner.replace(TAG_RE, '')).replace(/\s+/g, ' ').trim();
+	return stripItemPrefix(decodeEntities(inner.replace(TAG_RE, '')).replace(/\s+/g, ' ').trim());
 }
 
 function uniqueSlug(base: string, taken: (id: string) => boolean): string {
@@ -108,7 +122,7 @@ export function scanDomToc(root: HTMLElement, levels = [2, 3]): TocItem[] {
 	const used = new Set<string>();
 	const items: TocItem[] = [];
 	for (const el of root.querySelectorAll<HTMLElement>(sel)) {
-		const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+		const text = stripItemPrefix((el.textContent ?? '').replace(/\s+/g, ' ').trim());
 		if (!text) continue;
 		const level = Number(el.tagName[1]);
 		let id = el.id;
