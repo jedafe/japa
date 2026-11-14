@@ -102,8 +102,6 @@ func (s *Service) profileURL(username string) string {
 	return s.siteBase() + "/u/" + username
 }
 
-func (s *Service) inboxBase() string { return s.apiBase() + "/federation/inbox" }
-
 func (s *Service) outboxPageSize(ctx context.Context) int32 {
 	const fallback = 20
 	if s.settings == nil {
@@ -147,10 +145,16 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		return nil, fmt.Errorf("federation: webfinger lookup: %w", err)
 	}
 
+	// Subject echoes the canonical handle domain, not the (possibly
+	// differently-cased) request domain; fall back to the request domain
+	// only when no handle domain is configured.
+	canonical := s.handleDomain()
+	if canonical == "" {
+		canonical = domain
+	}
 	doc := webfingerJRD(
-		actor.PreferredUsername, domain, actor.ActorUrl,
+		actor.PreferredUsername, canonical, actor.ActorUrl,
 		s.profileURL(actor.PreferredUsername),
-		s.siteBase()+"/authorize_interaction?uri={uri}",
 	)
 	s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
 	return doc, nil
@@ -202,7 +206,16 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 	}
 
 	size := s.outboxPageSize(ctx)
-	rows, err := s.store.federatableContent(ctx, actor.UserID, size, int32(page-1)*size)
+	offset := int32(page-1) * size
+
+	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.OutboxUrl, p) }
+	// Past-the-end pages answer an empty page without scanning — remote
+	// crawlers walk next-links until items dry up, so the bound matters.
+	if int64(offset) >= total {
+		return orderedCollectionPage(pageID(page), actor.OutboxUrl, []any{}, total, false, page > 1, pageID, page), nil
+	}
+
+	rows, err := s.store.federatableContent(ctx, actor.UserID, size, offset)
 	if err != nil {
 		return nil, fmt.Errorf("federation: outbox page: %w", err)
 	}
@@ -213,7 +226,6 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 		items = append(items, createActivity(actor.ActorUrl, actor.FollowersUrl, obj))
 	}
 
-	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.OutboxUrl, p) }
 	return orderedCollectionPage(pageID(page), actor.OutboxUrl, items, total,
 		int64(page)*int64(size) < total, page > 1, pageID, page), nil
 }
@@ -246,6 +258,11 @@ func (s *Service) Followers(ctx context.Context, username string, page int) (map
 	size := s.outboxPageSize(ctx)
 	offset := int32(page-1) * size
 
+	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.FollowersUrl, p) }
+	if int64(offset) >= total {
+		return orderedCollectionPage(pageID(page), actor.FollowersUrl, []any{}, total, false, page > 1, pageID, page), nil
+	}
+
 	// Remote followers fill the first pages; local federated followers follow.
 	items := make([]any, 0, size)
 	if int64(offset) < remote {
@@ -271,7 +288,6 @@ func (s *Service) Followers(ctx context.Context, username string, page int) (map
 		}
 	}
 
-	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.FollowersUrl, p) }
 	return orderedCollectionPage(pageID(page), actor.FollowersUrl, items, total,
 		int64(page)*int64(size) < total, page > 1, pageID, page), nil
 }
@@ -297,7 +313,14 @@ func (s *Service) Following(ctx context.Context, username string, page int) (map
 	}
 
 	size := s.outboxPageSize(ctx)
-	urls, err := s.store.localFollowingURLs(ctx, actor.UserID, size, int32(page-1)*size)
+	offset := int32(page-1) * size
+
+	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.FollowingUrl, p) }
+	if int64(offset) >= total {
+		return orderedCollectionPage(pageID(page), actor.FollowingUrl, []any{}, total, false, page > 1, pageID, page), nil
+	}
+
+	urls, err := s.store.localFollowingURLs(ctx, actor.UserID, size, offset)
 	if err != nil {
 		return nil, fmt.Errorf("federation: following page: %w", err)
 	}
@@ -306,7 +329,6 @@ func (s *Service) Following(ctx context.Context, username string, page int) (map
 		items = append(items, u)
 	}
 
-	pageID := func(p int) string { return fmt.Sprintf("%s?page=%d", actor.FollowingUrl, p) }
 	return orderedCollectionPage(pageID(page), actor.FollowingUrl, items, total,
 		int64(page)*int64(size) < total, page > 1, pageID, page), nil
 }
@@ -342,16 +364,19 @@ func (s *Service) objectFromListRow(row gen.ListFederatableContentByAuthorRow, a
 		BodyHtml:    row.BodyHtml,
 		PublishedAt: row.PublishedAt,
 		UpdatedAt:   row.UpdatedAt,
-	}, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug))
+	}, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
 }
 
 func (s *Service) objectFromGetRow(row gen.GetFederatableContentByIDRow, actor gen.FederatedActor) map[string]any {
-	return objectDocument(row, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug))
+	return objectDocument(row, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
 }
 
-// pageURL resolves the human-facing canonical URL for a contents row:
-// canonical_url when editorially set, else the content-type route path.
-func (s *Service) pageURL(contentType, slug string) string {
+// pageURL resolves the human-facing URL for a contents row: the editorial
+// canonical_url when set, else the content-type route path.
+func (s *Service) pageURL(contentType, slug string, canonical *string) string {
+	if canonical != nil && *canonical != "" {
+		return *canonical
+	}
 	return s.siteBase() + model.LinkPathFor(contentType) + slug
 }
 
@@ -542,7 +567,7 @@ func (s *Service) Stats(ctx context.Context) (gen.GetFederationStatsRow, error) 
 func (s *Service) CreateBlock(ctx context.Context, domain, reason string, blockedBy pgtype.UUID) (gen.FederationInstanceBlock, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" || strings.ContainsAny(domain, "/@ \t") {
-		return gen.FederationInstanceBlock{}, fmt.Errorf("federation: invalid domain %q", domain)
+		return gen.FederationInstanceBlock{}, ErrInvalidDomain
 	}
 	return s.store.createBlock(ctx, domain, reason, blockedBy)
 }

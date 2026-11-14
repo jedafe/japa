@@ -45,6 +45,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
 	case errors.Is(err, ErrHandleDomain):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_resource", "Unsupported resource")
+	case errors.Is(err, ErrInvalidDomain):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_domain", "Invalid instance domain")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
 	}
@@ -252,7 +254,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	block, err := h.service.CreateBlock(r.Context(), body.Domain, body.Reason, user.UserID)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_domain", err.Error())
+		handleServiceErr(w, err)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusCreated, block)
@@ -277,7 +279,12 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func parsePage(r *http.Request) int {
-	n, err := strconv.Atoi(r.URL.Query().Get("page"))
+	raw := r.URL.Query().Get("page")
+	// Mastodon's outbox walker uses ?page=true for the first page.
+	if raw == "true" {
+		return 1
+	}
+	n, err := strconv.Atoi(raw)
 	if err != nil || n < 0 {
 		return 0
 	}

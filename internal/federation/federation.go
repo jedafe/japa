@@ -21,9 +21,14 @@ var ErrNotFound = errors.New("federation: not found")
 // other than the configured handle domain.
 var ErrHandleDomain = errors.New("federation: foreign handle domain")
 
-// Federatable content types (§126 Object Mapping). blog_post and guide
-// serialize as Article; everything else as Note.
-var federatableTypes = []string{"blog_post", "guide", "discussion", "post", "note", "story"}
+// ErrInvalidDomain is returned when an admin submits a malformed instance
+// block domain.
+var ErrInvalidDomain = errors.New("federation: invalid domain")
+
+// Federatable content types (§126 Object Mapping) — real contents
+// content_type values only. blog_post and guide serialize as Article;
+// everything else as Note.
+var federatableTypes = []string{"blog_post", "guide", "discussion", "story"}
 
 // apObjectType maps a contents.content_type to its ActivityStreams type.
 func apObjectType(contentType string) string {

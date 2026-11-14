@@ -127,7 +127,7 @@ CROSS JOIN permissions p
 WHERE (
     (r.slug IN ('member','pro_member','business_member','super_admin') AND p.key = 'federation.use')
     OR
-    (r.slug IN ('admin','super_admin') AND p.key IN ('federation.actors.view','federation.instances.manage'))
+    (r.slug = 'super_admin' AND p.key IN ('federation.actors.view','federation.instances.manage'))
 )
 ON CONFLICT DO NOTHING;
 

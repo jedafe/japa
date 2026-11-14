@@ -208,8 +208,11 @@ SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE (fa.preferred_username = $1 OR u.username = $1)
+WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
   AND fa.status = 'active'
+  AND u.status = 'active'
+ORDER BY (u.username = $1) DESC, fa.created_at DESC
+LIMIT 1
 `
 
 type GetActorProfileByUsernameRow struct {
@@ -343,9 +346,15 @@ func (q *Queries) GetFederatedActorByID(ctx context.Context, id pgtype.UUID) (Fe
 }
 
 const getFederatedActorByUserID = `-- name: GetFederatedActorByUserID :one
-SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at FROM federated_actors WHERE user_id = $1
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE fa.user_id = $1
+  AND u.status = 'active'
 `
 
+// Member-facing + object-attribution lookup. Suspended/deleted users are
+// treated as un-federated so their objects stop serving.
 func (q *Queries) GetFederatedActorByUserID(ctx context.Context, userID pgtype.UUID) (FederatedActor, error) {
 	row := q.db.QueryRow(ctx, getFederatedActorByUserID, userID)
 	var i FederatedActor
@@ -374,16 +383,23 @@ const getFederatedActorByUsername = `-- name: GetFederatedActorByUsername :one
 SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
-WHERE (fa.preferred_username = $1 OR u.username = $1)
+WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
   AND fa.status = 'active'
+  AND u.status = 'active'
+ORDER BY (u.username = $1) DESC, fa.created_at DESC
+LIMIT 1
 `
 
 // Section 126 (ADR-138) — ActivityPub Federation.
 // Local actor management, remote actor cache, remote→local follows,
 // outbound delivery ledger, inbound dedup/audit, instance blocks.
-// Actor lookup for WebFinger + actor-document fetches. Resolves by the
-// handle (preferred_username snapshot) OR the live users.username — a
-// username rename must not strand remote lookups of the old handle.
+// Actor lookup for WebFinger + actor-document fetches. acct localparts are
+// case-insensitive (usernames may be mixed-case), so preferred_username
+// compares under lower(); the live-username arm stays exact to keep using
+// its index. When a rename leaves a stale preferred_username, the live
+// u.username match wins (same precedence as GetUserByUsername) and the
+// superseded actor can never shadow a live handle. Suspended/deleted users
+// do not federate.
 func (q *Queries) GetFederatedActorByUsername(ctx context.Context, username string) (FederatedActor, error) {
 	row := q.db.QueryRow(ctx, getFederatedActorByUsername, username)
 	var i FederatedActor

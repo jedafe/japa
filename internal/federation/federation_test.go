@@ -137,15 +137,14 @@ func TestParseSignatureHeaderQuotedCommas(t *testing.T) {
 func TestWebfingerJRD(t *testing.T) {
 	doc := webfingerJRD("alice", "japa.to",
 		"https://api.japa.to/federation/actors/alice",
-		"https://japa.to/u/alice",
-		"https://japa.to/authorize_interaction?uri={uri}")
+		"https://japa.to/u/alice")
 
 	if doc["subject"] != "acct:alice@japa.to" {
 		t.Errorf("subject: %v", doc["subject"])
 	}
 	links, ok := doc["links"].([]any)
-	if !ok || len(links) != 3 {
-		t.Fatalf("expected 3 links, got %v", doc["links"])
+	if !ok || len(links) != 2 {
+		t.Fatalf("expected 2 links, got %v", doc["links"])
 	}
 	self := links[0].(map[string]any)
 	if self["rel"] != "self" || self["type"] != "application/activity+json" {
@@ -247,6 +246,43 @@ func TestObjectDocumentNoteVsArticle(t *testing.T) {
 	if article["name"] != "Hello" {
 		t.Errorf("Article should carry title as name, got %v", article["name"])
 	}
+
+	// No-nulls rule: optional keys must be absent, not null — several
+	// remote implementations reject unexpected nulls.
+	raw, _ := json.Marshal(article)
+	for _, k := range []string{`"summary":null`, `"inReplyTo":null`} {
+		if strings.Contains(string(raw), k) {
+			t.Errorf("object emits %s — optional keys must be absent", k)
+		}
+	}
+}
+
+func TestCreateActivityOmitsNilPublished(t *testing.T) {
+	obj := map[string]any{"id": "https://api.japa.to/federation/objects/contents/1", "type": "Note"}
+	act := createActivity("https://api.japa.to/federation/actors/alice", "https://api.japa.to/federation/actors/alice/followers", obj)
+	if _, ok := act["published"]; ok {
+		t.Error("published should be absent when the object has none")
+	}
+	obj["published"] = "2024-01-01T00:00:00Z"
+	act = createActivity("a", "f", obj)
+	if act["published"] != "2024-01-01T00:00:00Z" {
+		t.Errorf("published not copied: %v", act["published"])
+	}
+}
+
+func TestPageURLPrefersCanonical(t *testing.T) {
+	s := testService()
+	canonical := "https://japa.to/blog/custom-canonical"
+	if got := s.pageURL("blog_post", "slug", &canonical); got != canonical {
+		t.Errorf("canonical_url should win, got %q", got)
+	}
+	if got := s.pageURL("story", "slug", nil); got != "https://japa.to/story/slug" {
+		t.Errorf("route path fallback, got %q", got)
+	}
+	empty := ""
+	if got := s.pageURL("story", "slug", &empty); got != "https://japa.to/story/slug" {
+		t.Errorf("empty canonical should fall back, got %q", got)
+	}
 }
 
 func TestOrderedCollectionPagination(t *testing.T) {
@@ -346,9 +382,6 @@ func TestServiceURLs(t *testing.T) {
 	if got := s.profileURL("alice"); got != "https://japa.to/u/alice" {
 		t.Errorf("profileURL: %q", got)
 	}
-	if got := s.inboxBase(); got != "https://api.japa.to/federation/inbox" {
-		t.Errorf("inboxBase: %q", got)
-	}
 }
 
 func TestSharedInboxURLDerivation(t *testing.T) {
@@ -388,6 +421,19 @@ func TestAdminActorRowSanitizedBeforeMarshal(t *testing.T) {
 	raw, _ := json.Marshal(AdminActorRow{ListFederatedActorsRow: row, Handle: "alice@japa.to"})
 	if strings.Contains(string(raw), "CIPHERTEXT") {
 		t.Errorf("admin row leaked ciphertext: %s", raw)
+	}
+}
+
+func TestParsePage(t *testing.T) {
+	req := httptest.NewRequest("GET", "/x/outbox", nil)
+	if got := parsePage(req); got != 0 {
+		t.Errorf("no page param: got %d, want 0 (collection)", got)
+	}
+	for raw, want := range map[string]int{"?page=1": 1, "?page=true": 1, "?page=3": 3, "?page=abc": 0, "?page=-2": 0, "?page=0": 0} {
+		req := httptest.NewRequest("GET", "/x/outbox"+raw, nil)
+		if got := parsePage(req); got != want {
+			t.Errorf("%s: got %d, want %d", raw, got, want)
+		}
 	}
 }
 

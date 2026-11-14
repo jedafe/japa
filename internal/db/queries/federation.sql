@@ -3,17 +3,30 @@
 -- outbound delivery ledger, inbound dedup/audit, instance blocks.
 
 -- name: GetFederatedActorByUsername :one
--- Actor lookup for WebFinger + actor-document fetches. Resolves by the
--- handle (preferred_username snapshot) OR the live users.username — a
--- username rename must not strand remote lookups of the old handle.
+-- Actor lookup for WebFinger + actor-document fetches. acct localparts are
+-- case-insensitive (usernames may be mixed-case), so preferred_username
+-- compares under lower(); the live-username arm stays exact to keep using
+-- its index. When a rename leaves a stale preferred_username, the live
+-- u.username match wins (same precedence as GetUserByUsername) and the
+-- superseded actor can never shadow a live handle. Suspended/deleted users
+-- do not federate.
 SELECT fa.*
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
-WHERE (fa.preferred_username = @username OR u.username = @username)
-  AND fa.status = 'active';
+WHERE (lower(fa.preferred_username) = lower(@username) OR u.username = @username)
+  AND fa.status = 'active'
+  AND u.status = 'active'
+ORDER BY (u.username = @username) DESC, fa.created_at DESC
+LIMIT 1;
 
 -- name: GetFederatedActorByUserID :one
-SELECT * FROM federated_actors WHERE user_id = @user_id;
+-- Member-facing + object-attribution lookup. Suspended/deleted users are
+-- treated as un-federated so their objects stop serving.
+SELECT fa.*
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE fa.user_id = @user_id
+  AND u.status = 'active';
 
 -- name: GetActorProfileByUsername :one
 -- Actor-document source row: federated actor + public profile fields
@@ -26,8 +39,11 @@ SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE (fa.preferred_username = @username OR u.username = @username)
-  AND fa.status = 'active';
+WHERE (lower(fa.preferred_username) = lower(@username) OR u.username = @username)
+  AND fa.status = 'active'
+  AND u.status = 'active'
+ORDER BY (u.username = @username) DESC, fa.created_at DESC
+LIMIT 1;
 
 -- name: GetFederatedActorByID :one
 SELECT * FROM federated_actors WHERE id = @id;

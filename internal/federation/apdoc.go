@@ -14,7 +14,11 @@ import (
 // remote implementations reject unexpected nulls.
 
 // webfingerJRD builds the WebFinger JRD for acct:{username}@{domain}.
-func webfingerJRD(username, domain, actorURL, profileURL, subscribeTemplate string) map[string]any {
+// The OStatus subscribe template is deliberately omitted until the apex
+// has an /authorize_interaction page (M2+) — emitting a template that
+// resolves to 404 is worse than none; remote follow still works via the
+// follower's own instance UI.
+func webfingerJRD(username, domain, actorURL, profileURL string) map[string]any {
 	return map[string]any{
 		"subject": fmt.Sprintf("acct:%s@%s", username, domain),
 		"aliases": []string{actorURL, profileURL},
@@ -28,10 +32,6 @@ func webfingerJRD(username, domain, actorURL, profileURL, subscribeTemplate stri
 				"rel":  "http://webfinger.net/rel/profile-page",
 				"type": "text/html",
 				"href": profileURL,
-			},
-			map[string]any{
-				"rel":      "http://ostatus.org/schema/1.0/subscribe",
-				"template": subscribeTemplate,
 			},
 		},
 	}
@@ -106,8 +106,6 @@ func objectDocument(c gen.GetFederatableContentByIDRow, actorURL, followersURL, 
 		"type":         objType,
 		"attributedTo": actorURL,
 		"content":      c.BodyHtml,
-		"summary":      nil,
-		"inReplyTo":    nil,
 		"url":          pageURL,
 		"to":           []string{asPublic},
 		"cc":           []string{followersURL},
@@ -135,17 +133,22 @@ func objectURLFromActor(actorURL, contentID string) string {
 }
 
 // createActivity wraps an object in a Create activity for outbox items.
+// published is copied only when the object carries a real timestamp —
+// absent beats null under the package's no-nulls rule.
 func createActivity(actorURL, followersURL string, object map[string]any) map[string]any {
 	objID, _ := object["id"].(string)
-	return map[string]any{
-		"id":        objID + "#create",
-		"type":      "Create",
-		"actor":     actorURL,
-		"to":        []string{asPublic},
-		"cc":        []string{followersURL},
-		"published": object["published"],
-		"object":    object,
+	act := map[string]any{
+		"id":     objID + "#create",
+		"type":   "Create",
+		"actor":  actorURL,
+		"to":     []string{asPublic},
+		"cc":     []string{followersURL},
+		"object": object,
 	}
+	if published, ok := object["published"]; ok {
+		act["published"] = published
+	}
+	return act
 }
 
 // orderedCollection builds the unpaginated OrderedCollection shell.
