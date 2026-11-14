@@ -2126,6 +2126,19 @@ func (s *Service) applyGuideCategoryInput(ctx context.Context, category **string
 // entity classes are unioned; every is_required key must hold a non-empty
 // value in field_values.
 func (s *Service) validateRequiredFields(ctx context.Context, contentType string, guideCategory *string, fieldValues []byte) error {
+	// §14 list amendment: a published listicle needs ≥1 item — the composer
+	// gates this client-side; the server gate covers API-authored drafts.
+	// Placed first so it never touches the DB for the common empty case.
+	if contentType == TypeList {
+		var fv struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		_ = json.Unmarshal(fieldValues, &fv)
+		if len(fv.Items) == 0 {
+			return fmt.Errorf("%w: %s", ErrMissingRequiredFields, "items")
+		}
+	}
+
 	classes := []string{"content_type", "content_type:" + contentType}
 	if contentType == TypeGuide && guideCategory != nil && *guideCategory != "" {
 		classes = append(classes, "content_type:guide:"+*guideCategory)

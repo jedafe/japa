@@ -194,9 +194,18 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// the query-string form) so filtered hits consolidate. Multi-page lists
 	// (§14) are the exception: each ?page=N is structural content and
 	// self-canonicalizes so every page stays indexable.
-	const canonical = $derived(
-		`${page.url.origin}${contentHref(article)}` + (listPageNo > 1 ? `?page=${listPageNo}` : '')
-	);
+	const listPageUrl = (n: number): string =>
+		`${page.url.origin}${contentHref(article)}` + (n > 1 ? `?page=${n}` : '');
+	const canonical = $derived(listPageUrl(listPageNo));
+	// Pager links keep unrelated query params (utm etc.) but normalize
+	// page=1 away so it shares the clean canonical.
+	const listPageHref = (n: number): string => {
+		const params = new URLSearchParams(page.url.search);
+		if (n === 1) params.delete('page');
+		else params.set('page', String(n));
+		const q = params.toString();
+		return `${q ? `?${q}` : ''}#list-items`;
+	};
 
 	// Series part links route into this article's own route family
 	// (ADR-058): /guide/{slug} for guides, /content/{slug} for generic types.
@@ -269,6 +278,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
+	{#if listPageCount > 1}
+		{#if listPageNo > 1}<link rel="prev" href={listPageUrl(listPageNo - 1)} />{/if}
+		{#if listPageNo < listPageCount}<link rel="next" href={listPageUrl(listPageNo + 1)} />{/if}
+	{/if}
 	{#if article?.seo_indexable === false || article?.indexable === false}
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
@@ -494,7 +507,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				<nav class="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label={t('common.pagination', 'Pagination')}>
 					{#if listPageNo > 1}
 						<a
-							href="?page={listPageNo - 1}#list-items"
+							href={listPageHref(listPageNo - 1)}
 							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 						>
 							{t('common.previous', 'Previous')}
@@ -503,7 +516,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					{#each { length: listPageCount } as _, p (p)}
 						{@const n = p + 1}
 						<a
-							href="?page={n}#list-items"
+							href={listPageHref(n)}
 							aria-current={n === listPageNo ? 'page' : undefined}
 							class="rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {n === listPageNo
 								? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
@@ -514,7 +527,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					{/each}
 					{#if listPageNo < listPageCount}
 						<a
-							href="?page={listPageNo + 1}#list-items"
+							href={listPageHref(listPageNo + 1)}
 							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 						>
 							{t('common.next', 'Next')}

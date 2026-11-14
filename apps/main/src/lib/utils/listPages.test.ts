@@ -105,6 +105,26 @@ describe('flattenListPageWrappers', () => {
 		const flat = flattenListPageWrappers(body);
 		expect(flat).toContain('<p>kept</p>');
 	});
+
+	it('keeps wrapper markup nested inside an item body balanced', () => {
+		// A pasted list-page wrapper inside an item is content, not a
+		// structural wrapper — its open AND close must survive so no stray
+		// </div> escapes into the flat output.
+		const nested = `<div class="list-page" id="list-page-7"><p>pasted</p></div>`;
+		const flat = flattenListPageWrappers(`<p>i</p>${it3(1, nested)}${it3(2)}`);
+		expect(flat).toBe(`<p>i</p>${it3(1, nested)}${it3(2)}`);
+	});
+
+	it('still flattens real wrappers around a nested pasted one', () => {
+		const nested = `<div class="list-page" id="list-page-9"><p>x</p></div>`;
+		const body = `<div class="list-page" id="list-page-1">${it3(1, nested)}</div><div class="list-page" id="list-page-2">${it3(2)}</div>`;
+		expect(flattenListPageWrappers(body)).toBe(`${it3(1, nested)}${it3(2)}`);
+	});
+
+	it('tolerates an unclosed trailing wrapper', () => {
+		const body = `<div class="list-page" id="list-page-1">${it3(1)}${it3(2)}`;
+		expect(flattenListPageWrappers(body)).toBe(`${it3(1)}${it3(2)}`);
+	});
 });
 
 describe('listPageCount', () => {

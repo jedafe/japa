@@ -16,29 +16,60 @@
 
 const ITEM_MARK = '<div class="list-item" id="item-';
 // Wrappers emitted by the pre-field_values-driven serializer:
-// `<div class="list-page" id="list-page-N">`. A page boundary in stored
-// markup is `</div>` (previous wrapper close) + the next wrapper open.
-const PAGE_BOUNDARY = /<\/div><div class="list-page" id="list-page-\d+">/g;
-const PAGE_OPEN = /<div class="list-page" id="list-page-\d+">/g;
-// The last wrapper's close: a `</div>` at end-of-body only when it directly
-// follows another `</div>` (the last item's own close). The lookbehind keeps
-// a lone trailing `</div>` — or any content appended after the last wrapper —
-// untouched.
-const TRAILING_PAGE_CLOSE = /(?<=<\/div>)<\/div>$/;
+// `<div class="list-page" id="list-page-N">`. Sticky regex — matched only
+// at the cursor position.
+const PAGE_MARK = '<div class="list-page" id="list-page-';
+const PAGE_TAG = /<div class="list-page" id="list-page-\d+">/;
+const PAGE_TAG_AT = /<div class="list-page" id="list-page-\d+">/y;
 
 /**
- * Flatten any `.list-page` wrappers out of stored body_html. The wrapper
- * sequence is always `open { items } </div>` pairs — the shared boundary
- * `</div><div class="list-page" id="N">` removes close+open in one pass,
- * the leading open is removed next, and the final wrapper close is the
- * body's last tag pair. Bodies without wrappers are returned untouched.
+ * Flatten any `.list-page` wrappers out of stored body_html. Only
+ * depth-0 wrapper tags are structural: a stack scan skips a strict-pattern
+ * wrapper open and its own matching `</div>`, while a pasted/look-alike
+ * wrapper nested inside an item's rich text is preserved as content (and
+ * its close stays balanced — no stray `</div>` escapes into the flat
+ * output). Bodies without wrappers are returned untouched.
  */
 export function flattenListPageWrappers(bodyHtml: string): string {
-	if (!bodyHtml.includes('class="list-page"')) return bodyHtml;
-	return bodyHtml
-		.replace(PAGE_BOUNDARY, '')
-		.replace(PAGE_OPEN, '')
-		.replace(TRAILING_PAGE_CLOSE, '');
+	if (!bodyHtml.includes(PAGE_MARK)) return bodyHtml;
+	// Fast path: no strict wrapper tags at all — pasted look-alikes alone
+	// don't need rewriting.
+	if (!PAGE_TAG.test(bodyHtml)) return bodyHtml;
+
+	const stack: ('div' | 'page')[] = [];
+	let out = '';
+	for (let i = 0; i < bodyHtml.length; ) {
+		if (stack.length === 0) {
+			PAGE_TAG_AT.lastIndex = i;
+			const m = PAGE_TAG_AT.exec(bodyHtml);
+			if (m) {
+				stack.push('page');
+				i += m[0].length;
+				continue; // drop the wrapper open tag
+			}
+		}
+		if (bodyHtml.startsWith('</div>', i)) {
+			const top = stack.pop();
+			i += 6;
+			if (top === 'page') continue; // drop the wrapper's own close
+			out += '</div>';
+			continue;
+		}
+		if (bodyHtml.startsWith('<div', i)) {
+			stack.push('div');
+			const gt = bodyHtml.indexOf('>', i);
+			if (gt < 0) {
+				out += bodyHtml.slice(i);
+				break;
+			}
+			out += bodyHtml.slice(i, gt + 1);
+			i = gt + 1;
+			continue;
+		}
+		out += bodyHtml[i];
+		i++;
+	}
+	return out;
 }
 
 /**

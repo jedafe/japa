@@ -90,6 +90,10 @@ func validateListFieldValues(raw json.RawMessage, maxItems int, prev json.RawMes
 			(mode != "numbered" && mode != "countdown" && mode != "unnumbered") {
 			return nil, &listValidationError{"invalid_list_mode", "list_mode must be numbered, countdown, or unnumbered"}
 		}
+	} else {
+		// Absent mode normalizes to numbered — the renderer's implicit
+		// default — so stored field_values always carry the key.
+		fv["list_mode"] = json.RawMessage(`"numbered"`)
 	}
 
 	// §14 multi-page lists: items_per_page is optional — null/absent means
