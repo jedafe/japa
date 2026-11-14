@@ -78,6 +78,11 @@ type MentionNotifier interface {
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
 	Service             *Service
+	// SiteURL is the public site base (JC_SITE_URL) — the fallback origin
+	// for absolute URLs built into responses (e.g. ItemList item anchors).
+	// Trusted X-Forwarded-* headers take precedence via
+	// clientip.ForwardedBaseURL.
+	SiteURL             string
 	AsynqClient         TaskEnqueueClient
 	SpamPipeline        *spam.SpamPipeline
 	settings            *config.Settings
@@ -1114,7 +1119,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
 		}
 
-		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
+		fv, vErr := validateListFieldValues(input.FieldValues, maxItems, nil)
 		if vErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
 			return
@@ -1724,7 +1729,9 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		// so itemListElement/numberOfItems are injected from
 		// field_values.items after template resolution.
 		if content.ContentType == TypeList {
-			jsonLd = injectListItemListElements(jsonLd, content.FieldValues)
+			itemBase := clientip.ForwardedBaseURL(r, h.SiteURL) +
+				rssmodel.LinkPathFor(content.ContentType) + content.Slug
+			jsonLd = injectListItemListElements(jsonLd, content.FieldValues, itemBase)
 		}
 
 		// §45: editor FAQ accordion blocks become a FAQPage node — merged
@@ -2098,7 +2105,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			maxItems = h.settings.GetIntOr(r.Context(), "list.max_items", listDefaultMaxItems)
 		}
 
-		fv, vErr := validateListFieldValues(input.FieldValues, maxItems)
+		fv, vErr := validateListFieldValues(input.FieldValues, maxItems, prevContent.FieldValues)
 		if vErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, vErr.Code, vErr.Message)
 			return

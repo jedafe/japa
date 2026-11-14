@@ -45,8 +45,13 @@ type listItem struct {
 // validateListFieldValues validates and normalizes the `list` field_values
 // payload: list_mode enum, item cap (system_settings list.max_items, resolved
 // by the caller), per-item body_html sanitization, UUID/embed-kind checks,
-// http(s)-only URLs.
-func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage, *listValidationError) {
+// http(s)-only URLs. prev is the content's already-stored field_values
+// (empty on create): resubmitted values identical to stored ones are
+// grandfathered past the maxItems bounds so a lowered cap can't strand
+// unrelated edits (§14).
+func validateListFieldValues(raw json.RawMessage, maxItems int, prev json.RawMessage) (json.RawMessage, *listValidationError) {
+	prevIPP, prevItemCount := listPrevBounds(prev)
+
 	var fv map[string]json.RawMessage
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &fv); err != nil {
@@ -70,7 +75,7 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 		var n float64
 		if err := json.Unmarshal(ippRaw, &n); err == nil && ippIsNull(ippRaw) {
 			delete(fv, "items_per_page")
-		} else if err != nil || n < 1 || n > float64(maxItems) || n != float64(int64(n)) {
+		} else if err != nil || n < 1 || (n > float64(maxItems) && int64(n) != prevIPP) || n != float64(int64(n)) {
 			return nil, &listValidationError{"invalid_items_per_page", fmt.Sprintf("items_per_page must be an integer between 1 and %d", maxItems)}
 		} else {
 			fv["items_per_page"] = json.RawMessage(fmt.Sprintf("%d", int64(n)))
@@ -91,7 +96,10 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 		items = []listItem{}
 	}
 
-	if len(items) > maxItems {
+	// Grandfathered like items_per_page: an over-cap list keeps working as
+	// long as the PATCH doesn't grow it — same count or fewer items is
+	// progress toward the lowered bound, not a violation of it.
+	if len(items) > maxItems && len(items) > prevItemCount {
 		return nil, &listValidationError{"too_many_items", fmt.Sprintf("list supports at most %d items", maxItems)}
 	}
 
@@ -234,12 +242,31 @@ func isHTTPURL(s string) bool {
 	return u.Scheme == "http" || u.Scheme == "https"
 }
 
+// listPrevBounds extracts the stored items_per_page and items count from a
+// content row's field_values — the PATCH validator's grandfather inputs:
+// identical resubmissions stay valid even when list.max_items was lowered
+// below them (§14).
+func listPrevBounds(fv json.RawMessage) (itemsPerPage int64, itemCount int) {
+	var parsed struct {
+		ItemsPerPage int64         `json:"items_per_page"`
+		Items        []interface{} `json:"items"`
+	}
+	if err := json.Unmarshal(fv, &parsed); err != nil {
+		return 0, 0
+	}
+	return parsed.ItemsPerPage, len(parsed.Items)
+}
+
 // injectListItemListElements merges itemListElement/numberOfItems derived from
 // field_values.items into a resolved ItemList JSON-LD document. For
 // 'countdown' lists the array order is reversed so position 1 is the top-ranked
-// item (the list's last element). Best-effort: any parse failure returns the
-// input unchanged.
-func injectListItemListElements(jsonLd []byte, fv json.RawMessage) []byte {
+// item (the list's last element). itemBase is the content's absolute public
+// URL (e.g. https://site/list/slug) — each ListItem gets
+// "{itemBase}#item-N" pointing at the item's DOM anchor; N is the DOM
+// position, so for countdown position 1 carries the last item's
+// #item-{len} anchor. Best-effort: any parse failure returns the input
+// unchanged.
+func injectListItemListElements(jsonLd []byte, fv json.RawMessage, itemBase string) []byte {
 	var doc map[string]any
 	if err := json.Unmarshal(jsonLd, &doc); err != nil {
 		return jsonLd
@@ -265,14 +292,20 @@ func injectListItemListElements(jsonLd []byte, fv json.RawMessage) []byte {
 
 	for i := range parsed.Items {
 		it := parsed.Items[i]
+		domIdx := i + 1
 		if parsed.ListMode == "countdown" {
 			// Countdown display order is reversed: the last array element
 			// renders as "#1", so schema.org position p maps to
 			// items[len-p] — the position matches the displayed number.
 			it = parsed.Items[len(parsed.Items)-1-i]
+			domIdx = len(parsed.Items) - i
 		}
 
-		els = append(els, element{Type: "ListItem", Position: i + 1, Name: it.Heading})
+		el := element{Type: "ListItem", Position: i + 1, Name: it.Heading}
+		if itemBase != "" {
+			el.URL = fmt.Sprintf("%s#item-%d", itemBase, domIdx)
+		}
+		els = append(els, el)
 	}
 
 	doc["itemListElement"] = els

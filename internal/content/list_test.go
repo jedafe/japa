@@ -3,6 +3,7 @@ package content
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -34,7 +35,7 @@ func TestValidateListFieldValues(t *testing.T) {
 		{"items_per_page over max", `{"items_per_page":51,"items":[]}`, "invalid_items_per_page"},
 	}
 	for _, tc := range cases {
-		_, err := validateListFieldValues(json.RawMessage(tc.fv), 50)
+		_, err := validateListFieldValues(json.RawMessage(tc.fv), 50, nil)
 		if tc.wantErr == "" && err != nil {
 			t.Errorf("%s: unexpected error %v", tc.name, err)
 		}
@@ -47,7 +48,7 @@ func TestValidateListFieldValues(t *testing.T) {
 
 func TestValidateListFieldValuesItemsPerPage(t *testing.T) {
 	// null disables pagination — the key is normalized out of field_values.
-	out, err := validateListFieldValues(json.RawMessage(`{"items_per_page":null,"items":[]}`), 50)
+	out, err := validateListFieldValues(json.RawMessage(`{"items_per_page":null,"items":[]}`), 50, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestValidateListFieldValuesItemsPerPage(t *testing.T) {
 	}
 
 	// A valid bound is normalized to a plain integer for stable round-trips.
-	out, err = validateListFieldValues(json.RawMessage(`{"items_per_page":3,"items":[]}`), 50)
+	out, err = validateListFieldValues(json.RawMessage(`{"items_per_page":3,"items":[]}`), 50, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,13 +68,43 @@ func TestValidateListFieldValuesItemsPerPage(t *testing.T) {
 	}
 }
 
+func TestValidateListFieldValuesItemsPerPageGrandfather(t *testing.T) {
+	// §14 grandfather rule: a PATCH resubmitting the stored items_per_page
+	// passes even when list.max_items was lowered below it — the author
+	// isn't touching the bound, so unrelated edits must not strand.
+	prev := json.RawMessage(`{"items_per_page":40,"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"},{"heading":"d"},{"heading":"e"},{"heading":"f"},{"heading":"g"},{"heading":"h"},{"heading":"i"},{"heading":"j"},{"heading":"k"},{"heading":"l"}]}`)
+	if _, err := validateListFieldValues(json.RawMessage(`{"items_per_page":40,"items":[]}`), 10, prev); err != nil {
+		t.Fatalf("unchanged stored value should pass under a lowered cap, got %v", err)
+	}
+
+	// A NEW over-cap value still fails — the grandfather only covers the
+	// exact stored number.
+	if _, err := validateListFieldValues(json.RawMessage(`{"items_per_page":39,"items":[]}`), 10, prev); err == nil || err.Code != "invalid_items_per_page" {
+		t.Fatalf("changed over-cap value should fail, got %v", err)
+	}
+
+	// The same rule covers the items array: 12 stored items under a cap of
+	// 10 may resubmit or shrink, but not grow.
+	sameCount := `{"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"},{"heading":"d"},{"heading":"e"},{"heading":"f"},{"heading":"g"},{"heading":"h"},{"heading":"i"},{"heading":"j"},{"heading":"k"},{"heading":"l"}]}`
+	if _, err := validateListFieldValues(json.RawMessage(sameCount), 10, prev); err != nil {
+		t.Fatalf("stored item count should pass under a lowered cap, got %v", err)
+	}
+	if _, err := validateListFieldValues(json.RawMessage(`{"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"},{"heading":"d"},{"heading":"e"},{"heading":"f"},{"heading":"g"},{"heading":"h"},{"heading":"i"},{"heading":"j"},{"heading":"k"}]}`), 10, prev); err != nil {
+		t.Fatalf("shrinking toward the cap should pass, got %v", err)
+	}
+	grown := `{"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"},{"heading":"d"},{"heading":"e"},{"heading":"f"},{"heading":"g"},{"heading":"h"},{"heading":"i"},{"heading":"j"},{"heading":"k"},{"heading":"l"},{"heading":"m"}]}`
+	if _, err := validateListFieldValues(json.RawMessage(grown), 10, prev); err == nil || err.Code != "too_many_items" {
+		t.Fatalf("growing past the cap should fail, got %v", err)
+	}
+}
+
 func TestValidateListFieldValuesMaxItems(t *testing.T) {
 	fv := `{"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"}]}`
-	if _, err := validateListFieldValues(json.RawMessage(fv), 2); err == nil || err.Code != "too_many_items" {
+	if _, err := validateListFieldValues(json.RawMessage(fv), 2, nil); err == nil || err.Code != "too_many_items" {
 		t.Fatalf("want too_many_items, got %v", err)
 	}
 
-	if _, err := validateListFieldValues(json.RawMessage(fv), 3); err != nil {
+	if _, err := validateListFieldValues(json.RawMessage(fv), 3, nil); err != nil {
 		t.Fatalf("3 items at max 3 should pass, got %v", err)
 	}
 }
@@ -81,7 +112,7 @@ func TestValidateListFieldValuesMaxItems(t *testing.T) {
 func TestListItemHTMLSanitized(t *testing.T) {
 	fv := `{"items":[{"body_html":"<p onclick='x()'>hi</p><script>bad()</script>"}]}`
 
-	out, err := validateListFieldValues(json.RawMessage(fv), 50)
+	out, err := validateListFieldValues(json.RawMessage(fv), 50, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,10 +128,11 @@ func TestListItemHTMLSanitized(t *testing.T) {
 // to items in reverse (position p → items[len-p]).
 func TestInjectListItemListElements(t *testing.T) {
 	jsonLd := []byte(`{"@context":"https://schema.org","@type":"ItemList","name":"My list"}`)
+	const itemBase = "https://example.com/list/my-list"
 
 	t.Run("numbered order preserved", func(t *testing.T) {
 		fv := json.RawMessage(`{"list_mode":"numbered","items":[{"heading":"First"},{"heading":"Second"},{"heading":"Third"}]}`)
-		doc := decodeJSONLD(t, injectListItemListElements(jsonLd, fv))
+		doc := decodeJSONLD(t, injectListItemListElements(jsonLd, fv, itemBase))
 
 		els, ok := doc["itemListElement"].([]any)
 		if !ok || len(els) != 3 {
@@ -109,8 +141,9 @@ func TestInjectListItemListElements(t *testing.T) {
 
 		for i, want := range []string{"First", "Second", "Third"} {
 			el := els[i].(map[string]any)
-			if el["position"] != float64(i+1) || el["name"] != want {
-				t.Fatalf("element %d = %v, want position %d name %q", i, el, i+1, want)
+			wantURL := "https://example.com/list/my-list#item-" + strconv.Itoa(i+1)
+			if el["position"] != float64(i+1) || el["name"] != want || el["url"] != wantURL {
+				t.Fatalf("element %d = %v, want position %d name %q url %q", i, el, i+1, want, wantURL)
 			}
 		}
 
@@ -121,7 +154,7 @@ func TestInjectListItemListElements(t *testing.T) {
 
 	t.Run("countdown reverses positions", func(t *testing.T) {
 		fv := json.RawMessage(`{"list_mode":"countdown","items":[{"heading":"Bronze"},{"heading":"Silver"},{"heading":"Gold"}]}`)
-		doc := decodeJSONLD(t, injectListItemListElements(jsonLd, fv))
+		doc := decodeJSONLD(t, injectListItemListElements(jsonLd, fv, itemBase))
 
 		els, ok := doc["itemListElement"].([]any)
 		if !ok || len(els) != 3 {
@@ -132,8 +165,10 @@ func TestInjectListItemListElements(t *testing.T) {
 		want := []string{"Gold", "Silver", "Bronze"}
 		for i, w := range want {
 			el := els[i].(map[string]any)
-			if el["position"] != float64(i+1) || el["name"] != w {
-				t.Fatalf("element %d = %v, want position %d name %q", i, el, i+1, w)
+			// position 1 (top rank) anchors the LAST DOM item — #item-3.
+			wantURL := "https://example.com/list/my-list#item-" + strconv.Itoa(len(want)-i)
+			if el["position"] != float64(i+1) || el["name"] != w || el["url"] != wantURL {
+				t.Fatalf("element %d = %v, want position %d name %q url %q", i, el, i+1, w, wantURL)
 			}
 		}
 	})
@@ -141,14 +176,14 @@ func TestInjectListItemListElements(t *testing.T) {
 	t.Run("empty items returns input unchanged", func(t *testing.T) {
 		fv := json.RawMessage(`{"list_mode":"numbered","items":[]}`)
 
-		out := injectListItemListElements(jsonLd, fv)
+		out := injectListItemListElements(jsonLd, fv, itemBase)
 		if !bytes.Equal(out, jsonLd) {
 			t.Fatalf("expected unchanged input, got %s", out)
 		}
 	})
 
 	t.Run("garbage field_values returns input unchanged", func(t *testing.T) {
-		out := injectListItemListElements(jsonLd, json.RawMessage(`not json`))
+		out := injectListItemListElements(jsonLd, json.RawMessage(`not json`), itemBase)
 		if !bytes.Equal(out, jsonLd) {
 			t.Fatalf("expected unchanged input, got %s", out)
 		}

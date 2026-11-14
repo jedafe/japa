@@ -2,6 +2,7 @@
 	// Shared content single-page layout — used by /content/[slug] (fallback
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
@@ -132,8 +133,6 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// Render dates in the app-selected locale — `undefined` (server/client
 	// default locale) diverges between SSR and hydration for non-en users.
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' }));
-	const title = $derived(`${article.title} — ${t('app.name')}`);
-	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
 	const allowedIframeHosts = $derived(
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
@@ -157,11 +156,31 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	});
 	const listPageCount = $derived(listPageCount_(listBody.items.length, listItemsPerPage));
 	const listPageNo = $derived(clampListPage(parseInt(page.url.searchParams.get('page') ?? '1', 10), listPageCount));
+	// Suffix for title/meta on ?page=N>1 — each structural page is a
+	// distinct document for crawlers, so the title must differ too.
+	const listPageSuffix = $derived(listPageNo > 1 ? ` — ${t('common.page')} ${listPageNo}` : '');
+	const title = $derived(`${article.title}${listPageSuffix} — ${t('app.name')}`);
+	const description = $derived((article.excerpt ?? article.body.slice(0, 160)) + listPageSuffix);
 	const renderedBody = $derived(
 		listPageCount > 0
 			? listBody.intro + listBody.items.slice((listPageNo - 1) * listItemsPerPage, listPageNo * listItemsPerPage).join('')
 			: sanitizedBody
 	);
+
+	// Cross-page #item-N deep links: the fragment never reaches the server,
+	// so /list/x#item-5 can land on a ?page=N that doesn't contain the
+	// anchor. When the hash names an item living on another page, correct
+	// the URL in place (replaceState — the wrong page wasn't a step the
+	// user chose). Runs in an effect so client-side slug nav is covered
+	// too; after the goto the target page holds the item → effect settles.
+	$effect(() => {
+		const hash = page.url.hash;
+		if (!hash.startsWith('#item-') || listPageCount === 0) return;
+		const idx = listBody.items.findIndex((html) => html.includes(`id="${hash.slice(1)}"`));
+		if (idx < 0) return;
+		const target = Math.floor(idx / listItemsPerPage) + 1;
+		if (target !== listPageNo) goto(`?page=${target}${hash}`, { replaceState: true });
+	});
 
 	// Section 26 — self-referencing canonical on the clean content URL (never
 	// the query-string form) so filtered hits consolidate. Multi-page lists
@@ -238,7 +257,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
-	<meta property="og:title" content={article.title} />
+	<meta property="og:title" content={article.title + listPageSuffix} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
@@ -249,7 +268,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	<meta property="og:image" content={seoOgImage} />
 	<meta name="twitter:image" content={seoOgImage} />
 	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={article.title} />
+	<meta name="twitter:title" content={article.title + listPageSuffix} />
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
