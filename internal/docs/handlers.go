@@ -32,18 +32,19 @@ type PermissionChecker interface {
 }
 
 // AudienceGates maps each audience to the RBAC permission node required to read
-// it. Only documentation meant for internal development, the admin panel, and
-// the control panel is gated (admin, superadmin). Every other audience —
-// users, premium, organizations, moderators, api — is public: readable by
-// anyone regardless of which group the docs target.
+// it. Only documentation meant for internal use is gated: moderators,
+// admin, superadmin. Every other audience — users, premium, organizations,
+// api — is public: readable by anyone regardless of which group the docs
+// target. `moderators` is gated on admin.moderation, the existing node every
+// moderation-queue route already requires — no dedicated node needed.
 // Ref: japaconnect-engineering/sections/44-documentation-system.md.
 var AudienceGates = map[string]string{
+	"moderators": "admin.moderation",
 	"admin":      "admin.panel.access",
 	"superadmin": "admin.panel.access", // super_admin group holds wildcard
-	// users/premium/organizations/moderators/api stay public per §44 —
-	// TestAudienceGatesOnlyInternal codifies this. If premium/moderator docs
-	// should ever be gated, it needs a dedicated permission node (no seeded
-	// node expresses "is premium" / "is moderator"), not a repurposed one.
+	// users/premium/organizations/api stay public — moderator playbooks are
+	// internal; premium/org docs are pre-signup reading by product decision.
+	// TestAudienceGatesOnlyInternal codifies this.
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -121,8 +122,8 @@ func (h *Handlers) enqueueSearchIndex(pageID pgtype.UUID, operation string) {
 }
 
 // checkAudienceGate verifies the requester may read the given audience.
-// Ungated audiences (users, premium, organizations, moderators, api) always
-// pass. Gated audiences (admin, superadmin — internal/admin/control docs)
+// Ungated audiences (users, premium, organizations, api) always
+// pass. Gated audiences (moderators, admin, superadmin — internal docs)
 // require auth and the RBAC permission node mapped in AudienceGates (§44).
 // Returns true if access is allowed; false and writes a 403 if denied.
 func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, audience string) bool {
