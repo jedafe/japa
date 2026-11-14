@@ -5,7 +5,7 @@
 # has a tiny attack surface.
 
 # Stage 1: build the binary
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /build
 
