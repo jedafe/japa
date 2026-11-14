@@ -33,6 +33,7 @@ import (
 	carutil "github.com/ipld/go-car/util"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	jdb "github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	cbg "github.com/whyrusleeping/cbor-gen"
 )
@@ -52,9 +53,17 @@ const (
 )
 
 // insertEvent writes one sequencer row inside the caller's transaction
-// (commit events) or on the pool (lifecycle events). payload is the
+// (commit events) or a short pool tx (lifecycle events). payload is the
 // frame body with seq/time left zero — both stamp from the row at emit.
+//
+// The advisory lock is load-bearing: the identity seq allocates at
+// INSERT, not COMMIT, so without it two concurrent txs can commit out of
+// seq order and a seq > cursor reader skips the still-uncommitted lower
+// seq forever. Held to tx end, commit order == seq order.
 func insertEvent(ctx context.Context, q *gen.Queries, did, kind string, payload []byte) error {
+	if err := q.LockAtprotoEventSeq(ctx); err != nil {
+		return fmt.Errorf("atproto: event seq lock: %w", err)
+	}
 	_, err := q.InsertAtprotoRepoEvent(ctx, gen.InsertAtprotoRepoEventParams{
 		Did:     did,
 		Kind:    kind,
@@ -64,16 +73,19 @@ func insertEvent(ctx context.Context, q *gen.Queries, did, kind string, payload 
 }
 
 // emitEvent best-effort inserts a lifecycle frame (identity/account).
-// These ride the pool, not a tx — a lost frame costs one stale identity
-// cache downstream (the next change re-emits), which is cheap compared
-// to aborting the caller's operation.
+// A lost frame costs one stale identity cache downstream (the next
+// change re-emits), which is cheap compared to aborting the caller's
+// operation. Runs in its own short tx so the seq lock spans lock+insert
+// (a bare advisory lock on the pool would release before the INSERT).
 func (s *Service) emitEvent(ctx context.Context, did, kind string, body any) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		slog.Warn("atproto: event marshal failed", "kind", kind, "did", did, "error", err)
 		return
 	}
-	if err := insertEvent(ctx, s.store.q, did, kind, payload); err != nil {
+	if err := jdb.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		return insertEvent(ctx, q, did, kind, payload)
+	}); err != nil {
 		slog.Warn("atproto: event insert failed", "kind", kind, "did", did, "error", err)
 	}
 }

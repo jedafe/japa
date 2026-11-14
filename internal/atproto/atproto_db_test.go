@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
 	atrepo "github.com/bluesky-social/indigo/repo"
 	"github.com/gorilla/websocket"
@@ -1832,5 +1834,74 @@ func TestDBGetRepoSince(t *testing.T) {
 	_, blocks = readCAR(t, rec.Body.Bytes())
 	if len(blocks) != 1 {
 		t.Fatalf("getRepo?since=head: %d blocks, want 1", len(blocks))
+	}
+}
+
+// TestDBConcurrentCommitEventOrder hammers the event sequencer with
+// concurrent repo writes on two accounts plus racing lifecycle emits —
+// the cross-account case the seq lock exists for: without serialized
+// inserts, two txs can commit out of seq order and a seq > cursor
+// reader skips the still-uncommitted lower seq forever. Asserts every
+// commit lands on the stream and nothing deadlocks under contention.
+func TestDBConcurrentCommitEventOrder(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+
+	u1, _ := newAtprotoUser(t, ctx, d, "active")
+	u2, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := svc.EnableAccount(ctx, u1); err != nil {
+		t.Fatalf("enable u1: %v", err)
+	}
+	if _, err := svc.EnableAccount(ctx, u2); err != nil {
+		t.Fatalf("enable u2: %v", err)
+	}
+	a1 := atprotoAccountFor(t, ctx, d, u1)
+	a2 := atprotoAccountFor(t, ctx, d, u2)
+
+	const n = 4
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2*n)
+	put := func(acct gen.AtprotoAccount, tag string) {
+		defer wg.Done()
+		rec := &bsky.ActorProfile{
+			LexiconTypeID: CollectionProfile,
+			DisplayName:   &tag,
+		}
+		if _, err := svc.PutRecord(ctx, acct.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{}); err != nil {
+			errCh <- err
+		}
+	}
+	for i := 0; i < n; i++ {
+		wg.Add(3)
+		go put(a1, fmt.Sprintf("a1-%d", i))
+		go put(a2, fmt.Sprintf("a2-%d", i))
+		// Lifecycle emits racing the commit inserts — the pool path
+		// holds the same seq lock across its short tx.
+		go func() {
+			defer wg.Done()
+			svc.emitIdentityEvent(ctx, a1.Did, a1.Handle)
+			svc.emitAccountEvent(ctx, a2.Did, true, "")
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent put: %v", err)
+	}
+
+	// Every commit landed — n profile writes + the root commit per DID.
+	// The lock makes commit order == seq order, so a replaying reader
+	// can never observe a later seq while an earlier one is in flight.
+	for _, acct := range []gen.AtprotoAccount{a1, a2} {
+		var commits int64
+		if err := d.Writer.QueryRow(ctx,
+			`SELECT count(*) FROM atproto_repo_events WHERE did = $1 AND kind = 'commit'`,
+			acct.Did).Scan(&commits); err != nil {
+			t.Fatalf("count commits: %v", err)
+		}
+		if commits != int64(n+1) {
+			t.Fatalf("%s commits = %d, want %d", acct.Did, commits, n+1)
+		}
 	}
 }

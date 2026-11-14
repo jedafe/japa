@@ -388,8 +388,13 @@ func (s *Service) RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
 		return fmt.Errorf("atproto: requestCrawl: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("atproto: requestCrawl: relay %s returned %d", relay, resp.StatusCode)
+	if resp.StatusCode/100 == 2 {
+		return nil
 	}
-	return nil
+	// A 4xx from the relay is a verdict, not a transient — the same
+	// request gets the same answer on every retry.
+	if resp.StatusCode/100 == 4 {
+		return permanent(fmt.Errorf("atproto: requestCrawl: relay %s returned %d", relay, resp.StatusCode))
+	}
+	return fmt.Errorf("atproto: requestCrawl: relay %s returned %d", relay, resp.StatusCode)
 }

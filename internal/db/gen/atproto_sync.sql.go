@@ -93,7 +93,6 @@ func (q *Queries) InsertAtprotoCommitBlock(ctx context.Context, arg InsertAtprot
 }
 
 const insertAtprotoRepoEvent = `-- name: InsertAtprotoRepoEvent :one
-
 INSERT INTO atproto_repo_events (did, kind, payload)
 VALUES ($1, $2, $3::jsonb)
 RETURNING seq
@@ -105,11 +104,6 @@ type InsertAtprotoRepoEventParams struct {
 	Payload []byte `json:"payload"`
 }
 
-// Native AT Protocol mini-PDS (§127, ADR-139) — A3 sync surface queries.
-// atproto_repo_events is the subscribeRepos sequencer: commit rows land
-// inside the repo-write tx (seq order == commit order), identity/account
-// rows land best-effort on lifecycle transitions. Consumers replay from
-// a cursor (last-seen seq) then live-tail.
 func (q *Queries) InsertAtprotoRepoEvent(ctx context.Context, arg InsertAtprotoRepoEventParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertAtprotoRepoEvent, arg.Did, arg.Kind, arg.Payload)
 	var seq int64
@@ -269,4 +263,24 @@ func (q *Queries) ListAtprotoRepoEventsAfter(ctx context.Context, arg ListAtprot
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockAtprotoEventSeq = `-- name: LockAtprotoEventSeq :exec
+
+SELECT pg_advisory_xact_lock(hashtextextended('atproto:repo_events:seq', 0))
+`
+
+// Native AT Protocol mini-PDS (§127, ADR-139) — A3 sync surface queries.
+// atproto_repo_events is the subscribeRepos sequencer: commit rows land
+// inside the repo-write tx (seq order == commit order), identity/account
+// rows land best-effort on lifecycle transitions. Consumers replay from
+// a cursor (last-seen seq) then live-tail.
+// Serializes event inserts: bigserial allocates seq at INSERT, not
+// commit — without this, two concurrent repo-write txs can invert
+// (seq 6 commits before seq 5) and a seq > cursor reader permanently
+// skips the committed 5. Holding the lock to tx end forces commit
+// order == seq order. Same pg_advisory_xact_lock convention as wallet.
+func (q *Queries) LockAtprotoEventSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockAtprotoEventSeq)
+	return err
 }

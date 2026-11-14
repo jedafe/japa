@@ -4,6 +4,14 @@
 -- rows land best-effort on lifecycle transitions. Consumers replay from
 -- a cursor (last-seen seq) then live-tail.
 
+-- name: LockAtprotoEventSeq :exec
+-- Serializes event inserts: bigserial allocates seq at INSERT, not
+-- commit — without this, two concurrent repo-write txs can invert
+-- (seq 6 commits before seq 5) and a seq > cursor reader permanently
+-- skips the committed 5. Holding the lock to tx end forces commit
+-- order == seq order. Same pg_advisory_xact_lock convention as wallet.
+SELECT pg_advisory_xact_lock(hashtextextended('atproto:repo_events:seq', 0));
+
 -- name: InsertAtprotoRepoEvent :one
 INSERT INTO atproto_repo_events (did, kind, payload)
 VALUES (@did, @kind, @payload::jsonb)
