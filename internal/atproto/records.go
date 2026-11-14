@@ -176,15 +176,24 @@ func ContentPostURI(did string, contentID pgtype.UUID) string {
 
 // PublishContent projects an eligible contents row into the author's
 // repo as app.bsky.feed.post, keyed by the content UUID — republishes
-// are upserts, never duplicates. Content that has left the federatable
-// set (unpublished, visibility tightened, deleted, flag-gated) resolves
-// permanent(ErrNotFound) — retrying can never make it eligible. The
-// feature.atproto kill-switch freezes new projections but never blocks
-// deletes, so tombstones still drain the repo while the feature is off.
-// Returns the record's at:// URI.
-func (s *Service) PublishContent(ctx context.Context, accountID, contentID pgtype.UUID) (string, error) {
+// are upserts, never duplicates. The account is resolved from the
+// content's author, so a caller can only ever publish into the owning
+// repo. Content that has left the federatable set (unpublished,
+// visibility tightened, deleted, flag-gated, author without an active
+// account) resolves permanent(ErrNotFound) — retrying can never make
+// it eligible. The feature.atproto kill-switch freezes new projections
+// but never blocks deletes, so tombstones still drain the repo while
+// the feature is off. Returns the record's at:// URI.
+func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error) {
 	if !s.featureOn(ctx) {
 		return "", permanent(fmt.Errorf("atproto: feature.atproto disabled"))
+	}
+	accountID, err := s.store.q.GetAtprotoAccountIDByContent(ctx, contentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", permanent(ErrNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("atproto: account for content: %w", err)
 	}
 	row, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 		ID:           contentID,
@@ -217,8 +226,8 @@ func (s *Service) DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, ur
 	}
 	collection := parsed.Collection().String()
 	rkey := parsed.RecordKey().String()
-	if rkey == "" {
-		return permanent(fmt.Errorf("atproto: delete uri %q: missing record key", uri))
+	if collection == "" || rkey == "" {
+		return permanent(fmt.Errorf("atproto: delete uri %q: missing collection or record key", uri))
 	}
 	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
 		if parsed.Authority().String() != rep.RepoDid() {

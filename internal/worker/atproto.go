@@ -21,7 +21,7 @@ import (
 // auth-heavy import graph — internal/auth itself imports this package.
 type atprotoRepoWriter interface {
 	PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, collection, rkey string, raw json.RawMessage, contentID pgtype.UUID) (string, error)
-	PublishContent(ctx context.Context, accountID, contentID pgtype.UUID) (string, error)
+	PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error)
 	DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error
 }
 
@@ -49,15 +49,15 @@ func skipIfPermanent(err error) error {
 }
 
 // EnqueueAtprotoPublishContent fires atproto:publish_record for a
-// contents-derived feed.post — the worker builds the record from the
-// canonical row at task time (freshness + eligibility at write, not
-// enqueue). Fire-and-forget (Rule 8); a nil enqueuer is a no-op.
-func EnqueueAtprotoPublishContent(ctx context.Context, accountID, contentID pgtype.UUID) {
+// contents-derived feed.post — the service resolves the author's repo
+// and builds the record from the canonical row at task time (freshness
+// + eligibility + account pairing at write, not enqueue). Fire-and-
+// forget (Rule 8); a nil enqueuer is a no-op.
+func EnqueueAtprotoPublishContent(ctx context.Context, contentID pgtype.UUID) {
 	if taskEnqueuer == nil {
 		return
 	}
 	payload, err := json.Marshal(map[string]string{
-		"account_id": accountID.String(),
 		"collection": "app.bsky.feed.post",
 		"content_id": contentID.String(),
 	})
@@ -113,38 +113,42 @@ func HandleAtprotoPublishRecord(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:atproto:publish_record: invalid payload", "error", err)
 		return err
 	}
-	if payload.AccountID == "" {
-		slog.Error("task:atproto:publish_record: payload missing account_id")
-		return fmt.Errorf("task:atproto:publish_record: incomplete payload: %w", asynq.SkipRetry)
-	}
-
-	accountID, err := scanUUID(payload.AccountID)
-	if err != nil {
-		return fmt.Errorf("task:atproto:publish_record: %w: %w", err, asynq.SkipRetry)
-	}
 	contentID, err := scanOptionalUUID(payload.ContentID)
 	if err != nil {
 		return fmt.Errorf("task:atproto:publish_record: %w: %w", err, asynq.SkipRetry)
 	}
 
-	// Content-derived post: no embedded record — the service builds it
-	// from the canonical contents row and re-checks eligibility at write
-	// time, so an unpublished/deleted row is never projected.
+	// Content-derived post: no embedded record — the service resolves the
+	// author's repo from the contents row, builds the record, and re-
+	// checks eligibility at write time, so an unpublished/deleted row is
+	// never projected.
 	if len(payload.Record) == 0 {
 		if !contentID.Valid {
 			slog.Error("task:atproto:publish_record: payload has neither record nor content_id")
 			return fmt.Errorf("task:atproto:publish_record: incomplete payload: %w", asynq.SkipRetry)
 		}
-		uri, err := atprotoSvc.PublishContent(ctx, accountID, contentID)
+		if payload.Collection != "" && payload.Collection != "app.bsky.feed.post" {
+			slog.Error("task:atproto:publish_record: content task with non-post collection", "collection", payload.Collection)
+			return fmt.Errorf("task:atproto:publish_record: collection %q cannot carry content_id: %w", payload.Collection, asynq.SkipRetry)
+		}
+		uri, err := atprotoSvc.PublishContent(ctx, contentID)
 		if err != nil {
 			slog.Error("task:atproto:publish_record: publish failed",
-				"account_id", payload.AccountID, "content_id", payload.ContentID, "error", err)
+				"content_id", payload.ContentID, "error", err)
 			return skipIfPermanent(err)
 		}
 		slog.Info("task:atproto:publish_record: committed", "uri", uri)
 		return nil
 	}
 
+	if payload.AccountID == "" {
+		slog.Error("task:atproto:publish_record: payload missing account_id")
+		return fmt.Errorf("task:atproto:publish_record: incomplete payload: %w", asynq.SkipRetry)
+	}
+	accountID, err := scanUUID(payload.AccountID)
+	if err != nil {
+		return fmt.Errorf("task:atproto:publish_record: %w: %w", err, asynq.SkipRetry)
+	}
 	if payload.Collection == "" {
 		slog.Error("task:atproto:publish_record: record payload missing collection")
 		return fmt.Errorf("task:atproto:publish_record: incomplete payload: %w", asynq.SkipRetry)

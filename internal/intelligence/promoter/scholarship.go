@@ -21,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 	"github.com/jedafe/japa/internal/intelligence/services"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Store is the persistence surface the ScholarshipPromoter needs.
@@ -184,14 +185,28 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 	// error means we take the create path; any other error propagates.
 	existing, err := p.store.GetScholarshipByIntelRecord(ctx, pgID)
 	if err != nil {
-		if isNotFound(err) {
-			return p.createPath(ctx, record, source, ext)
+		if !isNotFound(err) {
+			return PromoteResult{}, fmt.Errorf("promoter: load existing scholarship: %w", err)
 		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing scholarship: %w", err)
 	}
 
-	return p.updatePath(ctx, record, source, existing, ext)
+	var result PromoteResult
+	if isNotFound(err) {
+		result, err = p.createPath(ctx, record, source, ext)
+	} else {
+		result, err = p.updatePath(ctx, record, source, existing, ext)
+	}
+
+	// §127 A2: a scholarship guide row written inside the promoter's tx
+	// bypasses content.Service — project it into the author's mini-PDS
+	// repo here, post-commit. The task re-checks eligibility and resolves
+	// the owning repo at write time (authors without accounts are a
+	// permanent skip). Verified bumps write no content — nothing to emit.
+	if err == nil && result.ContentID != uuid.Nil &&
+		(result.Action == ActionCreated || result.Action == ActionUpdated) {
+		worker.EnqueueAtprotoPublishContent(ctx, uuidToPg(result.ContentID))
+	}
+	return result, err
 }
 
 // createPath inserts the scholarships projection row. High-confidence,

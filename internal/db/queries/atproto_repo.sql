@@ -75,6 +75,16 @@ RETURNING *;
 SELECT * FROM atproto_blobs
 WHERE account_id = @account_id AND cid = @cid;
 
+-- name: GetAtprotoAccountIDByContent :one
+-- Content-keyed account resolution: the single source of truth for which
+-- repo a contents row projects into — callers pass only content_id so a
+-- (account, content) pairing bug is impossible by construction.
+SELECT a.id
+FROM atproto_accounts a
+JOIN contents c ON c.author_id = a.user_id
+WHERE c.id = @content_id
+  AND a.status = 'active';
+
 -- name: GetAtprotoProjectableContent :one
 -- Eligibility mirrors federation's GetFederatableContentByID: published +
 -- public + not deleted + federatable type (§127 Security: "same
@@ -88,6 +98,20 @@ WHERE c.id = @id
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
   AND c.content_type = ANY(@content_types::text[]);
+
+-- name: GetAtprotoRecordsByContent :many
+-- Content-keyed delete resolution: index rows are the durable proof a
+-- record was projected, so they resolve the (account_id, uri) delete
+-- task even after the contents row is soft-deleted/unreachable. Many,
+-- not one — an author reassignment can briefly index the same content
+-- under two repos until the old record's tombstone lands. The account
+-- join keeps disabled-account repos frozen (deliberate §127 lifecycle —
+-- emit sites skip, and the task itself no-ops on inactive accounts).
+SELECT r.account_id, r.uri
+FROM atproto_records r
+JOIN atproto_accounts a ON a.id = r.account_id AND a.status = 'active'
+WHERE r.content_id = @content_id
+  AND r.collection = 'app.bsky.feed.post';
 
 -- name: GetAtprotoUserProfile :one
 SELECT display_name, bio, avatar_media_id, banner_media_id

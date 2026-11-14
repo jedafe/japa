@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // use content package to avoid unused import in the create path.
@@ -159,11 +160,23 @@ func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 	// For guide content types, the promoted_record_id on the intel_record
 	// points to the contents row ID. If it's already set, this is an
 	// update; otherwise it's a create.
+	var result PromoteResult
 	if record.PromotedRecordID.Valid {
-		return p.guideUpdatePath(ctx, record, source, ext)
+		result, err = p.guideUpdatePath(ctx, record, source, ext)
+	} else {
+		result, err = p.guideCreatePath(ctx, record, source, ext)
 	}
 
-	return p.guideCreatePath(ctx, record, source, ext)
+	// §127 A2: the guide contents row was written in the promoter's own
+	// tx (bypassing content.Service), so the repo projection emit happens
+	// here post-commit. The task re-checks eligibility and resolves the
+	// author's repo at write time — a system author without an active
+	// mini-PDS account is a permanent skip, free.
+	if err == nil && result.ContentID != uuid.Nil &&
+		(result.Action == ActionCreated || result.Action == ActionUpdated) {
+		worker.EnqueueAtprotoPublishContent(ctx, uuidToPg(result.ContentID))
+	}
+	return result, err
 }
 
 func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {

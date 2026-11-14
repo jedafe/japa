@@ -657,7 +657,7 @@ func TestDBRepoPublishAndDeletePost(t *testing.T) {
 	acct := atprotoAccountFor(t, ctx, d, userID)
 	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
 
-	uri, err := svc.PublishContent(ctx, acct.ID, contentID)
+	uri, err := svc.PublishContent(ctx, contentID)
 	if err != nil {
 		t.Fatalf("PublishContent: %v", err)
 	}
@@ -719,7 +719,7 @@ func TestDBRepoCARRoundTrip(t *testing.T) {
 	}
 	acct := atprotoAccountFor(t, ctx, d, userID)
 	contentID := newAtprotoContent(t, ctx, d, userID, "blog_post", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, contentID); err != nil {
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
 		t.Fatalf("PublishContent: %v", err)
 	}
 
@@ -796,29 +796,35 @@ func TestDBRepoPublishGuards(t *testing.T) {
 	if _, err := svc.EnableAccount(ctx, userID); err != nil {
 		t.Fatalf("EnableAccount: %v", err)
 	}
-	acct := atprotoAccountFor(t, ctx, d, userID)
-
 	draft := newAtprotoContent(t, ctx, d, userID, "discussion", "draft", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, draft); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.PublishContent(ctx, draft); !errors.Is(err, ErrNotFound) {
 		t.Errorf("draft publish: got %v, want ErrNotFound", err)
 	}
 	membersOnly := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "members")
-	if _, err := svc.PublishContent(ctx, acct.ID, membersOnly); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.PublishContent(ctx, membersOnly); !errors.Is(err, ErrNotFound) {
 		t.Errorf("members-only publish: got %v, want ErrNotFound", err)
 	}
 	nonFederatable := newAtprotoContent(t, ctx, d, userID, "page", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, nonFederatable); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.PublishContent(ctx, nonFederatable); !errors.Is(err, ErrNotFound) {
 		t.Errorf("non-federatable type publish: got %v, want ErrNotFound", err)
 	}
 	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 1 {
 		t.Errorf("guarded publishes still committed (repo_seq=%d)", got)
 	}
 
+	// Content whose author holds no active account resolves no repo —
+	// the service derives the repo from the author, never the caller.
+	otherID, _ := newAtprotoUser(t, ctx, d, "active")
+	foreign := newAtprotoContent(t, ctx, d, otherID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, foreign); !errors.Is(err, ErrNotFound) {
+		t.Errorf("author-without-account publish: got %v, want ErrNotFound", err)
+	}
+
 	if _, err := svc.DisableAccount(ctx, userID); err != nil {
 		t.Fatalf("DisableAccount: %v", err)
 	}
 	pub := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, pub); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.PublishContent(ctx, pub); !errors.Is(err, ErrNotFound) {
 		t.Errorf("disabled-account publish: got %v, want ErrNotFound", err)
 	}
 }
@@ -907,7 +913,7 @@ func TestDBRepublishUpsertsPost(t *testing.T) {
 	acct := atprotoAccountFor(t, ctx, d, userID)
 	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
 
-	uri, err := svc.PublishContent(ctx, acct.ID, contentID)
+	uri, err := svc.PublishContent(ctx, contentID)
 	if err != nil {
 		t.Fatalf("PublishContent: %v", err)
 	}
@@ -917,7 +923,7 @@ func TestDBRepublishUpsertsPost(t *testing.T) {
 	}
 
 	// Second publish of the same content: one new commit, no new row.
-	uri2, err := svc.PublishContent(ctx, acct.ID, contentID)
+	uri2, err := svc.PublishContent(ctx, contentID)
 	if err != nil {
 		t.Fatalf("republish: %v", err)
 	}
@@ -948,7 +954,7 @@ func TestDBDeleteRecordURIPath(t *testing.T) {
 	}
 	acct := atprotoAccountFor(t, ctx, d, userID)
 	contentID := newAtprotoContent(t, ctx, d, userID, "blog_post", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, contentID); err != nil {
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
 		t.Fatalf("PublishContent: %v", err)
 	}
 
@@ -995,7 +1001,7 @@ func TestDBPublishPermanentClassification(t *testing.T) {
 	var pe interface{ Permanent() bool }
 
 	draft := newAtprotoContent(t, ctx, d, userID, "discussion", "draft", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, draft); !errors.As(err, &pe) || !pe.Permanent() {
+	if _, err := svc.PublishContent(ctx, draft); !errors.As(err, &pe) || !pe.Permanent() {
 		t.Errorf("ineligible content: got %v, want permanent", err)
 	}
 
@@ -1007,7 +1013,7 @@ func TestDBPublishPermanentClassification(t *testing.T) {
 		t.Fatalf("DisableAccount: %v", err)
 	}
 	pub := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
-	if _, err := svc.PublishContent(ctx, acct.ID, pub); !errors.As(err, &pe) || !pe.Permanent() {
+	if _, err := svc.PublishContent(ctx, pub); !errors.As(err, &pe) || !pe.Permanent() {
 		t.Errorf("disabled account: got %v, want permanent", err)
 	}
 }

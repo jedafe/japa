@@ -499,6 +499,14 @@ func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (
 	// discussion thread immediately — every content has a /thread page.
 	if content.Status == StatusPublished {
 		s.maybeMintThreadAnchor(ctx, content.ContentType, content.ID, content.AuthorID)
+
+		// §127 A2: project the post into the author's mini-PDS repo. This
+		// emit must stay post-commit — inside createContent it fires while
+		// the caller's tx is still uncommitted, and the task would find no
+		// row and permanently skip the projection.
+		if content.Visibility == VisibilityPublic {
+			s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
+		}
 	}
 
 	return content, nil
@@ -801,6 +809,8 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// webhook — subscribers to content.published (e.g. RSS, notifications)
 	// would otherwise miss this content. The content_scores row and affiliate
 	// scan are handled by the CreateContent handler (§32, §55).
+	// (The atproto emit deliberately lives in CreateContent post-commit —
+	// enqueuing from inside this shared impl races the caller's tx.)
 	if content.Status == StatusPublished {
 		s.emitWebhook(ctx, "content.published", map[string]any{
 			"content_id": content.ID,
@@ -809,9 +819,6 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			"actor_id":   content.AuthorID,
 		})
 		s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
-		if content.Visibility == VisibilityPublic {
-			s.emitAtproto(ctx, content.AuthorID, content.ID, true) // §127 A2
-		}
 	}
 
 	return content, nil
@@ -1762,11 +1769,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 
 	// §127 A2: the mini-PDS repo mirrors public-live state — while public,
 	// upsert refreshes the post (text/canonical URL may have changed);
-	// leaving public removes the record.
+	// leaving public removes the record. An author reassignment while
+	// public additionally tombstones the outgoing repo's copy — the index
+	// row still resolves the old account's URI.
 	if isPublic {
-		s.emitAtproto(ctx, content.AuthorID, content.ID, true)
-	} else if wasPublic {
-		s.emitAtproto(ctx, content.AuthorID, content.ID, false)
+		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
+	}
+	if wasPublic && (!isPublic || existing.AuthorID != content.AuthorID) {
+		s.emitAtprotoDelete(ctx, content.ID)
 	}
 
 	return content, nil
@@ -2058,30 +2068,53 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 	// publish upserts app.bsky.feed.post (the task re-checks public
 	// visibility at write time), leaving published deletes the record.
 	if status == StatusPublished && content.Visibility == VisibilityPublic {
-		s.emitAtproto(ctx, content.AuthorID, content.ID, true)
+		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
 	} else if row.Status == StatusPublished && row.Visibility == VisibilityPublic {
-		s.emitAtproto(ctx, content.AuthorID, content.ID, false)
+		s.emitAtprotoDelete(ctx, content.ID)
 	}
 
 	return content, nil
 }
 
-// emitAtproto projects a publish/unpublish transition into the author's
-// atproto repo via the task queue (§127 A2, Rule 8): publish=true
-// enqueues the feed.post upsert, publish=false enqueues the delete of
-// the record's content-keyed URI. Authors without an active mini-PDS
+// emitAtprotoPublish enqueues the feed.post upsert for a publish/edit
+// transition (§127 A2, Rule 8). Authors without an active mini-PDS
 // account get nothing — a disabled account's repo stays frozen by
-// design, so its records are deliberately left alone too.
-func (s *Service) emitAtproto(ctx context.Context, authorID, contentID pgtype.UUID, publish bool) {
-	acct, err := s.read.GetAtprotoAccountByUserID(ctx, authorID)
-	if err != nil || acct.Status != atproto.AccountStatusActive {
+// design. The task re-checks eligibility and resolves the owning repo
+// at write time, so a row that leaves the public set before the task
+// runs is never projected.
+func (s *Service) emitAtprotoPublish(ctx context.Context, authorID, contentID pgtype.UUID) {
+	// Read off Writer so a just-enabled account is visible (read-your-
+	// writes — the replica can lag an opt-in + immediate publish).
+	acct, err := s.write.GetAtprotoAccountByUserID(ctx, authorID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("content: atproto account lookup failed", "author_id", authorID.String(), "error", err)
+		}
 		return
 	}
-	if publish {
-		worker.EnqueueAtprotoPublishContent(ctx, acct.ID, contentID)
+	if acct.Status != atproto.AccountStatusActive {
 		return
 	}
-	worker.EnqueueAtprotoDeleteRecord(ctx, acct.ID, atproto.ContentPostURI(acct.Did, contentID))
+	worker.EnqueueAtprotoPublishContent(ctx, contentID)
+}
+
+// emitAtprotoDelete enqueues the atproto:delete_record task for a
+// content's projected feed.post (§127 A2). It resolves (account, uri)
+// from the atproto_records index row — the durable proof a record was
+// projected — so it works even after the contents row is soft-deleted
+// or its pre-read failed. No index row means nothing was ever
+// projected, and the join keeps disabled-account repos frozen.
+func (s *Service) emitAtprotoDelete(ctx context.Context, contentID pgtype.UUID) {
+	// Read off Writer so a just-projected index row is visible — an
+	// unpublish landing inside replication lag must still find it.
+	recs, err := s.write.GetAtprotoRecordsByContent(ctx, contentID)
+	if err != nil {
+		slog.Warn("content: atproto record lookup failed", "content_id", contentID.String(), "error", err)
+		return
+	}
+	for _, rec := range recs {
+		worker.EnqueueAtprotoDeleteRecord(ctx, rec.AccountID, rec.Uri)
+	}
 }
 
 // ScheduleContent sets status='scheduled' and publish_at for a future publish
@@ -2117,6 +2150,12 @@ func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt
 	// published doc until the scheduled_publish task fires (which re-indexes
 	// again on the published transition). Fire-and-forget.
 	worker.EnqueueSearchIndexSync(ctx, "content", id)
+
+	// §127 A2: scheduling a live row pulls it out of public-live — tombstone
+	// the projected feed.post; the scheduled_publish transition re-projects.
+	if row.Status == StatusPublished && row.Visibility == VisibilityPublic {
+		s.emitAtprotoDelete(ctx, id)
+	}
 
 	return content, nil
 }
@@ -2393,10 +2432,10 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 
 	s.purgeEdgeContent(ctx, id, existing.ContentType, existing.Slug)
 
-	// §127 A2: a live repo record must not outlive its canonical row.
-	if existing.Status == StatusPublished && existing.Visibility == VisibilityPublic {
-		s.emitAtproto(ctx, existing.AuthorID, id, false)
-	}
+	// §127 A2: a live repo record must not outlive its canonical row. The
+	// index row is the proof a record exists — firing unconditionally also
+	// covers the pre-read-failure path where `existing` is zero-valued.
+	s.emitAtprotoDelete(ctx, id)
 
 	// Unified-discussion spec: the canonical discussion thread dies with
 	// its content row — /thread/{slug} 404s and drops out of listings.

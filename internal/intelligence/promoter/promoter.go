@@ -37,7 +37,7 @@ type PromoteResult struct {
 	// (e.g. scholarships.id).
 	DomainID uuid.UUID
 	// ContentID is the id of the contents guide entry backing the projection,
-	// or the zero uuid on the update path when no new content is created.
+	// or the zero uuid when the projection carries no guide row.
 	ContentID uuid.UUID
 	// Action is one of "created", "updated", or "verified".
 	//   - "created": a new projection row was inserted.

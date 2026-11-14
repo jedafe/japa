@@ -55,6 +55,24 @@ func (q *Queries) DeleteAtprotoRecord(ctx context.Context, arg DeleteAtprotoReco
 	return err
 }
 
+const getAtprotoAccountIDByContent = `-- name: GetAtprotoAccountIDByContent :one
+SELECT a.id
+FROM atproto_accounts a
+JOIN contents c ON c.author_id = a.user_id
+WHERE c.id = $1
+  AND a.status = 'active'
+`
+
+// Content-keyed account resolution: the single source of truth for which
+// repo a contents row projects into — callers pass only content_id so a
+// (account, content) pairing bug is impossible by construction.
+func (q *Queries) GetAtprotoAccountIDByContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountIDByContent, contentID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getAtprotoBlob = `-- name: GetAtprotoBlob :one
 SELECT account_id, cid, mime, size, data, created_at FROM atproto_blobs
 WHERE account_id = $1 AND cid = $2
@@ -149,6 +167,46 @@ func (q *Queries) GetAtprotoRecord(ctx context.Context, uri string) (AtprotoReco
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getAtprotoRecordsByContent = `-- name: GetAtprotoRecordsByContent :many
+SELECT r.account_id, r.uri
+FROM atproto_records r
+JOIN atproto_accounts a ON a.id = r.account_id AND a.status = 'active'
+WHERE r.content_id = $1
+  AND r.collection = 'app.bsky.feed.post'
+`
+
+type GetAtprotoRecordsByContentRow struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Uri       string      `json:"uri"`
+}
+
+// Content-keyed delete resolution: index rows are the durable proof a
+// record was projected, so they resolve the (account_id, uri) delete
+// task even after the contents row is soft-deleted/unreachable. Many,
+// not one — an author reassignment can briefly index the same content
+// under two repos until the old record's tombstone lands. The account
+// join keeps disabled-account repos frozen (deliberate §127 lifecycle —
+// emit sites skip, and the task itself no-ops on inactive accounts).
+func (q *Queries) GetAtprotoRecordsByContent(ctx context.Context, contentID pgtype.UUID) ([]GetAtprotoRecordsByContentRow, error) {
+	rows, err := q.db.Query(ctx, getAtprotoRecordsByContent, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAtprotoRecordsByContentRow
+	for rows.Next() {
+		var i GetAtprotoRecordsByContentRow
+		if err := rows.Scan(&i.AccountID, &i.Uri); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAtprotoRepoHead = `-- name: GetAtprotoRepoHead :one
