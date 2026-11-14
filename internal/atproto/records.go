@@ -205,7 +205,32 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	if err != nil {
 		return "", fmt.Errorf("atproto: projectable content: %w", err)
 	}
-	uri, err := s.PutRecord(ctx, accountID, CollectionPost, contentRkey(contentID), s.postRecord(row), contentID)
+	rec := s.postRecord(row)
+	rkey := contentRkey(contentID)
+
+	// The eligibility re-check runs inside the repo tx, on the same
+	// connection, right before the commit — READ COMMITTED observes an
+	// unpublish that landed after the task-time read. Without it the
+	// publish-vs-unpublish interleave leaves a record live: the delete
+	// emit already ran and found no index row to address.
+	var uri string
+	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {
+		if _, err := q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
+			ID:           contentID,
+			ContentTypes: s.federatableTypesFor(ctx),
+		}); errors.Is(err, pgx.ErrNoRows) {
+			return nil, permanent(ErrNotFound)
+		} else if err != nil {
+			return nil, fmt.Errorf("atproto: projectable re-check: %w", err)
+		}
+		rpath := CollectionPost + "/" + rkey
+		recCid, err := upsertRecord(ctx, rep, rpath, rec)
+		if err != nil {
+			return nil, fmt.Errorf("atproto: put %s: %w", rpath, err)
+		}
+		uri = fmt.Sprintf("at://%s/%s", rep.RepoDid(), rpath)
+		return []indexWrite{{uri: uri, collection: CollectionPost, rkey: rkey, cid: recCid.String(), contentID: contentID}}, nil
+	})
 	if errors.Is(err, ErrNotFound) {
 		return "", permanent(err)
 	}
@@ -229,7 +254,10 @@ func (s *Service) DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, ur
 	if collection == "" || rkey == "" {
 		return permanent(fmt.Errorf("atproto: delete uri %q: missing collection or record key", uri))
 	}
-	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+	// ATURI preserves did:web percent-encoding in the authority
+	// (did:web:host%3Aport:...) and didFor stores the DID in the same
+	// encoded form, so the strings compare directly.
+	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		if parsed.Authority().String() != rep.RepoDid() {
 			return nil, permanent(fmt.Errorf("atproto: delete uri %q: authority is not this repo", uri))
 		}
@@ -297,6 +325,22 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 	rec, err := decodeRecord(collection, raw)
 	if err != nil {
 		return "", permanent(err)
+	}
+	// A record task carrying content_id must target the repo that owns
+	// the content — otherwise the index would link someone else's row
+	// and a later content delete would tombstone the wrong repo's
+	// record. Mispairing is terminal, never retryable.
+	if contentID.Valid {
+		owner, err := s.store.q.GetAtprotoAccountIDByContent(ctx, contentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return "", permanent(ErrNotFound)
+			}
+			return "", fmt.Errorf("atproto: account for content: %w", err)
+		}
+		if owner != accountID {
+			return "", permanent(fmt.Errorf("atproto: content %s is not owned by account %s", contentID.String(), accountID.String()))
+		}
 	}
 	var uri string
 	if rkey == "" {

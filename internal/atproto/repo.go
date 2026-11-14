@@ -185,7 +185,11 @@ func openRepo(ctx context.Context, bs *repoBlockstore, did string, head gen.Atpr
 // hydrated, fn mutates the repo and returns index writes, then the new
 // signed commit + dirty blocks + index rows + repo_seq bump persist
 // atomically. Disabled/tombstone accounts cannot write (§127 lifecycle).
-func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn func(rep *atrepo.Repo) ([]indexWrite, error)) error {
+// fn receives the tx's queries so a caller can re-validate canonical
+// state on the same connection right before the commit — READ COMMITTED
+// means it observes anything committed up to that statement, which is
+// what closes the publish-vs-unpublish interleave.
+func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error)) error {
 	return jdb.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		acct, err := q.LockAtprotoAccountForRepo(ctx, accountID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -212,7 +216,7 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 			return fmt.Errorf("atproto: open repo: %w", err)
 		}
 
-		writes, err := fn(rep)
+		writes, err := fn(rep, q)
 		if err != nil {
 			return err
 		}
@@ -224,6 +228,17 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 		commitCid, rev, err := rep.Commit(ctx, signer)
 		if err != nil {
 			return fmt.Errorf("atproto: commit: %w", err)
+		}
+
+		// indigo's TIDClock starts at zero on every OpenRepo — it is
+		// monotonic only within a process, never seeded from the head
+		// rev. A wall-clock regression (NTP step-back, VM snapshot)
+		// would mint rev <= head's, breaking the strictly-increasing
+		// ordering relays require. TIDs are fixed-width base32sort so
+		// lexicographic compare is exact. Refuse to persist — the error
+		// stays transient so the retry lands once the clock recovers.
+		if hasHead && rev <= head.Rev {
+			return fmt.Errorf("atproto: rev regression %s <= %s", rev, head.Rev)
 		}
 
 		for c := range bs.dirty {
@@ -282,24 +297,27 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 	})
 }
 
+// upsertRecord is the Add-vs-Update upsert indigo lacks — its PutRecord
+// fails on existing keys and UpdateRecord fails on missing ones, so the
+// pick rides on whether the rpath already resolves.
+func upsertRecord(ctx context.Context, rep *atrepo.Repo, rpath string, rec atrepo.CborMarshaler) (cid.Cid, error) {
+	if _, _, gerr := rep.GetRecordBytes(ctx, rpath); gerr == nil {
+		return rep.UpdateRecord(ctx, rpath, rec)
+	} else if errors.Is(gerr, indmst.ErrNotFound) {
+		return rep.PutRecord(ctx, rpath, rec)
+	} else {
+		return cid.Undef, gerr
+	}
+}
+
 // PutRecord upserts collection/rkey, commits the repo, and indexes the
 // at:// URI. rkey must satisfy atproto record-key rules (TID or literal
-// like "self"). indigo's PutRecord is insert-only and UpdateRecord is
-// update-only — the upsert picks by whether the rpath already exists.
-// Returns the record's at:// URI.
+// like "self"). Returns the record's at:// URI.
 func (s *Service) PutRecord(ctx context.Context, accountID pgtype.UUID, collection, rkey string, rec atrepo.CborMarshaler, contentID pgtype.UUID) (string, error) {
 	var uri string
-	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		rpath := collection + "/" + rkey
-		var recCid cid.Cid
-		var err error
-		if _, _, gerr := rep.GetRecordBytes(ctx, rpath); gerr == nil {
-			recCid, err = rep.UpdateRecord(ctx, rpath, rec)
-		} else if errors.Is(gerr, indmst.ErrNotFound) {
-			recCid, err = rep.PutRecord(ctx, rpath, rec)
-		} else {
-			err = gerr
-		}
+		recCid, err := upsertRecord(ctx, rep, rpath, rec)
 		if err != nil {
 			return nil, fmt.Errorf("atproto: put %s: %w", rpath, err)
 		}
@@ -316,7 +334,7 @@ func (s *Service) PutRecord(ctx context.Context, accountID pgtype.UUID, collecti
 // CreateRecord allocates it and returns it) — the feed.post path.
 // Returns uri + rkey.
 func (s *Service) CreateRecord(ctx context.Context, accountID pgtype.UUID, collection string, rec atrepo.CborMarshaler, contentID pgtype.UUID) (uri, rkey string, err error) {
-	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		recCid, tid, err := rep.CreateRecord(ctx, collection, rec)
 		if err != nil {
 			return nil, fmt.Errorf("atproto: create %s: %w", collection, err)
@@ -336,7 +354,7 @@ func (s *Service) CreateRecord(ctx context.Context, accountID pgtype.UUID, colle
 // seq bump — so retried unpublishes stay idempotent (indigo's
 // DeleteRecord errors on missing keys, so existence is checked first).
 func (s *Service) DeleteRecord(ctx context.Context, accountID pgtype.UUID, collection, rkey string) error {
-	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo) ([]indexWrite, error) {
+	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		rpath := collection + "/" + rkey
 		if _, _, gerr := rep.GetRecordBytes(ctx, rpath); errors.Is(gerr, indmst.ErrNotFound) {
 			return nil, errRepoNoop

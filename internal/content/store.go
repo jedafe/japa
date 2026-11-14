@@ -517,6 +517,9 @@ func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (
 // include content creation inside a larger transaction (e.g. the comparison
 // service's CreateComparison method, which must atomically create the content
 // row plus its items and dimensions). Ref: §6.2 transaction boundary, BUG-001.
+// Post-commit side effects (activity, thread anchor, atproto projection)
+// fire only from CreateContent — a caller creating a published+public
+// federatable row must emit its own atproto publish after its tx commits.
 func (s *Service) CreateContentWithQueries(ctx context.Context, q *gen.Queries, input CreateContentInput) (gen.CreateContentRow, error) {
 	return s.createContent(ctx, q, q, input)
 }
@@ -1329,7 +1332,10 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 // tracking slug changes in slug_history. The old slug is preserved for
 // 301 redirects.
 func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error) {
-	existing, err := s.read.GetContentByID(ctx,
+	// Pre-state read off Writer — the wasPublic/isPublic decision below
+	// (webhooks, atproto emit) must see committed truth; a lagged replica
+	// could report a just-published row as draft and skip the emit.
+	existing, err := s.write.GetContentByID(ctx,
 		id,
 	)
 	if err != nil {
@@ -1987,7 +1993,9 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, status)
 	}
 
-	row, err := s.read.GetContentByID(ctx, id)
+	// Pre-state read off Writer — the transition decision below
+	// (atproto emit, validation) needs committed truth, not replica lag.
+	row, err := s.write.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("getting content for status change: %w", err)
 	}
@@ -2123,7 +2131,9 @@ func (s *Service) emitAtprotoDelete(ctx context.Context, contentID pgtype.UUID) 
 // Asynq task with ProcessAt=publishAt for the actual publish to happen.
 // Scheduled content must have a primary space (Section 14 / BUG-007).
 func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
-	row, err := s.read.GetContentByID(ctx, id)
+	// Pre-state read off Writer — a lagged replica reporting published
+	// as still-draft would skip the tombstone emit for the live record.
+	row, err := s.write.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.ScheduleContentRow{}, fmt.Errorf("getting content for scheduling: %w", err)
 	}

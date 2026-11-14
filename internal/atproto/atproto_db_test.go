@@ -1017,3 +1017,94 @@ func TestDBPublishPermanentClassification(t *testing.T) {
 		t.Errorf("disabled account: got %v, want permanent", err)
 	}
 }
+
+// indigo's TIDClock resets to zero on every OpenRepo — a wall-clock
+// regression would mint rev <= head's and corrupt the chain ordering.
+// The guard must refuse to persist and stay transient (retryable once
+// the clock recovers), rolling back with no commit, no blocks, no seq.
+func TestDBRepoRevRegressionRefused(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+
+	// Forge a head rev far in the future — 'j'+12×'z' is a valid TID
+	// well beyond any wall-clock timestamp for decades.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_repo_commits SET rev = 'jzzzzzzzzzzzz' WHERE account_id = $1`, acct.ID); err != nil {
+		t.Fatalf("forge head rev: %v", err)
+	}
+
+	_, err := svc.PublishContent(ctx, contentID)
+	if err == nil {
+		t.Fatal("publish succeeded against a future head rev — chain ordering would break")
+	}
+	var pe interface{ Permanent() bool }
+	if errors.As(err, &pe) && pe.Permanent() {
+		t.Fatalf("rev regression classified permanent — must retry once the clock recovers: %v", err)
+	}
+
+	if got := atprotoAccountFor(t, ctx, d, userID).RepoSeq; got != 1 {
+		t.Fatalf("repo_seq advanced to %d despite refused commit", got)
+	}
+	var commits int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_repo_commits WHERE account_id = $1`, acct.ID).Scan(&commits); err != nil || commits != 1 {
+		t.Fatalf("commits = %d — refused write persisted a commit row", commits)
+	}
+	var recs int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id = $1 AND collection = 'app.bsky.feed.post'`, acct.ID).Scan(&recs); err != nil || recs != 0 {
+		t.Fatalf("post index rows = %d — refused write persisted an index row", recs)
+	}
+}
+
+// A record task carrying content_id must target the owning repo — the
+// index row it writes becomes the delete-resolution link, so a
+// mispaired (account, content) would let a content delete tombstone
+// another member's record. Mismatch is permanent.
+func TestDBPublishRecordContentPairing(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	ownerID, _ := newAtprotoUser(t, ctx, d, "active")
+	otherID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, ownerID); err != nil {
+		t.Fatalf("EnableAccount owner: %v", err)
+	}
+	if _, err := svc.EnableAccount(ctx, otherID); err != nil {
+		t.Fatalf("EnableAccount other: %v", err)
+	}
+	ownerAcct := atprotoAccountFor(t, ctx, d, ownerID)
+	otherAcct := atprotoAccountFor(t, ctx, d, otherID)
+	contentID := newAtprotoContent(t, ctx, d, ownerID, "discussion", "published", "public")
+
+	raw, err := json.Marshal(map[string]any{
+		"$type":     "app.bsky.feed.post",
+		"text":      "x",
+		"createdAt": "2025-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pe interface{ Permanent() bool }
+	if _, err := svc.PublishRecordJSON(ctx, otherAcct.ID, CollectionPost, contentID.String(), raw, contentID); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Fatalf("mispaired record task: got %v, want permanent", err)
+	}
+
+	// The owning account proceeds — explicit rkey upsert indexes the
+	// content link so delete-resolution can tombstone it later.
+	uri, err := svc.PublishRecordJSON(ctx, ownerAcct.ID, CollectionPost, contentID.String(), raw, contentID)
+	if err != nil {
+		t.Fatalf("paired record task: %v", err)
+	}
+	want := "at://" + ownerAcct.Did + "/" + CollectionPost + "/" + contentID.String()
+	if uri != want {
+		t.Fatalf("uri = %q, want %q", uri, want)
+	}
+}

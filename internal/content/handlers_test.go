@@ -353,6 +353,10 @@ func TestUpdateContentListTooManyItems(t *testing.T) {
 type captureUpdateDBTX struct {
 	updateArgs []any
 	updateRow  *gen.UpdateContentRow
+	// prev serves the pre-state GetContentByID read, which the service
+	// now runs on the write querier (committed truth, not replica lag).
+	// Patch helpers set it from their read stub's canned row.
+	prev any
 }
 
 func (d *captureUpdateDBTX) Exec(_ context.Context, query string, _ ...interface{}) (pgconn.CommandTag, error) {
@@ -380,6 +384,8 @@ func (d *captureUpdateDBTX) QueryRow(_ context.Context, query string, args ...in
 		return structRow{src: d.updateRow}
 	case strings.Contains(query, "-- name: CreateContentRevision"):
 		return structRow{src: &gen.ContentRevision{}}
+	case strings.Contains(query, "-- name: GetContentByID"):
+		return structRow{src: d.prev}
 	default:
 		return errRow{err: fmt.Errorf("unexpected QueryRow in test: %.80s", query)}
 	}
@@ -489,6 +495,9 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 	patch := func(t *testing.T, write *captureUpdateDBTX, body string) *httptest.ResponseRecorder {
 		t.Helper()
 
+		// The pre-state read runs on the write querier — serve the same
+		// canned row the read stub returns.
+		write.prev = &prev
 		h := &Handlers{Service: &Service{
 			read:  gen.New(rowDBTX{src: &prev}),
 			write: gen.New(write),
@@ -704,6 +713,7 @@ func TestUpdateContentAuthorOverride(t *testing.T) {
 	patch := func(t *testing.T, read authorAwareReadDBTX, write *captureUpdateDBTX, body string, resolver *rbac.RBAC) *httptest.ResponseRecorder {
 		t.Helper()
 
+		write.prev = read.src
 		h := &Handlers{Service: &Service{
 			read:  gen.New(read),
 			write: gen.New(write),
@@ -828,6 +838,7 @@ func TestUpdateContentBotAuthorSkipsReviewQueue(t *testing.T) {
 	patch := func(t *testing.T, read authorAwareReadDBTX, write *captureUpdateDBTX, callerID pgtype.UUID) *httptest.ResponseRecorder {
 		t.Helper()
 
+		write.prev = read.src
 		h := &Handlers{Service: &Service{read: gen.New(read), write: gen.New(write)}}
 		rr := httptest.NewRecorder()
 		// The caller IS the author (ownership edit) — no elevated permissions,
