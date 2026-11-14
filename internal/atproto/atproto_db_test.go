@@ -209,6 +209,58 @@ func TestDBHandleClaimCaseInsensitive(t *testing.T) {
 	}
 }
 
+// Rename coherence: after a username change the new subdomain resolves
+// to the same permanent DID and the stored handle lazily syncs — the
+// did:web path (immutable u:{mint_username}) keeps serving the doc.
+func TestDBRenameResolution(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	st, err := svc.EnableAccount(ctx, userID)
+	if err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	renamed := uname + "_renamed"
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, renamed, userID); err != nil {
+		t.Fatalf("rename user: %v", err)
+	}
+
+	// New subdomain resolves to the permanent DID.
+	did, err := svc.ResolveHandleDID(ctx, renamed+".test.dev")
+	if err != nil || did != st.DID {
+		t.Fatalf("renamed handle resolution: %v / %q", err, did)
+	}
+
+	// Stored handle lazily synced to the live username.
+	stored, err := svc.ResolveHandleDID(ctx, renamed+".test.dev")
+	if err != nil || stored != st.DID {
+		t.Fatalf("post-sync resolve: %v / %q", err, stored)
+	}
+	var handle string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT handle FROM atproto_accounts WHERE user_id = $1`, userID).Scan(&handle); err != nil {
+		t.Fatalf("select handle: %v", err)
+	}
+	if handle != renamed+".test.dev" {
+		t.Errorf("stored handle = %q, want lazy sync to %q", handle, renamed+".test.dev")
+	}
+
+	// The immutable did:web path still serves the doc (mint username).
+	doc, err := svc.DIDDocument(ctx, uname)
+	if err != nil {
+		t.Fatalf("DIDDocument via mint username: %v", err)
+	}
+	if doc["id"] != st.DID {
+		t.Errorf("doc id = %v, want %q", doc["id"], st.DID)
+	}
+	aka, _ := doc["alsoKnownAs"].([]string)
+	if len(aka) != 1 || aka[0] != "at://"+renamed+".test.dev" {
+		t.Errorf("alsoKnownAs = %v, want live handle", aka)
+	}
+}
+
 func TestDBAdminListHidesKey(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

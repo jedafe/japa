@@ -5,7 +5,7 @@
 -- The live u.username match outranks the stored handle: after a rename
 -- the member's new subdomain resolves to their permanent DID (mirrors
 -- the federated_actors precedence pattern).
-SELECT a.*
+SELECT a.*, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE (lower(a.handle) = lower(@handle) OR u.username = @username)
@@ -13,6 +13,14 @@ WHERE (lower(a.handle) = lower(@handle) OR u.username = @username)
   AND u.status = 'active'
 ORDER BY (u.username = @username) DESC
 LIMIT 1;
+
+-- name: UpdateAtprotoAccountHandle :exec
+-- Lazy rename sync: the stored handle tracks the live username (the DID
+-- itself is immutable — did:web:...:u:{mint_username} never changes).
+UPDATE atproto_accounts
+SET handle = @handle, updated_at = now()
+WHERE id = @id
+  AND lower(handle) <> lower(@handle);
 
 -- name: GetAtprotoAccountByUserID :one
 -- Member status reads + opt-in upsert path. Joins users so suspended
@@ -24,7 +32,10 @@ WHERE a.user_id = @user_id
   AND u.status = 'active';
 
 -- name: GetAtprotoAccountByDID :one
-SELECT a.*
+-- did:web document resolution. The :u:{mint_username} path component IS
+-- the DID encoding — looked up by DID (immutable) rather than handle so
+-- the minted identifier keeps resolving after renames and handle syncs.
+SELECT a.*, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE a.did = @did

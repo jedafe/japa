@@ -15,7 +15,7 @@ type store struct {
 
 func newStore(q *gen.Queries) *store { return &store{q: q} }
 
-func (s *store) accountByHandle(ctx context.Context, handle, username string) (gen.AtprotoAccount, error) {
+func (s *store) accountByHandle(ctx context.Context, handle, username string) (gen.GetAtprotoAccountByHandleRow, error) {
 	return s.q.GetAtprotoAccountByHandle(ctx, gen.GetAtprotoAccountByHandleParams{
 		Handle:   handle,
 		Username: username,
@@ -28,6 +28,14 @@ func (s *store) accountByUserID(ctx context.Context, userID pgtype.UUID) (gen.At
 
 func (s *store) createAccount(ctx context.Context, p gen.CreateAtprotoAccountParams) (gen.AtprotoAccount, error) {
 	return s.q.CreateAtprotoAccount(ctx, p)
+}
+
+func (s *store) accountByDID(ctx context.Context, did string) (gen.GetAtprotoAccountByDIDRow, error) {
+	return s.q.GetAtprotoAccountByDID(ctx, did)
+}
+
+func (s *store) setAccountHandle(ctx context.Context, id pgtype.UUID, handle string) error {
+	return s.q.UpdateAtprotoAccountHandle(ctx, gen.UpdateAtprotoAccountHandleParams{ID: id, Handle: handle})
 }
 
 func (s *store) setAccountStatus(ctx context.Context, id pgtype.UUID, status string) error {

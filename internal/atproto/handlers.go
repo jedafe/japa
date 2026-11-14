@@ -44,12 +44,15 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 // the handle→DID proof Bluesky's appview verifies. Byte-exact: any
 // deviation makes the account resolve as handle.invalid.
 //
-// X-Forwarded-Host wins over Host — the apex SvelteKit proxy forwards
-// the original subdomain that way.
+// X-Forwarded-Host is honored only from the apex proxy path (the
+// x-jc-surface marker the SvelteKit route sets) — a direct API hit with
+// a forged forwarded host can't steer handle derivation.
 func (h *Handlers) GetAtprotoDID(w http.ResponseWriter, r *http.Request) {
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
+	host := r.Host
+	if r.Header.Get("X-Jc-Surface") != "" {
+		if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+			host = fwd
+		}
 	}
 	handle := h.service.HandleFromHost(host)
 	if handle == "" {

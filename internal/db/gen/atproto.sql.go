@@ -74,7 +74,7 @@ func (q *Queries) CreateAtprotoAccount(ctx context.Context, arg CreateAtprotoAcc
 }
 
 const getAtprotoAccountByDID = `-- name: GetAtprotoAccountByDID :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE a.did = $1
@@ -82,9 +82,27 @@ WHERE a.did = $1
   AND u.status = 'active'
 `
 
-func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (AtprotoAccount, error) {
+type GetAtprotoAccountByDIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Handle             string             `json:"handle"`
+	Did                string             `json:"did"`
+	SigningKeyEnc      string             `json:"signing_key_enc"`
+	PublicKeyMultibase string             `json:"public_key_multibase"`
+	Status             string             `json:"status"`
+	RepoSeq            int64              `json:"repo_seq"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	LiveUsername       string             `json:"live_username"`
+}
+
+// did:web document resolution. The :u:{mint_username} path component IS
+// the DID encoding — looked up by DID (immutable) rather than handle so
+// the minted identifier keeps resolving after renames and handle syncs.
+func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAtprotoAccountByDIDRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoAccountByDID, did)
-	var i AtprotoAccount
+	var i GetAtprotoAccountByDIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -97,12 +115,13 @@ func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (Atpro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.LiveUsername,
 	)
 	return i, err
 }
 
 const getAtprotoAccountByHandle = `-- name: GetAtprotoAccountByHandle :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE (lower(a.handle) = lower($1) OR u.username = $2)
@@ -117,15 +136,30 @@ type GetAtprotoAccountByHandleParams struct {
 	Username string `json:"username"`
 }
 
+type GetAtprotoAccountByHandleRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Handle             string             `json:"handle"`
+	Did                string             `json:"did"`
+	SigningKeyEnc      string             `json:"signing_key_enc"`
+	PublicKeyMultibase string             `json:"public_key_multibase"`
+	Status             string             `json:"status"`
+	RepoSeq            int64              `json:"repo_seq"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	LiveUsername       string             `json:"live_username"`
+}
+
 // Handle resolution for /.well-known/atproto-did + did:web docs. Only
 // active accounts of active users resolve — suspended/deleted members
 // and disabled accounts don't exist on the atproto network.
 // The live u.username match outranks the stored handle: after a rename
 // the member's new subdomain resolves to their permanent DID (mirrors
 // the federated_actors precedence pattern).
-func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoAccountByHandleParams) (AtprotoAccount, error) {
+func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoAccountByHandleParams) (GetAtprotoAccountByHandleRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoAccountByHandle, arg.Handle, arg.Username)
-	var i AtprotoAccount
+	var i GetAtprotoAccountByHandleRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -138,6 +172,7 @@ func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoA
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.LiveUsername,
 	)
 	return i, err
 }
@@ -257,6 +292,25 @@ func (q *Queries) ListAtprotoAccounts(ctx context.Context, arg ListAtprotoAccoun
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAtprotoAccountHandle = `-- name: UpdateAtprotoAccountHandle :exec
+UPDATE atproto_accounts
+SET handle = $1, updated_at = now()
+WHERE id = $2
+  AND lower(handle) <> lower($1)
+`
+
+type UpdateAtprotoAccountHandleParams struct {
+	Handle string      `json:"handle"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// Lazy rename sync: the stored handle tracks the live username (the DID
+// itself is immutable — did:web:...:u:{mint_username} never changes).
+func (q *Queries) UpdateAtprotoAccountHandle(ctx context.Context, arg UpdateAtprotoAccountHandleParams) error {
+	_, err := q.db.Exec(ctx, updateAtprotoAccountHandle, arg.Handle, arg.ID)
+	return err
 }
 
 const updateAtprotoAccountStatus = `-- name: UpdateAtprotoAccountStatus :exec

@@ -108,6 +108,26 @@ func (s *Service) handleUsername(handle string) string {
 	return local
 }
 
+// syncHandle lazily reconciles the stored handle with the member's live
+// username after a rename — the DID itself is immutable
+// (did:web:…:u:{mint_username} never changes). Returns the handle to
+// emit in docs. Idempotent; on contention the stale value is served.
+func (s *Service) syncHandle(ctx context.Context, accountID pgtype.UUID, storedHandle, liveUsername string) string {
+	if liveUsername == "" {
+		return storedHandle
+	}
+	want := s.cfg.handleFor(liveUsername)
+	if strings.EqualFold(storedHandle, want) {
+		return storedHandle
+	}
+	if err := s.store.setAccountHandle(ctx, accountID, want); err != nil {
+		return storedHandle
+	}
+	s.invalidateAccount(ctx, storedHandle)
+	s.invalidateAccount(ctx, want)
+	return want
+}
+
 // ResolveHandleDID returns the member's DID string for the atproto-did
 // well-known (text/plain body). Active accounts of active users only.
 // Cached 10m at jc:atp:account:* — the appview hits this endpoint on
@@ -126,6 +146,7 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 		}
 		return "", fmt.Errorf("atproto: handle lookup: %w", err)
 	}
+	s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername)
 	if s.vk != nil {
 		_ = s.vk.Set(ctx, cacheKey, account.Did, 10*time.Minute).Err()
 	}
@@ -148,7 +169,9 @@ func (s *Service) DIDDocument(ctx context.Context, username string) (map[string]
 		return doc, nil
 	}
 
-	account, err := s.store.accountByHandle(ctx, handle, username)
+	// Resolve by DID — the path component is the DID encoding, stable
+	// across renames and lazy handle syncs (unlike the handle itself).
+	account, err := s.store.accountByDID(ctx, s.cfg.didFor(username))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -156,7 +179,9 @@ func (s *Service) DIDDocument(ctx context.Context, username string) (map[string]
 		return nil, fmt.Errorf("atproto: account lookup: %w", err)
 	}
 
-	doc := didDocument(account.Did, account.Handle, account.PublicKeyMultibase, s.cfg.pdsURL())
+	// alsoKnownAs emits the live handle (synced on read after renames).
+	doc := didDocument(account.Did, s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername),
+		account.PublicKeyMultibase, s.cfg.pdsURL())
 	s.cacheSet(ctx, cacheKey, doc, 10*time.Minute)
 	return doc, nil
 }
@@ -197,6 +222,11 @@ func (s *Service) GetMyAccount(ctx context.Context, userID pgtype.UUID) (Account
 		}
 		return AccountStatus{}, fmt.Errorf("atproto: my account: %w", err)
 	}
+	user, err := s.store.userByID(ctx, userID)
+	if err != nil {
+		return AccountStatus{}, fmt.Errorf("atproto: my user: %w", err)
+	}
+	account.Handle = s.syncHandle(ctx, account.ID, account.Handle, user.Username)
 	return s.statusFor(account), nil
 }
 
@@ -222,6 +252,7 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 			existing.Status = AccountStatusActive
 			s.invalidateAccount(ctx, existing.Handle)
 		}
+		existing.Handle = s.syncHandle(ctx, existing.ID, existing.Handle, user.Username)
 		return s.statusFor(existing), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
