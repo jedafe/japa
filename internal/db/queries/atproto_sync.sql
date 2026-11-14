@@ -31,3 +31,22 @@ WHERE account_id = @account_id AND collection = @collection AND rkey = @rkey;
 -- getBlocks: fetch a caller-named CID slice from one account's block set.
 SELECT * FROM atproto_repo_blocks
 WHERE account_id = @account_id AND cid = ANY(@cids::text[]);
+
+-- name: InsertAtprotoCommitBlock :exec
+-- One row per block a commit introduced — the getRepo?since index.
+INSERT INTO atproto_commit_blocks (account_id, seq, cid)
+VALUES (@account_id, @seq, @cid);
+
+-- name: ListAtprotoCommitsAfterRev :many
+-- getRepo?since: commits newer than the client's rev. Revs are TIDs —
+-- lexicographic order == chronological.
+SELECT * FROM atproto_repo_commits
+WHERE account_id = @account_id AND rev > @rev
+ORDER BY seq;
+
+-- name: ListAtprotoCommitBlocks :many
+-- The introduced-block set for a seq range — joined to repo_blocks for
+-- data by the caller (blocks are content-addressed, no dup data needed).
+SELECT seq, cid FROM atproto_commit_blocks
+WHERE account_id = @account_id AND seq = ANY(@seqs::bigint[])
+ORDER BY seq;

@@ -720,6 +720,12 @@ type AtprotoBlob struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AtprotoCommitBlock struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Seq       int64       `json:"seq"`
+	Cid       string      `json:"cid"`
+}
+
 type AtprotoRecord struct {
 	Uri        string             `json:"uri"`
 	AccountID  pgtype.UUID        `json:"account_id"`

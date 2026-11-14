@@ -53,6 +53,23 @@ func (q *Queries) GetAtprotoRepoEventMaxSeq(ctx context.Context) (int64, error) 
 	return max_seq, err
 }
 
+const insertAtprotoCommitBlock = `-- name: InsertAtprotoCommitBlock :exec
+INSERT INTO atproto_commit_blocks (account_id, seq, cid)
+VALUES ($1, $2, $3)
+`
+
+type InsertAtprotoCommitBlockParams struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Seq       int64       `json:"seq"`
+	Cid       string      `json:"cid"`
+}
+
+// One row per block a commit introduced — the getRepo?since index.
+func (q *Queries) InsertAtprotoCommitBlock(ctx context.Context, arg InsertAtprotoCommitBlockParams) error {
+	_, err := q.db.Exec(ctx, insertAtprotoCommitBlock, arg.AccountID, arg.Seq, arg.Cid)
+	return err
+}
+
 const insertAtprotoRepoEvent = `-- name: InsertAtprotoRepoEvent :one
 
 INSERT INTO atproto_repo_events (did, kind, payload)
@@ -76,6 +93,85 @@ func (q *Queries) InsertAtprotoRepoEvent(ctx context.Context, arg InsertAtprotoR
 	var seq int64
 	err := row.Scan(&seq)
 	return seq, err
+}
+
+const listAtprotoCommitBlocks = `-- name: ListAtprotoCommitBlocks :many
+SELECT seq, cid FROM atproto_commit_blocks
+WHERE account_id = $1 AND seq = ANY($2::bigint[])
+ORDER BY seq
+`
+
+type ListAtprotoCommitBlocksParams struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Seqs      []int64     `json:"seqs"`
+}
+
+type ListAtprotoCommitBlocksRow struct {
+	Seq int64  `json:"seq"`
+	Cid string `json:"cid"`
+}
+
+// The introduced-block set for a seq range — joined to repo_blocks for
+// data by the caller (blocks are content-addressed, no dup data needed).
+func (q *Queries) ListAtprotoCommitBlocks(ctx context.Context, arg ListAtprotoCommitBlocksParams) ([]ListAtprotoCommitBlocksRow, error) {
+	rows, err := q.db.Query(ctx, listAtprotoCommitBlocks, arg.AccountID, arg.Seqs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtprotoCommitBlocksRow
+	for rows.Next() {
+		var i ListAtprotoCommitBlocksRow
+		if err := rows.Scan(&i.Seq, &i.Cid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAtprotoCommitsAfterRev = `-- name: ListAtprotoCommitsAfterRev :many
+SELECT account_id, seq, cid, rev, prev_cid, data, created_at FROM atproto_repo_commits
+WHERE account_id = $1 AND rev > $2
+ORDER BY seq
+`
+
+type ListAtprotoCommitsAfterRevParams struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Rev       string      `json:"rev"`
+}
+
+// getRepo?since: commits newer than the client's rev. Revs are TIDs —
+// lexicographic order == chronological.
+func (q *Queries) ListAtprotoCommitsAfterRev(ctx context.Context, arg ListAtprotoCommitsAfterRevParams) ([]AtprotoRepoCommit, error) {
+	rows, err := q.db.Query(ctx, listAtprotoCommitsAfterRev, arg.AccountID, arg.Rev)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AtprotoRepoCommit
+	for rows.Next() {
+		var i AtprotoRepoCommit
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.Seq,
+			&i.Cid,
+			&i.Rev,
+			&i.PrevCid,
+			&i.Data,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAtprotoRepoBlocksByCids = `-- name: ListAtprotoRepoBlocksByCids :many

@@ -267,6 +267,18 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 			return fmt.Errorf("atproto: persist commit: %w", err)
 		}
 
+		// §127 A3: index the introduced-block set — getRepo?since serves
+		// the union of these rows as its diff CAR.
+		for c := range bs.dirty {
+			if err := q.InsertAtprotoCommitBlock(ctx, gen.InsertAtprotoCommitBlockParams{
+				AccountID: accountID,
+				Seq:       acct.RepoSeq + 1,
+				Cid:       c.String(),
+			}); err != nil {
+				return fmt.Errorf("atproto: index commit block %s: %w", c, err)
+			}
+		}
+
 		// §127 A3: the #commit firehose frame lands in the same tx — the
 		// events identity-seq is allocated in commit order, so the stream
 		// can never skip or reorder a committed rev. Built before the

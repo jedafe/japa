@@ -1696,3 +1696,147 @@ func TestDBRequestCrawl(t *testing.T) {
 		t.Fatalf("disabled-account crawl: got %v, want permanent", err)
 	}
 }
+
+// getRepo?since serves the diff CAR: head commit root + only the blocks
+// newer commits introduced — never blocks the client's rev already had.
+func TestDBGetRepoSince(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	h := NewHandlers(svc)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	var rootRev string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT rev FROM atproto_repo_commits WHERE account_id = $1 ORDER BY seq LIMIT 1`,
+		acct.ID).Scan(&rootRev); err != nil {
+		t.Fatalf("root rev: %v", err)
+	}
+
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+	headCid, headRev, err := svc.HeadCommit(ctx, acct.Did)
+	if err != nil {
+		t.Fatalf("HeadCommit: %v", err)
+	}
+
+	readCAR := func(t *testing.T, data []byte) (roots []string, blocks map[string][]byte) {
+		t.Helper()
+		cr, err := car.NewCarReader(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("CAR: %v", err)
+		}
+		for _, r := range cr.Header.Roots {
+			roots = append(roots, r.String())
+		}
+		blocks = map[string][]byte{}
+		for {
+			b, err := cr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("CAR block: %v", err)
+			}
+			blocks[b.Cid().String()] = b.RawData()
+		}
+		return roots, blocks
+	}
+
+	// since = root rev → diff = the create commit's introduced set only:
+	// its commit block, new MST nodes, the post record — NOT the root
+	// commit or profile blocks.
+	data, err := svc.RepoCARSince(ctx, acct.Did, rootRev)
+	if err != nil {
+		t.Fatalf("RepoCARSince(root): %v", err)
+	}
+	roots, blocks := readCAR(t, data)
+	if len(roots) != 1 || roots[0] != headCid {
+		t.Fatalf("diff roots = %v, want [%s]", roots, headCid)
+	}
+	var wantBlocks int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_commit_blocks WHERE account_id = $1 AND seq > 1`,
+		acct.ID).Scan(&wantBlocks); err != nil {
+		t.Fatalf("index count: %v", err)
+	}
+	if len(blocks) != wantBlocks {
+		t.Fatalf("diff blocks = %d, want %d (commit_blocks rows for seq>1)", len(blocks), wantBlocks)
+	}
+	if _, ok := blocks[headCid]; !ok {
+		t.Fatal("diff missing head commit block")
+	}
+	// The root commit's block must NOT ship in the diff.
+	var rootCid string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT cid FROM atproto_repo_commits WHERE account_id = $1 AND seq = 1`,
+		acct.ID).Scan(&rootCid); err != nil {
+		t.Fatalf("root cid: %v", err)
+	}
+	if _, ok := blocks[rootCid]; ok {
+		t.Fatal("diff contains pre-since commit block")
+	}
+
+	// since = head rev → already-current answer: head commit block only.
+	data, err = svc.RepoCARSince(ctx, acct.Did, headRev)
+	if err != nil {
+		t.Fatalf("RepoCARSince(head): %v", err)
+	}
+	roots, blocks = readCAR(t, data)
+	if len(roots) != 1 || roots[0] != headCid || len(blocks) != 1 {
+		t.Fatalf("since=head: roots=%v blocks=%d, want head commit only", roots, len(blocks))
+	}
+	if _, ok := blocks[headCid]; !ok {
+		t.Fatal("since=head missing head commit block")
+	}
+
+	// since = "" → identical to the full-CAR path (the live tree — the
+	// DAG traversal legitimately skips superseded blocks; the index diff
+	// is a superset, which is legal for content-addressed blocks).
+	data, err = svc.RepoCARSince(ctx, acct.Did, "")
+	if err != nil {
+		t.Fatalf("RepoCARSince(empty): %v", err)
+	}
+	full, err := svc.RepoCAR(ctx, acct.ID)
+	if err != nil {
+		t.Fatalf("RepoCAR: %v", err)
+	}
+	if !bytes.Equal(data, full) {
+		t.Fatal("RepoCARSince(\"\") differs from RepoCAR")
+	}
+
+	// since before any commit → every commit's blocks (≈ full repo).
+	data, err = svc.RepoCARSince(ctx, acct.Did, "3aaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatalf("RepoCARSince(old): %v", err)
+	}
+	_, blocks = readCAR(t, data)
+	var indexedTotal int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_commit_blocks WHERE account_id = $1`,
+		acct.ID).Scan(&indexedTotal); err != nil {
+		t.Fatalf("index total: %v", err)
+	}
+	if len(blocks) != indexedTotal {
+		t.Fatalf("pre-history diff = %d, want %d indexed blocks", len(blocks), indexedTotal)
+	}
+
+	// The endpoint wires the param through — since param on the wire.
+	rec := httptest.NewRecorder()
+	h.GetRepo(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getRepo?did="+acct.Did+"&since="+headRev, nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != carMediaType {
+		t.Fatalf("getRepo?since: %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	_, blocks = readCAR(t, rec.Body.Bytes())
+	if len(blocks) != 1 {
+		t.Fatalf("getRepo?since=head: %d blocks, want 1", len(blocks))
+	}
+}

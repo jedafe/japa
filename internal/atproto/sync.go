@@ -56,6 +56,136 @@ func (s *Service) repoCARByDID(ctx context.Context, did string) ([]byte, error) 
 	return s.RepoCAR(ctx, account.ID)
 }
 
+// RepoCARSince serves getRepo: the full CAR when since is empty; a diff
+// CAR otherwise — head commit as root + every block introduced by the
+// commits newer than the client's rev (the same block sets the #commit
+// firehose frames carry, unioned). Revs are TIDs: lexicographic order
+// is chronological. since at/after head answers with just the head
+// commit block — the "you're current" no-op. A since range spanning a
+// commit the block index doesn't cover (pre-001146 history) falls back
+// to the full CAR — always a legal, self-sufficient answer.
+func (s *Service) RepoCARSince(ctx context.Context, did, since string) ([]byte, error) {
+	account, err := s.accountForDID(ctx, did)
+	if err != nil {
+		return nil, err
+	}
+	if since == "" {
+		return s.RepoCAR(ctx, account.ID)
+	}
+	head, err := s.store.q.GetAtprotoRepoHead(ctx, account.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("atproto: repo head: %w", err)
+	}
+	headCid, err := cid.Parse(head.Cid)
+	if err != nil {
+		return nil, fmt.Errorf("atproto: head commit cid %q: %w", head.Cid, err)
+	}
+	if since >= head.Rev {
+		return carFromBlockSet(headCid, map[string][]byte{head.Cid: head.Data}, nil)
+	}
+	commits, err := s.store.q.ListAtprotoCommitsAfterRev(ctx, gen.ListAtprotoCommitsAfterRevParams{
+		AccountID: account.ID,
+		Rev:       since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("atproto: commits after rev: %w", err)
+	}
+	seqs := make([]int64, len(commits))
+	for i, c := range commits {
+		seqs[i] = c.Seq
+	}
+	rows, err := s.store.q.ListAtprotoCommitBlocks(ctx, gen.ListAtprotoCommitBlocksParams{
+		AccountID: account.ID,
+		Seqs:      seqs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("atproto: commit blocks: %w", err)
+	}
+	covered := make(map[int64]struct{}, len(commits))
+	cids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		covered[r.Seq] = struct{}{}
+		cids = append(cids, r.Cid)
+	}
+	if len(covered) != len(commits) {
+		return s.RepoCAR(ctx, account.ID)
+	}
+	blocks, err := s.store.q.ListAtprotoRepoBlocksByCids(ctx, gen.ListAtprotoRepoBlocksByCidsParams{
+		AccountID: account.ID,
+		Cids:      cids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("atproto: slice blocks: %w", err)
+	}
+	blockData := make(map[string][]byte, len(blocks)+1)
+	for _, b := range blocks {
+		blockData[b.Cid] = b.Data
+	}
+	blockData[head.Cid] = head.Data
+	// Commit blocks first in CAR order (head leads via carFromBlockSet's
+	// root emit), then the introduced MST/record blocks — mirroring the
+	// #commit frame's diff ordering relays already apply.
+	isCommit := make(map[string]struct{}, len(commits))
+	order := make([]cid.Cid, 0, len(cids))
+	for _, c := range commits {
+		isCommit[c.Cid] = struct{}{}
+		cc, err := cid.Parse(c.Cid)
+		if err != nil {
+			return nil, fmt.Errorf("atproto: commit cid %q: %w", c.Cid, err)
+		}
+		order = append(order, cc)
+	}
+	for _, raw := range cids {
+		if _, ok := isCommit[raw]; ok {
+			continue
+		}
+		cc, err := cid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("atproto: slice cid %q: %w", raw, err)
+		}
+		order = append(order, cc)
+	}
+	return carFromBlockSet(headCid, blockData, order)
+}
+
+// carFromBlockSet frames a CAR v1: root first in the roots list AND the
+// section stream (convention the #commit frame established), then each
+// ordered CID present in blockData. Absent CIDs skip silently — callers
+// decide what absence means before framing.
+func carFromBlockSet(root cid.Cid, blockData map[string][]byte, order []cid.Cid) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := car.WriteHeader(&car.CarHeader{Roots: []cid.Cid{root}, Version: 1}, &buf); err != nil {
+		return nil, fmt.Errorf("atproto: car header: %w", err)
+	}
+	written := map[cid.Cid]struct{}{}
+	emit := func(c cid.Cid) error {
+		if _, ok := written[c]; ok {
+			return nil
+		}
+		data, ok := blockData[c.String()]
+		if !ok {
+			return nil
+		}
+		if err := carutil.LdWrite(&buf, c.Bytes(), data); err != nil {
+			return fmt.Errorf("atproto: car block %s: %w", c, err)
+		}
+		written[c] = struct{}{}
+		return nil
+	}
+	if err := emit(root); err != nil {
+		return nil, err
+	}
+	for _, c := range order {
+		if err := emit(c); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
 // HeadCommit returns (commit CID, rev) for getLatestCommit.
 func (s *Service) HeadCommit(ctx context.Context, did string) (string, string, error) {
 	account, err := s.accountForDID(ctx, did)

@@ -58,13 +58,11 @@ func (h *Handlers) DescribeServer(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetRepo serves GET /xrpc/com.atproto.sync.getRepo?did=[&since=] —
-// the full repo CAR (commit root + live blocks). `since` is accepted
-// but advisory: the full CAR is always a legal, self-sufficient answer
-// (§127 documents it as such — per-commit diff CARs need a
-// block-per-commit index that adds storage for marginal wire savings).
+// the full repo CAR without since; a diff CAR (head commit + the block
+// set introduced by newer commits, per atproto_commit_blocks) with it.
 func (h *Handlers) GetRepo(w http.ResponseWriter, r *http.Request) {
-	did := r.URL.Query().Get("did")
-	data, err := h.service.repoCARByDID(r.Context(), did)
+	q := r.URL.Query()
+	data, err := h.service.RepoCARSince(r.Context(), q.Get("did"), q.Get("since"))
 	if err != nil {
 		xrpcNotFound(w, err, "RepoNotFound")
 		return
