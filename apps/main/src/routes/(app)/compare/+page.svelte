@@ -359,6 +359,12 @@
 		return familyGroups.groups.find((g) => g.family.key === family) ?? null;
 	});
 	let pickerTypes = $derived(pickerGroup ? pickerGroup.types : familyGroups.ungrouped);
+	// The workspace's current category — the selected type's family card, or
+	// its own tile when ungrouped. Drives the "current" marker in the
+	// all-categories dialog.
+	let activeCategoryHref = $derived(
+		selectedType ? `/compare?type=${(pickerGroup?.types[0] ?? selectedType).slug}` : ''
+	);
 	let categoriesModalOpen = $state(false);
 	let sortModalOpen = $state(false);
 	let typeModalOpen = $state(false);
@@ -957,6 +963,7 @@
 						onclick={() => (categoriesModalOpen = true)}
 						class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
+						<LayoutGrid size={14} class="text-[var(--color-muted)]" />
 						{t('jce.compare.landing.all_categories', 'All categories')}
 						<ChevronDown size={14} class="text-[var(--color-muted)]" />
 					</button>
@@ -1278,6 +1285,7 @@
 					subtitle={tile.subtitle}
 					count={tile.count}
 					href={tile.href}
+					selected={tile.href === activeCategoryHref}
 				/>
 			{/each}
 		</div>

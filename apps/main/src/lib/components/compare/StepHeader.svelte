@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
-	import { ChevronDown, X } from 'lucide-svelte';
+	import { ChevronDown, LayoutGrid, X } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 
 	interface Props {
@@ -39,6 +39,7 @@
 			onclick={onAllCategories}
 			class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
+			<LayoutGrid size={13} class="text-[var(--color-muted)]" />
 			{t('jce.compare.landing.all_categories', 'All categories')}
 			<ChevronDown size={13} class="text-[var(--color-muted)]" />
 		</button>

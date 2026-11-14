@@ -1,7 +1,7 @@
 <script lang="ts">
 	/** Category tile for the /compare landing: tinted icon chip, name,
 	 *  subcategory subtitle, optional comparison count, trailing chevron. */
-	import { ChevronRight } from 'lucide-svelte';
+	import { Check, ChevronRight } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 
 	let {
@@ -11,6 +11,7 @@
 		subtitle = '',
 		count,
 		href,
+		selected = false,
 		class: className = ''
 	}: {
 		icon: Component;
@@ -19,13 +20,26 @@
 		subtitle?: string;
 		count?: number;
 		href: string;
+		selected?: boolean;
 		class?: string;
 	} = $props();
+
+	// In the "All categories" dialog the tile for the workspace's current
+	// category is marked selected — scroll it into view since the dialog's
+	// grid overflows on narrow screens.
+	function scrollSelected(node: HTMLElement) {
+		if (!selected) return;
+		requestAnimationFrame(() => node.scrollIntoView({ block: 'nearest' }));
+	}
 </script>
 
 <a
 	{href}
-	class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)] {className}"
+	aria-current={selected ? 'page' : undefined}
+	{@attach scrollSelected}
+	class="group flex items-center gap-3 rounded-[var(--radius-card)] border p-4 transition-colors {selected
+		? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
+		: 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'} {className}"
 >
 	<span
 		class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)]"
@@ -44,5 +58,9 @@
 			<span class="mt-0.5 block truncate text-sm text-[var(--color-muted)]">{subtitle}</span>
 		{/if}
 	</span>
-	<ChevronRight size={16} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100" />
+	{#if selected}
+		<Check size={16} class="shrink-0 text-[var(--color-primary)]" />
+	{:else}
+		<ChevronRight size={16} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100" />
+	{/if}
 </a>
