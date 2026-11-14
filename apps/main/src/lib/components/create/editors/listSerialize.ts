@@ -74,39 +74,60 @@ function embedHtml(item: ListItem, mediaUrls: Record<string, string>): string {
 	return '';
 }
 
+/** Serialize one item into its `<div class="list-item" id="item-N">` block.
+ *  Numbering is global across pages so a paginated countdown's rank order
+ *  is unbroken (§14 list amendment — multi-page). */
+function itemHtml(item: ListItem, i: number, total: number, mode: ListMode, mediaUrls: Record<string, string>): string {
+	const n = i + 1;
+	const num = displayNumber(mode, i, total);
+	const badge = mode === 'unnumbered' ? '' : `<span class="li-num">${num}.</span> `;
+	const heading = item.heading?.trim()
+		? `<h3>${badge}${esc(item.heading.trim())}</h3>`
+		: badge
+			? `<h3>${badge.trim()}</h3>`
+			: '';
+	// Item body_html embeds raw — the server re-sanitizes on save and
+	// field_values.items[].body_html is re-sanitized by
+	// validateListFieldValues before persistence.
+	const body = !isEmptyHtml(item.body_html) ? (item.body_html ?? '') : '';
+	const visual = embedHtml(item, mediaUrls);
+	const credit = item.source_url || item.credit
+		? `<p class="li-credit">${
+				item.source_url
+					? `<a href="${esc(item.source_url)}">${esc(item.credit || item.source_url)}</a>`
+					: esc(item.credit ?? '')
+			}</p>`
+		: '';
+	return `<div class="list-item" id="item-${n}">${heading}${visual}${body}${credit}</div>`;
+}
+
 /** Serialize the whole list composer state into the canonical body_html
  *  persisted on the contents row. `mediaUrls` maps media_id → public URL
- *  (resolved by the composer via GET /media/{id}). */
+ *  (resolved by the composer via GET /media/{id}). When `itemsPerPage` is a
+ *  positive int, items are grouped into `<div class="list-page"
+ *  id="list-page-P">` chunks — the public page serves one chunk per
+ *  ?page=N. Single-page lists keep flat markup (no wrapper). */
 export function serializeListBodyHtml(
 	mode: ListMode,
 	introHtml: string,
 	items: ListItem[],
-	mediaUrls: Record<string, string>
+	mediaUrls: Record<string, string>,
+	itemsPerPage?: number | null
 ): string {
 	const parts: string[] = [];
 	if (!isEmptyHtml(introHtml)) parts.push(introHtml);
-	items.forEach((item, i) => {
-		const n = i + 1;
-		const num = displayNumber(mode, i, items.length);
-		const badge = mode === 'unnumbered' ? '' : `<span class="li-num">${num}.</span> `;
-		const heading = item.heading?.trim()
-			? `<h3>${badge}${esc(item.heading.trim())}</h3>`
-			: badge
-				? `<h3>${badge.trim()}</h3>`
-				: '';
-		// Item body_html embeds raw — the server re-sanitizes on save and
-		// field_values.items[].body_html is re-sanitized by
-		// validateListFieldValues before persistence.
-		const body = !isEmptyHtml(item.body_html) ? (item.body_html ?? '') : '';
-		const visual = embedHtml(item, mediaUrls);
-		const credit = item.source_url || item.credit
-			? `<p class="li-credit">${
-					item.source_url
-						? `<a href="${esc(item.source_url)}">${esc(item.credit || item.source_url)}</a>`
-						: esc(item.credit ?? '')
-				}</p>`
-			: '';
-		parts.push(`<div class="list-item" id="item-${n}">${heading}${visual}${body}${credit}</div>`);
-	});
+	const perPage = itemsPerPage && itemsPerPage >= 1 ? Math.floor(itemsPerPage) : 0;
+	if (perPage > 0 && perPage < items.length) {
+		for (let start = 0; start < items.length; start += perPage) {
+			const pageNo = start / perPage + 1;
+			const chunk = items
+				.slice(start, start + perPage)
+				.map((item, off) => itemHtml(item, start + off, items.length, mode, mediaUrls))
+				.join('');
+			parts.push(`<div class="list-page" id="list-page-${pageNo}">${chunk}</div>`);
+		}
+	} else {
+		items.forEach((item, i) => parts.push(itemHtml(item, i, items.length, mode, mediaUrls)));
+	}
 	return parts.join('');
 }

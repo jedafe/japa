@@ -64,6 +64,19 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 		}
 	}
 
+	// §14 multi-page lists: items_per_page is optional — null/absent means
+	// single-page; a set value must be an integer in [1, maxItems].
+	if ippRaw, ok := fv["items_per_page"]; ok {
+		var n float64
+		if err := json.Unmarshal(ippRaw, &n); err == nil && ippIsNull(ippRaw) {
+			delete(fv, "items_per_page")
+		} else if err != nil || n < 1 || n > float64(maxItems) || n != float64(int64(n)) {
+			return nil, &listValidationError{"invalid_items_per_page", fmt.Sprintf("items_per_page must be an integer between 1 and %d", maxItems)}
+		} else {
+			fv["items_per_page"] = json.RawMessage(fmt.Sprintf("%d", int64(n)))
+		}
+	}
+
 	var items []listItem
 	if itemsRaw, ok := fv["items"]; ok {
 		if err := json.Unmarshal(itemsRaw, &items); err != nil {
@@ -202,6 +215,13 @@ func validateListItemEmbed(e *listItemEmbed) *listValidationError {
 	}
 
 	return nil
+}
+
+// ippIsNull reports whether the raw field value is JSON null — unmarshalling
+// null into a float64 succeeds with n == 0, so the raw bytes are checked
+// directly to distinguish "disabled" from an invalid zero.
+func ippIsNull(raw json.RawMessage) bool {
+	return string(raw) == "null"
 }
 
 // isHTTPURL reports whether s parses as an http or https URL.

@@ -129,13 +129,42 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
-	// Section 26 — self-referencing canonical on the clean content URL (never
-	// the query-string form) so filtered/paginated hits consolidate.
-	const canonical = $derived(`${page.url.origin}${contentHref(article)}`);
 	const allowedIframeHosts = $derived(
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
 	const sanitizedBody = $derived(sanitizeContentHtml(article.body_html || article.body, allowedIframeHosts));
+
+	// §14 multi-page lists — items_per_page makes the serializer group items
+	// into <div class="list-page" id="list-page-P"> chunks in body_html. The
+	// detail page serves one chunk per ?page=N; the ?page param is a real URL
+	// so pagination works no-JS and stays crawlable. Out-of-range params
+	// clamp into [1, pageCount]. Single-page lists emit no wrappers and take
+	// the flat path.
+	const LIST_PAGE_MARK = '<div class="list-page"';
+	const listBody = $derived.by(() => {
+		if (article.content_type !== 'list') return { intro: '', pages: [] as string[] };
+		const parts = sanitizedBody.split(LIST_PAGE_MARK);
+		if (parts.length < 2) return { intro: '', pages: [] as string[] };
+		return { intro: parts[0], pages: parts.slice(1).map((p) => LIST_PAGE_MARK + p) };
+	});
+	const listPageCount = $derived(listBody.pages.length);
+	const listPageNo = $derived.by(() => {
+		if (listPageCount === 0) return 1;
+		const raw = parseInt(page.url.searchParams.get('page') ?? '1', 10);
+		if (Number.isNaN(raw) || raw < 1) return 1;
+		return Math.min(raw, listPageCount);
+	});
+	const renderedBody = $derived(
+		listPageCount > 0 ? listBody.intro + listBody.pages[listPageNo - 1] : sanitizedBody
+	);
+
+	// Section 26 — self-referencing canonical on the clean content URL (never
+	// the query-string form) so filtered hits consolidate. Multi-page lists
+	// (§14) are the exception: each ?page=N is structural content and
+	// self-canonicalizes so every page stays indexable.
+	const canonical = $derived(
+		`${page.url.origin}${contentHref(article)}` + (listPageNo > 1 ? `?page=${listPageNo}` : '')
+	);
 
 	// Series part links route into this article's own route family
 	// (ADR-058): /guide/{slug} for guides, /content/{slug} for generic types.
@@ -419,10 +448,53 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			</div>
 		{/if}
 
-		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
-			{@html sanitizedBody}
-		</div>
+		<!-- Article body: prose TipTap HTML with serif reading font. Multi-page
+		     lists ({listPageCount > 0}) render one ?page=N chunk at a time —
+		     the {#key} remount re-runs the hydration actions on the swapped
+		     DOM so page 2+ embeds still come alive. -->
+		{#if listPageCount > 0}
+			{#key listPageNo}
+				<div class="prose mt-8" id="list-items" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
+					{@html renderedBody}
+				</div>
+			{/key}
+			{#if listPageCount > 1}
+				<nav class="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label={t('common.pagination', 'Pagination')}>
+					{#if listPageNo > 1}
+						<a
+							href="?page={listPageNo - 1}#list-items"
+							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
+						>
+							{t('common.previous', 'Previous')}
+						</a>
+					{/if}
+					{#each { length: listPageCount } as _, p (p)}
+						{@const n = p + 1}
+						<a
+							href="?page={n}#list-items"
+							aria-current={n === listPageNo ? 'page' : undefined}
+							class="rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {n === listPageNo
+								? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]'}"
+						>
+							{n}
+						</a>
+					{/each}
+					{#if listPageNo < listPageCount}
+						<a
+							href="?page={listPageNo + 1}#list-items"
+							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
+						>
+							{t('common.next', 'Next')}
+						</a>
+					{/if}
+				</nav>
+			{/if}
+		{:else}
+			<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
+				{@html sanitizedBody}
+			</div>
+		{/if}
 
 		<!-- Reaction/action bar: fixed bottom bar on mobile (the routes using
 		     this are ADR-058 exceptions, so the shell's mobile tab bar is

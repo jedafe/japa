@@ -175,4 +175,41 @@ describe('serializeListBodyHtml', () => {
 		], {});
 		expect(html).toContain('href="/content/x-post"');
 	});
+
+	it('wraps item chunks in list-page divs when items_per_page is set', () => {
+		const items = ['A', 'B', 'C', 'D', 'E'].map((h) => item({ heading: h }));
+		const html = serializeListBodyHtml('numbered', '', items, {}, 2);
+		expect(html).toContain('<div class="list-page" id="list-page-1">');
+		expect(html).toContain('<div class="list-page" id="list-page-2">');
+		expect(html).toContain('<div class="list-page" id="list-page-3">');
+		expect(html.match(/class="list-page"/g)).toHaveLength(3);
+		// Page 1 holds items 1-2, page 2 holds 3-4, page 3 holds 5.
+		const p1 = html.indexOf('id="list-page-1"');
+		const p2 = html.indexOf('id="list-page-2"');
+		const p3 = html.indexOf('id="list-page-3"');
+		expect(html.slice(p1, p2)).toContain('id="item-1"');
+		expect(html.slice(p1, p2)).toContain('id="item-2"');
+		expect(html.slice(p1, p2)).not.toContain('id="item-3"');
+		expect(html.slice(p2, p3)).toContain('id="item-3"');
+		expect(html.slice(p3)).toContain('id="item-5"');
+		// Numbering stays global across page boundaries.
+		expect(html.slice(p2, p3)).toContain('<span class="li-num">3.</span>');
+	});
+
+	it('keeps countdown badge numbers global across pages', () => {
+		const items = ['A', 'B', 'C', 'D'].map((h) => item({ heading: h }));
+		const html = serializeListBodyHtml('countdown', '', items, {}, 3);
+		// Page 2 holds only item 4 — still badge "1." (rank last).
+		expect(html.slice(html.indexOf('id="list-page-2"'))).toContain('<span class="li-num">1.</span>');
+		expect(html.slice(html.indexOf('id="list-page-1"'), html.indexOf('id="list-page-2"'))).toContain(
+			'<span class="li-num">4.</span>'
+		);
+	});
+
+	it('emits flat markup when items_per_page covers the whole list', () => {
+		const items = [item({ heading: 'A' }), item({ heading: 'B' })];
+		expect(serializeListBodyHtml('numbered', '', items, {}, 5)).not.toContain('list-page');
+		expect(serializeListBodyHtml('numbered', '', items, {}, null)).not.toContain('list-page');
+		expect(serializeListBodyHtml('numbered', '', items, {}, 0)).not.toContain('list-page');
+	});
 });

@@ -2377,6 +2377,9 @@ export interface ListItem {
 export interface ListFieldValues {
 	list_mode: ListMode;
 	intro_html?: string;
+	/** Multi-page lists: positive int = items per page; null/absent = single
+	 *  page. Backend validates 1..list.max_items. */
+	items_per_page?: number | null;
 	items: ListItem[];
 }
 

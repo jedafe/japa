@@ -25,6 +25,13 @@ func TestValidateListFieldValues(t *testing.T) {
 		{"content embed missing slug", `{"items":[{"embed":{"kind":"content","content_id":"` + uuid.New().String() + `"}}]}`, "invalid_list_items"},
 		{"url embed bad scheme", `{"items":[{"embed":{"kind":"url","url":"javascript:alert(1)"}}]}`, "invalid_list_items"},
 		{"bad source_url", `{"items":[{"source_url":"ftp://x"}]}`, "invalid_list_items"},
+		{"items_per_page ok", `{"items_per_page":5,"items":[]}`, ""},
+		{"items_per_page one", `{"items_per_page":1,"items":[]}`, ""},
+		{"items_per_page zero", `{"items_per_page":0,"items":[]}`, "invalid_items_per_page"},
+		{"items_per_page negative", `{"items_per_page":-2,"items":[]}`, "invalid_items_per_page"},
+		{"items_per_page float", `{"items_per_page":2.5,"items":[]}`, "invalid_items_per_page"},
+		{"items_per_page string", `{"items_per_page":"5","items":[]}`, "invalid_items_per_page"},
+		{"items_per_page over max", `{"items_per_page":51,"items":[]}`, "invalid_items_per_page"},
 	}
 	for _, tc := range cases {
 		_, err := validateListFieldValues(json.RawMessage(tc.fv), 50)
@@ -35,6 +42,28 @@ func TestValidateListFieldValues(t *testing.T) {
 		if tc.wantErr != "" && (err == nil || err.Code != tc.wantErr) {
 			t.Errorf("%s: want %s, got %v", tc.name, tc.wantErr, err)
 		}
+	}
+}
+
+func TestValidateListFieldValuesItemsPerPage(t *testing.T) {
+	// null disables pagination — the key is normalized out of field_values.
+	out, err := validateListFieldValues(json.RawMessage(`{"items_per_page":null,"items":[]}`), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Contains(out, []byte("items_per_page")) {
+		t.Fatalf("null items_per_page should be dropped, got %s", out)
+	}
+
+	// A valid bound is normalized to a plain integer for stable round-trips.
+	out, err = validateListFieldValues(json.RawMessage(`{"items_per_page":3,"items":[]}`), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Contains(out, []byte(`"items_per_page":3`)) {
+		t.Fatalf("want normalized items_per_page:3, got %s", out)
 	}
 }
 

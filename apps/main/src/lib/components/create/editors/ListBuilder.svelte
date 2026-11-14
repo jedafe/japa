@@ -95,6 +95,10 @@
 	let mode = $state<ListMode>(untrack(() => initial?.list_mode ?? 'numbered'));
 	let introHtml = $state(untrack(() => initial?.intro_html ?? ''));
 	let rows = $state<Row[]>(untrack(() => (initial?.items ?? []).map(toRow)));
+	// §14 multi-page lists — items_per_page > 0 paginates the public page
+	// (?page=N); unchecked/empty input stores no key (single page).
+	let paginated = $state(untrack(() => (initial?.items_per_page ?? 0) > 0));
+	let itemsPerPage = $state<number>(untrack(() => initial?.items_per_page ?? 5));
 	// media_id → public URL, used by the serializer to emit <img src>.
 	let mediaUrls = $state<Record<string, string>>({});
 	// Row key whose image tab is picking from the media library (modal open).
@@ -110,8 +114,14 @@
 			...r.item,
 			body_html: isEmptyHtml(r.item.body_html) ? undefined : r.item.body_html
 		}));
-		onvalues({ list_mode: mode, intro_html: isEmptyHtml(introHtml) ? '' : introHtml, items });
-		onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls));
+		const perPage = paginated && itemsPerPage >= 1 ? Math.floor(itemsPerPage) : null;
+		onvalues({
+			list_mode: mode,
+			intro_html: isEmptyHtml(introHtml) ? '' : introHtml,
+			items_per_page: perPage,
+			items
+		});
+		onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls, perPage));
 		oncounts(items.length);
 		if (markDirty) onedit();
 	}
@@ -331,6 +341,40 @@
 				</button>
 			{/each}
 		</div>
+	</div>
+
+	<!-- Multi-page toggle — ?page=N pagination on the public list page. -->
+	<div class="mode-row">
+		<span class="field-label">{t('create.list.pagination')}</span>
+		<label class="page-toggle">
+			<input
+				type="checkbox"
+				checked={paginated}
+				onchange={(e) => {
+					paginated = e.currentTarget.checked;
+					emit();
+				}}
+			/>
+			{t('create.list.paginate')}
+		</label>
+		{#if paginated}
+			<input
+				type="number"
+				class="per-page-input"
+				min="1"
+				step="1"
+				value={itemsPerPage}
+				aria-label={t('create.list.per_page')}
+				oninput={(e) => {
+					const v = parseInt(e.currentTarget.value, 10);
+					if (!Number.isNaN(v)) {
+						itemsPerPage = v;
+						emit();
+					}
+				}}
+			/>
+			<span class="per-page-label">{t('create.list.per_page')}</span>
+		{/if}
 	</div>
 
 	{#each rows as row, i (row.key)}
@@ -610,6 +654,33 @@
 		background: var(--color-surface);
 		color: var(--color-primary-text);
 		box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+	}
+
+	.page-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.8125rem;
+		color: var(--color-text);
+		cursor: pointer;
+	}
+	.per-page-input {
+		width: 4.5rem;
+		height: 1.75rem;
+		padding: 0 8px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.8125rem;
+		outline: none;
+	}
+	.per-page-input:focus {
+		border-color: var(--color-primary);
+	}
+	.per-page-label {
+		font-size: 0.8125rem;
+		color: var(--color-text-subtle);
 	}
 
 	.list-item-card {
