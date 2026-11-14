@@ -687,12 +687,16 @@ func (s *Service) cacheSet(ctx context.Context, key string, doc map[string]any, 
 
 // invalidateActorCache drops a username's webfinger/actor doc cache on
 // status transitions so disabled actors stop serving immediately.
+// One DEL per key: valkey-go rejects multi-key commands spanning
+// different hash slots (panics) — same convention as users/handlers.go.
 func (s *Service) invalidateActorCache(ctx context.Context, username string) {
 	if s.vk == nil {
 		return
 	}
 	u := strings.ToLower(username)
-	_ = s.vk.Del(ctx, "jc:fed:webfinger:"+u, "jc:fed:actor:"+u).Err()
+	for _, k := range [2]string{"jc:fed:webfinger:" + u, "jc:fed:actor:" + u} {
+		_ = s.vk.Del(ctx, k).Err()
+	}
 }
 
 // RemoteCacheKey is the catalogued jc:fed:remote:{sha256(actor_url)} key.

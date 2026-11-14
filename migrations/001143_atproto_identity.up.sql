@@ -11,6 +11,11 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS atproto_accounts (
     id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- ON DELETE CASCADE: a hard-deleted user drops the account row
+    -- silently. A6 contract: the erasure flow MUST emit #tombstone +
+    -- record-deletion commits BEFORE the users row is removed — after
+    -- the cascade the signing key is gone and the member's repo content
+    -- dangles on the network with no way to retract it.
     user_id               uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     handle                text NOT NULL UNIQUE,  -- {username}.{JC_ATPROTO_HANDLE_DOMAIN}
     did                   text NOT NULL UNIQUE,  -- did:web:{pds_host}:atproto:u:{user_uuid}

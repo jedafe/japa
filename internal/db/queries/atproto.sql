@@ -4,14 +4,19 @@
 -- and disabled accounts don't exist on the atproto network.
 -- The live u.username match outranks the stored handle: after a rename
 -- the member's new subdomain resolves to their permanent DID (mirrors
--- the federated_actors precedence pattern).
+-- the federated_actors precedence pattern). lower() on the username side
+-- because handles are normalized lowercase but users.username preserves
+-- case — 'Alice2' must still match a live username 'Alice2' → 'alice2'.
+-- At most one account can match lower(u.username) at a time: two users
+-- whose names collide under lower() compete for the same derived handle
+-- and only one can hold an account.
 SELECT a.*, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE (lower(a.handle) = lower(@handle) OR u.username = @username)
+WHERE (lower(a.handle) = lower(@handle) OR lower(u.username) = @username)
   AND a.status = 'active'
   AND u.status = 'active'
-ORDER BY (u.username = @username) DESC
+ORDER BY (lower(u.username) = @username) DESC
 LIMIT 1;
 
 -- name: GetAtprotoHandleClaim :one
@@ -26,7 +31,7 @@ LIMIT 1;
 
 -- name: UpdateAtprotoAccountHandle :exec
 -- Lazy rename sync: the stored handle tracks the live username (the DID
--- itself is immutable — did:web:...:u:{mint_username} never changes).
+-- itself is immutable — did:web:...:u:{user_uuid} never changes).
 UPDATE atproto_accounts
 SET handle = @handle, updated_at = now()
 WHERE id = @id
@@ -42,7 +47,7 @@ WHERE a.user_id = @user_id
   AND u.status = 'active';
 
 -- name: GetAtprotoAccountByDID :one
--- did:web document resolution. The :u:{mint_username} path component IS
+-- did:web document resolution. The :u:{user_uuid} path component IS
 -- the DID encoding — looked up by DID (immutable) rather than handle so
 -- the minted identifier keeps resolving after renames and handle syncs.
 SELECT a.*, u.username AS live_username

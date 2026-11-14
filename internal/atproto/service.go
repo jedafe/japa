@@ -70,14 +70,19 @@ func (s *Service) cacheSet(ctx context.Context, key string, doc any, ttl time.Du
 
 // invalidateAccount drops the account's cached resolution keys — the
 // did:web doc under its u/{uuid} path key and the handle→DID proof.
+// One DEL per key: valkey-go rejects multi-key commands spanning
+// different hash slots (panics), so keys are deleted individually —
+// same convention as internal/users/handlers.go.
 func (s *Service) invalidateAccount(ctx context.Context, handle, didPathID string) {
 	if s.vk == nil {
 		return
 	}
-	_ = s.vk.Del(ctx,
-		"jc:atp:did:"+strings.ToLower(didPathID),
-		"jc:atp:account:"+strings.ToLower(handle),
-	).Err()
+	for _, k := range [2]string{
+		"jc:atp:did:" + strings.ToLower(didPathID),
+		"jc:atp:account:" + strings.ToLower(handle),
+	} {
+		_ = s.vk.Del(ctx, k).Err()
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -110,12 +115,35 @@ func (s *Service) handleUsername(handle string) string {
 	return local
 }
 
+// handleLocalRe matches a single atproto handle label — lowercase alnum
+// with interior hyphens (no leading/trailing hyphen, no underscore).
+// This is the §50 username charset minus '_': usernames like "alice_w"
+// are legal platform-side but can never verify as atproto handles.
+var handleLocalRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// validHandle reports whether a username's derived handle can ever verify
+// on the atproto network: the username-derived label must be DNS-legal,
+// and the handle must not collide with the PDS host itself (HandleFromHost
+// excludes it — an account named after the PDS host mints a handle that
+// permanently 404s).
+func (s *Service) validHandle(username, handle string) bool {
+	if !handleLocalRe.MatchString(strings.ToLower(username)) {
+		return false
+	}
+	if handle == strings.Split(s.cfg.pdsHost(), ":")[0] {
+		return false
+	}
+	return true
+}
+
 // syncHandle lazily reconciles the stored handle with the member's live
 // username after a rename — the DID itself is immutable
 // (did:web:…:u:{user_uuid} never changes). Returns the handle to
 // emit in docs. Idempotent; on contention the stale value is served.
-func (s *Service) syncHandle(ctx context.Context, accountID pgtype.UUID, storedHandle, liveUsername string) string {
-	if liveUsername == "" {
+// userID (the account's owner — NOT the row PK) keys the jc:atp:did:*
+// doc cache, which is addressed by the did:web u/{user_uuid} path.
+func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID, storedHandle, liveUsername string) string {
+	if liveUsername == "" || s.cfg.handleDomain() == "" {
 		return storedHandle
 	}
 	want := s.cfg.handleFor(liveUsername)
@@ -125,7 +153,7 @@ func (s *Service) syncHandle(ctx context.Context, accountID pgtype.UUID, storedH
 	if err := s.store.setAccountHandle(ctx, accountID, want); err != nil {
 		return storedHandle
 	}
-	id := uuidString(accountID)
+	id := uuidString(userID)
 	s.invalidateAccount(ctx, storedHandle, id)
 	s.invalidateAccount(ctx, want, id)
 	return want
@@ -160,7 +188,7 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 	// claim just migrated to the member's live username — the requested
 	// handle is now unclaimed. Returning the row's DID here would cache
 	// (and prove) the wrong account for a freed handle.
-	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername), handle) {
+	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.UserID, account.Handle, account.LiveUsername), handle) {
 		return "", ErrNotFound
 	}
 	if s.vk != nil {
@@ -198,7 +226,7 @@ func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, e
 	}
 
 	// alsoKnownAs emits the live handle (synced on read after renames).
-	doc := didDocument(account.Did, s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername),
+	doc := didDocument(account.Did, s.syncHandle(ctx, account.ID, account.UserID, account.Handle, account.LiveUsername),
 		account.PublicKeyMultibase, s.cfg.pdsURL())
 	s.cacheSet(ctx, cacheKey, doc, 10*time.Minute)
 	return doc, nil
@@ -244,7 +272,7 @@ func (s *Service) GetMyAccount(ctx context.Context, userID pgtype.UUID) (Account
 	if err != nil {
 		return AccountStatus{}, fmt.Errorf("atproto: my user: %w", err)
 	}
-	account.Handle = s.syncHandle(ctx, account.ID, account.Handle, user.Username)
+	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Handle, user.Username)
 	return s.statusFor(account), nil
 }
 
@@ -259,18 +287,37 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	if user.Status != "active" {
 		return AccountStatus{}, ErrNotFound
 	}
+	// Refuse to mint or mutate identity on an unconfigured PDS — an empty
+	// pdsURL yields "did:web::atproto:u:…" and an empty domain writes
+	// "{username}." handles. Both persist permanently.
+	if s.cfg.pdsURL() == "" || s.cfg.handleDomain() == "" {
+		return AccountStatus{}, ErrMisconfigured
+	}
 	handle := s.cfg.handleFor(user.Username)
+	// The §50 username charset allows '_' — atproto handle labels don't.
+	// Minting anyway produces an account that verifies as handle.invalid
+	// on the network (ADR-139's silent-failure mode); reject up front.
+	// Also rejects handles colliding with the PDS host, which
+	// HandleFromHost deliberately never resolves.
+	if !s.validHandle(user.Username, handle) {
+		return AccountStatus{}, ErrInvalidHandle
+	}
 
 	existing, err := s.store.accountByUserID(ctx, userID)
 	if err == nil {
+		// Tombstone is terminal — A6's erasure end-state. The member
+		// endpoints must never resurrect or downgrade it.
+		if existing.Status == AccountStatusTombstone {
+			return AccountStatus{}, ErrNotFound
+		}
 		if existing.Status != AccountStatusActive {
 			if uerr := s.store.setAccountStatus(ctx, existing.ID, AccountStatusActive); uerr != nil {
 				return AccountStatus{}, fmt.Errorf("atproto: reactivate: %w", uerr)
 			}
 			existing.Status = AccountStatusActive
-			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.ID))
+			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
 		}
-		existing.Handle = s.syncHandle(ctx, existing.ID, existing.Handle, user.Username)
+		existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, user.Username)
 		return s.statusFor(existing), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -294,7 +341,7 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		if strings.EqualFold(s.cfg.handleFor(claimed.LiveUsername), handle) {
 			return AccountStatus{}, ErrHandleTaken
 		}
-		s.syncHandle(ctx, claimed.ID, claimed.Handle, claimed.LiveUsername)
+		s.syncHandle(ctx, claimed.ID, claimed.UserID, claimed.Handle, claimed.LiveUsername)
 	}
 
 	account, err := s.store.createAccount(ctx, gen.CreateAtprotoAccountParams{
@@ -318,7 +365,8 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 
 // DisableAccount deactivates the caller's account. The row is kept so a
 // later re-enable preserves the DID + keypair (identity is permanent);
-// A6 additionally emits #tombstone for full erasure.
+// A6 additionally emits #tombstone for full erasure — and tombstone is
+// terminal: this path must never downgrade it back to 'disabled'.
 func (s *Service) DisableAccount(ctx context.Context, userID pgtype.UUID) (AccountStatus, error) {
 	account, err := s.store.accountByUserID(ctx, userID)
 	if err != nil {
@@ -327,13 +375,13 @@ func (s *Service) DisableAccount(ctx context.Context, userID pgtype.UUID) (Accou
 		}
 		return AccountStatus{}, fmt.Errorf("atproto: lookup account: %w", err)
 	}
-	if account.Status != AccountStatusDisabled {
+	if account.Status == AccountStatusActive {
 		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusDisabled); err != nil {
 			return AccountStatus{}, fmt.Errorf("atproto: disable: %w", err)
 		}
+		account.Status = AccountStatusDisabled
 	}
-	s.invalidateAccount(ctx, account.Handle, uuidString(account.ID))
-	account.Status = AccountStatusDisabled
+	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
 	return s.statusFor(account), nil
 }
 

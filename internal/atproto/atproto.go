@@ -15,6 +15,7 @@ package atproto
 
 import (
 	"errors"
+	"net"
 	"strings"
 )
 
@@ -30,6 +31,7 @@ var (
 	ErrInvalidHandle = errors.New("invalid atproto handle")
 	ErrInvalidID     = errors.New("invalid atproto account id")
 	ErrHandleTaken   = errors.New("atproto handle already claimed")
+	ErrMisconfigured = errors.New("atproto pds url or handle domain not configured")
 )
 
 // Config carries the JC_ATPROTO_* deployment values (internal/config),
@@ -67,17 +69,30 @@ func (c Config) pdsURL() string {
 }
 
 // handleDomain resolves the handle domain: configured domain wins, else
-// the SiteBase host (mirrors federation's derivation).
+// the SiteBase host (mirrors federation's derivation). Ports are stripped —
+// handles are DNS names and can't carry one (dev JC_SITE_URL values like
+// localhost:3000 would otherwise mint unresolvable "alice.localhost:3000"
+// handles). The pdsHost derivation keeps its port deliberately — did:web
+// encodes it (%3A).
 func (c Config) handleDomain() string {
 	if c.HandleDomain != "" {
-		return strings.ToLower(strings.TrimSpace(c.HandleDomain))
+		return stripPort(strings.ToLower(strings.TrimSpace(c.HandleDomain)))
 	}
 	u := strings.TrimPrefix(c.SiteBase, "https://")
 	u = strings.TrimPrefix(u, "http://")
 	if i := strings.IndexAny(u, "/?#"); i >= 0 {
 		u = u[:i]
 	}
-	return strings.ToLower(strings.TrimSuffix(u, "/"))
+	return stripPort(strings.ToLower(strings.TrimSuffix(u, "/")))
+}
+
+// stripPort drops the :port suffix from a host[:port] string, tolerating
+// bracketed IPv6; a bare hostname passes through unchanged.
+func stripPort(hostport string) string {
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		return strings.Trim(h, "[]")
+	}
+	return hostport
 }
 
 // pdsHost returns the host component of the PDS URL — the did:web

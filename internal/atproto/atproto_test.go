@@ -1,6 +1,7 @@
 package atproto
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -104,6 +105,76 @@ func TestHandleDomainFallbacks(t *testing.T) {
 	cfg = Config{APIBase: "https://api.japa.to"}
 	if got := cfg.pdsURL(); got != "https://api.japa.to" {
 		t.Errorf("pdsURL fallback = %q", got)
+	}
+}
+
+func TestHandleDomainStripsPort(t *testing.T) {
+	// Dev JC_SITE_URL values carry ports — handles are DNS names and
+	// can't; "alice.localhost:3000" would never resolve.
+	cfg := Config{SiteBase: "http://localhost:3000"}
+	if got := cfg.handleDomain(); got != "localhost" {
+		t.Errorf("handleDomain(SiteBase w/ port) = %q, want localhost", got)
+	}
+	cfg = Config{HandleDomain: "JAPA.TO:443"}
+	if got := cfg.handleDomain(); got != "japa.to" {
+		t.Errorf("handleDomain(config w/ port) = %q, want japa.to", got)
+	}
+	// pdsHost keeps its port deliberately — did:web encodes it (%3A).
+	cfg = Config{PDSURL: "http://localhost:8080"}
+	if got := cfg.pdsHost(); got != "localhost:8080" {
+		t.Errorf("pdsHost = %q, want port preserved", got)
+	}
+}
+
+// validHandle is the mint-time gate: the username-derived label must be
+// DNS-legal (the §50 charset allows '_', atproto labels don't) and the
+// derived handle must not collide with the PDS host.
+func TestValidHandle(t *testing.T) {
+	svc := testService() // pdsHost api.japa.to, domain japa.to
+	cases := []struct {
+		username, handle string
+		want             bool
+	}{
+		{"alice", "alice.japa.to", true},
+		{"alice-w", "alice-w.japa.to", true},
+		{"Alice9", "alice9.japa.to", true},    // casefolds into a legal label
+		{"9lives", "9lives.japa.to", true},    // leading digit is legal in labels
+		{"alice_w", "alice_w.japa.to", false}, // underscore: legal username, illegal handle
+		{"-alice", "-alice.japa.to", false},   // leading hyphen
+		{"alice-", "alice-.japa.to", false},   // trailing hyphen
+		{"api", "api.japa.to", false},         // collides with the PDS host itself
+	}
+	for _, c := range cases {
+		if got := svc.validHandle(c.username, c.handle); got != c.want {
+			t.Errorf("validHandle(%q, %q) = %v, want %v", c.username, c.handle, got, c.want)
+		}
+	}
+}
+
+// invalidateAccount must drop the real cache keys the service writes:
+// jc:atp:did:{user_uuid} (keyed by the did:web u/{id} path component —
+// the USER uuid, not the account row PK) and jc:atp:account:{handle}.
+func TestInvalidateAccountDropsRealKeys(t *testing.T) {
+	vk := startTestCompat(t)
+	svc := testService()
+	svc.vk = vk
+	ctx := context.Background()
+
+	if err := vk.Set(ctx, "jc:atp:did:some-user-uuid", []byte(`{}`), 0).Err(); err != nil {
+		t.Fatalf("seed did key: %v", err)
+	}
+	if err := vk.Set(ctx, "jc:atp:account:alice.japa.to", []byte("did:web:x"), 0).Err(); err != nil {
+		t.Fatalf("seed account key: %v", err)
+	}
+
+	// Mixed-case args must still hit the lowercase-normalized keys.
+	svc.invalidateAccount(ctx, "Alice.JAPA.to", "SOME-USER-UUID")
+
+	if _, err := vk.Get(ctx, "jc:atp:did:some-user-uuid").Result(); err == nil {
+		t.Error("jc:atp:did:* still cached after invalidation")
+	}
+	if _, err := vk.Get(ctx, "jc:atp:account:alice.japa.to").Result(); err == nil {
+		t.Error("jc:atp:account:* still cached after invalidation")
 	}
 }
 

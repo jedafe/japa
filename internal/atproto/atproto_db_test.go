@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // DB integration tests — same harness as federation_db_test.go: real
@@ -34,7 +37,16 @@ func testDB(t *testing.T) *db.DB {
 
 func newAtprotoUser(t *testing.T, ctx context.Context, d *db.DB, status string) (pgtype.UUID, string) {
 	t.Helper()
-	uname := fmt.Sprintf("atptest_%d", time.Now().UnixNano())
+	return newAtprotoNamedUser(t, ctx, d, fmt.Sprintf("atptest%d", time.Now().UnixNano()), status)
+}
+
+// newAtprotoNamedUser inserts a user with an explicit username — tests
+// that need specific names (caseful, underscore-bearing) use it directly.
+// Generated names must be handle-legal: atproto labels reject '_', so the
+// default generator produces "atptest<n>" (no underscore) so generic
+// tests exercise the happy path.
+func newAtprotoNamedUser(t *testing.T, ctx context.Context, d *db.DB, uname, status string) (pgtype.UUID, string) {
+	t.Helper()
 	var id pgtype.UUID
 	err := d.Writer.QueryRow(ctx,
 		`INSERT INTO users (username, email, status) VALUES ($1, $2, $3) RETURNING id`,
@@ -47,6 +59,27 @@ func newAtprotoUser(t *testing.T, ctx context.Context, d *db.DB, status string) 
 		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, id)
 	})
 	return id, uname
+}
+
+// startTestCompat wires an in-memory Valkey (miniredis) behind the
+// go-redis-compatible Cmdable the service caches through — mirrors
+// internal/valkey/cachehelper_test.go's startTestCompat.
+func startTestCompat(t *testing.T) valkeycompat.Cmdable {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("valkey.NewClient: %v", err)
+	}
+	t.Cleanup(vk.Close)
+	return valkeycompat.NewAdapter(vk)
 }
 
 func newAtprotoService(t *testing.T, d *db.DB) *Service {
@@ -305,7 +338,7 @@ func TestDBStaleClaimReclaimed(t *testing.T) {
 	// Charlie mints 'charlie.japa.to' then renames away — stored handle
 	// goes stale (no read path has synced it yet).
 	charlieID, charlieName := newAtprotoUser(t, ctx, d, "active")
-	charlieName = charlieName + "_" + base // unique-ish
+	charlieName = charlieName + "-" + base // unique-ish (hyphen: handle-legal)
 	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, charlieName, charlieID); err != nil {
 		t.Fatalf("name charlie: %v", err)
 	}
@@ -366,5 +399,151 @@ func TestDBAdminListHidesKey(t *testing.T) {
 		if a.SigningKeyEnc != "" {
 			t.Error("admin row carries key ciphertext — sanitization failed")
 		}
+	}
+}
+
+// Caseful usernames: users.username preserves case but handles are
+// normalized lowercase. A rename to a caseful name must still resolve
+// publicly — the live-username precedence compares lower(u.username)
+// (pre-fix: u.username = @username never matched a caseful live name,
+// so the new subdomain could only self-heal via a member-side read).
+func TestDBCasefulRenameResolution(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+
+	userID, uname := newAtprotoNamedUser(t, ctx, d,
+		fmt.Sprintf("CaseUser%d", time.Now().UnixNano()), "active")
+	st, err := svc.EnableAccount(ctx, userID)
+	if err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	if st.Handle != strings.ToLower(uname)+".test.dev" {
+		t.Fatalf("handle = %q, want normalized %q", st.Handle, strings.ToLower(uname)+".test.dev")
+	}
+
+	renamed := uname + "New"
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, renamed, userID); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	did, err := svc.ResolveHandleDID(ctx, strings.ToLower(renamed)+".test.dev")
+	if err != nil || did != st.DID {
+		t.Fatalf("caseful rename resolution: %v / %q", err, did)
+	}
+}
+
+// Underscore usernames are legal under §50 but can't form an atproto
+// handle label — opt-in must fail with ErrInvalidHandle rather than mint
+// an account that verifies as handle.invalid on the network.
+func TestDBUnderscoreUsernameRejected(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+
+	userID, _ := newAtprotoNamedUser(t, ctx, d,
+		fmt.Sprintf("atp_bad%d", time.Now().UnixNano()), "active")
+	if _, err := svc.EnableAccount(ctx, userID); err != ErrInvalidHandle {
+		t.Errorf("underscore enable: got %v, want ErrInvalidHandle", err)
+	}
+}
+
+// A handle colliding with the PDS host itself can never resolve —
+// HandleFromHost excludes it by design. Opt-in must reject, not mint a
+// permanently dead account.
+func TestDBPDSHostCollisionRejected(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d) // pdsHost api.test.dev, domain test.dev
+
+	userID, _ := newAtprotoNamedUser(t, ctx, d, "api", "active")
+	if _, err := svc.EnableAccount(ctx, userID); err != ErrInvalidHandle {
+		t.Errorf("pds-host collision enable: got %v, want ErrInvalidHandle", err)
+	}
+}
+
+// Tombstone is terminal (A6's erasure end-state): the member endpoints
+// must neither resurrect it via enable nor downgrade it via disable.
+func TestDBTombstoneTerminal(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_accounts SET status = 'tombstone' WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+
+	if _, err := svc.EnableAccount(ctx, userID); err != ErrNotFound {
+		t.Errorf("enable tombstoned: got %v, want ErrNotFound", err)
+	}
+	st, err := svc.DisableAccount(ctx, userID)
+	if err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	if st.Status != AccountStatusTombstone {
+		t.Errorf("disable downgraded tombstone to %q", st.Status)
+	}
+	var status string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT status FROM atproto_accounts WHERE user_id = $1`, userID).Scan(&status); err != nil {
+		t.Fatalf("select status: %v", err)
+	}
+	if status != AccountStatusTombstone {
+		t.Errorf("stored status = %q, want tombstone", status)
+	}
+}
+
+// jc:atp:did:{id} is keyed on the USER uuid — the did:web u/{id} path
+// component — not the atproto_accounts row PK. Disable must evict both
+// the DID-doc cache and the well-known account cache so a deactivated
+// member stops resolving immediately, not after the 10m TTL.
+func TestDBDisableInvalidatesCaches(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	svc.SetValkey(startTestCompat(t))
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	// Warm both caches.
+	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != nil {
+		t.Fatalf("DIDDocument warm: %v", err)
+	}
+	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != nil {
+		t.Fatalf("ResolveHandleDID warm: %v", err)
+	}
+
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+
+	// Both lookups must now miss — a lingering DID doc cache would keep
+	// serving the doc for a deactivated member until TTL expiry.
+	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != ErrNotFound {
+		t.Errorf("disabled DID doc still served (cache not invalidated): %v", err)
+	}
+	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != ErrNotFound {
+		t.Errorf("disabled handle still resolves (cache not invalidated): %v", err)
+	}
+}
+
+// An unconfigured PDS must fail closed: opt-in returns ErrMisconfigured
+// instead of persisting "did:web::atproto:u:…" ids / "{username}."
+// handles that can never resolve.
+func TestDBEnableMisconfiguredFailsClosed(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := NewService(d, Config{})
+
+	if _, err := svc.EnableAccount(ctx, userID); err != ErrMisconfigured {
+		t.Errorf("unconfigured enable: got %v, want ErrMisconfigured", err)
 	}
 }

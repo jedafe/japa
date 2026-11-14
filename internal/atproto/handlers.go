@@ -33,6 +33,9 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid account id")
 	case errors.Is(err, ErrHandleTaken):
 		errpkg.WriteError(w, http.StatusConflict, "handle_taken", "Handle already claimed")
+	case errors.Is(err, ErrMisconfigured):
+		slog.Error("atproto misconfigured", "err", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "AT Protocol is not configured")
 	default:
 		slog.Error("atproto handler error", "err", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
@@ -113,7 +116,7 @@ func (h *Handlers) GetMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	writeTypedJSON(w, http.StatusOK, "application/json", st)
+	errpkg.WriteJSON(w, http.StatusOK, st)
 }
 
 // EnableMyAccount serves POST /api/v1/me/atproto (idempotent opt-in).
@@ -127,7 +130,7 @@ func (h *Handlers) EnableMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	writeTypedJSON(w, http.StatusOK, "application/json", st)
+	errpkg.WriteJSON(w, http.StatusOK, st)
 }
 
 // DisableMyAccount serves DELETE /api/v1/me/atproto.
@@ -141,7 +144,7 @@ func (h *Handlers) DisableMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	writeTypedJSON(w, http.StatusOK, "application/json", st)
+	errpkg.WriteJSON(w, http.StatusOK, st)
 }
 
 // ---------------------------------------------------------------------------
@@ -156,9 +159,9 @@ func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	writeTypedJSON(w, http.StatusOK, "application/json", map[string]any{
-		"accounts": accounts,
-		"total":    total,
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": accounts,
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset, "total_pages": totalPages(total, int32(limit))},
 	})
 }
 
@@ -169,7 +172,7 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	writeTypedJSON(w, http.StatusOK, "application/json", stats)
+	errpkg.WriteJSON(w, http.StatusOK, stats)
 }
 
 // writeTypedJSON is shared with the federation package's convention:
@@ -183,6 +186,13 @@ func writeTypedJSON(w http.ResponseWriter, status int, contentType string, v any
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		_ = err
 	}
+}
+
+func totalPages(total int64, limit int32) int32 {
+	if limit <= 0 || total <= 0 {
+		return 1
+	}
+	return int32((total + int64(limit) - 1) / int64(limit))
 }
 
 func parseLimitOffset(r *http.Request, defLimit, maxLimit int) (int, int) {

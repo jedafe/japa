@@ -97,7 +97,7 @@ type GetAtprotoAccountByDIDRow struct {
 	LiveUsername       string             `json:"live_username"`
 }
 
-// did:web document resolution. The :u:{mint_username} path component IS
+// did:web document resolution. The :u:{user_uuid} path component IS
 // the DID encoding — looked up by DID (immutable) rather than handle so
 // the minted identifier keeps resolving after renames and handle syncs.
 func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAtprotoAccountByDIDRow, error) {
@@ -124,10 +124,10 @@ const getAtprotoAccountByHandle = `-- name: GetAtprotoAccountByHandle :one
 SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE (lower(a.handle) = lower($1) OR u.username = $2)
+WHERE (lower(a.handle) = lower($1) OR lower(u.username) = $2)
   AND a.status = 'active'
   AND u.status = 'active'
-ORDER BY (u.username = $2) DESC
+ORDER BY (lower(u.username) = $2) DESC
 LIMIT 1
 `
 
@@ -156,7 +156,12 @@ type GetAtprotoAccountByHandleRow struct {
 // and disabled accounts don't exist on the atproto network.
 // The live u.username match outranks the stored handle: after a rename
 // the member's new subdomain resolves to their permanent DID (mirrors
-// the federated_actors precedence pattern).
+// the federated_actors precedence pattern). lower() on the username side
+// because handles are normalized lowercase but users.username preserves
+// case — 'Alice2' must still match a live username 'Alice2' → 'alice2'.
+// At most one account can match lower(u.username) at a time: two users
+// whose names collide under lower() compete for the same derived handle
+// and only one can hold an account.
 func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoAccountByHandleParams) (GetAtprotoAccountByHandleRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoAccountByHandle, arg.Handle, arg.Username)
 	var i GetAtprotoAccountByHandleRow
@@ -353,7 +358,7 @@ type UpdateAtprotoAccountHandleParams struct {
 }
 
 // Lazy rename sync: the stored handle tracks the live username (the DID
-// itself is immutable — did:web:...:u:{mint_username} never changes).
+// itself is immutable — did:web:...:u:{user_uuid} never changes).
 func (q *Queries) UpdateAtprotoAccountHandle(ctx context.Context, arg UpdateAtprotoAccountHandleParams) error {
 	_, err := q.db.Exec(ctx, updateAtprotoAccountHandle, arg.Handle, arg.ID)
 	return err
