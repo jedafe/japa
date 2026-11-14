@@ -122,7 +122,9 @@
 			items_per_page: perPage,
 			items
 		});
-		onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls, perPage));
+		// body_html stays flat — pagination derives from items_per_page at
+		// render time (lib/utils/listPages.ts), not from baked page markup.
+		onhtml(serializeListBodyHtml(mode, introHtml, items, mediaUrls));
 		oncounts(items.length);
 		if (markDirty) onedit();
 	}

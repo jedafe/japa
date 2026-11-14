@@ -2382,6 +2382,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			UserType:   "existing",
 			EntityType: "post",
 			IsEdit:     true,
+			EntityID:   id,
 		})
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)

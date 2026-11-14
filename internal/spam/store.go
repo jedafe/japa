@@ -401,6 +401,23 @@ func (s *Store) CheckDuplicateHash(ctx context.Context, hash string) (bool, erro
 	return result, nil
 }
 
+// CheckDuplicateHashExcluding is CheckDuplicateHash minus one row — used on
+// the edit path so a post's own stored hash can't self-collide when only its
+// markup changed and the derived plain text is unchanged.
+func (s *Store) CheckDuplicateHashExcluding(ctx context.Context, hash string, excludeID pgtype.UUID) (bool, error) {
+	result, err := s.queries.CheckDuplicateHashExcluding(ctx,
+		gen.CheckDuplicateHashExcludingParams{
+			ContentHash: &hash,
+			ID:          excludeID,
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("checking duplicate hash: %w", err)
+	}
+
+	return result, nil
+}
+
 // --- helpers ---
 
 // netipParseAddrOrCIDR parses a CIDR or IP string into a netip.Prefix.

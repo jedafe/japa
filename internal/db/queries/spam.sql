@@ -283,3 +283,11 @@ SELECT EXISTS(
  WHERE content_hash = $1
  AND content_hash IS NOT NULL
 ) AS duplicate;
+
+-- name: CheckDuplicateHashExcluding :one
+SELECT EXISTS(
+ SELECT 1 FROM contents
+ WHERE content_hash = $1
+ AND content_hash IS NOT NULL
+ AND id != $2
+) AS duplicate;

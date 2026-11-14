@@ -103,31 +103,18 @@ function itemHtml(item: ListItem, i: number, total: number, mode: ListMode, medi
 
 /** Serialize the whole list composer state into the canonical body_html
  *  persisted on the contents row. `mediaUrls` maps media_id → public URL
- *  (resolved by the composer via GET /media/{id}). When `itemsPerPage` is a
- *  positive int, items are grouped into `<div class="list-page"
- *  id="list-page-P">` chunks — the public page serves one chunk per
- *  ?page=N. Single-page lists keep flat markup (no wrapper). */
+ *  (resolved by the composer via GET /media/{id}). Markup is always flat —
+ *  multi-page pagination derives from field_values.items_per_page at render
+ *  time (lib/utils/listPages.ts), never from baked-in page markup, so the
+ *  stored body can't drift out of sync with the setting. */
 export function serializeListBodyHtml(
 	mode: ListMode,
 	introHtml: string,
 	items: ListItem[],
-	mediaUrls: Record<string, string>,
-	itemsPerPage?: number | null
+	mediaUrls: Record<string, string>
 ): string {
 	const parts: string[] = [];
 	if (!isEmptyHtml(introHtml)) parts.push(introHtml);
-	const perPage = itemsPerPage && itemsPerPage >= 1 ? Math.floor(itemsPerPage) : 0;
-	if (perPage > 0 && perPage < items.length) {
-		for (let start = 0; start < items.length; start += perPage) {
-			const pageNo = start / perPage + 1;
-			const chunk = items
-				.slice(start, start + perPage)
-				.map((item, off) => itemHtml(item, start + off, items.length, mode, mediaUrls))
-				.join('');
-			parts.push(`<div class="list-page" id="list-page-${pageNo}">${chunk}</div>`);
-		}
-	} else {
-		items.forEach((item, i) => parts.push(itemHtml(item, i, items.length, mode, mediaUrls)));
-	}
+	items.forEach((item, i) => parts.push(itemHtml(item, i, items.length, mode, mediaUrls)));
 	return parts.join('');
 }

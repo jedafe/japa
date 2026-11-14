@@ -20,6 +20,11 @@
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
 	import { hydrateContentEmbeds } from '#lib/tiptap/hydrateContentEmbeds.js';
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import {
+		splitListItems,
+		clampListPage,
+		listPageCount as listPageCount_
+	} from '#lib/utils/listPages.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
@@ -134,28 +139,28 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	);
 	const sanitizedBody = $derived(sanitizeContentHtml(article.body_html || article.body, allowedIframeHosts));
 
-	// §14 multi-page lists — items_per_page makes the serializer group items
-	// into <div class="list-page" id="list-page-P"> chunks in body_html. The
-	// detail page serves one chunk per ?page=N; the ?page param is a real URL
-	// so pagination works no-JS and stays crawlable. Out-of-range params
-	// clamp into [1, pageCount]. Single-page lists emit no wrappers and take
-	// the flat path.
-	const LIST_PAGE_MARK = '<div class="list-page"';
+	// §14 multi-page lists — field_values.items_per_page is the ONLY
+	// authority: the detail page slices body_html's `.list-item` blocks into
+	// ?page=N chunks. Baked `.list-page` wrappers are flattened before
+	// slicing (legacy stored bodies), and the strict `id="item-N"` boundary
+	// keeps pasted look-alike markup from corrupting pagination. The ?page
+	// param is a real URL — no-JS and crawlable; out-of-range params clamp
+	// into [1, pageCount]. Single-page lists take the flat path.
+	const listItemsPerPage = $derived.by(() => {
+		if (article.content_type !== 'list') return 0;
+		const n = Number(article.field_values?.items_per_page);
+		return Number.isInteger(n) && n >= 1 ? n : 0;
+	});
 	const listBody = $derived.by(() => {
-		if (article.content_type !== 'list') return { intro: '', pages: [] as string[] };
-		const parts = sanitizedBody.split(LIST_PAGE_MARK);
-		if (parts.length < 2) return { intro: '', pages: [] as string[] };
-		return { intro: parts[0], pages: parts.slice(1).map((p) => LIST_PAGE_MARK + p) };
+		if (listItemsPerPage === 0) return { intro: '', items: [] as string[] };
+		return splitListItems(sanitizedBody);
 	});
-	const listPageCount = $derived(listBody.pages.length);
-	const listPageNo = $derived.by(() => {
-		if (listPageCount === 0) return 1;
-		const raw = parseInt(page.url.searchParams.get('page') ?? '1', 10);
-		if (Number.isNaN(raw) || raw < 1) return 1;
-		return Math.min(raw, listPageCount);
-	});
+	const listPageCount = $derived(listPageCount_(listBody.items.length, listItemsPerPage));
+	const listPageNo = $derived(clampListPage(parseInt(page.url.searchParams.get('page') ?? '1', 10), listPageCount));
 	const renderedBody = $derived(
-		listPageCount > 0 ? listBody.intro + listBody.pages[listPageNo - 1] : sanitizedBody
+		listPageCount > 0
+			? listBody.intro + listBody.items.slice((listPageNo - 1) * listItemsPerPage, listPageNo * listItemsPerPage).join('')
+			: sanitizedBody
 	);
 
 	// Section 26 — self-referencing canonical on the clean content URL (never

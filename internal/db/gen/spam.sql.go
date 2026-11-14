@@ -27,6 +27,27 @@ func (q *Queries) CheckDuplicateHash(ctx context.Context, contentHash *string) (
 	return duplicate, err
 }
 
+const checkDuplicateHashExcluding = `-- name: CheckDuplicateHashExcluding :one
+SELECT EXISTS(
+ SELECT 1 FROM contents
+ WHERE content_hash = $1
+ AND content_hash IS NOT NULL
+ AND id != $2
+) AS duplicate
+`
+
+type CheckDuplicateHashExcludingParams struct {
+	ContentHash *string     `json:"content_hash"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) CheckDuplicateHashExcluding(ctx context.Context, arg CheckDuplicateHashExcludingParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkDuplicateHashExcluding, arg.ContentHash, arg.ID)
+	var duplicate bool
+	err := row.Scan(&duplicate)
+	return duplicate, err
+}
+
 const countAllUserBlocks = `-- name: CountAllUserBlocks :one
 SELECT COUNT(*)::int AS count
 FROM user_blocks

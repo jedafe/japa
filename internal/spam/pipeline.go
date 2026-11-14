@@ -29,6 +29,10 @@ type SpamCheckRequest struct { //nolint:revive // stuttering type name preserved
 	// IsEdit marks an update-path check — the creation-rate window gates
 	// NEW posts, not edits of existing ones, so it is skipped here.
 	IsEdit bool
+	// EntityID is the row being edited. On edits the Layer-4 hash check
+	// excludes it so an unchanged text body doesn't self-collide when the
+	// markup alone changed (content_hash is computed from plain text).
+	EntityID pgtype.UUID
 }
 
 // SpamCheckResult holds the combined output of all pipeline layers.
@@ -346,7 +350,13 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, req SpamCheckReques
 
 	hash := ComputeContentHash(req.Content)
 
-	duplicate, err := p.store.CheckDuplicateHash(ctx, hash)
+	var duplicate bool
+	var err error
+	if req.IsEdit && req.EntityID.Valid {
+		duplicate, err = p.store.CheckDuplicateHashExcluding(ctx, hash, req.EntityID)
+	} else {
+		duplicate, err = p.store.CheckDuplicateHash(ctx, hash)
+	}
 	if err != nil {
 		slog.Warn("content hash check failed", "error", err)
 		return name, 0.0, nil
