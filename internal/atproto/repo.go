@@ -267,6 +267,15 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 			return fmt.Errorf("atproto: persist commit: %w", err)
 		}
 
+		// §127 A3: the #commit firehose frame lands in the same tx — the
+		// events identity-seq is allocated in commit order, so the stream
+		// can never skip or reorder a committed rev. Built before the
+		// index writes apply: ops read the still-stale index rows for
+		// their prev CIDs.
+		if err := s.emitCommitEvent(ctx, q, rep, accountID, commitCid, rev, head, hasHead, bs, writes); err != nil {
+			return fmt.Errorf("atproto: emit commit event: %w", err)
+		}
+
 		for _, w := range writes {
 			if w.del {
 				if err := q.DeleteAtprotoRecord(ctx, gen.DeleteAtprotoRecordParams{

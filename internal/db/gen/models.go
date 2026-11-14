@@ -748,6 +748,14 @@ type AtprotoRepoCommit struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AtprotoRepoEvent struct {
+	Seq       int64              `json:"seq"`
+	Did       string             `json:"did"`
+	Kind      string             `json:"kind"`
+	Payload   []byte             `json:"payload"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type AttestationCommunityUpdate struct {
 	ID             pgtype.UUID        `json:"id"`
 	PathwayID      pgtype.UUID        `json:"pathway_id"`

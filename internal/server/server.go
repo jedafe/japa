@@ -4011,12 +4011,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 
 	// Section 127 — AT Protocol mini-PDS (ADR-139). Public identity
-	// surface: handle→DID proof + did:web resolution docs. Unversioned —
+	// surface (handle→DID proof + did:web resolution docs) and A3 sync
+	// surface (XRPC reads + subscribeRepos firehose). Unversioned —
 	// DIDs and handles are permanent. 404s when feature.atproto is off.
 	r.Group(func(r chi.Router) {
 		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose"), features.Gate(featureChecker, "feature.atproto"))
 		r.Get("/.well-known/atproto-did", atprotoHandlers.GetAtprotoDID)
+		r.Get("/.well-known/did.json", atprotoHandlers.GetHostDIDDoc)
 		r.Get("/atproto/u/{id}/did.json", atprotoHandlers.GetDIDDoc)
+		r.Get("/xrpc/com.atproto.server.describeServer", atprotoHandlers.DescribeServer)
+		r.Get("/xrpc/com.atproto.sync.getRepo", atprotoHandlers.GetRepo)
+		r.Get("/xrpc/com.atproto.sync.getBlocks", atprotoHandlers.GetBlocks)
+		r.Get("/xrpc/com.atproto.sync.getLatestCommit", atprotoHandlers.GetLatestCommit)
+		r.Get("/xrpc/com.atproto.sync.getRecord", atprotoHandlers.GetRecord)
+		r.Get("/xrpc/com.atproto.sync.subscribeRepos", atprotoHandlers.SubscribeRepos)
 	})
 
 	// API routes go through platform resolution

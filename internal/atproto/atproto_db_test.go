@@ -6,21 +6,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
 	atrepo "github.com/bluesky-social/indigo/repo"
+	"github.com/gorilla/websocket"
 	"github.com/ipfs/go-cid"
+	car "github.com/ipld/go-car"
 	"github.com/jackc/pgx/v5/pgtype"
 	jcrypto "github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 // DB integration tests — same harness as federation_db_test.go: real
@@ -1190,5 +1197,502 @@ func TestDBPublishRecordContentPairing(t *testing.T) {
 	want := "at://" + ownerAcct.Did + "/" + CollectionPost + "/" + contentID.String()
 	if uri != want {
 		t.Fatalf("uri = %q, want %q", uri, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A3 — sync surface + firehose
+// ---------------------------------------------------------------------------
+
+// repoEvents lists an account's firehose rows in stream order.
+func repoEvents(t *testing.T, ctx context.Context, d *db.DB, did string) []gen.AtprotoRepoEvent {
+	t.Helper()
+	rows, err := d.Writer.Query(ctx,
+		`SELECT seq, did, kind, payload, created_at FROM atproto_repo_events WHERE did = $1 ORDER BY seq`, did)
+	if err != nil {
+		t.Fatalf("events query: %v", err)
+	}
+	defer rows.Close()
+	var out []gen.AtprotoRepoEvent
+	for rows.Next() {
+		var ev gen.AtprotoRepoEvent
+		if err := rows.Scan(&ev.Seq, &ev.Did, &ev.Kind, &ev.Payload, &ev.CreatedAt); err != nil {
+			t.Fatalf("event scan: %v", err)
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// decodeFrameHeader parses a subscribeRepos frame's {op,t} map, leaving the
+// returned reader positioned at the frame body (indigo's UnmarshalCBOR reuses
+// a *CborReader verbatim, so the same stream continues into the body).
+func decodeFrameHeader(t *testing.T, msg []byte) (int64, string, *cbg.CborReader) {
+	t.Helper()
+	cr := cbg.NewCborReader(bytes.NewReader(msg))
+	maj, extra, err := cr.ReadHeader()
+	if err != nil || maj != cbg.MajMap {
+		t.Fatalf("frame header: maj=%d extra=%d err=%v", maj, extra, err)
+	}
+	var op int64
+	var typ string
+	for i := uint64(0); i < extra; i++ {
+		kmaj, klen, err := cr.ReadHeader()
+		if err != nil || kmaj != cbg.MajTextString {
+			t.Fatalf("frame header key: maj=%d err=%v", kmaj, err)
+		}
+		kbuf := make([]byte, klen)
+		if _, err := io.ReadFull(cr, kbuf); err != nil {
+			t.Fatalf("frame header key read: %v", err)
+		}
+		vmaj, vlen, err := cr.ReadHeader()
+		if err != nil {
+			t.Fatalf("frame header value: %v", err)
+		}
+		switch string(kbuf) {
+		case "t":
+			if vmaj != cbg.MajTextString {
+				t.Fatalf("frame t not text: maj=%d", vmaj)
+			}
+			vbuf := make([]byte, vlen)
+			if _, err := io.ReadFull(cr, vbuf); err != nil {
+				t.Fatalf("frame t read: %v", err)
+			}
+			typ = string(vbuf)
+		case "op":
+			if vmaj == cbg.MajNegativeInt {
+				op = -int64(vlen) - 1
+			} else {
+				op = int64(vlen)
+			}
+		default:
+			t.Fatalf("unexpected frame header key %q", kbuf)
+		}
+	}
+	return op, typ, cr
+}
+
+// Firehose rows land in emission order, and each commit's ops carry the
+// create/update/delete shape relays apply against their copy.
+func TestDBFirehoseEventsOrdered(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+	// Same rkey rewritten → update op naming the previous record CID.
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if err := svc.DeleteRecordURI(ctx, acct.ID, ContentPostURI(acct.Did, contentID)); err != nil {
+		t.Fatalf("DeleteRecordURI: %v", err)
+	}
+
+	events := repoEvents(t, ctx, d, acct.Did)
+	kinds := make([]string, 0, len(events))
+	for _, ev := range events {
+		kinds = append(kinds, ev.Kind)
+	}
+	// account → identity → profile commit → post create → post update → post delete
+	want := []string{"account", "identity", "commit", "commit", "commit", "commit"}
+	if len(kinds) != len(want) {
+		t.Fatalf("event kinds = %v, want %v", kinds, want)
+	}
+	for i := range want {
+		if kinds[i] != want[i] {
+			t.Fatalf("event[%d] kind = %q, want %q (all: %v)", i, kinds[i], want[i], kinds)
+		}
+	}
+	for i := 1; i < len(events); i++ {
+		if events[i].Seq <= events[i-1].Seq {
+			t.Fatalf("seqs not increasing: %v", events)
+		}
+	}
+
+	var account comatproto.SyncSubscribeRepos_Account
+	if err := json.Unmarshal(events[0].Payload, &account); err != nil {
+		t.Fatalf("account payload: %v", err)
+	}
+	if !account.Active || account.Did != acct.Did {
+		t.Fatalf("account payload = %+v", account)
+	}
+	var identity comatproto.SyncSubscribeRepos_Identity
+	if err := json.Unmarshal(events[1].Payload, &identity); err != nil {
+		t.Fatalf("identity payload: %v", err)
+	}
+	if identity.Did != acct.Did || identity.Handle == nil || *identity.Handle != acct.Handle {
+		t.Fatalf("identity payload = %+v", identity)
+	}
+
+	commitBodies := make([]comatproto.SyncSubscribeRepos_Commit, 0, 4)
+	for _, ev := range events[2:] {
+		var b comatproto.SyncSubscribeRepos_Commit
+		if err := json.Unmarshal(ev.Payload, &b); err != nil {
+			t.Fatalf("commit payload: %v", err)
+		}
+		commitBodies = append(commitBodies, b)
+	}
+	if commitBodies[0].Repo != acct.Did || len(commitBodies[0].Blocks) == 0 {
+		t.Fatalf("profile commit payload = %+v", commitBodies[0])
+	}
+	postPath := CollectionPost + "/" + contentID.String()
+	ops := commitBodies[1].Ops
+	if len(ops) != 1 || ops[0].Action != "create" || ops[0].Path != postPath || ops[0].Cid == nil {
+		t.Fatalf("create op = %+v", ops)
+	}
+	createdCid := ops[0].Cid.String()
+	ops = commitBodies[2].Ops
+	if len(ops) != 1 || ops[0].Action != "update" || ops[0].Path != postPath {
+		t.Fatalf("update op = %+v", ops)
+	}
+	if ops[0].Prev == nil || ops[0].Prev.String() != createdCid {
+		t.Fatalf("update op prev = %v, want %s", ops[0].Prev, createdCid)
+	}
+	ops = commitBodies[3].Ops
+	if len(ops) != 1 || ops[0].Action != "delete" || ops[0].Path != postPath || ops[0].Prev == nil {
+		t.Fatalf("delete op = %+v", ops)
+	}
+	// Every commit frame carries a diff CAR whose root is the commit CID.
+	for i, b := range commitBodies {
+		cr, err := car.NewCarReader(bytes.NewReader(b.Blocks))
+		if err != nil {
+			t.Fatalf("commit[%d] diff CAR header: %v", i, err)
+		}
+		if len(cr.Header.Roots) != 1 || cr.Header.Roots[0].String() != b.Commit.String() {
+			t.Fatalf("commit[%d] CAR roots = %v, want [%s]", i, cr.Header.Roots, b.Commit)
+		}
+	}
+}
+
+// A rename emits #identity so relay handle caches refresh.
+func TestDBIdentityEventOnRename(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	renamed := "renamed" + uname
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, renamed, userID); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	// The new handle resolves to the same permanent DID (lazy sync +
+	// identity emit); the freed old handle no longer resolves.
+	newHandle := renamed + ".test.dev"
+	did, err := svc.ResolveHandleDID(ctx, newHandle)
+	if err != nil {
+		t.Fatalf("ResolveHandleDID: %v", err)
+	}
+	if did != acct.Did {
+		t.Fatalf("renamed did = %q, want %q", did, acct.Did)
+	}
+	if _, err := svc.ResolveHandleDID(ctx, acct.Handle); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old handle resolve: %v, want ErrNotFound", err)
+	}
+
+	events := repoEvents(t, ctx, d, acct.Did)
+	var last comatproto.SyncSubscribeRepos_Identity
+	found := false
+	for _, ev := range events {
+		if ev.Kind != EventKindIdentity {
+			continue
+		}
+		if err := json.Unmarshal(ev.Payload, &last); err != nil {
+			t.Fatalf("identity payload: %v", err)
+		}
+		found = true
+	}
+	if !found || last.Handle == nil || *last.Handle != renamed+".test.dev" {
+		t.Fatalf("identity events = %+v (found=%v)", events, found)
+	}
+}
+
+// The public read surface resolves the did, serves CARs, and reports the
+// head commit — the lexicon error names travel on misses.
+func TestDBSyncEndpoints(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	h := NewHandlers(svc)
+
+	rec := httptest.NewRecorder()
+	h.DescribeServer(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.server.describeServer", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("describeServer: %d %s", rec.Code, rec.Body)
+	}
+	var desc struct {
+		AvailableUserDomains []string `json:"availableUserDomains"`
+		Did                  string   `json:"did"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &desc); err != nil {
+		t.Fatalf("describeServer decode: %v", err)
+	}
+	if desc.Did != "did:web:api.test.dev" || len(desc.AvailableUserDomains) != 1 || desc.AvailableUserDomains[0] != ".test.dev" {
+		t.Fatalf("describeServer = %+v", desc)
+	}
+
+	rec = httptest.NewRecorder()
+	h.GetHostDIDDoc(rec, httptest.NewRequest(http.MethodGet, "/.well-known/did.json", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "did+ld+json") {
+		t.Fatalf("host did doc: %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+
+	headCid, rev, err := svc.HeadCommit(ctx, acct.Did)
+	if err != nil {
+		t.Fatalf("HeadCommit: %v", err)
+	}
+	if headCid == "" || rev == "" {
+		t.Fatalf("head = %q rev %q", headCid, rev)
+	}
+	rec = httptest.NewRecorder()
+	h.GetLatestCommit(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getLatestCommit?did="+acct.Did, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getLatestCommit: %d %s", rec.Code, rec.Body)
+	}
+	var latest comatproto.SyncGetLatestCommit_Output
+	if err := json.Unmarshal(rec.Body.Bytes(), &latest); err != nil {
+		t.Fatalf("getLatestCommit decode: %v", err)
+	}
+	if latest.Cid != headCid || latest.Rev != rev {
+		t.Fatalf("getLatestCommit = %+v, want %s@%s", latest, headCid, rev)
+	}
+
+	// getRepo → valid CAR containing the head commit block.
+	rec = httptest.NewRecorder()
+	h.GetRepo(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.sync.getRepo?did="+acct.Did, nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != carMediaType {
+		t.Fatalf("getRepo: %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	cr, err := car.NewCarReader(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("getRepo CAR: %v", err)
+	}
+	if len(cr.Header.Roots) != 1 || cr.Header.Roots[0].String() != headCid {
+		t.Fatalf("getRepo roots = %v, want [%s]", cr.Header.Roots, headCid)
+	}
+	foundHead := false
+	for {
+		b, err := cr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("getRepo CAR block: %v", err)
+		}
+		if b.Cid().String() == headCid {
+			foundHead = true
+		}
+	}
+	if !foundHead {
+		t.Fatal("getRepo CAR missing head commit block")
+	}
+
+	// getBlocks returns only the named, known blocks.
+	data, err := svc.BlocksCAR(ctx, acct.Did, []string{headCid, "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"})
+	if err != nil {
+		t.Fatalf("BlocksCAR: %v", err)
+	}
+	cr, err = car.NewCarReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("BlocksCAR CAR: %v", err)
+	}
+	n := 0
+	for {
+		b, err := cr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("BlocksCAR block: %v", err)
+		}
+		if b.Cid().String() != headCid {
+			t.Fatalf("BlocksCAR returned unrequested %s", b.Cid())
+		}
+		n++
+	}
+	if n != 1 {
+		t.Fatalf("BlocksCAR blocks = %d, want 1 (unknown CID omitted)", n)
+	}
+
+	// getRecord serves the record-bearing CAR; a missing rkey maps to
+	// RecordNotFound — and a missing did to RepoNotFound.
+	data, err = svc.RecordCAR(ctx, acct.Did, CollectionPost, contentID.String())
+	if err != nil || len(data) == 0 {
+		t.Fatalf("RecordCAR: %v", err)
+	}
+	if _, err := svc.RecordCAR(ctx, acct.Did, CollectionPost, "nosuch"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RecordCAR missing rkey: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.GetRecord(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getRecord?repo="+acct.Did+"&collection="+CollectionPost+"&rkey=nosuch", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "RecordNotFound") {
+		t.Fatalf("getRecord miss: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	h.GetRepo(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.sync.getRepo?did=did:web:api.test.dev:atproto:u:00000000-0000-0000-0000-000000000000", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "RepoNotFound") {
+		t.Fatalf("getRepo miss: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// subscribeRepos replays the log from ?cursor= then live-tails — frames are
+// two-part CBOR a relay can UnmarshalCBOR straight off the wire.
+func TestDBSubscribeReposStream(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	srv := httptest.NewServer(http.HandlerFunc(NewHandlers(svc).SubscribeRepos))
+	t.Cleanup(srv.Close)
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	// The stream is global — prior tests contributed rows — so measure the
+	// high-water mark; a cursor past it is a FutureCursor error frame.
+	maxSeq, err := svc.MaxEventSeq(ctx)
+	if err != nil {
+		t.Fatalf("MaxEventSeq: %v", err)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"?cursor="+fmt.Sprint(maxSeq+1000), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read error frame: %v", err)
+	}
+	op, _, cr := decodeFrameHeader(t, msg)
+	if op != -1 {
+		t.Fatalf("error frame op = %d, want -1", op)
+	}
+	maj, extra, err := cr.ReadHeader()
+	if err != nil || maj != cbg.MajMap || extra != 2 {
+		t.Fatalf("error body: maj=%d extra=%d err=%v", maj, extra, err)
+	}
+	conn.Close()
+
+	// Live tail: connect at the current mark, then enable → this account's
+	// account/identity/commit frames arrive in order, seqs stamped.
+	conn, _, err = websocket.DefaultDialer.Dial(wsURL+"?cursor="+fmt.Sprint(maxSeq), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	var commitBody comatproto.SyncSubscribeRepos_Commit
+	lastSeq := maxSeq
+	for _, wantType := range []string{"#account", "#identity", "#commit"} {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read %s frame: %v", wantType, err)
+		}
+		op, typ, cr := decodeFrameHeader(t, msg)
+		if op != 1 || typ != wantType {
+			t.Fatalf("frame = op %d type %q, want op 1 %s", op, typ, wantType)
+		}
+		switch typ {
+		case "#account":
+			var b comatproto.SyncSubscribeRepos_Account
+			if err := b.UnmarshalCBOR(cr); err != nil {
+				t.Fatalf("account body: %v", err)
+			}
+			if b.Did != acct.Did || !b.Active || b.Seq <= lastSeq {
+				t.Fatalf("account body = %+v", b)
+			}
+			lastSeq = b.Seq
+		case "#identity":
+			var b comatproto.SyncSubscribeRepos_Identity
+			if err := b.UnmarshalCBOR(cr); err != nil {
+				t.Fatalf("identity body: %v", err)
+			}
+			if b.Did != acct.Did || b.Seq <= lastSeq {
+				t.Fatalf("identity body = %+v", b)
+			}
+			lastSeq = b.Seq
+		case "#commit":
+			if err := commitBody.UnmarshalCBOR(cr); err != nil {
+				t.Fatalf("commit body: %v", err)
+			}
+			if commitBody.Repo != acct.Did || commitBody.Seq <= lastSeq || commitBody.Rev == "" || len(commitBody.Blocks) == 0 {
+				t.Fatalf("commit body = %+v", commitBody)
+			}
+			lastSeq = commitBody.Seq
+		}
+	}
+}
+
+// requestCrawl posts the PDS hostname to the configured relay; a disabled
+// account fails permanently (no retry) — transient relay errors retry.
+func TestDBRequestCrawl(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	var gotBody []byte
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/com.atproto.sync.requestCrawl" || r.Method != http.MethodPost {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(relay.Close)
+	svc.cfg.RelayURL = relay.URL
+
+	if err := svc.RequestCrawl(ctx, acct.ID); err != nil {
+		t.Fatalf("RequestCrawl: %v", err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatalf("relay body: %v", err)
+	}
+	if body["hostname"] != "api.test.dev" {
+		t.Fatalf("relay body = %v", body)
+	}
+
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	err := svc.RequestCrawl(ctx, acct.ID)
+	var pe interface{ Permanent() bool }
+	if err == nil || !errors.As(err, &pe) || !pe.Permanent() {
+		t.Fatalf("disabled-account crawl: got %v, want permanent", err)
 	}
 }

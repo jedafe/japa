@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/worker"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -175,6 +176,9 @@ func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID,
 	id := uuidString(userID)
 	s.invalidateAccount(ctx, storedHandle, id)
 	s.invalidateAccount(ctx, want, id)
+	// §127 A3: handle changes ride #identity — relays/appviews refresh
+	// their handle→DID caches off it.
+	s.emitIdentityEvent(ctx, s.cfg.didFor(id), want)
 	return want
 }
 
@@ -200,6 +204,7 @@ func (s *Service) releaseStaleClaim(ctx context.Context, handle string, accountI
 	id := uuidString(claimed.UserID)
 	s.invalidateAccount(ctx, claimed.Handle, id)
 	s.invalidateAccount(ctx, live, id)
+	s.emitIdentityEvent(ctx, s.cfg.didFor(id), live)
 }
 
 // uuidString renders a pgtype.UUID in canonical lowercase hyphenated
@@ -353,16 +358,21 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		if existing.Status == AccountStatusTombstone {
 			return AccountStatus{}, ErrNotFound
 		}
-		if existing.Status != AccountStatusActive {
+		wasActive := existing.Status == AccountStatusActive
+		if !wasActive {
 			if uerr := s.store.setAccountStatus(ctx, existing.ID, AccountStatusActive); uerr != nil {
 				return AccountStatus{}, fmt.Errorf("atproto: reactivate: %w", uerr)
 			}
 			existing.Status = AccountStatusActive
 			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
+			s.emitAccountEvent(ctx, existing.Did, true, "")
 		}
 		existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, user.Username)
 		if err := s.ensureRepoInitialized(ctx, &existing); err != nil {
 			return AccountStatus{}, err
+		}
+		if !wasActive {
+			worker.EnqueueAtprotoRequestCrawl(ctx, existing.ID)
 		}
 		return s.statusFor(existing), nil
 	}
@@ -406,11 +416,16 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	}
 
 	slog.Info("atproto account enabled", "user_id", userID.String(), "did", account.Did, "handle", handle)
+	// §127 A3: announce activation + identity before the first commit so
+	// the firehose reads account → identity → commit in seq order.
+	s.emitAccountEvent(ctx, account.Did, true, "")
+	s.emitIdentityEvent(ctx, account.Did, handle)
 	// §127: opt-in mints the repo root commit — repo init + the
 	// app.bsky.actor.profile record land in one signed commit.
 	if err := s.ensureRepoInitialized(ctx, &account); err != nil {
 		return AccountStatus{}, err
 	}
+	worker.EnqueueAtprotoRequestCrawl(ctx, account.ID)
 	return s.statusFor(account), nil
 }
 
@@ -443,6 +458,7 @@ func (s *Service) DisableAccount(ctx context.Context, userID pgtype.UUID) (Accou
 			return AccountStatus{}, fmt.Errorf("atproto: disable: %w", err)
 		}
 		account.Status = AccountStatusDisabled
+		s.emitAccountEvent(ctx, account.Did, false, "deactivated")
 	}
 	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
 	return s.statusFor(account), nil

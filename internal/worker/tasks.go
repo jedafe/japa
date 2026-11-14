@@ -216,6 +216,7 @@ const (
 
 	TypeAtprotoPublishRecord = "atproto:publish_record" // default (§127 A2)
 	TypeAtprotoDeleteRecord  = "atproto:delete_record"  // default (§11: tombstone/unpublish)
+	TypeAtprotoRequestCrawl  = "atproto:request_crawl"  // default (§127 A3: relay requestCrawl on activation)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -449,6 +450,7 @@ var handlerRegistry = []struct {
 	// §127 AT Protocol
 	{TypeAtprotoPublishRecord, HandleAtprotoPublishRecord},
 	{TypeAtprotoDeleteRecord, HandleAtprotoDeleteRecord},
+	{TypeAtprotoRequestCrawl, HandleAtprotoRequestCrawl},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

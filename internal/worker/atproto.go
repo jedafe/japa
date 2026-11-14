@@ -23,6 +23,7 @@ type atprotoRepoWriter interface {
 	PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, collection, rkey string, raw json.RawMessage, contentID pgtype.UUID) (string, error)
 	PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error)
 	DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error
+	RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -87,6 +88,55 @@ func EnqueueAtprotoDeleteRecord(ctx context.Context, accountID pgtype.UUID, uri 
 	if err := taskEnqueuer.Enqueue(TypeAtprotoDeleteRecord, payload); err != nil {
 		slog.Warn("worker: atproto delete enqueue failed", "uri", uri, "error", err)
 	}
+}
+
+// EnqueueAtprotoRequestCrawl fires atproto:request_crawl after account
+// activation — the relay learns our PDS host exists and starts crawling
+// subscribeRepos/getRepo (§127 A3). Fire-and-forget (Rule 8); a nil
+// enqueuer is a no-op.
+func EnqueueAtprotoRequestCrawl(ctx context.Context, accountID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"account_id": accountID.String()})
+	if err != nil {
+		slog.Warn("worker: atproto crawl enqueue marshal failed", "account_id", accountID.String(), "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeAtprotoRequestCrawl, payload); err != nil {
+		slog.Warn("worker: atproto crawl enqueue failed", "account_id", accountID.String(), "error", err)
+	}
+}
+
+// HandleAtprotoRequestCrawl processes atproto:request_crawl (§127 A3):
+// POST com.atproto.sync.requestCrawl to JC_ATPROTO_RELAY_URL for one
+// activated account. Relay/network failures retry; a missing or
+// inactive account is permanent.
+func HandleAtprotoRequestCrawl(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:atproto:request_crawl")
+
+	if atprotoSvc == nil {
+		slog.Warn("task:atproto:request_crawl: service not registered, dropping task")
+		return nil
+	}
+
+	var payload struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:atproto:request_crawl: invalid payload", "error", err)
+		return err
+	}
+	accountID, err := scanUUID(payload.AccountID)
+	if err != nil {
+		return fmt.Errorf("task:atproto:request_crawl: %w: %w", err, asynq.SkipRetry)
+	}
+	if err := atprotoSvc.RequestCrawl(ctx, accountID); err != nil {
+		slog.Error("task:atproto:request_crawl: crawl failed", "account_id", payload.AccountID, "error", err)
+		return skipIfPermanent(err)
+	}
+	slog.Info("task:atproto:request_crawl: sent", "account_id", payload.AccountID)
+	return nil
 }
 
 // HandleAtprotoPublishRecord processes atproto:publish_record (§127 A2).
