@@ -20,6 +20,9 @@
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
 	import { hydrateContentEmbeds } from '#lib/tiptap/hydrateContentEmbeds.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden } from '#lib/utils/toc.js';
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import {
 		splitListItems,
@@ -170,6 +173,15 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			? listBody.intro + listBody.items.slice((listPageNo - 1) * listItemsPerPage, listPageNo * listItemsPerPage).join('')
 			: sanitizedBody
 	);
+
+	// TOC — heading ids are injected into the rendered body string so the
+	// anchors exist in SSR HTML (deterministic slugs, no hydration drift).
+	// For multi-page lists the items track the current ?page=N slice.
+	// field_values.hide_toc (or .toc === false) opts a single page out.
+	const bodyToc = $derived(extractToc(renderedBody));
+	const tocItems = $derived(tocHidden(article) ? [] : bodyToc.items);
+	const showToc = $derived(tocItems.length >= 3);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
 
 	// Cross-page #item-N deep links: the fragment never reaches the server,
 	// so /list/x#item-5 can land on a ?page=N that doesn't contain the
@@ -498,6 +510,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			</div>
 		{/if}
 
+		<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left FAB
+		     takes over once this block scrolls out of view. -->
+		{#if showToc}
+			<div class="mt-8" bind:this={tocAnchorEl}>
+				<TocBlock items={tocItems} />
+			</div>
+		{/if}
+
 		<!-- Article body: prose TipTap HTML with serif reading font. Multi-page
 		     lists ({listPageCount > 0}) render one ?page=N chunk at a time —
 		     the {#key} remount re-runs the hydration actions on the swapped
@@ -505,7 +525,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{#if listPageCount > 0}
 			{#key listPageNo}
 				<div class="prose mt-8" id="list-items" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
-					{@html renderedBody}
+					{@html bodyToc.html}
 				</div>
 			{/key}
 			{#if listPageCount > 1}
@@ -545,7 +565,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			{/if}
 		{:else}
 			<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
-				{@html sanitizedBody}
+				{@html bodyToc.html}
 			</div>
 		{/if}
 
@@ -613,4 +633,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			{@render rightSidebar()}
 		</div>
 	</aside>
+
+	{#if showToc}
+		<TocFloat items={tocItems} watch={tocAnchorEl} />
+	{/if}
 </div>

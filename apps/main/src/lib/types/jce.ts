@@ -94,6 +94,8 @@ export interface JCEComparisonContent {
 	/** §34 cover/hero media — resolved by the JCE detail endpoint. */
 	featured_image_url?: string | null;
 	header_image_url?: string | null;
+	/** TOC opt-out — when true the page renders no inline/floating TOC. */
+	hide_toc?: boolean;
 }
 
 export interface JCEComparisonMetadata {

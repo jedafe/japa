@@ -11,6 +11,9 @@
 	import { EmptyState } from '#lib/components/ui/index.js';
 	import { LandingRenderer, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { scanDomToc, tocHidden, type TocItem } from '#lib/utils/toc.js';
 	import type { PageBuilderPage } from '#lib/types/index.js';
 
 import { ogCardUrl } from '#lib/seo/og.js';
@@ -54,6 +57,39 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	);
 
 	const seoOgImage = $derived(ogCardUrl(page.url.origin, pageData?.id ?? 'page'));
+
+	// TOC — the block tree renders through LandingRenderer (no HTML string
+	// to transform), so headings are harvested from the live DOM on mount:
+	// scanDomToc assigns slugified ids to the rendered h2/h3s. LandingRenderer
+	// lazy-mounts below-fold blocks on approach, so a MutationObserver
+	// rescans as new sections enter the DOM. The inline block therefore
+	// appears client-side only — SSR emits no TOC here.
+	// meta.hide_toc / meta.toc === false opts the page out.
+	let contentEl = $state<HTMLElement | null>(null);
+	let domTocItems = $state<TocItem[]>([]);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		const root = contentEl;
+		normalizedBlocks; // rescan when the block list changes
+		if (!root || typeof MutationObserver === 'undefined') return;
+		let queued = false;
+		const scan = () => {
+			queued = false;
+			domTocItems = scanDomToc(root);
+		};
+		scan();
+		const mo = new MutationObserver(() => {
+			if (queued) return;
+			queued = true;
+			queueMicrotask(scan);
+		});
+		mo.observe(root, { childList: true, subtree: true });
+		return () => mo.disconnect();
+	});
+
+	const tocItems = $derived(tocHidden(pageData) ? [] : domTocItems);
+	const showToc = $derived(tocItems.length >= 3);
 </script>
 
 <svelte:head>
@@ -79,6 +115,19 @@ import { ogCardUrl } from '#lib/seo/og.js';
 {:else}
 	<!-- Center-shell width — max-w-4xl, matching the /wiki column. -->
 	<div class="mx-auto w-full max-w-4xl">
-		<LandingRenderer blocks={normalizedBlocks} {guestHome} />
+		<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left
+		     FAB takes over once this block scrolls out of view. -->
+		{#if showToc}
+			<div class="px-4 pt-4" bind:this={tocAnchorEl}>
+				<TocBlock items={tocItems} />
+			</div>
+		{/if}
+		<div bind:this={contentEl}>
+			<LandingRenderer blocks={normalizedBlocks} {guestHome} />
+		</div>
 	</div>
+{/if}
+
+{#if showToc}
+	<TocFloat items={tocItems} watch={tocAnchorEl} />
 {/if}

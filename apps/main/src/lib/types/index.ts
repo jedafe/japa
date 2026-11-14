@@ -3809,6 +3809,9 @@ export interface WikiPage extends WikiPageIndex {
 	/** §80 lazy template pages: the page rendered straight from its
 	 *  template — no wiki_pages row until the first submission. */
 	lazy?: boolean;
+	/** TOC opt-out — when true the page renders no inline/floating TOC and
+	 *  the sidebar falls back to its structured-only anchors. */
+	hide_toc?: boolean;
 }
 
 /** §80 Reader UX: aggregated "Was this page helpful?" votes on a page. */

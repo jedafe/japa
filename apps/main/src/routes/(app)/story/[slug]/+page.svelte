@@ -26,6 +26,9 @@
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
 	import { imgLightbox, openLightbox } from '#lib/lightbox.svelte.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden } from '#lib/utils/toc.js';
 	import { parseMostUsefulResource } from '#lib/utils/storyResources.js';
 	import type { PageData } from './$types';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '#lib/types/index.js';
@@ -134,6 +137,20 @@
 	// so they can be edited through the text column while the composer stores a
 	// repeater (§79). Parse into display-ready title/URL pairs for the single page.
 	const usefulResources = $derived(parseMostUsefulResource(story?.most_useful_resource));
+
+	// TOC — prose headings (ids injected into sanitizedBody) plus the fixed
+	// highlight sections below the body, in DOM order. hide_toc opts out.
+	const bodyToc = $derived(extractToc(sanitizedBody));
+	const tocItems = $derived.by(() => {
+		if (tocHidden(story)) return [] as typeof bodyToc.items;
+		const items = [...bodyToc.items];
+		if (story?.biggest_challenge) items.push({ id: 'story-biggest-challenge', text: t('stories.biggest_challenge', 'Biggest Challenge'), level: 2 });
+		if (usefulResources.length > 0) items.push({ id: 'story-useful-resources', text: t('stories.most_useful_resource', 'Most Useful Resource'), level: 2 });
+		if (story?.best_advice) items.push({ id: 'story-best-advice', text: t('stories.best_advice', 'Best Advice'), level: 2 });
+		return items;
+	});
+	const showToc = $derived(tocItems.length >= 3);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
 
 	// §79 "Integration points" — surface related tools for the story's
 	// destination (visa routes, community locator, processing tracker). All
@@ -331,19 +348,27 @@
 				</dl>
 			{/if}
 
+			<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left FAB
+			     takes over once this block scrolls out of view. -->
+			{#if showToc}
+				<div class="mt-8" bind:this={tocAnchorEl}>
+					<TocBlock items={tocItems} />
+				</div>
+			{/if}
+
 			<!-- Body: sanitized TipTap HTML with prose styling.
 			     InArticleAd injects the article_inline slot between blocks (§25). -->
 			{#if sanitizedBody}
 				<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
 					<NextActionInline />
-			<InArticleAd html={sanitizedBody} />
+			<InArticleAd html={bodyToc.html} />
 				</div>
 			{/if}
 
 			<!-- Highlighted story fields -->
 			<div class="mt-8 space-y-4">
 				{#if story?.biggest_challenge}
-					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div id="story-biggest-challenge" class="scroll-mt-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 							<Lightbulb size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.biggest_challenge', 'Biggest Challenge')}
@@ -353,7 +378,7 @@
 				{/if}
 
 				{#if usefulResources.length > 0}
-					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div id="story-useful-resources" class="scroll-mt-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 							<BookMarked size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.most_useful_resource', 'Most Useful Resource')}
@@ -381,7 +406,7 @@
 				{/if}
 
 				{#if story?.best_advice}
-					<div class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+					<div id="story-best-advice" class="scroll-mt-24 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 							<Quote size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.best_advice', 'Best Advice')}
@@ -490,6 +515,10 @@
 				{@render rightSidebar()}
 			</div>
 		</aside>
+
+		{#if showToc}
+			<TocFloat items={tocItems} watch={tocAnchorEl} />
+		{/if}
 	</div>
 
 	{#if showDeleteConfirm}

@@ -28,6 +28,9 @@
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { tiptapToHtml, tiptapToText, tiptapDocFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden, type TocItem } from '#lib/utils/toc.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	let { data }: { data: PageData } = $props();
@@ -372,6 +375,41 @@
 		return items.length >= 2 ? items : [];
 	});
 
+	// Unified page TOC — prose headings (ids injected into htmlContent
+	// below) merged with the structured anchors in DOM order: prose →
+	// rollup → directory → field sections. The sidebar's "On this page"
+	// consumes the same merged list so they never disagree; a hide_toc
+	// flag on the page opts out of the merged list (sidebar falls back to
+	// its structured-only anchors).
+	const bodyToc = $derived(extractToc(htmlContent));
+	const mergedToc = $derived.by((): TocItem[] => {
+		const items: TocItem[] = [...bodyToc.items];
+		if (data.page?.rollup) items.push({ id: 'wiki-rollup', text: t('wiki.rollup_title', 'City-by-city comparison'), level: 2 });
+		if (data.page?.directory) items.push({ id: 'wiki-directory', text: t('wiki.directory_title', 'Places'), level: 2 });
+		for (const entry of toc) {
+			// toc's tail already carries the two panel anchors — they're
+			// pushed above so the merged list follows true DOM order.
+			if (entry.id === 'wiki-rollup' || entry.id === 'wiki-directory') continue;
+			items.push({ id: entry.id, text: entry.label, level: 2 });
+		}
+		return items;
+	});
+	const wikiTocHidden = $derived(tocHidden(data.page));
+	const tocItems = $derived(wikiTocHidden ? [] : mergedToc);
+	// Prose (and its anchors) unmounts while editing — no TOC on dead links.
+	const showToc = $derived(tocItems.length >= 3 && !editing);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
+	// Sidebar "On this page" renders whenever the list is non-empty — keep
+	// the caller's ≥2 gate so single-anchor pages don't sprout a one-link
+	// TOC they didn't have before.
+	const sidebarToc = $derived(
+		wikiTocHidden
+			? toc
+			: mergedToc.length >= 2
+				? mergedToc.map((m) => ({ id: m.id, label: m.text }))
+				: []
+	);
+
 	$effect(() => {
 		const type = dataEntityType;
 		const spaceId = panelSpaceId;
@@ -421,7 +459,7 @@
 		spaceLevel={spaceLevel}
 		pages={sidebarPages}
 		currentPageSlug={data.pageSlug}
-		toc={toc}
+		toc={sidebarToc}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>
@@ -638,6 +676,14 @@
 					{/if}
 				</div>
 
+				<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left
+				     FAB takes over once this block scrolls out of view. -->
+				{#if showToc}
+					<div class="mb-6" bind:this={tocAnchorEl}>
+						<TocBlock items={tocItems} />
+					</div>
+				{/if}
+
 				{#if editing}
 					<form onsubmit={submitRevision} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 						<div class="flex flex-col gap-1.5">
@@ -700,7 +746,7 @@
 					{#if htmlContent}
 						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]" use:imgLightbox>
 							<NextActionInline />
-							<InArticleAd html={htmlContent} spaceId={spaceId} />
+							<InArticleAd html={bodyToc.html} spaceId={spaceId} />
 						</div>
 					{:else if !data.page.directory}
 						<!-- Directory pages have no prose by design — the child
@@ -919,6 +965,10 @@
 					<EntityDiscussions entityType="wiki_page" entityKey={data.page.id} authed={data.authed} />
 				</div>
 			{/if}
+		{/if}
+
+		{#if showToc}
+			<TocFloat items={tocItems} watch={tocAnchorEl} />
 		{/if}
 	</div>
 </div>

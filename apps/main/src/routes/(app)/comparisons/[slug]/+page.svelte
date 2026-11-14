@@ -11,6 +11,9 @@
 		type DimensionGroup
 	} from '#lib/utils/comparison.js';
 	import { flagUrl } from '#lib/utils/flags.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden } from '#lib/utils/toc.js';
 	import type {
 		FreshnessSummary,
 		JCEComparisonDetail,
@@ -168,6 +171,18 @@
 		sanitizeContentHtml(comparison.content.body_html ?? comparison.content.body ?? '')
 	);
 
+	// TOC — prose headings plus the Items grid and comparison matrix
+	// sections below the body, in DOM order. hide_toc opts a page out.
+	const bodyToc = $derived(extractToc(sanitizedBody));
+	const tocItems = $derived.by(() => {
+		if (tocHidden(comparison.content)) return [] as typeof bodyToc.items;
+		const items = [...bodyToc.items, { id: 'comparison-items', text: t('jce.compare.items_heading', 'Items'), level: 2 }];
+		if (matrix.length > 0) items.push({ id: 'comparison-matrix', text: t('jce.compare.matrix_heading', 'Comparison matrix'), level: 2 });
+		return items;
+	});
+	const showToc = $derived(tocItems.length >= 3);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
+
 	const seoOgImage = $derived(
 		ogMediaUrl(page.url.origin, comparison?.content?.featured_image_url) ||
 		ogCardUrl(page.url.origin, 'comparison')
@@ -296,15 +311,23 @@
 			<span class="flex items-center gap-1"><Eye size={14} /> {comparison.content.view_count} {t('content.views', 'views')}</span>
 		</div>
 
+	<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left FAB
+	     takes over once this block scrolls out of view. -->
+	{#if showToc}
+		<div class="mt-8" bind:this={tocAnchorEl}>
+			<TocBlock items={tocItems} />
+		</div>
+	{/if}
+
 	{#if sanitizedBody}
 		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage;
 		     re-sanitized client-side for parity with the other content singles. -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
-			{@html sanitizedBody}
+			{@html bodyToc.html}
 		</div>
 	{/if}
 
-	<section class="mt-8">
+	<section id="comparison-items" class="mt-8 scroll-mt-24">
 		<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('jce.compare.items_heading')}</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each resolvedItems as item (item.id)}
@@ -341,7 +364,7 @@
 	</section>
 
 	{#if matrix.length > 0}
-		<section class="mt-8">
+		<section id="comparison-matrix" class="mt-8 scroll-mt-24">
 			<div class="mb-3 flex flex-wrap items-center justify-end gap-3">
 				<div class="flex flex-wrap items-center gap-2">
 					{#if user && features['feature.jce.refresh']}
@@ -542,6 +565,10 @@
 		{@render rightSidebar()}
 	</div>
 </aside>
+
+{#if showToc}
+	<TocFloat items={tocItems} watch={tocAnchorEl} />
+{/if}
 </div>
 
 <style>

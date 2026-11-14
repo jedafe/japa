@@ -8,6 +8,9 @@
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { tiptapToText, type TipTapDoc as TipDoc } from '#lib/tiptap/serialize.js';
 	import { tiptapToHtml, tiptapDocFirstImageSrc, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden, type TocItem } from '#lib/utils/toc.js';
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
@@ -30,6 +33,25 @@
 		}
 		return '';
 	});
+
+	// TOC — prose headings merged with the structured sections below the
+	// body (fields table, related listing) in DOM order. hide_toc opts a
+	// page out of the inline block + floating button.
+	const bodyToc = $derived(extractToc(htmlContent));
+	const tocItems = $derived.by((): TocItem[] => {
+		if (tocHidden(page)) return [];
+		const items: TocItem[] = [...bodyToc.items];
+		if (page?.fields && page.fields.fields.length > 0) {
+			items.push({ id: 'entity-fields', text: page.fields.name, level: 2 });
+		}
+		if (page?.related && page.related.items.length > 0) {
+			items.push({ id: 'entity-related', text: relatedHeading, level: 2 });
+		}
+		return items;
+	});
+	// Prose (and its anchors) unmounts while editing — no TOC on dead links.
+	const showToc = $derived.by(() => tocItems.length >= 3 && !editing);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
 
 	// §wiki-links — mode:"related" grid heading: an offering page lists
 	// other universities with the same catalog course; a program page
@@ -289,6 +311,13 @@
 		</nav>
 	{/if}
 
+	<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left FAB
+	     takes over once this block scrolls out of view. -->
+	{#if showToc}
+		<div bind:this={tocAnchorEl}>
+			<TocBlock items={tocItems} />
+		</div>
+	{/if}
 
 	{#if editing}
 		<form onsubmit={submitRevision} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
@@ -331,7 +360,7 @@
 			</p>
 		{/if}
 		{#if htmlContent}
-			<div class="prose max-w-none">{@html htmlContent}</div>
+			<div class="prose max-w-none">{@html bodyToc.html}</div>
 		{:else}
 			<p class="text-sm text-[var(--color-muted)]">{t('wiki.empty_content', 'This page has no content yet.')}</p>
 		{/if}
@@ -350,7 +379,7 @@
 	{/if}
 
 	{#if page.fields && page.fields.fields.length > 0}
-		<section class="space-y-2">
+		<section id="entity-fields" class="space-y-2 scroll-mt-24">
 			<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 				{page.fields.name}
 			</h2>
@@ -389,7 +418,7 @@
 	{/if}
 
 	{#if page.related && page.related.items.length > 0}
-		<section class="space-y-3">
+		<section id="entity-related" class="space-y-3 scroll-mt-24">
 			<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 				{relatedHeading}
 			</h2>
@@ -427,5 +456,9 @@
 				</p>
 			{/if}
 		</section>
+	{/if}
+
+	{#if showToc}
+		<TocFloat items={tocItems} watch={tocAnchorEl} />
 	{/if}
 </article>

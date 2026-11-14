@@ -19,6 +19,9 @@
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import TocBlock from '#lib/components/toc/TocBlock.svelte';
+	import TocFloat from '#lib/components/toc/TocFloat.svelte';
+	import { extractToc, tocHidden } from '#lib/utils/toc.js';
 	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { excerpt } from '#lib/utils/seo-score.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
@@ -98,6 +101,13 @@
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
 	const sanitizedBody = $derived(sanitizeContentHtml(article.body_html || article.body, allowedIframeHosts));
+
+	// TOC — slug ids injected into the sanitized body so anchors ship in the
+	// SSR HTML. field_values.hide_toc opts a single article out.
+	const bodyToc = $derived(extractToc(sanitizedBody));
+	const tocItems = $derived(tocHidden(article) ? [] : bodyToc.items);
+	const showToc = $derived(tocItems.length >= 3);
+	let tocAnchorEl = $state<HTMLElement | null>(null);
 
 	// JSON-LD structured data (Section 14, Section 26 — SEO). The backend
 	// resolves the admin-managed Article template server-side and returns it
@@ -319,12 +329,20 @@
 			</div>
 		{/if}
 
+		<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left FAB
+		     takes over once this block scrolls out of view. -->
+		{#if showToc}
+			<div class="mt-8" bind:this={tocAnchorEl}>
+				<TocBlock items={tocItems} />
+			</div>
+		{/if}
+
 		<!-- Article body: prose TipTap HTML with serif reading font.
 		     InArticleAd splits the sanitized body on block boundaries and
 		     injects the article_inline ad slot (§25 amendment). -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
 			<NextActionInline />
-			<InArticleAd html={sanitizedBody} />
+			<InArticleAd html={bodyToc.html} />
 		</div>
 
 		<!-- Reaction/action bar: fixed bottom bar on mobile (this route is an
@@ -393,4 +411,8 @@
 			{@render rightSidebar()}
 		</div>
 	</aside>
+
+	{#if showToc}
+		<TocFloat items={tocItems} watch={tocAnchorEl} />
+	{/if}
 </div>

@@ -47,6 +47,8 @@ export interface EntityWikiPage {
 	helpful?: WikiHelpful | null;
 	revision_summary?: string;
 	submitted_by?: string;
+	/** TOC opt-out — when true the page renders no inline/floating TOC. */
+	hide_toc?: boolean;
 }
 
 // Entity-bound wiki page: /wiki/e/{type_slug}/{entity}/{page_slug}
