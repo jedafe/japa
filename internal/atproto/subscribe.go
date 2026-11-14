@@ -11,12 +11,12 @@ package atproto
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"log/slog"
 )
 
 // subscribePollInterval is the live-tail poll — relays buffer frames,
@@ -51,7 +51,7 @@ func (h *Handlers) SubscribeRepos(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("cursor"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || n < 0 {
-			xrpcError(w, "InvalidRequest", "bad cursor")
+			xrpcError(w, http.StatusBadRequest, "InvalidRequest", "bad cursor")
 			return
 		}
 		cursor = n
@@ -71,17 +71,27 @@ func (h *Handlers) SubscribeRepos(w http.ResponseWriter, r *http.Request) {
 		maxSeq, err := h.service.MaxEventSeq(ctx)
 		if err != nil {
 			slog.Error("atproto: subscribeRepos max seq", "error", err)
+			writeErrorFrame(conn, "InternalError", "internal error")
 			return
 		}
 		if cursor > maxSeq {
-			if frame, ferr := errorFrameBytes("FutureCursor", "cursor is ahead of the stream"); ferr == nil {
-				_ = conn.WriteMessage(websocket.BinaryMessage, frame)
-			}
+			writeErrorFrame(conn, "FutureCursor", "cursor is ahead of the stream")
 			return
 		}
 	}
 
 	h.tailEvents(ctx, conn, cursor)
+}
+
+// writeErrorFrame best-effort emits an {op:-1} error frame before close —
+// an abrupt drop leaves the relay without diagnostics; the frame names why.
+func writeErrorFrame(conn *websocket.Conn, name, message string) {
+	frame, err := errorFrameBytes(name, message)
+	if err != nil {
+		return
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(subscribeWriteDeadline))
+	_ = conn.WriteMessage(websocket.BinaryMessage, frame)
 }
 
 // tailEvents replays then live-tails the event log onto the socket.
@@ -109,6 +119,7 @@ func (h *Handlers) tailEvents(ctx context.Context, conn *websocket.Conn, cursor 
 		rows, err := h.service.EventsAfter(ctx, last, subscribeBatch)
 		if err != nil {
 			slog.Error("atproto: subscribeRepos read events", "error", err)
+			writeErrorFrame(conn, "InternalError", "internal error")
 			return
 		}
 		for _, ev := range rows {

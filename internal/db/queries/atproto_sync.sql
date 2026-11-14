@@ -50,3 +50,12 @@ ORDER BY seq;
 SELECT seq, cid FROM atproto_commit_blocks
 WHERE account_id = @account_id AND seq = ANY(@seqs::bigint[])
 ORDER BY seq;
+
+-- name: AtprotoCommitRevExists :one
+-- getRepo?since validation: a since naming a rev we never minted tells
+-- us nothing about the client's state — the full CAR is the only
+-- provably-sufficient answer.
+SELECT EXISTS(
+    SELECT 1 FROM atproto_repo_commits
+    WHERE account_id = @account_id AND rev = @rev
+);

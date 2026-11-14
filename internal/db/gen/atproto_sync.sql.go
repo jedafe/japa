@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const atprotoCommitRevExists = `-- name: AtprotoCommitRevExists :one
+SELECT EXISTS(
+    SELECT 1 FROM atproto_repo_commits
+    WHERE account_id = $1 AND rev = $2
+)
+`
+
+type AtprotoCommitRevExistsParams struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Rev       string      `json:"rev"`
+}
+
+// getRepo?since validation: a since naming a rev we never minted tells
+// us nothing about the client's state — the full CAR is the only
+// provably-sufficient answer.
+func (q *Queries) AtprotoCommitRevExists(ctx context.Context, arg AtprotoCommitRevExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, atprotoCommitRevExists, arg.AccountID, arg.Rev)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getAtprotoRecordByPath = `-- name: GetAtprotoRecordByPath :one
 SELECT uri, account_id, collection, rkey, cid, content_id, created_at, updated_at FROM atproto_records
 WHERE account_id = $1 AND collection = $2 AND rkey = $3

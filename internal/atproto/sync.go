@@ -45,17 +45,6 @@ func (s *Service) accountForDID(ctx context.Context, did string) (gen.GetAtproto
 	return account, nil
 }
 
-// repoCARByDID resolves the repo param then returns RepoCAR — shared by
-// getRepo and getRecord (a repo without a head commit doesn't exist on
-// the network).
-func (s *Service) repoCARByDID(ctx context.Context, did string) ([]byte, error) {
-	account, err := s.accountForDID(ctx, did)
-	if err != nil {
-		return nil, err
-	}
-	return s.RepoCAR(ctx, account.ID)
-}
-
 // RepoCARSince serves getRepo: the full CAR when since is empty; a diff
 // CAR otherwise — head commit as root + every block introduced by the
 // commits newer than the client's rev (the same block sets the #commit
@@ -85,6 +74,19 @@ func (s *Service) RepoCARSince(ctx context.Context, did, since string) ([]byte, 
 	}
 	if since >= head.Rev {
 		return carFromBlockSet(headCid, map[string][]byte{head.Cid: head.Data}, nil)
+	}
+	// A since naming a rev we never minted can't tell us what the client
+	// already holds — the diff could under-ship context. Full CAR is the
+	// always-correct answer.
+	knownRev, err := s.store.q.AtprotoCommitRevExists(ctx, gen.AtprotoCommitRevExistsParams{
+		AccountID: account.ID,
+		Rev:       since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("atproto: rev lookup: %w", err)
+	}
+	if !knownRev {
+		return s.RepoCAR(ctx, account.ID)
 	}
 	commits, err := s.store.q.ListAtprotoCommitsAfterRev(ctx, gen.ListAtprotoCommitsAfterRevParams{
 		AccountID: account.ID,
@@ -214,12 +216,17 @@ func (s *Service) BlocksCAR(ctx context.Context, did string, cids []string) ([]b
 	if len(cids) == 0 {
 		return nil, ErrInvalidID
 	}
+	seen := make(map[cid.Cid]struct{}, len(cids))
 	valid := make([]cid.Cid, 0, len(cids))
 	for _, raw := range cids {
 		c, err := cid.Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("atproto: bad cid %q", raw)
+			return nil, ErrInvalidID
 		}
+		if _, dup := seen[c]; dup {
+			continue // duplicate section bytes add nothing — CIDs address content
+		}
+		seen[c] = struct{}{}
 		valid = append(valid, c)
 	}
 	texts := make([]string, 0, len(valid))

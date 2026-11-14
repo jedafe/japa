@@ -1812,20 +1812,14 @@ func TestDBGetRepoSince(t *testing.T) {
 		t.Fatal("RepoCARSince(\"\") differs from RepoCAR")
 	}
 
-	// since before any commit → every commit's blocks (≈ full repo).
+	// since naming a rev we never minted → we can't know what the client
+	// holds → full CAR (the provably-sufficient answer).
 	data, err = svc.RepoCARSince(ctx, acct.Did, "3aaaaaaaaaaaaaa")
 	if err != nil {
-		t.Fatalf("RepoCARSince(old): %v", err)
+		t.Fatalf("RepoCARSince(unknown): %v", err)
 	}
-	_, blocks = readCAR(t, data)
-	var indexedTotal int
-	if err := d.Writer.QueryRow(ctx,
-		`SELECT COUNT(*) FROM atproto_commit_blocks WHERE account_id = $1`,
-		acct.ID).Scan(&indexedTotal); err != nil {
-		t.Fatalf("index total: %v", err)
-	}
-	if len(blocks) != indexedTotal {
-		t.Fatalf("pre-history diff = %d, want %d indexed blocks", len(blocks), indexedTotal)
+	if !bytes.Equal(data, full) {
+		t.Fatal("RepoCARSince(unknown rev) differs from full CAR")
 	}
 
 	// The endpoint wires the param through — since param on the wire.

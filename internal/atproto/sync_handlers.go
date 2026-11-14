@@ -14,22 +14,24 @@ import (
 )
 
 // xrpcError writes the XRPC error contract for the public sync surface.
-func xrpcError(w http.ResponseWriter, name, message string) {
-	errpkg.WriteJSON(w, http.StatusBadRequest, map[string]string{
+func xrpcError(w http.ResponseWriter, status int, name, message string) {
+	errpkg.WriteJSON(w, status, map[string]string{
 		"error":   name,
 		"message": message,
 	})
 }
 
-// xrpcNotFound maps ErrNotFound to the endpoint's lexicon error name.
+// xrpcNotFound maps service errors to the endpoint's lexicon error name —
+// lexicon/param errors are 400, anything else is 500: a 4xx reads as a
+// permanent condition to a relay, so transient failures must never wear it.
 func xrpcNotFound(w http.ResponseWriter, err error, name string) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		xrpcError(w, name, "repository not found")
+		xrpcError(w, http.StatusBadRequest, name, "repository not found")
 	case errors.Is(err, ErrInvalidID):
-		xrpcError(w, "InvalidRequest", "invalid parameter")
+		xrpcError(w, http.StatusBadRequest, "InvalidRequest", "invalid parameter")
 	default:
-		xrpcError(w, "InternalError", "internal error")
+		xrpcError(w, http.StatusInternalServerError, "InternalError", "internal error")
 	}
 }
 
@@ -47,6 +49,10 @@ func (h *Handlers) GetHostDIDDoc(w http.ResponseWriter, r *http.Request) {
 // DescribeServer serves GET /xrpc/com.atproto.server.describeServer —
 // the PDS's self-description relays read after requestCrawl.
 func (h *Handlers) DescribeServer(w http.ResponseWriter, r *http.Request) {
+	if h.service.cfg.pdsURL() == "" || h.service.cfg.handleDomain() == "" {
+		xrpcError(w, http.StatusInternalServerError, "InternalError", "server misconfigured")
+		return
+	}
 	false_ := false
 	out := &comatproto.ServerDescribeServer_Output{
 		AvailableUserDomains:      []string{"." + h.service.cfg.handleDomain()},
@@ -103,7 +109,10 @@ func (h *Handlers) GetLatestCommit(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetRecord serves GET /xrpc/com.atproto.sync.getRecord?repo=&collection=
-// &rkey= — a CAR carrying the record and the MST material to verify it.
+// &rkey=[&commit=] — a CAR carrying the record and the MST material to
+// verify it. The optional `commit` anchor is ignored: the record index
+// is current-state only, so the head-anchored CAR is what we can prove —
+// a record deleted since the anchor 404s rather than serving stale data.
 func (h *Handlers) GetRecord(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	data, err := h.service.RecordCAR(r.Context(), q.Get("repo"), q.Get("collection"), q.Get("rkey"))
