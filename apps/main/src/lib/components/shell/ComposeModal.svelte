@@ -164,8 +164,15 @@
 			inset-inline-start: 0;
 		}
 	}
+	/* Cap the sheet a little under the full band so it reads at a consistent
+	   width on every page; auto margins center it between the nav edge and
+	   the sidebar edge (or viewport edge when the rail is hidden). */
+	.composer-sheet {
+		max-width: 50rem;
+		margin-inline: auto;
+	}
 	/* Exception #1 content singles (blog/CPT) hide the right sidebar entirely —
-	   there is no rail to clear, so the sheet spans to the viewport edge. */
+	   there is no rail to clear, so the sheet centers in the wider band. */
 	:global(.shell.hide-sidebar) .composer-sheet {
 		inset-inline-end: 0;
 	}
