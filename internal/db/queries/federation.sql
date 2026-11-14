@@ -36,6 +36,7 @@ WHERE fa.user_id = @user_id
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
        COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
@@ -91,8 +92,8 @@ WHERE (@q::text = '' OR u.username ILIKE '%' || @q || '%' OR fa.actor_url ILIKE 
 -- name: GetNodeInfoUsage :one
 -- NodeInfo 2.1 usage counters (active users, published contents, comments).
 SELECT
-    (SELECT COUNT(*) FROM users WHERE status = 'active')::bigint AS total_users,
-    (SELECT COUNT(*) FROM contents WHERE status = 'published' AND deleted_at IS NULL)::bigint AS local_posts,
+    (SELECT COUNT(*) FROM users WHERE status = 'active' AND is_synthetic = false)::bigint AS total_users,
+    (SELECT COUNT(*) FROM contents WHERE status = 'published' AND visibility = 'public' AND deleted_at IS NULL)::bigint AS local_posts,
     (SELECT COUNT(*) FROM comments WHERE deleted_at IS NULL)::bigint AS local_comments;
 
 -- name: GetFederationStats :one

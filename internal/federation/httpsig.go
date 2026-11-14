@@ -151,9 +151,14 @@ func splitSignatureParams(raw string) []string {
 	return parts
 }
 
+// signatureClockSkew bounds Date-header staleness for inbound signatures
+// (Mastodon convention: 12h). Limits replay of captured signed requests.
+const signatureClockSkew = 12 * time.Hour
+
 // VerifySignature verifies an inbound request's Signature header against
 // the actor's public key. body is required when the covered headers
-// include `digest` (always true for POST deliveries).
+// include `digest` (always true for POST deliveries). The `date` header
+// must be covered and within signatureClockSkew of now.
 func VerifySignature(r *http.Request, pub *rsa.PublicKey, body []byte) error {
 	params := ParseSignatureHeader(r.Header.Get("Signature"))
 	sigB64 := params["signature"]
@@ -169,6 +174,26 @@ func VerifySignature(r *http.Request, pub *rsa.PublicKey, body []byte) error {
 	covered := []string{"date"}
 	if h := params["headers"]; h != "" {
 		covered = strings.Fields(h)
+	}
+
+	// Freshness: date must be covered, parseable, and within the skew
+	// window — otherwise an old signed request replays forever.
+	dateCovered := false
+	for _, name := range covered {
+		if strings.EqualFold(name, "date") {
+			dateCovered = true
+			break
+		}
+	}
+	if !dateCovered {
+		return errors.New("federation: date header not covered by signature")
+	}
+	ts, err := http.ParseTime(r.Header.Get("Date"))
+	if err != nil {
+		return fmt.Errorf("federation: bad date header: %w", err)
+	}
+	if skew := time.Since(ts); skew > signatureClockSkew || skew < -signatureClockSkew {
+		return fmt.Errorf("federation: signature date outside %s skew", signatureClockSkew)
 	}
 
 	// Body integrity: when digest is covered, it must match the payload.

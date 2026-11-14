@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -108,6 +109,25 @@ func TestVerifySignatureRejectsTamperedBody(t *testing.T) {
 
 	if err := VerifySignature(req, &priv.PublicKey, []byte(`{"type":"Delete"}`)); err == nil {
 		t.Error("expected digest mismatch for tampered body")
+	}
+}
+
+func TestVerifySignatureRejectsStaleDate(t *testing.T) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	body := []byte(`{"type":"Follow"}`)
+
+	req := httptest.NewRequest("POST", "https://remote.example/inbox", strings.NewReader(string(body)))
+	req.Host = "remote.example"
+	if err := SignRequest(req, "key", priv, body); err != nil {
+		t.Fatalf("SignRequest: %v", err)
+	}
+	// Rewind the signed Date past the 12h skew window; the signature over
+	// "date" still verifies cryptographically, so freshness must reject it.
+	stale := time.Now().Add(-13 * time.Hour).UTC().Format(http.TimeFormat)
+	req.Header.Set("Date", stale)
+
+	if err := VerifySignature(req, &priv.PublicKey, body); err == nil {
+		t.Error("expected stale date rejection")
 	}
 }
 
@@ -402,7 +422,7 @@ func TestFederationStatusNeverSerializesKeys(t *testing.T) {
 		PrivateKeyEnc:     "CIPHERTEXT",
 		Status:            ActorStatusActive,
 	}
-	st := s.statusFor(actor)
+	st := s.statusFor(actor, "alice")
 	raw, err := json.Marshal(st)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

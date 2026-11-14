@@ -166,7 +166,10 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		return doc, nil
 	}
 
-	actor, err := s.store.actorByUsername(ctx, username)
+	// The profile query carries the live users.username — the JRD subject
+	// echoes it, not the (possibly stale) preferred_username snapshot, so a
+	// renamed member's old handle resolves to their current acct address.
+	profile, err := s.store.actorProfile(ctx, username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -182,8 +185,8 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		canonical = domain
 	}
 	doc := webfingerJRD(
-		actor.PreferredUsername, canonical, actor.ActorUrl,
-		s.profileURL(actor.PreferredUsername),
+		profile.Username, canonical, profile.ActorUrl,
+		s.profileURL(profile.Username),
 	)
 	s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
 	return doc, nil
@@ -209,7 +212,6 @@ func (s *Service) ActorDocument(ctx context.Context, username string) (map[strin
 	}
 
 	doc := actorDocument(profile, s.siteBase())
-	doc["@context"] = asContext
 	s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
 	return doc, nil
 }
@@ -401,10 +403,15 @@ func (s *Service) objectFromGetRow(row gen.GetFederatableContentByIDRow, actor g
 }
 
 // pageURL resolves the human-facing URL for a contents row: the editorial
-// canonical_url when set, else the content-type route path.
+// canonical_url when set, else the content-type route path. A relative
+// canonical ("/blog/x") is anchored to siteBase — AP urls must be absolute.
 func (s *Service) pageURL(contentType, slug string, canonical *string) string {
 	if canonical != nil && *canonical != "" {
-		return *canonical
+		c := *canonical
+		if strings.HasPrefix(c, "http://") || strings.HasPrefix(c, "https://") {
+			return c
+		}
+		return s.siteBase() + "/" + strings.TrimPrefix(c, "/")
 	}
 	return s.siteBase() + model.LinkPathFor(contentType) + slug
 }
@@ -462,15 +469,22 @@ func (s *Service) GetMyFederation(ctx context.Context, userID pgtype.UUID) (Fede
 		}
 		return FederationStatus{}, fmt.Errorf("federation: my actor: %w", err)
 	}
-	return s.statusFor(actor), nil
+	user, err := s.store.userByID(ctx, userID)
+	if err != nil {
+		return FederationStatus{}, fmt.Errorf("federation: my user: %w", err)
+	}
+	return s.statusFor(actor, user.Username), nil
 }
 
-func (s *Service) statusFor(actor gen.FederatedActor) FederationStatus {
+// statusFor builds the member-facing actor view. The handle uses the live
+// username — preferred_username is a creation-time snapshot that can lag
+// a rename.
+func (s *Service) statusFor(actor gen.FederatedActor, username string) FederationStatus {
 	st := FederationStatus{
 		Enabled:  actor.Status == ActorStatusActive,
 		Status:   actor.Status,
 		ActorURL: actor.ActorUrl,
-		Handle:   actor.PreferredUsername + "@" + s.handleDomain(),
+		Handle:   username + "@" + s.handleDomain(),
 	}
 	if actor.CreatedAt.Valid {
 		st.CreatedAt = actor.CreatedAt.Time.UTC().Format(time.RFC3339)
@@ -486,6 +500,9 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 	if err != nil {
 		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
 	}
+	if user.Status != "active" {
+		return FederationStatus{}, ErrNotFound
+	}
 	username := user.Username
 
 	existing, err := s.store.actorByUserID(ctx, userID)
@@ -497,7 +514,7 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 			existing.Status = ActorStatusActive
 			s.invalidateActorCache(ctx, existing.PreferredUsername)
 		}
-		return s.statusFor(existing), nil
+		return s.statusFor(existing, username), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return FederationStatus{}, fmt.Errorf("federation: lookup actor: %w", err)
@@ -533,7 +550,7 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 	}
 
 	slog.Info("federation actor enabled", "user_id", userID.String(), "actor_url", actorURL)
-	return s.statusFor(actor), nil
+	return s.statusFor(actor, username), nil
 }
 
 // approvesFollowers maps the member's user_privacy_settings onto the AP
@@ -565,7 +582,12 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 	}
 	s.invalidateActorCache(ctx, actor.PreferredUsername)
 	actor.Status = ActorStatusDisabled
-	return s.statusFor(actor), nil
+
+	user, err := s.store.userByID(ctx, userID)
+	if err != nil {
+		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
+	}
+	return s.statusFor(actor, user.Username), nil
 }
 
 // ---------------------------------------------------------------------------

@@ -46,7 +46,7 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 		"preferredUsername":         p.Username,
 		"url":                       siteBase + "/u/" + p.Username,
 		"manuallyApprovesFollowers": p.ManuallyApprovesFollowers,
-		"discoverable":              true,
+		"discoverable":              p.Discoverable,
 		"inbox":                     p.InboxUrl,
 		"outbox":                    p.OutboxUrl,
 		"followers":                 p.FollowersUrl,

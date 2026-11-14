@@ -4836,8 +4836,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// /api/v1/federation/webfinger + nodeinfo/2.1 exist as proxy
 			// targets for the apex SvelteKit well-known endpoints.
 			r.With(features.Gate(featureChecker, "feature.federation")).Group(func(r chi.Router) {
-				r.With(mcp.PublicCORS).Get("/federation/webfinger", federationHandlers.GetWebfinger)
-				r.With(mcp.PublicCORS).Get("/federation/nodeinfo/2.1", federationHandlers.GetNodeInfo)
+				r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose")).Get("/federation/webfinger", federationHandlers.GetWebfinger)
+				r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose")).Get("/federation/nodeinfo/2.1", federationHandlers.GetNodeInfo)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation", federationHandlers.GetMyFederation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation", federationHandlers.EnableMyFederation)

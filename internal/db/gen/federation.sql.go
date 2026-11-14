@@ -207,6 +207,7 @@ const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
        COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
@@ -232,6 +233,7 @@ type GetActorProfileByUsernameRow struct {
 	FollowersUrl              string             `json:"followers_url"`
 	FollowingUrl              string             `json:"following_url"`
 	ManuallyApprovesFollowers interface{}        `json:"manually_approves_followers"`
+	Discoverable              bool               `json:"discoverable"`
 	Status                    string             `json:"status"`
 	ActorCreatedAt            pgtype.Timestamptz `json:"actor_created_at"`
 	Username                  string             `json:"username"`
@@ -261,6 +263,7 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 		&i.FollowersUrl,
 		&i.FollowingUrl,
 		&i.ManuallyApprovesFollowers,
+		&i.Discoverable,
 		&i.Status,
 		&i.ActorCreatedAt,
 		&i.Username,
@@ -527,8 +530,8 @@ func (q *Queries) GetInstanceBlockByDomain(ctx context.Context, domain string) (
 
 const getNodeInfoUsage = `-- name: GetNodeInfoUsage :one
 SELECT
-    (SELECT COUNT(*) FROM users WHERE status = 'active')::bigint AS total_users,
-    (SELECT COUNT(*) FROM contents WHERE status = 'published' AND deleted_at IS NULL)::bigint AS local_posts,
+    (SELECT COUNT(*) FROM users WHERE status = 'active' AND is_synthetic = false)::bigint AS total_users,
+    (SELECT COUNT(*) FROM contents WHERE status = 'published' AND visibility = 'public' AND deleted_at IS NULL)::bigint AS local_posts,
     (SELECT COUNT(*) FROM comments WHERE deleted_at IS NULL)::bigint AS local_comments
 `
 
