@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { clampListPage, flattenListPageWrappers, listPageCount, splitListItems } from './listPages';
+import {
+	clampListPage,
+	flattenListPageWrappers,
+	listItemIndexByDomId,
+	listPageCount,
+	splitListItems
+} from './listPages';
 
 const it3 = (n: number, inner = '') =>
 	`<div class="list-item" id="item-${n}"><h3>${inner || `H${n}`}</h3></div>`;
@@ -25,6 +31,44 @@ describe('splitListItems', () => {
 		const { items } = splitListItems(evil);
 		expect(items).toHaveLength(1);
 		expect(items[0]).toContain('id="item-1"');
+	});
+
+	it('ignores item markers nested inside an item body', () => {
+		// A rendered list pasted into item rich text survives the class/id
+		// whitelist — nested markers are content, never a page boundary.
+		const nested = `<div class="list-item" id="item-99"><p>pasted</p></div>`;
+		const body = `<p>i</p>${it3(1)}${it3(2, nested)}${it3(3)}`;
+		const { items } = splitListItems(body);
+		expect(items).toHaveLength(3);
+		expect(items[1]).toContain('id="item-99"');
+		expect(items[1]).toContain('id="item-2"');
+	});
+
+	it('keeps item bodies containing other divs balanced', () => {
+		const body = `<p>i</p>${it3(1, '<div data-type="link-preview"></div>')}${it3(2)}`;
+		const { items } = splitListItems(body);
+		expect(items).toHaveLength(2);
+		expect(items[1]).toContain('id="item-2"');
+	});
+});
+
+describe('listItemIndexByDomId', () => {
+	const blocks = [it3(1), it3(2, '<div class="list-item" id="item-9"><p>x</p></div>'), it3(3)];
+
+	it('matches the block-own marker only', () => {
+		expect(listItemIndexByDomId(blocks, 1)).toBe(0);
+		expect(listItemIndexByDomId(blocks, 2)).toBe(1);
+		expect(listItemIndexByDomId(blocks, 3)).toBe(2);
+		// The nested id="item-9" inside block 2 must not resolve.
+		expect(listItemIndexByDomId(blocks, 9)).toBe(-1);
+	});
+
+	it('rejects invalid ids', () => {
+		expect(listItemIndexByDomId(blocks, 0)).toBe(-1);
+		expect(listItemIndexByDomId(blocks, -2)).toBe(-1);
+		expect(listItemIndexByDomId(blocks, 1.5)).toBe(-1);
+		expect(listItemIndexByDomId(blocks, NaN)).toBe(-1);
+		expect(listItemIndexByDomId(blocks, 99)).toBe(-1);
 	});
 });
 

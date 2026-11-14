@@ -46,19 +46,42 @@ type listItem struct {
 // payload: list_mode enum, item cap (system_settings list.max_items, resolved
 // by the caller), per-item body_html sanitization, UUID/embed-kind checks,
 // http(s)-only URLs. prev is the content's already-stored field_values
-// (empty on create): resubmitted values identical to stored ones are
-// grandfathered past the maxItems bounds so a lowered cap can't strand
-// unrelated edits (§14).
+// (empty on create). On update the stored object is merged under the
+// submitted one first — the column is replaced wholesale, but fv PATCH is
+// per-key, so keys the caller omits (items, list_mode, …) keep their stored
+// values rather than being silently dropped. Resubmitted values identical
+// to stored ones are grandfathered past the maxItems bounds so a lowered
+// cap can't strand unrelated edits (§14).
 func validateListFieldValues(raw json.RawMessage, maxItems int, prev json.RawMessage) (json.RawMessage, *listValidationError) {
+	// list.max_items <= 0 is a misconfiguration — list.enabled is the
+	// killswitch, not a zero-item cap. Fall back to the default so a bad
+	// settings row can't brick every list edit.
+	if maxItems < 1 {
+		maxItems = listDefaultMaxItems
+	}
+
 	prevIPP, prevItemCount := listPrevBounds(prev)
 
-	var fv map[string]json.RawMessage
+	var patch map[string]json.RawMessage
 	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &fv); err != nil {
+		if err := json.Unmarshal(raw, &patch); err != nil {
 			return nil, &listValidationError{"invalid_list_items", "field_values must be an object"}
 		}
-	} else {
-		fv = map[string]json.RawMessage{}
+	}
+
+	// field_values is stored/replaced wholesale, but PATCH semantics are
+	// per-key: merge the stored object under the submitted one so a PATCH
+	// carrying only items_per_page doesn't wipe items/list_mode. Keys the
+	// caller sends explicitly (including null — handled per-field below)
+	// win; omitted keys keep their stored values.
+	fv := map[string]json.RawMessage{}
+	if len(prev) > 0 {
+		// Stored fv passed validation on write — an unmarshal failure is
+		// not actionable here; fall back to the patch alone.
+		_ = json.Unmarshal(prev, &fv)
+	}
+	for k, v := range patch {
+		fv[k] = v
 	}
 
 	if modeRaw, ok := fv["list_mode"]; ok {

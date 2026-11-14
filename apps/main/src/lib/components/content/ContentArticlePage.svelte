@@ -24,6 +24,7 @@
 	import {
 		splitListItems,
 		clampListPage,
+		listItemIndexByDomId,
 		listPageCount as listPageCount_
 	} from '#lib/utils/listPages.js';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
@@ -176,7 +177,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	$effect(() => {
 		const hash = page.url.hash;
 		if (!hash.startsWith('#item-') || listPageCount === 0) return;
-		const idx = listBody.items.findIndex((html) => html.includes(`id="${hash.slice(1)}"`));
+		const n = parseInt(hash.slice(6), 10);
+		let idx = listItemIndexByDomId(listBody.items, n);
+		// Fallback: an id that isn't an own-marker may still exist nested
+		// inside an item's body (pasted markup) — land on the page holding
+		// that element rather than leaving a dead anchor.
+		if (idx < 0 && Number.isInteger(n) && n >= 1) {
+			idx = listBody.items.findIndex((html) => html.includes(`id="item-${n}"`));
+		}
 		if (idx < 0) return;
 		const target = Math.floor(idx / listItemsPerPage) + 1;
 		if (target !== listPageNo) goto(`?page=${target}${hash}`, { replaceState: true });

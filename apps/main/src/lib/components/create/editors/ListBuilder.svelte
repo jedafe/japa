@@ -375,6 +375,14 @@
 						emit();
 					}
 				}}
+				onchange={(e) => {
+					// A cleared input leaves itemsPerPage stale while showing
+					// empty — snap the field back to the effective value.
+					const v = parseInt(e.currentTarget.value, 10);
+					itemsPerPage = Number.isNaN(v) ? 1 : Math.max(1, v);
+					e.currentTarget.value = String(itemsPerPage);
+					emit();
+				}}
 			/>
 			<span class="per-page-label">{t('create.list.per_page')}</span>
 		{/if}

@@ -98,6 +98,66 @@ func TestValidateListFieldValuesItemsPerPageGrandfather(t *testing.T) {
 	}
 }
 
+// §14: field_values PATCH is per-key — the stored object is merged under
+// the submitted one so a PATCH carrying only items_per_page cannot wipe
+// items/list_mode (the column itself is still replaced wholesale).
+func TestValidateListFieldValuesPatchMerge(t *testing.T) {
+	prev := json.RawMessage(`{"list_mode":"numbered","items_per_page":4,"custom_key":"keep","items":[{"heading":"a"},{"heading":"b"}]}`)
+
+	// ipp-only patch: items, mode, and foreign keys all survive.
+	out, err := validateListFieldValues(json.RawMessage(`{"items_per_page":3}`), 50, prev)
+	if err != nil {
+		t.Fatalf("ipp-only patch should validate, got %v", err)
+	}
+	for _, want := range []string{`"items_per_page":3`, `"list_mode":"numbered"`, `"custom_key":"keep"`, `"heading":"a"`, `"heading":"b"`} {
+		if !bytes.Contains(out, []byte(want)) {
+			t.Fatalf("merged output missing %s: %s", want, out)
+		}
+	}
+
+	// Explicit null disables pagination but keeps everything else.
+	out, err = validateListFieldValues(json.RawMessage(`{"items_per_page":null}`), 50, prev)
+	if err != nil {
+		t.Fatalf("null ipp patch should validate, got %v", err)
+	}
+	if bytes.Contains(out, []byte("items_per_page")) {
+		t.Fatalf("null items_per_page should be dropped, got %s", out)
+	}
+	if !bytes.Contains(out, []byte(`"heading":"a"`)) || !bytes.Contains(out, []byte(`"list_mode":"numbered"`)) {
+		t.Fatalf("null ipp patch should keep items/mode, got %s", out)
+	}
+
+	// An explicit items array replaces wholesale — no element-wise merge.
+	out, err = validateListFieldValues(json.RawMessage(`{"items":[{"heading":"z"}]}`), 50, prev)
+	if err != nil {
+		t.Fatalf("items patch should validate, got %v", err)
+	}
+	if !bytes.Contains(out, []byte(`"heading":"z"`)) || bytes.Contains(out, []byte(`"heading":"a"`)) {
+		t.Fatalf("items should replace wholesale, got %s", out)
+	}
+	if !bytes.Contains(out, []byte(`"items_per_page":4`)) {
+		t.Fatalf("items patch should keep stored items_per_page, got %s", out)
+	}
+
+	// Explicit null on items clears to the normalized empty array.
+	out, err = validateListFieldValues(json.RawMessage(`{"items":null}`), 50, prev)
+	if err != nil {
+		t.Fatalf("null items patch should validate, got %v", err)
+	}
+	if !bytes.Contains(out, []byte(`"items":[]`)) {
+		t.Fatalf("null items should normalize to [], got %s", out)
+	}
+
+	// Corrupt stored fv falls back to the patch alone.
+	out, err = validateListFieldValues(json.RawMessage(`{"items_per_page":2}`), 50, json.RawMessage(`{bad`))
+	if err != nil {
+		t.Fatalf("corrupt prev should not fail validation, got %v", err)
+	}
+	if !bytes.Contains(out, []byte(`"items_per_page":2`)) {
+		t.Fatalf("want items_per_page:2, got %s", out)
+	}
+}
+
 func TestValidateListFieldValuesMaxItems(t *testing.T) {
 	fv := `{"items":[{"heading":"a"},{"heading":"b"},{"heading":"c"}]}`
 	if _, err := validateListFieldValues(json.RawMessage(fv), 2, nil); err == nil || err.Code != "too_many_items" {
@@ -106,6 +166,15 @@ func TestValidateListFieldValuesMaxItems(t *testing.T) {
 
 	if _, err := validateListFieldValues(json.RawMessage(fv), 3, nil); err != nil {
 		t.Fatalf("3 items at max 3 should pass, got %v", err)
+	}
+
+	// A non-positive cap is a misconfiguration, not a zero-item rule —
+	// validation falls back to the default bound.
+	if _, err := validateListFieldValues(json.RawMessage(fv), 0, nil); err != nil {
+		t.Fatalf("maxItems=0 should fall back to default, got %v", err)
+	}
+	if _, err := validateListFieldValues(json.RawMessage(`{"items_per_page":5}`), -3, nil); err != nil {
+		t.Fatalf("negative maxItems should fall back to default, got %v", err)
 	}
 }
 
