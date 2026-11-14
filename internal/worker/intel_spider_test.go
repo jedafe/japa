@@ -375,7 +375,7 @@ func TestHandleIntelHarvestOutbound_Proposes(t *testing.T) {
 		t.Fatalf("lookup proposed source: %v", err)
 	}
 
-	t.Cleanup(func() { _ = srcStore.Delete(t.Context(), proposed.ID) })
+	t.Cleanup(func() { deleteIntelSource(srcStore, proposed.ID) })
 
 	if proposed.Status != "proposed" || proposed.Enabled {
 		t.Errorf("proposed source status=%q enabled=%v, want proposed/disabled", proposed.Status, proposed.Enabled)
@@ -390,7 +390,7 @@ func TestHandleIntelHarvestOutbound_Proposes(t *testing.T) {
 	}
 
 	if second, err := srcStore.GetByURL(t.Context(), "https://new-b.example.net/"); err == nil {
-		t.Cleanup(func() { _ = srcStore.Delete(t.Context(), second.ID) })
+		t.Cleanup(func() { deleteIntelSource(srcStore, second.ID) })
 	}
 
 	// Re-run over the same doc must be a no-op (domain dedupe).

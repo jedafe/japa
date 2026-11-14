@@ -40,6 +40,11 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// DB exposes the underlying pool — used by test cleanup that must run
+// raw statements against the NO ACTION foreign keys blocking source
+// deletion. Matches the DB() accessor on the personas/campaign stores.
+func (s *Store) DB() *db.DB { return s.pool }
+
 // Create inserts a new intel_sources row. The ID is stamped into the
 // row regardless of any value the caller set on arg.
 func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {

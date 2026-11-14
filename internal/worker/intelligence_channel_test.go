@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -227,9 +228,32 @@ func mkIntelTestSource(t *testing.T, srcStore *sources.Store, name string, mutat
 		t.Fatalf("create source %s: %v", name, err)
 	}
 
-	t.Cleanup(func() { _ = srcStore.Delete(t.Context(), src.ID) })
+	t.Cleanup(func() { deleteIntelSource(srcStore, src.ID) })
 
 	return src
+}
+
+// deleteIntelSource removes a fixture source. Two traps it exists for:
+// t.Context() is already canceled inside t.Cleanup (so deletes need a
+// fresh context), and six NO ACTION foreign keys — contents.
+// intel_source_id plus source_id on comparison_data_sources,
+// organizations, spaces, users, video_sources — block the hard delete;
+// NULLing them leaves the referencing fixture rows for their own
+// cleanups while unblocking the source delete.
+func deleteIntelSource(srcStore *sources.Store, id pgtype.UUID) {
+	ctx := context.Background()
+	pool := srcStore.DB().Writer
+	for _, q := range []string{
+		`UPDATE comparison_data_sources SET source_id = NULL WHERE source_id = $1`,
+		`UPDATE contents SET intel_source_id = NULL WHERE intel_source_id = $1`,
+		`UPDATE organizations SET source_id = NULL WHERE source_id = $1`,
+		`UPDATE spaces SET source_id = NULL WHERE source_id = $1`,
+		`UPDATE users SET source_id = NULL WHERE source_id = $1`,
+		`UPDATE video_sources SET source_id = NULL WHERE source_id = $1`,
+	} {
+		_, _ = pool.Exec(ctx, q, id)
+	}
+	_ = srcStore.Delete(ctx, id)
 }
 
 // mkIntelTestChannel inserts an intel_source_channels row under src.
@@ -637,8 +661,46 @@ func TestHandleIntelDetectChanges_PropagatesChannel(t *testing.T) {
 // with its failure counter reset; a still-dead endpoint stays disabled
 // (error noted, not counted); a deliberately admin-disabled channel — no
 // failures, no error message — is left untouched.
+// parkCircuitBreakers flips every foreign disabled_by='circuit_breaker'
+// channel to 'admin' — the reprobe sweep is unscoped, so pre-existing
+// rows (seeds, other tests' leaks) would be fetched for real and break
+// the fixture assertions. Restores them by id on cleanup; 'admin' is
+// chosen because the sweep deliberately never re-checks it.
+func parkCircuitBreakers(t *testing.T, database *db.DB) {
+	t.Helper()
+	ctx := t.Context()
+	rows, err := database.Writer.Query(ctx, `SELECT id::text FROM intel_source_channels WHERE enabled = false AND disabled_by = 'circuit_breaker'`)
+	if err != nil {
+		t.Fatalf("park circuit breakers: %v", err)
+	}
+	var parked []string
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("park circuit breakers: %v", err)
+		}
+		parked = append(parked, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("park circuit breakers: %v", err)
+	}
+	if len(parked) == 0 {
+		return
+	}
+	if _, err := database.Writer.Exec(ctx, `UPDATE intel_source_channels SET disabled_by = 'admin' WHERE id = ANY($1::uuid[])`, parked); err != nil {
+		t.Fatalf("park circuit breakers: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := database.Writer.Exec(context.Background(), `UPDATE intel_source_channels SET disabled_by = 'circuit_breaker' WHERE id = ANY($1::uuid[]) AND disabled_by = 'admin'`, parked); err != nil {
+			t.Logf("restore parked circuit breakers: %v", err)
+		}
+	})
+}
+
 func TestHandleIntelReprobeDeadChannels(t *testing.T) {
 	database, srcStore, _, inspector := wireIntelChannelDeps(t)
+	parkCircuitBreakers(t, database)
 	srv := staticFixture(t)
 
 	src := mkIntelTestSource(t, srcStore, "reprobe-src", nil)

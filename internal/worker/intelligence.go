@@ -3998,7 +3998,11 @@ func HandleIntelReprobeDeadChannels(ctx context.Context, _ *asynq.Task) error {
 			deadSources[ch.SourceID.String()] = true
 			intelReleaseChannelLock(ctx, ch.ID.String(), "")
 			if fetcher.ClassifyFetchError(err) == fetcher.FailureBlocked {
-				_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, "reprobe: "+err.Error(), int32(min(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600), math.MaxInt32))) // #nosec G115 -- clamped to MaxInt32
+				wallSecs := 21600
+				if appSettings != nil {
+					wallSecs = appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600)
+				}
+				_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, "reprobe: "+err.Error(), int32(min(wallSecs, math.MaxInt32))) // #nosec G115 -- clamped to MaxInt32
 			} else {
 				_ = intelSourcesStore.NoteChannelError(ctx, gen.NoteIntelChannelErrorParams{
 					ID:               ch.ID,

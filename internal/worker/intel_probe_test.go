@@ -317,7 +317,7 @@ func TestHandleIntelProbeVerify_SkipPaths(t *testing.T) {
 			t.Fatalf("create %s: %v", name, err)
 		}
 
-		t.Cleanup(func() { _ = srcStore.Delete(ctx, src.ID) })
+		t.Cleanup(func() { deleteIntelSource(srcStore, src.ID) })
 
 		return src
 	}
