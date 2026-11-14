@@ -248,6 +248,11 @@ func TestDBRenameResolution(t *testing.T) {
 		t.Errorf("stored handle = %q, want lazy sync to %q", handle, renamed+".test.dev")
 	}
 
+	// The abandoned old subdomain no longer resolves post-sync.
+	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != ErrNotFound {
+		t.Errorf("old handle still resolves: %v", err)
+	}
+
 	// The immutable did:web path (user UUID — rename-independent) still
 	// serves the doc.
 	doc, err := svc.DIDDocument(ctx, uuidString(userID))
@@ -260,6 +265,31 @@ func TestDBRenameResolution(t *testing.T) {
 	aka, _ := doc["alsoKnownAs"].([]string)
 	if len(aka) != 1 || aka[0] != "at://"+renamed+".test.dev" {
 		t.Errorf("alsoKnownAs = %v, want live handle", aka)
+	}
+}
+
+// Stale-handle reads must not poison resolution: when a request hits a
+// handle whose claim just migrated away, the row's DID must NOT be
+// returned or cached — the handle is now unclaimed.
+func TestDBStaleHandleResolvesNotFound(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	// Rename without touching any read path — the stored handle is stale.
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, uname+"_x", userID); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	// The abandoned subdomain resolves nothing — before the post-sync
+	// check it returned (and cached) the owner's DID for a freed handle.
+	did, err := svc.ResolveHandleDID(ctx, uname+".test.dev")
+	if err != ErrNotFound {
+		t.Fatalf("stale handle resolved: did=%q err=%v", did, err)
 	}
 }
 

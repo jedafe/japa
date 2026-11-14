@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS atproto_accounts (
     id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id               uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     handle                text NOT NULL UNIQUE,  -- {username}.{JC_ATPROTO_HANDLE_DOMAIN}
-    did                   text NOT NULL UNIQUE,  -- did:web:{pds_host}:atproto:u:{username}
+    did                   text NOT NULL UNIQUE,  -- did:web:{pds_host}:atproto:u:{user_uuid}
     signing_key_enc       text NOT NULL,         -- K-256 private key, internal/crypto ciphertext
     public_key_multibase  text NOT NULL,         -- verificationMethod material for the DID doc
     status                text NOT NULL DEFAULT 'active',

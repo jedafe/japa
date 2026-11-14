@@ -3,6 +3,7 @@ package atproto
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -31,6 +32,7 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrHandleTaken):
 		errpkg.WriteError(w, http.StatusConflict, "handle_taken", "Handle already claimed")
 	default:
+		slog.Error("atproto handler error", "err", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
 	}
 }

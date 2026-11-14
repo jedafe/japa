@@ -93,7 +93,7 @@ func (s *Service) HandleFromHost(host string) string {
 	if !strings.HasSuffix(host, suffix) || host == s.cfg.handleDomain() {
 		return ""
 	}
-	if host == s.cfg.pdsHost() {
+	if host == strings.Split(s.cfg.pdsHost(), ":")[0] {
 		return ""
 	}
 	return host
@@ -156,7 +156,13 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 		}
 		return "", fmt.Errorf("atproto: handle lookup: %w", err)
 	}
-	s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername)
+	// Post-sync check: if the row matched via a stale stored handle, the
+	// claim just migrated to the member's live username — the requested
+	// handle is now unclaimed. Returning the row's DID here would cache
+	// (and prove) the wrong account for a freed handle.
+	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.Handle, account.LiveUsername), handle) {
+		return "", ErrNotFound
+	}
 	if s.vk != nil {
 		_ = s.vk.Set(ctx, cacheKey, account.Did, 10*time.Minute).Err()
 	}
@@ -181,7 +187,9 @@ func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, e
 
 	// Resolve by DID — the path component is the DID encoding, immutable
 	// by construction (keyed on user_id, never the mutable username).
-	account, err := s.store.accountByDID(ctx, s.cfg.didFor(id))
+	// UUIDs are canonically lowercase; normalize so a case-variant path
+	// still resolves the same document.
+	account, err := s.store.accountByDID(ctx, s.cfg.didFor(strings.ToLower(id)))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
