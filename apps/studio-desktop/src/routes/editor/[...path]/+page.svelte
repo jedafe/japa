@@ -70,12 +70,17 @@
 	let canSkipHitl = $state(false);
 	const pageParam = $derived(page.params.path);
 
-	const title = $derived(getString('title') || 'Untitled');
-	const preview = $derived(
-		mode === 'source'
-		? markdownToHtml(parseFrontmatter(raw).body, { sanitize: true })
-			: markdownToHtml(body, { sanitize: true })
+	// In source mode the raw text is authoritative — the frontmatter/body
+	// state fields only reflect the last fields-mode sync. Validation,
+	// preview, and publish must read the parsed raw instead of stale state.
+	const parsedSource = $derived(mode === 'source' ? parseFrontmatter(raw) : null);
+	const activeFrontmatter = $derived(parsedSource ? parsedSource.frontmatter : frontmatter);
+	const activeBody = $derived(parsedSource ? parsedSource.body : body);
+
+	const title = $derived(
+		(typeof activeFrontmatter['title'] === 'string' ? activeFrontmatter['title'] : '') || 'Untitled'
 	);
+	const preview = $derived(markdownToHtml(activeBody, { sanitize: true }));
 
 	const contentTypeOptions = $derived(
 		options.contentTypes.map((t) => ({ value: t.type, label: t.label }))
@@ -87,19 +92,23 @@
 	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.profile_name })));
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
+	const activeStatus = $derived(
+		typeof activeFrontmatter['status'] === 'string' ? activeFrontmatter['status'] : ''
+	);
 	const effectiveStatus = $derived(
-		isHighStakes(frontmatter) && !canSkipHitl
+		isHighStakes(activeFrontmatter) && !canSkipHitl &&
+		(activeStatus === 'published' || activeStatus === 'scheduled')
 			? 'in_review'
-			: getString('status') || 'in_review'
+			: activeStatus || 'in_review'
 	);
 	const statusOptions = $derived(
-		isHighStakes(frontmatter) && !canSkipHitl
-			? options.statusOptions.filter((o) => o.value === 'in_review')
+		isHighStakes(activeFrontmatter) && !canSkipHitl
+			? options.statusOptions.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
 			: options.statusOptions
 	);
 	const validationErrors = $derived(
 		validateFrontmatter(
-			frontmatter,
+			activeFrontmatter,
 			effectiveStatus,
 			settings.mode,
 			options.statusOptions.map((o) => o.value),
@@ -108,19 +117,20 @@
 		)
 	);
 	const bodyError = $derived(
-		validateBody(
-			mode === 'source' ? parseFrontmatter(raw).body : body,
-			effectiveStatus,
-			settings.contentMinLength ?? 10
-		)
+		validateBody(activeBody, effectiveStatus, settings.contentMinLength ?? 10)
 	);
 	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
 
 	$effect(() => {
 		// High-stakes categories must route to in_review unless the operator
-		// holds agent.skip_hitl (§103).
+		// holds agent.skip_hitl (§103) — but draft/archived are legitimate
+		// pre-review states, so only published/scheduled get downgraded
+		// (same contract as the prompt page and the validator).
 		// Ref: sections/105-japa-content-studio-desktop.md (High-Stakes HITL Gate)
-		if (isHighStakes(frontmatter) && !canSkipHitl && getString('status') !== 'in_review') {
+		if (
+			isHighStakes(frontmatter) && !canSkipHitl &&
+			(getString('status') === 'published' || getString('status') === 'scheduled')
+		) {
 			setString('status', 'in_review');
 		}
 	});
@@ -406,11 +416,16 @@
 			const saved = await handleSave();
 			if (!saved) return;
 
+			// Publish the parsed output markdown, not the state fields — in
+			// source mode those fields are stale (last fields-mode sync), and
+			// parsing the emitted text also applies the member-mode
+			// persona/voice scrub in buildOutputMarkdown.
 			const currentRaw = mode === 'source' ? raw : buildOutputMarkdown();
+			const parsed = parseFrontmatter(currentRaw);
 			const result = await publishContent({
 				relativePath,
-				frontmatter,
-				body,
+				frontmatter: parsed.frontmatter,
+				body: parsed.body,
 				raw: currentRaw
 			});
 

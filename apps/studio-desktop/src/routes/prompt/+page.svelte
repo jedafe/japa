@@ -121,9 +121,9 @@
 		loadSettingsAndOptions();
 	});
 
-	$effect(() => {
-		tagsInput = promptStore.values.tags.join(', ');
-	});
+	// tagsInput is synced explicitly on reset/template-load (matching
+	// fieldValuePairs) — a reactive rejoin here would rewrite the input
+	// while the user types, eating the separator comma and merging tags.
 
 	$effect(() => {
 		if (
@@ -158,6 +158,7 @@
 	function loadSettingsAndOptions() {
 		settings = loadSettings();
 		promptStore.reset();
+		tagsInput = promptStore.values.tags.join(', ');
 		loadFieldValuePairs({});
 		promptStore.refreshTemplates();
 
@@ -338,6 +339,7 @@
 		const template = promptStore.templates.find((t) => t.id === id);
 		if (!template) return;
 		promptStore.loadTemplate(template);
+		tagsInput = promptStore.values.tags.join(', ');
 		loadFieldValuePairs(promptStore.values.field_values ?? {});
 		frameworkManuallySet = !!promptStore.values.framework;
 		showStatus(`Loaded template "${template.name}".`);
