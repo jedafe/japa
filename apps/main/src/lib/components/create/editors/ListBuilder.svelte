@@ -96,9 +96,10 @@
 	let introHtml = $state(untrack(() => initial?.intro_html ?? ''));
 	let rows = $state<Row[]>(untrack(() => (initial?.items ?? []).map(toRow)));
 	// §14 multi-page lists — items_per_page > 0 paginates the public page
-	// (?page=N); unchecked/empty input stores no key (single page).
+	// (?page=N); unchecked/empty input stores no key (single page). The
+	// default of 1 gives the classic one-item-per-page slideshow listicle.
 	let paginated = $state(untrack(() => (initial?.items_per_page ?? 0) > 0));
-	let itemsPerPage = $state<number>(untrack(() => initial?.items_per_page ?? 5));
+	let itemsPerPage = $state<number>(untrack(() => initial?.items_per_page ?? 1));
 	// media_id → public URL, used by the serializer to emit <img src>.
 	let mediaUrls = $state<Record<string, string>>({});
 	// Row key whose image tab is picking from the media library (modal open).
@@ -368,7 +369,7 @@
 				oninput={(e) => {
 					const v = parseInt(e.currentTarget.value, 10);
 					if (!Number.isNaN(v)) {
-						itemsPerPage = v;
+						itemsPerPage = Math.max(1, v);
 						emit();
 					}
 				}}

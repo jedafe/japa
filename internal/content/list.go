@@ -221,7 +221,7 @@ func validateListItemEmbed(e *listItemEmbed) *listValidationError {
 // null into a float64 succeeds with n == 0, so the raw bytes are checked
 // directly to distinguish "disabled" from an invalid zero.
 func ippIsNull(raw json.RawMessage) bool {
-	return string(raw) == "null"
+	return strings.TrimSpace(string(raw)) == "null"
 }
 
 // isHTTPURL reports whether s parses as an http or https URL.
