@@ -37,7 +37,11 @@
 	// TOC — prose headings merged with the structured sections below the
 	// body (fields table, related listing) in DOM order. hide_toc opts a
 	// page out of the inline block + floating button.
-	const bodyToc = $derived(extractToc(htmlContent));
+	// Fields/related section ids live in the template — reserve them so a
+	// same-titled prose heading can't slug-collide with a real anchor.
+	const bodyToc = $derived(
+		extractToc(htmlContent, { reserved: ['entity-fields', 'entity-related', 'entity-wiki-summary'] })
+	);
 	const tocItems = $derived.by((): TocItem[] => {
 		if (tocHidden(page)) return [];
 		const items: TocItem[] = [...bodyToc.items];

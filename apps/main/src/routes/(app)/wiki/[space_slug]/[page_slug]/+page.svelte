@@ -381,7 +381,12 @@
 	// consumes the same merged list so they never disagree; a hide_toc
 	// flag on the page opts out of the merged list (sidebar falls back to
 	// its structured-only anchors).
-	const bodyToc = $derived(extractToc(htmlContent));
+	// Structured anchors (rollup/directory panels, section-* field tables)
+	// live outside the body string — reserve them so prose headings can't
+	// slug-collide with a real section anchor.
+	const bodyToc = $derived(
+		extractToc(htmlContent, { reserved: ['wiki-rollup', 'wiki-directory', ...toc.map((e) => e.id)] })
+	);
 	const mergedToc = $derived.by((): TocItem[] => {
 		const items: TocItem[] = [...bodyToc.items];
 		if (data.page?.rollup) items.push({ id: 'wiki-rollup', text: t('wiki.rollup_title', 'City-by-city comparison'), level: 2 });

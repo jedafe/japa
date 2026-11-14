@@ -140,7 +140,13 @@
 
 	// TOC — prose headings (ids injected into sanitizedBody) plus the fixed
 	// highlight sections below the body, in DOM order. hide_toc opts out.
-	const bodyToc = $derived(extractToc(sanitizedBody));
+	// The story-* anchors live in the template, so they're reserved to stop
+	// a same-titled prose heading slug-colliding with them.
+	const bodyToc = $derived(
+		extractToc(sanitizedBody, {
+			reserved: ['story-biggest-challenge', 'story-useful-resources', 'story-best-advice']
+		})
+	);
 	const tocItems = $derived.by(() => {
 		if (tocHidden(story)) return [] as typeof bodyToc.items;
 		const items = [...bodyToc.items];

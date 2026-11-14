@@ -28,7 +28,12 @@ export interface TocItem {
 }
 
 const HEADING_RE = /<(h[2-4])([^>]*)>([\s\S]*?)<\/\1>/gi;
-const ID_ATTR_RE = /\bid\s*=\s*(["'])(.*?)\1/i;
+// `(?:^|\s)` — plain \b would match the "id" inside `data-id="…"` and treat
+// a heading as pre-anchored, producing a dead TOC entry.
+const ID_ATTR_RE = /(?:^|\s)id\s*=\s*(["'])([^"']*)\1/i;
+// Looser variant for the reserve pass — over-collecting ids (data-id etc.)
+// is safe; it only means a slug gets a `-2` suffix.
+const ANY_ID_RE = /\bid\s*=\s*(["'])([^"']*)\1/gi;
 const TAG_RE = /<[^>]*>/g;
 
 const ENTITIES: Record<string, string> = {
@@ -38,7 +43,23 @@ const ENTITIES: Record<string, string> = {
 	quot: '"',
 	apos: "'",
 	nbsp: ' ',
-	'#39': "'"
+	'#39': "'",
+	mdash: '—',
+	ndash: '–',
+	hellip: '…',
+	lsquo: '‘',
+	rsquo: '’',
+	ldquo: '“',
+	rdquo: '”',
+	laquo: '«',
+	raquo: '»',
+	times: '×',
+	deg: '°',
+	middot: '·',
+	bull: '•',
+	trade: '™',
+	copy: '©',
+	reg: '®'
 };
 
 function decodeEntities(s: string): string {
@@ -67,7 +88,7 @@ export function slugifyHeading(text: string): string {
  * "2024 outlook" (>2 digits), "U.S. relations" (no space after `U.`),
  * or "Section 2: things" (word first).
  */
-const PREFIX_RE = /^\s*(?:[-*•·▪◦‣»–—]|\d{1,2}[.)]|[a-zA-Z][.)])\s+/;
+const PREFIX_RE = /^\s*(?:[-*•·▪◦‣»–—]|\d{1,2}[.)]|[a-zA-Z][.)]|[ivxIVX]{2,4}[.)])\s+/;
 
 export function stripItemPrefix(text: string): string {
 	return text.replace(PREFIX_RE, '').trim();
@@ -88,11 +109,23 @@ function uniqueSlug(base: string, taken: (id: string) => boolean): string {
  * Inject `id`s into <h2>/<h3> headings (h4 opt-in via `levels`) and return
  * the rewritten HTML + ordered TOC items. Headings with an existing id are
  * kept as-is and listed; empty headings are skipped entirely.
+ *
+ * Slug uniqueness is guarded on two fronts: every `id="…"` already present
+ * in the html (e.g. list-article `id="item-N"` markers on non-heading
+ * elements), plus caller-supplied `reserved` ids for anchors that live
+ * outside the string — template-level sections like `comparison-items`,
+ * `story-best-advice`, `section-*`. Without those, a prose heading titled
+ * "Comparison items" would be injected with a duplicate id and its TOC
+ * entry would scroll to the wrong element.
  */
-export function extractToc(html: string, opts?: { levels?: number[] }): { html: string; items: TocItem[] } {
+export function extractToc(
+	html: string,
+	opts?: { levels?: number[]; reserved?: readonly string[] }
+): { html: string; items: TocItem[] } {
 	const levels = new Set(opts?.levels ?? [2, 3]);
 	const items: TocItem[] = [];
-	const used = new Set<string>();
+	const used = new Set<string>(opts?.reserved ?? []);
+	for (const m of html.matchAll(ANY_ID_RE)) used.add(m[2]);
 	const out = html.replace(HEADING_RE, (whole: string, tag: string, attrs: string, inner: string) => {
 		const level = Number(tag[1]);
 		if (!levels.has(level)) return whole;
@@ -118,6 +151,7 @@ export function extractToc(html: string, opts?: { levels?: number[] }): { html: 
  * returns the item list. No-ops outside the browser.
  */
 export function scanDomToc(root: HTMLElement, levels = [2, 3]): TocItem[] {
+	if (typeof document === 'undefined') return [];
 	const sel = levels.map((l) => `h${l}`).join(',');
 	const used = new Set<string>();
 	const items: TocItem[] = [];

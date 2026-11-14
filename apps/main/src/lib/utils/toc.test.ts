@@ -71,6 +71,30 @@ describe('extractToc', () => {
 		]);
 		expect(out).toContain('<h2 id="introduction">1. Introduction</h2>');
 	});
+
+	it('ignores data-id — it is not an anchor id', () => {
+		const { html: out, items } = extractToc('<h2 data-id="not-an-anchor">Head</h2>');
+		expect(items).toEqual([{ id: 'head', text: 'Head', level: 2 }]);
+		expect(out).toContain('<h2 id="head" data-id="not-an-anchor">Head</h2>');
+	});
+
+	it('suffixes slugs that collide with reserved template ids', () => {
+		const { items } = extractToc('<h2>Comparison items</h2>', {
+			reserved: ['comparison-items', 'comparison-matrix']
+		});
+		expect(items).toEqual([{ id: 'comparison-items-2', text: 'Comparison items', level: 2 }]);
+	});
+
+	it('suffixes slugs that collide with non-heading ids inside the html', () => {
+		const { html: out, items } = extractToc('<div id="item-1">x</div><h2>Item 1</h2>');
+		expect(items).toEqual([{ id: 'item-1-2', text: 'Item 1', level: 2 }]);
+		expect(out).toContain('<h2 id="item-1-2">Item 1</h2>');
+	});
+
+	it('decodes common named entities in item text', () => {
+		const { items } = extractToc('<h2>Costs &mdash; what&rsquo;s real</h2>');
+		expect(items).toEqual([{ id: 'costs-what-s-real', text: 'Costs — what’s real', level: 2 }]);
+	});
 });
 
 describe('stripItemPrefix', () => {
@@ -87,6 +111,12 @@ describe('stripItemPrefix', () => {
 		expect(stripItemPrefix('U.S. Relations')).toBe('U.S. Relations');
 		expect(stripItemPrefix('Section 2: Costs')).toBe('Section 2: Costs');
 		expect(stripItemPrefix('Étape 1')).toBe('Étape 1');
+	});
+
+	it('strips roman numeral enumerators', () => {
+		expect(stripItemPrefix('iv. Scope')).toBe('Scope');
+		expect(stripItemPrefix('XI. Appendix')).toBe('Appendix');
+		expect(stripItemPrefix('iOS apps')).toBe('iOS apps');
 	});
 });
 

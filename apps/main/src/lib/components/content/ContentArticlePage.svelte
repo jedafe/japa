@@ -178,7 +178,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// anchors exist in SSR HTML (deterministic slugs, no hydration drift).
 	// For multi-page lists the items track the current ?page=N slice.
 	// field_values.hide_toc (or .toc === false) opts a single page out.
-	const bodyToc = $derived(extractToc(renderedBody));
+	// `id="list-items"` lives in the template — reserved so a same-titled
+	// heading can't slug-collide. In-body `id="item-N"` markers are picked
+	// up by extractToc's own reserve pass.
+	const bodyToc = $derived(extractToc(renderedBody, { reserved: ['list-items'] }));
 	const tocItems = $derived(tocHidden(article) ? [] : bodyToc.items);
 	const showToc = $derived(tocItems.length >= 3);
 	let tocAnchorEl = $state<HTMLElement | null>(null);

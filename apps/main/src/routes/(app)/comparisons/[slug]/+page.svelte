@@ -173,7 +173,9 @@
 
 	// TOC — prose headings plus the Items grid and comparison matrix
 	// sections below the body, in DOM order. hide_toc opts a page out.
-	const bodyToc = $derived(extractToc(sanitizedBody));
+	// The items/matrix section ids live in the template, not the body
+	// string — reserve them so a same-titled prose heading can't collide.
+	const bodyToc = $derived(extractToc(sanitizedBody, { reserved: ['comparison-items', 'comparison-matrix'] }));
 	const tocItems = $derived.by(() => {
 		if (tocHidden(comparison.content)) return [] as typeof bodyToc.items;
 		const items = [...bodyToc.items, { id: 'comparison-items', text: t('jce.compare.items_heading', 'Items'), level: 2 }];

@@ -42,7 +42,11 @@
 		scrollToTocItem(id);
 	}
 
-	function jump(_e: MouseEvent, id: string) {
+	function jump(e: MouseEvent, id: string) {
+		// The anchor's default nav must not run — it would push a history
+		// entry and try to jump while the dialog still scroll-locks the
+		// body. The deferred scrollToTocItem is the only navigation.
+		e.preventDefault();
 		pendingScrollId = id;
 		open = false;
 		pendingTimer = setTimeout(flushPendingScroll, 450);
@@ -71,6 +75,10 @@
 		io.observe(el);
 		return () => io.disconnect();
 	});
+
+	// A pending jump whose component unmounts first — the timer handle is
+	// released here; scrollToTocItem's null-target guard covers the rest.
+	$effect(() => () => clearTimeout(pendingTimer));
 </script>
 
 {#if items.length > 0}
@@ -78,6 +86,9 @@
 		type="button"
 		onclick={() => (open = true)}
 		aria-label={t('toc.open', 'Table of contents')}
+		aria-hidden={!visible}
+		tabindex={visible ? 0 : -1}
+		inert={!visible}
 		title={t('toc.on_this_page', 'On this page')}
 		class="toc-fab fixed start-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-all duration-200 hover:bg-[var(--color-primary-hover)] bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 {visible
 			? 'translate-y-0 opacity-100'
