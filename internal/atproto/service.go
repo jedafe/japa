@@ -68,12 +68,14 @@ func (s *Service) cacheSet(ctx context.Context, key string, doc any, ttl time.Du
 	_ = s.vk.Set(ctx, key, raw, ttl).Err()
 }
 
-func (s *Service) invalidateAccount(ctx context.Context, handle string) {
+// invalidateAccount drops the account's cached resolution keys — the
+// did:web doc under its u/{uuid} path key and the handle→DID proof.
+func (s *Service) invalidateAccount(ctx context.Context, handle, didPathID string) {
 	if s.vk == nil {
 		return
 	}
 	_ = s.vk.Del(ctx,
-		"jc:atp:did:"+strings.ToLower(handle),
+		"jc:atp:did:"+strings.ToLower(didPathID),
 		"jc:atp:account:"+strings.ToLower(handle),
 	).Err()
 }
@@ -110,7 +112,7 @@ func (s *Service) handleUsername(handle string) string {
 
 // syncHandle lazily reconciles the stored handle with the member's live
 // username after a rename — the DID itself is immutable
-// (did:web:…:u:{mint_username} never changes). Returns the handle to
+// (did:web:…:u:{user_uuid} never changes). Returns the handle to
 // emit in docs. Idempotent; on contention the stale value is served.
 func (s *Service) syncHandle(ctx context.Context, accountID pgtype.UUID, storedHandle, liveUsername string) string {
 	if liveUsername == "" {
@@ -123,9 +125,17 @@ func (s *Service) syncHandle(ctx context.Context, accountID pgtype.UUID, storedH
 	if err := s.store.setAccountHandle(ctx, accountID, want); err != nil {
 		return storedHandle
 	}
-	s.invalidateAccount(ctx, storedHandle)
-	s.invalidateAccount(ctx, want)
+	id := uuidString(accountID)
+	s.invalidateAccount(ctx, storedHandle, id)
+	s.invalidateAccount(ctx, want, id)
 	return want
+}
+
+// uuidString renders a pgtype.UUID in canonical lowercase hyphenated
+// form — the did:web u/{id} path component and jc:atp:did:* key suffix.
+func uuidString(u pgtype.UUID) string {
+	b := u.Bytes
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // ResolveHandleDID returns the member's DID string for the atproto-did
@@ -153,25 +163,25 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 	return account.Did, nil
 }
 
-// usernameRe matches the platform username charset (ValidateUsername) —
-// did:web path params outside it can't name a member account.
-var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+// idRe matches the did:web path component — a canonical UUID (the
+// account's user_id). Path params outside it can't name an account.
+var idRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // DIDDocument serves the did:web resolution document for
-// {PDSURL}/atproto/u/{username}/did.json. Cached 10m at jc:atp:did:*.
-func (s *Service) DIDDocument(ctx context.Context, username string) (map[string]any, error) {
-	if !usernameRe.MatchString(username) {
+// {PDSURL}/atproto/u/{id}/did.json — id is the account's user UUID.
+// Cached 10m at jc:atp:did:{id}.
+func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, error) {
+	if !idRe.MatchString(id) {
 		return nil, ErrInvalidHandle
 	}
-	handle := s.cfg.handleFor(username)
-	cacheKey := "jc:atp:did:" + strings.ToLower(handle)
+	cacheKey := "jc:atp:did:" + strings.ToLower(id)
 	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
 		return doc, nil
 	}
 
-	// Resolve by DID — the path component is the DID encoding, stable
-	// across renames and lazy handle syncs (unlike the handle itself).
-	account, err := s.store.accountByDID(ctx, s.cfg.didFor(username))
+	// Resolve by DID — the path component is the DID encoding, immutable
+	// by construction (keyed on user_id, never the mutable username).
+	account, err := s.store.accountByDID(ctx, s.cfg.didFor(id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -250,7 +260,7 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 				return AccountStatus{}, fmt.Errorf("atproto: reactivate: %w", uerr)
 			}
 			existing.Status = AccountStatusActive
-			s.invalidateAccount(ctx, existing.Handle)
+			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.ID))
 		}
 		existing.Handle = s.syncHandle(ctx, existing.ID, existing.Handle, user.Username)
 		return s.statusFor(existing), nil
@@ -268,18 +278,21 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		return AccountStatus{}, fmt.Errorf("atproto: encrypt key: %w", err)
 	}
 
-	// First-come-first-served on the case-insensitive handle: another
-	// member's account already holding {username}.{domain} blocks this
-	// opt-in with a 409 (e.g. users 'Alice' and 'alice' — both resolve to
-	// the same normalized handle).
-	if claimed, err := s.store.accountByHandle(ctx, handle, ""); err == nil && claimed.UserID != userID {
-		return AccountStatus{}, ErrHandleTaken
+	// First-come-first-served on the case-insensitive handle — but only a
+	// LIVE-ALIGNED claimant blocks. A stale row (holder renamed away,
+	// account dormant) gets its handle synced to the live username first,
+	// freeing the contested handle for its legitimate owner.
+	if claimed, err := s.store.handleClaim(ctx, handle); err == nil && claimed.UserID != userID {
+		if strings.EqualFold(s.cfg.handleFor(claimed.LiveUsername), handle) {
+			return AccountStatus{}, ErrHandleTaken
+		}
+		s.syncHandle(ctx, claimed.ID, claimed.Handle, claimed.LiveUsername)
 	}
 
 	account, err := s.store.createAccount(ctx, gen.CreateAtprotoAccountParams{
 		UserID:             userID,
 		Handle:             handle,
-		Did:                s.cfg.didFor(user.Username),
+		Did:                s.cfg.didFor(uuidString(userID)),
 		SigningKeyEnc:      privEnc,
 		PublicKeyMultibase: pubMultibase,
 	})
@@ -311,7 +324,7 @@ func (s *Service) DisableAccount(ctx context.Context, userID pgtype.UUID) (Accou
 			return AccountStatus{}, fmt.Errorf("atproto: disable: %w", err)
 		}
 	}
-	s.invalidateAccount(ctx, account.Handle)
+	s.invalidateAccount(ctx, account.Handle, uuidString(account.ID))
 	account.Status = AccountStatusDisabled
 	return s.statusFor(account), nil
 }

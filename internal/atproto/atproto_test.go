@@ -79,7 +79,7 @@ func TestParsePrivateKeyRejectsGarbage(t *testing.T) {
 func TestDIDAndHandleDerivation(t *testing.T) {
 	cfg := testService().cfg
 
-	if got := cfg.didFor("alice"); got != "did:web:api.japa.to:atproto:u:alice" {
+	if got := cfg.didFor("550e8400-e29b-41d4-a716-446655440000"); got != "did:web:api.japa.to:atproto:u:550e8400-e29b-41d4-a716-446655440000" {
 		t.Errorf("didFor = %q", got)
 	}
 	if got := cfg.handleFor("alice"); got != "alice.japa.to" {

@@ -30,6 +30,10 @@ func (s *store) createAccount(ctx context.Context, p gen.CreateAtprotoAccountPar
 	return s.q.CreateAtprotoAccount(ctx, p)
 }
 
+func (s *store) handleClaim(ctx context.Context, handle string) (gen.GetAtprotoHandleClaimRow, error) {
+	return s.q.GetAtprotoHandleClaim(ctx, handle)
+}
+
 func (s *store) accountByDID(ctx context.Context, did string) (gen.GetAtprotoAccountByDIDRow, error) {
 	return s.q.GetAtprotoAccountByDID(ctx, did)
 }

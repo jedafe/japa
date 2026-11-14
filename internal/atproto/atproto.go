@@ -98,14 +98,18 @@ func (c Config) relayURL() string {
 	return "https://bsky.network"
 }
 
-// didFor derives the did:web identifier for a username:
-// did:web:{pds_host}:atproto:u:{username} — resolves at
-// {PDSURL}/atproto/u/{username}/did.json per the did:web spec.
+// didFor derives the did:web identifier for an account:
+// did:web:{pds_host}:atproto:u:{user_uuid} — resolves at
+// {PDSURL}/atproto/u/{uuid}/did.json per the did:web spec.
+// The path component is the user UUID, NOT the username: usernames are
+// mutable and re-claimable, so a username-derived DID would collide
+// across different members over time (rename → new registrant mints the
+// identical DID under a different keypair). UUIDs are permanent.
 // did:web requires percent-encoding of ':' in the host segment —
 // dev PDS hosts like localhost:8080 produce did:web:localhost%3A8080:…
-func (c Config) didFor(username string) string {
+func (c Config) didFor(id string) string {
 	host := strings.ReplaceAll(c.pdsHost(), ":", "%3A")
-	return "did:web:" + host + ":atproto:u:" + username
+	return "did:web:" + host + ":atproto:u:" + id
 }
 
 // handleFor derives the member handle: {username}.{handle_domain},

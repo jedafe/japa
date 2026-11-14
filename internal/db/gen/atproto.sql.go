@@ -206,6 +206,52 @@ func (q *Queries) GetAtprotoAccountByUserID(ctx context.Context, userID pgtype.U
 	return i, err
 }
 
+const getAtprotoHandleClaim = `-- name: GetAtprotoHandleClaim :one
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE lower(a.handle) = lower($1)
+LIMIT 1
+`
+
+type GetAtprotoHandleClaimRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Handle             string             `json:"handle"`
+	Did                string             `json:"did"`
+	SigningKeyEnc      string             `json:"signing_key_enc"`
+	PublicKeyMultibase string             `json:"public_key_multibase"`
+	Status             string             `json:"status"`
+	RepoSeq            int64              `json:"repo_seq"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	LiveUsername       string             `json:"live_username"`
+}
+
+// Any-status claimant of a handle, joined to its live username — lets
+// EnableAccount distinguish a live-aligned holder (409) from a stale
+// row left behind by a rename (reclaim via lazy sync, then insert).
+func (q *Queries) GetAtprotoHandleClaim(ctx context.Context, handle string) (GetAtprotoHandleClaimRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoHandleClaim, handle)
+	var i GetAtprotoHandleClaimRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Handle,
+		&i.Did,
+		&i.SigningKeyEnc,
+		&i.PublicKeyMultibase,
+		&i.Status,
+		&i.RepoSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisabledAt,
+		&i.LiveUsername,
+	)
+	return i, err
+}
+
 const getAtprotoStats = `-- name: GetAtprotoStats :one
 SELECT
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'active')::bigint AS active_accounts,

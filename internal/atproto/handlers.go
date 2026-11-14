@@ -69,10 +69,11 @@ func (h *Handlers) GetAtprotoDID(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(did))
 }
 
-// GetDIDDoc serves GET /atproto/u/{username}/did.json — the did:web
-// resolution document (application/did+ld+json).
+// GetDIDDoc serves GET /atproto/u/{id}/did.json — the did:web
+// resolution document (application/did+ld+json). The path id is the
+// account's user UUID — permanent, rename- and re-claim-proof.
 func (h *Handlers) GetDIDDoc(w http.ResponseWriter, r *http.Request) {
-	doc, err := h.service.DIDDocument(r.Context(), chi.URLParam(r, "username"))
+	doc, err := h.service.DIDDocument(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		handleServiceErr(w, err)
 		return

@@ -73,7 +73,7 @@ func TestDBEnableDisableAccount(t *testing.T) {
 	if !st.Enabled || st.Handle != wantHandle {
 		t.Fatalf("unexpected status: %+v", st)
 	}
-	if st.DID != "did:web:api.test.dev:atproto:u:"+uname {
+	if st.DID != "did:web:api.test.dev:atproto:u:"+uuidString(userID) {
 		t.Fatalf("did = %q", st.DID)
 	}
 
@@ -124,8 +124,9 @@ func TestDBHandleResolution(t *testing.T) {
 		t.Errorf("ResolveHandleDID casing: %v / %q", err, did)
 	}
 
-	// did:web doc resolves and carries the right fields.
-	doc, err := svc.DIDDocument(ctx, uname)
+	// did:web doc resolves at the u/{user_uuid} path and carries the
+	// right fields.
+	doc, err := svc.DIDDocument(ctx, uuidString(userID))
 	if err != nil {
 		t.Fatalf("DIDDocument: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestDBSuspendedUserNotFederated(t *testing.T) {
 	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != ErrNotFound {
 		t.Errorf("suspended user's handle resolved: %v", err)
 	}
-	if _, err := svc.DIDDocument(ctx, uname); err != ErrNotFound {
+	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != ErrNotFound {
 		t.Errorf("suspended user's DID doc served: %v", err)
 	}
 	// Suspended user can't re-enable through the upsert path either.
@@ -211,7 +212,7 @@ func TestDBHandleClaimCaseInsensitive(t *testing.T) {
 
 // Rename coherence: after a username change the new subdomain resolves
 // to the same permanent DID and the stored handle lazily syncs — the
-// did:web path (immutable u:{mint_username}) keeps serving the doc.
+// did:web path (immutable u:{user_uuid}) keeps serving the doc.
 func TestDBRenameResolution(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
@@ -247,10 +248,11 @@ func TestDBRenameResolution(t *testing.T) {
 		t.Errorf("stored handle = %q, want lazy sync to %q", handle, renamed+".test.dev")
 	}
 
-	// The immutable did:web path still serves the doc (mint username).
-	doc, err := svc.DIDDocument(ctx, uname)
+	// The immutable did:web path (user UUID — rename-independent) still
+	// serves the doc.
+	doc, err := svc.DIDDocument(ctx, uuidString(userID))
 	if err != nil {
-		t.Fatalf("DIDDocument via mint username: %v", err)
+		t.Fatalf("DIDDocument via uuid path: %v", err)
 	}
 	if doc["id"] != st.DID {
 		t.Errorf("doc id = %v, want %q", doc["id"], st.DID)
@@ -258,6 +260,59 @@ func TestDBRenameResolution(t *testing.T) {
 	aka, _ := doc["alsoKnownAs"].([]string)
 	if len(aka) != 1 || aka[0] != "at://"+renamed+".test.dev" {
 		t.Errorf("alsoKnownAs = %v, want live handle", aka)
+	}
+}
+
+// Stale-claim reclaim: an account row whose holder renamed away still
+// occupies the old normalized handle — a new member legitimately named
+// after it must win the claim (the stale row lazy-syncs, freeing it).
+func TestDBStaleClaimReclaimed(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+	base := fmt.Sprintf("atpstale%d", time.Now().UnixNano())
+
+	// Charlie mints 'charlie.japa.to' then renames away — stored handle
+	// goes stale (no read path has synced it yet).
+	charlieID, charlieName := newAtprotoUser(t, ctx, d, "active")
+	charlieName = charlieName + "_" + base // unique-ish
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, charlieName, charlieID); err != nil {
+		t.Fatalf("name charlie: %v", err)
+	}
+	charlieSt, err := svc.EnableAccount(ctx, charlieID)
+	if err != nil {
+		t.Fatalf("EnableAccount (charlie): %v", err)
+	}
+	// Rename Charlie so his stored handle is orphaned.
+	movedName := charlieName + "_moved"
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, movedName, charlieID); err != nil {
+		t.Fatalf("rename charlie: %v", err)
+	}
+
+	// New member Bob legitimately claims the abandoned username.
+	bobID, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, charlieName, bobID); err != nil {
+		t.Fatalf("name bob: %v", err)
+	}
+	bobSt, err := svc.EnableAccount(ctx, bobID)
+	if err != nil {
+		t.Fatalf("EnableAccount (bob): %v — stale claim should have been reclaimed", err)
+	}
+	if bobSt.Handle != strings.ToLower(charlieName)+".test.dev" {
+		t.Errorf("bob handle = %q", bobSt.Handle)
+	}
+	if bobSt.DID == charlieSt.DID {
+		t.Error("bob minted charlie's DID")
+	}
+
+	// Charlie's row now carries his live handle.
+	var handle string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT handle FROM atproto_accounts WHERE user_id = $1`, charlieID).Scan(&handle); err != nil {
+		t.Fatalf("select charlie handle: %v", err)
+	}
+	if handle != strings.ToLower(movedName)+".test.dev" {
+		t.Errorf("charlie stored handle = %q, want synced %q", handle, strings.ToLower(movedName)+".test.dev")
 	}
 }
 

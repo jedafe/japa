@@ -14,6 +14,16 @@ WHERE (lower(a.handle) = lower(@handle) OR u.username = @username)
 ORDER BY (u.username = @username) DESC
 LIMIT 1;
 
+-- name: GetAtprotoHandleClaim :one
+-- Any-status claimant of a handle, joined to its live username — lets
+-- EnableAccount distinguish a live-aligned holder (409) from a stale
+-- row left behind by a rename (reclaim via lazy sync, then insert).
+SELECT a.*, u.username AS live_username
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE lower(a.handle) = lower(@handle)
+LIMIT 1;
+
 -- name: UpdateAtprotoAccountHandle :exec
 -- Lazy rename sync: the stored handle tracks the live username (the DID
 -- itself is immutable — did:web:...:u:{mint_username} never changes).

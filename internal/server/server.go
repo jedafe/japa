@@ -4014,7 +4014,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose"), features.Gate(featureChecker, "feature.atproto"))
 		r.Get("/.well-known/atproto-did", atprotoHandlers.GetAtprotoDID)
-		r.Get("/atproto/u/{username}/did.json", atprotoHandlers.GetDIDDoc)
+		r.Get("/atproto/u/{id}/did.json", atprotoHandlers.GetDIDDoc)
 	})
 
 	// API routes go through platform resolution
