@@ -80,6 +80,11 @@ type Config struct {
 	OAuthRedirectBase        string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
 	MCPPublicURL             string // JC_MCP_PUBLIC_URL — public base URL of the API host serving MCP/OAuth (e.g. https://api.example.com); §120 issuer
 	FederationDomain         string // JC_FEDERATION_DOMAIN — ActivityPub acct handle domain (e.g. japa.to); default: host of JC_SITE_URL (§126)
+	ATProtoHandleDomain      string // JC_ATPROTO_HANDLE_DOMAIN — atproto handle domain; member handles are {username}.{domain} (§127)
+	ATProtoPDSURL            string // JC_ATPROTO_PDS_URL — public PDS base serving DID docs + XRPC sync; default: JC_API_PUBLIC_URL (§127)
+	ATProtoRelayURL          string // JC_ATPROTO_RELAY_URL — requestCrawl target; default https://bsky.network (§127)
+	ATProtoPLCURL            string // JC_ATPROTO_PLC_URL — did:plc directory; default https://plc.directory (§127 A6)
+	ATProtoJetstreamURL      string // JC_ATPROTO_JETSTREAM_URL — filtered inbound consumer; default jetstream2.us-east.bsky.network (§127 A5)
 	EncryptionKey            string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
 	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
 	StripeSecretKey          string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
@@ -182,6 +187,11 @@ func Load() (Config, error) {
 		OAuthRedirectBase:        os.Getenv("JC_OAUTH_REDIRECT_BASE"),
 		MCPPublicURL:             os.Getenv("JC_MCP_PUBLIC_URL"),
 		FederationDomain:         os.Getenv("JC_FEDERATION_DOMAIN"),
+		ATProtoHandleDomain:      os.Getenv("JC_ATPROTO_HANDLE_DOMAIN"),
+		ATProtoPDSURL:            os.Getenv("JC_ATPROTO_PDS_URL"),
+		ATProtoRelayURL:          os.Getenv("JC_ATPROTO_RELAY_URL"),
+		ATProtoPLCURL:            os.Getenv("JC_ATPROTO_PLC_URL"),
+		ATProtoJetstreamURL:      os.Getenv("JC_ATPROTO_JETSTREAM_URL"),
 		EncryptionKey:            os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:        os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),

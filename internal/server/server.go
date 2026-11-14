@@ -37,6 +37,7 @@ import (
 	"github.com/jedafe/japa/internal/appointmentalert"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/assessment"
+	"github.com/jedafe/japa/internal/atproto"
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/blog"
@@ -710,6 +711,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	federationService.SetValkey(vkClient.Redis())
 	federationService.SetFlags(featureChecker) // §42: prune flag-gated content types from AP projections
 	federationHandlers := federation.NewHandlers(federationService)
+
+	atprotoService := atproto.NewService(database, atproto.Config{
+		PDSURL:       cfg.ATProtoPDSURL,
+		APIBase:      cfg.APIPublicURL,
+		SiteBase:     cfg.SiteURL,
+		HandleDomain: cfg.ATProtoHandleDomain,
+		RelayURL:     cfg.ATProtoRelayURL,
+		PLCURL:       cfg.ATProtoPLCURL,
+		JetstreamURL: cfg.ATProtoJetstreamURL,
+	})
+	atprotoService.SetValkey(vkClient.Redis())
+	atprotoHandlers := atproto.NewHandlers(atprotoService)
 
 	// BUG-003: wire the space posting-permission checker into the content
 	// handler so CreateContent enforces the space's posting_perm axis
@@ -3995,6 +4008,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/federation/objects/contents/{id}", federationHandlers.GetObject)
 	})
 
+	// Section 127 — AT Protocol mini-PDS (ADR-139). Public identity
+	// surface: handle→DID proof + did:web resolution docs. Unversioned —
+	// DIDs and handles are permanent. 404s when feature.atproto is off.
+	r.Group(func(r chi.Router) {
+		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "loose"), features.Gate(featureChecker, "feature.atproto"))
+		r.Get("/.well-known/atproto-did", atprotoHandlers.GetAtprotoDID)
+		r.Get("/atproto/u/{username}/did.json", atprotoHandlers.GetDIDDoc)
+	})
+
 	// API routes go through platform resolution
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
@@ -4848,6 +4870,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Get("/admin/federation/instances", federationHandlers.ListBlocks)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Post("/admin/federation/instances", federationHandlers.CreateBlock)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Delete("/admin/federation/instances/{id}", federationHandlers.DeleteBlock)
+			})
+
+			// Section 127 — AT Protocol mini-PDS (ADR-139). Member opt-in +
+			// admin management; the public PDS surface is at root.
+			r.With(features.Gate(featureChecker, "feature.atproto")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto", atprotoHandlers.GetMyAccount)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto", atprotoHandlers.EnableMyAccount)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto", atprotoHandlers.DisableMyAccount)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/accounts", atprotoHandlers.ListAccounts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/stats", atprotoHandlers.GetStats)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)

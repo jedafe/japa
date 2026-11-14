@@ -697,6 +697,20 @@ type AssessmentResult struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
+type AtprotoAccount struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Handle             string             `json:"handle"`
+	Did                string             `json:"did"`
+	SigningKeyEnc      string             `json:"signing_key_enc"`
+	PublicKeyMultibase string             `json:"public_key_multibase"`
+	Status             string             `json:"status"`
+	RepoSeq            int64              `json:"repo_seq"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+}
+
 type AttestationCommunityUpdate struct {
 	ID             pgtype.UUID        `json:"id"`
 	PathwayID      pgtype.UUID        `json:"pathway_id"`
