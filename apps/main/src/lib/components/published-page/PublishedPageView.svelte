@@ -77,6 +77,11 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		const scan = () => {
 			queued = false;
 			domTocItems = scanDomToc(root);
+			// Re-seat the TOC host after the hero — covers remounts where the
+			// positioning effect below can't see the host go stale.
+			const host = tocAnchorEl;
+			const hero = root.firstElementChild?.firstElementChild;
+			if (host && hero && host.previousElementSibling !== hero) hero.after(host);
 		};
 		scan();
 		const mo = new MutationObserver(() => {
@@ -86,6 +91,18 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		});
 		mo.observe(root, { childList: true, subtree: true });
 		return () => mo.disconnect();
+	});
+
+	// The TOC card belongs right after the hero: .landing-page holds one
+	// LazyMount wrapper per top-level block and the first is the page
+	// header — move the host div once it's mounted (Svelte keeps the node
+	// reference, so relocating it is safe).
+	$effect(() => {
+		const host = tocAnchorEl;
+		const root = contentEl;
+		if (!host || !root) return;
+		const hero = root.firstElementChild?.firstElementChild;
+		if (hero && host.previousElementSibling !== hero) hero.after(host);
 	});
 
 	const tocItems = $derived(tocHidden(pageData) ? [] : domTocItems);
@@ -118,7 +135,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		<!-- Collapsible TOC — collapsed by default; TocFloat's bottom-left
 		     FAB takes over once this block scrolls out of view. -->
 		{#if showToc}
-			<div class="px-4 pt-4" bind:this={tocAnchorEl}>
+			<div class="mx-auto max-w-3xl px-4 pt-4" bind:this={tocAnchorEl}>
 				<TocBlock items={tocItems} />
 			</div>
 		{/if}

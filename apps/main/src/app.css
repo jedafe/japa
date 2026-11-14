@@ -310,6 +310,19 @@ fieldset {
 /* TOC anchors — extractToc injects ids into prose headings; offset them
    below the sticky shell chrome when a TOC link smooth-scrolls to one. */
 .prose h1[id], .prose h2[id], .prose h3[id], .prose h4[id] { scroll-margin-top: 6rem; }
+
+/* TOC floating button — on ≥768px the shell's fixed sidenav occupies the
+   inline-start edge, so shift the FAB past the nav column (and past the
+   left ad rail when it renders). Below 768px the nav is a drawer and the
+   FAB hugs the edge. --current-nav-width tracks the pinned column. */
+@media (min-width: 768px) {
+	.toc-fab {
+		inset-inline-start: calc(var(--current-nav-width, 0px) + 1rem);
+	}
+	.shell.show-left-rail .toc-fab {
+		inset-inline-start: calc(var(--current-nav-width, 0px) + var(--left-rail-width, 0px) + 1rem);
+	}
+}
 .prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
 .prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; word-break: break-word; overflow-wrap: break-word; }
 .prose a:hover { color: var(--color-primary-hover); }

@@ -156,3 +156,43 @@ export function scrollToTocItem(id: string): void {
 	el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	goto(`#${id}`, { replace: true, shallow: true, state: page.state });
 }
+
+/**
+ * Scroll-spy for TOC lists — reports the id of the section the reader is
+ * currently in. The active heading is the first one inside a band just
+ * under the sticky chrome (96px→30% of the viewport); when no heading
+ * sits in the band (mid-section), the last heading scrolled above it
+ * wins. Returns a cleanup that disconnects the observer.
+ */
+export function watchTocSpy(ids: string[], onActive: (id: string) => void): () => void {
+	if (typeof IntersectionObserver === 'undefined') return () => {};
+	const els = ids
+		.map((id) => document.getElementById(id))
+		.filter((el): el is HTMLElement => el instanceof HTMLElement);
+	if (els.length === 0) return () => {};
+	const inBand = new Set<string>();
+	const io = new IntersectionObserver(
+		(entries) => {
+			for (const e of entries) {
+				if (e.isIntersecting) inBand.add(e.target.id);
+				else inBand.delete(e.target.id);
+			}
+			let active = '';
+			for (const el of els) {
+				if (inBand.has(el.id)) {
+					active = el.id;
+					break;
+				}
+			}
+			if (!active) {
+				for (const el of els) {
+					if (el.getBoundingClientRect().top < 96) active = el.id;
+				}
+			}
+			onActive(active);
+		},
+		{ rootMargin: '-96px 0px -70% 0px', threshold: 0 }
+	);
+	for (const el of els) io.observe(el);
+	return () => io.disconnect();
+}

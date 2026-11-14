@@ -13,6 +13,9 @@
 		open?: boolean;
 		/** Fires when bits-ui wants to change open (Esc, overlay click). */
 		onOpenChange?: (open: boolean) => void;
+		/** Fires after the open/close transition fully completes — use it for
+		 *  post-close work (Bits UI scroll-locks the body while open). */
+		onOpenChangeComplete?: (open: boolean) => void;
 		/** Visible dialog title — renders the header row with a close button.
 		 * Pass a snippet for rich title content (e.g. title + count badge). */
 		title?: string | Snippet;
@@ -51,6 +54,7 @@
 	let {
 		open = $bindable(false),
 		onOpenChange,
+		onOpenChangeComplete,
 		title,
 		icon: Icon,
 		ariaTitle,
@@ -83,7 +87,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open {onOpenChange}>
+<Dialog.Root bind:open {onOpenChange} {onOpenChangeComplete}>
 	{#if trigger}
 		<Dialog.Trigger type="button" class={triggerClass}>
 			{@render trigger()}
