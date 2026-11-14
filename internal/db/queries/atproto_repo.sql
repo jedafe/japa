@@ -78,12 +78,16 @@ WHERE account_id = @account_id AND cid = @cid;
 -- name: GetAtprotoAccountIDByContent :one
 -- Content-keyed account resolution: the single source of truth for which
 -- repo a contents row projects into — callers pass only content_id so a
--- (account, content) pairing bug is impossible by construction.
+-- (account, content) pairing bug is impossible by construction. The
+-- users join mirrors GetAtprotoAccountByUserID / AP actor resolution —
+-- suspended members don't project (§127: same eligibility as AP).
 SELECT a.id
 FROM atproto_accounts a
 JOIN contents c ON c.author_id = a.user_id
+JOIN users u ON u.id = a.user_id
 WHERE c.id = @content_id
-  AND a.status = 'active';
+  AND a.status = 'active'
+  AND u.status = 'active';
 
 -- name: GetAtprotoProjectableContent :one
 -- Eligibility mirrors federation's GetFederatableContentByID: published +

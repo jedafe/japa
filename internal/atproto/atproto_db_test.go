@@ -1018,6 +1018,29 @@ func TestDBPublishPermanentClassification(t *testing.T) {
 	}
 }
 
+// A suspended member's account stays status='active' but must not
+// project — every atproto resolution query joins u.status='active',
+// and the content-keyed account lookup must gate the same way
+// (§127: same eligibility as AP).
+func TestDBSuspendedUserNotProjected(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, userID); err != nil {
+		t.Fatalf("suspend user: %v", err)
+	}
+	var pe interface{ Permanent() bool }
+	if _, err := svc.PublishContent(ctx, contentID); !errors.As(err, &pe) || !pe.Permanent() {
+		t.Fatalf("suspended user publish: got %v, want permanent", err)
+	}
+}
+
 // indigo's TIDClock resets to zero on every OpenRepo — a wall-clock
 // regression would mint rev <= head's and corrupt the chain ordering.
 // The guard must refuse to persist and stay transient (retryable once

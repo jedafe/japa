@@ -59,13 +59,17 @@ const getAtprotoAccountIDByContent = `-- name: GetAtprotoAccountIDByContent :one
 SELECT a.id
 FROM atproto_accounts a
 JOIN contents c ON c.author_id = a.user_id
+JOIN users u ON u.id = a.user_id
 WHERE c.id = $1
   AND a.status = 'active'
+  AND u.status = 'active'
 `
 
 // Content-keyed account resolution: the single source of truth for which
 // repo a contents row projects into — callers pass only content_id so a
-// (account, content) pairing bug is impossible by construction.
+// (account, content) pairing bug is impossible by construction. The
+// users join mirrors GetAtprotoAccountByUserID / AP actor resolution —
+// suspended members don't project (§127: same eligibility as AP).
 func (q *Queries) GetAtprotoAccountIDByContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getAtprotoAccountIDByContent, contentID)
 	var id pgtype.UUID
