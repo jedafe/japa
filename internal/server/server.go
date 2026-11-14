@@ -651,6 +651,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Content HTTP handlers (Service created earlier, above spaceService).
 	contentHandlers := content.NewHandlers(contentService)
+	contentHandlers.SiteURL = cfg.SiteURL
 	contentHandlers.SetSpamPipeline(spamPipeline)
 	contentHandlers.SetSettings(settingsService)
 	contentHandlers.SetFeatureChecker(featureChecker) // list.enabled reads feature_flags
@@ -707,6 +708,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	federationService.SetSettings(settingsService)
 	federationService.SetValkey(vkClient.Redis())
+	federationService.SetFlags(featureChecker) // §42: prune flag-gated content types from AP projections
 	federationHandlers := federation.NewHandlers(federationService)
 
 	// BUG-003: wire the space posting-permission checker into the content

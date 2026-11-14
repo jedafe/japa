@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS federated_actors (
     updated_at                  timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT federated_actors_status_check CHECK (status IN ('active','disabled','tombstone'))
 );
-CREATE INDEX IF NOT EXISTS idx_federated_actors_preferred_username ON federated_actors (preferred_username);
+-- acct localpart lookups compare under lower() — functional index serves them
+CREATE INDEX IF NOT EXISTS idx_federated_actors_preferred_username ON federated_actors (lower(preferred_username));
 
 CREATE TABLE IF NOT EXISTS remote_actors (
     id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),

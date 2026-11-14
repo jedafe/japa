@@ -35,6 +35,10 @@ func (s *Store) userByID(ctx context.Context, userID pgtype.UUID) (gen.GetUserBy
 	return s.read.GetUserByID(ctx, userID)
 }
 
+func (s *Store) userPrivacy(ctx context.Context, userID pgtype.UUID) (gen.GetUserPrivacySettingsRow, error) {
+	return s.read.GetUserPrivacySettings(ctx, userID)
+}
+
 func (s *Store) createActor(ctx context.Context, arg gen.CreateFederatedActorParams) (gen.FederatedActor, error) {
 	return s.write.CreateFederatedActor(ctx, arg)
 }
@@ -59,26 +63,26 @@ func (s *Store) nodeInfoUsage(ctx context.Context) (gen.GetNodeInfoUsageRow, err
 	return s.read.GetNodeInfoUsage(ctx)
 }
 
-func (s *Store) federatableContent(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListFederatableContentByAuthorRow, error) {
+func (s *Store) federatableContent(ctx context.Context, authorID pgtype.UUID, types []string, limit, offset int32) ([]gen.ListFederatableContentByAuthorRow, error) {
 	return s.read.ListFederatableContentByAuthor(ctx, gen.ListFederatableContentByAuthorParams{
 		AuthorID:     authorID,
-		ContentTypes: federatableTypes,
+		ContentTypes: types,
 		PageLimit:    limit,
 		PageOffset:   offset,
 	})
 }
 
-func (s *Store) countFederatableContent(ctx context.Context, authorID pgtype.UUID) (int64, error) {
+func (s *Store) countFederatableContent(ctx context.Context, authorID pgtype.UUID, types []string) (int64, error) {
 	return s.read.CountFederatableContentByAuthor(ctx, gen.CountFederatableContentByAuthorParams{
 		AuthorID:     authorID,
-		ContentTypes: federatableTypes,
+		ContentTypes: types,
 	})
 }
 
-func (s *Store) federatableContentByID(ctx context.Context, id pgtype.UUID) (gen.GetFederatableContentByIDRow, error) {
+func (s *Store) federatableContentByID(ctx context.Context, id pgtype.UUID, types []string) (gen.GetFederatableContentByIDRow, error) {
 	return s.read.GetFederatableContentByID(ctx, gen.GetFederatableContentByIDParams{
 		ID:           id,
-		ContentTypes: federatableTypes,
+		ContentTypes: types,
 	})
 }
 

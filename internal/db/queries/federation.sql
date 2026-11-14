@@ -30,15 +30,19 @@ WHERE fa.user_id = @user_id
 
 -- name: GetActorProfileByUsername :one
 -- Actor-document source row: federated actor + public profile fields
--- (no PII) in one join.
+-- (no PII) in one join. manually_approves_followers derives live from the
+-- member's profile_visibility ('followers' → true) so privacy changes
+-- apply without touching the actor row.
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
-       fa.manually_approves_followers, fa.status, fa.created_at AS actor_created_at,
+       COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE (lower(fa.preferred_username) = lower(@username) OR u.username = @username)
   AND fa.status = 'active'
   AND u.status = 'active'
@@ -51,10 +55,12 @@ SELECT * FROM federated_actors WHERE id = @id;
 -- name: CreateFederatedActor :one
 INSERT INTO federated_actors (
     user_id, actor_url, preferred_username, public_key_pem, private_key_enc,
-    public_key_id, inbox_url, outbox_url, followers_url, following_url
+    public_key_id, inbox_url, outbox_url, followers_url, following_url,
+    manually_approves_followers
 ) VALUES (
     @user_id, @actor_url, @preferred_username, @public_key_pem, @private_key_enc,
-    @public_key_id, @inbox_url, @outbox_url, @followers_url, @following_url
+    @public_key_id, @inbox_url, @outbox_url, @followers_url, @following_url,
+    @manually_approves_followers
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
@@ -66,7 +72,9 @@ UPDATE federated_actors SET status = @status, updated_at = now() WHERE id = @id;
 
 -- name: ListFederatedActors :many
 -- Admin DataTable: ?q= matches username/actor_url; sorted newest first.
-SELECT fa.*, u.username, u.email, up.display_name, up.avatar_url
+-- u.email deliberately excluded — actor management needs the handle, not
+-- PII (admins who need email use the users surface).
+SELECT fa.*, u.username, up.display_name, up.avatar_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id

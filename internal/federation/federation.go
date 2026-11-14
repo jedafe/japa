@@ -27,8 +27,10 @@ var ErrInvalidDomain = errors.New("federation: invalid domain")
 
 // Federatable content types (§126 Object Mapping) — real contents
 // content_type values only. blog_post and guide serialize as Article;
-// everything else as Note.
-var federatableTypes = []string{"blog_post", "guide", "discussion", "story"}
+// everything else as Note. Flag-gated types are pruned per request by
+// features.GatedContentTypes — a disabled feature's content never
+// federates (same rule RSS/search apply).
+var federatableTypes = []string{"blog_post", "guide", "discussion", "forum_thread", "story"}
 
 // apObjectType maps a contents.content_type to its ActivityStreams type.
 func apObjectType(contentType string) string {

@@ -18,6 +18,7 @@ import (
 	jcrypto "github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/rss/model"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -53,6 +54,7 @@ type Service struct {
 	cfg      Config
 	settings SettingsReader
 	vk       valkeycompat.Cmdable
+	flags    features.FlagEvaluator
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -69,6 +71,33 @@ func (s *Service) SetSettings(settings SettingsReader) { s.settings = settings }
 // SetValkey wires the Valkey client for webfinger/actor doc caching.
 // Optional — nil disables caching (tests/development).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetFlags wires the feature-flag evaluator used to prune flag-gated
+// content types (§42) from federation projections. Optional — nil serves
+// the full federatable allowlist.
+func (s *Service) SetFlags(c features.FlagEvaluator) { s.flags = c }
+
+// federatableTypesFor returns the allowlist minus content types whose
+// feature flag is unreachable for this caller (discussion/forum_thread
+// die with feature.forum, story with story.enabled, blog_post with
+// feature.blog) — the same pruning RSS and search apply.
+func (s *Service) federatableTypesFor(ctx context.Context) []string {
+	gated := features.GatedContentTypes(ctx, s.flags)
+	if len(gated) == 0 {
+		return federatableTypes
+	}
+	hide := make(map[string]bool, len(gated))
+	for _, ct := range gated {
+		hide[ct] = true
+	}
+	out := make([]string, 0, len(federatableTypes))
+	for _, ct := range federatableTypes {
+		if !hide[ct] {
+			out = append(out, ct)
+		}
+	}
+	return out
+}
 
 // ---------------------------------------------------------------------------
 // URL helpers
@@ -196,7 +225,7 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 		return nil, fmt.Errorf("federation: outbox actor: %w", err)
 	}
 
-	total, err := s.store.countFederatableContent(ctx, actor.UserID)
+	total, err := s.store.countFederatableContent(ctx, actor.UserID, s.federatableTypesFor(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("federation: outbox count: %w", err)
 	}
@@ -215,7 +244,7 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 		return orderedCollectionPage(pageID(page), actor.OutboxUrl, []any{}, total, false, page > 1, pageID, page), nil
 	}
 
-	rows, err := s.store.federatableContent(ctx, actor.UserID, size, offset)
+	rows, err := s.store.federatableContent(ctx, actor.UserID, s.federatableTypesFor(ctx), size, offset)
 	if err != nil {
 		return nil, fmt.Errorf("federation: outbox page: %w", err)
 	}
@@ -336,7 +365,7 @@ func (s *Service) Following(ctx context.Context, username string, page int) (map
 // ObjectDocument returns the Note/Article for a federatable contents id —
 // served only while the author holds an active federated actor.
 func (s *Service) ObjectDocument(ctx context.Context, contentID pgtype.UUID) (map[string]any, error) {
-	row, err := s.store.federatableContentByID(ctx, contentID)
+	row, err := s.store.federatableContentByID(ctx, contentID, s.federatableTypesFor(ctx))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -495,6 +524,9 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 		OutboxUrl:         actorURL + "/outbox",
 		FollowersUrl:      actorURL + "/followers",
 		FollowingUrl:      actorURL + "/following",
+		// AP analogue of profile_visibility='followers': the actor doc
+		// derives this live, the column seeds the M2 Accept/Reject path.
+		ManuallyApprovesFollowers: s.approvesFollowers(ctx, userID),
 	})
 	if err != nil {
 		return FederationStatus{}, fmt.Errorf("federation: create actor: %w", err)
@@ -502,6 +534,17 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 
 	slog.Info("federation actor enabled", "user_id", userID.String(), "actor_url", actorURL)
 	return s.statusFor(actor), nil
+}
+
+// approvesFollowers maps the member's user_privacy_settings onto the AP
+// follow-approval flag: 'followers' visibility means only approved
+// followers see the profile, so remote follows need approval too.
+func (s *Service) approvesFollowers(ctx context.Context, userID pgtype.UUID) bool {
+	privacy, err := s.store.userPrivacy(ctx, userID)
+	if err != nil {
+		return false
+	}
+	return privacy.ProfileVisibility == "followers"
 }
 
 // DisableFederation deactivates the caller's actor. The row is kept so a

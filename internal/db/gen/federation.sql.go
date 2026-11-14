@@ -106,10 +106,12 @@ func (q *Queries) CountRemoteFollowersByActor(ctx context.Context, localActorID 
 const createFederatedActor = `-- name: CreateFederatedActor :one
 INSERT INTO federated_actors (
     user_id, actor_url, preferred_username, public_key_pem, private_key_enc,
-    public_key_id, inbox_url, outbox_url, followers_url, following_url
+    public_key_id, inbox_url, outbox_url, followers_url, following_url,
+    manually_approves_followers
 ) VALUES (
     $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10
+    $6, $7, $8, $9, $10,
+    $11
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
@@ -118,16 +120,17 @@ RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_ke
 `
 
 type CreateFederatedActorParams struct {
-	UserID            pgtype.UUID `json:"user_id"`
-	ActorUrl          string      `json:"actor_url"`
-	PreferredUsername string      `json:"preferred_username"`
-	PublicKeyPem      string      `json:"public_key_pem"`
-	PrivateKeyEnc     string      `json:"private_key_enc"`
-	PublicKeyID       string      `json:"public_key_id"`
-	InboxUrl          string      `json:"inbox_url"`
-	OutboxUrl         string      `json:"outbox_url"`
-	FollowersUrl      string      `json:"followers_url"`
-	FollowingUrl      string      `json:"following_url"`
+	UserID                    pgtype.UUID `json:"user_id"`
+	ActorUrl                  string      `json:"actor_url"`
+	PreferredUsername         string      `json:"preferred_username"`
+	PublicKeyPem              string      `json:"public_key_pem"`
+	PrivateKeyEnc             string      `json:"private_key_enc"`
+	PublicKeyID               string      `json:"public_key_id"`
+	InboxUrl                  string      `json:"inbox_url"`
+	OutboxUrl                 string      `json:"outbox_url"`
+	FollowersUrl              string      `json:"followers_url"`
+	FollowingUrl              string      `json:"following_url"`
+	ManuallyApprovesFollowers bool        `json:"manually_approves_followers"`
 }
 
 func (q *Queries) CreateFederatedActor(ctx context.Context, arg CreateFederatedActorParams) (FederatedActor, error) {
@@ -142,6 +145,7 @@ func (q *Queries) CreateFederatedActor(ctx context.Context, arg CreateFederatedA
 		arg.OutboxUrl,
 		arg.FollowersUrl,
 		arg.FollowingUrl,
+		arg.ManuallyApprovesFollowers,
 	)
 	var i FederatedActor
 	err := row.Scan(
@@ -202,12 +206,14 @@ func (q *Queries) DeleteInstanceBlock(ctx context.Context, id pgtype.UUID) error
 const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
-       fa.manually_approves_followers, fa.status, fa.created_at AS actor_created_at,
+       COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
   AND fa.status = 'active'
   AND u.status = 'active'
@@ -225,7 +231,7 @@ type GetActorProfileByUsernameRow struct {
 	OutboxUrl                 string             `json:"outbox_url"`
 	FollowersUrl              string             `json:"followers_url"`
 	FollowingUrl              string             `json:"following_url"`
-	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
+	ManuallyApprovesFollowers interface{}        `json:"manually_approves_followers"`
 	Status                    string             `json:"status"`
 	ActorCreatedAt            pgtype.Timestamptz `json:"actor_created_at"`
 	Username                  string             `json:"username"`
@@ -238,7 +244,9 @@ type GetActorProfileByUsernameRow struct {
 }
 
 // Actor-document source row: federated actor + public profile fields
-// (no PII) in one join.
+// (no PII) in one join. manually_approves_followers derives live from the
+// member's profile_visibility ('followers' → true) so privacy changes
+// apply without touching the actor row.
 func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string) (GetActorProfileByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getActorProfileByUsername, username)
 	var i GetActorProfileByUsernameRow
@@ -801,7 +809,7 @@ func (q *Queries) ListFederatableContentByAuthor(ctx context.Context, arg ListFe
 }
 
 const listFederatedActors = `-- name: ListFederatedActors :many
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, u.username, u.email, up.display_name, up.avatar_url
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, u.username, up.display_name, up.avatar_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -833,12 +841,13 @@ type ListFederatedActorsRow struct {
 	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
 	Username                  string             `json:"username"`
-	Email                     string             `json:"email"`
 	DisplayName               *string            `json:"display_name"`
 	AvatarUrl                 *string            `json:"avatar_url"`
 }
 
 // Admin DataTable: ?q= matches username/actor_url; sorted newest first.
+// u.email deliberately excluded — actor management needs the handle, not
+// PII (admins who need email use the users surface).
 func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActorsParams) ([]ListFederatedActorsRow, error) {
 	rows, err := q.db.Query(ctx, listFederatedActors, arg.Q, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -865,7 +874,6 @@ func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActo
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Username,
-			&i.Email,
 			&i.DisplayName,
 			&i.AvatarUrl,
 		); err != nil {
