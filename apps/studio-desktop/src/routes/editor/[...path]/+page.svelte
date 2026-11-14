@@ -65,6 +65,9 @@
 		visibilityOptions: [],
 		loaded: false
 	});
+	// agent.skip_hitl (§103) — high-stakes categories keep the status the
+	// operator picked instead of being forced to in_review.
+	let canSkipHitl = $state(false);
 	const pageParam = $derived(page.params.path);
 
 	const title = $derived(getString('title') || 'Untitled');
@@ -85,10 +88,12 @@
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
 	const effectiveStatus = $derived(
-		isHighStakes(frontmatter) ? 'in_review' : getString('status') || 'published'
+		isHighStakes(frontmatter) && !canSkipHitl
+			? 'in_review'
+			: getString('status') || 'in_review'
 	);
 	const statusOptions = $derived(
-		isHighStakes(frontmatter)
+		isHighStakes(frontmatter) && !canSkipHitl
 			? options.statusOptions.filter((o) => o.value === 'in_review')
 			: options.statusOptions
 	);
@@ -98,7 +103,8 @@
 			effectiveStatus,
 			settings.mode,
 			options.statusOptions.map((o) => o.value),
-			options.visibilityOptions.map((o) => o.value)
+			options.visibilityOptions.map((o) => o.value),
+			canSkipHitl
 		)
 	);
 	const bodyError = $derived(
@@ -111,9 +117,10 @@
 	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
 
 	$effect(() => {
-		// High-stakes categories must always route to in_review.
+		// High-stakes categories must route to in_review unless the operator
+		// holds agent.skip_hitl (§103).
 		// Ref: sections/105-japa-content-studio-desktop.md (High-Stakes HITL Gate)
-		if (isHighStakes(frontmatter) && getString('status') !== 'in_review') {
+		if (isHighStakes(frontmatter) && !canSkipHitl && getString('status') !== 'in_review') {
 			setString('status', 'in_review');
 		}
 	});
@@ -167,9 +174,10 @@
 		const spaceRes = isMember
 			? await client.getMySpaces()
 			: await client.getSpaces();
-		const [statusRes, visibilityRes] = await Promise.all([
+		const [statusRes, visibilityRes, permsRes] = await Promise.all([
 			client.getStatusOptions(),
-			client.getVisibilityOptions()
+			client.getVisibilityOptions(),
+			client.getMyPermissions()
 		]);
 
 		let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
@@ -177,6 +185,11 @@
 		if (!isMember) {
 			[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
 		}
+
+		// Permissions failing resolves to false — the high-stakes hold stays
+		// on (safe direction), same as the publisher path.
+		const perms = permsRes.ok && permsRes.data ? (permsRes.data.permissions ?? []) : [];
+		canSkipHitl = perms.includes('*') || perms.includes('agent.skip_hitl');
 
 		const contentTypes: StudioContentType[] = (contentRes.data ?? []).map(mapPublicContentType);
 

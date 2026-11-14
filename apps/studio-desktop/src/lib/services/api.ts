@@ -71,6 +71,9 @@ export function createApiClient(baseUrl: string) {
 		getMe() {
 			return client.get<{ id: string; email: string }>('/me');
 		},
+		getMyPermissions() {
+			return client.get<{ permissions: string[] }>('/me/permissions');
+		},
 		getMyContent(id: string) {
 			return client.get<ContentDetail>(`/me/content/${encodeURIComponent(id)}`);
 		},

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { publishContent } from './publisher';
+import { publishContent, resetSkipHitlCache } from './publisher';
 import { queueStore } from '#lib/stores/queue.svelte.js';
 import { syncLogStore } from '#lib/stores/sync-log.svelte.js';
 import {
@@ -94,6 +94,7 @@ beforeEach(async () => {
 	vi.stubGlobal('localStorage', createStorage());
 	globalThis.fetch = vi.fn(defaultFetch);
 	setSettingsCache(defaultSettings());
+	resetSkipHitlCache();
 	await queueStore.setFiles([]);
 	await syncLogStore.clear();
 });
@@ -231,6 +232,26 @@ describe('publishContent', () => {
 			String(call[0]).includes('/publish')
 		);
 		expect(publishCalls).toHaveLength(0);
+	});
+
+	it('keeps high-stakes published status when the actor holds agent.skip_hitl', async () => {
+		globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+			const path = new URL(String(input)).pathname;
+			if (path === '/api/v1/me/permissions') {
+				return Promise.resolve(okJson({ permissions: ['agent.skip_hitl'] }));
+			}
+			return defaultFetch(input, init);
+		});
+		setSettings({ baseUrl: 'https://api.example.com', apiKey: 'key', accessToken: 'token', tokenExpiresAt: Date.now() + 60000, mode: 'operator' });
+		const result = await publishContent({
+			relativePath: 'jc-content/guide/my-post.md',
+			frontmatter: buildFrontmatter({ guide_category: 'visa', status: 'published' }),
+			body: sampleBody,
+			raw: sampleRaw
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.status).toBe('published');
 	});
 
 	it('accepts scheduled content with a future publish_at', async () => {

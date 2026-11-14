@@ -62,6 +62,9 @@
 	let selectedTemplateId = $state('');
 	let allStatusOptions = $state<SelectOption[]>([]);
 	let visibilityOptions = $state<SelectOption[]>([]);
+	// agent.skip_hitl (§103) — high-stakes categories keep the status the
+	// operator picked instead of being forced to in_review.
+	let canSkipHitl = $state(false);
 
 	const contentTypeOptions = $derived(
 		contentTypes.map((t) => ({ value: t.type, label: t.label }))
@@ -98,7 +101,7 @@
 			promptStore.templates.map((t) => ({ value: t.id, label: t.name }))
 		)
 	);
-	const highStakes = $derived(isHighStakes(promptStore.values));
+	const highStakes = $derived(isHighStakes(promptStore.values) && !canSkipHitl);
 	const statusOptions = $derived(
 		highStakes
 			? allStatusOptions.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
@@ -178,9 +181,10 @@
 			const spaceRes = isMember
 				? await client.getMySpaces()
 				: await client.getSpaces();
-			const [statusRes, visibilityRes] = await Promise.all([
+			const [statusRes, visibilityRes, permsRes] = await Promise.all([
 				client.getStatusOptions(),
-				client.getVisibilityOptions()
+				client.getVisibilityOptions(),
+				client.getMyPermissions()
 			]);
 
 			let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
@@ -209,6 +213,10 @@
 			if (visibilityRes.ok && visibilityRes.data) {
 				visibilityOptions = visibilityRes.data;
 			}
+			// Permissions failing resolves to false — the high-stakes hold
+			// stays on (safe direction), same as the publisher path.
+			const perms = permsRes.ok && permsRes.data ? (permsRes.data.permissions ?? []) : [];
+			canSkipHitl = perms.includes('*') || perms.includes('agent.skip_hitl');
 
 			const messages = [
 				!contentRes.ok && `content types: ${contentRes.error?.message}`,
@@ -288,7 +296,7 @@
 	function handleGenerate() {
 		try {
 			const lookups = buildLookups();
-			promptStore.setGenerated(buildPrompt(promptStore.values, lookups, settings.mode));
+			promptStore.setGenerated(buildPrompt(promptStore.values, lookups, settings.mode, canSkipHitl));
 			showStatus('Prompt generated.');
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to generate prompt.';

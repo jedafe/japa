@@ -62,8 +62,11 @@ function frontmatterLine(key: string, value: unknown): string {
 	return '';
 }
 
-function effectiveStatus(values: PromptFormValues): string {
-	if (isHighStakesPrompt(values) && (values.status === 'published' || values.status === 'scheduled')) {
+function effectiveStatus(values: PromptFormValues, canSkipHitl: boolean): string {
+	// agent.skip_hitl holders (§103) keep the status they selected; the UI
+	// already offers them published/scheduled on high-stakes categories, so
+	// downgrading here would silently contradict the selection.
+	if (!canSkipHitl && isHighStakesPrompt(values) && (values.status === 'published' || values.status === 'scheduled')) {
 		return 'in_review';
 	}
 	return values.status;
@@ -79,10 +82,15 @@ function fieldValuesYaml(values: Record<string, string>): string {
 		.join('\n')}\n`;
 }
 
-export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mode?: StudioMode): string {
+export function buildPrompt(
+	values: PromptFormValues,
+	lookups: PromptLookups,
+	mode?: StudioMode,
+	canSkipHitl = false
+): string {
 	const slug = slugify(values.title || values.topic || 'untitled');
 	const filePath = `jc-content/${values.content_type}/${slug}.md`;
-	const status = effectiveStatus(values);
+	const status = effectiveStatus(values, canSkipHitl);
 
 	const frameworkInstruction = values.framework
 		? `Use the ${values.framework.toUpperCase()} framework to structure the article.`

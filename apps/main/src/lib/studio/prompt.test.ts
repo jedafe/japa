@@ -105,6 +105,12 @@ describe('buildPrompt', () => {
 		expect(prompt).toContain('status: "in_review"');
 	});
 
+	it('keeps the selected high-stakes status when canSkipHitl', () => {
+		const values = { ...baseValues, guide_category: 'visa' };
+		const prompt = buildPrompt(values, lookups, undefined, true);
+		expect(prompt).toContain('status: "published"');
+	});
+
 	it('does not emit placeholder ID fields', () => {
 		const values: PromptFormValues = { ...baseValues, space_id: '', persona_id: '', voice_id: '' };
 		const prompt = buildPrompt(values, lookups);

@@ -29,9 +29,12 @@
 		personas: Persona[];
 		voices: VoiceOption[];
 		spaceName: string;
+		/** Actor holds agent.skip_hitl (§103) — high-stakes categories don't
+		 *  force in_review for them. */
+		canSkipHitl?: boolean;
 	}
 
-	let { values = $bindable(), contentTypes, canPersona, personas, voices, spaceName }: Props = $props();
+	let { values = $bindable(), contentTypes, canPersona, personas, voices, spaceName, canSkipHitl = false }: Props = $props();
 
 	const mode: StudioMode = $derived(canPersona ? 'operator' : 'member');
 
@@ -45,7 +48,7 @@
 	const hasCategory = $derived(
 		selectedType?.has_category === true || categories.length > 0
 	);
-	const highStakes = $derived(isHighStakesCategory(values.guide_category));
+	const highStakes = $derived(isHighStakesCategory(values.guide_category) && !canSkipHitl);
 
 	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
 	const typeFetcher = $derived(staticAutocompleteFetcher(typeItems));
@@ -117,7 +120,7 @@
 		categoryFields: categoryFieldGroups.flatMap((g) => g.fields)
 	});
 
-	const promptText = $derived(buildPrompt(values, lookups, mode));
+	const promptText = $derived(buildPrompt(values, lookups, mode, canSkipHitl));
 
 	async function copyPrompt() {
 		try {
@@ -297,7 +300,7 @@
 		border: none;
 		border-radius: var(--radius);
 		background: var(--color-primary);
-		color: #fff;
+		color: var(--color-primary-contrast);
 		font-size: 0.75rem;
 		font-weight: 500;
 		cursor: pointer;

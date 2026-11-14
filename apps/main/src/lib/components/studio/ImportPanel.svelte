@@ -25,9 +25,12 @@
 		visibilityOptions: { value: string; label: string }[];
 		/** GET /content/status-options — the authoritative status list. */
 		statusOptions: { value: string; label: string }[];
+		/** Actor holds agent.skip_hitl (§103) — high-stakes categories may keep
+		 *  published/scheduled instead of being forced to in_review. */
+		canSkipHitl?: boolean;
 	}
 
-	let { contentTypes, spaces, drafts, visibilityOptions, statusOptions }: Props = $props();
+	let { contentTypes, spaces, drafts, visibilityOptions, statusOptions, canSkipHitl = false }: Props = $props();
 
 	let raw = $state('');
 	let parsed = $state(false);
@@ -45,12 +48,13 @@
 		contentType?: string;
 		slug?: string;
 		status?: string;
+		warnings?: string[];
 	} | null>(null);
 
 	const categories = $derived(
 		contentTypes.find((ct) => ct.value === str('content_type'))?.categories ?? []
 	);
-	const highStakes = $derived(isHighStakesCategory(str('guide_category')));
+	const highStakes = $derived(isHighStakesCategory(str('guide_category')) && !canSkipHitl);
 	const conflictingDraft = $derived(drafts.find((d) => d.slug && d.slug === str('slug')));
 
 	const typeItems = $derived(contentTypes.map((ct) => ({ id: ct.value, label: ct.label })));
@@ -111,7 +115,8 @@
 			status,
 			'member',
 			statusOptions.map((s) => s.value),
-			visibilityOptions.map((v) => v.value)
+			visibilityOptions.map((v) => v.value),
+			canSkipHitl
 		);
 		bodyError = validateBody(body, status) ?? '';
 	}
@@ -207,6 +212,16 @@
 				</a>
 			{/if}
 		</div>
+		<!-- Post-save linkage (tags/series) failures are non-fatal but the
+		     user must know the saved draft is incomplete. -->
+		{#if result.warnings && result.warnings.length > 0}
+			<div class="mb-3 flex items-start gap-2 text-sm text-[var(--color-warning)]">
+				<AlertCircle size={16} class="mt-0.5 shrink-0" />
+				<span>
+					{t('studio.prompts.saved_warnings', 'Saved, but some linked data could not be applied: {list}.', { list: result.warnings.join(', ') })}
+				</span>
+			</div>
+		{/if}
 	{:else if result?.error}
 		<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-danger)]">
 			<AlertCircle size={16} /> {result.message || result.error}
@@ -250,6 +265,7 @@
 							ok?: boolean;
 							error?: string;
 							message?: string;
+							warnings?: string[];
 							content?: { id?: string; content_type?: string; slug?: string; status?: string };
 						};
 						result = {

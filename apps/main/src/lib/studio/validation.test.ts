@@ -39,6 +39,27 @@ describe('validateFrontmatter', () => {
 		expect(errors.guide_category).toContain('High-stakes');
 	});
 
+	it('allows published high-stakes content when canSkipHitl', () => {
+		const errors = validateFrontmatter(
+			{
+				title: 'Visa Guide',
+				slug: 'visa-guide',
+				content_type: 'guide',
+				guide_category: 'visa',
+				status: 'published',
+				visibility: 'public',
+				space_id: 'space-1',
+				persona_id: 'persona-1'
+			},
+			'published',
+			'member',
+			undefined,
+			undefined,
+			true
+		);
+		expect(errors.guide_category).toBeUndefined();
+	});
+
 	it('allows high-stakes content in review', () => {
 		const errors = validateFrontmatter(
 			{

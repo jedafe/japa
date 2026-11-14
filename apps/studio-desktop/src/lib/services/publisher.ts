@@ -108,14 +108,40 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function determineStatus(frontmatter: Record<string, unknown>): string {
+/**
+ * agent.skip_hitl (§103) — cached briefly so a batch publish doesn't refetch
+ * the permission set per file. Keyed on the credentials so switching
+ * accounts/baseUrl can't serve a stale answer. A fetch failure resolves to
+ * false (the high-stakes hold stays on — the safe direction).
+ */
+let skipHitlCache: { key: string; at: number; canSkip: boolean } | null = null;
+export function resetSkipHitlCache(): void {
+	skipHitlCache = null;
+}
+async function canSkipHitl(
+	client: ReturnType<typeof createApiClient>,
+	cacheKey: string
+): Promise<boolean> {
+	if (skipHitlCache && skipHitlCache.key === cacheKey && Date.now() - skipHitlCache.at < 60_000) {
+		return skipHitlCache.canSkip;
+	}
+	const res = await client.getMyPermissions();
+	const perms = res.ok && res.data ? (res.data.permissions ?? []) : [];
+	const canSkip = perms.includes('*') || perms.includes('agent.skip_hitl');
+	skipHitlCache = { key: cacheKey, at: Date.now(), canSkip };
+	return canSkip;
+}
+
+function determineStatus(frontmatter: Record<string, unknown>, canSkipHitl: boolean): string {
 	const requested = getString(frontmatter, 'status');
 	if (requested === 'scheduled' && getString(frontmatter, 'publish_at')) {
-		if (isHighStakes(frontmatter)) return 'in_review';
+		if (!canSkipHitl && isHighStakes(frontmatter)) return 'in_review';
 		return 'scheduled';
 	}
-	if (isHighStakes(frontmatter)) return 'in_review';
-	return requested || 'published';
+	if (!canSkipHitl && isHighStakes(frontmatter)) return 'in_review';
+	// Absent status defaults to in_review, not published — pushing unmarked
+	// frontmatter straight to live is the riskier failure mode.
+	return requested || 'in_review';
 }
 
 function isRetryableStatus(status: number | undefined): boolean {
@@ -243,7 +269,9 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		return { ok: false, error: 'API settings are not configured.' };
 	}
 
-	const status = determineStatus(input.frontmatter);
+	const client = createApiClient(settings.baseUrl);
+	const skipHitl = await canSkipHitl(client, `${settings.baseUrl}|${settings.apiKey}`);
+	const status = determineStatus(input.frontmatter, skipHitl);
 
 	const inferredType = inferredContentType(input.relativePath);
 	const declaredType = getString(input.frontmatter, 'content_type');
@@ -254,14 +282,20 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		};
 	}
 
-	const validationErrors = validateFrontmatter(input.frontmatter, status, settings.mode);
+	const validationErrors = validateFrontmatter(
+		input.frontmatter,
+		status,
+		settings.mode,
+		undefined,
+		undefined,
+		skipHitl
+	);
 	const bodyError = validateBody(input.body, status, settings.contentMinLength ?? 10);
 	if (Object.keys(validationErrors).length > 0 || bodyError) {
 		const messages = [...Object.values(validationErrors), bodyError].filter(Boolean).join(' ');
 		return { ok: false, error: messages };
 	}
 
-	const client = createApiClient(settings.baseUrl);
 	const existing = queueStore.files.find((f) => f.relativePath === input.relativePath);
 	const contentId = existing?.contentId;
 

@@ -26,7 +26,10 @@ export function validateFrontmatter(
 	effectiveStatus?: string,
 	mode?: 'operator' | 'member',
 	allowedStatuses?: string[],
-	allowedVisibilities?: string[]
+	allowedVisibilities?: string[],
+	/** §103 — agent.skip_hitl holders may publish/schedule high-stakes
+	 *  categories directly; skip the in_review hold for them. */
+	canSkipHitl = false
 ): ValidationErrors {
 	const errors: ValidationErrors = {};
 
@@ -77,7 +80,7 @@ export function validateFrontmatter(
 	}
 
 	const guideCategory = getString(frontmatter, 'guide_category');
-	if (guideCategory && isHighStakesCategory(guideCategory) && (status === 'published' || status === 'scheduled')) {
+	if (!canSkipHitl && guideCategory && isHighStakesCategory(guideCategory) && (status === 'published' || status === 'scheduled')) {
 		errors.guide_category = `High-stakes category "${guideCategory}" must be held for review (status in_review).`;
 	}
 

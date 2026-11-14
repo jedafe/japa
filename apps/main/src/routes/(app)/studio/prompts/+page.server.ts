@@ -4,7 +4,7 @@
 // draft via POST/PATCH /content.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPatch, apiDelete, ApiError } from '#lib/server/api.js';
+import { apiContext, apiGet, apiList, apiPost, apiPatch, apiDelete, ApiError, type ApiContext } from '#lib/server/api.js';
 import type { ContentTypeMeta, MeSpace, ContentRecord, ContentTag, Visibility, BlogSeries, AssessmentForm } from '#lib/types/index.js';
 import type { Persona } from '#lib/studio/types.js';
 import { validateFrontmatter, validateBody, isHighStakesCategory } from '#lib/studio/validation.js';
@@ -16,6 +16,27 @@ interface VoiceOption {
 	id: string;
 	name: string;
 	voice_prompt?: string;
+}
+
+/**
+ * Fetch every page of a paginated list endpoint. Some handlers reject a
+ * page_size above their cap by falling back to the default page size
+ * (rather than clamping), so callers must not guess the cap — walk
+ * page_offset against meta.total instead. Bounded so a pathological
+ * backend cannot loop forever.
+ */
+async function apiListAll<T>(ctx: ApiContext, basePath: string): Promise<T[]> {
+	const out: T[] = [];
+	for (let page = 0; page < 10; page++) {
+		const sep = basePath.includes('?') ? '&' : '?';
+		const { items, meta } = await apiList<T>(
+			ctx,
+			`${basePath}${sep}page_size=100&page_offset=${out.length}`
+		);
+		out.push(...items);
+		if (meta?.total === undefined || out.length >= meta.total || items.length === 0) break;
+	}
+	return out;
 }
 
 export const load: PageServerLoad = async (event) => {
@@ -50,46 +71,57 @@ export const load: PageServerLoad = async (event) => {
 			apiGet<AssessmentForm>(ctx, '/assessment')
 		]);
 
+	// A failed lookup previously degraded to an empty select with no signal;
+	// collect the labels so the page can warn the user that option lists are
+	// incomplete instead of looking deliberately empty.
+	const lookupWarnings: string[] = [];
+	const settled = <T,>(res: PromiseSettledResult<T>, label: string): T | undefined => {
+		if (res.status === 'fulfilled') return res.value;
+		lookupWarnings.push(label);
+		return undefined;
+	};
+
 	const canPersona =
 		permsRes.status === 'fulfilled' &&
 		(permsRes.value?.permissions ?? []).includes('persona.view');
+	if (permsRes.status !== 'fulfilled') lookupWarnings.push('permissions');
 
 	let voices: VoiceOption[] = [];
 	let personas: Persona[] = [];
 	if (canPersona) {
-		// Operator selectors (§105): voices from the shared non-admin route
-		// (same one AiDraftPanel uses); personas only exist behind the admin
-		// route, which persona.view holders are allowed to read.
+		// Operator selectors (§105): voices via the persona.view-gated admin
+		// route — /ai/voices is gated by the ai.* nodes, so a persona.view
+		// operator without AI access would get a silent 403. ?slim=1 is the
+		// {id, name} picker projection; full rows carry voice_prompt (~1.7KB
+		// each → ~2.6MB). PromptBuilder lazy-fetches the selected voice's
+		// prompt via GET /admin/persona-voices/{id} (same gate).
+		// Personas paginate through apiListAll — a page_size above the
+		// handler's cap is rejected (falls back to the default 20), so the
+		// request must not out-request the cap.
 		const [voicesRes, personasRes] = await Promise.allSettled([
-			// ?slim=1 — the {id, name} picker projection; full rows carry
-			// voice_prompt (~1.7KB each → ~2.6MB). PromptBuilder lazy-fetches
-			// the selected voice's prompt via GET /admin/persona-voices/{id}
-			// (same persona.view gate).
-			apiList<VoiceOption>(ctx, '/ai/voices?slim=1&page_size=5000'),
-			apiList<Persona>(ctx, '/admin/personas?page_size=200')
+			apiList<VoiceOption>(ctx, '/admin/persona-voices?slim=1&page_size=5000'),
+			apiListAll<Persona>(ctx, '/admin/personas')
 		]);
 		// Strip stays as a cheap guard — only {id, name} lands in the page.
-		voices =
-			voicesRes.status === 'fulfilled'
-				? voicesRes.value.items.map((v) => ({ id: v.id, name: v.name }))
-				: [];
-		personas = personasRes.status === 'fulfilled' ? personasRes.value.items : [];
+		voices = (settled(voicesRes, 'voices')?.items ?? []).map((v) => ({
+			id: v.id,
+			name: v.name
+		}));
+		personas = settled(personasRes, 'personas') ?? [];
 	}
 
 	return {
-		contentTypes: typesRes.status === 'fulfilled' ? typesRes.value.items : [],
-		spaces: spacesRes.status === 'fulfilled' ? spacesRes.value.items : [],
-		drafts: draftsRes.status === 'fulfilled' ? draftsRes.value.items : [],
+		contentTypes: settled(typesRes, 'content types')?.items ?? [],
+		spaces: settled(spacesRes, 'spaces')?.items ?? [],
+		drafts: settled(draftsRes, 'drafts')?.items ?? [],
 		canPersona,
 		voices,
 		personas,
-		visibilityOptions:
-			visibilityRes.status === 'fulfilled' ? visibilityRes.value : [],
-		statusOptions:
-			statusRes.status === 'fulfilled' ? statusRes.value : [],
-		series: seriesRes.status === 'fulfilled' ? seriesRes.value.items : [],
-		assessmentDimensions:
-			assessmentRes.status === 'fulfilled' ? (assessmentRes.value?.dimensions ?? []) : []
+		visibilityOptions: settled(visibilityRes, 'visibility options') ?? [],
+		statusOptions: settled(statusRes, 'status options') ?? [],
+		series: settled(seriesRes, 'series')?.items ?? [],
+		assessmentDimensions: settled(assessmentRes, 'journey dimensions')?.dimensions ?? [],
+		lookupWarnings
 	};
 };
 
@@ -215,7 +247,8 @@ export const actions: Actions = {
 			status,
 			'member',
 			statusOpts.map((o) => o.value),
-			visOpts.map((o) => o.value)
+			visOpts.map((o) => o.value),
+			canSkipHitl
 		);
 		const bodyError = validateBody(getStr(fm, 'body'), status);
 		if (Object.keys(fieldErrors).length > 0 || bodyError) {
@@ -230,33 +263,46 @@ export const actions: Actions = {
 		const tags = getTags(fm);
 		const payload = buildApiPayload(fm, status);
 
+		// Post-save linkage failures must not throw — the content row already
+		// exists, so an error result would invite a retry that duplicates it.
+		// Collect them as warnings the UI surfaces instead.
+		const warnings: string[] = [];
 		try {
 			let content: ContentRecord;
 			if (contentId) {
 				content = await apiPatch<ContentRecord>(ctx, `/content/${contentId}`, payload);
-				// Tag diff: attach new slugs, detach removed ones.
+				// Tag diff: attach new slugs, detach removed ones. A failed tag
+				// lookup degrades to attach-only (the backend upsert is
+				// idempotent) rather than a silent no-op.
 				const existing = await apiList<ContentTag>(ctx, `/content/${contentId}/tags`).catch(
-					() => ({ items: [] as ContentTag[] })
+					() => {
+						warnings.push('tag_lookup_failed');
+						return { items: [] as ContentTag[] };
+					}
 				);
 				const existingSlugs = new Set(
 					existing.items.map((t) => t.slug ?? t.name ?? '').filter(Boolean)
 				);
 				for (const slug of tags) {
 					if (!existingSlugs.has(slug)) {
-						await apiPost(ctx, `/content/${contentId}/tags`, { tag_slugs: [slug] });
+						await apiPost(ctx, `/content/${contentId}/tags`, { tag_slugs: [slug] }).catch(
+							() => warnings.push('tag_sync_failed')
+						);
 					}
 				}
 				for (const slug of existingSlugs) {
 					if (!tags.includes(slug)) {
 						await apiDelete(ctx, `/content/${contentId}/tags/${encodeURIComponent(slug)}`).catch(
-							() => ({})
+							() => warnings.push('tag_sync_failed')
 						);
 					}
 				}
 			} else {
 				content = await apiPost<ContentRecord>(ctx, '/content', payload);
 				if (tags.length > 0) {
-					await apiPost(ctx, `/content/${content.id}/tags`, { tag_slugs: tags });
+					await apiPost(ctx, `/content/${content.id}/tags`, { tag_slugs: tags }).catch(
+						() => warnings.push('tag_sync_failed')
+					);
 				}
 			}
 
@@ -267,10 +313,10 @@ export const actions: Actions = {
 				await apiPost(ctx, `/series/${seriesId}/posts`, {
 					content_id: content.id,
 					position: 0
-				}).catch(() => ({}));
+				}).catch(() => warnings.push('series_link_failed'));
 			}
 
-			return { ok: true, content };
+			return { ok: true, content, warnings };
 		} catch (err) {
 			if (err instanceof ApiError) {
 				return { error: err.code, message: err.message };

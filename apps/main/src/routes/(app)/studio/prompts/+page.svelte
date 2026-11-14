@@ -62,6 +62,12 @@
 	const spaceName = $derived(
 		spaces.find((s) => s.id === values.space_id)?.name ?? ''
 	);
+	// agent.skip_hitl (§103) — shared by the builder, the import flow, and
+	// the right rail so all three apply the same high-stakes hold rule the
+	// server action enforces.
+	const canSkipHitl = $derived(
+		!!(data.user?.permissions?.includes('*') || data.user?.permissions?.includes('agent.skip_hitl'))
+	);
 	const maxTags = $derived(
 		typeof data.siteSettings?.['content.max_tags'] === 'number'
 			? (data.siteSettings['content.max_tags'] as number)
@@ -70,6 +76,12 @@
 </script>
 
 <SeoHead title={`${t('studio.tabs.prompts', 'Prompts')} — ${t('studio.title', 'Studio — {site}')}`} robots="noindex" description={t('studio.prompts_description', 'Reusable generation prompts for your content pipeline.')} />
+
+{#if data.lookupWarnings.length > 0}
+	<div class="lookup-warning" role="status">
+		{t('studio.prompts.lookup_failed', 'Some option lists failed to load ({list}) — those pickers may be incomplete.', { list: data.lookupWarnings.join(', ') })}
+	</div>
+{/if}
 
 <div class="composer-grid" data-mobile-section={studioMobile.section}>
 	<div class="composer-main">
@@ -80,6 +92,7 @@
 			personas={data.personas}
 			voices={data.voices}
 			{spaceName}
+			{canSkipHitl}
 		/>
 		<ImportPanel
 			contentTypes={data.contentTypes}
@@ -87,6 +100,7 @@
 			drafts={data.drafts}
 			visibilityOptions={data.visibilityOptions}
 			statusOptions={data.statusOptions}
+			{canSkipHitl}
 		/>
 	</div>
 
@@ -102,15 +116,22 @@
 			voices={data.voices}
 			statusOptions={data.statusOptions}
 			visibilityOptions={data.visibilityOptions}
-			canSkipHitl={!!(
-				data.user?.permissions?.includes('*') ||
-				data.user?.permissions?.includes('agent.skip_hitl')
-			)}
+			{canSkipHitl}
 		/>
 	</aside>
 </div>
 
 <style>
+	.lookup-warning {
+		margin-bottom: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface-elevated);
+		padding: 0.5rem 0.75rem;
+		font-size: 0.75rem;
+		color: var(--color-warning);
+	}
+
 	/* Same grid contract as CreateShell's .composer-grid. */
 	.composer-grid {
 		display: grid;
