@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -334,6 +335,50 @@ func (s *Settings) GetIntOr(ctx context.Context, key string, fallback int) int {
 	return v
 }
 
+// encryptedSettingKeys lists system_settings keys stored AES-256-GCM-
+// encrypted at rest (§125 amendment — platform integration secrets such as
+// the Open Collective personal token). GetStringOr decrypts them
+// transparently; every write path encrypts via EncryptSettingValue first.
+var encryptedSettingKeys = map[string]bool{
+	"tips.oc_platform_token": true,
+}
+
+// EncryptSettingValue transforms a serialized system_settings value for keys
+// in encryptedSettingKeys so at-rest storage is always ciphertext. Plaintext
+// is encrypted; input that already decrypts (a ciphertext round-trip from a
+// settings form) is stored unchanged so re-saving can never double-encrypt.
+// Non-encrypted keys, non-string JSON, and empty clears pass through.
+func EncryptSettingValue(key string, valueJSON []byte) ([]byte, error) {
+	if !encryptedSettingKeys[key] {
+		return valueJSON, nil
+	}
+	var raw string
+	if err := json.Unmarshal(valueJSON, &raw); err != nil || raw == "" {
+		return valueJSON, nil
+	}
+	if _, err := crypto.Decrypt(raw); err == nil {
+		return valueJSON, nil
+	}
+	enc, err := crypto.Encrypt(raw)
+	if err != nil {
+		return nil, fmt.Errorf("encrypting setting %q: %w", key, err)
+	}
+	return json.Marshal(enc)
+}
+
+// decryptSettingValue reverses EncryptSettingValue on read. Values that do
+// not decrypt are returned unchanged — rows written before encryption was
+// introduced stay readable until their next write upgrades them.
+func decryptSettingValue(key, val string) string {
+	if !encryptedSettingKeys[key] {
+		return val
+	}
+	if dec, err := crypto.Decrypt(val); err == nil {
+		return dec
+	}
+	return val
+}
+
 // GetStringOr returns the string value for key, or fallback when the key is
 // unset or missing. It never returns an error. The value is unquoted if it
 // is a JSON-encoded string (e.g. "\"https://...\"" → "https://...").
@@ -348,11 +393,11 @@ func (s *Settings) GetStringOr(ctx context.Context, key, fallback string) string
 	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
 		var unquoted string
 		if json.Unmarshal([]byte(val), &unquoted) == nil {
-			return unquoted
+			return decryptSettingValue(key, unquoted)
 		}
 	}
 
-	return val
+	return decryptSettingValue(key, val)
 }
 
 // GetFloatOr returns the float64 value for key, or fallback when the key is
@@ -410,9 +455,13 @@ func (s *Settings) GetBoolOr(ctx context.Context, key string, fallback bool) boo
 // SetSetting upserts a setting value for the given key.
 // The is_public flag is preserved on conflict (not reset to false).
 func (s *Settings) SetSetting(ctx context.Context, key, value string) error {
+	stored, err := EncryptSettingValue(key, []byte(value))
+	if err != nil {
+		return err
+	}
 	if err := s.qWriter.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
 		Key:   key,
-		Value: []byte(value),
+		Value: stored,
 	}); err != nil {
 		return fmt.Errorf("upserting setting %q: %w", key, err)
 	}
@@ -581,9 +630,13 @@ func fetchExternalLogoDims(rawURL string) (w, h int, ok bool) {
 func (s *Settings) UpdateSettingsBatch(ctx context.Context, settings map[string][]byte) error {
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		for key, valueJSON := range settings {
+			stored, encErr := EncryptSettingValue(key, valueJSON)
+			if encErr != nil {
+				return encErr
+			}
 			if err := q.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
 				Key:   key,
-				Value: valueJSON,
+				Value: stored,
 			}); err != nil {
 				return fmt.Errorf("upserting setting %q: %w", key, err)
 			}
@@ -610,10 +663,14 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, settings map[string]
 func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, settings map[string][]byte, isPublic map[string]bool) error {
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		for key, valueJSON := range settings {
+			stored, encErr := EncryptSettingValue(key, valueJSON)
+			if encErr != nil {
+				return encErr
+			}
 			pub := isPublic[key]
 			if err := q.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
 				Key:      key,
-				Value:    valueJSON,
+				Value:    stored,
 				IsPublic: pub,
 			}); err != nil {
 				return fmt.Errorf("upserting setting %q: %w", key, err)

@@ -126,12 +126,16 @@
 	let spaceTips = $state<Tip[]>([]);
 	let spaceTipsLoaded = $state(false);
 
+	// Master tips.enabled flag — the space routes are gated server-side, so
+	// the section must not render or fetch at all when the feature is off.
+	const tipsFeatureEnabled = $derived(!!page.data.features?.['tips.enabled']);
+
 	// A space advertises fiat when the public config's methods carry anything
 	// beyond credits/opencollective — provider-agnostic (any §17 provider).
 	const isFiatMethod = (m: string) => m !== 'credits' && m !== 'opencollective';
 
 	$effect(() => {
-		if (isOwner && space.level === 'custom' && !tipsLoaded) {
+		if (isOwner && space.level === 'custom' && tipsFeatureEnabled && !tipsLoaded) {
 			void (async () => {
 				const res = await api.get<TipConfig>(`/spaces/${space.slug}/tip-settings`);
 				if (!res.error && res.data) {
@@ -147,7 +151,7 @@
 	});
 
 	$effect(() => {
-		if (isOwner && space.level === 'custom' && !spaceTipsLoaded) {
+		if (isOwner && space.level === 'custom' && tipsFeatureEnabled && !spaceTipsLoaded) {
 			void (async () => {
 				const res = await listSpaceTips(space.slug, 1, 10);
 				if (!res.error && res.data) spaceTips = res.data;
@@ -1033,7 +1037,7 @@
 	</form>
 
 	<!-- Danger zone — delete space (Ref: §05; DELETE /spaces/{id}; creator-only, 0 members) -->
-	{#if isOwner && space.level === 'custom'}
+	{#if isOwner && space.level === 'custom' && tipsFeatureEnabled}
 		<fieldset class="mt-6 rounded-lg border border-[var(--color-border)] p-5">
 			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
 				{t('space.tips_section', 'Tips & donations')}

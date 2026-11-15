@@ -1597,7 +1597,9 @@ FROM (SELECT * FROM tips WHERE sender_user_id = @user_id ORDER BY created_at DES
 
 -- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id ORDER BY created_at DESC) t;
+FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id
+         OR recipient_wallet_user_id = @user_id
+      ORDER BY created_at DESC) t;
 
 -- name: ReassignTipsRecipientToPlaceholder :exec
 -- tips.recipient_user_id has a NO ACTION FK to users — received tips would
@@ -1605,6 +1607,12 @@ FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id ORDER BY created_at 
 -- financial record survives pseudonymized (§19 retention).
 UPDATE tips SET recipient_user_id = @target_user_id
 WHERE recipient_user_id = @user_id;
+
+-- name: ReassignTipsWalletOwnerToPlaceholder :exec
+-- recipient_wallet_user_id carries the same NO ACTION FK — org/space tips
+-- keep recipient_user_id NULL while the wallet owner is the erased user.
+UPDATE tips SET recipient_wallet_user_id = @target_user_id
+WHERE recipient_wallet_user_id = @user_id;
 
 -- name: GdprDeleteSpaceMembersByUser :exec
 -- BUG-033: membership rows reference the erased user; delete on erasure.

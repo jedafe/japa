@@ -4807,6 +4807,7 @@ type Tip struct {
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 	CheckoutUrl             *string            `json:"checkout_url"`
 	RecipientSpaceID        pgtype.UUID        `json:"recipient_space_id"`
+	RecipientWalletUserID   pgtype.UUID        `json:"recipient_wallet_user_id"`
 }
 
 type TipExternalLink struct {

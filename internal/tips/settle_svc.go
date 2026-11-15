@@ -208,6 +208,13 @@ func (s *Service) walletOwnerFor(ctx context.Context, tip gen.Tip) (pgtype.UUID,
 	case RecipientUser:
 		return tip.RecipientUserID, nil
 	case RecipientOrganization:
+		// recipient_wallet_user_id snapshots the owner who received the
+		// credits — clawback must debit that wallet, not whoever owns the
+		// org now. Fall back to live resolution for rows written before
+		// the snapshot column existed.
+		if tip.RecipientWalletUserID.Valid {
+			return tip.RecipientWalletUserID, nil
+		}
 		return s.store.getOrgOwnerID(ctx, tip.RecipientOrganizationID)
 	case RecipientSpace:
 		// recipient_user_id snapshots the space owner who received the

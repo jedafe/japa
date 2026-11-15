@@ -164,7 +164,6 @@
 						<option value="kofi">Ko-fi</option>
 						<option value="buymeacoffee">Buy Me a Coffee</option>
 						<option value="opencollective">Open Collective</option>
-						<option value="other">Other</option>
 					</select>
 					<input bind:value={linkLabel} placeholder="Label" class="w-32 rounded-md border border-border bg-background px-2 py-2 text-sm" />
 					<input bind:value={linkUrl} placeholder="https://" class="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm" />

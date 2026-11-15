@@ -1542,6 +1542,11 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}); err != nil {
 			return fmt.Errorf("reassigning tips recipient: %w", err)
 		}
+		if err := q.ReassignTipsWalletOwnerToPlaceholder(ctx, gen.ReassignTipsWalletOwnerToPlaceholderParams{
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning tips wallet owner: %w", err)
+		}
 		if err := q.DeleteTipSettingsForUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting tip settings: %w", err)
 		}

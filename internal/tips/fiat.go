@@ -72,6 +72,7 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		SenderUserID:            senderID,
 		RecipientType:           owner.Type,
 		RecipientUserID:         recipientUserSnapshot(owner, walletOwner),
+		RecipientWalletUserID:   walletOwner,
 		RecipientOrganizationID: nullableOwnerOrg(owner),
 		RecipientSpaceID:        nullableOwnerSpace(owner),
 		ContentID:               in.ContentID,

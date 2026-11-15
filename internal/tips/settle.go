@@ -92,6 +92,7 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		SenderUserID:            p.senderID,
 		RecipientType:           p.recipientType,
 		RecipientUserID:         p.recipientUserID,
+		RecipientWalletUserID:   p.walletOwnerID,
 		RecipientOrganizationID: p.recipientOrgID,
 		RecipientSpaceID:        p.recipientSpaceID,
 		ContentID:               p.contentID,

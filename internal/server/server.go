@@ -4609,11 +4609,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/members", spaceHandlers.AddMember)
 			// Space tips (§05 addendum): public button state, owner writes, tips ledger.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
+			// All three are gated by tips.enabled like the rest of §125; the
+			// ledger requires auth + space management (catalog: owner full view).
+			r.With(features.Gate(featureChecker, "tips.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
 				Get("/spaces/{slug}/tip-settings", tipsHandlers.GetSpaceTipSettings)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "tips.enabled"), auth.RequireAuth(kr, vkClient.Redis())).
 				Patch("/spaces/{slug}/tip-settings", tipsHandlers.UpdateSpaceTipSettings)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
+			r.With(features.Gate(featureChecker, "tips.enabled"), auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
 				Get("/spaces/{slug}/tips", tipsHandlers.ListSpaceTips)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited

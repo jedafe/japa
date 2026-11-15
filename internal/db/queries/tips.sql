@@ -71,11 +71,11 @@ UPDATE tip_external_links SET click_count = click_count + 1 WHERE id = @id;
 
 -- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
-    recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
+    recipient_wallet_user_id, recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
     fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id,
     message, is_anonymous, status, idempotency_key)
 VALUES (@sender_user_id, @external_sender_name, @recipient_type, @recipient_user_id,
-    @recipient_organization_id, @recipient_space_id, @content_id, @method, @credits_amount,
+    @recipient_wallet_user_id, @recipient_organization_id, @recipient_space_id, @content_id, @method, @credits_amount,
     @fiat_amount, @fiat_currency, @fee_amount, @net_credits, @payment_id, @oc_contribution_id,
     @message, @is_anonymous, @status, @idempotency_key)
 RETURNING *;
@@ -125,16 +125,28 @@ SELECT * FROM tips WHERE sender_user_id = @sender_user_id
 ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListTipsReceived :many
--- recipient_user_id is the wallet snapshot for every recipient kind — org and
--- space tips settle into the owner's wallet too, so the received ledger must
--- not filter to recipient_type='user' (org tips would be invisible to the
--- wallet holder; there is no org-level tips route).
-SELECT * FROM tips WHERE recipient_user_id = @recipient_user_id
-   AND status = 'completed'
+-- recipient_wallet_user_id snapshots the wallet a tip settled into for every
+-- recipient kind — org and space tips land on the owner's wallet too, so the
+-- received ledger must match on either column (org tips keep
+-- recipient_user_id NULL by CHECK). The IS NULL-guarded org-owner fallback
+-- covers rows written before the snapshot column existed.
+SELECT * FROM tips
+WHERE status = 'completed'
+   AND (recipient_user_id = @wallet_user_id
+        OR recipient_wallet_user_id = @wallet_user_id
+        OR (recipient_wallet_user_id IS NULL
+            AND recipient_organization_id IN
+                (SELECT id FROM organizations WHERE owner_user_id = @wallet_user_id)))
 ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountTipsReceived :one
-SELECT count(*)::int FROM tips WHERE recipient_user_id = @recipient_user_id AND status = 'completed';
+SELECT count(*)::int FROM tips
+WHERE status = 'completed'
+   AND (recipient_user_id = @wallet_user_id
+        OR recipient_wallet_user_id = @wallet_user_id
+        OR (recipient_wallet_user_id IS NULL
+            AND recipient_organization_id IN
+                (SELECT id FROM organizations WHERE owner_user_id = @wallet_user_id)));
 
 -- name: ContentTipSummary :one
 SELECT count(*)::int AS tip_count,

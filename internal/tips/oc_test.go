@@ -60,6 +60,31 @@ func TestImportContributionDedupeAndRecipient(t *testing.T) {
 	}
 }
 
+// Org OC imports snapshot the org owner's wallet into
+// recipient_wallet_user_id — the received ledger and clawbacks resolve it
+// even after an ownership transfer (BUG-037/038).
+func TestImportContributionOrgWalletSnapshot(t *testing.T) {
+	fs := newFakeStore()
+	ownerID := uid(t, "44444444-4444-4444-4444-444444444444")
+	orgID := uid(t, "55555555-5555-5555-5555-555555555555")
+	fs.orgOwner = ownerID
+	svc := &Service{store: fs}
+
+	inserted, err := svc.ImportContribution(context.Background(), OrgOwner(orgID), OCContribution{
+		ID: "oc-org-1", AmountCents: 1200, Currency: "USD",
+	})
+	if err != nil || !inserted {
+		t.Fatalf("ImportContribution: inserted=%v err=%v", inserted, err)
+	}
+	got := fs.inserted[0]
+	if got.RecipientOrganizationID != orgID || got.RecipientUserID.Valid {
+		t.Fatalf("org recipient columns wrong: %+v", got)
+	}
+	if got.RecipientWalletUserID != ownerID {
+		t.Fatalf("wallet snapshot should be the org owner: %v", got.RecipientWalletUserID)
+	}
+}
+
 func TestImportContributionEmailMatch(t *testing.T) {
 	fs := newFakeStore()
 	matched := uid(t, "33333333-3333-3333-3333-333333333333")

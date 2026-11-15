@@ -9,7 +9,7 @@
 	import { page } from '$app/state';
 	import { t } from '#lib/i18n/index.js';
 	import { Modal } from '#lib/components/ui/index.js';
-	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, type TipConfig } from '#lib/api/tips.js';
+	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, getContentTipSummary, type TipConfig, type TipSummary } from '#lib/api/tips.js';
 	import { getAccessToken } from '#lib/api/token.svelte.js';
 	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn } from 'lucide-svelte';
 
@@ -34,6 +34,9 @@
 	let pendingTransfer = $state(false);
 	let idemKey = newIdempotencyKey();
 	let balance = $state<{ credits?: number }>({});
+	// §125 tip-summary — the public aggregate for the tipped content item
+	// (no sender identity; is_anonymous donors still count toward it).
+	let summary = $state<TipSummary | null>(null);
 
 	const authed = $derived(!!getAccessToken());
 	const returnUrl = $derived(`/login?return=${encodeURIComponent(page.url.pathname)}`);
@@ -80,6 +83,12 @@
 			succeeded = false;
 			pendingTransfer = false;
 			idemKey = newIdempotencyKey();
+			summary = null;
+			if (contentId) {
+				getContentTipSummary(contentId).then((res) => {
+					if (!res.error && res.data && res.data.tip_count > 0) summary = res.data;
+				});
+			}
 			if (getAccessToken()) {
 				getWalletBalance().then((res) => {
 					if (!res.error && res.data) {
@@ -154,6 +163,17 @@
 	});
 </script>
 
+{#snippet tipSummary()}
+	{#if summary}
+		<p class="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+			<Heart class="size-3.5 shrink-0" />
+			{t('tips.content_summary', '{n} supporter(s) · {credits} credits')
+				.replace('{n}', String(summary.tip_count))
+				.replace('{credits}', String(summary.credits_total))}
+		</p>
+	{/if}
+{/snippet}
+
 <Modal bind:open title="{t('tips.title')} — {recipientName}">
 	{#if succeeded}
 		<div class="flex flex-col items-center gap-3 py-6 text-center">
@@ -169,6 +189,7 @@
 	{:else if !authed}
 		<!-- Guests can see the dialog surface but must sign in to transact —
 		     POST /tips requires auth (BUG-014). -->
+		{@render tipSummary()}
 		<div class="flex flex-col items-center gap-3 py-6 text-center">
 			<LogIn class="size-10 text-[var(--color-primary-text)]" />
 			<p class="text-sm text-muted-foreground">{t('tips.sign_in_hint', 'Sign in to send a tip.')}</p>
@@ -178,6 +199,7 @@
 			</a>
 		</div>
 	{:else}
+		{@render tipSummary()}
 		{#if error}
 			<div class="mb-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
 				<AlertCircle class="size-4" />{error}

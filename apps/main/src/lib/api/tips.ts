@@ -67,7 +67,7 @@ export interface CreateTipResult {
 }
 
 export interface TipSummary {
-	count: number;
+	tip_count: number;
 	credits_total: number;
 }
 
@@ -174,7 +174,9 @@ export interface TipProductDomain {
 }
 
 // listTipProductDomains — monetizable platforms for 'product' links (§125).
+// api.get already unwraps the {data: …} envelope — the payload itself is
+// the array, so there is no second .data to read.
 export async function listTipProductDomains(): Promise<TipProductDomain[]> {
-	const res = await api.get<{ data: TipProductDomain[] }>('/api/v1/tips/product-domains');
-	return res.data?.data ?? [];
+	const res = await api.get<TipProductDomain[]>('/tips/product-domains');
+	return res.data ?? [];
 }

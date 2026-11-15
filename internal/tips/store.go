@@ -294,7 +294,7 @@ func (s *Store) listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, o
 }
 
 func (s *Store) listTipsReceived(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Tip, error) {
-	return s.read.ListTipsReceived(ctx, gen.ListTipsReceivedParams{RecipientUserID: userID, PageLimit: limit, PageOffset: offset})
+	return s.read.ListTipsReceived(ctx, gen.ListTipsReceivedParams{WalletUserID: userID, PageLimit: limit, PageOffset: offset})
 }
 
 func (s *Store) countTipsReceived(ctx context.Context, userID pgtype.UUID) (int32, error) {

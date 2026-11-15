@@ -195,6 +195,37 @@ func TestCreateTipOrgOwnerSettlement(t *testing.T) {
 	}
 }
 
+// Org tips snapshot the wallet owner at write time — after an ownership
+// transfer a clawback must still debit the wallet that received the
+// credits, not the new owner's (BUG-038). Rows predating the snapshot
+// fall back to live owner resolution.
+func TestWalletOwnerForOrgSnapshot(t *testing.T) {
+	fs := newFakeStore()
+	oldOwner := recipientID
+	newOwner := mustUID("77777777-7777-7777-7777-777777777777")
+	fs.orgOwner = newOwner // ownership transferred after the tip settled
+	svc := baseSvc(fs)
+
+	snapTip := gen.Tip{
+		RecipientType:           RecipientOrganization,
+		RecipientOrganizationID: orgID,
+		RecipientWalletUserID:   oldOwner,
+	}
+	got, err := svc.walletOwnerFor(context.Background(), snapTip)
+	if err != nil || got != oldOwner {
+		t.Fatalf("snapshot should win: got %v err %v", got, err)
+	}
+
+	legacyTip := gen.Tip{
+		RecipientType:           RecipientOrganization,
+		RecipientOrganizationID: orgID,
+	}
+	got, err = svc.walletOwnerFor(context.Background(), legacyTip)
+	if err != nil || got != newOwner {
+		t.Fatalf("legacy rows should fall back to live owner: got %v err %v", got, err)
+	}
+}
+
 func TestCreateTipIdempotentReplay(t *testing.T) {
 	fs := newFakeStore()
 	enabledRecipient(fs, UserOwner(recipientID))

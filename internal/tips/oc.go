@@ -160,14 +160,21 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 	}
 	if owner.Type == RecipientUser {
 		params.RecipientUserID = owner.ID
+		params.RecipientWalletUserID = owner.ID
 	} else if owner.Type == RecipientOrganization {
 		params.RecipientOrganizationID = owner.ID
+		// Snapshot the org owner's wallet so received-history + clawbacks
+		// resolve the same user even after an ownership transfer.
+		if w, err := s.store.getOrgOwnerID(ctx, owner.ID); err == nil {
+			params.RecipientWalletUserID = w
+		}
 	} else if owner.Type == RecipientSpace {
 		// Space recipients need recipient_space_id AND a recipient_user_id
 		// snapshot of the wallet owner (tips_recipient_check).
 		params.RecipientSpaceID = owner.ID
 		if w, err := s.store.getSpaceTipRecipient(ctx, owner.ID); err == nil {
 			params.RecipientUserID = w
+			params.RecipientWalletUserID = w
 		}
 	}
 

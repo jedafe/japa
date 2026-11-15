@@ -1541,7 +1541,9 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUI
 
 const gdprExportTipsReceived = `-- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE recipient_user_id = $1 ORDER BY created_at DESC) t
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE recipient_user_id = $1
+         OR recipient_wallet_user_id = $1
+      ORDER BY created_at DESC) t
 `
 
 func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -1553,7 +1555,7 @@ func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID
 
 const gdprExportTipsSent = `-- name: GdprExportTipsSent :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE sender_user_id = $1 ORDER BY created_at DESC) t
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE sender_user_id = $1 ORDER BY created_at DESC) t
 `
 
 func (q *Queries) GdprExportTipsSent(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -3734,6 +3736,23 @@ type ReassignTipsRecipientToPlaceholderParams struct {
 // financial record survives pseudonymized (§19 retention).
 func (q *Queries) ReassignTipsRecipientToPlaceholder(ctx context.Context, arg ReassignTipsRecipientToPlaceholderParams) error {
 	_, err := q.db.Exec(ctx, reassignTipsRecipientToPlaceholder, arg.TargetUserID, arg.UserID)
+	return err
+}
+
+const reassignTipsWalletOwnerToPlaceholder = `-- name: ReassignTipsWalletOwnerToPlaceholder :exec
+UPDATE tips SET recipient_wallet_user_id = $1
+WHERE recipient_wallet_user_id = $2
+`
+
+type ReassignTipsWalletOwnerToPlaceholderParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+// recipient_wallet_user_id carries the same NO ACTION FK — org/space tips
+// keep recipient_user_id NULL while the wallet owner is the erased user.
+func (q *Queries) ReassignTipsWalletOwnerToPlaceholder(ctx context.Context, arg ReassignTipsWalletOwnerToPlaceholderParams) error {
+	_, err := q.db.Exec(ctx, reassignTipsWalletOwnerToPlaceholder, arg.TargetUserID, arg.UserID)
 	return err
 }
 

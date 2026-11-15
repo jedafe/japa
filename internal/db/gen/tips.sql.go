@@ -41,7 +41,7 @@ func (q *Queries) AdminCountTips(ctx context.Context, arg AdminCountTipsParams) 
 }
 
 const adminListTips = `-- name: AdminListTips :many
-SELECT t.id, t.sender_user_id, t.external_sender_name, t.recipient_type, t.recipient_user_id, t.recipient_organization_id, t.content_id, t.method, t.credits_amount, t.fiat_amount, t.fiat_currency, t.fee_amount, t.net_credits, t.payment_id, t.oc_contribution_id, t.message, t.is_anonymous, t.status, t.idempotency_key, t.created_at, t.updated_at, t.checkout_url, t.recipient_space_id FROM tips t
+SELECT t.id, t.sender_user_id, t.external_sender_name, t.recipient_type, t.recipient_user_id, t.recipient_organization_id, t.content_id, t.method, t.credits_amount, t.fiat_amount, t.fiat_currency, t.fee_amount, t.net_credits, t.payment_id, t.oc_contribution_id, t.message, t.is_anonymous, t.status, t.idempotency_key, t.created_at, t.updated_at, t.checkout_url, t.recipient_space_id, t.recipient_wallet_user_id FROM tips t
 WHERE ($1::text = '' OR t.status = $1)
   AND ($2::text = '' OR t.method = $2)
   AND ($3::text = '' OR t.recipient_type = $3)
@@ -100,6 +100,7 @@ func (q *Queries) AdminListTips(ctx context.Context, arg AdminListTipsParams) ([
 			&i.UpdatedAt,
 			&i.CheckoutUrl,
 			&i.RecipientSpaceID,
+			&i.RecipientWalletUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -261,11 +262,17 @@ func (q *Queries) CountTipsBySpace(ctx context.Context, spaceID pgtype.UUID) (in
 }
 
 const countTipsReceived = `-- name: CountTipsReceived :one
-SELECT count(*)::int FROM tips WHERE recipient_user_id = $1 AND status = 'completed'
+SELECT count(*)::int FROM tips
+WHERE status = 'completed'
+   AND (recipient_user_id = $1
+        OR recipient_wallet_user_id = $1
+        OR (recipient_wallet_user_id IS NULL
+            AND recipient_organization_id IN
+                (SELECT id FROM organizations WHERE owner_user_id = $1)))
 `
 
-func (q *Queries) CountTipsReceived(ctx context.Context, recipientUserID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countTipsReceived, recipientUserID)
+func (q *Queries) CountTipsReceived(ctx context.Context, walletUserID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countTipsReceived, walletUserID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -457,7 +464,7 @@ func (q *Queries) GetSpaceTipEligibility(ctx context.Context, id pgtype.UUID) (G
 }
 
 const getTip = `-- name: GetTip :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE id = $1
 `
 
 func (q *Queries) GetTip(ctx context.Context, id pgtype.UUID) (Tip, error) {
@@ -487,12 +494,13 @@ func (q *Queries) GetTip(ctx context.Context, id pgtype.UUID) (Tip, error) {
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
 
 const getTipByIdempotencyKey = `-- name: GetTipByIdempotencyKey :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE sender_user_id = $1 AND idempotency_key = $2
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE sender_user_id = $1 AND idempotency_key = $2
 `
 
 type GetTipByIdempotencyKeyParams struct {
@@ -527,12 +535,13 @@ func (q *Queries) GetTipByIdempotencyKey(ctx context.Context, arg GetTipByIdempo
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
 
 const getTipByOCContributionID = `-- name: GetTipByOCContributionID :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE oc_contribution_id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE oc_contribution_id = $1
 `
 
 func (q *Queries) GetTipByOCContributionID(ctx context.Context, ocContributionID *string) (Tip, error) {
@@ -562,12 +571,13 @@ func (q *Queries) GetTipByOCContributionID(ctx context.Context, ocContributionID
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
 
 const getTipByPaymentID = `-- name: GetTipByPaymentID :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE payment_id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE payment_id = $1
 `
 
 func (q *Queries) GetTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) (Tip, error) {
@@ -597,6 +607,7 @@ func (q *Queries) GetTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) 
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
@@ -622,7 +633,7 @@ func (q *Queries) GetTipExternalLinkByID(ctx context.Context, id pgtype.UUID) (T
 }
 
 const getTipForUpdate = `-- name: GetTipForUpdate :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE id = $1 FOR UPDATE
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE id = $1 FOR UPDATE
 `
 
 // Row lock for settlement/clawback txs: a concurrent refund's UPDATE blocks
@@ -655,6 +666,7 @@ func (q *Queries) GetTipForUpdate(ctx context.Context, id pgtype.UUID) (Tip, err
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
@@ -830,14 +842,14 @@ func (q *Queries) IncrementTipLinkClickCount(ctx context.Context, id pgtype.UUID
 
 const insertTip = `-- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
-    recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
+    recipient_wallet_user_id, recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
     fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id,
     message, is_anonymous, status, idempotency_key)
 VALUES ($1, $2, $3, $4,
-    $5, $6, $7, $8, $9,
-    $10, $11, $12, $13, $14, $15,
-    $16, $17, $18, $19)
-RETURNING id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id
+    $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16,
+    $17, $18, $19, $20)
+RETURNING id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id
 `
 
 type InsertTipParams struct {
@@ -845,6 +857,7 @@ type InsertTipParams struct {
 	ExternalSenderName      *string     `json:"external_sender_name"`
 	RecipientType           string      `json:"recipient_type"`
 	RecipientUserID         pgtype.UUID `json:"recipient_user_id"`
+	RecipientWalletUserID   pgtype.UUID `json:"recipient_wallet_user_id"`
 	RecipientOrganizationID pgtype.UUID `json:"recipient_organization_id"`
 	RecipientSpaceID        pgtype.UUID `json:"recipient_space_id"`
 	ContentID               pgtype.UUID `json:"content_id"`
@@ -868,6 +881,7 @@ func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, erro
 		arg.ExternalSenderName,
 		arg.RecipientType,
 		arg.RecipientUserID,
+		arg.RecipientWalletUserID,
 		arg.RecipientOrganizationID,
 		arg.RecipientSpaceID,
 		arg.ContentID,
@@ -909,6 +923,7 @@ func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, erro
 		&i.UpdatedAt,
 		&i.CheckoutUrl,
 		&i.RecipientSpaceID,
+		&i.RecipientWalletUserID,
 	)
 	return i, err
 }
@@ -1102,7 +1117,7 @@ func (q *Queries) ListTipSettingsWithOCToken(ctx context.Context) ([]TipSetting,
 }
 
 const listTipsBySpace = `-- name: ListTipsBySpace :many
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE recipient_space_id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE recipient_space_id = $1
 ORDER BY created_at DESC LIMIT $3 OFFSET $2
 `
 
@@ -1146,6 +1161,7 @@ func (q *Queries) ListTipsBySpace(ctx context.Context, arg ListTipsBySpaceParams
 			&i.UpdatedAt,
 			&i.CheckoutUrl,
 			&i.RecipientSpaceID,
+			&i.RecipientWalletUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -1158,23 +1174,29 @@ func (q *Queries) ListTipsBySpace(ctx context.Context, arg ListTipsBySpaceParams
 }
 
 const listTipsReceived = `-- name: ListTipsReceived :many
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE recipient_user_id = $1
-   AND status = 'completed'
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips
+WHERE status = 'completed'
+   AND (recipient_user_id = $1
+        OR recipient_wallet_user_id = $1
+        OR (recipient_wallet_user_id IS NULL
+            AND recipient_organization_id IN
+                (SELECT id FROM organizations WHERE owner_user_id = $1)))
 ORDER BY created_at DESC LIMIT $3 OFFSET $2
 `
 
 type ListTipsReceivedParams struct {
-	RecipientUserID pgtype.UUID `json:"recipient_user_id"`
-	PageOffset      int32       `json:"page_offset"`
-	PageLimit       int32       `json:"page_limit"`
+	WalletUserID pgtype.UUID `json:"wallet_user_id"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
 }
 
-// recipient_user_id is the wallet snapshot for every recipient kind — org and
-// space tips settle into the owner's wallet too, so the received ledger must
-// not filter to recipient_type='user' (org tips would be invisible to the
-// wallet holder; there is no org-level tips route).
+// recipient_wallet_user_id snapshots the wallet a tip settled into for every
+// recipient kind — org and space tips land on the owner's wallet too, so the
+// received ledger must match on either column (org tips keep
+// recipient_user_id NULL by CHECK). The IS NULL-guarded org-owner fallback
+// covers rows written before the snapshot column existed.
 func (q *Queries) ListTipsReceived(ctx context.Context, arg ListTipsReceivedParams) ([]Tip, error) {
-	rows, err := q.db.Query(ctx, listTipsReceived, arg.RecipientUserID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listTipsReceived, arg.WalletUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1206,6 +1228,7 @@ func (q *Queries) ListTipsReceived(ctx context.Context, arg ListTipsReceivedPara
 			&i.UpdatedAt,
 			&i.CheckoutUrl,
 			&i.RecipientSpaceID,
+			&i.RecipientWalletUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -1218,7 +1241,7 @@ func (q *Queries) ListTipsReceived(ctx context.Context, arg ListTipsReceivedPara
 }
 
 const listTipsSent = `-- name: ListTipsSent :many
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE sender_user_id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE sender_user_id = $1
 ORDER BY created_at DESC LIMIT $3 OFFSET $2
 `
 
@@ -1261,6 +1284,7 @@ func (q *Queries) ListTipsSent(ctx context.Context, arg ListTipsSentParams) ([]T
 			&i.UpdatedAt,
 			&i.CheckoutUrl,
 			&i.RecipientSpaceID,
+			&i.RecipientWalletUserID,
 		); err != nil {
 			return nil, err
 		}

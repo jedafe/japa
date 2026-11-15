@@ -896,28 +896,31 @@ func (h *Handlers) canViewSpaceTips(r *http.Request, spaceID pgtype.UUID, visibi
 	if user == nil || !user.UserID.Valid {
 		return false
 	}
-	ctx := r.Context()
-	// Managers (owner, assigned moderator, spaces.moderate/admin node) can
-	// always see the space's tip state — mirrors canManageRestrictedSpace.
-	isManager := false
-	if ok, err := h.service.store.checkSpaceOwnership(ctx, spaceID, user.UserID); err == nil && ok {
-		isManager = true
-	} else if ok, err := h.service.store.getSpaceModerator(ctx, spaceID, user.UserID); err == nil && ok {
-		isManager = true
-	} else if h.service.perms != nil &&
-		(h.service.perms.Can(ctx, user.UserID, "spaces.moderate") || h.service.perms.Can(ctx, user.UserID, "spaces.admin")) {
-		isManager = true
-	}
 	if status != "active" {
-		return isManager
+		return h.isSpaceManager(r, spaceID, user.UserID)
 	}
-	if isManager {
+	if h.isSpaceManager(r, spaceID, user.UserID) {
 		return true
 	}
-	if ok, err := h.service.store.checkSpaceMembership(ctx, spaceID, user.UserID); err == nil && ok {
+	if ok, err := h.service.store.checkSpaceMembership(r.Context(), spaceID, user.UserID); err == nil && ok {
 		return true
 	}
 	return false
+}
+
+// isSpaceManager reports whether the user administers the space — owner,
+// assigned moderator, or a holder of the spaces.moderate/spaces.admin node.
+// Mirrors canManageRestrictedSpace.
+func (h *Handlers) isSpaceManager(r *http.Request, spaceID, userID pgtype.UUID) bool {
+	ctx := r.Context()
+	if ok, err := h.service.store.checkSpaceOwnership(ctx, spaceID, userID); err == nil && ok {
+		return true
+	}
+	if ok, err := h.service.store.getSpaceModerator(ctx, spaceID, userID); err == nil && ok {
+		return true
+	}
+	return h.service.perms != nil &&
+		(h.service.perms.Can(ctx, userID, "spaces.moderate") || h.service.perms.Can(ctx, userID, "spaces.admin"))
 }
 
 func spaceTipReadGate(h *Handlers, w http.ResponseWriter, r *http.Request, space gen.GetSpaceBySlugRow) bool {
@@ -968,10 +971,29 @@ func (h *Handlers) UpdateSpaceTipSettings(w http.ResponseWriter, r *http.Request
 }
 
 // ListSpaceTips handles GET /api/v1/spaces/{slug}/tips — paginated tips the
-// space has received.
+// space has received. Catalog: full ledger is owner/management-only (a
+// public aggregate is optional and not implemented).
 func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
 	space, ok := h.spaceBySlug(w, r)
 	if !ok || !spaceTipReadGate(h, w, r, space) {
+		return
+	}
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Sign in required")
+		return
+	}
+	// Financial ledger: only the recipient wallet owner, space management,
+	// or tips moderators may enumerate rows — a public member sees nothing.
+	isOwner := false
+	// getSpaceTipOwner performs no eligibility checks — owners keep
+	// read access to real senders even on suspended/ineligible spaces.
+	if ownerID, oerr := h.service.store.getSpaceTipOwner(r.Context(), space.ID); oerr == nil && ownerID == user.UserID {
+		isOwner = true
+	}
+	if !isOwner && !h.isSpaceManager(r, space.ID, user.UserID) &&
+		!(h.service.perms != nil && h.service.perms.Can(r.Context(), user.UserID, "tips.moderate")) {
+		errpkg.WriteError(w, http.StatusForbidden, "not_authorized", "Space tip ledger is owner/moderator only")
 		return
 	}
 	limit := parsePageSize(r)
@@ -987,15 +1009,8 @@ func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
 	// Anonymous tips hide sender identity for everyone except the recipient
 	// owner and tips moderators — same masking as the other tip lists.
 	mask := true
-	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
-		// getSpaceTipOwner performs no eligibility checks — owners keep
-		// read access to real senders even on suspended/ineligible spaces.
-		if ownerID, oerr := h.service.store.getSpaceTipOwner(r.Context(), space.ID); oerr == nil && ownerID == user.UserID {
-			mask = false
-		}
-		if mask && h.service.perms != nil && h.service.perms.Can(r.Context(), user.UserID, "tips.moderate") {
-			mask = false
-		}
+	if isOwner || (h.service.perms != nil && h.service.perms.Can(r.Context(), user.UserID, "tips.moderate")) {
+		mask = false
 	}
 	items := h.service.hydrateTips(r.Context(), rows, mask)
 

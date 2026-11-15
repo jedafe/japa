@@ -454,6 +454,15 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		// a JSON array/object as a string (e.g. '["uuid"]'), avoiding
 		// double-encoding.
 		data := encodeSettingValue(value)
+		// Keys registered as encrypted-at-rest (e.g. tips.oc_platform_token)
+		// are transformed before the upsert — the stored value is ciphertext.
+		if stored, encErr := config.EncryptSettingValue(key, data); encErr == nil {
+			data = stored
+		} else {
+			slog.Error("control: encrypt system setting", "key", key, "error", encErr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			return
+		}
 		// Consult the catalog for the is_public flag. On INSERT, set is_public
 		// from the catalog so appearance/branding settings are exposed via
 		// GET /site/settings/public. On CONFLICT (existing row), preserve the
@@ -507,6 +516,14 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	// value is a string that itself is a JSON array/object, preventing
 	// double-encoding.
 	data := encodeSettingValue(input.Value)
+	// Keys registered as encrypted-at-rest are transformed before the upsert.
+	if stored, encErr := config.EncryptSettingValue(key, data); encErr == nil {
+		data = stored
+	} else {
+		slog.Error("control: encrypt system setting", "key", key, "error", encErr)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+		return
+	}
 	// Resolve is_public: explicit request body value takes precedence; fall
 	// back to the catalog default so appearance/branding settings are public.
 	isPublic := false

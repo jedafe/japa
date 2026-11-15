@@ -43,6 +43,9 @@
 
 	let following = $state(untrack(() => followingProp ?? false));
 
+	// Master tips.enabled flag — the space tip routes are gated server-side.
+	const tipsEnabled = $derived(!!page.data.features?.['tips.enabled']);
+
 	// Wiki content: the API stores it as base64-encoded JSON with
 	// {title, extract, description, thumbnail, content_url}. Decode and
 	// extract the text for the sidebar about widget.
@@ -227,8 +230,10 @@
 		{/if}
 
 		<!-- §05 space tips: member-created custom spaces only — the button
-		     fetches tip-settings and self-hides when disabled/ineligible. -->
-		{#if space.level === 'custom'}
+		     fetches tip-settings and self-hides when disabled/ineligible. The
+		     master tips.enabled flag gates the space routes server-side, so
+		     the button must not render (or fetch) when the feature is off. -->
+		{#if space.level === 'custom' && tipsEnabled}
 			<div class="mt-3">
 				<TipButton
 					recipientType="space"
