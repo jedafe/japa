@@ -4,8 +4,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import { Briefcase, FileText, ArrowLeft } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import { Briefcase, FileText, ArrowLeft, Filter } from 'lucide-svelte';
+	import { EmptyState, Modal, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import SelectField from '#lib/components/ui/SelectField.svelte';
 	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
@@ -18,6 +18,8 @@
 	const applications = $derived(data.applications);
 	const meta = $derived(data.meta);
 	const statusFilter = $derived(data.statusFilter);
+	const hasActiveFilters = $derived(!!statusFilter);
+	let filtersModalOpen = $state(false);
 
 	// Per-row status drafts so changing the select does not mutate the
 	// loaded list; the hidden input submits the draft value.
@@ -77,10 +79,29 @@
 	</div>
 
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-2">
-		<div class="w-48">
-			<SelectField value={statusFilter} options={filterOptions} onValueChange={applyStatusFilter} />
-		</div>
+		<button
+			type="button"
+			onclick={() => (filtersModalOpen = true)}
+			class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			{t('common.filters', 'Filters')}
+			{#if hasActiveFilters}
+				<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+			{/if}
+			<Filter size={16} />
+		</button>
 	</div>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<div>
+				<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="applications-status">
+					{t('jobs.status_filter_label', 'Status')}
+				</label>
+				<SelectField value={statusFilter} options={filterOptions} onValueChange={applyStatusFilter} />
+			</div>
+		{/snippet}
+	</Modal>
 
 	<div class="p-4">
 		{#if applications.length === 0}

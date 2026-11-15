@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, invalidate, invalidateAll } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2, Bot } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2, Bot, Filter } from 'lucide-svelte';
 	import { MenuItem, Modal } from '#lib/components/ui/index.js';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -224,6 +224,7 @@
 	let pageSize = $state(10);
 	let q = $state('');
 	let sortVal = $state<'newest' | 'oldest'>('newest');
+	let filtersModalOpen = $state(false);
 
 	// Reset the filter, search, sort + page whenever the active tab changes.
 	// `activeTab` is the only dependency; the writes below must not create
@@ -234,6 +235,7 @@
 		q = '';
 		sortVal = 'newest';
 		currentPage = 1;
+		filtersModalOpen = false;
 	});
 
 	// Unknown or unavailable ?tab= values (e.g. ?tab=bogus, or a conditional
@@ -1361,24 +1363,42 @@ profile is private, or no stage is set. -->
 		<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
 				<div class="flex flex-wrap items-center gap-2">
 					{#if options.length > 1}
-						<div class="w-full sm:w-44">
-							<Autocomplete
-								placeholder={t('profile.filter.label', 'Filter')}
-								emptyMessage={t('profile.empty.no_results', 'No results')}
-								fetcher={staticFilterFetcher(items)}
-								initialFetcher={() => Promise.resolve(items)}
-								selectedId={filterVal}
-								selectedLabel={options.find((o) => o.value === filterVal)?.label}
-								onSelect={(item) => {
-									filterVal = item.id;
-									currentPage = 1;
-								}}
-								onClear={() => {
-									filterVal = 'all';
-									currentPage = 1;
-								}}
-							/>
-						</div>
+						<button
+							type="button"
+							onclick={() => (filtersModalOpen = true)}
+							class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('common.filters', 'Filters')}
+							{#if filterVal !== 'all'}
+								<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+							{/if}
+							<Filter size={16} />
+						</button>
+						<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+							{#snippet children()}
+								<div>
+									<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="profile-filter">
+										{t('profile.filter.label', 'Filter')}
+									</label>
+									<Autocomplete
+										placeholder={t('profile.filter.label', 'Filter')}
+										emptyMessage={t('profile.empty.no_results', 'No results')}
+										fetcher={staticFilterFetcher(items)}
+										initialFetcher={() => Promise.resolve(items)}
+										selectedId={filterVal}
+										selectedLabel={options.find((o) => o.value === filterVal)?.label}
+										onSelect={(item) => {
+											filterVal = item.id;
+											currentPage = 1;
+										}}
+										onClear={() => {
+											filterVal = 'all';
+											currentPage = 1;
+										}}
+									/>
+								</div>
+							{/snippet}
+						</Modal>
 					{/if}
 					{#if sortable}
 						<div class="w-full sm:w-40">
