@@ -2489,6 +2489,18 @@ func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
 		contentType = st.ContentType
 	}
 
+	// §127: resolve the projected index rows BEFORE the delete —
+	// atproto_records.content_id is ON DELETE SET NULL, so once the row
+	// is gone nothing attributes the records to tombstone. The admin
+	// handler resolves its own set because its ForceDelete fallback
+	// bypasses this method; service callers (story AdminHardDelete et
+	// al.) rely on this copy. Enqueue only after the delete confirms.
+	atprotoRecs, aerr := s.write.GetAtprotoRecordsByContent(ctx, id)
+	if aerr != nil {
+		slog.Warn("content: atproto record lookup before hard delete failed",
+			"content_id", id.String(), "error", aerr)
+	}
+
 	affected, err := s.write.HardDeleteContent(ctx, id)
 	if err != nil {
 		if errpkg.IsFKViolation(err) {
@@ -2512,6 +2524,10 @@ func (s *Service) HardDeleteContent(ctx context.Context, id pgtype.UUID) error {
 	}
 
 	s.purgeEdgeContent(ctx, id, contentType, slug)
+
+	for _, rec := range atprotoRecs {
+		worker.EnqueueAtprotoDeleteRecord(ctx, rec.AccountID, rec.Uri)
+	}
 
 	return nil
 }
