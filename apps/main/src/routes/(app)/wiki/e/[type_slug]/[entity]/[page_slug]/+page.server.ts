@@ -47,6 +47,9 @@ export interface EntityWikiPage {
 	helpful?: WikiHelpful | null;
 	revision_summary?: string;
 	submitted_by?: string;
+	/** §07 — byline verification badge (managed taxonomy, scope=user). */
+	submitted_by_verified?: boolean;
+	submitted_by_verification_type?: string;
 	/** TOC opt-out — when true the page renders no inline/floating TOC. */
 	hide_toc?: boolean;
 }

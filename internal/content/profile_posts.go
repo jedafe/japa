@@ -136,12 +136,12 @@ func splitTags(csv string) []string {
 // the "on behalf of <Org>" badge renders. Nil for personal posts.
 // Ref: japaconnect-engineering/sections/07-organization-profiles.md.
 type OrgRef struct {
-	ID      pgtype.UUID `json:"id"`
-	Name    string      `json:"name"`
-	Slug    string      `json:"slug"`
-	LogoURL string      `json:"logo_url,omitempty"`
-	Verified         bool   `json:"verified,omitempty"`
-	VerificationType string `json:"verification_type,omitempty"`
+	ID               pgtype.UUID `json:"id"`
+	Name             string      `json:"name"`
+	Slug             string      `json:"slug"`
+	LogoURL          string      `json:"logo_url,omitempty"`
+	Verified         bool        `json:"verified,omitempty"`
+	VerificationType string      `json:"verification_type,omitempty"`
 }
 
 // orgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
@@ -178,45 +178,47 @@ func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string, ver
 // here), is_locked, reshare_count, publish_at, updated_at.
 // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 type PostCard struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Excerpt           string             `json:"excerpt"`
-	BodyHtml          string             `json:"body_html"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	AuthorName        string             `json:"author_name"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorAvatarURL   string             `json:"author_avatar_url"`
-	OrganizationID    pgtype.UUID        `json:"organization_id"`
-	Organization      *OrgRef            `json:"organization,omitempty"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	SpaceName         string             `json:"space_name"`
-	SpaceSlug         string             `json:"space_slug"`
-	SpaceAvatarURL    string             `json:"space_avatar_url"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CoverImageURL     string             `json:"cover_image_url"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ReactionCount     int32              `json:"reaction_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	ShareCount        int32              `json:"share_count"`
-	Tags              []string           `json:"tags,omitempty"`
-	JourneyStage      *string            `json:"journey_stage,omitempty"`
-	VisaRoute         *string            `json:"visa_route,omitempty"`
-	SourceCountry     *string            `json:"source_country,omitempty"`
-	TargetCountry     *string            `json:"target_country,omitempty"`
-	GuideCategory     *string            `json:"guide_category,omitempty"`
-	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
-	VideoSourceURL    string             `json:"video_source_url"`
-	VideoSourceType   string             `json:"video_source_type"`
-	VideoDurationSecs int32              `json:"video_duration_secs"`
-	VideoThumbnailURL string             `json:"video_thumbnail_url"`
-	IsPinned          bool               `json:"is_pinned"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Excerpt                string             `json:"excerpt"`
+	BodyHtml               string             `json:"body_html"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	AuthorName             string             `json:"author_name"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorAvatarURL        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	OrganizationID         pgtype.UUID        `json:"organization_id"`
+	Organization           *OrgRef            `json:"organization,omitempty"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	SpaceName              string             `json:"space_name"`
+	SpaceSlug              string             `json:"space_slug"`
+	SpaceAvatarURL         string             `json:"space_avatar_url"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CoverImageURL          string             `json:"cover_image_url"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ReactionCount          int32              `json:"reaction_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	ShareCount             int32              `json:"share_count"`
+	Tags                   []string           `json:"tags,omitempty"`
+	JourneyStage           *string            `json:"journey_stage,omitempty"`
+	VisaRoute              *string            `json:"visa_route,omitempty"`
+	SourceCountry          *string            `json:"source_country,omitempty"`
+	TargetCountry          *string            `json:"target_country,omitempty"`
+	GuideCategory          *string            `json:"guide_category,omitempty"`
+	VideoSourceID          pgtype.UUID        `json:"video_source_id"`
+	VideoSourceURL         string             `json:"video_source_url"`
+	VideoSourceType        string             `json:"video_source_type"`
+	VideoDurationSecs      int32              `json:"video_duration_secs"`
+	VideoThumbnailURL      string             `json:"video_thumbnail_url"`
+	IsPinned               bool               `json:"is_pinned"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 }
 
 // MakeExcerpt strips HTML tags from bodyHtml, collapses whitespace, and
@@ -271,45 +273,47 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 	for i := range items {
 		c := &items[i]
 		cards[i] = PostCard{
-			ID:                c.ID,
-			ContentType:       c.ContentType,
-			Title:             c.Title,
-			Slug:              c.Slug,
-			Excerpt:           MakeExcerpt(c.BodyHtml, 200),
-			BodyHtml:          c.BodyHtml,
-			AuthorID:          c.AuthorID,
-			AuthorName:        c.AuthorName,
-			AuthorUsername:    c.AuthorUsername,
-			AuthorAvatarURL:   c.AuthorAvatarUrl,
-			OrganizationID:    c.OrganizationID,
-			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
-			SpaceID:           c.SpaceID,
-			SpaceName:         c.SpaceName,
-			SpaceSlug:         c.SpaceSlug,
-			SpaceAvatarURL:    mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
-			HeaderImageID:     c.HeaderImageID,
-			FeaturedImageID:   c.FeaturedImageID,
-			CoverImageURL:     coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
-			ReadTimeMinutes:   c.ReadTimeMinutes,
-			ViewCount:         c.ViewCount,
-			CommentCount:      c.CommentCount,
-			ReactionCount:     c.ReactionCount,
-			BookmarkCount:     c.BookmarkCount,
-			ShareCount:        c.ShareCount,
-			Tags:              splitTags(stringFromInterface(c.Tags)),
-			JourneyStage:      c.JourneyStage,
-			VisaRoute:         c.VisaRoute,
-			SourceCountry:     c.SourceCountry,
-			TargetCountry:     c.TargetCountry,
-			GuideCategory:     c.GuideCategory,
-			VideoSourceID:     c.VideoSourceID,
-			VideoSourceURL:    derefString(c.VideoSourceUrl),
-			VideoSourceType:   derefString(c.VideoSourceType),
-			VideoDurationSecs: derefInt32(c.VideoDurationSecs),
-			VideoThumbnailURL: derefString(c.VideoThumbnailUrl),
-			IsPinned:          c.IsPinned,
-			PublishedAt:       c.PublishedAt,
-			CreatedAt:         c.CreatedAt,
+			ID:                     c.ID,
+			ContentType:            c.ContentType,
+			Title:                  c.Title,
+			Slug:                   c.Slug,
+			Excerpt:                MakeExcerpt(c.BodyHtml, 200),
+			BodyHtml:               c.BodyHtml,
+			AuthorID:               c.AuthorID,
+			AuthorName:             c.AuthorName,
+			AuthorUsername:         c.AuthorUsername,
+			AuthorAvatarURL:        c.AuthorAvatarUrl,
+			AuthorVerified:         c.AuthorVerified,
+			AuthorVerificationType: c.AuthorVerificationType,
+			OrganizationID:         c.OrganizationID,
+			Organization:           orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
+			SpaceID:                c.SpaceID,
+			SpaceName:              c.SpaceName,
+			SpaceSlug:              c.SpaceSlug,
+			SpaceAvatarURL:         mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
+			HeaderImageID:          c.HeaderImageID,
+			FeaturedImageID:        c.FeaturedImageID,
+			CoverImageURL:          coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
+			ReadTimeMinutes:        c.ReadTimeMinutes,
+			ViewCount:              c.ViewCount,
+			CommentCount:           c.CommentCount,
+			ReactionCount:          c.ReactionCount,
+			BookmarkCount:          c.BookmarkCount,
+			ShareCount:             c.ShareCount,
+			Tags:                   splitTags(stringFromInterface(c.Tags)),
+			JourneyStage:           c.JourneyStage,
+			VisaRoute:              c.VisaRoute,
+			SourceCountry:          c.SourceCountry,
+			TargetCountry:          c.TargetCountry,
+			GuideCategory:          c.GuideCategory,
+			VideoSourceID:          c.VideoSourceID,
+			VideoSourceURL:         derefString(c.VideoSourceUrl),
+			VideoSourceType:        derefString(c.VideoSourceType),
+			VideoDurationSecs:      derefInt32(c.VideoDurationSecs),
+			VideoThumbnailURL:      derefString(c.VideoThumbnailUrl),
+			IsPinned:               c.IsPinned,
+			PublishedAt:            c.PublishedAt,
+			CreatedAt:              c.CreatedAt,
 		}
 	}
 
@@ -376,45 +380,47 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 	for i := range items {
 		c := &items[i]
 		cards[i] = PostCard{
-			ID:                c.ID,
-			ContentType:       c.ContentType,
-			Title:             c.Title,
-			Slug:              c.Slug,
-			Excerpt:           MakeExcerpt(c.BodyHtml, 200),
-			BodyHtml:          c.BodyHtml,
-			AuthorID:          c.AuthorID,
-			AuthorName:        c.AuthorName,
-			AuthorUsername:    c.AuthorUsername,
-			AuthorAvatarURL:   c.AuthorAvatarUrl,
-			OrganizationID:    c.OrganizationID,
-			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
-			SpaceID:           c.SpaceID,
-			SpaceName:         c.SpaceName,
-			SpaceSlug:         c.SpaceSlug,
-			SpaceAvatarURL:    mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
-			HeaderImageID:     c.HeaderImageID,
-			FeaturedImageID:   c.FeaturedImageID,
-			CoverImageURL:     coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
-			ReadTimeMinutes:   c.ReadTimeMinutes,
-			ViewCount:         c.ViewCount,
-			CommentCount:      c.CommentCount,
-			ReactionCount:     c.ReactionCount,
-			BookmarkCount:     c.BookmarkCount,
-			ShareCount:        c.ShareCount,
-			Tags:              splitTags(stringFromInterface(c.Tags)),
-			JourneyStage:      c.JourneyStage,
-			VisaRoute:         c.VisaRoute,
-			SourceCountry:     c.SourceCountry,
-			TargetCountry:     c.TargetCountry,
-			GuideCategory:     c.GuideCategory,
-			VideoSourceID:     c.VideoSourceID,
-			VideoSourceURL:    derefString(c.VideoSourceUrl),
-			VideoSourceType:   derefString(c.VideoSourceType),
-			VideoDurationSecs: derefInt32(c.VideoDurationSecs),
-			VideoThumbnailURL: derefString(c.VideoThumbnailUrl),
-			IsPinned:          c.IsPinned,
-			PublishedAt:       c.PublishedAt,
-			CreatedAt:         c.CreatedAt,
+			ID:                     c.ID,
+			ContentType:            c.ContentType,
+			Title:                  c.Title,
+			Slug:                   c.Slug,
+			Excerpt:                MakeExcerpt(c.BodyHtml, 200),
+			BodyHtml:               c.BodyHtml,
+			AuthorID:               c.AuthorID,
+			AuthorName:             c.AuthorName,
+			AuthorUsername:         c.AuthorUsername,
+			AuthorAvatarURL:        c.AuthorAvatarUrl,
+			AuthorVerified:         c.AuthorVerified,
+			AuthorVerificationType: c.AuthorVerificationType,
+			OrganizationID:         c.OrganizationID,
+			Organization:           orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
+			SpaceID:                c.SpaceID,
+			SpaceName:              c.SpaceName,
+			SpaceSlug:              c.SpaceSlug,
+			SpaceAvatarURL:         mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
+			HeaderImageID:          c.HeaderImageID,
+			FeaturedImageID:        c.FeaturedImageID,
+			CoverImageURL:          coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
+			ReadTimeMinutes:        c.ReadTimeMinutes,
+			ViewCount:              c.ViewCount,
+			CommentCount:           c.CommentCount,
+			ReactionCount:          c.ReactionCount,
+			BookmarkCount:          c.BookmarkCount,
+			ShareCount:             c.ShareCount,
+			Tags:                   splitTags(stringFromInterface(c.Tags)),
+			JourneyStage:           c.JourneyStage,
+			VisaRoute:              c.VisaRoute,
+			SourceCountry:          c.SourceCountry,
+			TargetCountry:          c.TargetCountry,
+			GuideCategory:          c.GuideCategory,
+			VideoSourceID:          c.VideoSourceID,
+			VideoSourceURL:         derefString(c.VideoSourceUrl),
+			VideoSourceType:        derefString(c.VideoSourceType),
+			VideoDurationSecs:      derefInt32(c.VideoDurationSecs),
+			VideoThumbnailURL:      derefString(c.VideoThumbnailUrl),
+			IsPinned:               c.IsPinned,
+			PublishedAt:            c.PublishedAt,
+			CreatedAt:              c.CreatedAt,
 		}
 	}
 

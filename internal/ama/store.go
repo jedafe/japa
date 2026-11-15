@@ -52,6 +52,9 @@ type AMAThread struct {
 	AuthorUserID pgtype.UUID
 	AuthorName   string
 	AuthorAvatar string
+	// §07 author badge — false/"" when is_anonymous (SQL CASE redacts).
+	AuthorVerified         bool
+	AuthorVerificationType string
 	IsAnonymous  bool
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
@@ -96,7 +99,7 @@ func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSiz
 
 	out := make([]AMAThread, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
+		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.AuthorVerified, r.AuthorVerificationType, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
 	}
 
 	return out, nil
@@ -125,7 +128,7 @@ func (s *Store) ListClosed(ctx context.Context, dest, profession string, pageSiz
 
 	out := make([]AMAThread, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
+		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.AuthorVerified, r.AuthorVerificationType, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
 	}
 
 	return out, nil
@@ -138,7 +141,7 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (AMAThread, error) 
 		return AMAThread{}, err
 	}
 
-	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
+	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.AuthorVerified, r.AuthorVerificationType, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
 // GetAuthorID returns the author (author_user_id) of an AMA thread, used by
@@ -201,7 +204,7 @@ func (s *Store) UpdateAMA(ctx context.Context, threadID pgtype.UUID, title strin
 		return AMAThread{}, err
 	}
 
-	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
+	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.AuthorVerified, r.AuthorVerificationType, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
 // CloseAMA sets the closes_at field in ama_config to now(), closing the AMA.
@@ -280,6 +283,7 @@ func (s *Store) GetLastAMACreatedAt(ctx context.Context, userID pgtype.UUID) (ti
 func rowToAMAThread(
 	id pgtype.UUID, title, slug string, body, amaConfig []byte,
 	authorUserID pgtype.UUID, authorUsername, authorAvatar interface{},
+	authorVerified bool, authorVerificationType string,
 	isAnonymous bool,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) AMAThread {
@@ -291,6 +295,8 @@ func rowToAMAThread(
 		Body:         body,
 		AmaConfig:    amaConfig,
 		AuthorUserID: authorUserID,
+		AuthorVerified:         authorVerified,
+		AuthorVerificationType: authorVerificationType,
 		IsAnonymous:  isAnonymous,
 		CreatedAt:    createdAt,
 		UpdatedAt:    updatedAt,

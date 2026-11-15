@@ -7,6 +7,7 @@
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { enhance } from '$app/forms';
 	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2, Trash2 } from 'lucide-svelte';
 	import type { WikiRevision, WikiRevisionStatus } from '#lib/types/index.js';
@@ -248,7 +249,7 @@
 						<dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
 							<div>
 								<dt class="inline">{t('wiki.submitted_by', 'Submitted by')}: </dt>
-								<dd class="inline text-[var(--color-text-subtle)]">{rev.submitted_by}</dd>
+								<dd class="inline-flex items-center gap-1 text-[var(--color-text-subtle)]">{rev.submitted_by}<VerifiedBadge verified={rev.submitted_by_verified} type={rev.submitted_by_verification_type} size={12} /></dd>
 							</div>
 							{#if rev.reviewed_by}
 								<div>

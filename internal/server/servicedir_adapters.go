@@ -51,15 +51,17 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, entityType strin
 
 	for _, r := range rows {
 		item := servicedir.ReviewItem{
-			ID:                r.ID.String(),
-			AuthorID:          r.ReviewerUserID.String(),
-			AuthorUsername:    r.AuthorUsername,
-			AuthorDisplayName: r.AuthorDisplayName,
-			AuthorAvatarURL:   r.AuthorAvatarUrl,
-			Rating:            r.Rating,
-			Title:             r.Title,
-			Body:              r.Body,
-			CreatedAt:         r.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			ID:                     r.ID.String(),
+			AuthorID:               r.ReviewerUserID.String(),
+			AuthorUsername:         r.AuthorUsername,
+			AuthorDisplayName:      r.AuthorDisplayName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
+			Rating:                 r.Rating,
+			Title:                  r.Title,
+			Body:                   r.Body,
+			CreatedAt:              r.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		}
 		items = append(items, item)
 	}

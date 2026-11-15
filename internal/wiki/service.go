@@ -101,6 +101,9 @@ type WikiPageDetailDTO struct {
 	// §80 Reader UX — the approved submitter's avatar for the byline;
 	// empty for AI/system-generated pages or users without one.
 	SubmittedByAvatarURL string `json:"submitted_by_avatar_url,omitempty"`
+	// §07 verification badge state for the byline identity.
+	SubmittedByVerified         bool   `json:"submitted_by_verified,omitempty"`
+	SubmittedByVerificationType string `json:"submitted_by_verification_type,omitempty"`
 	// Fields is the bound field group's schema+values block (§80); every
 	// category binds a group, so nil only when the group lookup itself
 	// fails. CategoryLabel echoes the template's admin-set label so the
@@ -257,8 +260,11 @@ type WikiRevisionDTO struct {
 	TargetEntityID   string `json:"target_entity_id,omitempty"`
 
 	SubmittedBy string `json:"submitted_by,omitempty"`
-	ReviewedBy  string `json:"reviewed_by,omitempty"`
-	ReviewedAt  string `json:"reviewed_at,omitempty"`
+	// §07 verification badge state for the submitter identity.
+	SubmittedByVerified         bool   `json:"submitted_by_verified,omitempty"`
+	SubmittedByVerificationType string `json:"submitted_by_verification_type,omitempty"`
+	ReviewedBy                  string `json:"reviewed_by,omitempty"`
+	ReviewedAt                  string `json:"reviewed_at,omitempty"`
 	// WikiPageID links a revision back to its host page — empty for
 	// page-less fields/mixed ops revisions (§80).
 	WikiPageID string `json:"wiki_page_id,omitempty"`
@@ -1038,6 +1044,14 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 		if rev.SubmittedByAvatarURL != nil {
 			dto.SubmittedByAvatarURL = *rev.SubmittedByAvatarURL
+		}
+
+		if rev.SubmittedByVerified != nil {
+			dto.SubmittedByVerified = *rev.SubmittedByVerified
+		}
+
+		if rev.SubmittedByVerificationType != nil {
+			dto.SubmittedByVerificationType = *rev.SubmittedByVerificationType
 		}
 	}
 	// If no approved revision exists, current_content is nil — the page
@@ -2211,6 +2225,14 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 
 	if r.SubmittedByName != nil {
 		dto.SubmittedBy = *r.SubmittedByName
+	}
+
+	if r.SubmittedByVerified != nil {
+		dto.SubmittedByVerified = *r.SubmittedByVerified
+	}
+
+	if r.SubmittedByVerificationType != nil {
+		dto.SubmittedByVerificationType = *r.SubmittedByVerificationType
 	}
 
 	if r.ReviewedByName != nil && *r.ReviewedByName != "" {

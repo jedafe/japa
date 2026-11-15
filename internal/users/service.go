@@ -1413,6 +1413,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sort
 			Bio:             u.Bio,
 			ProfileType:     u.ProfileType,
 			Verified:        u.Verified,
+			VerificationType: u.VerificationType,
 			FollowerCount:   u.FollowerCount,
 			FollowingCount:  u.FollowingCount,
 			CreatedAt:       u.CreatedAt.Time.Format(time.RFC3339),

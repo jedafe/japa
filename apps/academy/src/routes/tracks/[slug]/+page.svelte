@@ -9,6 +9,7 @@
 	import { goto } from '$app/navigation';
 	import LevelBadge from '#lib/components/academy/LevelBadge.svelte';
 	import StarRating from '#lib/components/academy/StarRating.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import CheckoutModal from '#lib/components/academy/CheckoutModal.svelte';
 	import { LoadingSkeleton } from '#lib/components/ui/index.js';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '#lib/format.js';
@@ -600,7 +601,10 @@
 										</span>
 									{/if}
 									<div class="flex-1">
-										<p class="text-sm font-medium text-[var(--color-text)]">{review.author_displayName ?? review.author_username}</p>
+										<p class="flex items-center gap-1 text-sm font-medium text-[var(--color-text)]">
+											{review.author_displayName ?? review.author_username}
+											<VerifiedBadge verified={review.author_verified} type={review.author_verification_type} size={14} />
+										</p>
 										<StarRating value={review.rating} small />
 									</div>
 								</div>

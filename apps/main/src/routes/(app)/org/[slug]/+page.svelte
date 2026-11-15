@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight, Briefcase, Pencil, TriangleAlert } from 'lucide-svelte';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -281,6 +282,8 @@
 								slug={member.user.username}
 								name={member.user.display_name ?? member.user.username}
 								avatar={member.user.avatar_url}
+								verified={member.user.verified}
+								verificationType={member.user.verification_type}
 								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
@@ -292,7 +295,7 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name ?? member.user.username}</span>
+										<span class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{member.user.display_name ?? member.user.username}</span><VerifiedBadge verified={member.user.verified} type={member.user.verification_type} size={14} /></span>
 										<span class="block text-xs text-[var(--color-muted)]">@{member.user.username}</span>
 									</span>
 									<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{t(`org_admin.role.${member.role}`, member.role)}</span>

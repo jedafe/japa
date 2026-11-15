@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Bot, ChevronRight } from 'lucide-svelte';
 	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import type { PageData } from './$types';
 
@@ -64,7 +65,7 @@
 						<time class="text-[var(--color-muted)]">{new Date(rev.created_at).toLocaleDateString()}</time>
 					</div>
 					{#if rev.summary}<p class="text-sm text-[var(--color-text)]">{rev.summary}</p>{/if}
-					{#if rev.submitted_by}<p class="text-xs text-[var(--color-muted)]">{t('wiki.submitted_by', 'by {name}', { name: rev.submitted_by })}</p>{/if}
+					{#if rev.submitted_by}<p class="flex items-center gap-1 text-xs text-[var(--color-muted)]">{t('wiki.submitted_by', 'by {name}', { name: rev.submitted_by })}<VerifiedBadge verified={rev.submitted_by_verified} type={rev.submitted_by_verification_type} size={12} /></p>{/if}
 				</li>
 			{/each}
 		</ul>

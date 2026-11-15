@@ -29,6 +29,7 @@
 	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, releaseNextAction, isNextActionClaimed, markNextActionPending, nextActionsViewer, nextActionsSurface } from '#lib/api/nextActions.js';
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { untrack } from 'svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	// Self-import enables configured_widget delegation: a sidebar-typed
@@ -377,7 +378,7 @@
 	}
 
 	// --- Context widgets (user_card, related_discussions on /org/* and /u/* pages) ---
-	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
+	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; verified?: boolean; verification_type?: string | null; }
 	interface RelatedDiscussion { id: string; title: string; slug: string; reply_count?: number; }
 
 	// Resolve context widgets from the already-loaded page data where possible.
@@ -1556,7 +1557,7 @@
 					</span>
 				{/if}
 				<span class="min-w-0 flex-1">
-					<span class="block truncate text-sm font-medium text-[var(--color-text)]">{userCardData.display_name ?? userCardData.username}</span>
+					<span class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{userCardData.display_name ?? userCardData.username}</span><VerifiedBadge verified={userCardData.verified} type={userCardData.verification_type} size={14} /></span>
 					{#if userCardData.username}
 						<span class="block text-xs text-[var(--color-muted)]">@{userCardData.username}</span>
 					{/if}

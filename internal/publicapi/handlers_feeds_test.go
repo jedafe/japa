@@ -293,13 +293,13 @@ func tagContentRowVals(id pgtype.UUID, created time.Time) []any {
 		pgtype.UUID{},
 		pgtype.UUID{},
 		(*string)(nil), (*string)(nil), (*string)(nil), (*string)(nil),
-		true, "published", "public", false, false,
+		true, false, "published", "public", false, false,
 		int32(0), int32(5), int32(1), int32(0), int32(0),
 		pgtype.Timestamptz{},
 		ts, ts,
 		pgtype.Timestamptz{},
 		(*string)(nil), (*string)(nil),
-		"Jane Doe", "", "Canada", "canada", "excerpt", "visas,jobs",
+		"Jane Doe", "", true, "notable", "Canada", "canada", "excerpt", "visas,jobs",
 	}
 }
 
@@ -342,7 +342,8 @@ func spaceByIDVals(id pgtype.UUID, slug string) []any {
 
 func publicUserVals(id pgtype.UUID, username string) []any {
 	return []any{
-		id, username, "individual", int32(0), (*string)(nil), (*string)(nil),
+		id, username, "individual", false, (*string)(nil), int32(0),
+		(*string)(nil), (*string)(nil),
 		(*string)(nil), (*string)(nil),
 		pgtype.Timestamptz{},
 		int32(0),

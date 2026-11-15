@@ -8,6 +8,7 @@
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import SuggestEdit from '#lib/components/wiki/SuggestEdit.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import WikiItemTables from '#lib/components/wiki/WikiItemTables.svelte';
 	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
 	import WikiRollupPanel from '#lib/components/wiki/WikiRollupPanel.svelte';
@@ -629,8 +630,9 @@
 							/>
 						{/if}
 						{#if data.page.submitted_by}
-							<span>
+							<span class="inline-flex items-center gap-1">
 								{t('wiki.byline', 'By {name}').replace('{name}', data.page.submitted_by)}
+								<VerifiedBadge verified={data.page.submitted_by_verified} type={data.page.submitted_by_verification_type} size={13} />
 							</span>
 						{/if}
 						{#if data.page.updated_at}

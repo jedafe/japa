@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { api } from '#lib/api/client.js';
@@ -807,8 +808,10 @@
 										{#if review.body}
 											<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
 										{/if}
-										<p class="mt-2 text-xs text-[var(--color-muted)]">
-											{reviewerName(review.reviewer_user_id)} · {new Date(review.created_at).toLocaleDateString()}
+										<p class="mt-2 flex items-center gap-1 text-xs text-[var(--color-muted)]">
+											{reviewerName(review.reviewer_user_id)}
+											<VerifiedBadge verified={review.author_verified} type={review.author_verification_type} size={12} />
+											· {new Date(review.created_at).toLocaleDateString()}
 										</p>
 									</div>
 									{#if currentUser?.id && review.reviewer_user_id === currentUser.id}

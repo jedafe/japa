@@ -23,6 +23,7 @@ SELECT EXISTS(
 SELECT um.id, um.muted_user_id, COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
+ u.verified, u.verification_type,
  um.created_at
 FROM user_mutes um
 JOIN users u ON u.id = um.muted_user_id

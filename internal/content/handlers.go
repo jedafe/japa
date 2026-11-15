@@ -1568,15 +1568,17 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		// Roadmap shadow rows: the item slug so /content/{slug} and
 		// /thread/{slug} self-views can redirect to the canonical
 		// /roadmap/{item-slug} page.
-		"roadmap_item_slug": content.RoadmapItemSlug,
-		"journey_stage":     content.JourneyStage,
-		"visa_route":        content.VisaRoute,
-		"source_country":    content.SourceCountry,
-		"target_country":    content.TargetCountry,
-		"video_source_id":   content.VideoSourceID,
-		"author_name":       content.AuthorName,
-		"author_username":   content.AuthorUsername,
-		"author_avatar_url": content.AuthorAvatarUrl,
+		"roadmap_item_slug":        content.RoadmapItemSlug,
+		"journey_stage":            content.JourneyStage,
+		"visa_route":               content.VisaRoute,
+		"source_country":           content.SourceCountry,
+		"target_country":           content.TargetCountry,
+		"video_source_id":          content.VideoSourceID,
+		"author_name":              content.AuthorName,
+		"author_username":          content.AuthorUsername,
+		"author_avatar_url":        content.AuthorAvatarUrl,
+		"author_verified":          content.AuthorVerified,
+		"author_verification_type": content.AuthorVerificationType,
 		// §68 disclosure toggle — true when the author is a persona with
 		// disclosure_mode = 'disclosed'; frontend renders an AI badge.
 		"author_ai_disclosed": content.AuthorPersonaDisclosure != nil && *content.AuthorPersonaDisclosure == "disclosed",

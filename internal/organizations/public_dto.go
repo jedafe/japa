@@ -10,18 +10,18 @@ import (
 // omits internal columns the raw gen.Organization row carries (,
 // owner_user_id, field_values, status, deleted_at, updated_at).
 type PublicOrgResponse struct {
-	ID               pgtype.UUID        `json:"id"`
-	Name             string             `json:"name"`
-	Slug             string             `json:"slug"`
-	Tagline          *string            `json:"tagline"`
-	Description      *string            `json:"description"`
-	OrgType          string             `json:"org_type"`
-	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
-	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
-	LogoURL          string             `json:"logo_url"`
-	HeaderURL        string             `json:"header_url"`
-	WebsiteURL       *string            `json:"website_url"`
-	CountryCode      *string            `json:"country_code"`
+	ID            pgtype.UUID `json:"id"`
+	Name          string      `json:"name"`
+	Slug          string      `json:"slug"`
+	Tagline       *string     `json:"tagline"`
+	Description   *string     `json:"description"`
+	OrgType       string      `json:"org_type"`
+	LogoMediaID   pgtype.UUID `json:"logo_media_id"`
+	HeaderMediaID pgtype.UUID `json:"header_media_id"`
+	LogoURL       string      `json:"logo_url"`
+	HeaderURL     string      `json:"header_url"`
+	WebsiteURL    *string     `json:"website_url"`
+	CountryCode   *string     `json:"country_code"`
 	// Claimed is true when an owner operates the page (owner_user_id set).
 	// A verified badge implies claimed — the grant refuses ownerless orgs.
 	Claimed          bool               `json:"claimed"`
@@ -37,10 +37,12 @@ type PublicOrgResponse struct {
 // public org response for the "Org Leader" sidebar widget. Unlike the public
 // members list, the owner is shown regardless of their account standing.
 type OrgOwnerResponse struct {
-	ID          pgtype.UUID `json:"id"`
-	Username    string      `json:"username"`
-	DisplayName *string     `json:"display_name"`
-	AvatarURL   *string     `json:"avatar_url"`
+	ID               pgtype.UUID `json:"id"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarURL        *string     `json:"avatar_url"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 func toPublicOrg(o gen.Organization) PublicOrgResponse {
@@ -66,10 +68,12 @@ func toPublicOrg(o gen.Organization) PublicOrgResponse {
 
 // OrgMemberUser is the lean public user shape embedded in a member row.
 type OrgMemberUser struct {
-	ID          pgtype.UUID `json:"id"`
-	Username    string      `json:"username"`
-	DisplayName *string     `json:"display_name"`
-	AvatarURL   *string     `json:"avatar_url"`
+	ID               pgtype.UUID `json:"id"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarURL        *string     `json:"avatar_url"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 // OrgMemberResponse is the lean public shape for the Members tab: the member's
@@ -87,10 +91,12 @@ func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberRespon
 		r := &rows[i]
 		out[i] = OrgMemberResponse{
 			User: OrgMemberUser{
-				ID:          r.UserID,
-				Username:    r.Username,
-				DisplayName: r.DisplayName,
-				AvatarURL:   r.AvatarUrl,
+				ID:               r.UserID,
+				Username:         r.Username,
+				DisplayName:      r.DisplayName,
+				AvatarURL:        r.AvatarUrl,
+				Verified:         r.Verified,
+				VerificationType: r.VerificationType,
 			},
 			Role:     r.Role,
 			JoinedAt: r.JoinedAt,
@@ -102,21 +108,22 @@ func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberRespon
 
 // PublicOrgListItem is the lean shape for the public Discover org list.
 type PublicOrgListItem struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	Tagline       *string            `json:"tagline"`
-	OrgType       string             `json:"org_type"`
-	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
-	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
-	LogoURL       string             `json:"logo_url"`
-	HeaderURL     string             `json:"header_url"`
-	CountryCode   *string            `json:"country_code"`
-	Verified      bool               `json:"verified"`
-	Claimed       bool               `json:"claimed"`
-	FollowerCount int32              `json:"follower_count"`
-	MemberCount   int32              `json:"member_count"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Tagline          *string            `json:"tagline"`
+	OrgType          string             `json:"org_type"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	LogoURL          string             `json:"logo_url"`
+	HeaderURL        string             `json:"header_url"`
+	CountryCode      *string            `json:"country_code"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Claimed          bool               `json:"claimed"`
+	FollowerCount    int32              `json:"follower_count"`
+	MemberCount      int32              `json:"member_count"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem {
@@ -125,19 +132,20 @@ func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem 
 	for i := range rows {
 		r := &rows[i]
 		out[i] = PublicOrgListItem{
-			ID:            r.ID,
-			Name:          r.Name,
-			Slug:          r.Slug,
-			Tagline:       r.Tagline,
-			OrgType:       r.OrgType,
-			LogoMediaID:   r.LogoMediaID,
-			HeaderMediaID: r.HeaderMediaID,
-			CountryCode:   r.CountryCode,
-			Verified:      r.Verified,
-			Claimed:       r.Claimed,
-			FollowerCount: r.FollowerCount,
-			MemberCount:   r.MemberCount,
-			CreatedAt:     r.CreatedAt,
+			ID:               r.ID,
+			Name:             r.Name,
+			Slug:             r.Slug,
+			Tagline:          r.Tagline,
+			OrgType:          r.OrgType,
+			LogoMediaID:      r.LogoMediaID,
+			HeaderMediaID:    r.HeaderMediaID,
+			CountryCode:      r.CountryCode,
+			Verified:         r.Verified,
+			VerificationType: r.VerificationType,
+			Claimed:          r.Claimed,
+			FollowerCount:    r.FollowerCount,
+			MemberCount:      r.MemberCount,
+			CreatedAt:        r.CreatedAt,
 		}
 	}
 

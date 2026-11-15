@@ -66,15 +66,17 @@ type RBACResolver interface {
 // ReviewItem is a single review returned by ReviewFetcher.ListByEntity.
 // Mirrors the relevant fields from §29 reviews joined with author info.
 type ReviewItem struct {
-	ID                string  `json:"id"`
-	AuthorID          string  `json:"author_id"`
-	AuthorUsername    string  `json:"author_username"`
-	AuthorDisplayName *string `json:"author_display_name,omitempty"`
-	AuthorAvatarURL   *string `json:"author_avatar_url,omitempty"`
-	Rating            int16   `json:"rating"`
-	Title             *string `json:"title,omitempty"`
-	Body              *string `json:"body,omitempty"`
-	CreatedAt         string  `json:"created_at"`
+	ID                     string  `json:"id"`
+	AuthorID               string  `json:"author_id"`
+	AuthorUsername         string  `json:"author_username"`
+	AuthorDisplayName      *string `json:"author_display_name,omitempty"`
+	AuthorAvatarURL        *string `json:"author_avatar_url,omitempty"`
+	AuthorVerified         bool    `json:"author_verified"`
+	AuthorVerificationType *string `json:"author_verification_type,omitempty"`
+	Rating                 int16   `json:"rating"`
+	Title                  *string `json:"title,omitempty"`
+	Body                   *string `json:"body,omitempty"`
+	CreatedAt              string  `json:"created_at"`
 }
 
 // ReviewAggregate holds the count + average rating for an entity (§29).

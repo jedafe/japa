@@ -360,12 +360,14 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 		}
 
 		items = append(items, map[string]any{
-			"id":          row.ID,
-			"rating":      row.Rating,
-			"title":       row.Title,
-			"body":        row.Body,
-			"author_name": authorName,
-			"created_at":  row.CreatedAt,
+			"id":                       row.ID,
+			"rating":                   row.Rating,
+			"title":                    row.Title,
+			"body":                     row.Body,
+			"author_name":              authorName,
+			"author_verified":          row.AuthorVerified,
+			"author_verification_type": row.AuthorVerificationType,
+			"created_at":               row.CreatedAt,
 		})
 	}
 

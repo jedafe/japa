@@ -73,21 +73,23 @@ type SemanticSearcher interface {
 
 // PublicFeedItem is the stable feed-card shape for API consumers.
 type PublicFeedItem struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Slug         string   `json:"slug"`
-	ContentType  string   `json:"content_type"`
-	Excerpt      string   `json:"excerpt,omitempty"`
-	SpaceID      string   `json:"space_id,omitempty"`
-	SpaceSlug    string   `json:"space_slug,omitempty"`
-	SpaceName    string   `json:"space_name,omitempty"`
-	AuthorName   string   `json:"author_name,omitempty"`
-	AuthorHandle string   `json:"author_handle,omitempty"`
-	VoteScore    int32    `json:"vote_score"`
-	CommentCount int32    `json:"comment_count"`
-	ViewCount    int32    `json:"view_count"`
-	Tags         []string `json:"tags,omitempty"`
-	PublishedAt  string   `json:"published_at,omitempty"`
+	ID                     string   `json:"id"`
+	Title                  string   `json:"title"`
+	Slug                   string   `json:"slug"`
+	ContentType            string   `json:"content_type"`
+	Excerpt                string   `json:"excerpt,omitempty"`
+	SpaceID                string   `json:"space_id,omitempty"`
+	SpaceSlug              string   `json:"space_slug,omitempty"`
+	SpaceName              string   `json:"space_name,omitempty"`
+	AuthorName             string   `json:"author_name,omitempty"`
+	AuthorHandle           string   `json:"author_handle,omitempty"`
+	AuthorVerified         bool     `json:"author_verified,omitempty"`
+	AuthorVerificationType string   `json:"author_verification_type,omitempty"`
+	VoteScore              int32    `json:"vote_score"`
+	CommentCount           int32    `json:"comment_count"`
+	ViewCount              int32    `json:"view_count"`
+	Tags                   []string `json:"tags,omitempty"`
+	PublishedAt            string   `json:"published_at,omitempty"`
 }
 
 // PublicScamReport is the curated public DTO — scamalert.ScamReportDTO
@@ -607,17 +609,19 @@ func feedItemToPublic(it feed.FeedItem) PublicFeedItem {
 // excerpt, tags, space, and author joins) onto the stable feed-card shape.
 func tagRowToFeedItem(r gen.ListContentByTagRow) PublicFeedItem {
 	p := PublicFeedItem{
-		ID:           r.ID.String(),
-		Title:        r.Title,
-		Slug:         r.Slug,
-		ContentType:  r.ContentType,
-		Excerpt:      feed.CleanExcerpt(r.Excerpt, r.Title),
-		SpaceSlug:    r.SpaceSlug,
-		SpaceName:    r.SpaceName,
-		AuthorName:   r.AuthorName,
-		CommentCount: r.CommentCount,
-		ViewCount:    r.ViewCount,
-		Tags:         splitTagList(r.Tags),
+		ID:                     r.ID.String(),
+		Title:                  r.Title,
+		Slug:                   r.Slug,
+		ContentType:            r.ContentType,
+		Excerpt:                feed.CleanExcerpt(r.Excerpt, r.Title),
+		SpaceSlug:              r.SpaceSlug,
+		SpaceName:              r.SpaceName,
+		AuthorName:             r.AuthorName,
+		AuthorVerified:         r.AuthorVerified,
+		AuthorVerificationType: r.AuthorVerificationType,
+		CommentCount:           r.CommentCount,
+		ViewCount:              r.ViewCount,
+		Tags:                   splitTagList(r.Tags),
 	}
 	if r.SpaceID.Valid {
 		p.SpaceID = r.SpaceID.String()

@@ -506,17 +506,17 @@ type ConversationResult struct {
 
 // ConversationInfo is the API response for a conversation list item.
 type ConversationInfo struct {
-	ID                 string  `json:"id"`
-	OtherUserID        string  `json:"other_user_id"`
-	OtherUsername      string  `json:"other_username"`
-	OtherDisplayName   string  `json:"other_display_name"`
-	OtherAvatarURL     string  `json:"other_avatar_url"`
-	OtherVerified      bool    `json:"other_verified,omitempty"`
-	OtherVerificationType string `json:"other_verification_type,omitempty"`
-	LastMessageAt      *string `json:"last_message_at,omitempty"`
-	LastMessagePreview *string `json:"last_message_preview,omitempty"`
-	UnreadCount        int32   `json:"unread_count"`
-	CreatedAt          string  `json:"created_at"`
+	ID                    string  `json:"id"`
+	OtherUserID           string  `json:"other_user_id"`
+	OtherUsername         string  `json:"other_username"`
+	OtherDisplayName      string  `json:"other_display_name"`
+	OtherAvatarURL        string  `json:"other_avatar_url"`
+	OtherVerified         bool    `json:"other_verified,omitempty"`
+	OtherVerificationType string  `json:"other_verification_type,omitempty"`
+	LastMessageAt         *string `json:"last_message_at,omitempty"`
+	LastMessagePreview    *string `json:"last_message_preview,omitempty"`
+	UnreadCount           int32   `json:"unread_count"`
+	CreatedAt             string  `json:"created_at"`
 	// 000942 — org conversations show the org as the "other" party and
 	// flag the type so the UI can badge it.
 	ConversationType string  `json:"conversation_type,omitempty"`
@@ -1034,16 +1034,16 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 		}
 
 		infos[i] = ConversationInfo{
-			ID:               r.ID.String(),
-			OtherUserID:      otherUserID,
-			OtherUsername:    r.OtherUsername,
-			OtherDisplayName: r.OtherDisplayName,
-			OtherAvatarURL:   r.OtherAvatarUrl,
-			OtherVerified:      r.OtherVerified,
+			ID:                    r.ID.String(),
+			OtherUserID:           otherUserID,
+			OtherUsername:         r.OtherUsername,
+			OtherDisplayName:      r.OtherDisplayName,
+			OtherAvatarURL:        r.OtherAvatarUrl,
+			OtherVerified:         r.OtherVerified,
 			OtherVerificationType: r.OtherVerificationType,
-			UnreadCount:      r.UnreadCount,
-			CreatedAt:        r.CreatedAt.Time.Format(time.RFC3339),
-			ConversationType: r.ConversationType,
+			UnreadCount:           r.UnreadCount,
+			CreatedAt:             r.CreatedAt.Time.Format(time.RFC3339),
+			ConversationType:      r.ConversationType,
 		}
 
 		if r.ConversationType == "org" {
@@ -1293,15 +1293,17 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 
 // MessageRequestInfo is the API response for a pending DM request item.
 type MessageRequestInfo struct {
-	ID                   string  `json:"id"`
-	ConversationID       *string `json:"conversation_id,omitempty"`
-	RequesterID          string  `json:"requester_id"`
-	RequesterUsername    string  `json:"requester_username"`
-	RequesterDisplayName string  `json:"requester_display_name"`
-	RequesterAvatarURL   *string `json:"requester_avatar_url,omitempty"`
-	PreviewMessage       string  `json:"preview_message"`
-	Status               string  `json:"status"`
-	CreatedAt            string  `json:"created_at"`
+	ID                        string  `json:"id"`
+	ConversationID            *string `json:"conversation_id,omitempty"`
+	RequesterID               string  `json:"requester_id"`
+	RequesterUsername         string  `json:"requester_username"`
+	RequesterDisplayName      string  `json:"requester_display_name"`
+	RequesterAvatarURL        *string `json:"requester_avatar_url,omitempty"`
+	RequesterVerified         bool    `json:"requester_verified"`
+	RequesterVerificationType *string `json:"requester_verification_type,omitempty"`
+	PreviewMessage            string  `json:"preview_message"`
+	Status                    string  `json:"status"`
+	CreatedAt                 string  `json:"created_at"`
 }
 
 // GetPendingMessageRequests returns pending DM requests for a recipient
@@ -1340,6 +1342,9 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID p
 		if r.RequesterAvatarUrl != nil {
 			infos[i].RequesterAvatarURL = r.RequesterAvatarUrl
 		}
+
+		infos[i].RequesterVerified = r.RequesterVerified
+		infos[i].RequesterVerificationType = r.RequesterVerificationType
 	}
 
 	return infos, nextRequestCursor(rows, sort, limit), nil

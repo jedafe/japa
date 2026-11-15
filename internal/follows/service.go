@@ -22,6 +22,9 @@ type FollowerInfo struct {
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url"`
 	ProfileType string `json:"profile_type"`
+	// §07 verification — populated on user rows only.
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
 	IsFollowing bool   `json:"is_following"`
 	// IsSynthetic marks persona/bot followers so UIs and consumers can flag
 	// or exclude synthetic activity per P10.
@@ -40,6 +43,9 @@ type FollowingInfo struct {
 	EntitySlug  string `json:"entity_slug"`
 	DisplayName string `json:"entity_display_name"`
 	AvatarUrl   string `json:"entity_avatar_url"`
+	// §07 verification — populated on user-type follows only.
+	EntityVerified         bool   `json:"entity_verified"`
+	EntityVerificationType string `json:"entity_verification_type"`
 	IsFollowing bool   `json:"is_following"`
 }
 
@@ -519,6 +525,8 @@ func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entity
 			DisplayName: r.DisplayName,
 			AvatarURL:   r.AvatarUrl,
 			ProfileType: r.ProfileType,
+			Verified:    r.Verified,
+			VerificationType: r.VerificationType,
 			IsSynthetic: r.IsSynthetic,
 		}
 		if bulkStatus != nil {
@@ -631,6 +639,8 @@ func (s *Service) GetFollowing(ctx context.Context, callerID, followerID pgtype.
 			EntitySlug:  r.EntitySlug,
 			DisplayName: r.EntityDisplayName,
 			AvatarUrl:   r.EntityAvatarUrl,
+			EntityVerified:         r.EntityVerified,
+			EntityVerificationType: r.EntityVerificationType,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.EntityType][r.EntityID]
@@ -679,6 +689,8 @@ func (s *Service) GetFollowingByType(ctx context.Context, callerID, followerID p
 			EntitySlug:  r.EntitySlug,
 			DisplayName: r.EntityDisplayName,
 			AvatarUrl:   r.EntityAvatarUrl,
+			EntityVerified:         r.EntityVerified,
+			EntityVerificationType: r.EntityVerificationType,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.EntityID]

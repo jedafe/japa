@@ -2003,17 +2003,19 @@ func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, lessonID pgtype
 // (CreateTrackReview) returns author_* empty since the just-inserted row has
 // not been re-joined — callers that need author info should re-fetch the list.
 type TrackReview struct {
-	ID                string    `json:"id"`
-	TrackID           string    `json:"track_id"`
-	AuthorID          string    `json:"author_id"`
-	AuthorUsername    string    `json:"author_username"`
-	AuthorDisplayName *string   `json:"author_displayName,omitempty"`
-	AuthorAvatarURL   *string   `json:"author_avatar_url,omitempty"`
-	Rating            int16     `json:"rating"`
-	Title             *string   `json:"title,omitempty"`
-	Body              *string   `json:"body,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                     string    `json:"id"`
+	TrackID                string    `json:"track_id"`
+	AuthorID               string    `json:"author_id"`
+	AuthorUsername         string    `json:"author_username"`
+	AuthorDisplayName      *string   `json:"author_displayName,omitempty"`
+	AuthorAvatarURL        *string   `json:"author_avatar_url,omitempty"`
+	AuthorVerified         bool      `json:"author_verified"`
+	AuthorVerificationType *string   `json:"author_verification_type,omitempty"`
+	Rating                 int16     `json:"rating"`
+	Title                  *string   `json:"title,omitempty"`
+	Body                   *string   `json:"body,omitempty"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // TrackReviewAggregate holds the aggregate rating for a track. JSON keys
@@ -2118,17 +2120,19 @@ func trackReviewFromRow(r gen.Review) TrackReview {
 // author_username, author_displayName, and author_avatar_url.
 func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackReview {
 	return TrackReview{
-		ID:                r.ID.String(),
-		TrackID:           r.EntityID.String(),
-		AuthorID:          r.ReviewerUserID.String(),
-		AuthorUsername:    strOrEmpty(&r.AuthorUsername),
-		AuthorDisplayName: r.AuthorDisplayName,
-		AuthorAvatarURL:   r.AuthorAvatarUrl,
-		Rating:            r.Rating,
-		Title:             r.Title,
-		Body:              r.Body,
-		CreatedAt:         r.CreatedAt.Time,
-		UpdatedAt:         r.UpdatedAt.Time,
+		ID:                     r.ID.String(),
+		TrackID:                r.EntityID.String(),
+		AuthorID:               r.ReviewerUserID.String(),
+		AuthorUsername:         strOrEmpty(&r.AuthorUsername),
+		AuthorDisplayName:      r.AuthorDisplayName,
+		AuthorAvatarURL:        r.AuthorAvatarUrl,
+		AuthorVerified:         r.AuthorVerified,
+		AuthorVerificationType: r.AuthorVerificationType,
+		Rating:                 r.Rating,
+		Title:                  r.Title,
+		Body:                   r.Body,
+		CreatedAt:              r.CreatedAt.Time,
+		UpdatedAt:              r.UpdatedAt.Time,
 	}
 }
 

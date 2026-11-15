@@ -16,6 +16,7 @@
 	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import MetricCard from '#lib/components/hub/MetricCard.svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Users, ChevronLeft, ChevronRight, Search } from 'lucide-svelte';
 
@@ -31,6 +32,8 @@
 		entity_slug?: string;
 		entity_display_name?: string;
 		entity_avatar_url?: string;
+		entity_verified?: boolean;
+		entity_verification_type?: string | null;
 		is_following?: boolean;
 		created_at?: string;
 	}
@@ -42,6 +45,8 @@
 		display_name?: string;
 		avatar_url?: string;
 		profile_type?: string;
+		verified?: boolean;
+		verification_type?: string | null;
 		is_following?: boolean;
 		created_at?: string;
 	}
@@ -60,6 +65,8 @@
 		username?: string;
 		display_name?: string;
 		avatar_url?: string;
+		verified?: boolean;
+		verification_type?: string | null;
 		created_at?: string;
 	}
 
@@ -68,6 +75,8 @@
 		username?: string;
 		display_name?: string;
 		avatar_url?: string;
+		verified?: boolean;
+		verification_type?: string | null;
 		created_at?: string;
 	}
 
@@ -588,9 +597,12 @@
 							<div class="min-w-0">
 								<a
 									href={entityUrl(item)}
-									class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline"
+									class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline"
 								>
-									{displayName(item) || item.entity_name || item.entity_id}
+									<span class="truncate">{displayName(item) || item.entity_name || item.entity_id}</span>
+									{#if item.entity_type === 'user' || item.entity_type === 'organization'}
+										<VerifiedBadge verified={item.entity_verified} type={item.entity_verification_type} scope={item.entity_type === 'organization' ? 'organization' : 'user'} size={13} />
+									{/if}
 								</a>
 								{#if item.created_at}
 									<span class="text-xs text-[var(--color-muted)]">
@@ -636,9 +648,10 @@
 							<div class="min-w-0">
 								<a
 									href="/u/{user.username || user.follower_id}"
-									class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline"
+									class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline"
 								>
-									{user.display_name || user.username || user.follower_id}
+									<span class="truncate">{user.display_name || user.username || user.follower_id}</span>
+									<VerifiedBadge verified={user.verified} type={user.verification_type} size={13} />
 								</a>
 								{#if user.created_at}
 									<span class="text-xs text-[var(--color-muted)]">
@@ -749,9 +762,10 @@
 							{/if}
 							<a
 								href="/u/{user.username ?? user.blocked_id}"
-								class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline"
+								class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline"
 							>
-								{user.display_name ?? user.username ?? user.blocked_id}
+								<span class="truncate">{user.display_name ?? user.username ?? user.blocked_id}</span>
+								<VerifiedBadge verified={user.verified} type={user.verification_type} size={13} />
 							</a>
 						</div>
 						<button
@@ -790,9 +804,10 @@
 							{/if}
 							<a
 								href="/u/{user.username ?? user.muted_user_id}"
-								class="block truncate text-sm font-medium text-[var(--color-text)] hover:underline"
+								class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)] hover:underline"
 							>
-								{user.display_name ?? user.username ?? user.muted_user_id}
+								<span class="truncate">{user.display_name ?? user.username ?? user.muted_user_id}</span>
+								<VerifiedBadge verified={user.verified} type={user.verification_type} size={13} />
 							</a>
 						</div>
 						<button

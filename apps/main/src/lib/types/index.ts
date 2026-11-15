@@ -1173,6 +1173,8 @@ export interface OrgOwner {
 	username: string;
 	display_name?: string | null;
 	avatar_url?: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** GET /organizations/meta — valid option lists for org dropdowns (Rule 16).
@@ -1757,6 +1759,8 @@ export interface DMRequest {
 	requester_username: string;
 	requester_display_name: string;
 	requester_avatar_url?: string;
+	requester_verified?: boolean;
+	requester_verification_type?: string | null;
 	preview_message: string;
 	status: string;
 	created_at: string;
@@ -2636,6 +2640,10 @@ export interface Review {
 	status: string;
 	created_at: string;
 	updated_at: string;
+	/** §07 — emitted by the with-author list endpoints (space/university
+	 *  reviews); absent on create/patch echoes. */
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 }
 
 /** GET /reviews/{entity_type}/{entity_id}/aggregate — rolled-up ratings. */
@@ -3787,6 +3795,9 @@ export interface WikiPage extends WikiPageIndex {
 	submitted_by?: string;
 	/** §80 Reader UX: byline avatar for the approved submitter. */
 	submitted_by_avatar_url?: string;
+	/** §07 — byline verification badge (managed taxonomy, scope=user). */
+	submitted_by_verified?: boolean;
+	submitted_by_verification_type?: string;
 	/** §80 Reader UX: "Was this page helpful?" aggregate + the viewer's
 	 *  own vote; absent on lazy pages (no row to vote on). */
 	helpful?: WikiHelpful | null;
@@ -3882,6 +3893,9 @@ export interface WikiRevision {
 	summary?: string;
 	ai_generated: boolean;
 	submitted_by?: string;
+	/** §07 — submitter verification badge (managed taxonomy, scope=user). */
+	submitted_by_verified?: boolean;
+	submitted_by_verification_type?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
 	created_at: string;

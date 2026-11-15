@@ -292,12 +292,15 @@ type EntityPageDTO struct {
 	Fields         *EntityFieldGroupDTO `json:"fields,omitempty"`
 	// Parity with WikiPageDetailDTO: revision metadata, reader feedback,
 	// sibling pages on the same entity, and host-space breadcrumbs.
-	RevisionSummary string             `json:"revision_summary,omitempty"`
-	SubmittedBy     string             `json:"submitted_by,omitempty"`
-	Helpful         *WikiHelpfulDTO    `json:"helpful,omitempty"`
-	Siblings        []EntitySiblingDTO `json:"siblings,omitempty"`
-	Ancestors       []WikiSpaceRefDTO  `json:"ancestors,omitempty"`
-	AncestorsAlt    []WikiSpaceRefDTO  `json:"ancestors_alt,omitempty"`
+	RevisionSummary string `json:"revision_summary,omitempty"`
+	SubmittedBy     string `json:"submitted_by,omitempty"`
+	// §07 verification badge state for the byline identity.
+	SubmittedByVerified         bool               `json:"submitted_by_verified,omitempty"`
+	SubmittedByVerificationType string             `json:"submitted_by_verification_type,omitempty"`
+	Helpful                     *WikiHelpfulDTO    `json:"helpful,omitempty"`
+	Siblings                    []EntitySiblingDTO `json:"siblings,omitempty"`
+	Ancestors                   []WikiSpaceRefDTO  `json:"ancestors,omitempty"`
+	AncestorsAlt                []WikiSpaceRefDTO  `json:"ancestors_alt,omitempty"`
 	// Related is the mode:"related" peer listing (course → sibling-offering
 	// universities, program → all offering universities); nil when the
 	// category has no related config or the listing is empty.
@@ -405,6 +408,14 @@ func (s *Service) GetEntityWikiPage(ctx context.Context, userID pgtype.UUID, typ
 			}
 			if rev.SubmittedByName != nil {
 				dto.SubmittedBy = *rev.SubmittedByName
+			}
+
+			if rev.SubmittedByVerified != nil {
+				dto.SubmittedByVerified = *rev.SubmittedByVerified
+			}
+
+			if rev.SubmittedByVerificationType != nil {
+				dto.SubmittedByVerificationType = *rev.SubmittedByVerificationType
 			}
 		}
 		dto.Helpful = s.pageFeedbackDTO(ctx, page.ID, userID)

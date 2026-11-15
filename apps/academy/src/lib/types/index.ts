@@ -480,6 +480,8 @@ export interface TrackReview {
 	author_username: string;
 	author_displayName?: string;
 	author_avatar_url?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	rating: number;
 	title?: string | null;
 	body?: string | null;

@@ -1556,11 +1556,13 @@ func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID, g
 
 // SpaceMemberRow represents a space member with user profile information.
 type SpaceMemberRow struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	Username    string             `json:"username"`
-	DisplayName *string            `json:"display_name"`
-	AvatarURL   *string            `json:"avatar_url"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarURL        *string            `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
 }
 
 // ListMembers returns paginated members of a space with user profile data.
@@ -1585,11 +1587,13 @@ func (s *Service) ListMembers(ctx context.Context, viewerID, spaceID pgtype.UUID
 
 	for _, r := range rows {
 		members = append(members, SpaceMemberRow{
-			UserID:      r.UserID,
-			Username:    r.Username,
-			DisplayName: r.DisplayName,
-			AvatarURL:   r.AvatarUrl,
-			JoinedAt:    r.JoinedAt,
+			UserID:           r.UserID,
+			Username:         r.Username,
+			DisplayName:      r.DisplayName,
+			AvatarURL:        r.AvatarUrl,
+			Verified:         r.Verified,
+			VerificationType: r.VerificationType,
+			JoinedAt:         r.JoinedAt,
 		})
 	}
 

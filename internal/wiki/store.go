@@ -185,6 +185,11 @@ type WikiRevision struct {
 	// SubmittedByAvatarURL is the submitter's user_profiles.avatar_url —
 	// populated only by GetApprovedRevision (§80 Reader UX byline).
 	SubmittedByAvatarURL *string
+	// SubmittedByVerified/VerificationType are the submitter's §07
+	// verification state — populated only by byline-carrying queries
+	// (GetApprovedRevision, GetRevision) so the reader can badge the name.
+	SubmittedByVerified         *bool
+	SubmittedByVerificationType *string
 }
 
 // strPtrOrNil maps a COALESCE'd username column (” when the LEFT JOIN missed)
@@ -300,32 +305,46 @@ func revisionFromApprovedRow(r gen.GetApprovedWikiRevisionRow) WikiRevision {
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, "")
 	rev.SubmittedByAvatarURL = r.SubmittedByAvatarUrl
+	rev.SubmittedByVerified = r.SubmittedByVerified
+	rev.SubmittedByVerificationType = r.SubmittedByVerificationType
 
 	return rev
 }
 
 func revisionFromListRow(r gen.ListWikiRevisionsRow) WikiRevision {
-	return mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
+	rev := mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
 		r.TargetEntityType, r.TargetEntityID, r.Status, r.SubmittedBy,
 		r.ReviewedBy, r.ReviewedAt, r.ApplyError, r.AiGenerated, r.AiModel,
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, r.ReviewedByName)
+	rev.SubmittedByVerified = r.SubmittedByVerified
+	rev.SubmittedByVerificationType = r.SubmittedByVerificationType
+
+	return rev
 }
 
 func revisionFromGetRow(r gen.GetWikiRevisionRow) WikiRevision {
-	return mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
+	rev := mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
 		r.TargetEntityType, r.TargetEntityID, r.Status, r.SubmittedBy,
 		r.ReviewedBy, r.ReviewedAt, r.ApplyError, r.AiGenerated, r.AiModel,
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, r.ReviewedByName)
+	rev.SubmittedByVerified = r.SubmittedByVerified
+	rev.SubmittedByVerificationType = r.SubmittedByVerificationType
+
+	return rev
 }
 
 func revisionFromByTargetRow(r gen.ListWikiRevisionsByTargetRow) WikiRevision {
-	return mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
+	rev := mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
 		r.TargetEntityType, r.TargetEntityID, r.Status, r.SubmittedBy,
 		r.ReviewedBy, r.ReviewedAt, r.ApplyError, r.AiGenerated, r.AiModel,
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, r.ReviewedByName)
+	rev.SubmittedByVerified = r.SubmittedByVerified
+	rev.SubmittedByVerificationType = r.SubmittedByVerificationType
+
+	return rev
 }
 
 func revisionFromAdminRow(r gen.AdminListWikiRevisionsRow) WikiRevision {

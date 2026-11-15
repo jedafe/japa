@@ -233,10 +233,13 @@ type MentorCardInput struct {
 
 // MentorSummary is a mentor's public card for discovery and comparison.
 type MentorSummary struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	Username          string             `json:"username"`
-	DisplayName       *string            `json:"display_name"`
-	AvatarURL         *string            `json:"avatar_url"`
+	UserID      pgtype.UUID `json:"user_id"`
+	Username    string      `json:"username"`
+	DisplayName *string     `json:"display_name"`
+	AvatarURL   *string     `json:"avatar_url"`
+	// §07 verification badge on the mentor's user identity.
+	Verified          bool               `json:"verified"`
+	VerificationType  *string            `json:"verification_type"`
 	MentorAreas       []string           `json:"mentor_areas"`
 	MentorBio         *string            `json:"mentor_bio"`
 	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
@@ -663,7 +666,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, username string) (Men
 
 	return mentorSummaryFromRow(row.UserID, row.IsMentor, row.MentorCapacity,
 		row.ActiveMenteeCount, row.MentorAreas, row.MentorBio, row.MentorSince,
-		row.DisplayName, row.AvatarUrl, row.Username, row.AvailableSlots, row.Profession, row.WebsiteUrl,
+		row.DisplayName, row.AvatarUrl, row.Username, row.AvailableSlots, row.Profession, row.WebsiteUrl, row.Verified, row.VerificationType,
 		mentorCardFields{
 			Location: row.Location, MentorTitle: row.MentorTitle,
 			ResponseTime: row.MentorResponseTime, Availability: row.MentorAvailability,
@@ -712,7 +715,7 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 			mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl, r.Verified, r.VerificationType,
 				mentorCardFields{})
 		}
 
@@ -744,7 +747,7 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl, r.Verified, r.VerificationType,
 			mentorCardFields{})
 	}
 
@@ -778,7 +781,7 @@ func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) 
 			r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
-			r.Profession, r.WebsiteUrl,
+			r.Profession, r.WebsiteUrl, r.Verified, r.VerificationType,
 			mentorCardFields{
 				Location: r.Location, MentorTitle: r.MentorTitle,
 				ResponseTime: r.MentorResponseTime, Availability: r.MentorAvailability,
@@ -844,7 +847,7 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([
 	for i, r := range rows {
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl,
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots, r.Profession, r.WebsiteUrl, r.Verified, r.VerificationType,
 			mentorCardFields{
 				Location: r.Location, MentorTitle: r.MentorTitle,
 				ResponseTime: r.MentorResponseTime, Availability: r.MentorAvailability,
@@ -1516,12 +1519,14 @@ type mentorCardFields struct {
 }
 
 // mentorSummaryFromRow builds a MentorSummary from common field values.
-func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32, profession, websiteURL *string, card mentorCardFields) MentorSummary {
+func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32, profession, websiteURL *string, verified bool, verificationType *string, card mentorCardFields) MentorSummary {
 	return MentorSummary{
 		UserID:            userID,
 		Username:          username,
 		DisplayName:       displayName,
 		AvatarURL:         avatarURL,
+		Verified:          verified,
+		VerificationType:  verificationType,
 		MentorAreas:       areas,
 		MentorBio:         bio,
 		MentorSince:       since,

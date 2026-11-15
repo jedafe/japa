@@ -77,10 +77,12 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 
 	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID); oErr == nil {
 		orgDTO.Owner = &OrgOwnerResponse{
-			ID:          ownerRow.ID,
-			Username:    ownerRow.Username,
-			DisplayName: ownerRow.DisplayName,
-			AvatarURL:   ownerRow.AvatarUrl,
+			ID:               ownerRow.ID,
+			Username:         ownerRow.Username,
+			DisplayName:      ownerRow.DisplayName,
+			AvatarURL:        ownerRow.AvatarUrl,
+			Verified:         ownerRow.Verified,
+			VerificationType: ownerRow.VerificationType,
 		}
 	}
 

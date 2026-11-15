@@ -146,11 +146,13 @@ func (s *Service) UnblockUser(ctx context.Context, blockerID, blockedID pgtype.U
 
 // BlockedUserInfo holds the blocked user's ID, profile, and creation timestamp.
 type BlockedUserInfo struct {
-	BlockedID   pgtype.UUID        `json:"blocked_id"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarURL   string             `json:"avatar_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	BlockedID        pgtype.UUID        `json:"blocked_id"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	AvatarURL        string             `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 // ListBlockedUsers returns users blocked by the given user, platform-scoped
@@ -176,11 +178,13 @@ func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID, l
 	result := make([]BlockedUserInfo, len(rows))
 	for i, r := range rows {
 		result[i] = BlockedUserInfo{
-			BlockedID:   r.BlockedID,
-			Username:    r.Username,
-			DisplayName: r.DisplayName,
-			AvatarURL:   r.AvatarUrl,
-			CreatedAt:   r.CreatedAt,
+			BlockedID:        r.BlockedID,
+			Username:         r.Username,
+			DisplayName:      r.DisplayName,
+			AvatarURL:        r.AvatarUrl,
+			Verified:         r.Verified,
+			VerificationType: r.VerificationType,
+			CreatedAt:        r.CreatedAt,
 		}
 	}
 
@@ -272,12 +276,14 @@ func (s *Service) IsUserMuted(ctx context.Context, userID, mutedUserID pgtype.UU
 
 // MutedUserInfo holds user-mute list entry data.
 type MutedUserInfo struct {
-	ID          pgtype.UUID        `json:"id"`
-	MutedUserID pgtype.UUID        `json:"muted_user_id"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarURL   string             `json:"avatar_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	MutedUserID      pgtype.UUID        `json:"muted_user_id"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	AvatarURL        string             `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 // ListMutedUsers returns paginated muted users for the caller.
@@ -294,12 +300,14 @@ func (s *Service) ListMutedUsers(ctx context.Context, userID pgtype.UUID, limit,
 	result := make([]MutedUserInfo, len(rows))
 	for i, r := range rows {
 		result[i] = MutedUserInfo{
-			ID:          r.ID,
-			MutedUserID: r.MutedUserID,
-			Username:    r.Username,
-			DisplayName: r.DisplayName,
-			AvatarURL:   r.AvatarUrl,
-			CreatedAt:   r.CreatedAt,
+			ID:               r.ID,
+			MutedUserID:      r.MutedUserID,
+			Username:         r.Username,
+			DisplayName:      r.DisplayName,
+			AvatarURL:        r.AvatarUrl,
+			Verified:         r.Verified,
+			VerificationType: r.VerificationType,
+			CreatedAt:        r.CreatedAt,
 		}
 	}
 

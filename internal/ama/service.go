@@ -37,6 +37,9 @@ type AMAThreadDTO struct {
 	AuthorUserID string          `json:"author_user_id,omitempty"`
 	AuthorName   string          `json:"author_name,omitempty"`
 	AuthorAvatar string          `json:"author_avatar,omitempty"`
+	// §07 author badge — false/"" when is_anonymous.
+	AuthorVerified         bool   `json:"author_verified,omitempty"`
+	AuthorVerificationType string `json:"author_verification_type,omitempty"`
 	IsAnonymous  bool            `json:"is_anonymous"`
 	AmaConfig    json.RawMessage `json:"ama_config"`
 	CreatedAt    string          `json:"created_at"`
@@ -455,6 +458,8 @@ func threadToDTO(t AMAThread) AMAThreadDTO {
 		AuthorUserID: t.AuthorUserID.String(),
 		AuthorName:   t.AuthorName,
 		AuthorAvatar: t.AuthorAvatar,
+		AuthorVerified:         t.AuthorVerified,
+		AuthorVerificationType: t.AuthorVerificationType,
 		IsAnonymous:  t.IsAnonymous,
 		AmaConfig:    json.RawMessage(t.AmaConfig),
 		CreatedAt:    formatTs(t.CreatedAt),

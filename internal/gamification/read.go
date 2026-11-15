@@ -239,12 +239,14 @@ func (s *Service) GetLeaderboard(ctx context.Context, scope, period string, limi
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
-				UserID:      uuidStr(r.UserID),
-				Username:    r.Username,
-				DisplayName: ptrStr(r.DisplayName),
-				AvatarURL:   r.AvatarUrl,
-				Points:      r.PointsBalance,
-				Rank:        i + 1,
+				UserID:           uuidStr(r.UserID),
+				Username:         r.Username,
+				DisplayName:      ptrStr(r.DisplayName),
+				AvatarURL:        r.AvatarUrl,
+				Verified:         r.Verified,
+				VerificationType: r.VerificationType,
+				Points:           r.PointsBalance,
+				Rank:             i + 1,
 			})
 		}
 	} else {
@@ -258,12 +260,14 @@ func (s *Service) GetLeaderboard(ctx context.Context, scope, period string, limi
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
-				UserID:      uuidStr(r.UserID),
-				Username:    r.Username,
-				DisplayName: ptrStr(r.DisplayName),
-				AvatarURL:   r.AvatarUrl,
-				Points:      r.PeriodPoints,
-				Rank:        i + 1,
+				UserID:           uuidStr(r.UserID),
+				Username:         r.Username,
+				DisplayName:      ptrStr(r.DisplayName),
+				AvatarURL:        r.AvatarUrl,
+				Verified:         r.Verified,
+				VerificationType: r.VerificationType,
+				Points:           r.PeriodPoints,
+				Rank:             i + 1,
 			})
 		}
 	}

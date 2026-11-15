@@ -37,7 +37,7 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 	requests := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		requests = append(requests, map[string]any{
-			"user_id": r.UserID, "username": r.Username, "display_name": r.DisplayName, "avatar_url": r.AvatarUrl, "joined_at": r.JoinedAt, "status": r.Status,
+			"user_id": r.UserID, "username": r.Username, "display_name": r.DisplayName, "avatar_url": r.AvatarUrl, "verified": r.Verified, "verification_type": r.VerificationType, "joined_at": r.JoinedAt, "status": r.Status,
 		})
 	}
 
@@ -284,14 +284,16 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 		compositeID := row.SpaceID.String() + "::" + row.UserID.String()
 
 		entry := map[string]any{
-			"id":           compositeID,
-			"space_id":     row.SpaceID,
-			"user_id":      row.UserID,
-			"username":     row.Username,
-			"display_name": row.DisplayName,
-			"avatar_url":   row.AvatarUrl,
-			"joined_at":    row.JoinedAt,
-			"status":       row.Status,
+			"id":                compositeID,
+			"space_id":          row.SpaceID,
+			"user_id":           row.UserID,
+			"username":          row.Username,
+			"display_name":      row.DisplayName,
+			"avatar_url":        row.AvatarUrl,
+			"verified":          row.Verified,
+			"verification_type": row.VerificationType,
+			"joined_at":         row.JoinedAt,
+			"status":            row.Status,
 		}
 		if row.SpaceName != nil {
 			entry["space_name"] = *row.SpaceName

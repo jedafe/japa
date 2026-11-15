@@ -147,12 +147,14 @@ type ChallengeWithProgress struct {
 
 // LeaderboardEntry is a single row in the leaderboard.
 type LeaderboardEntry struct {
-	UserID      string  `json:"user_id"`
-	Username    string  `json:"username"`
-	DisplayName string  `json:"display_name,omitempty"`
-	AvatarURL   *string `json:"avatar_url,omitempty"`
-	Points      int64   `json:"points"`
-	Rank        int     `json:"rank"`
+	UserID           string  `json:"user_id"`
+	Username         string  `json:"username"`
+	DisplayName      string  `json:"display_name,omitempty"`
+	AvatarURL        *string `json:"avatar_url,omitempty"`
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type,omitempty"`
+	Points           int64   `json:"points"`
+	Rank             int     `json:"rank"`
 }
 
 // CreateBadgeInput is the admin request body for creating a badge.

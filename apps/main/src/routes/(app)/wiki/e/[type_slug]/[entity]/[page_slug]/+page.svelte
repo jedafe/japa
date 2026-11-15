@@ -4,6 +4,7 @@
 	import { api } from '#lib/api/client.js';
 	import { ChevronRight, Lock, Pencil } from 'lucide-svelte';
 	import SuggestEdit from '#lib/components/wiki/SuggestEdit.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { tiptapToText, type TipTapDoc as TipDoc } from '#lib/tiptap/serialize.js';
@@ -275,7 +276,7 @@
 					<span class="ms-2 text-xs">{page.revision_summary}</span>
 				{/if}
 				{#if page.submitted_by}
-					<span class="ms-2 text-xs">· {t('wiki.submitted_by', 'by {name}', { name: page.submitted_by })}</span>
+					<span class="ms-2 inline-flex items-center gap-1 text-xs">· {t('wiki.submitted_by', 'by {name}', { name: page.submitted_by })}<VerifiedBadge verified={page.submitted_by_verified} type={page.submitted_by_verification_type} size={13} /></span>
 				{/if}
 				{#if page.id}
 					<a href={entityEndpoint + '/history'} class="ms-2 text-xs text-[var(--color-primary-text)] hover:underline">{t('wiki.history', 'History')}</a>

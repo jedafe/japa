@@ -9,6 +9,7 @@
 	import { EmptyState, AutocompleteSelect, ListPageBar } from '#lib/components/ui/index.js';
 	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
 	import { UserX, Search, Loader2 } from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { DMRequest } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -182,8 +183,9 @@
 							</span>
 						{/if}
 						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-[var(--color-text)]">
-								{req.requester_display_name}
+							<p class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+								<span class="truncate">{req.requester_display_name}</span>
+								<VerifiedBadge verified={req.requester_verified} type={req.requester_verification_type} size={14} />
 							</p>
 							<a
 								href="/u/{req.requester_username}"

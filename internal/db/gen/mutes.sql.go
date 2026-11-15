@@ -203,6 +203,7 @@ const listMutedUsers = `-- name: ListMutedUsers :many
 SELECT um.id, um.muted_user_id, COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
+ u.verified, u.verification_type,
  um.created_at
 FROM user_mutes um
 JOIN users u ON u.id = um.muted_user_id
@@ -219,12 +220,14 @@ type ListMutedUsersParams struct {
 }
 
 type ListMutedUsersRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	MutedUserID pgtype.UUID        `json:"muted_user_id"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	MutedUserID      pgtype.UUID        `json:"muted_user_id"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	AvatarUrl        string             `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListMutedUsers(ctx context.Context, arg ListMutedUsersParams) ([]ListMutedUsersRow, error) {
@@ -242,6 +245,8 @@ func (q *Queries) ListMutedUsers(ctx context.Context, arg ListMutedUsersParams) 
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
