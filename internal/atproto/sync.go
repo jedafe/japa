@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ipfs/go-cid"
 	car "github.com/ipld/go-car"
 	carutil "github.com/ipld/go-car/util"
@@ -28,22 +29,52 @@ import (
 // carMediaType is the content type all CAR-producing XRPC endpoints use.
 const carMediaType = "application/vnd.ipld.car"
 
-// accountForDID resolves a sync-endpoint `did`/`repo` param to its
-// account row — active accounts of active users only (suspended members
-// and disabled accounts don't exist on the network). An absent param is
-// InvalidRequest, not RepoNotFound — the request never named a repo.
-func (s *Service) accountForDID(ctx context.Context, did string) (gen.GetAtprotoAccountByDIDRow, error) {
+// accountForDID resolves a sync-endpoint `did` param to its account
+// row. The lookup is deliberately unfiltered: a hosted-but-inactive
+// repo must answer with its lexicon name (RepoDeactivated /
+// RepoSuspended / RepoTakendown) so relays distinguish it from an
+// unhosted DID's RepoNotFound. Tombstone rows and unknown DIDs read as
+// RepoNotFound — the member is gone from the network. An absent param
+// is InvalidRequest, not RepoNotFound — the request never named a repo.
+func (s *Service) accountForDID(ctx context.Context, did string) (gen.GetAtprotoRepoRefByDIDRow, error) {
 	if did == "" {
-		return gen.GetAtprotoAccountByDIDRow{}, ErrInvalidID
+		return gen.GetAtprotoRepoRefByDIDRow{}, ErrInvalidID
 	}
-	account, err := s.store.accountByDID(ctx, did)
+	account, err := s.store.q.GetAtprotoRepoRefByDID(ctx, did)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return gen.GetAtprotoAccountByDIDRow{}, ErrNotFound
+		return gen.GetAtprotoRepoRefByDIDRow{}, ErrNotFound
 	}
 	if err != nil {
-		return gen.GetAtprotoAccountByDIDRow{}, fmt.Errorf("atproto: account by did: %w", err)
+		return gen.GetAtprotoRepoRefByDIDRow{}, fmt.Errorf("atproto: account by did: %w", err)
+	}
+	if err := repoAvailabilityError(account.AccountStatus, account.UserStatus); err != nil {
+		return gen.GetAtprotoRepoRefByDIDRow{}, err
 	}
 	return account, nil
+}
+
+// repoAvailabilityError maps (account.status, users.status) to the
+// lexicon's inactive-repo names — nil when the repo is servable.
+// Tombstone is terminal: it reads as unhosted, never an inactive state.
+func repoAvailabilityError(accountStatus, userStatus string) error {
+	switch accountStatus {
+	case AccountStatusDisabled:
+		return &repoInactiveError{name: "RepoDeactivated"}
+	case AccountStatusTombstone:
+		return ErrNotFound
+	}
+	switch userStatus {
+	case "suspended", "restricted":
+		return &repoInactiveError{name: "RepoSuspended"}
+	case "banned", "deleted":
+		return &repoInactiveError{name: "RepoTakendown"}
+	case "active":
+		return nil
+	default:
+		// 'pending' and any future status read as suspended — the user
+		// exists but isn't live, which is precisely what the name means.
+		return &repoInactiveError{name: "RepoSuspended"}
+	}
 }
 
 // RepoCARSince serves getRepo: the full CAR when since is empty; a diff
@@ -61,6 +92,11 @@ func (s *Service) RepoCARSince(ctx context.Context, did, since string) ([]byte, 
 	}
 	if since == "" {
 		return s.RepoCAR(ctx, account.ID)
+	}
+	// Revs are TIDs — reject malformed input as InvalidRequest rather
+	// than silently comparing garbage against the rev column.
+	if _, perr := syntax.ParseTID(since); perr != nil {
+		return nil, ErrInvalidID
 	}
 	head, err := s.store.q.GetAtprotoRepoHead(ctx, account.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -216,6 +252,10 @@ func (s *Service) HeadCommit(ctx context.Context, did string) (string, string, e
 	return head.Cid, head.Rev, nil
 }
 
+// maxGetBlocksCIDs bounds a getBlocks request — the lexicon allows up
+// to 100 CIDs per call.
+const maxGetBlocksCIDs = 100
+
 // BlocksCAR frames the caller-named CIDs of one repo as CAR v1 for
 // getBlocks — unknown CIDs are simply absent from the section stream
 // (content-addressed blocks are immutable; a missing one can't be
@@ -225,7 +265,7 @@ func (s *Service) BlocksCAR(ctx context.Context, did string, cids []string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if len(cids) == 0 {
+	if len(cids) == 0 || len(cids) > maxGetBlocksCIDs {
 		return nil, ErrInvalidID
 	}
 	// An account without a head commit has no repo on the network —
@@ -303,6 +343,106 @@ func (s *Service) RecordCAR(ctx context.Context, did, collection, rkey string) (
 		return nil, fmt.Errorf("atproto: record lookup: %w", err)
 	}
 	return s.RepoCAR(ctx, account.ID)
+}
+
+// RepoStatusResult is com.atproto.sync.getRepoStatus's output — active
+// repos carry rev; inactive ones carry the lexicon status word
+// ("deactivated"/"suspended"/"takendown"). Unknown DIDs and tombstone
+// rows are RepoNotFound — the repo isn't hosted, there's no status.
+type RepoStatusResult struct {
+	Active bool   `json:"active"`
+	Rev    string `json:"rev,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+// lexiconRepoStatus maps (account.status, users.status) to the
+// lexicon's output words — the same mapping repoAvailabilityError
+// expresses as error names.
+func lexiconRepoStatus(accountStatus, userStatus string) (active bool, status string) {
+	if accountStatus == AccountStatusDisabled {
+		return false, "deactivated"
+	}
+	switch userStatus {
+	case "active":
+		return true, ""
+	case "suspended", "restricted":
+		return false, "suspended"
+	case "banned", "deleted":
+		return false, "takendown"
+	default:
+		return false, "suspended"
+	}
+}
+
+// RepoStatus serves getRepoStatus: the relay calls it on the
+// inactive-recheck path — answering with the right status word keeps a
+// frozen repo's straggler commits from being dropped as unverifiable.
+func (s *Service) RepoStatus(ctx context.Context, did string) (RepoStatusResult, error) {
+	if did == "" {
+		return RepoStatusResult{}, ErrInvalidID
+	}
+	row, err := s.store.q.GetAtprotoRepoStatusByDID(ctx, did)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RepoStatusResult{}, ErrNotFound
+	}
+	if err != nil {
+		return RepoStatusResult{}, fmt.Errorf("atproto: repo status: %w", err)
+	}
+	if row.AccountStatus == AccountStatusTombstone {
+		return RepoStatusResult{}, ErrNotFound
+	}
+	active, status := lexiconRepoStatus(row.AccountStatus, row.UserStatus)
+	out := RepoStatusResult{Active: active, Status: status}
+	if active {
+		out.Rev = row.HeadRev
+	}
+	return out, nil
+}
+
+// HostedRepo is one listRepos repos[] entry.
+type HostedRepo struct {
+	DID    string `json:"did"`
+	Head   string `json:"head"`
+	Rev    string `json:"rev"`
+	Active bool   `json:"active"`
+	Status string `json:"status,omitempty"`
+}
+
+// maxListReposLimit bounds a listRepos page — the lexicon allows up to
+// 1000.
+const maxListReposLimit = 1000
+
+// ListRepos serves listRepos: hosted-repo census for ecosystem
+// resync/census tooling. Cursor is the last returned did (opaque).
+// Disabled accounts list with active:false + status so consumers see
+// the freeze rather than an unexplained gap.
+func (s *Service) ListRepos(ctx context.Context, cursor string, limit int32) ([]HostedRepo, string, error) {
+	if limit <= 0 || limit > maxListReposLimit {
+		limit = maxListReposLimit
+	}
+	rows, err := s.store.q.ListAtprotoRepos(ctx, gen.ListAtprotoReposParams{
+		Cursor:    cursor,
+		PageLimit: limit,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("atproto: list repos: %w", err)
+	}
+	repos := make([]HostedRepo, 0, len(rows))
+	for _, r := range rows {
+		active, status := lexiconRepoStatus(r.AccountStatus, r.UserStatus)
+		repos = append(repos, HostedRepo{
+			DID:    r.Did,
+			Head:   r.HeadCid,
+			Rev:    r.HeadRev,
+			Active: active,
+			Status: status,
+		})
+	}
+	next := ""
+	if int32(len(rows)) == limit {
+		next = rows[len(rows)-1].Did
+	}
+	return repos, next, nil
 }
 
 // EventsAfter returns the next page of firehose events after cursor

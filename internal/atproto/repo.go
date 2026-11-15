@@ -180,16 +180,31 @@ func openRepo(ctx context.Context, bs *repoBlockstore, did string, head gen.Atpr
 	return atrepo.OpenRepo(ctx, bs, root)
 }
 
+// repoWriteMode selects the liveness gate inside the repo write tx.
+type repoWriteMode int
+
+const (
+	// repoWriteNormal requires an active account AND a live 'active'
+	// user — a queued publish task must never commit past a suspension.
+	repoWriteNormal repoWriteMode = iota
+	// repoWriteErasure writes into an already-frozen repo — the GDPR
+	// path retracts records and mints final commits while the account
+	// is disabled; only tombstone is past writing.
+	repoWriteErasure
+)
+
 // withRepoWrite runs fn inside the repo write transaction: the account
 // row is locked FOR UPDATE (serializing same-repo writers), blocks are
 // hydrated, fn mutates the repo and returns index writes, then the new
 // signed commit + dirty blocks + index rows + repo_seq bump persist
-// atomically. Disabled/tombstone accounts cannot write (§127 lifecycle).
-// fn receives the tx's queries so a caller can re-validate canonical
-// state on the same connection right before the commit — READ COMMITTED
-// means it observes anything committed up to that statement, which is
-// what closes the publish-vs-unpublish interleave.
-func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error)) error {
+// atomically. Disabled/tombstone accounts cannot write (§127 lifecycle),
+// and in normal mode the live users.status is re-checked on the same
+// locked row — READ COMMITTED observes a suspension committed after
+// the task was queued. fn receives the tx's queries so a caller can
+// re-validate canonical state on the same connection right before the
+// commit — the same mechanism that closes the publish-vs-unpublish
+// interleave.
+func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, mode repoWriteMode, fn func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error)) error {
 	return jdb.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		acct, err := q.LockAtprotoAccountForRepo(ctx, accountID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -198,8 +213,26 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, fn f
 		if err != nil {
 			return fmt.Errorf("atproto: lock account: %w", err)
 		}
-		if acct.Status != AccountStatusActive {
-			return ErrNotFound
+		switch mode {
+		case repoWriteErasure:
+			if acct.Status == AccountStatusTombstone {
+				return permanent(ErrNotFound)
+			}
+		default:
+			if acct.Status != AccountStatusActive {
+				return permanent(ErrNotFound)
+			}
+			// Live-user gate on the same connection: a suspended or
+			// deleted member's queued writes drop here rather than
+			// committing content into a repo the network already heard
+			// deactivate. Permanent — retrying can't un-suspend.
+			ustatus, uerr := q.GetUserStatus(ctx, acct.UserID)
+			if uerr != nil {
+				return fmt.Errorf("atproto: user status: %w", uerr)
+			}
+			if ustatus != "active" {
+				return permanent(repoAvailabilityError(acct.Status, ustatus))
+			}
 		}
 
 		bs, err := loadBlockstore(ctx, q, accountID)
@@ -336,7 +369,7 @@ func upsertRecord(ctx context.Context, rep *atrepo.Repo, rpath string, rec atrep
 // like "self"). Returns the record's at:// URI.
 func (s *Service) PutRecord(ctx context.Context, accountID pgtype.UUID, collection, rkey string, rec atrepo.CborMarshaler, contentID pgtype.UUID) (string, error) {
 	var uri string
-	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
+	err := s.withRepoWrite(ctx, accountID, repoWriteNormal, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		rpath := collection + "/" + rkey
 		recCid, err := upsertRecord(ctx, rep, rpath, rec)
 		if err != nil {
@@ -355,7 +388,7 @@ func (s *Service) PutRecord(ctx context.Context, accountID pgtype.UUID, collecti
 // CreateRecord allocates it and returns it) — the feed.post path.
 // Returns uri + rkey.
 func (s *Service) CreateRecord(ctx context.Context, accountID pgtype.UUID, collection string, rec atrepo.CborMarshaler, contentID pgtype.UUID) (uri, rkey string, err error) {
-	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
+	err = s.withRepoWrite(ctx, accountID, repoWriteNormal, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		recCid, tid, err := rep.CreateRecord(ctx, collection, rec)
 		if err != nil {
 			return nil, fmt.Errorf("atproto: create %s: %w", collection, err)
@@ -375,7 +408,18 @@ func (s *Service) CreateRecord(ctx context.Context, accountID pgtype.UUID, colle
 // seq bump — so retried unpublishes stay idempotent (indigo's
 // DeleteRecord errors on missing keys, so existence is checked first).
 func (s *Service) DeleteRecord(ctx context.Context, accountID pgtype.UUID, collection, rkey string) error {
-	err := s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
+	err := s.deleteRecordMode(ctx, accountID, collection, rkey, repoWriteNormal)
+	if errors.Is(err, errRepoNoop) {
+		return nil
+	}
+	return err
+}
+
+// deleteRecordMode removes collection/rkey under the given write mode —
+// erasure passes repoWriteErasure to retract records inside a
+// lifecycle-frozen repo.
+func (s *Service) deleteRecordMode(ctx context.Context, accountID pgtype.UUID, collection, rkey string, mode repoWriteMode) error {
+	return s.withRepoWrite(ctx, accountID, mode, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		rpath := collection + "/" + rkey
 		if _, _, gerr := rep.GetRecordBytes(ctx, rpath); errors.Is(gerr, indmst.ErrNotFound) {
 			return nil, errRepoNoop
@@ -387,10 +431,6 @@ func (s *Service) DeleteRecord(ctx context.Context, accountID pgtype.UUID, colle
 		}
 		return []indexWrite{{del: true, collection: collection, rkey: rkey}}, nil
 	})
-	if errors.Is(err, errRepoNoop) {
-		return nil
-	}
-	return err
 }
 
 // RepoCAR serializes the account's repo (commit root + every block) to a

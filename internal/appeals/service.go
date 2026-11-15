@@ -969,6 +969,9 @@ func (s *Service) finishUserLift(ctx context.Context, uid pgtype.UUID) {
 		slog.Error("appeals: status restore failed", "user_id", uid.String(), "error", err)
 	}
 
+	// §127: a restored status may reactivate a lifecycle-frozen account.
+	worker.EnqueueAtprotoLifecycleSync(ctx, uid)
+
 	if s.invalidateUserAccess != nil {
 		s.invalidateUserAccess(ctx, uid)
 	}
@@ -1194,6 +1197,9 @@ func (s *Service) operationBanSubject() SubjectHooks {
 					}); err != nil {
 						return err
 					}
+					// §127: a restored status may reactivate a
+					// lifecycle-frozen account.
+					worker.EnqueueAtprotoLifecycleSync(ctx, row.UserID)
 				}
 			}
 			if s.invalidateUserAccess != nil {

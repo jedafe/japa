@@ -9,7 +9,9 @@
 -- one commit.
 
 -- name: LockAtprotoAccountForRepo :one
-SELECT id, did, repo_seq, signing_key_enc, status
+-- user_id comes along so the write path can gate on the member's live
+-- platform status (suspended users can't commit) without a second lock.
+SELECT id, user_id, did, repo_seq, signing_key_enc, status
 FROM atproto_accounts
 WHERE id = @id
 FOR UPDATE;

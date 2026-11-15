@@ -432,7 +432,7 @@ func (q *Queries) ListAtprotoRepoBlocks(ctx context.Context, accountID pgtype.UU
 
 const lockAtprotoAccountForRepo = `-- name: LockAtprotoAccountForRepo :one
 
-SELECT id, did, repo_seq, signing_key_enc, status
+SELECT id, user_id, did, repo_seq, signing_key_enc, status
 FROM atproto_accounts
 WHERE id = $1
 FOR UPDATE
@@ -440,6 +440,7 @@ FOR UPDATE
 
 type LockAtprotoAccountForRepoRow struct {
 	ID            pgtype.UUID `json:"id"`
+	UserID        pgtype.UUID `json:"user_id"`
 	Did           string      `json:"did"`
 	RepoSeq       int64       `json:"repo_seq"`
 	SigningKeyEnc string      `json:"signing_key_enc"`
@@ -455,11 +456,14 @@ type LockAtprotoAccountForRepoRow struct {
 // Write path is transactional: LockAtprotoAccount serializes same-repo
 // writers (FOR UPDATE), blocks+commit+records-index+repo_seq persist in
 // one commit.
+// user_id comes along so the write path can gate on the member's live
+// platform status (suspended users can't commit) without a second lock.
 func (q *Queries) LockAtprotoAccountForRepo(ctx context.Context, id pgtype.UUID) (LockAtprotoAccountForRepoRow, error) {
 	row := q.db.QueryRow(ctx, lockAtprotoAccountForRepo, id)
 	var i LockAtprotoAccountForRepoRow
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Did,
 		&i.RepoSeq,
 		&i.SigningKeyEnc,

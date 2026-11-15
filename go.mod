@@ -34,9 +34,11 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/pgvector/pgvector-go v0.4.1
 	github.com/pquerna/otp v1.5.0
+	github.com/rivo/uniseg v0.4.7
 	github.com/stretchr/testify v1.12.1
 	github.com/valkey-io/valkey-go v1.0.79
 	github.com/valkey-io/valkey-go/valkeycompat v1.0.79
+	github.com/whyrusleeping/cbor-gen v0.3.1
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 	golang.org/x/image v0.47.0
@@ -113,7 +115,6 @@ require (
 	github.com/skeema/knownhosts v1.3.3 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/whyrusleeping/cbor-gen v0.3.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect

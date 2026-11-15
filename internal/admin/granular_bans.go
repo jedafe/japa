@@ -152,6 +152,8 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
 	// Re-sync the users search doc — status may have flipped to 'restricted'.
 	worker.EnqueueSearchIndexSync(ctx, "user", uid)
+	// §127: atproto account follows platform status.
+	worker.EnqueueAtprotoLifecycleSync(ctx, uid)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id":    uid.String(),
@@ -221,6 +223,7 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the users search doc — lifting a restriction can restore the
 	// account to 'active', which re-enters search.
 	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(r.Context(), uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "operation": op, "lifted": true})
 }
@@ -267,6 +270,7 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the users search doc — lifting all restrictions can restore
 	// the account to 'active', which re-enters search.
 	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(r.Context(), uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "lifted_all": true})
 }
@@ -397,6 +401,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the users search doc — a suspended account drops out of
 	// search (IndexUser gates on effective status).
 	worker.EnqueueSearchIndexSync(ctx, "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(ctx, uid)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id": uid.String(),
@@ -530,6 +535,8 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid))
+		// §127: auto-restriction can flip status to 'restricted'.
+		worker.EnqueueAtprotoLifecycleSync(ctx, uid)
 		slog.Warn("warn: auto-escalation triggered",
 			"user_id", uid.String(),
 			"violation_type", input.ViolationType,

@@ -26,6 +26,23 @@ const (
 	AccountStatusTombstone = "tombstone"
 )
 
+// DisableReason values for atproto_accounts.disabled_reason — WHO froze
+// the account (001147). 'member' re-enables only via member opt-in;
+// 'lifecycle' re-enables when the user returns to 'active'. A NULL
+// reason reads as member-initiated — every pre-column disable was.
+const (
+	DisableReasonMember    = "member"
+	DisableReasonLifecycle = "lifecycle"
+)
+
+// repoInactiveError names the lexicon error for a repo that exists but
+// isn't servable — the sync surface distinguishes RepoDeactivated /
+// RepoSuspended / RepoTakendown so relays can tell "not hosted"
+// (RepoNotFound) from a present-but-frozen account.
+type repoInactiveError struct{ name string }
+
+func (e *repoInactiveError) Error() string { return "atproto repo inactive: " + e.name }
+
 var (
 	ErrNotFound      = errors.New("atproto account not found")
 	ErrInvalidHandle = errors.New("invalid atproto handle")

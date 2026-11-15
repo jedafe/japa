@@ -25,6 +25,7 @@ import (
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/rss/model"
+	"github.com/rivo/uniseg"
 )
 
 // Collection NSIDs the A2 engine writes. feed.post replies carry
@@ -109,16 +110,19 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 
 // profileRecord projects user_profiles → app.bsky.actor.profile.
 // displayName falls back to the username; avatar/banner are blob refs
-// and arrive with A4's media pipeline.
+// and arrive with A4's media pipeline. Both strings cap at the
+// lexicon's maxGraphemes (64/256) — a raw rune cap overshoots on
+// emoji/ZWJ sequences, which the network would reject at validation.
 func profileRecord(username string, p gen.GetAtprotoUserProfileRow, accountCreated time.Time) *bsky.ActorProfile {
 	rec := &bsky.ActorProfile{LexiconTypeID: CollectionProfile}
 	name := username
 	if p.DisplayName != nil && strings.TrimSpace(*p.DisplayName) != "" {
 		name = strings.TrimSpace(*p.DisplayName)
 	}
+	name = truncateGraphemes(name, 64)
 	rec.DisplayName = &name
 	if p.Bio != nil && strings.TrimSpace(*p.Bio) != "" {
-		bio := strings.TrimSpace(*p.Bio)
+		bio := truncateGraphemes(strings.TrimSpace(*p.Bio), 256)
 		rec.Description = &bio
 	}
 	created := accountCreated.UTC().Format(time.RFC3339)
@@ -214,7 +218,7 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	// publish-vs-unpublish interleave leaves a record live: the delete
 	// emit already ran and found no index row to address.
 	var uri string
-	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {
+	err = s.withRepoWrite(ctx, accountID, repoWriteNormal, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {
 		if _, err := q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 			ID:           contentID,
 			ContentTypes: s.federatableTypesFor(ctx),
@@ -257,7 +261,7 @@ func (s *Service) DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, ur
 	// ATURI preserves did:web percent-encoding in the authority
 	// (did:web:host%3Aport:...) and didFor stores the DID in the same
 	// encoded form, so the strings compare directly.
-	err = s.withRepoWrite(ctx, accountID, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
+	err = s.withRepoWrite(ctx, accountID, repoWriteNormal, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
 		if parsed.Authority().String() != rep.RepoDid() {
 			return nil, permanent(fmt.Errorf("atproto: delete uri %q: authority is not this repo", uri))
 		}
@@ -365,6 +369,24 @@ func (s *Service) pageURL(contentType, slug string, canonical *string) string {
 		return s.cfg.siteBase() + "/" + strings.TrimPrefix(c, "/")
 	}
 	return s.cfg.siteBase() + model.LinkPathFor(contentType) + slug
+}
+
+// truncateGraphemes caps s at n grapheme clusters — the unit a
+// lexicon maxGraphemes constraint counts. Cluster boundaries are
+// byte-exact, so slicing at the (n+1)th cluster's start keeps the
+// result valid UTF-8.
+func truncateGraphemes(s string, n int) string {
+	g := uniseg.NewGraphemes(s)
+	count := 0
+	end := len(s)
+	for g.Next() {
+		if count == n {
+			end, _ = g.Positions()
+			break
+		}
+		count++
+	}
+	return s[:end]
 }
 
 // truncateRunes caps s at n runes, marking truncation with '…'.

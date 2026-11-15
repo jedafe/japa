@@ -1303,6 +1303,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
 	gdprService.SetOwnerEmail(cfg.OwnerEmail)
+	// §127: the mini-PDS retraction path — hard delete must sign its
+	// tombstone commits while key custody still exists.
+	gdprService.SetAtprotoEraser(atprotoService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
 	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).
@@ -4024,6 +4027,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/xrpc/com.atproto.sync.getBlocks", atprotoHandlers.GetBlocks)
 		r.Get("/xrpc/com.atproto.sync.getLatestCommit", atprotoHandlers.GetLatestCommit)
 		r.Get("/xrpc/com.atproto.sync.getRecord", atprotoHandlers.GetRecord)
+		r.Get("/xrpc/com.atproto.sync.getRepoStatus", atprotoHandlers.GetRepoStatus)
+		r.Get("/xrpc/com.atproto.sync.listRepos", atprotoHandlers.ListRepos)
 		r.Get("/xrpc/com.atproto.sync.subscribeRepos", atprotoHandlers.SubscribeRepos)
 	})
 

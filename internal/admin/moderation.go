@@ -1005,6 +1005,7 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 	h.invalidateUserAccessCaches(ctx, uid, banCacheKey(uid))
 	// Re-sync the users search doc — a banned account drops out of search.
 	worker.EnqueueSearchIndexSync(ctx, "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(ctx, uid)
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
 
@@ -1053,6 +1054,7 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	h.invalidateUserAccessCaches(r.Context(), uid, banCacheKey(uid))
 	// Re-sync the users search doc — a restored account re-enters search.
 	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(r.Context(), uid)
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1273,6 +1275,7 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the users search doc — suspended/banned/deleted accounts drop
 	// out of search; restored accounts re-enter.
 	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
+	worker.EnqueueAtprotoLifecycleSync(r.Context(), uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
 }

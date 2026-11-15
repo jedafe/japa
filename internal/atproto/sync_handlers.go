@@ -8,6 +8,7 @@ package atproto
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -25,7 +26,10 @@ func xrpcError(w http.ResponseWriter, status int, name, message string) {
 // lexicon/param errors are 400, anything else is 500: a 4xx reads as a
 // permanent condition to a relay, so transient failures must never wear it.
 func xrpcNotFound(w http.ResponseWriter, err error, name string) {
+	var inactive *repoInactiveError
 	switch {
+	case errors.As(err, &inactive):
+		xrpcError(w, http.StatusBadRequest, inactive.name, "repository is not active")
 	case errors.Is(err, ErrNotFound):
 		xrpcError(w, http.StatusBadRequest, name, "repository not found")
 	case errors.Is(err, ErrInvalidID):
@@ -108,14 +112,17 @@ func (h *Handlers) GetLatestCommit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetRecord serves GET /xrpc/com.atproto.sync.getRecord?repo=&collection=
-// &rkey=[&commit=] — a CAR carrying the record and the MST material to
-// verify it. The optional `commit` anchor is ignored: the record index
-// is current-state only, so the head-anchored CAR is what we can prove —
-// a record deleted since the anchor 404s rather than serving stale data.
+// GetRecord serves GET /xrpc/com.atproto.sync.getRecord?did=&collection=
+// &rkey= — a CAR carrying the record and the MST material to verify it.
+// The lexicon's required param is `did`; legacy `repo` is accepted for
+// pre-rename callers (both name the same repo DID).
 func (h *Handlers) GetRecord(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	data, err := h.service.RecordCAR(r.Context(), q.Get("repo"), q.Get("collection"), q.Get("rkey"))
+	did := q.Get("did")
+	if did == "" {
+		did = q.Get("repo")
+	}
+	data, err := h.service.RecordCAR(r.Context(), did, q.Get("collection"), q.Get("rkey"))
 	if err != nil {
 		xrpcNotFound(w, err, "RecordNotFound")
 		return
@@ -123,4 +130,41 @@ func (h *Handlers) GetRecord(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", carMediaType)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// GetRepoStatus serves GET /xrpc/com.atproto.sync.getRepoStatus?did= —
+// the relay's inactive-recheck: reports whether a hosted repo is
+// servable and, when not, which inactive state it's in.
+func (h *Handlers) GetRepoStatus(w http.ResponseWriter, r *http.Request) {
+	out, err := h.service.RepoStatus(r.Context(), r.URL.Query().Get("did"))
+	if err != nil {
+		xrpcNotFound(w, err, "RepoNotFound")
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, "application/json", out)
+}
+
+// ListRepos serves GET /xrpc/com.atproto.sync.listRepos?limit=&cursor=
+// — the hosted-repo census ecosystem resync tooling reads.
+func (h *Handlers) ListRepos(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var limit int32
+	if raw := q.Get("limit"); raw != "" {
+		if n, perr := strconv.ParseInt(raw, 10, 32); perr == nil {
+			limit = int32(n)
+		} else {
+			xrpcError(w, http.StatusBadRequest, "InvalidRequest", "invalid limit")
+			return
+		}
+	}
+	repos, cursor, err := h.service.ListRepos(r.Context(), q.Get("cursor"), limit)
+	if err != nil {
+		xrpcNotFound(w, err, "RepoNotFound")
+		return
+	}
+	out := map[string]any{"repos": repos}
+	if cursor != "" {
+		out["cursor"] = cursor
+	}
+	writeTypedJSON(w, http.StatusOK, "application/json", out)
 }

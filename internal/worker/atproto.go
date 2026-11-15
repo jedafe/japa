@@ -24,6 +24,7 @@ type atprotoRepoWriter interface {
 	PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error)
 	DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error
 	RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
+	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) error
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -106,6 +107,54 @@ func EnqueueAtprotoRequestCrawl(ctx context.Context, accountID pgtype.UUID) {
 	if err := taskEnqueuer.Enqueue(TypeAtprotoRequestCrawl, payload); err != nil {
 		slog.Warn("worker: atproto crawl enqueue failed", "account_id", accountID.String(), "error", err)
 	}
+}
+
+// EnqueueAtprotoLifecycleSync fires atproto:lifecycle_sync after a
+// users.status write — the service reconciles the member's account
+// (freeze on suspension/deletion, reactivate only lifecycle-frozen
+// accounts). Fire-and-forget (Rule 8); safe to call unconditionally —
+// members without an account converge to a no-op.
+func EnqueueAtprotoLifecycleSync(ctx context.Context, userID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"user_id": userID.String()})
+	if err != nil {
+		slog.Warn("worker: atproto lifecycle enqueue marshal failed", "user_id", userID.String(), "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeAtprotoLifecycleSync, payload); err != nil {
+		slog.Warn("worker: atproto lifecycle enqueue failed", "user_id", userID.String(), "error", err)
+	}
+}
+
+// HandleAtprotoLifecycleSync processes atproto:lifecycle_sync (§127
+// lifecycle): reconcile the member's atproto account with their live
+// users.status. Idempotent — retries and out-of-order delivery converge.
+func HandleAtprotoLifecycleSync(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:atproto:lifecycle_sync")
+
+	if atprotoSvc == nil {
+		slog.Warn("task:atproto:lifecycle_sync: service not registered, dropping task")
+		return nil
+	}
+
+	var payload struct {
+		UserID string `json:"user_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:atproto:lifecycle_sync: invalid payload", "error", err)
+		return err
+	}
+	userID, err := scanUUID(payload.UserID)
+	if err != nil {
+		return fmt.Errorf("task:atproto:lifecycle_sync: %w: %w", err, asynq.SkipRetry)
+	}
+	if err := atprotoSvc.SyncUserLifecycle(ctx, userID); err != nil {
+		slog.Error("task:atproto:lifecycle_sync: sync failed", "user_id", payload.UserID, "error", err)
+		return skipIfPermanent(err)
+	}
+	return nil
 }
 
 // HandleAtprotoRequestCrawl processes atproto:request_crawl (§127 A3):

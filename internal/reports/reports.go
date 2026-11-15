@@ -545,6 +545,8 @@ func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string
 	// Re-sync the users search doc — a banned account must drop out of
 	// search results (IndexUser gates on effective status).
 	worker.EnqueueSearchIndexSync(ctx, EntityTypeUser, userID)
+	// §127: the atproto account follows platform status.
+	worker.EnqueueAtprotoLifecycleSync(ctx, userID)
 
 	return nil
 }

@@ -45,6 +45,16 @@ type SessionDeleter interface {
 	DeleteSessions(ctx context.Context, userID string) error
 }
 
+// AtprotoEraser retracts a member's atproto repo and tombstones the
+// account before the user row's physical delete — *atproto.Service's
+// EraseAccount satisfies it in production. The user-row DELETE cascades
+// atproto_accounts (key custody included) away, so signed retraction
+// commits are only possible beforehand; a nil eraser means the mini-PDS
+// is off and the step is skipped.
+type AtprotoEraser interface {
+	EraseAccount(ctx context.Context, userID pgtype.UUID) error
+}
+
 // Service provides GDPR operations with reader/writer pool separation.
 type Service struct {
 	store          *Store
@@ -53,6 +63,7 @@ type Service struct {
 	honchoEraser   HonchoEraser
 	honchoFetcher  HonchoFetcher
 	sessionDeleter SessionDeleter
+	atprotoEraser  AtprotoEraser
 	siteName       string
 	settings       SettingsProvider
 	storage        Storage
@@ -116,6 +127,13 @@ func (s *Service) SetHonchoFetcher(h HonchoFetcher) {
 // during account deletion. When nil (development), the step is skipped.
 func (s *Service) SetSessionDeleter(d SessionDeleter) {
 	s.sessionDeleter = d
+}
+
+// SetAtprotoEraser injects the mini-PDS erasure path (§127 lifecycle).
+// When nil, hardDeleteUser skips atproto retraction — the mini-PDS is
+// off, so nothing exists to retract.
+func (s *Service) SetAtprotoEraser(e AtprotoEraser) {
+	s.atprotoEraser = e
 }
 
 // SetSettings injects the system settings provider for hard-delete configuration.
@@ -624,6 +642,10 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing user: %w", err)
 		}
+		// §127: anonymize flips users.status to 'deleted' — the atproto
+		// account freezes (+ #account deleted) during the retention
+		// window, not at hard delete.
+		worker.EnqueueAtprotoLifecycleSync(ctx, request.UserID)
 		// Clear PII in user_profiles (display_name, bio, timezone, business
 		// info, content_country_preference, preferred_currency, avatar/cover)
 		// so it is scrubbed during the retention window, not just at hard
@@ -1107,6 +1129,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}
 	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") && os.Getenv("JC_HONCHO_URL") != "" {
 		return fmt.Errorf("hard delete blocked: honcho eraser not configured — required in production for user %s", userID)
+	}
+
+	// §127 lifecycle: retract the member's atproto repo (signed commits
+	// carrying delete ops) and tombstone the account BEFORE the user-row
+	// DELETE — the cascade below drops atproto_accounts including key
+	// custody, after which no retraction can ever be signed (001143's
+	// warning). A failure blocks the delete: proceeding would burn the
+	// signing key while the member's records stay live on the network.
+	if s.atprotoEraser != nil {
+		if err := s.atprotoEraser.EraseAccount(ctx, userID); err != nil {
+			return fmt.Errorf("hard delete blocked: atproto erasure failed for user %s: %w", userID, err)
+		}
 	}
 
 	// All four steps run in one transaction so a failure cannot leave the user

@@ -150,10 +150,27 @@ func TestDBEnableDisableAccount(t *testing.T) {
 	if st.Enabled || st.Status != AccountStatusDisabled {
 		t.Fatalf("disabled status: %+v", st)
 	}
+	var reason *string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT disabled_reason FROM atproto_accounts WHERE user_id = $1`, userID).Scan(&reason); err != nil {
+		t.Fatalf("disabled_reason read: %v", err)
+	}
+	if reason == nil || *reason != DisableReasonMember {
+		t.Fatalf("member disable reason = %v, want 'member'", reason)
+	}
 
-	// Disabled accounts don't resolve.
-	if _, err := svc.ResolveHandleDID(ctx, wantHandle); err != ErrNotFound {
-		t.Errorf("disabled handle resolved: %v", err)
+	// Deactivated-repo semantics: identity keeps resolving so signed
+	// history stays verifiable; the repo itself is frozen.
+	if got, err := svc.ResolveHandleDID(ctx, wantHandle); err != nil || got != st.DID {
+		t.Errorf("disabled handle resolve = %q, %v — want %q", got, err, st.DID)
+	}
+	if _, err := svc.RepoCARSince(ctx, st.DID, ""); err == nil {
+		t.Error("disabled repo served a CAR — want RepoDeactivated")
+	} else {
+		var inactive *repoInactiveError
+		if !errors.As(err, &inactive) || inactive.name != "RepoDeactivated" {
+			t.Errorf("disabled repo error = %v, want RepoDeactivated", err)
+		}
 	}
 }
 
@@ -534,7 +551,16 @@ func TestDBPDSHostCollisionRejected(t *testing.T) {
 	ctx := context.Background()
 	svc := newAtprotoService(t, d) // pdsHost api.test.dev, domain test.dev
 
-	userID, _ := newAtprotoNamedUser(t, ctx, d, "api", "active")
+	// "api" is both a PDS-host collision and a reserved localpart —
+	// either reason must reject with ErrInvalidHandle. Seed data may
+	// already hold the username — reuse the row.
+	var userID pgtype.UUID
+	if err := d.Writer.QueryRow(ctx,
+		`INSERT INTO users (username, email, status) VALUES ('api', 'api-pds@test.dev', 'active')
+		 ON CONFLICT (username) DO UPDATE SET status = 'active'
+		 RETURNING id`).Scan(&userID); err != nil {
+		t.Fatalf("api user: %v", err)
+	}
 	if _, err := svc.EnableAccount(ctx, userID); err != ErrInvalidHandle {
 		t.Errorf("pds-host collision enable: got %v, want ErrInvalidHandle", err)
 	}
@@ -577,10 +603,11 @@ func TestDBTombstoneTerminal(t *testing.T) {
 }
 
 // jc:atp:did:{id} is keyed on the USER uuid — the did:web u/{id} path
-// component — not the atproto_accounts row PK. Disable must evict both
-// the DID-doc cache and the well-known account cache so a deactivated
-// member stops resolving immediately, not after the 10m TTL.
-func TestDBDisableInvalidatesCaches(t *testing.T) {
+// component — not the atproto_accounts row PK. Disable evicts both
+// identity caches, but deactivated-repo semantics keep the doc and
+// handle resolvable — the freeze surfaces only on the sync endpoints,
+// and a stale warm cache must never resurrect the wrong answer.
+func TestDBDisableKeepsIdentityCaches(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	userID, uname := newAtprotoUser(t, ctx, d, "active")
@@ -602,13 +629,17 @@ func TestDBDisableInvalidatesCaches(t *testing.T) {
 		t.Fatalf("DisableAccount: %v", err)
 	}
 
-	// Both lookups must now miss — a lingering DID doc cache would keep
-	// serving the doc for a deactivated member until TTL expiry.
-	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != ErrNotFound {
-		t.Errorf("disabled DID doc still served (cache not invalidated): %v", err)
+	// Identity still resolves — signed history stays verifiable — while
+	// the sync surface reports the repo as deactivated.
+	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != nil {
+		t.Errorf("disabled DID doc no longer served: %v", err)
 	}
-	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != ErrNotFound {
-		t.Errorf("disabled handle still resolves (cache not invalidated): %v", err)
+	if _, err := svc.ResolveHandleDID(ctx, uname+".test.dev"); err != nil {
+		t.Errorf("disabled handle no longer resolves: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	if _, err := svc.RepoCARSince(ctx, acct.Did, ""); err == nil {
+		t.Error("disabled repo CAR served — want RepoDeactivated")
 	}
 }
 
@@ -656,7 +687,7 @@ func atprotoAccountFor(t *testing.T, ctx context.Context, d *db.DB, userID pgtyp
 	var a gen.AtprotoAccount
 	err := d.Writer.QueryRow(ctx, `SELECT * FROM atproto_accounts WHERE user_id = $1`, userID).Scan(
 		&a.ID, &a.UserID, &a.Handle, &a.Did, &a.SigningKeyEnc, &a.PublicKeyMultibase,
-		&a.Status, &a.RepoSeq, &a.CreatedAt, &a.UpdatedAt, &a.DisabledAt)
+		&a.Status, &a.RepoSeq, &a.CreatedAt, &a.UpdatedAt, &a.DisabledAt, &a.DisabledReason)
 	if err != nil {
 		t.Fatalf("read account: %v", err)
 	}
@@ -1550,9 +1581,17 @@ func TestDBSyncEndpoints(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	h.GetRecord(rec, httptest.NewRequest(http.MethodGet,
-		"/xrpc/com.atproto.sync.getRecord?repo="+acct.Did+"&collection="+CollectionPost+"&rkey=nosuch", nil))
+		"/xrpc/com.atproto.sync.getRecord?did="+acct.Did+"&collection="+CollectionPost+"&rkey=nosuch", nil))
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "RecordNotFound") {
 		t.Fatalf("getRecord miss: %d %s", rec.Code, rec.Body)
+	}
+	// Lexicon requires did; legacy repo is still accepted for
+	// pre-rename callers — both name the same repo.
+	rec = httptest.NewRecorder()
+	h.GetRecord(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getRecord?repo="+acct.Did+"&collection="+CollectionPost+"&rkey="+contentID.String(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getRecord legacy repo param: %d %s", rec.Code, rec.Body)
 	}
 	rec = httptest.NewRecorder()
 	h.GetRepo(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.sync.getRepo?did=did:web:api.test.dev:atproto:u:00000000-0000-0000-0000-000000000000", nil))
@@ -1814,9 +1853,9 @@ func TestDBGetRepoSince(t *testing.T) {
 		t.Fatal("RepoCARSince(\"\") differs from RepoCAR")
 	}
 
-	// since naming a rev we never minted → we can't know what the client
-	// holds → full CAR (the provably-sufficient answer).
-	data, err = svc.RepoCARSince(ctx, acct.Did, "3aaaaaaaaaaaaaa")
+	// since naming a valid TID we never minted → we can't know what the
+	// client holds → full CAR (the provably-sufficient answer).
+	data, err = svc.RepoCARSince(ctx, acct.Did, "3aaaaaaaaaaaa")
 	if err != nil {
 		t.Fatalf("RepoCARSince(unknown): %v", err)
 	}
@@ -1903,5 +1942,561 @@ func TestDBConcurrentCommitEventOrder(t *testing.T) {
 		if commits != int64(n+1) {
 			t.Fatalf("%s commits = %d, want %d", acct.Did, commits, n+1)
 		}
+	}
+}
+
+// setUserStatus flips users.status directly — lifecycle tests drive the
+// same column the admin/moderation paths write.
+func setUserStatus(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID, status string) {
+	t.Helper()
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = $2 WHERE id = $1`, userID, status); err != nil {
+		t.Fatalf("set user status: %v", err)
+	}
+}
+
+// getRepoStatus reports servability: active repos carry rev, inactive
+// ones carry the lexicon status word, unknown/tombstone DIDs are
+// RepoNotFound — the mapping the relay's inactive-recheck reads.
+func TestDBGetRepoStatusEndpoint(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	h := NewHandlers(svc)
+
+	out, err := svc.RepoStatus(ctx, "did:web:api.test.dev:atproto:u:00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown did status = %+v, %v — want ErrNotFound", out, err)
+	}
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	out, err = svc.RepoStatus(ctx, acct.Did)
+	if err != nil || !out.Active || out.Rev == "" || out.Status != "" {
+		t.Fatalf("active repo status = %+v, %v", out, err)
+	}
+
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	out, err = svc.RepoStatus(ctx, acct.Did)
+	if err != nil || out.Active || out.Status != "deactivated" || out.Rev != "" {
+		t.Fatalf("disabled repo status = %+v, %v — want deactivated", out, err)
+	}
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+	setUserStatus(t, ctx, d, userID, "suspended")
+	out, err = svc.RepoStatus(ctx, acct.Did)
+	if err != nil || out.Active || out.Status != "suspended" {
+		t.Fatalf("suspended repo status = %+v, %v", out, err)
+	}
+	setUserStatus(t, ctx, d, userID, "banned")
+	out, err = svc.RepoStatus(ctx, acct.Did)
+	if err != nil || out.Active || out.Status != "takendown" {
+		t.Fatalf("banned repo status = %+v, %v", out, err)
+	}
+	setUserStatus(t, ctx, d, userID, "active")
+
+	// Tombstone reads as unhosted.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_accounts SET status = 'tombstone' WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+	out, err = svc.RepoStatus(ctx, acct.Did)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("tombstone status = %+v, %v — want ErrNotFound", out, err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.GetRepoStatus(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getRepoStatus?did="+acct.Did, nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "RepoNotFound") {
+		t.Fatalf("getRepoStatus tombstone: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// listRepos is the hosted-repo census: required fields, inactive repos
+// carry their status word, and the did cursor paginates.
+func TestDBListReposEndpoint(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+	h := NewHandlers(svc)
+
+	u1, _ := newAtprotoUser(t, ctx, d, "active")
+	u2, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := svc.EnableAccount(ctx, u1); err != nil {
+		t.Fatalf("enable u1: %v", err)
+	}
+	if _, err := svc.EnableAccount(ctx, u2); err != nil {
+		t.Fatalf("enable u2: %v", err)
+	}
+	a1 := atprotoAccountFor(t, ctx, d, u1)
+	a2 := atprotoAccountFor(t, ctx, d, u2)
+	if _, err := svc.DisableAccount(ctx, u2); err != nil {
+		t.Fatalf("disable u2: %v", err)
+	}
+
+	repos, cursor, err := svc.ListRepos(ctx, "", 1000)
+	if err != nil {
+		t.Fatalf("ListRepos: %v", err)
+	}
+	seen := map[string]HostedRepo{}
+	for _, r := range repos {
+		seen[r.DID] = r
+		if r.DID == "" || r.Head == "" || r.Rev == "" {
+			t.Fatalf("repo entry missing required fields: %+v", r)
+		}
+	}
+	r1, ok := seen[a1.Did]
+	if !ok || !r1.Active {
+		t.Fatalf("a1 entry = %+v present=%v", r1, ok)
+	}
+	r2, ok := seen[a2.Did]
+	if !ok || r2.Active || r2.Status != "deactivated" {
+		t.Fatalf("a2 entry = %+v present=%v — want active:false deactivated", r2, ok)
+	}
+	if len(repos) < 1000 && cursor != "" {
+		t.Fatalf("cursor %q returned with a short page", cursor)
+	}
+
+	// Pagination: walk by the returned cursor — no repeats, reaches the end.
+	first, cur, err := svc.ListRepos(ctx, "", 1)
+	if err != nil || len(first) != 1 || cur == "" {
+		t.Fatalf("first page: len=%d cursor=%q err=%v", len(first), cur, err)
+	}
+	second, _, err := svc.ListRepos(ctx, cur, 1000)
+	if err != nil {
+		t.Fatalf("second page: %v", err)
+	}
+	for _, r := range second {
+		if r.DID == first[0].DID {
+			t.Fatalf("cursor page repeated %s", r.DID)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	h.ListRepos(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.sync.listRepos?limit=2", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"repos"`) {
+		t.Fatalf("listRepos handler: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	h.ListRepos(rec, httptest.NewRequest(http.MethodGet, "/xrpc/com.atproto.sync.listRepos?limit=abc", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "InvalidRequest") {
+		t.Fatalf("listRepos bad limit: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// Malformed inputs are InvalidRequest, never a silent wrong answer:
+// bad since TIDs, over-bounded cids, missing did.
+func TestDBSyncInputValidation(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	h := NewHandlers(svc)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	for _, bad := range []string{"not-a-tid", "3k!nvalid", "zzzzzzzzzzzzz"} {
+		if _, err := svc.RepoCARSince(ctx, acct.Did, bad); !errors.Is(err, ErrInvalidID) {
+			t.Fatalf("since %q: %v — want ErrInvalidID", bad, err)
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.GetRepo(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getRepo?did="+acct.Did+"&since=not-a-tid", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "InvalidRequest") {
+		t.Fatalf("getRepo bad since: %d %s", rec.Code, rec.Body)
+	}
+
+	cids := make([]string, maxGetBlocksCIDs+1)
+	for i := range cids {
+		cids[i] = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
+	}
+	if _, err := svc.BlocksCAR(ctx, acct.Did, cids); !errors.Is(err, ErrInvalidID) {
+		t.Fatalf("BlocksCAR over cap: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.GetBlocks(rec, httptest.NewRequest(http.MethodGet,
+		"/xrpc/com.atproto.sync.getBlocks?did="+acct.Did+"&cids="+strings.Join(cids, "&cids="), nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "InvalidRequest") {
+		t.Fatalf("getBlocks over cap: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// Inactive repos answer with their lexicon names — a frozen repo is
+// never confused with an unhosted DID by the sync endpoints.
+func TestDBInactiveRepoErrorNames(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	wantName := func(err error) string {
+		t.Helper()
+		var inactive *repoInactiveError
+		if !errors.As(err, &inactive) {
+			t.Fatalf("error %v is not a repoInactiveError", err)
+		}
+		return inactive.name
+	}
+
+	setUserStatus(t, ctx, d, userID, "suspended")
+	if _, err := svc.RepoCARSince(ctx, acct.Did, ""); wantName(err) != "RepoSuspended" {
+		t.Fatalf("suspended user getRepo: %v", err)
+	}
+	setUserStatus(t, ctx, d, userID, "banned")
+	if _, err := svc.RepoCARSince(ctx, acct.Did, ""); wantName(err) != "RepoTakendown" {
+		t.Fatalf("banned user getRepo: %v", err)
+	}
+	setUserStatus(t, ctx, d, userID, "active")
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	if _, _, err := svc.HeadCommit(ctx, acct.Did); wantName(err) != "RepoDeactivated" {
+		t.Fatalf("disabled getLatestCommit: %v", err)
+	}
+	if _, err := svc.RecordCAR(ctx, acct.Did, CollectionProfile, ProfileRkey); wantName(err) != "RepoDeactivated" {
+		t.Fatalf("disabled getRecord: %v", err)
+	}
+}
+
+// SyncUserLifecycle converges the account on users.status: freeze on
+// suspension (once), reactivate only lifecycle-frozen accounts, never
+// resurrect a member's own opt-out or a tombstone.
+func TestDBLifecycleSync(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	// Never opted in → no-op.
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle no-account: %v", err)
+	}
+
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	maxSeq, err := svc.MaxEventSeq(ctx)
+	if err != nil {
+		t.Fatalf("MaxEventSeq: %v", err)
+	}
+
+	// Suspension freezes with 'lifecycle' reason + one #account frame.
+	setUserStatus(t, ctx, d, userID, "suspended")
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle suspend: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusDisabled || acct.DisabledReason == nil || *acct.DisabledReason != DisableReasonLifecycle {
+		t.Fatalf("frozen account = %+v", acct)
+	}
+	rows, err := svc.EventsAfter(ctx, maxSeq, 10)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	var frame struct {
+		Active bool   `json:"active"`
+		Status string `json:"status"`
+	}
+	if len(rows) != 1 || rows[0].Kind != EventKindAccount ||
+		json.Unmarshal(rows[0].Payload, &frame) != nil || frame.Active || frame.Status != "suspended" {
+		t.Fatalf("freeze events = %+v", rows)
+	}
+	// Repeat sync emits nothing — the transition already announced.
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle repeat: %v", err)
+	}
+	rows, err = svc.EventsAfter(ctx, maxSeq, 10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("repeat sync events = %+v", rows)
+	}
+
+	// Restore reactivates a lifecycle freeze (+ one #account frame).
+	setUserStatus(t, ctx, d, userID, "active")
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle restore: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusActive || acct.DisabledReason != nil {
+		t.Fatalf("reactivated account = %+v", acct)
+	}
+
+	// A member opt-out must NOT be reactivated by a moderation cycle.
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle member-disabled: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusDisabled || acct.DisabledReason == nil || *acct.DisabledReason != DisableReasonMember {
+		t.Fatalf("member-disabled account resurrected: %+v", acct)
+	}
+
+	// Nor a historical NULL-reason disable.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_accounts SET disabled_reason = NULL WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("null reason: %v", err)
+	}
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle null-reason: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusDisabled {
+		t.Fatalf("null-reason disable resurrected: %+v", acct)
+	}
+
+	// Tombstone is terminal either direction.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_accounts SET status = 'tombstone' WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+	setUserStatus(t, ctx, d, userID, "suspended")
+	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+		t.Fatalf("lifecycle tombstone: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusTombstone {
+		t.Fatalf("tombstone mutated: %+v", acct)
+	}
+}
+
+// A queued publish that lands after a suspension must not commit —
+// the live users.status gate inside the repo tx drops it permanently.
+func TestDBPublishAfterSuspensionDropped(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	seqBefore := acct.RepoSeq
+
+	setUserStatus(t, ctx, d, userID, "suspended")
+	// Content resolution itself gates on u.status='active' → permanent.
+	if _, err := svc.PublishContent(ctx, contentID); err == nil {
+		t.Fatal("PublishContent on suspended user succeeded")
+	} else {
+		var p interface{ Permanent() bool }
+		if !errors.As(err, &p) || !p.Permanent() {
+			t.Fatalf("PublishContent error not permanent: %v", err)
+		}
+	}
+	// The write-path gate catches a direct PutRecord too — the account
+	// row is still 'active' (no lifecycle task ran), only the user
+	// status guard inside the tx stops the commit.
+	name := "x"
+	if _, err := svc.PutRecord(ctx, acct.ID, CollectionProfile, ProfileRkey,
+		&bsky.ActorProfile{LexiconTypeID: CollectionProfile, DisplayName: &name}, pgtype.UUID{}); err == nil {
+		t.Fatal("PutRecord on suspended user committed")
+	} else {
+		var p interface{ Permanent() bool }
+		if !errors.As(err, &p) || !p.Permanent() {
+			t.Fatalf("PutRecord error not permanent: %v", err)
+		}
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.RepoSeq != seqBefore {
+		t.Fatalf("repo_seq advanced past suspension: %d → %d", seqBefore, acct.RepoSeq)
+	}
+}
+
+// EraseAccount is the GDPR ordering: records retract in signed commits
+// while key custody exists, the account tombstones, #account deleted
+// announces it — and a second call is a no-op.
+func TestDBEraseAccount(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+	maxSeq, err := svc.MaxEventSeq(ctx)
+	if err != nil {
+		t.Fatalf("MaxEventSeq: %v", err)
+	}
+
+	// Erasure from an active account (hard-delete path order) and from
+	// a lifecycle-frozen one both work — run the second user through
+	// the freeze-first order.
+	userID2, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := svc.EnableAccount(ctx, userID2); err != nil {
+		t.Fatalf("EnableAccount u2: %v", err)
+	}
+	if _, err := svc.DisableAccount(ctx, userID2); err != nil {
+		t.Fatalf("DisableAccount u2: %v", err)
+	}
+
+	if err := svc.EraseAccount(ctx, userID); err != nil {
+		t.Fatalf("EraseAccount: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.Status != AccountStatusTombstone {
+		t.Fatalf("erased account = %+v", acct)
+	}
+	var recs int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT count(*) FROM atproto_records WHERE account_id = $1`, acct.ID).Scan(&recs); err != nil {
+		t.Fatalf("count records: %v", err)
+	}
+	if recs != 0 {
+		t.Fatalf("records left after erasure: %d", recs)
+	}
+	// The retraction commit landed: repo_seq advanced past the
+	// publish commits, and the #commit frame carries delete ops so the
+	// network sees the content leave.
+	acct = atprotoAccountFor(t, ctx, d, userID)
+	if acct.RepoSeq < 3 {
+		t.Fatalf("repo_seq = %d — want root + publish + retraction commits", acct.RepoSeq)
+	}
+	var commitPayload []byte
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT payload FROM atproto_repo_events WHERE did = $1 AND kind = 'commit' ORDER BY seq DESC LIMIT 1`,
+		acct.Did).Scan(&commitPayload); err != nil {
+		t.Fatalf("last commit event: %v", err)
+	}
+	var commitFrame struct {
+		Ops []struct {
+			Action string `json:"action"`
+		} `json:"ops"`
+	}
+	deletes := 0
+	if err := json.Unmarshal(commitPayload, &commitFrame); err == nil {
+		for _, op := range commitFrame.Ops {
+			if op.Action == "delete" {
+				deletes++
+			}
+		}
+	}
+	if deletes != 2 {
+		t.Fatalf("retraction commit delete ops = %d, want 2: %s", deletes, commitPayload)
+	}
+	var acctPayload []byte
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT payload FROM atproto_repo_events WHERE did = $1 AND kind = 'account' ORDER BY seq DESC LIMIT 1`,
+		acct.Did).Scan(&acctPayload); err != nil {
+		t.Fatalf("account event: %v", err)
+	}
+	var acctFrame struct {
+		Active bool   `json:"active"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(acctPayload, &acctFrame); err != nil || acctFrame.Active || acctFrame.Status != "deleted" {
+		t.Fatalf("erasure account frame: %s", acctPayload)
+	}
+	rows, err := svc.EventsAfter(ctx, maxSeq, 50)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	// Frames read in seq order: retraction commit(s) precede the
+	// #account{deleted} frame.
+	lastKind := ""
+	for _, r := range rows {
+		if r.Did == acct.Did {
+			lastKind = r.Kind
+		}
+	}
+	if lastKind != EventKindAccount {
+		t.Fatalf("last frame for erased did = %q, want account", lastKind)
+	}
+
+	// Idempotent — a retried erasure is a no-op, no second commit.
+	seqAfter := acct.RepoSeq
+	if err := svc.EraseAccount(ctx, userID); err != nil {
+		t.Fatalf("EraseAccount retry: %v", err)
+	}
+	if acct2 := atprotoAccountFor(t, ctx, d, userID); acct2.RepoSeq != seqAfter {
+		t.Fatalf("retry minted commits: %d → %d", seqAfter, acct2.RepoSeq)
+	}
+
+	// Frozen-first order works too (lifecycle sync ran before erasure).
+	if err := svc.EraseAccount(ctx, userID2); err != nil {
+		t.Fatalf("EraseAccount frozen: %v", err)
+	}
+	if acct2 := atprotoAccountFor(t, ctx, d, userID2); acct2.Status != AccountStatusTombstone {
+		t.Fatalf("frozen erasure = %+v", acct2)
+	}
+
+	// Tombstoned repos vanish from both identity and sync surfaces.
+	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != ErrNotFound {
+		t.Fatalf("tombstone DID doc = %v", err)
+	}
+	if _, err := svc.RepoStatus(ctx, acct.Did); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("tombstone repo status = %v", err)
+	}
+}
+
+// Reserved localparts can never mint a handle — a member named "api"
+// would otherwise claim the API host's own subdomain.
+func TestDBReservedHandleRejected(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+	for _, name := range []string{"api", "www", "admin", "pds", "relay", "cdn"} {
+		// Seed data may already hold these usernames — reuse the row.
+		var uid pgtype.UUID
+		if err := d.Writer.QueryRow(ctx,
+			`INSERT INTO users (username, email, status) VALUES ($1, $2, 'active')
+			 ON CONFLICT (username) DO UPDATE SET status = 'active'
+			 RETURNING id`, name, name+"-atp@test.dev").Scan(&uid); err != nil {
+			t.Fatalf("reserved-name user %q: %v", name, err)
+		}
+		if _, err := svc.EnableAccount(ctx, uid); !errors.Is(err, ErrInvalidHandle) {
+			t.Fatalf("reserved localpart %q enabled: %v", name, err)
+		}
+	}
+	uid, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := svc.EnableAccount(ctx, uid); err != nil {
+		t.Fatalf("normal username rejected: %v", err)
+	}
+}
+
+// ILIKE metacharacters in the admin search are literal — a member named
+// "attest%" must not match every "attest…" account.
+func TestDBAdminSearchEscapesWildcards(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+
+	u1, _ := newAtprotoNamedUser(t, ctx, d, "ilikeme", "active")
+	if _, err := svc.EnableAccount(ctx, u1); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+
+	// An unescaped '%' would match every account; escaped it matches none.
+	rows, _, err := svc.ListAccounts(ctx, "%", 50, 0)
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("search %% matched %d rows — wildcards must be literal", len(rows))
+	}
+	// The literal substring still finds the account.
+	rows, _, err = svc.ListAccounts(ctx, "ilikeme", 50, 0)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("literal search: %+v, %v", rows, err)
 	}
 }

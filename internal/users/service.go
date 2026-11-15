@@ -2171,7 +2171,13 @@ func (s *Service) GetUserAnalytics(ctx context.Context, userID pgtype.UUID, from
 
 // DeactivateAccount soft-deactivates the user account.
 func (s *Service) DeactivateAccount(ctx context.Context, userID pgtype.UUID) error {
-	return s.store.deactivateUser(ctx, userID)
+	if err := s.store.deactivateUser(ctx, userID); err != nil {
+		return err
+	}
+	// §127: the atproto account follows platform status — lifecycle_sync
+	// freezes the repo + emits #account{active:false}.
+	worker.EnqueueAtprotoLifecycleSync(ctx, userID)
+	return nil
 }
 
 // SoftDeleteUser soft-deletes a user account (status = 'deleted').
@@ -2182,6 +2188,7 @@ func (s *Service) SoftDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 	// Re-sync the users search doc — a deleted account must drop out of
 	// search results (IndexUser gates on effective status).
 	s.enqueueUserSearchIndex(userID)
+	worker.EnqueueAtprotoLifecycleSync(ctx, userID)
 	return nil
 }
 

@@ -33,9 +33,11 @@ INSERT INTO atproto_accounts (
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
+    disabled_reason = NULL,
     disabled_at = NULL,
     updated_at = now()
-RETURNING id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at
+WHERE atproto_accounts.status <> 'tombstone'
+RETURNING id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason
 `
 
 type CreateAtprotoAccountParams struct {
@@ -47,7 +49,9 @@ type CreateAtprotoAccountParams struct {
 }
 
 // Opt-in insert; ON CONFLICT reactivates a disabled row (key custody is
-// permanent — re-enable keeps the same DID + keypair).
+// permanent — re-enable keeps the same DID + keypair). The WHERE guard
+// refuses to resurrect a tombstoned row: a conflict against tombstone
+// yields no RETURNING row (ErrNoRows → caller maps tombstone-terminal).
 func (q *Queries) CreateAtprotoAccount(ctx context.Context, arg CreateAtprotoAccountParams) (AtprotoAccount, error) {
 	row := q.db.QueryRow(ctx, createAtprotoAccount,
 		arg.UserID,
@@ -69,40 +73,21 @@ func (q *Queries) CreateAtprotoAccount(ctx context.Context, arg CreateAtprotoAcc
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.DisabledReason,
 	)
 	return i, err
 }
 
-const getAtprotoAccountByDID = `-- name: GetAtprotoAccountByDID :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
-FROM atproto_accounts a
-JOIN users u ON u.id = a.user_id
-WHERE a.did = $1
-  AND a.status = 'active'
-  AND u.status = 'active'
+const getAtprotoAccountAnyUserStatus = `-- name: GetAtprotoAccountAnyUserStatus :one
+SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason FROM atproto_accounts WHERE user_id = $1
 `
 
-type GetAtprotoAccountByDIDRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	Handle             string             `json:"handle"`
-	Did                string             `json:"did"`
-	SigningKeyEnc      string             `json:"signing_key_enc"`
-	PublicKeyMultibase string             `json:"public_key_multibase"`
-	Status             string             `json:"status"`
-	RepoSeq            int64              `json:"repo_seq"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
-	LiveUsername       string             `json:"live_username"`
-}
-
-// did:web document resolution. The :u:{user_uuid} path component IS
-// the DID encoding — looked up by DID (immutable) rather than handle so
-// the minted identifier keeps resolving after renames and handle syncs.
-func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAtprotoAccountByDIDRow, error) {
-	row := q.db.QueryRow(ctx, getAtprotoAccountByDID, did)
-	var i GetAtprotoAccountByDIDRow
+// Lifecycle sync + erasure: the account row regardless of user status —
+// the joined queries all filter u.status='active', which would hide
+// exactly the rows lifecycle transitions must reach.
+func (q *Queries) GetAtprotoAccountAnyUserStatus(ctx context.Context, userID pgtype.UUID) (AtprotoAccount, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountAnyUserStatus, userID)
+	var i AtprotoAccount
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -115,17 +100,17 @@ func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAt
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
-		&i.LiveUsername,
+		&i.DisabledReason,
 	)
 	return i, err
 }
 
 const getAtprotoAccountByHandle = `-- name: GetAtprotoAccountByHandle :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE (lower(a.handle) = lower($1) OR lower(u.username) = $2)
-  AND a.status = 'active'
+  AND a.status IN ('active', 'disabled')
   AND u.status = 'active'
 ORDER BY (lower(u.username) = $2) DESC
 LIMIT 1
@@ -148,12 +133,14 @@ type GetAtprotoAccountByHandleRow struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	DisabledReason     *string            `json:"disabled_reason"`
 	LiveUsername       string             `json:"live_username"`
 }
 
-// Handle resolution for /.well-known/atproto-did + did:web docs. Only
-// active accounts of active users resolve — suspended/deleted members
-// and disabled accounts don't exist on the atproto network.
+// Handle resolution for /.well-known/atproto-did + did:web docs.
+// 'disabled' accounts keep resolving (upstream deactivated-repo
+// semantics: identity stays verifiable while the repo is frozen); only
+// tombstone rows and non-'active' users go dark.
 // The live u.username match outranks the stored handle: after a rename
 // the member's new subdomain resolves to their permanent DID (mirrors
 // the federated_actors precedence pattern). lower() on the username side
@@ -177,13 +164,14 @@ func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoA
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.DisabledReason,
 		&i.LiveUsername,
 	)
 	return i, err
 }
 
 const getAtprotoAccountByUserID = `-- name: GetAtprotoAccountByUserID :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE a.user_id = $1
@@ -207,12 +195,13 @@ func (q *Queries) GetAtprotoAccountByUserID(ctx context.Context, userID pgtype.U
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.DisabledReason,
 	)
 	return i, err
 }
 
 const getAtprotoHandleClaim = `-- name: GetAtprotoHandleClaim :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, u.username AS live_username
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE lower(a.handle) = lower($1)
@@ -231,6 +220,7 @@ type GetAtprotoHandleClaimRow struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	DisabledReason     *string            `json:"disabled_reason"`
 	LiveUsername       string             `json:"live_username"`
 }
 
@@ -252,8 +242,116 @@ func (q *Queries) GetAtprotoHandleClaim(ctx context.Context, handle string) (Get
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DisabledAt,
+		&i.DisabledReason,
 		&i.LiveUsername,
 	)
+	return i, err
+}
+
+const getAtprotoIdentityByDID = `-- name: GetAtprotoIdentityByDID :one
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.did = $1
+  AND a.status IN ('active', 'disabled')
+  AND u.status = 'active'
+`
+
+type GetAtprotoIdentityByDIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Handle             string             `json:"handle"`
+	Did                string             `json:"did"`
+	SigningKeyEnc      string             `json:"signing_key_enc"`
+	PublicKeyMultibase string             `json:"public_key_multibase"`
+	Status             string             `json:"status"`
+	RepoSeq            int64              `json:"repo_seq"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	DisabledReason     *string            `json:"disabled_reason"`
+	LiveUsername       string             `json:"live_username"`
+}
+
+// did:web document resolution. The :u:{user_uuid} path component IS
+// the DID encoding — looked up by DID (immutable) rather than handle so
+// the minted identifier keeps resolving after renames and handle syncs.
+// 'disabled' accounts keep their document (upstream deactivated-repo
+// semantics — prior signed content stays verifiable); tombstone rows
+// and non-'active' users resolve nothing.
+func (q *Queries) GetAtprotoIdentityByDID(ctx context.Context, did string) (GetAtprotoIdentityByDIDRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoIdentityByDID, did)
+	var i GetAtprotoIdentityByDIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Handle,
+		&i.Did,
+		&i.SigningKeyEnc,
+		&i.PublicKeyMultibase,
+		&i.Status,
+		&i.RepoSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisabledAt,
+		&i.DisabledReason,
+		&i.LiveUsername,
+	)
+	return i, err
+}
+
+const getAtprotoRepoRefByDID = `-- name: GetAtprotoRepoRefByDID :one
+SELECT a.id, a.did, a.status AS account_status, u.status AS user_status
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.did = $1
+`
+
+type GetAtprotoRepoRefByDIDRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Did           string      `json:"did"`
+	AccountStatus string      `json:"account_status"`
+	UserStatus    string      `json:"user_status"`
+}
+
+// Sync-surface repo lookup — deliberately unfiltered by status so the
+// caller can name WHY a repo isn't servable (RepoDeactivated /
+// RepoSuspended / RepoTakendown per the lexicon) instead of a blanket
+// RepoNotFound.
+func (q *Queries) GetAtprotoRepoRefByDID(ctx context.Context, did string) (GetAtprotoRepoRefByDIDRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRepoRefByDID, did)
+	var i GetAtprotoRepoRefByDIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Did,
+		&i.AccountStatus,
+		&i.UserStatus,
+	)
+	return i, err
+}
+
+const getAtprotoRepoStatusByDID = `-- name: GetAtprotoRepoStatusByDID :one
+SELECT a.status AS account_status, u.status AS user_status,
+       COALESCE((SELECT c.rev FROM atproto_repo_commits c
+        WHERE c.account_id = a.id
+        ORDER BY c.seq DESC LIMIT 1), '')::text AS head_rev
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.did = $1
+`
+
+type GetAtprotoRepoStatusByDIDRow struct {
+	AccountStatus string `json:"account_status"`
+	UserStatus    string `json:"user_status"`
+	HeadRev       string `json:"head_rev"`
+}
+
+// getRepoStatus: account + user status + head rev in one read. The
+// endpoint must answer for inactive repos, so nothing is filtered.
+func (q *Queries) GetAtprotoRepoStatusByDID(ctx context.Context, did string) (GetAtprotoRepoStatusByDIDRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRepoStatusByDID, did)
+	var i GetAtprotoRepoStatusByDIDRow
+	err := row.Scan(&i.AccountStatus, &i.UserStatus, &i.HeadRev)
 	return i, err
 }
 
@@ -263,7 +361,8 @@ SELECT
     (SELECT COUNT(*) FROM atproto_accounts WHERE status = 'disabled')::bigint AS disabled_accounts,
     (SELECT COUNT(*) FROM atproto_accounts)::bigint AS total_accounts,
     (SELECT COUNT(*) FROM atproto_records)::bigint AS total_records,
-    (SELECT COUNT(*) FROM atproto_repo_commits)::bigint AS total_commits
+    (SELECT COUNT(*) FROM atproto_repo_commits)::bigint AS total_commits,
+    (SELECT COUNT(*) FROM atproto_repo_events)::bigint AS total_repo_events
 `
 
 type GetAtprotoStatsRow struct {
@@ -272,6 +371,7 @@ type GetAtprotoStatsRow struct {
 	TotalAccounts    int64 `json:"total_accounts"`
 	TotalRecords     int64 `json:"total_records"`
 	TotalCommits     int64 `json:"total_commits"`
+	TotalRepoEvents  int64 `json:"total_repo_events"`
 }
 
 func (q *Queries) GetAtprotoStats(ctx context.Context) (GetAtprotoStatsRow, error) {
@@ -283,6 +383,7 @@ func (q *Queries) GetAtprotoStats(ctx context.Context) (GetAtprotoStatsRow, erro
 		&i.TotalAccounts,
 		&i.TotalRecords,
 		&i.TotalCommits,
+		&i.TotalRepoEvents,
 	)
 	return i, err
 }
@@ -355,6 +456,63 @@ func (q *Queries) ListAtprotoAccounts(ctx context.Context, arg ListAtprotoAccoun
 	return items, nil
 }
 
+const listAtprotoRepos = `-- name: ListAtprotoRepos :many
+SELECT a.did, a.status AS account_status, u.status AS user_status,
+       head.cid AS head_cid, head.rev AS head_rev
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+JOIN LATERAL (
+    SELECT c.cid, c.rev FROM atproto_repo_commits c
+    WHERE c.account_id = a.id
+    ORDER BY c.seq DESC LIMIT 1
+) head ON true
+WHERE ($1::text = '' OR a.did > $1)
+ORDER BY a.did
+LIMIT $2
+`
+
+type ListAtprotoReposParams struct {
+	Cursor    string `json:"cursor"`
+	PageLimit int32  `json:"page_limit"`
+}
+
+type ListAtprotoReposRow struct {
+	Did           string `json:"did"`
+	AccountStatus string `json:"account_status"`
+	UserStatus    string `json:"user_status"`
+	HeadCid       string `json:"head_cid"`
+	HeadRev       string `json:"head_rev"`
+}
+
+// listRepos: hosted-repo census. Repos without a single commit have no
+// network presence (head/rev are required output fields) — the lateral
+// join excludes them. Cursor is opaque: the last returned did.
+func (q *Queries) ListAtprotoRepos(ctx context.Context, arg ListAtprotoReposParams) ([]ListAtprotoReposRow, error) {
+	rows, err := q.db.Query(ctx, listAtprotoRepos, arg.Cursor, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtprotoReposRow
+	for rows.Next() {
+		var i ListAtprotoReposRow
+		if err := rows.Scan(
+			&i.Did,
+			&i.AccountStatus,
+			&i.UserStatus,
+			&i.HeadCid,
+			&i.HeadRev,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAtprotoAccountHandle = `-- name: UpdateAtprotoAccountHandle :exec
 UPDATE atproto_accounts
 SET handle = $1, updated_at = now()
@@ -377,17 +535,21 @@ func (q *Queries) UpdateAtprotoAccountHandle(ctx context.Context, arg UpdateAtpr
 const updateAtprotoAccountStatus = `-- name: UpdateAtprotoAccountStatus :exec
 UPDATE atproto_accounts
 SET status = $1,
+    disabled_reason = $2,
     disabled_at = CASE WHEN $1 = 'active' THEN NULL ELSE now() END,
     updated_at = now()
-WHERE id = $2
+WHERE id = $3
 `
 
 type UpdateAtprotoAccountStatusParams struct {
-	Status string      `json:"status"`
-	ID     pgtype.UUID `json:"id"`
+	Status         string      `json:"status"`
+	DisabledReason *string     `json:"disabled_reason"`
+	ID             pgtype.UUID `json:"id"`
 }
 
+// disabled_reason records who froze the account ('member' | 'lifecycle'
+// — §127 lifecycle); NULL clears it (reactivation, tombstone).
 func (q *Queries) UpdateAtprotoAccountStatus(ctx context.Context, arg UpdateAtprotoAccountStatusParams) error {
-	_, err := q.db.Exec(ctx, updateAtprotoAccountStatus, arg.Status, arg.ID)
+	_, err := q.db.Exec(ctx, updateAtprotoAccountStatus, arg.Status, arg.DisabledReason, arg.ID)
 	return err
 }

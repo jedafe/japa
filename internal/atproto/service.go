@@ -131,13 +131,26 @@ func (s *Service) handleUsername(handle string) string {
 // are legal platform-side but can never verify as atproto handles.
 var handleLocalRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// reservedHandleLocalparts are platform/infra subdomain names a member
+// handle must never mint — a user named "api" would otherwise claim
+// api.{handle_domain}, colliding with the API host itself (§127).
+var reservedHandleLocalparts = map[string]struct{}{
+	"www": {}, "api": {}, "app": {}, "admin": {}, "control": {},
+	"academy": {}, "docs": {}, "tools": {}, "mail": {}, "status": {},
+	"auth": {}, "support": {}, "help": {}, "cdn": {}, "static": {},
+	"assets": {}, "pds": {}, "relay": {},
+}
+
 // validHandle reports whether a username's derived handle can ever verify
 // on the atproto network: the username-derived label must be DNS-legal,
-// and the handle must not collide with the PDS host itself (HandleFromHost
-// excludes it — an account named after the PDS host mints a handle that
-// permanently 404s).
+// not reserved, and the handle must not collide with the PDS host itself
+// (HandleFromHost excludes it — an account named after the PDS host mints
+// a handle that permanently 404s).
 func (s *Service) validHandle(username, handle string) bool {
 	if !handleLocalRe.MatchString(strings.ToLower(username)) {
+		return false
+	}
+	if _, reserved := reservedHandleLocalparts[strings.ToLower(username)]; reserved {
 		return false
 	}
 	if handle == strings.Split(s.cfg.pdsHost(), ":")[0] {
@@ -264,8 +277,9 @@ func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, e
 	// Resolve by DID — the path component is the DID encoding, immutable
 	// by construction (keyed on user_id, never the mutable username).
 	// UUIDs are canonically lowercase; normalize so a case-variant path
-	// still resolves the same document.
-	account, err := s.store.accountByDID(ctx, s.cfg.didFor(strings.ToLower(id)))
+	// still resolves the same document. identityByDID keeps serving the
+	// doc for 'disabled' accounts (upstream deactivated-repo semantics).
+	account, err := s.store.identityByDID(ctx, s.cfg.didFor(strings.ToLower(id)))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -353,28 +367,7 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 
 	existing, err := s.store.accountByUserID(ctx, userID)
 	if err == nil {
-		// Tombstone is terminal — A6's erasure end-state. The member
-		// endpoints must never resurrect or downgrade it.
-		if existing.Status == AccountStatusTombstone {
-			return AccountStatus{}, ErrNotFound
-		}
-		wasActive := existing.Status == AccountStatusActive
-		if !wasActive {
-			if uerr := s.store.setAccountStatus(ctx, existing.ID, AccountStatusActive); uerr != nil {
-				return AccountStatus{}, fmt.Errorf("atproto: reactivate: %w", uerr)
-			}
-			existing.Status = AccountStatusActive
-			s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
-			s.emitAccountEvent(ctx, existing.Did, true, "")
-		}
-		existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, user.Username)
-		if err := s.ensureRepoInitialized(ctx, &existing); err != nil {
-			return AccountStatus{}, err
-		}
-		if !wasActive {
-			worker.EnqueueAtprotoRequestCrawl(ctx, existing.ID)
-		}
-		return s.statusFor(existing), nil
+		return s.enableExisting(ctx, existing, user.Username)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return AccountStatus{}, fmt.Errorf("atproto: lookup account: %w", err)
@@ -409,7 +402,20 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// ON CONFLICT arm skipped: the racing row is tombstoned —
+			// terminal, the member endpoints never resurrect it.
+			return AccountStatus{}, ErrNotFound
+		case errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "atproto_accounts_user_id_key":
+			// A concurrent EnableAccount won the insert race — surface
+			// the winner's state instead of misreporting handle_taken.
+			winner, lerr := s.store.accountByUserID(ctx, userID)
+			if lerr == nil {
+				return s.enableExisting(ctx, winner, user.Username)
+			}
+			return AccountStatus{}, fmt.Errorf("atproto: account race lookup: %w", lerr)
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
 			return AccountStatus{}, ErrHandleTaken
 		}
 		return AccountStatus{}, fmt.Errorf("atproto: create account: %w", err)
@@ -427,6 +433,33 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	}
 	worker.EnqueueAtprotoRequestCrawl(ctx, account.ID)
 	return s.statusFor(account), nil
+}
+
+// enableExisting is the idempotent re-enable path for a member who
+// already holds an account row — reactivation (disabled → active),
+// lazy handle sync, and repo-bootstrap retry. Tombstone is terminal:
+// the member endpoints must never resurrect or downgrade it.
+func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccount, liveUsername string) (AccountStatus, error) {
+	if existing.Status == AccountStatusTombstone {
+		return AccountStatus{}, ErrNotFound
+	}
+	wasActive := existing.Status == AccountStatusActive
+	if !wasActive {
+		if uerr := s.store.setAccountStatus(ctx, existing.ID, AccountStatusActive, nil); uerr != nil {
+			return AccountStatus{}, fmt.Errorf("atproto: reactivate: %w", uerr)
+		}
+		existing.Status = AccountStatusActive
+		s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
+		s.emitAccountEvent(ctx, existing.Did, true, "")
+	}
+	existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, liveUsername)
+	if err := s.ensureRepoInitialized(ctx, &existing); err != nil {
+		return AccountStatus{}, err
+	}
+	if !wasActive {
+		worker.EnqueueAtprotoRequestCrawl(ctx, existing.ID)
+	}
+	return s.statusFor(existing), nil
 }
 
 // ensureRepoInitialized writes the member's first repo commit — an
@@ -454,7 +487,8 @@ func (s *Service) DisableAccount(ctx context.Context, userID pgtype.UUID) (Accou
 		return AccountStatus{}, fmt.Errorf("atproto: lookup account: %w", err)
 	}
 	if account.Status == AccountStatusActive {
-		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusDisabled); err != nil {
+		member := DisableReasonMember
+		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusDisabled, &member); err != nil {
 			return AccountStatus{}, fmt.Errorf("atproto: disable: %w", err)
 		}
 		account.Status = AccountStatusDisabled

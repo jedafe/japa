@@ -709,6 +709,7 @@ type AtprotoAccount struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	DisabledReason     *string            `json:"disabled_reason"`
 }
 
 type AtprotoBlob struct {
