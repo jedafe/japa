@@ -78,8 +78,10 @@ func writeOAuthJSONDoc(w http.ResponseWriter, status int, v any) {
 // by AuthenticateDPoP via WWW-Authenticate instead).
 func oauthErrStatus(err error) int {
 	switch {
+	case errors.Is(err, ErrOAuthInvalidClient):
+		return http.StatusUnauthorized // RFC 6749 §5.2 — client auth failed
 	case errors.Is(err, ErrOAuthNonce), errors.Is(err, ErrOAuthDPoP),
-		errors.Is(err, ErrOAuthInvalidClient), errors.Is(err, ErrOAuthInvalidGrant),
+		errors.Is(err, ErrOAuthInvalidGrant),
 		errors.Is(err, ErrOAuthInvalidScope), errors.Is(err, ErrOAuthInvalidRequest):
 		return http.StatusBadRequest
 	}
@@ -288,6 +290,10 @@ func (h *Handlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	account, err := h.service.store.accountByUserID(r.Context(), user.UserID)
 	if err != nil {
 		h.renderOAuthError(w, "Your account has no ATProto identity — enable it in your JapaConnect settings first.")
+		return
+	}
+	if account.Status == AccountStatusTombstone {
+		h.renderOAuthError(w, "This ATProto identity is deleted. Please restart sign-in from the app.")
 		return
 	}
 
@@ -627,15 +633,30 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Confidential clients authenticate the revocation; public clients
-	// revoke by possession (the token hash is the credential).
-	if clientID := r.PostForm.Get("client_id"); IsAtprotoClientID(clientID) {
-		if doc, err := h.service.fetchClientDoc(r.Context(), clientID); err == nil && doc.confidential() {
-			if _, verr := h.service.verifyClientAssertion(r.Context(), doc, issuerOrigin(r),
-				r.PostForm.Get("client_assertion_type"), r.PostForm.Get("client_assertion")); verr != nil {
-				h.writeOAuthServiceErr(w, verr)
-				return
-			}
+	// Confidential grants authenticate the revocation — resolved by hash
+	// so a metadata-fetch outage can't silently drop the requirement
+	// (fail closed). Public grants revoke by possession: the token hash
+	// is the credential.
+	grant, err := h.service.store.q.GetOAuthGrantByAnyHash(r.Context(), oauthHash(tok))
+	switch {
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		writeOAuthErr(w, http.StatusServiceUnavailable, "temporarily_unavailable", "grant lookup failed")
+		return
+	case err == nil && grant.ClientJkt != nil:
+		doc, ferr := h.service.fetchClientDoc(r.Context(), r.PostForm.Get("client_id"))
+		if ferr != nil {
+			h.writeOAuthServiceErr(w, ferr)
+			return
+		}
+		jkt, verr := h.service.verifyClientAssertion(r.Context(), doc, issuerOrigin(r),
+			r.PostForm.Get("client_assertion_type"), r.PostForm.Get("client_assertion"))
+		if verr != nil {
+			h.writeOAuthServiceErr(w, verr)
+			return
+		}
+		if jkt != *grant.ClientJkt {
+			writeOAuthErr(w, http.StatusUnauthorized, "invalid_client", "client key binding does not match the grant")
+			return
 		}
 	}
 	h.service.RevokeOAuthToken(r.Context(), tok)

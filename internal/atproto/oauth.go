@@ -44,10 +44,14 @@ const (
 	// Profile ceilings: access tokens are opaque but revocable, so the
 	// ≤30-minute bound applies; 15 minutes leaves headroom for client
 	// clock skew and matches the profile's conservative end.
-	oauthAccessTTL         = 15 * time.Minute
-	oauthRefreshPublicTTL  = 14 * 24 * time.Hour
-	oauthRefreshConfidTTL  = 180 * 24 * time.Hour
-	oauthPARTTL            = 10 * time.Minute
+	oauthAccessTTL        = 15 * time.Minute
+	oauthRefreshPublicTTL = 14 * 24 * time.Hour
+	oauthRefreshConfidTTL = 180 * 24 * time.Hour
+	oauthPARTTL           = 10 * time.Minute
+	// oauthRefreshReuseGrace is the stale-refresh window matching
+	// §120's 30s reuse-grace: a prev-hash replay inside it is a
+	// benign concurrent retry, outside it is theft.
+	oauthRefreshReuseGrace = 30 * time.Second
 	oauthCodeExchangeTTL   = 5 * time.Minute // enforced by ConsumeOAuthCode
 	oauthDPoPMaxSkew       = 5 * time.Minute
 	oauthNonceMaxAge       = 10 * time.Minute
@@ -727,8 +731,10 @@ type oauthTokenResponse struct {
 	Sub          string `json:"sub"`
 }
 
-// mintGrant issues a fresh access+refresh pair on a new grant row.
-func (s *Service) mintGrant(ctx context.Context, accountID pgtype.UUID, clientID, clientJKT, scope, dpopJKT string) (*oauthTokenResponse, error) {
+// mintGrant issues a fresh access+refresh pair on a new grant row —
+// stamped with the request_uri so a code replay revokes exactly this
+// grant, never a sibling the same client holds.
+func (s *Service) mintGrant(ctx context.Context, accountID pgtype.UUID, requestURI, clientID, clientJKT, scope, dpopJKT string) (*oauthTokenResponse, error) {
 	access := oauthRandom(oauthAccessTokenPrefix)
 	refresh := oauthRandom(oauthRefreshTokenPrefix)
 	refreshTTL := oauthRefreshPublicTTL
@@ -738,6 +744,7 @@ func (s *Service) mintGrant(ctx context.Context, accountID pgtype.UUID, clientID
 	now := time.Now()
 	row, err := s.store.q.CreateOAuthGrant(ctx, gen.CreateOAuthGrantParams{
 		AccountID:        accountID,
+		RequestUri:       strPtr(requestURI),
 		ClientID:         clientID,
 		ClientJkt:        strPtr(clientJKT),
 		Scope:            scope,
@@ -787,11 +794,16 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		return nil, oauthErr("invalid_grant", "the refresh token is expired")
 	}
 	if grant.RefreshHash != hash {
-		// Stale-hash replay on a live grant — the old refresh token
-		// escaped. Revoke the family the way atproto_sessions does; a
-		// presented *access* token is just the wrong grant, no signal.
+		// Stale-hash replay on a live grant. Within the 30s grace a
+		// benign concurrent retry is indistinguishable from theft —
+		// plain invalid_grant (the client's rotated pair still works);
+		// an older replay revokes the family (§120 grace posture).
 		if grant.PrevRefreshHash != nil && *grant.PrevRefreshHash == hash {
-			_, _ = s.store.q.RevokeOAuthGrant(ctx, grant.ID)
+			inGrace := grant.RefreshRotatedAt.Valid &&
+				time.Since(grant.RefreshRotatedAt.Time) < oauthRefreshReuseGrace
+			if !inGrace {
+				_, _ = s.store.q.RevokeOAuthGrant(ctx, grant.ID)
+			}
 		}
 		return nil, oauthErr("invalid_grant", "the refresh token is no longer current")
 	}
@@ -1005,11 +1017,10 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Replay path — the code mapped to an already-consumed
-			// request. The grant it minted dies with the detection.
-			if prev, perr := s.store.q.GetOAuthRequestByCodeHash(ctx, &hash); perr == nil && prev.AccountID.Valid {
-				_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, gen.RevokeOAuthGrantsForRequestParams{
-					AccountID: prev.AccountID, ClientID: prev.ClientID,
-				})
+			// request. The grant it minted dies with the detection;
+			// sibling grants on the same client×account survive.
+			if prev, perr := s.store.q.GetOAuthRequestByCodeHash(ctx, &hash); perr == nil {
+				_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, &prev.RequestUri)
 			}
 			return nil, oauthErr("invalid_grant", "the authorization code is invalid, expired, or already used")
 		}
@@ -1032,5 +1043,5 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 	if row.DpopJkt != dpopJKT {
 		return nil, oauthErr("invalid_grant", "DPoP key does not match the authorization request")
 	}
-	return s.mintGrant(ctx, row.AccountID, clientID, clientJKT, row.Scope, dpopJKT)
+	return s.mintGrant(ctx, row.AccountID, row.RequestUri, clientID, clientJKT, row.Scope, dpopJKT)
 }

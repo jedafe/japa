@@ -352,8 +352,45 @@ func TestOAuthEndToEnd(t *testing.T) {
 		t.Fatalf("bad token response: %+v", tok)
 	}
 
-	// --- Code replay: same code again → invalid_grant AND the live
-	// grant is revoked (spec: replay kills the session it minted).
+	// --- Second grant BEFORE the code replay: the replay must revoke
+	// only the grant its own request_uri minted — a sibling grant on
+	// the same client×account survives.
+	verifier2 := oauthRandom("")
+	ch2sum := sha256.Sum256([]byte(verifier2))
+	challenge2 := base64.RawURLEncoding.EncodeToString(ch2sum[:])
+	jkt := mustJKT(t, dpopKey)
+	row2uri := oauthRequestURIPrefix + oauthRandom("req_")
+	// code_challenge is single-use: reusing grant 1's challenge fails.
+	if _, err := svc.CreateOAuthRequest(ctx, &gen.CreateOAuthRequestParams{
+		RequestUri: row2uri, ClientID: testClientID, RedirectUri: testRedirect,
+		Scope: "atproto transition:generic", State: "s2",
+		CodeChallenge: challenge, DpopJkt: jkt,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+	}); err == nil {
+		t.Fatal("code_challenge reuse was not rejected")
+	}
+	if _, err := svc.CreateOAuthRequest(ctx, &gen.CreateOAuthRequestParams{
+		RequestUri: row2uri, ClientID: testClientID, RedirectUri: testRedirect,
+		Scope: "atproto transition:generic", State: "s2",
+		CodeChallenge: challenge2, DpopJkt: jkt,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+	}); err != nil {
+		t.Fatalf("second PAR: %v", err)
+	}
+	code2 := oauthRandom("atp_cd_")
+	ch2 := oauthHash(code2)
+	if _, err := svc.store.q.IssueOAuthCode(ctx, gen.IssueOAuthCodeParams{
+		RequestUri: row2uri, AccountID: acct.ID, CodeHash: &ch2,
+	}); err != nil {
+		t.Fatalf("issue code 2: %v", err)
+	}
+	resp2, err := svc.ExchangeCode(ctx, code2, testClientID, "", testRedirect, verifier2, jkt)
+	if err != nil {
+		t.Fatalf("second exchange: %v", err)
+	}
+
+	// --- Code replay: same code again → invalid_grant AND grant 1 dies
+	// (spec: replay kills the session it minted) while grant 2 lives.
 	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token", strings.NewReader(exForm))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", tokenHTU, svc.mintNonce(), ""))
@@ -365,57 +402,44 @@ func TestOAuthEndToEnd(t *testing.T) {
 	if grant, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken)); gerr != nil || !grant.RevokedAt.Valid {
 		t.Fatal("code replay left the minted grant live")
 	}
-
-	// Re-grant for the refresh + RS checks below (replay killed grant #1).
-	code2 := oauthRandom("atp_cd_")
-	ch2 := oauthHash(code2)
-	row2uri := oauthRequestURIPrefix + oauthRandom("req_")
-	if _, err := svc.CreateOAuthRequest(ctx, &gen.CreateOAuthRequestParams{
-		RequestUri: row2uri, ClientID: testClientID, RedirectUri: testRedirect,
-		Scope: "atproto transition:generic", State: "s2",
-		CodeChallenge: challenge, DpopJkt: mustJKT(t, dpopKey),
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
-	}); err == nil {
-		t.Fatal("code_challenge reuse was not rejected")
-	}
-	// Fresh challenge for the second grant.
-	verifier2 := oauthRandom("")
-	ch2sum := sha256.Sum256([]byte(verifier2))
-	challenge2 := base64.RawURLEncoding.EncodeToString(ch2sum[:])
-	jkt := mustJKT(t, dpopKey)
-	if _, err := svc.CreateOAuthRequest(ctx, &gen.CreateOAuthRequestParams{
-		RequestUri: row2uri, ClientID: testClientID, RedirectUri: testRedirect,
-		Scope: "atproto transition:generic", State: "s2",
-		CodeChallenge: challenge2, DpopJkt: jkt,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
-	}); err != nil {
-		t.Fatalf("second PAR: %v", err)
-	}
-	if _, err := svc.store.q.IssueOAuthCode(ctx, gen.IssueOAuthCodeParams{
-		RequestUri: row2uri, AccountID: acct.ID, CodeHash: &ch2,
-	}); err != nil {
-		t.Fatalf("issue code 2: %v", err)
-	}
-	resp2, err := svc.ExchangeCode(ctx, code2, testClientID, "", testRedirect, verifier2, jkt)
-	if err != nil {
-		t.Fatalf("second exchange: %v", err)
+	if grant, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(resp2.AccessToken)); gerr != nil || grant.RevokedAt.Valid {
+		t.Fatal("code replay revoked a sibling grant")
 	}
 
-	// --- Refresh rotation → new pair; stale replay revokes.
-	rot, err := svc.rotateGrant(ctx, resp2.RefreshToken, testClientID, "", jkt)
+	// --- Refresh grace: rotation → in-grace stale replay is a benign
+	// concurrent retry — invalid_grant but the family stays live and
+	// the rotated pair still rotates.
+	rot1, err := svc.rotateGrant(ctx, resp2.RefreshToken, testClientID, "", jkt)
 	if err != nil {
 		t.Fatalf("refresh rotation: %v", err)
 	}
-	if rot.RefreshToken == resp2.RefreshToken || rot.AccessToken == resp2.AccessToken {
+	if rot1.RefreshToken == resp2.RefreshToken || rot1.AccessToken == resp2.AccessToken {
 		t.Fatal("rotation did not issue a fresh pair")
 	}
 	if _, err := svc.rotateGrant(ctx, resp2.RefreshToken, testClientID, "", jkt); err == nil {
 		t.Fatal("stale refresh accepted")
 	}
-	// The stale replay revoked the grant — the rotated pair must now
-	// fail too (family revocation).
-	if _, err := svc.rotateGrant(ctx, rot.RefreshToken, testClientID, "", jkt); err == nil {
-		t.Fatal("family survived stale-hash replay")
+	rot2, err := svc.rotateGrant(ctx, rot1.RefreshToken, testClientID, "", jkt)
+	if err != nil {
+		t.Fatalf("in-grace stale replay revoked the family: %v", err)
+	}
+
+	// --- Theft path: backdate the rotation past the grace window —
+	// the same stale-hash replay now revokes the family.
+	grant, err := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(rot2.AccessToken))
+	if err != nil {
+		t.Fatalf("grant lookup: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_oauth_tokens SET refresh_rotated_at = now() - interval '1 minute' WHERE id = $1`,
+		grant.ID); err != nil {
+		t.Fatalf("backdate refresh_rotated_at: %v", err)
+	}
+	if _, err := svc.rotateGrant(ctx, rot1.RefreshToken, testClientID, "", jkt); err == nil {
+		t.Fatal("past-grace stale refresh accepted")
+	}
+	if _, err := svc.rotateGrant(ctx, rot2.RefreshToken, testClientID, "", jkt); err == nil {
+		t.Fatal("family survived a past-grace stale-hash replay")
 	}
 
 	// --- Fresh grant for the DPoP RS path (own PKCE pair — challenges
@@ -489,4 +513,178 @@ func mustJKT(t *testing.T, k *ecdsa.PrivateKey) string {
 		t.Fatalf("jkt: %v", err)
 	}
 	return j
+}
+
+// ---------------------------------------------------------------------------
+// Confidential client — private_key_jwt end-to-end, incl. the client-doc
+// cache-hit path (regression: resolved jwks used to vanish across the
+// Valkey round-trip) and fail-closed confidential revocation.
+// ---------------------------------------------------------------------------
+
+func TestOAuthConfidentialClient(t *testing.T) {
+	ctx := context.Background()
+	d := testDB(t)
+
+	clientKey := testECKey(t)
+	const confClientID = "https://conf.example.com/client-metadata.json"
+	const confRedirect = "https://conf.example.com/cb"
+	cjwk := ecJWK(&clientKey.PublicKey)
+	cjwk["kid"] = "k1"
+	confDoc, _ := json.Marshal(map[string]any{
+		"client_id":                  confClientID,
+		"redirect_uris":              []string{confRedirect},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"scope":                      "atproto transition:generic",
+		"token_endpoint_auth_method": "private_key_jwt",
+		"application_type":           "web",
+		"dpop_bound_access_tokens":   true,
+		"jwks":                       map[string]any{"keys": []map[string]any{cjwk}},
+	})
+	svc := oauthTestService(t, d, map[string]string{confClientID: string(confDoc)})
+	h := NewHandlers(svc)
+
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct, err := svc.store.accountByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("no atproto account for user: %v", err)
+	}
+
+	assertion := func() string {
+		return signES256(t, clientKey,
+			map[string]any{"typ": "JWT", "alg": "ES256", "kid": "k1"},
+			map[string]any{
+				"iss": confClientID, "sub": confClientID,
+				"aud": "http://api.test.dev",
+				"iat": float64(time.Now().Unix()),
+				"exp": float64(time.Now().Add(2 * time.Minute).Unix()),
+				"jti": oauthRandom(""),
+			})
+	}
+
+	// Fetch twice — the second call is a cache hit; the assertion must
+	// still verify against the rehydrated jwks.
+	if _, err := svc.fetchClientDoc(ctx, confClientID); err != nil {
+		t.Fatalf("first client-doc fetch: %v", err)
+	}
+	doc, err := svc.fetchClientDoc(ctx, confClientID)
+	if err != nil {
+		t.Fatalf("cached client-doc fetch: %v", err)
+	}
+	clientJKT, err := svc.verifyClientAssertion(ctx, doc, "http://api.test.dev", clientAssertionType, assertion())
+	if err != nil || clientJKT == "" {
+		t.Fatalf("assertion against cached doc: %v", err)
+	}
+
+	// --- PAR + exchange + refresh all carry the assertion.
+	dpopKey := testECKey(t)
+	verifier := oauthRandom("")
+	challengeSum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
+	parForm := "response_type=code&client_id=" + confClientID +
+		"&redirect_uri=" + confRedirect + "&scope=atproto+transition:generic" +
+		"&state=cf&code_challenge=" + challenge + "&code_challenge_method=S256" +
+		"&client_assertion_type=" + clientAssertionType +
+		"&client_assertion=" + assertion()
+	req := httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/par", strings.NewReader(parForm))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", "http://api.test.dev/oauth/par", svc.mintNonce(), ""))
+	rec := httptest.NewRecorder()
+	h.HandlePAR(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("confidential PAR: got %d body %s", rec.Code, rec.Body.String())
+	}
+	var parResp struct {
+		RequestURI string `json:"request_uri"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&parResp); err != nil || parResp.RequestURI == "" {
+		t.Fatalf("bad PAR response: %v %q", err, rec.Body.String())
+	}
+
+	code := oauthRandom("atp_cd_")
+	ch := oauthHash(code)
+	if _, err := svc.store.q.IssueOAuthCode(ctx, gen.IssueOAuthCodeParams{
+		RequestUri: parResp.RequestURI, AccountID: acct.ID, CodeHash: &ch,
+	}); err != nil {
+		t.Fatalf("issue code: %v", err)
+	}
+	// Missing assertion on the exchange must be refused.
+	exForm := "grant_type=authorization_code&client_id=" + confClientID +
+		"&code=" + code + "&redirect_uri=" + confRedirect + "&code_verifier=" + verifier
+	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token", strings.NewReader(exForm))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", "http://api.test.dev/oauth/token", svc.mintNonce(), ""))
+	rec = httptest.NewRecorder()
+	h.HandleToken(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("exchange without assertion: got %d body %s", rec.Code, rec.Body.String())
+	}
+	// With the assertion → tokens on a confidential grant.
+	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token",
+		strings.NewReader(exForm+"&client_assertion_type="+clientAssertionType+"&client_assertion="+assertion()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", "http://api.test.dev/oauth/token", svc.mintNonce(), ""))
+	rec = httptest.NewRecorder()
+	h.HandleToken(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confidential exchange: got %d body %s", rec.Code, rec.Body.String())
+	}
+	var tok oauthTokenResponse
+	if err := json.NewDecoder(rec.Body).Decode(&tok); err != nil {
+		t.Fatalf("token decode: %v", err)
+	}
+	grant, err := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken))
+	if err != nil || grant.ClientJkt == nil || *grant.ClientJkt != clientJKT {
+		t.Fatal("grant did not record the client binding")
+	}
+
+	// Refresh with a WRONG client key's assertion → binding mismatch.
+	otherKey := testECKey(t)
+	otherAssertion := signES256(t, otherKey,
+		map[string]any{"typ": "JWT", "alg": "ES256", "kid": "k9"},
+		map[string]any{
+			"iss": confClientID, "sub": confClientID, "aud": "http://api.test.dev",
+			"iat": float64(time.Now().Unix()), "exp": float64(time.Now().Add(time.Minute).Unix()),
+			"jti": oauthRandom(""),
+		})
+	rfForm := "grant_type=refresh_token&client_id=" + confClientID +
+		"&refresh_token=" + tok.RefreshToken +
+		"&client_assertion_type=" + clientAssertionType + "&client_assertion=" + otherAssertion
+	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token", strings.NewReader(rfForm))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", "http://api.test.dev/oauth/token", svc.mintNonce(), ""))
+	rec = httptest.NewRecorder()
+	h.HandleToken(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatal("refresh accepted a foreign-key assertion")
+	}
+
+	// --- Revoke without an assertion → refused (fail closed on a
+	// confidential grant).
+	revForm := "token=" + tok.RefreshToken + "&client_id=" + confClientID
+	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/revoke", strings.NewReader(revForm))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	h.HandleRevoke(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("revoke without assertion: got %d body %s", rec.Code, rec.Body.String())
+	}
+	if g, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken)); gerr != nil || g.RevokedAt.Valid {
+		t.Fatal("unauthenticated revoke touched the grant")
+	}
+
+	// With the assertion → 200 and the grant dies.
+	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/revoke",
+		strings.NewReader(revForm+"&client_assertion_type="+clientAssertionType+"&client_assertion="+assertion()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	h.HandleRevoke(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confidential revoke: got %d body %s", rec.Code, rec.Body.String())
+	}
+	if g, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken)); gerr != nil || !g.RevokedAt.Valid {
+		t.Fatal("confidential revoke left the grant live")
+	}
 }

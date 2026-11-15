@@ -50,12 +50,12 @@ RETURNING *;
 
 -- name: RevokeOAuthGrantsForRequest :execrows
 -- Code reuse detection: when a code presented at the token endpoint
--- maps to an already-consumed request, the grant it minted dies
+-- maps to an already-consumed request, the grant it minted dies —
+-- exactly that request's grant, never a sibling the same client holds
 -- (profile: replay of a redeemed code revokes the session it created).
 UPDATE atproto_oauth_tokens
 SET revoked_at = now()
-WHERE account_id = @account_id
-  AND client_id = @client_id
+WHERE request_uri = @request_uri
   AND revoked_at IS NULL;
 
 -- name: GetOAuthRequestByCodeHash :one
@@ -65,10 +65,10 @@ SELECT * FROM atproto_oauth_requests WHERE code_hash = @code_hash;
 
 -- name: CreateOAuthGrant :one
 INSERT INTO atproto_oauth_tokens (
-    account_id, client_id, client_jkt, scope, dpop_jkt,
+    account_id, request_uri, client_id, client_jkt, scope, dpop_jkt,
     access_hash, refresh_hash, access_expires_at, refresh_expires_at
 ) VALUES (
-    @account_id, @client_id, @client_jkt, @scope, @dpop_jkt,
+    @account_id, @request_uri, @client_id, @client_jkt, @scope, @dpop_jkt,
     @access_hash, @refresh_hash, @access_expires_at, @refresh_expires_at
 )
 RETURNING *;
@@ -84,6 +84,7 @@ UPDATE atproto_oauth_tokens
 SET access_hash = @new_access_hash,
     prev_refresh_hash = refresh_hash,
     refresh_hash = @new_refresh_hash,
+    refresh_rotated_at = now(),
     access_expires_at = @access_expires_at
 WHERE refresh_hash = @refresh_hash
   AND revoked_at IS NULL

@@ -49,17 +49,18 @@ func (q *Queries) ConsumeOAuthCode(ctx context.Context, codeHash *string) (Atpro
 
 const createOAuthGrant = `-- name: CreateOAuthGrant :one
 INSERT INTO atproto_oauth_tokens (
-    account_id, client_id, client_jkt, scope, dpop_jkt,
+    account_id, request_uri, client_id, client_jkt, scope, dpop_jkt,
     access_hash, refresh_hash, access_expires_at, refresh_expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10
 )
-RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at
+RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at, request_uri, refresh_rotated_at
 `
 
 type CreateOAuthGrantParams struct {
 	AccountID        pgtype.UUID        `json:"account_id"`
+	RequestUri       *string            `json:"request_uri"`
 	ClientID         string             `json:"client_id"`
 	ClientJkt        *string            `json:"client_jkt"`
 	Scope            string             `json:"scope"`
@@ -73,6 +74,7 @@ type CreateOAuthGrantParams struct {
 func (q *Queries) CreateOAuthGrant(ctx context.Context, arg CreateOAuthGrantParams) (AtprotoOauthToken, error) {
 	row := q.db.QueryRow(ctx, createOAuthGrant,
 		arg.AccountID,
+		arg.RequestUri,
 		arg.ClientID,
 		arg.ClientJkt,
 		arg.Scope,
@@ -97,6 +99,8 @@ func (q *Queries) CreateOAuthGrant(ctx context.Context, arg CreateOAuthGrantPara
 		&i.RefreshExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.RequestUri,
+		&i.RefreshRotatedAt,
 	)
 	return i, err
 }
@@ -226,7 +230,7 @@ func (q *Queries) DenyOAuthRequest(ctx context.Context, requestUri string) (Atpr
 }
 
 const getOAuthGrantByAccessHash = `-- name: GetOAuthGrantByAccessHash :one
-SELECT id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at FROM atproto_oauth_tokens WHERE access_hash = $1
+SELECT id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at, request_uri, refresh_rotated_at FROM atproto_oauth_tokens WHERE access_hash = $1
 `
 
 func (q *Queries) GetOAuthGrantByAccessHash(ctx context.Context, accessHash string) (AtprotoOauthToken, error) {
@@ -246,12 +250,14 @@ func (q *Queries) GetOAuthGrantByAccessHash(ctx context.Context, accessHash stri
 		&i.RefreshExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.RequestUri,
+		&i.RefreshRotatedAt,
 	)
 	return i, err
 }
 
 const getOAuthGrantByAnyHash = `-- name: GetOAuthGrantByAnyHash :one
-SELECT id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at FROM atproto_oauth_tokens
+SELECT id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at, request_uri, refresh_rotated_at FROM atproto_oauth_tokens
 WHERE refresh_hash = $1 OR access_hash = $1 OR prev_refresh_hash = $1
 LIMIT 1
 `
@@ -275,6 +281,8 @@ func (q *Queries) GetOAuthGrantByAnyHash(ctx context.Context, hash string) (Atpr
 		&i.RefreshExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.RequestUri,
+		&i.RefreshRotatedAt,
 	)
 	return i, err
 }
@@ -431,7 +439,7 @@ const revokeOAuthGrant = `-- name: RevokeOAuthGrant :one
 UPDATE atproto_oauth_tokens
 SET revoked_at = now()
 WHERE id = $1 AND revoked_at IS NULL
-RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at
+RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at, request_uri, refresh_rotated_at
 `
 
 func (q *Queries) RevokeOAuthGrant(ctx context.Context, id pgtype.UUID) (AtprotoOauthToken, error) {
@@ -451,6 +459,8 @@ func (q *Queries) RevokeOAuthGrant(ctx context.Context, id pgtype.UUID) (Atproto
 		&i.RefreshExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.RequestUri,
+		&i.RefreshRotatedAt,
 	)
 	return i, err
 }
@@ -493,21 +503,16 @@ func (q *Queries) RevokeOAuthGrantsForClient(ctx context.Context, arg RevokeOAut
 const revokeOAuthGrantsForRequest = `-- name: RevokeOAuthGrantsForRequest :execrows
 UPDATE atproto_oauth_tokens
 SET revoked_at = now()
-WHERE account_id = $1
-  AND client_id = $2
+WHERE request_uri = $1
   AND revoked_at IS NULL
 `
 
-type RevokeOAuthGrantsForRequestParams struct {
-	AccountID pgtype.UUID `json:"account_id"`
-	ClientID  string      `json:"client_id"`
-}
-
 // Code reuse detection: when a code presented at the token endpoint
-// maps to an already-consumed request, the grant it minted dies
+// maps to an already-consumed request, the grant it minted dies —
+// exactly that request's grant, never a sibling the same client holds
 // (profile: replay of a redeemed code revokes the session it created).
-func (q *Queries) RevokeOAuthGrantsForRequest(ctx context.Context, arg RevokeOAuthGrantsForRequestParams) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeOAuthGrantsForRequest, arg.AccountID, arg.ClientID)
+func (q *Queries) RevokeOAuthGrantsForRequest(ctx context.Context, requestUri *string) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOAuthGrantsForRequest, requestUri)
 	if err != nil {
 		return 0, err
 	}
@@ -519,11 +524,12 @@ UPDATE atproto_oauth_tokens
 SET access_hash = $1,
     prev_refresh_hash = refresh_hash,
     refresh_hash = $2,
+    refresh_rotated_at = now(),
     access_expires_at = $3
 WHERE refresh_hash = $4
   AND revoked_at IS NULL
   AND refresh_expires_at > now()
-RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at
+RETURNING id, account_id, client_id, client_jkt, scope, dpop_jkt, access_hash, refresh_hash, prev_refresh_hash, access_expires_at, refresh_expires_at, revoked_at, created_at, request_uri, refresh_rotated_at
 `
 
 type RotateOAuthGrantParams struct {
@@ -558,6 +564,8 @@ func (q *Queries) RotateOAuthGrant(ctx context.Context, arg RotateOAuthGrantPara
 		&i.RefreshExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.RequestUri,
+		&i.RefreshRotatedAt,
 	)
 	return i, err
 }

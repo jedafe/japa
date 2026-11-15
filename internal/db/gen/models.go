@@ -795,6 +795,8 @@ type AtprotoOauthToken struct {
 	RefreshExpiresAt pgtype.Timestamptz `json:"refresh_expires_at"`
 	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	RequestUri       *string            `json:"request_uri"`
+	RefreshRotatedAt pgtype.Timestamptz `json:"refresh_rotated_at"`
 }
 
 type AtprotoRecord struct {
