@@ -22,7 +22,6 @@
 	import StickyAnchorAd from '#lib/components/ads/StickyAnchorAd.svelte';
 	import NextActionBar from '#lib/components/shell/NextActionBar.svelte';
 	import NextActionPopup from '#lib/components/shell/NextActionPopup.svelte';
-	import JourneyOnboardingModal from '#lib/components/feed/JourneyOnboardingModal.svelte';
 	import AdConversionTracker from '#lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '#lib/lightbox.svelte.js';
 	import { chatTemplateRail } from '#lib/ai/chatTemplateRail.svelte.js';
@@ -406,14 +405,10 @@
 	<MediaLightboxComp bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
 {/if}
 
-<!-- Guest journey onboarding (design §6.1): mounted shell-wide so the
-     60s auto-prompt fires on any guest surface — JourneyContextBar stays
-     on /explore, only the modal is global. The component self-gates — no
-     auto-open for members or guests with a declared destination; skipped
-     on the roadmap host's compact shell. -->
-{#if !data.user && !data.isRoadmapHost}
-	<JourneyOnboardingModal />
-{/if}
+<!-- Guest journey onboarding (design §6.1): the modal lives at the root
+     +layout.svelte so the ~60s auto-prompt reaches every guest surface —
+     (app) pages, (marketplace) listings, (auth) screens — while the
+     JourneyContextBar stays scoped to /explore. -->
 
 <!-- §25: fires the conversion ad event when a navigation lands with the
      same-origin attribution param (jc_ad_cid). Covers guests and authed

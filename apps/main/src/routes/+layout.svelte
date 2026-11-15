@@ -14,6 +14,7 @@
 	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
 	import CookieConsentBanner from '#lib/components/CookieConsentBanner.svelte';
+	import JourneyOnboardingModal from '#lib/components/feed/JourneyOnboardingModal.svelte';
 	import { consent, initConsent } from '#lib/consent.svelte.js';
 	import { syncPushSubscription } from '#lib/pwa/push-sync.js';
 
@@ -409,3 +410,12 @@
      confirm dialogs (replaces window.confirm). -->
 <ToastHost />
 <ConfirmHost />
+
+{#if !data.user && !data.isRoadmapHost}
+	<!-- Guest journey onboarding — mounted at the root layout so the ~60s
+	     auto-prompt fires on EVERY guest surface: (app) pages, marketplace
+	     listings, auth screens, and marketing pages alike. The component
+	     self-gates for guests who already hold a journey token. The
+	     JourneyContextBar stays scoped to /explore. -->
+	<JourneyOnboardingModal />
+{/if}
