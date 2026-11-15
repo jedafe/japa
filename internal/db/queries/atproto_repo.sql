@@ -172,6 +172,25 @@ SELECT * FROM (
 ORDER BY field_rank, position
 LIMIT 4;
 
+-- name: ListAtprotoReconcileMissingPosts :many
+-- A4 reconcile: the member's canonically-eligible contents with no
+-- index row under this account — content published inside a disabled
+-- window never emitted (emitAtprotoPublish skips inactive accounts),
+-- so the index walk alone can't see it. Eligibility mirrors
+-- GetAtprotoProjectableContent's predicate.
+SELECT c.id
+FROM contents c
+WHERE c.author_id = @user_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[])
+  AND NOT EXISTS (
+    SELECT 1 FROM atproto_records r
+    WHERE r.content_id = c.id AND r.account_id = @account_id
+  );
+
 -- name: ListAtprotoBlobsByAccount :many
 -- CAR traversal sees embedded blob CIDs as DAG links — the blockstore
 -- must resolve them or car.WriteCar aborts on the missing leaf (A4).

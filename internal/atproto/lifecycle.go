@@ -185,6 +185,21 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 			}
 		}
 	}
+	// Eligible content with no index row — posts published inside the
+	// disabled window never emitted, so the index walk above can't see
+	// them. PublishContent's in-tx re-check keeps this self-correcting.
+	missing, err := s.store.q.ListAtprotoReconcileMissingPosts(ctx, gen.ListAtprotoReconcileMissingPostsParams{
+		UserID:       account.UserID,
+		AccountID:    accountID,
+		ContentTypes: s.federatableTypesFor(ctx),
+	})
+	if err != nil {
+		return errors.Join(errs, fmt.Errorf("atproto: reconcile missing: %w", err))
+	}
+	for _, contentID := range missing {
+		_, perr := s.PublishContent(ctx, contentID)
+		perRow(perr)
+	}
 	return errs
 }
 

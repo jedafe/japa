@@ -239,12 +239,15 @@ func TestDBReconcileRepo(t *testing.T) {
 		`UPDATE contents SET federate_opt_out = true WHERE id = $1`, stale); err != nil {
 		t.Fatal(err)
 	}
+	// Content published inside the disabled window — never emitted, no
+	// index row; the reconcile must project it rather than walk past.
+	missing := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
 
 	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
 		t.Fatalf("ReconcileRepo: %v", err)
 	}
 
-	var liveRows, staleRows int
+	var liveRows, staleRows, missingRows int
 	if err := d.Writer.QueryRow(ctx,
 		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
 		acct.ID, live).Scan(&liveRows); err != nil {
@@ -255,8 +258,13 @@ func TestDBReconcileRepo(t *testing.T) {
 		acct.ID, stale).Scan(&staleRows); err != nil {
 		t.Fatal(err)
 	}
-	if liveRows != 1 || staleRows != 0 {
-		t.Fatalf("records: live=%d stale=%d, want 1/0", liveRows, staleRows)
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
+		acct.ID, missing).Scan(&missingRows); err != nil {
+		t.Fatal(err)
+	}
+	if liveRows != 1 || staleRows != 0 || missingRows != 1 {
+		t.Fatalf("records: live=%d stale=%d missing=%d, want 1/0/1", liveRows, staleRows, missingRows)
 	}
 }
 

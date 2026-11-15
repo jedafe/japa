@@ -539,6 +539,52 @@ func (q *Queries) ListAtprotoContentImages(ctx context.Context, contentID pgtype
 	return items, nil
 }
 
+const listAtprotoReconcileMissingPosts = `-- name: ListAtprotoReconcileMissingPosts :many
+SELECT c.id
+FROM contents c
+WHERE c.author_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY($2::text[])
+  AND NOT EXISTS (
+    SELECT 1 FROM atproto_records r
+    WHERE r.content_id = c.id AND r.account_id = $3
+  )
+`
+
+type ListAtprotoReconcileMissingPostsParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	ContentTypes []string    `json:"content_types"`
+	AccountID    pgtype.UUID `json:"account_id"`
+}
+
+// A4 reconcile: the member's canonically-eligible contents with no
+// index row under this account — content published inside a disabled
+// window never emitted (emitAtprotoPublish skips inactive accounts),
+// so the index walk alone can't see it. Eligibility mirrors
+// GetAtprotoProjectableContent's predicate.
+func (q *Queries) ListAtprotoReconcileMissingPosts(ctx context.Context, arg ListAtprotoReconcileMissingPostsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listAtprotoReconcileMissingPosts, arg.UserID, arg.ContentTypes, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAtprotoRecords = `-- name: ListAtprotoRecords :many
 SELECT uri, account_id, collection, rkey, cid, content_id, created_at, updated_at FROM atproto_records
 WHERE account_id = $1
