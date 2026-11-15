@@ -23,12 +23,12 @@ import (
 
 // Service holds the mini-PDS identity business logic.
 type Service struct {
-	cfg   Config
-	db    *db.DB
-	store *store
-	vk    valkeycompat.Cmdable
-	flags features.FlagEvaluator
-	media MediaReader
+	cfg      Config
+	db       *db.DB
+	store    *store
+	vk       valkeycompat.Cmdable
+	flags    features.FlagEvaluator
+	media    MediaReader
 	notifier Notifier
 }
 
