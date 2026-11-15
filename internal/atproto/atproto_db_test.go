@@ -2243,7 +2243,7 @@ func TestDBLifecycleSync(t *testing.T) {
 	svc := newAtprotoService(t, d)
 
 	// Never opted in → no-op.
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle no-account: %v", err)
 	}
 
@@ -2258,7 +2258,7 @@ func TestDBLifecycleSync(t *testing.T) {
 
 	// Suspension freezes with 'lifecycle' reason + one #account frame.
 	setUserStatus(t, ctx, d, userID, "suspended")
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle suspend: %v", err)
 	}
 	acct = atprotoAccountFor(t, ctx, d, userID)
@@ -2278,7 +2278,7 @@ func TestDBLifecycleSync(t *testing.T) {
 		t.Fatalf("freeze events = %+v", rows)
 	}
 	// Repeat sync emits nothing — the transition already announced.
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle repeat: %v", err)
 	}
 	rows, err = svc.EventsAfter(ctx, maxSeq, 10)
@@ -2288,7 +2288,7 @@ func TestDBLifecycleSync(t *testing.T) {
 
 	// Restore reactivates a lifecycle freeze (+ one #account frame).
 	setUserStatus(t, ctx, d, userID, "active")
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle restore: %v", err)
 	}
 	acct = atprotoAccountFor(t, ctx, d, userID)
@@ -2300,7 +2300,7 @@ func TestDBLifecycleSync(t *testing.T) {
 	if _, err := svc.DisableAccount(ctx, userID); err != nil {
 		t.Fatalf("DisableAccount: %v", err)
 	}
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle member-disabled: %v", err)
 	}
 	acct = atprotoAccountFor(t, ctx, d, userID)
@@ -2313,7 +2313,7 @@ func TestDBLifecycleSync(t *testing.T) {
 		`UPDATE atproto_accounts SET disabled_reason = NULL WHERE user_id = $1`, userID); err != nil {
 		t.Fatalf("null reason: %v", err)
 	}
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle null-reason: %v", err)
 	}
 	acct = atprotoAccountFor(t, ctx, d, userID)
@@ -2327,7 +2327,7 @@ func TestDBLifecycleSync(t *testing.T) {
 		t.Fatalf("tombstone: %v", err)
 	}
 	setUserStatus(t, ctx, d, userID, "suspended")
-	if err := svc.SyncUserLifecycle(ctx, userID); err != nil {
+	if _, err := svc.SyncUserLifecycle(ctx, userID); err != nil {
 		t.Fatalf("lifecycle tombstone: %v", err)
 	}
 	acct = atprotoAccountFor(t, ctx, d, userID)

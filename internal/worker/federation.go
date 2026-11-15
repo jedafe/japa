@@ -49,6 +49,10 @@ func EnqueueFederationAutoOptin(ctx context.Context, userID pgtype.UUID) {
 	}
 }
 
+// fireFederationAutoOptin is the indirection handlers use to enqueue the
+// auto-opt-in task — a var so tests can observe the trigger.
+var fireFederationAutoOptin = EnqueueFederationAutoOptin
+
 // HandleFederationAutoOptin processes federation:auto_optin (§126 auto
 // opt-in): provision the new member's federated identity — AP actor under
 // feature.federation, atproto account under feature.atproto — when

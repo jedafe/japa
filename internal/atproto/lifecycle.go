@@ -30,17 +30,10 @@ import (
 // SyncUserLifecycle reconciles one member's atproto account with their
 // live users.status — the atproto:lifecycle_sync task's entry point.
 // Idempotent: repeat enqueues and out-of-order delivery both converge.
-func (s *Service) SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) error {
-	account, err := s.store.q.GetAtprotoAccountAnyUserStatus(ctx, userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil // never opted in — nothing to converge
-	}
-	if err != nil {
-		return fmt.Errorf("atproto: lifecycle account: %w", err)
-	}
-	if account.Status == AccountStatusTombstone {
-		return nil // terminal — nothing downgrades or resurrects it
-	}
+// The bool reports whether the member is 'active' at run time — the
+// worker handler uses it to gate the §126 auto-opt-in re-evaluation,
+// so transitions to suspended/banned/deleted never produce the task.
+func (s *Service) SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	ustatus, err := s.store.q.GetUserStatus(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// User row gone — only GDPR's hard delete removes it, and that
@@ -48,12 +41,24 @@ func (s *Service) SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) err
 		// absence as deleted rather than resurrecting a ghost.
 		ustatus = "deleted"
 	} else if err != nil {
-		return fmt.Errorf("atproto: lifecycle user status: %w", err)
+		return false, fmt.Errorf("atproto: lifecycle user status: %w", err)
 	}
-	if ustatus == "active" {
-		return s.reactivateFromLifecycle(ctx, account)
+	userActive := ustatus == "active"
+
+	account, err := s.store.q.GetAtprotoAccountAnyUserStatus(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return userActive, nil // never opted in — nothing to converge
 	}
-	return s.freezeFromLifecycle(ctx, account, ustatus)
+	if err != nil {
+		return userActive, fmt.Errorf("atproto: lifecycle account: %w", err)
+	}
+	if account.Status == AccountStatusTombstone {
+		return userActive, nil // terminal — nothing downgrades or resurrects it
+	}
+	if userActive {
+		return true, s.reactivateFromLifecycle(ctx, account)
+	}
+	return false, s.freezeFromLifecycle(ctx, account, ustatus)
 }
 
 // lifecycleAccountStatusWord maps a users.status to the #account

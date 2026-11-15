@@ -40,8 +40,11 @@ func (f *fakeProvisioner) DeleteRecordURI(_ context.Context, _ pgtype.UUID, _ st
 	return nil
 }
 func (f *fakeProvisioner) RequestCrawl(_ context.Context, _ pgtype.UUID) error { return nil }
-func (f *fakeProvisioner) SyncUserLifecycle(_ context.Context, _ pgtype.UUID) error {
-	return nil
+
+var fakeUserActive = true // lifecycle seam: run-time status the fake reports
+
+func (f *fakeProvisioner) SyncUserLifecycle(_ context.Context, _ pgtype.UUID) (bool, error) {
+	return fakeUserActive, nil
 }
 
 // setAutoOptinSeams injects fakes into the package-level seams the handler
@@ -176,6 +179,46 @@ func TestFederationBackfillOptinBadCursor(t *testing.T) {
 		asynq.NewTask(TypeFederationBackfillOptin, []byte(`{"cursor":"bogus"}`)))
 	if err == nil || !errors.Is(err, asynq.SkipRetry) {
 		t.Fatalf("bad cursor: err=%v, want SkipRetry", err)
+	}
+}
+
+// The lifecycle handler gates the auto-opt-in re-evaluation on the
+// member's status AT RUN TIME — transitions to suspended/banned must
+// not produce the task, a restore to active must.
+func TestLifecycleSyncAutoOptinGate(t *testing.T) {
+	fed, atp := &fakeProvisioner{}, &fakeProvisioner{}
+	setAutoOptinSeams(t,
+		fakeSettingsReader{bools: map[string]bool{"federation.auto_optin": true}},
+		fakeFlagChecker{on: map[string]bool{}},
+		fed, atp)
+
+	var fired []string
+	oldFire, oldActive := fireFederationAutoOptin, fakeUserActive
+	fireFederationAutoOptin = func(_ context.Context, id pgtype.UUID) {
+		fired = append(fired, id.String())
+	}
+	t.Cleanup(func() { fireFederationAutoOptin, fakeUserActive = oldFire, oldActive })
+
+	var userID pgtype.UUID
+	_ = userID.Scan("33333333-3333-3333-3333-333333333333")
+	payload := []byte(`{"user_id":"` + userID.String() + `"}`)
+
+	fakeUserActive = false // suspend/ban transition
+	if err := HandleAtprotoLifecycleSync(context.Background(),
+		asynq.NewTask(TypeAtprotoLifecycleSync, payload)); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(fired) != 0 {
+		t.Fatalf("auto_optin fired on non-active transition: %v", fired)
+	}
+
+	fakeUserActive = true // restore to active
+	if err := HandleAtprotoLifecycleSync(context.Background(),
+		asynq.NewTask(TypeAtprotoLifecycleSync, payload)); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(fired) != 1 || fired[0] != userID.String() {
+		t.Fatalf("auto_optin not fired on active transition: %v", fired)
 	}
 }
 

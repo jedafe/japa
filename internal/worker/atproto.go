@@ -24,7 +24,7 @@ type atprotoRepoWriter interface {
 	PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error)
 	DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error
 	RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
-	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) error
+	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) (bool, error)
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
 }
 
@@ -127,12 +127,6 @@ func EnqueueAtprotoLifecycleSync(ctx context.Context, userID pgtype.UUID) {
 	if err := taskEnqueuer.Enqueue(TypeAtprotoLifecycleSync, payload); err != nil {
 		slog.Warn("worker: atproto lifecycle enqueue failed", "user_id", userID.String(), "error", err)
 	}
-
-	// §126 auto opt-in: every status transition also re-evaluates
-	// auto-provisioning — a member suspended between signup and the
-	// task run receives their identity on reactivation. Self-gating:
-	// setting off, still-inactive, or an existing row all no-op.
-	EnqueueFederationAutoOptin(ctx, userID)
 }
 
 // HandleAtprotoLifecycleSync processes atproto:lifecycle_sync (§127
@@ -157,9 +151,18 @@ func HandleAtprotoLifecycleSync(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:atproto:lifecycle_sync: %w: %w", err, asynq.SkipRetry)
 	}
-	if err := atprotoSvc.SyncUserLifecycle(ctx, userID); err != nil {
+	userActive, err := atprotoSvc.SyncUserLifecycle(ctx, userID)
+	if err != nil {
 		slog.Error("task:atproto:lifecycle_sync: sync failed", "user_id", payload.UserID, "error", err)
 		return skipIfPermanent(err)
+	}
+	// §126 auto opt-in: a transition INTO active re-evaluates
+	// auto-provisioning — a member suspended between signup and the
+	// task run receives their identity on reactivation. Gated on the
+	// run-time status (not the enqueue-time intent), so transitions to
+	// suspended/banned/deleted never produce the task at all.
+	if userActive {
+		fireFederationAutoOptin(ctx, userID)
 	}
 	return nil
 }
