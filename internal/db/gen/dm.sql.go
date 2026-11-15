@@ -157,7 +157,8 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.context_type, dm.context_id, dm.context_label, dm.context_slug, dm.sent_as_org, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.context_type, dm.context_id, dm.context_label, dm.context_slug, dm.sent_as_org, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name,
+       COALESCE(u.verified, false) AS sender_verified, u.verification_type AS sender_verification_type
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -179,21 +180,23 @@ type GetConversationMessagesParams struct {
 }
 
 type GetConversationMessagesRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ConversationID    pgtype.UUID        `json:"conversation_id"`
-	SenderID          pgtype.UUID        `json:"sender_id"`
-	Body              string             `json:"body"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	ReadAt            pgtype.Timestamptz `json:"read_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	EditedAt          pgtype.Timestamptz `json:"edited_at"`
-	ContextType       *string            `json:"context_type"`
-	ContextID         pgtype.UUID        `json:"context_id"`
-	ContextLabel      *string            `json:"context_label"`
-	ContextSlug       *string            `json:"context_slug"`
-	SentAsOrg         bool               `json:"sent_as_org"`
-	SenderUsername    string             `json:"sender_username"`
-	SenderDisplayName *string            `json:"sender_display_name"`
+	ID                     pgtype.UUID        `json:"id"`
+	ConversationID         pgtype.UUID        `json:"conversation_id"`
+	SenderID               pgtype.UUID        `json:"sender_id"`
+	Body                   string             `json:"body"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	ReadAt                 pgtype.Timestamptz `json:"read_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	EditedAt               pgtype.Timestamptz `json:"edited_at"`
+	ContextType            *string            `json:"context_type"`
+	ContextID              pgtype.UUID        `json:"context_id"`
+	ContextLabel           *string            `json:"context_label"`
+	ContextSlug            *string            `json:"context_slug"`
+	SentAsOrg              bool               `json:"sent_as_org"`
+	SenderUsername         string             `json:"sender_username"`
+	SenderDisplayName      *string            `json:"sender_display_name"`
+	SenderVerified         bool               `json:"sender_verified"`
+	SenderVerificationType *string            `json:"sender_verification_type"`
 }
 
 // Keyset-paginated by (created_at, id) DESC per Section 48 ("cursor-
@@ -232,6 +235,8 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.SentAsOrg,
 			&i.SenderUsername,
 			&i.SenderDisplayName,
+			&i.SenderVerified,
+			&i.SenderVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -519,19 +524,26 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 }
 
 const getSenderDisplayName = `-- name: GetSenderDisplayName :one
-SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text
+SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text AS display_name,
+       COALESCE(u.verified, false) AS verified, u.verification_type
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE u.id = $1
 `
 
+type GetSenderDisplayNameRow struct {
+	DisplayName      string  `json:"display_name"`
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
+}
+
 // Display name for a sender's messages — WS payload fan-out (000942) so a
 // live org-member reply renders with its attribution, not after refresh.
-func (q *Queries) GetSenderDisplayName(ctx context.Context, id pgtype.UUID) (string, error) {
+func (q *Queries) GetSenderDisplayName(ctx context.Context, id pgtype.UUID) (GetSenderDisplayNameRow, error) {
 	row := q.db.QueryRow(ctx, getSenderDisplayName, id)
-	var column_1 string
-	err := row.Scan(&column_1)
-	return column_1, err
+	var i GetSenderDisplayNameRow
+	err := row.Scan(&i.DisplayName, &i.Verified, &i.VerificationType)
+	return i, err
 }
 
 const getServiceListingContext = `-- name: GetServiceListingContext :one

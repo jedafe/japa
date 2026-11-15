@@ -2745,6 +2745,10 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 		return fmt.Errorf("verifying user: %w", err)
 	}
 
+	// §07: the users index carries verified/verification_type — resync so
+	// search results reflect the badge grant immediately.
+	s.enqueueUserSearchIndex(id)
+
 	s.emitWebhook(ctx, "user.verified", map[string]any{
 		"user_id":           id,
 		"verification_type": vtype,
@@ -2764,6 +2768,8 @@ func (s *Service) UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) err
 	if err := s.store.UnverifyUser(ctx, id); err != nil {
 		return fmt.Errorf("unverifying user: %w", err)
 	}
+
+	s.enqueueUserSearchIndex(id)
 
 	s.emitWebhook(ctx, "user.unverified", map[string]any{
 		"user_id":       id,

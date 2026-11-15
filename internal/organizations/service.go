@@ -1066,6 +1066,10 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUI
 
 	s.InvalidateOrgCache(ctx)
 
+	// §07: the organizations index carries verified/verification_type —
+	// resync so search results reflect the badge grant immediately.
+	worker.EnqueueSearchIndexSync(ctx, "organization", id)
+
 	s.emitWebhook(ctx, "organization.verified", map[string]any{
 		"organization_id": id,
 		"name":            org.Name,
@@ -1089,6 +1093,8 @@ func (s *Service) UnverifyOrganization(ctx context.Context, id, adminID pgtype.U
 	}
 
 	s.InvalidateOrgCache(ctx)
+
+	worker.EnqueueSearchIndexSync(ctx, "organization", id)
 
 	s.emitWebhook(ctx, "organization.unverified", map[string]any{
 		"organization_id": id,

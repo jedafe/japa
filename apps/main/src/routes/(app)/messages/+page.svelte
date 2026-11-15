@@ -231,6 +231,8 @@
 						sender_id: ev.sender_id,
 						sender_username: '',
 						sender_display_name: ev.sender_display_name ?? '',
+						sender_verified: ev.sender_verified,
+						sender_verification_type: ev.sender_verification_type ?? null,
 						body: ev.body,
 						created_at: new Date().toISOString(),
 						read_at: null,
@@ -711,6 +713,9 @@
 														: 'text-[var(--color-text-subtle)]'}"
 												>
 													{msg.sender_display_name}
+													{#if msg.sender_verified}
+														<VerifiedBadge verified type={msg.sender_verification_type} />
+													{/if}
 												</p>
 											{/if}
 											<p class="whitespace-pre-wrap break-words">{msg.body}</p>

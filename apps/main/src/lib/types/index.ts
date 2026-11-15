@@ -1741,6 +1741,8 @@ export interface DMMessage {
 	sender_id: string;
 	sender_username: string;
 	sender_display_name: string;
+	sender_verified?: boolean;
+	sender_verification_type?: string | null;
 	body: string;
 	created_at: string;
 	read_at: string | null;

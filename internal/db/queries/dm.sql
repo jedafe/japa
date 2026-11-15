@@ -182,7 +182,8 @@ DO UPDATE SET last_read_at = now();
 -- name: GetSenderDisplayName :one
 -- Display name for a sender's messages — WS payload fan-out (000942) so a
 -- live org-member reply renders with its attribution, not after refresh.
-SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text
+SELECT COALESCE(p.display_name, u.public_username, u.username, '')::text AS display_name,
+       COALESCE(u.verified, false) AS verified, u.verification_type
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE u.id = @id;
@@ -215,7 +216,8 @@ WHERE id = @organization_id AND owner_user_id IS NOT NULL;
 -- paginated, keyset by created_at, newest first"). The cursor carries the
 -- (created_at, id) of the previous page's last row; @page_offset only
 -- applies to cursor-less (legacy) calls.
-SELECT dm.*, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name
+SELECT dm.*, COALESCE(u.public_username, u.username, '') AS sender_username, p.display_name AS sender_display_name,
+       COALESCE(u.verified, false) AS sender_verified, u.verification_type AS sender_verification_type
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id

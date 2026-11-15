@@ -263,9 +263,9 @@ func (s *DMStore) GetOrgConversationByParticipants(ctx context.Context, senderID
 	})
 }
 
-// GetSenderDisplayName resolves a sender's display name for live-event
-// attribution (000942).
-func (s *DMStore) GetSenderDisplayName(ctx context.Context, senderID pgtype.UUID) (string, error) {
+// GetSenderDisplayName resolves a sender's display name + verification for
+// live-event attribution (000942).
+func (s *DMStore) GetSenderDisplayName(ctx context.Context, senderID pgtype.UUID) (gen.GetSenderDisplayNameRow, error) {
 	return s.read.GetSenderDisplayName(ctx, senderID)
 }
 
@@ -541,6 +541,8 @@ type MessageInfo struct {
 	SenderID          string  `json:"sender_id"`
 	SenderUsername    string  `json:"sender_username"`
 	SenderDisplayName string  `json:"sender_display_name"`
+	SenderVerified    bool    `json:"sender_verified,omitempty"`
+	SenderVerificationType *string `json:"sender_verification_type,omitempty"`
 	Body              string  `json:"body"`
 	CreatedAt         string  `json:"created_at"`
 	ReadAt            *string `json:"read_at,omitempty"`
@@ -976,8 +978,10 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	}
 	if asOrg {
 		payload["sent_as_org"] = true
-		if name, nErr := s.store.GetSenderDisplayName(ctx, senderID); nErr == nil {
-			payload["sender_display_name"] = name
+		if row, nErr := s.store.GetSenderDisplayName(ctx, senderID); nErr == nil {
+			payload["sender_display_name"] = row.DisplayName
+			payload["sender_verified"] = row.Verified
+			payload["sender_verification_type"] = row.VerificationType
 		}
 	}
 	for _, uid := range notifyIDs {
@@ -1152,6 +1156,8 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 			SenderID:          r.SenderID.String(),
 			SenderUsername:    r.SenderUsername,
 			SenderDisplayName: displayName,
+			SenderVerified:    r.SenderVerified,
+			SenderVerificationType: r.SenderVerificationType,
 			Body:              r.Body,
 			CreatedAt:         r.CreatedAt.Time.Format(time.RFC3339),
 		}

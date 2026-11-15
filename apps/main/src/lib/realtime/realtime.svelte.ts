@@ -30,6 +30,8 @@ export interface DMMessageEvent {
 	/** 000942 — sent by an org member on behalf of the org. */
 	sent_as_org?: boolean;
 	sender_display_name?: string;
+	sender_verified?: boolean;
+	sender_verification_type?: string | null;
 }
 
 /** Payload shape broadcast by the backend for `presence` events. */
