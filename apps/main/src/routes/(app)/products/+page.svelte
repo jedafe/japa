@@ -28,9 +28,10 @@
 		Star,
 		Store,
 		Tag,
-		Wrench
+		Wrench,
+		Filter
 	} from 'lucide-svelte';
-	import { EmptyState, ListPageBar, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import { EmptyState, ListPageBar, Modal, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 
@@ -92,6 +93,8 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	let searchInput = $state(untrack(() => data.q));
 	let selectedType = $state(untrack(() => data.type));
 	let selectedSort = $state('name');
+	let filtersModalOpen = $state(false);
+	const hasActiveFilters = $derived(!!selectedType);
 
 	$effect(() => {
 		const q = data.q;
@@ -304,14 +307,17 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				/>
 			</div>
 			<div class="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
-				<AutocompleteSelect
-					id="products-type"
-					ariaLabel={t('products.type_filter', 'Product type')}
-					placeholder={t('products.types_all', 'All')}
-					options={typeOptions}
-					bind:value={selectedType}
-					onValueChange={() => applyFilters()}
-				/>
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 				<AutocompleteSelect
 					id="products-sort"
 					ariaLabel={t('products.sort_label', 'Sort products')}
@@ -321,6 +327,20 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				/>
 			</div>
 		</div>
+
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+				<AutocompleteSelect
+					id="products-type"
+					class="w-full"
+					ariaLabel={t('products.type_filter', 'Product type')}
+					placeholder={t('products.types_all', 'All')}
+					options={typeOptions}
+					bind:value={selectedType}
+					onValueChange={() => applyFilters()}
+				/>
+			{/snippet}
+		</Modal>
 
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">

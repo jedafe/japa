@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
-	import { Ticket, Tag, House, Scissors, Music, UtensilsCrossed, LayoutGrid, List, Copy, Check, BadgeCheck, ExternalLink, Plus, Loader2, Search, Pencil } from 'lucide-svelte';
+	import { Ticket, Tag, House, Scissors, Music, UtensilsCrossed, LayoutGrid, List, Copy, Check, BadgeCheck, ExternalLink, Plus, Loader2, Search, Pencil, Filter } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, Modal, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import DealForm from '#lib/components/deals/DealForm.svelte';
@@ -82,6 +82,8 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	let selectedProvider = $state(untrack(() => data.filters.providerId));
 	let selectedType = $state(untrack(() => data.filters.couponType));
 	let selectedSort = $state(untrack(() => data.filters.sort));
+	let filtersModalOpen = $state(false);
+	const hasActiveFilters = $derived(!!selectedProvider || !!selectedType);
 
 	$effect(() => {
 		const f = data.filters;
@@ -455,23 +457,18 @@ import { ogCardUrl } from '#lib/seo/og.js';
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pe-3 ps-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 			</div>
-			<div class="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
-				<AutocompleteSelect
-					id="deals-provider"
-					ariaLabel={t('deals.filter_provider', 'Filter by provider')}
-					placeholder={t('deals.all_providers', 'All providers')}
-					options={providerOptions}
-					bind:value={selectedProvider}
-					onValueChange={() => applyFilters()}
-				/>
-				<AutocompleteSelect
-					id="deals-type"
-					ariaLabel={t('deals.filter_type', 'Filter by type')}
-					placeholder={t('deals.all_types', 'All types')}
-					options={typeOptions}
-					bind:value={selectedType}
-					onValueChange={() => applyFilters()}
-				/>
+			<div class="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 				<AutocompleteSelect
 					id="deals-sort"
 					ariaLabel={t('deals.sort_label', 'Sort deals')}
@@ -482,6 +479,31 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				/>
 			</div>
 		</div>
+
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<AutocompleteSelect
+						id="deals-provider"
+						class="w-full"
+						ariaLabel={t('deals.filter_provider', 'Filter by provider')}
+						placeholder={t('deals.all_providers', 'All providers')}
+						options={providerOptions}
+						bind:value={selectedProvider}
+						onValueChange={() => applyFilters()}
+					/>
+					<AutocompleteSelect
+						id="deals-type"
+						class="w-full"
+						ariaLabel={t('deals.filter_type', 'Filter by type')}
+						placeholder={t('deals.all_types', 'All types')}
+						options={typeOptions}
+						bind:value={selectedType}
+						onValueChange={() => applyFilters()}
+					/>
+				</div>
+			{/snippet}
+		</Modal>
 
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
