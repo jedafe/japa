@@ -264,6 +264,9 @@ func (s *Service) verifyDPoP(ctx context.Context, r *http.Request) (*dpopProof, 
 		return nil, oauthErr("invalid_dpop_proof", "DPoP typ must be dpop+jwt")
 	}
 	jwk, _ := hdr["jwk"].(map[string]any)
+	if _, hasPriv := jwk["d"]; hasPriv {
+		return nil, oauthErr("invalid_dpop_proof", "DPoP jwk must not carry private material")
+	}
 	pub, err := ecPublicKeyFromJWK(jwk)
 	if err != nil {
 		return nil, oauthErr("invalid_dpop_proof", "DPoP jwk must be an EC P-256 key")
@@ -742,6 +745,12 @@ func (s *Service) mintGrant(ctx context.Context, accountID pgtype.UUID, requestU
 		refreshTTL = oauthRefreshConfidTTL
 	}
 	now := time.Now()
+	// Resolve the account before the insert — a tombstone race between
+	// consent and exchange must not leak a live grant row.
+	acct, err := s.sessionAccountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
 	row, err := s.store.q.CreateOAuthGrant(ctx, gen.CreateOAuthGrantParams{
 		AccountID:        accountID,
 		RequestUri:       strPtr(requestURI),
@@ -758,10 +767,6 @@ func (s *Service) mintGrant(ctx context.Context, accountID pgtype.UUID, requestU
 		return nil, fmt.Errorf("atproto: create oauth grant: %w", err)
 	}
 	_ = row
-	acct, err := s.sessionAccountByID(ctx, accountID)
-	if err != nil {
-		return nil, err
-	}
 	return &oauthTokenResponse{
 		AccessToken:  access,
 		TokenType:    "DPoP",
@@ -906,11 +911,14 @@ func (s *Service) AuthenticateDPoP(ctx context.Context, r *http.Request, w http.
 	if w != nil {
 		s.setNonceHeader(w)
 	}
-	if proof.jkt != grant.DpopJkt {
-		return nil, ErrAuthRequired
-	}
+	// jkt/ath mismatches are still credential failures — emit the
+	// invalid_token challenge the profile expects.
 	tokSum := sha256.Sum256([]byte(raw))
-	if proof.ath != base64.RawURLEncoding.EncodeToString(tokSum[:]) {
+	if proof.jkt != grant.DpopJkt ||
+		proof.ath != base64.RawURLEncoding.EncodeToString(tokSum[:]) {
+		if w != nil {
+			w.Header().Set("WWW-Authenticate", `DPoP algs="ES256", error="invalid_token"`)
+		}
 		return nil, ErrAuthRequired
 	}
 	acct, err := s.sessionAccountByID(ctx, grant.AccountID)
@@ -1020,7 +1028,9 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 			// request. The grant it minted dies with the detection;
 			// sibling grants on the same client×account survive.
 			if prev, perr := s.store.q.GetOAuthRequestByCodeHash(ctx, &hash); perr == nil {
-				_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, &prev.RequestUri)
+				_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, gen.RevokeOAuthGrantsForRequestParams{
+					RequestUri: &prev.RequestUri, AccountID: prev.AccountID, ClientID: prev.ClientID,
+				})
 			}
 			return nil, oauthErr("invalid_grant", "the authorization code is invalid, expired, or already used")
 		}

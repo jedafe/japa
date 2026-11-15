@@ -621,8 +621,10 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 	// proof must verify (fresh nonce included); absent proof is tolerated
 	// so a client that simply drops the token still succeeds, matching
 	// RFC 7009's always-200 posture.
+	var proof *dpopProof
 	if r.Header.Get("DPoP") != "" {
-		proof, err := h.service.verifyDPoP(r.Context(), r)
+		var err error
+		proof, err = h.service.verifyDPoP(r.Context(), r)
 		h.service.setNonceHeader(w)
 		if err != nil {
 			h.writeOAuthServiceErr(w, err)
@@ -641,6 +643,10 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err != nil && !errors.Is(err, pgx.ErrNoRows):
 		writeOAuthErr(w, http.StatusServiceUnavailable, "temporarily_unavailable", "grant lookup failed")
+		return
+	case err == nil && proof != nil && proof.jkt != grant.DpopJkt:
+		// A presented proof must bind to the grant's DPoP key.
+		writeOAuthErr(w, http.StatusBadRequest, "invalid_dpop_proof", "DPoP key does not match the grant")
 		return
 	case err == nil && grant.ClientJkt != nil:
 		doc, ferr := h.service.fetchClientDoc(r.Context(), r.PostForm.Get("client_id"))

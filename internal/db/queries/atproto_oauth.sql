@@ -53,9 +53,11 @@ RETURNING *;
 -- maps to an already-consumed request, the grant it minted dies —
 -- exactly that request's grant, never a sibling the same client holds
 -- (profile: replay of a redeemed code revokes the session it created).
+-- The NULL branch catches grants minted before request_uri existed.
 UPDATE atproto_oauth_tokens
 SET revoked_at = now()
-WHERE request_uri = @request_uri
+WHERE (request_uri = @request_uri
+       OR (request_uri IS NULL AND account_id = @account_id AND client_id = @client_id))
   AND revoked_at IS NULL;
 
 -- name: GetOAuthRequestByCodeHash :one

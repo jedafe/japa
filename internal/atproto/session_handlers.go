@@ -52,6 +52,9 @@ func (h *Handlers) requireSession(w http.ResponseWriter, r *http.Request) *Sessi
 		acct, err = h.service.AuthenticateDPoP(r.Context(), r, w)
 	} else {
 		acct, err = h.service.AuthenticateAccess(r.Context(), r.Header.Get("Authorization"))
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="atproto"`)
+		}
 	}
 	if err != nil {
 		xrpcAuthErr(w, err)

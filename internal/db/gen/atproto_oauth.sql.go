@@ -503,16 +503,24 @@ func (q *Queries) RevokeOAuthGrantsForClient(ctx context.Context, arg RevokeOAut
 const revokeOAuthGrantsForRequest = `-- name: RevokeOAuthGrantsForRequest :execrows
 UPDATE atproto_oauth_tokens
 SET revoked_at = now()
-WHERE request_uri = $1
+WHERE (request_uri = $1
+       OR (request_uri IS NULL AND account_id = $2 AND client_id = $3))
   AND revoked_at IS NULL
 `
+
+type RevokeOAuthGrantsForRequestParams struct {
+	RequestUri *string     `json:"request_uri"`
+	AccountID  pgtype.UUID `json:"account_id"`
+	ClientID   string      `json:"client_id"`
+}
 
 // Code reuse detection: when a code presented at the token endpoint
 // maps to an already-consumed request, the grant it minted dies —
 // exactly that request's grant, never a sibling the same client holds
 // (profile: replay of a redeemed code revokes the session it created).
-func (q *Queries) RevokeOAuthGrantsForRequest(ctx context.Context, requestUri *string) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeOAuthGrantsForRequest, requestUri)
+// The NULL branch catches grants minted before request_uri existed.
+func (q *Queries) RevokeOAuthGrantsForRequest(ctx context.Context, arg RevokeOAuthGrantsForRequestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOAuthGrantsForRequest, arg.RequestUri, arg.AccountID, arg.ClientID)
 	if err != nil {
 		return 0, err
 	}
