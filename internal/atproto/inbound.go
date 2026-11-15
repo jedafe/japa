@@ -122,6 +122,9 @@ func (s *Service) consume(ctx context.Context) error {
 	slog.Info("atproto: jetstream connected", "url", subURL.Host)
 
 	var lastCursor atomic.Int64
+	// Flush on exit — a disconnect shouldn't lose up to 500ms of cursor.
+	defer s.flushCursor(context.Background(), lastCursor.Load())
+
 	lastFlush := time.Now()
 	for {
 		if ctx.Err() != nil {
@@ -169,7 +172,8 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) {
 	// The seq is part of the material so a legit create→delete→create
 	// sequence isn't swallowed; replays carry identical time_us.
 	dk := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", uri, c.Operation, ev.TimeUS)))
-	if ok, err := s.vk.SetNX(ctx, "jc:atp:in:dedup:"+hex.EncodeToString(dk[:]), "1", jetstreamDedupTTL).Result(); err == nil && !ok {
+	dedupKey := "jc:atp:in:dedup:" + hex.EncodeToString(dk[:])
+	if ok, err := s.vk.SetNX(ctx, dedupKey, "1", jetstreamDedupTTL).Result(); err == nil && !ok {
 		return
 	}
 
@@ -187,6 +191,9 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return // ledger says duplicate — processed already
 		}
+		// Transient failure — roll the fast-path dedup key back so redelivery
+		// can retry; without this the event is dropped for the 72h TTL.
+		_ = s.vk.Del(ctx, dedupKey).Err()
 		slog.Warn("atproto: inbound ledger insert failed", "uri", uri, "error", err)
 		return
 	}
@@ -262,10 +269,14 @@ func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri stri
 		if body == "" {
 			return "rejected", "empty reply text"
 		}
-		// Nest under a prior remote comment when the parent URI is one.
+		// Nest under a prior remote comment when the parent URI is one — but
+		// only when that comment belongs to the same content row (a remote
+		// reply could point at a comment on an unrelated thread).
 		var parentID pgtype.UUID
-		if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &parentURI); perr == nil {
+		depth := int32(0)
+		if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &parentURI); perr == nil && pc.ContentID == rec.ContentID {
 			parentID = pc.ID
+			depth = pc.Depth + 1
 		}
 		// comments.body is ProseMirror JSON — wrap the remote plain text.
 		docJSON, _ := json.Marshal(map[string]any{
@@ -275,9 +286,10 @@ func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri stri
 				"content": []any{map[string]any{"type": "text", "text": body}},
 			}},
 		})
-		row, err := q.InsertAtprotoRemoteComment(ctx, gen.InsertAtprotoRemoteCommentParams{
+		_, err = q.InsertAtprotoRemoteComment(ctx, gen.InsertAtprotoRemoteCommentParams{
 			ContentID:            rec.ContentID,
 			Body:                 docJSON,
+			Depth:                depth,
 			RemoteAtprotoActorID: actor.ID,
 			RemoteUri:            &uri,
 			ParentID:             parentID,
@@ -288,12 +300,46 @@ func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri stri
 			}
 			return "error", "comment insert: " + err.Error()
 		}
+		// Mirror the local create path's denormalized counters (§49 BUG-008,
+		// unified-discussion bubbling) — a trigger-free path must bump them.
+		_ = q.IncrementContentCommentCount(ctx, rec.ContentID)
+		_ = q.IncrementLinkedContentCommentCount(ctx, rec.ContentID)
+		if parentID.Valid {
+			_ = q.IncrementCommentReplyCount(ctx, parentID)
+		}
 		s.notifyInbound(ctx, rec, actor, "post_reply", "Bluesky reply", "replied to your post on Bluesky")
-		_ = row
+		return "processed", ""
+	case "update":
+		// Remote edits carry the full record — refresh the local copy.
+		body := recStr(c.Record, "text")
+		if body == "" {
+			return "rejected", "empty reply text"
+		}
+		docJSON, _ := json.Marshal(map[string]any{
+			"type": "doc",
+			"content": []any{map[string]any{
+				"type":    "paragraph",
+				"content": []any{map[string]any{"type": "text", "text": body}},
+			}},
+		})
+		if _, err := q.UpdateAtprotoRemoteCommentBody(ctx, gen.UpdateAtprotoRemoteCommentBodyParams{
+			RemoteUri: &uri, Body: docJSON,
+		}); err != nil {
+			return "error", "comment update: " + err.Error()
+		}
 		return "processed", ""
 	case "delete":
+		// Tombstone + unwind the counters the create path bumped.
+		prev, perr := q.GetAtprotoCommentByRemoteURI(ctx, &uri)
 		if _, err := q.SoftDeleteAtprotoCommentByRemoteURI(ctx, &uri); err != nil {
 			return "error", "comment delete: " + err.Error()
+		}
+		if perr == nil && !prev.DeletedAt.Valid {
+			_ = q.DecrementContentCommentCount(ctx, prev.ContentID)
+			_ = q.DecrementLinkedContentCommentCount(ctx, prev.ContentID)
+			if prev.ParentID.Valid {
+				_ = q.DecrementCommentReplyCount(ctx, prev.ParentID)
+			}
 		}
 		return "processed", ""
 	}
@@ -314,6 +360,12 @@ func (s *Service) dispatchLike(ctx context.Context, ev *jetstreamEvent, uri stri
 		rec, err := q.GetAtprotoRecordByURI(ctx, subject)
 		if err != nil || !rec.ContentID.Valid {
 			return "ignored", "like target is not a member record"
+		}
+		// Replay guard: a create replayed upstream with a fresh time_us still
+		// carries the same record URI — an already-active like is a no-op, not
+		// a second notification.
+		if ex, xerr := q.GetAtprotoRemoteLikeByURI(ctx, uri); xerr == nil && !ex.UndoneAt.Valid {
+			return "ignored", "like already active"
 		}
 		actor, err := s.resolveRemoteActor(ctx, ev.DID)
 		if err != nil {
@@ -353,6 +405,9 @@ func (s *Service) dispatchFollow(ctx context.Context, ev *jetstreamEvent, uri st
 		if err != nil {
 			return "ignored", "follow target is not a member"
 		}
+		if ex, xerr := q.GetAtprotoRemoteFollowByURI(ctx, uri); xerr == nil && !ex.UndoneAt.Valid {
+			return "ignored", "follow already active"
+		}
 		actor, err := s.resolveRemoteActor(ctx, ev.DID)
 		if err != nil {
 			return "error", "remote actor: " + err.Error()
@@ -391,7 +446,7 @@ func (s *Service) notifyInbound(ctx context.Context, rec gen.GetAtprotoRecordByU
 		handle = "@" + *actor.Handle
 	}
 	body := handle + " " + verb
-	action := "/content/" + owner.ID.String()
+	action := "/content/" + owner.Slug
 	s.notifyAccount(ctx, owner.AuthorID, actor, nType, "content", rec.ContentID, title, body, action)
 }
 

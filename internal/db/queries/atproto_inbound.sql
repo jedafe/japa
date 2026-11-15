@@ -4,12 +4,14 @@
 -- Remote actors are did-keyed, never users rows. Profile fields refresh on
 -- every touch so a later event sees the actor's latest advertised handle/name.
 INSERT INTO atproto_remote_actors (did, handle, display_name, avatar_url, fetched_at)
-VALUES (@did, @handle, @display_name, @avatar_url, now())
+VALUES (@did, @handle, @display_name, @avatar_url, @fetched_at)
 ON CONFLICT (did) DO UPDATE SET
     handle       = COALESCE(EXCLUDED.handle, atproto_remote_actors.handle),
     display_name = COALESCE(EXCLUDED.display_name, atproto_remote_actors.display_name),
     avatar_url   = COALESCE(EXCLUDED.avatar_url, atproto_remote_actors.avatar_url),
-    fetched_at   = now(),
+    -- fetched_at only advances when a profile fetch succeeded — a failed
+    -- fetch leaves the row stale so the next event retries the AppView.
+    fetched_at   = COALESCE(EXCLUDED.fetched_at, atproto_remote_actors.fetched_at),
     updated_at   = now()
 RETURNING *;
 
@@ -39,6 +41,12 @@ VALUES (@account_id, @remote_actor_id, @follow_uri)
 ON CONFLICT (follow_uri) DO UPDATE SET undone_at = NULL
 RETURNING *;
 
+-- name: GetAtprotoRemoteFollowByURI :one
+-- Replay guard: a create replayed with a fresh upstream seq still carries the
+-- same record URI — if the row is already active the event is a no-op and no
+-- second notification fires.
+SELECT id, undone_at FROM atproto_remote_follows WHERE follow_uri = @follow_uri;
+
 -- name: UndoAtprotoRemoteFollow :execrows
 UPDATE atproto_remote_follows SET undone_at = now() WHERE follow_uri = @follow_uri AND undone_at IS NULL;
 
@@ -48,22 +56,35 @@ VALUES (@account_id, @remote_actor_id, @like_uri, @content_id)
 ON CONFLICT (like_uri) DO UPDATE SET undone_at = NULL
 RETURNING *;
 
+-- name: GetAtprotoRemoteLikeByURI :one
+SELECT id, undone_at FROM atproto_remote_likes WHERE like_uri = @like_uri;
+
 -- name: UndoAtprotoRemoteLike :execrows
 UPDATE atproto_remote_likes SET undone_at = now() WHERE like_uri = @like_uri AND undone_at IS NULL;
 
 -- name: InsertAtprotoRemoteComment :one
 -- Remote reply: author_user_id stays NULL; provenance lives on
--- remote_atproto_actor_id + remote_uri. depth mirrors the local reply model —
--- a reply to a member's top-level post is depth 0 under the content.
+-- remote_atproto_actor_id + remote_uri. Depth mirrors the local model —
+-- 0 top-level under the content, parent.depth + 1 when nested.
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous,
                       remote_atproto_actor_id, remote_uri, status)
-VALUES (@content_id, NULL, sqlc.narg(parent_id), @body, 0, false,
+VALUES (@content_id, NULL, sqlc.narg(parent_id), @body, @depth, false,
         @remote_atproto_actor_id, @remote_uri, 'published')
 ON CONFLICT (remote_uri) WHERE remote_uri IS NOT NULL DO NOTHING
 RETURNING *;
 
 -- name: GetAtprotoCommentByRemoteURI :one
-SELECT id, content_id, deleted_at FROM comments WHERE remote_uri = @remote_uri;
+-- Parent resolution carries content_id + parent_id + depth so nested remote
+-- replies land under the right comment on the right content with
+-- depth = parent.depth + 1, and the delete path can unwind the counters the
+-- local create path maintains.
+SELECT id, content_id, parent_id, depth, deleted_at FROM comments WHERE remote_uri = @remote_uri;
+
+-- name: UpdateAtprotoRemoteCommentBody :execrows
+-- Remote edit ops carry the full updated record — refresh the local copy
+-- (is_edited mirrors the local edit-path marker).
+UPDATE comments SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
+WHERE remote_uri = @remote_uri AND deleted_at IS NULL;
 
 -- name: SoftDeleteAtprotoCommentByRemoteURI :execrows
 -- Remote delete ops tombstone the local row the same way member deletes do.

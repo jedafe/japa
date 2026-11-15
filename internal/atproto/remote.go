@@ -44,6 +44,7 @@ func (s *Service) resolveRemoteActor(ctx context.Context, did string) (gen.Atpro
 	}
 
 	var handle, displayName, avatarURL *string
+	var fetchedAt pgtype.Timestamptz
 	if prof, err := s.fetchRemoteActorProfile(ctx, did); err == nil {
 		if prof.Handle != "" {
 			handle = &prof.Handle
@@ -54,13 +55,17 @@ func (s *Service) resolveRemoteActor(ctx context.Context, did string) (gen.Atpro
 		if prof.Avatar != "" {
 			avatarURL = &prof.Avatar
 		}
+		fetchedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	}
+	// A failed fetch upserts without fetched_at — the row stays stale so the
+	// next event retries the AppView instead of locking a miss for 24h.
 
 	return q.UpsertAtprotoRemoteActor(ctx, gen.UpsertAtprotoRemoteActorParams{
 		Did:         did,
 		Handle:      handle,
 		DisplayName: displayName,
 		AvatarUrl:   avatarURL,
+		FetchedAt:   fetchedAt,
 	})
 }
 

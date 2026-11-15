@@ -310,3 +310,81 @@ func commitEventWithURI(did, rkey string, seq int64, collection string, record m
 	ev.Commit.Collection = collection
 	return ev
 }
+
+// TestDBInboundNestedReplyCounters — a reply to a remote comment nests at
+// depth+1 and bumps parent reply_count + content comment_count; the delete
+// unwinds them.
+func TestDBInboundNestedReplyCounters(t *testing.T) {
+	ctx := context.Background()
+	svc, _, contentID, uri := a5Fixture(t, ctx)
+	svc.SetNotifier(&captureNotifier{})
+
+	remoteDID := fmt.Sprintf("did:plc:nest%d", time.Now().UnixNano())
+	parentURI := "at://" + remoteDID + "/app.bsky.feed.post/p1"
+	// Remote reply directly on the member post → depth 0 remote comment.
+	svc.handleCommit(ctx, commitEventWithURI(remoteDID, "p1", 700, colFeedPost, map[string]any{
+		"text":  "parent reply",
+		"reply": map[string]any{"parent": map[string]any{"uri": uri}, "root": map[string]any{"uri": uri}},
+	}))
+	// Nested reply whose parent is the remote comment → depth 1.
+	svc.handleCommit(ctx, commitEventWithURI(remoteDID, "p2", 701, colFeedPost, map[string]any{
+		"text":  "nested reply",
+		"reply": map[string]any{"parent": map[string]any{"uri": parentURI}, "root": map[string]any{"uri": uri}},
+	}))
+
+	d := testDB(t)
+	var depth int
+	var parentID pgtype.UUID
+	err := d.Writer.QueryRow(ctx, `SELECT depth, parent_id FROM comments WHERE remote_uri = $1`,
+		"at://"+remoteDID+"/app.bsky.feed.post/p2").Scan(&depth, &parentID)
+	if err != nil {
+		t.Fatalf("nested comment missing: %v", err)
+	}
+	if depth != 1 || !parentID.Valid {
+		t.Fatalf("nested reply depth=%d parent=%v", depth, parentID)
+	}
+	var rc int
+	_ = d.Writer.QueryRow(ctx, `SELECT reply_count FROM comments WHERE remote_uri = $1`, parentURI).Scan(&rc)
+	if rc != 1 {
+		t.Fatalf("parent reply_count=%d", rc)
+	}
+	var cc int
+	_ = d.Writer.QueryRow(ctx, `SELECT comment_count FROM contents WHERE id = $1`, contentID).Scan(&cc)
+	if cc != 2 {
+		t.Fatalf("content comment_count=%d", cc)
+	}
+
+	// Deleting the nested reply unwinds both counters.
+	del := commitEventWithURI(remoteDID, "p2", 702, colFeedPost, nil)
+	del.Commit.Operation = "delete"
+	svc.handleCommit(ctx, del)
+	_ = d.Writer.QueryRow(ctx, `SELECT reply_count FROM comments WHERE remote_uri = $1`, parentURI).Scan(&rc)
+	_ = d.Writer.QueryRow(ctx, `SELECT comment_count FROM contents WHERE id = $1`, contentID).Scan(&cc)
+	if rc != 0 || cc != 1 {
+		t.Fatalf("counters not unwound: reply_count=%d comment_count=%d", rc, cc)
+	}
+}
+
+// TestDBInboundReplayNewSeqNoDupNotify — a replayed create carrying a fresh
+// upstream time_us with the same record URI must not re-notify.
+func TestDBInboundReplayNewSeqNoDupNotify(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, uri := a5Fixture(t, ctx)
+	notifier := &captureNotifier{}
+	svc.SetNotifier(notifier)
+
+	remoteDID := fmt.Sprintf("did:plc:rp%d", time.Now().UnixNano())
+	like := map[string]any{"subject": map[string]any{"uri": uri}}
+	svc.handleCommit(ctx, commitEventWithURI(remoteDID, "lk1", 800, colFeedLike, like))
+	svc.handleCommit(ctx, commitEventWithURI(remoteDID, "lk1", 801, colFeedLike, like)) // replay, new seq
+
+	if len(notifier.calls) != 1 {
+		t.Fatalf("replayed like notified %d times", len(notifier.calls))
+	}
+	d := testDB(t)
+	var status string
+	_ = d.Writer.QueryRow(ctx, `SELECT status FROM atproto_inbound WHERE event_seq = 801 AND did = $1`, remoteDID).Scan(&status)
+	if status != "ignored" {
+		t.Fatalf("replay ledger status=%s", status)
+	}
+}

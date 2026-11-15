@@ -38,19 +38,31 @@ func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAt
 }
 
 const getAtprotoCommentByRemoteURI = `-- name: GetAtprotoCommentByRemoteURI :one
-SELECT id, content_id, deleted_at FROM comments WHERE remote_uri = $1
+SELECT id, content_id, parent_id, depth, deleted_at FROM comments WHERE remote_uri = $1
 `
 
 type GetAtprotoCommentByRemoteURIRow struct {
 	ID        pgtype.UUID        `json:"id"`
 	ContentID pgtype.UUID        `json:"content_id"`
+	ParentID  pgtype.UUID        `json:"parent_id"`
+	Depth     int32              `json:"depth"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
+// Parent resolution carries content_id + parent_id + depth so nested remote
+// replies land under the right comment on the right content with
+// depth = parent.depth + 1, and the delete path can unwind the counters the
+// local create path maintains.
 func (q *Queries) GetAtprotoCommentByRemoteURI(ctx context.Context, remoteUri *string) (GetAtprotoCommentByRemoteURIRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoCommentByRemoteURI, remoteUri)
 	var i GetAtprotoCommentByRemoteURIRow
-	err := row.Scan(&i.ID, &i.ContentID, &i.DeletedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.ParentID,
+		&i.Depth,
+		&i.DeletedAt,
+	)
 	return i, err
 }
 
@@ -71,6 +83,41 @@ func (q *Queries) GetAtprotoRemoteActorByDID(ctx context.Context, did string) (A
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
+	return i, err
+}
+
+const getAtprotoRemoteFollowByURI = `-- name: GetAtprotoRemoteFollowByURI :one
+SELECT id, undone_at FROM atproto_remote_follows WHERE follow_uri = $1
+`
+
+type GetAtprotoRemoteFollowByURIRow struct {
+	ID       pgtype.UUID        `json:"id"`
+	UndoneAt pgtype.Timestamptz `json:"undone_at"`
+}
+
+// Replay guard: a create replayed with a fresh upstream seq still carries the
+// same record URI — if the row is already active the event is a no-op and no
+// second notification fires.
+func (q *Queries) GetAtprotoRemoteFollowByURI(ctx context.Context, followUri string) (GetAtprotoRemoteFollowByURIRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRemoteFollowByURI, followUri)
+	var i GetAtprotoRemoteFollowByURIRow
+	err := row.Scan(&i.ID, &i.UndoneAt)
+	return i, err
+}
+
+const getAtprotoRemoteLikeByURI = `-- name: GetAtprotoRemoteLikeByURI :one
+SELECT id, undone_at FROM atproto_remote_likes WHERE like_uri = $1
+`
+
+type GetAtprotoRemoteLikeByURIRow struct {
+	ID       pgtype.UUID        `json:"id"`
+	UndoneAt pgtype.Timestamptz `json:"undone_at"`
+}
+
+func (q *Queries) GetAtprotoRemoteLikeByURI(ctx context.Context, likeUri string) (GetAtprotoRemoteLikeByURIRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRemoteLikeByURI, likeUri)
+	var i GetAtprotoRemoteLikeByURIRow
+	err := row.Scan(&i.ID, &i.UndoneAt)
 	return i, err
 }
 
@@ -113,8 +160,8 @@ func (q *Queries) InsertAtprotoInbound(ctx context.Context, arg InsertAtprotoInb
 const insertAtprotoRemoteComment = `-- name: InsertAtprotoRemoteComment :one
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous,
                       remote_atproto_actor_id, remote_uri, status)
-VALUES ($1, NULL, $2, $3, 0, false,
-        $4, $5, 'published')
+VALUES ($1, NULL, $2, $3, $4, false,
+        $5, $6, 'published')
 ON CONFLICT (remote_uri) WHERE remote_uri IS NOT NULL DO NOTHING
 RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
 `
@@ -123,18 +170,20 @@ type InsertAtprotoRemoteCommentParams struct {
 	ContentID            pgtype.UUID `json:"content_id"`
 	ParentID             pgtype.UUID `json:"parent_id"`
 	Body                 []byte      `json:"body"`
+	Depth                int32       `json:"depth"`
 	RemoteAtprotoActorID pgtype.UUID `json:"remote_atproto_actor_id"`
 	RemoteUri            *string     `json:"remote_uri"`
 }
 
 // Remote reply: author_user_id stays NULL; provenance lives on
-// remote_atproto_actor_id + remote_uri. depth mirrors the local reply model —
-// a reply to a member's top-level post is depth 0 under the content.
+// remote_atproto_actor_id + remote_uri. Depth mirrors the local model —
+// 0 top-level under the content, parent.depth + 1 when nested.
 func (q *Queries) InsertAtprotoRemoteComment(ctx context.Context, arg InsertAtprotoRemoteCommentParams) (Comment, error) {
 	row := q.db.QueryRow(ctx, insertAtprotoRemoteComment,
 		arg.ContentID,
 		arg.ParentID,
 		arg.Body,
+		arg.Depth,
 		arg.RemoteAtprotoActorID,
 		arg.RemoteUri,
 	)
@@ -221,24 +270,47 @@ func (q *Queries) UpdateAtprotoInboundStatus(ctx context.Context, arg UpdateAtpr
 	return err
 }
 
+const updateAtprotoRemoteCommentBody = `-- name: UpdateAtprotoRemoteCommentBody :execrows
+UPDATE comments SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
+WHERE remote_uri = $2 AND deleted_at IS NULL
+`
+
+type UpdateAtprotoRemoteCommentBodyParams struct {
+	Body      []byte  `json:"body"`
+	RemoteUri *string `json:"remote_uri"`
+}
+
+// Remote edit ops carry the full updated record — refresh the local copy
+// (is_edited mirrors the local edit-path marker).
+func (q *Queries) UpdateAtprotoRemoteCommentBody(ctx context.Context, arg UpdateAtprotoRemoteCommentBodyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateAtprotoRemoteCommentBody, arg.Body, arg.RemoteUri)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertAtprotoRemoteActor = `-- name: UpsertAtprotoRemoteActor :one
 
 INSERT INTO atproto_remote_actors (did, handle, display_name, avatar_url, fetched_at)
-VALUES ($1, $2, $3, $4, now())
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (did) DO UPDATE SET
     handle       = COALESCE(EXCLUDED.handle, atproto_remote_actors.handle),
     display_name = COALESCE(EXCLUDED.display_name, atproto_remote_actors.display_name),
     avatar_url   = COALESCE(EXCLUDED.avatar_url, atproto_remote_actors.avatar_url),
-    fetched_at   = now(),
+    -- fetched_at only advances when a profile fetch succeeded — a failed
+    -- fetch leaves the row stale so the next event retries the AppView.
+    fetched_at   = COALESCE(EXCLUDED.fetched_at, atproto_remote_actors.fetched_at),
     updated_at   = now()
 RETURNING id, did, handle, display_name, avatar_url, fetched_at, created_at, updated_at
 `
 
 type UpsertAtprotoRemoteActorParams struct {
-	Did         string  `json:"did"`
-	Handle      *string `json:"handle"`
-	DisplayName *string `json:"display_name"`
-	AvatarUrl   *string `json:"avatar_url"`
+	Did         string             `json:"did"`
+	Handle      *string            `json:"handle"`
+	DisplayName *string            `json:"display_name"`
+	AvatarUrl   *string            `json:"avatar_url"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
 }
 
 // Ref: japaconnect-engineering/sections/127-atproto-native.md (A5 — Jetstream inbound)
@@ -250,6 +322,7 @@ func (q *Queries) UpsertAtprotoRemoteActor(ctx context.Context, arg UpsertAtprot
 		arg.Handle,
 		arg.DisplayName,
 		arg.AvatarUrl,
+		arg.FetchedAt,
 	)
 	var i AtprotoRemoteActor
 	err := row.Scan(
