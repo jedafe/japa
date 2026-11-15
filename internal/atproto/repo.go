@@ -146,23 +146,42 @@ func commitSigner(signingKeyEnc string) (func(context.Context, string, []byte) (
 }
 
 // loadBlockstore hydrates an account's committed blocks into an
-// in-memory blockstore indigo can open the repo over.
+// in-memory blockstore indigo can open the repo over. Blob bytes join
+// the set: embed/avatar LexBlob refs encode as CID links inside record
+// blocks, so car.WriteCar's DAG walk tries to resolve them — a missing
+// leaf aborts the whole CAR (A4 getRepo regression). Blobs are
+// content-addressed, so the hydrated block is the real leaf.
 func loadBlockstore(ctx context.Context, q *gen.Queries, accountID pgtype.UUID) (*repoBlockstore, error) {
 	rows, err := q.ListAtprotoRepoBlocks(ctx, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("atproto: load blocks: %w", err)
 	}
 	bs := newRepoBlockstore()
-	for _, row := range rows {
-		c, err := cid.Parse(row.Cid)
+	put := func(cidStr string, data []byte) error {
+		c, err := cid.Parse(cidStr)
 		if err != nil {
-			return nil, fmt.Errorf("atproto: stored block cid %q: %w", row.Cid, err)
+			return fmt.Errorf("atproto: stored block cid %q: %w", cidStr, err)
 		}
-		b, err := blockformat.NewBlockWithCid(row.Data, c)
+		b, err := blockformat.NewBlockWithCid(data, c)
 		if err != nil {
-			return nil, fmt.Errorf("atproto: stored block %s: %w", row.Cid, err)
+			return fmt.Errorf("atproto: stored block %s: %w", cidStr, err)
 		}
 		bs.blocks[c] = b
+		return nil
+	}
+	for _, row := range rows {
+		if err := put(row.Cid, row.Data); err != nil {
+			return nil, err
+		}
+	}
+	blobs, err := q.ListAtprotoBlobsByAccount(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("atproto: load blobs: %w", err)
+	}
+	for _, row := range blobs {
+		if err := put(row.Cid, row.Data); err != nil {
+			return nil, err
+		}
 	}
 	return bs, nil
 }

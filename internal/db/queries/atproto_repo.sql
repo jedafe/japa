@@ -169,6 +169,11 @@ SELECT * FROM (
 ORDER BY field_rank, position
 LIMIT 4;
 
+-- name: ListAtprotoBlobsByAccount :many
+-- CAR traversal sees embedded blob CIDs as DAG links — the blockstore
+-- must resolve them or car.WriteCar aborts on the missing leaf (A4).
+SELECT cid, data FROM atproto_blobs WHERE account_id = @account_id;
+
 -- name: DeleteAtprotoBlobsForAccount :execrows
 -- A4 erasure: blob bytes are member media — they must not outlive the
 -- tombstone (§127 Content pipeline). Erasure is the only caller; blobs

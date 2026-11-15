@@ -410,6 +410,37 @@ func (q *Queries) InsertAtprotoRepoCommit(ctx context.Context, arg InsertAtproto
 	return i, err
 }
 
+const listAtprotoBlobsByAccount = `-- name: ListAtprotoBlobsByAccount :many
+SELECT cid, data FROM atproto_blobs WHERE account_id = $1
+`
+
+type ListAtprotoBlobsByAccountRow struct {
+	Cid  string `json:"cid"`
+	Data []byte `json:"data"`
+}
+
+// CAR traversal sees embedded blob CIDs as DAG links — the blockstore
+// must resolve them or car.WriteCar aborts on the missing leaf (A4).
+func (q *Queries) ListAtprotoBlobsByAccount(ctx context.Context, accountID pgtype.UUID) ([]ListAtprotoBlobsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listAtprotoBlobsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtprotoBlobsByAccountRow
+	for rows.Next() {
+		var i ListAtprotoBlobsByAccountRow
+		if err := rows.Scan(&i.Cid, &i.Data); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAtprotoContentImages = `-- name: ListAtprotoContentImages :many
 SELECT id, mime_type, storage_bucket, storage_path, alt_text, width_px, height_px, file_size_bytes, field_rank, position FROM (
   SELECT DISTINCT ON (m.id)
