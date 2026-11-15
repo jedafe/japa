@@ -397,17 +397,12 @@
 
 	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 		{#snippet children()}
-			<div>
-				<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="ads-status">
-					{t('org_ads.filter_status', 'Filter by status')}
-				</label>
-				<AutocompleteSelect
-					value={statusFilter}
-					options={statusFilterOptions}
-					ariaLabel={t('org_ads.filter_status', 'Filter by status')}
-					onValueChange={changeStatus}
-				/>
-			</div>
+			<AutocompleteSelect
+				value={statusFilter}
+				options={statusFilterOptions}
+				ariaLabel={t('org_ads.filter_status', 'Filter by status')}
+				onValueChange={changeStatus}
+			/>
 		{/snippet}
 	</Modal>
 	{#if campaigns.length === 0}

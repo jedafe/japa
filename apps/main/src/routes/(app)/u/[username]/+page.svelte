@@ -1376,27 +1376,23 @@ profile is private, or no stage is set. -->
 						</button>
 						<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 							{#snippet children()}
-								<div>
-									<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="profile-filter">
-										{t('profile.filter.label', 'Filter')}
-									</label>
-									<Autocomplete
-										placeholder={t('profile.filter.label', 'Filter')}
-										emptyMessage={t('profile.empty.no_results', 'No results')}
-										fetcher={staticFilterFetcher(items)}
-										initialFetcher={() => Promise.resolve(items)}
-										selectedId={filterVal}
-										selectedLabel={options.find((o) => o.value === filterVal)?.label}
-										onSelect={(item) => {
-											filterVal = item.id;
-											currentPage = 1;
-										}}
-										onClear={() => {
-											filterVal = 'all';
-											currentPage = 1;
-										}}
-									/>
-								</div>
+								<Autocomplete
+									placeholder={t('profile.filter.label', 'Filter')}
+									ariaLabel={t('profile.filter.label', 'Filter')}
+									emptyMessage={t('profile.empty.no_results', 'No results')}
+									fetcher={staticFilterFetcher(items)}
+									initialFetcher={() => Promise.resolve(items)}
+									selectedId={filterVal}
+									selectedLabel={options.find((o) => o.value === filterVal)?.label}
+									onSelect={(item) => {
+										filterVal = item.id;
+										currentPage = 1;
+									}}
+									onClear={() => {
+										filterVal = 'all';
+										currentPage = 1;
+									}}
+								/>
 							{/snippet}
 						</Modal>
 					{/if}

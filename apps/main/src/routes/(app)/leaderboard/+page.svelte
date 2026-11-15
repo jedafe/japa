@@ -100,16 +100,12 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	{#if !disabled && scopeOptions.length > 1}
 		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 			{#snippet children()}
-				<div>
-					<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="leaderboard-scope">
-						{t('leaderboard.scope_label', 'Scope')}
-					</label>
-					<SelectField
-						value={activeScope}
-						options={scopeOptions}
-						onValueChange={selectScope}
-					/>
-				</div>
+				<SelectField
+					value={activeScope}
+					options={scopeOptions}
+					ariaLabel={t('leaderboard.scope_label', 'Scope')}
+					onValueChange={selectScope}
+				/>
 			{/snippet}
 		</Modal>
 	{/if}

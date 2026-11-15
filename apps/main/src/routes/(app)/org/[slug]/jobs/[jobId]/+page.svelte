@@ -94,12 +94,12 @@
 
 	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 		{#snippet children()}
-			<div>
-				<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="applications-status">
-					{t('jobs.status_filter_label', 'Status')}
-				</label>
-				<SelectField value={statusFilter} options={filterOptions} onValueChange={applyStatusFilter} />
-			</div>
+			<SelectField
+				value={statusFilter}
+				options={filterOptions}
+				ariaLabel={t('jobs.status_filter_label', 'Status')}
+				onValueChange={applyStatusFilter}
+			/>
 		{/snippet}
 	</Modal>
 
