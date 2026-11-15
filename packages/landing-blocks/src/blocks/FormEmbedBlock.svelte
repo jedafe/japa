@@ -3,13 +3,23 @@
 
   interface Props {
     props: FormEmbedProps;
+    id?: string;
   }
-  let { props }: Props = $props();
+  let { props, id }: Props = $props();
 
   let formData = $state<Record<string, string>>({});
   let submitting = $state(false);
   let success = $state(false);
   let error = $state(false);
+
+  // §06 POST /forms/{id}/submissions expects the values under field_values;
+  // other preset endpoints (newsletter/waitlist) take the bare map.
+  const SUBMISSIONS_ENDPOINT = /\/forms\/[0-9a-f-]{36}\/submissions\/?$/i;
+  const body = $derived(
+    SUBMISSIONS_ENDPOINT.test(props.submit_endpoint)
+      ? { field_values: formData }
+      : formData
+  );
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -19,7 +29,7 @@
       const res = await fetch(props.submit_endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed');
       success = true;
@@ -31,7 +41,7 @@
   }
 </script>
 
-<section class="px-6 py-16">
+<section id={id} class="px-6 py-16">
   <div class="mx-auto max-w-xl rounded-[var(--radius-card)] bg-[var(--color-surface)] border border-[var(--color-border)] p-8">
     {#if success}
       <div class="text-center">
