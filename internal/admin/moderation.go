@@ -2348,10 +2348,19 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if r.URL.Query().Get("force") == "true" {
-		// §127: emit BEFORE the delete — atproto_records.content_id is
-		// ON DELETE SET NULL, so once the row is gone the emit resolves
-		// nothing and the projected feed.post orphans in the repo.
-		h.emitAtprotoDelete(r.Context(), cid)
+		// §127: resolve the projected index rows BEFORE the delete —
+		// atproto_records.content_id is ON DELETE SET NULL, so once the
+		// row is gone nothing resolves the records to tombstone. The
+		// delete tasks fire only after the delete is confirmed below —
+		// a failed/409 path must not kill a live record.
+		atprotoRecs, aerr := gen.New(h.DB.Writer).GetAtprotoRecordsByContent(r.Context(), cid)
+		if aerr != nil {
+			// The only attribution source — a silent miss orphans the
+			// projected record with no trace, so log even though the
+			// delete itself proceeds.
+			slog.Warn("admin: atproto record lookup before hard delete failed",
+				"content_id", cid.String(), "error", aerr)
+		}
 		affected, err := h.Queries.HardDeleteContent(r.Context(), cid)
 		if err != nil {
 			if errpkg.IsFKViolation(err) {
@@ -2389,6 +2398,10 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "not_deleted", "Content must be removed (soft-deleted) before it can be permanently deleted")
 
 			return
+		}
+
+		for _, rec := range atprotoRecs {
+			worker.EnqueueAtprotoDeleteRecord(r.Context(), rec.AccountID, rec.Uri)
 		}
 
 		h.auditContentAction(r, "admin.content.hard_delete", cid, body.Reason)

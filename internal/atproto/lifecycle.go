@@ -120,8 +120,9 @@ func (s *Service) reactivateFromLifecycle(ctx context.Context, account gen.Atpro
 // eligibility — the atproto:reconcile_repo task path (§127 A4/
 // Lifecycle). Emits skip while a repo is frozen (suspension or member
 // disable), so records that went stale inside a disabled window would
-// otherwise resurface on reactivation; every path back to 'active'
-// enqueues this instead. Per row: a feed.post still eligible AND still
+// otherwise resurface on reactivation; every path to 'active' —
+// reactivation, member re-enable, first-time provisioning — enqueues
+// this instead. Per row: a feed.post still eligible AND still
 // owned re-projects (refresh — pre-A4 records gain facets/embeds); an
 // ineligible row, or one whose author moved to another repo, tombstones
 // via the normal delete path; a `self` profile republishes (avatar/
