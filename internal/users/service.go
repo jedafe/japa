@@ -803,11 +803,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 		s.enqueueUserSearchIndex(userID)
 	}
 
-	// §127 A2: re-project app.bsky.actor.profile into the member's repo
+	// §127 A2/A4: re-project app.bsky.actor.profile into the member's repo
 	// when the fields the record carries change — same fire-and-forget
-	// pattern as search (Rule 8). Avatar/banner land with A4's blob
-	// pipeline, so media-only updates don't enqueue yet.
-	if req.DisplayName != nil || req.Bio != nil {
+	// pattern as search (Rule 8). displayName/description come from
+	// display_name/bio; avatar is the blob projected from avatar_media_id.
+	if req.DisplayName != nil || req.Bio != nil || req.AvatarMediaID != nil {
 		s.enqueueAtprotoProfile(ctx, userID)
 	}
 
