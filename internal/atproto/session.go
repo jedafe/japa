@@ -423,6 +423,12 @@ func (s *Service) DeleteSession(ctx context.Context, authHeader string) error {
 	if raw == "" {
 		return ErrAuthRequired
 	}
+	// OAuth clients (A6-5) carry opaque atp_* tokens — deleteSession on
+	// one revokes the grant it names, same semantics as the session row.
+	if IsAtprotoToken(raw) {
+		s.RevokeOAuthToken(ctx, raw)
+		return nil
+	}
 	claims, err := s.parseSessionJWT(raw, sessionScopeRefresh)
 	if err != nil {
 		return err

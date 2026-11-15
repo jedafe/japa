@@ -147,14 +147,36 @@ func ecPublicKeyFromJWK(jwk map[string]any) (*ecdsa.PublicKey, error) {
 func jwkThumbprint(jwk map[string]any) (string, error) {
 	crv, _ := jwk["crv"].(string)
 	kty, _ := jwk["kty"].(string)
-	x, _ := jwk["x"].(string)
-	y, _ := jwk["y"].(string)
-	if crv == "" || kty == "" || x == "" || y == "" {
+	xs, _ := jwk["x"].(string)
+	ys, _ := jwk["y"].(string)
+	if crv == "" || kty == "" || xs == "" || ys == "" {
 		return "", fmt.Errorf("jwk missing members")
+	}
+	// Canonicalize the coordinates to the fixed 32-byte octet form —
+	// a client that strips a leading zero encodes the same integer, so
+	// the thumbprint must not change with the encoding.
+	x, err := canonicalCoord(xs)
+	if err != nil {
+		return "", err
+	}
+	y, err := canonicalCoord(ys)
+	if err != nil {
+		return "", err
 	}
 	canonical := fmt.Sprintf(`{"crv":%q,"kty":%q,"x":%q,"y":%q}`, crv, kty, x, y)
 	sum := sha256.Sum256([]byte(canonical))
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+}
+
+func canonicalCoord(s string) (string, error) {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil || len(b) == 0 || len(b) > 32 {
+		return "", fmt.Errorf("bad jwk coordinate")
+	}
+	if len(b) < 32 {
+		b = append(make([]byte, 32-len(b)), b...)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // verifyES256JWT splits "h.p.s", checks alg=ES256 (and typ when wantTyp
@@ -216,24 +238,33 @@ type dpopProof struct {
 	ath   string
 }
 
-// requestHTU is the URL a DPoP proof must name — the profile compares
-// against what the client sent, so either http or https scheme is
-// accepted when the host+path match (a TLS-terminating proxy would
-// otherwise false-reject every proof).
-func requestHTU(r *http.Request) (string, string) {
-	scheme := "https"
-	if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
-		scheme = p
-	} else if r.URL != nil && r.URL.Scheme != "" {
-		scheme = r.URL.Scheme
-	} else if r.TLS == nil {
-		scheme = "http"
-	}
+// requestHTU is the host+path a DPoP proof must name — the profile
+// tolerates either scheme (a TLS-terminating proxy would otherwise
+// false-reject every proof), so comparison happens via normalizeHTU.
+func requestHTU(r *http.Request) string {
 	host := r.Host
 	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
 		host = h
 	}
-	return scheme + "://" + host + r.URL.Path, host + r.URL.Path
+	return host + r.URL.Path
+}
+
+// normalizeHTU folds a request/proof URL to host+path — scheme dropped,
+// default ports (:443 https, :80 http) folded, other ports kept. It is
+// applied to BOTH the proof's htu claim and the request URL, so
+// "https://a.dev:443/par" and "http://a.dev:80/par" and "https://a.dev/par"
+// are equivalent (and IPv6/bracket forms normalize the same way).
+func normalizeHTU(u string) string {
+	p, err := url.Parse(u)
+	if err != nil || p.Hostname() == "" {
+		return ""
+	}
+	host := p.Hostname()
+	if port := p.Port(); port != "" &&
+		!((p.Scheme == "https" && port == "443") || (p.Scheme == "http" && port == "80")) {
+		host += ":" + port
+	}
+	return host + p.Path
 }
 
 // verifyDPoP validates the DPoP header on r. htm must match the method,
@@ -295,8 +326,7 @@ func (s *Service) verifyDPoP(ctx context.Context, r *http.Request) (*dpopProof, 
 		return nil, oauthErr("invalid_dpop_proof", "DPoP htm does not match the request method")
 	}
 	htu, _ := claims["htu"].(string)
-	full, hostPath := requestHTU(r)
-	if htu != full && htu != "https://"+hostPath && htu != "http://"+hostPath {
+	if normalizeHTU(htu) == "" || normalizeHTU(htu) != normalizeHTU("https://"+requestHTU(r)) {
 		return nil, oauthErr("invalid_dpop_proof", "DPoP htu does not match the request URL")
 	}
 	iatf, ok := claims["iat"].(float64)

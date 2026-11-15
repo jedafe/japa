@@ -122,6 +122,24 @@ func testClientDoc() string {
 // Units — nonce, jkt, PKCE shape, redirect rules, scope, discrimination
 // ---------------------------------------------------------------------------
 
+func TestNormalizeHTU(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://api.dev:443/par", "api.dev/par"},
+		{"http://api.dev:80/par", "api.dev/par"},
+		{"https://api.dev/par", "api.dev/par"},
+		{"https://api.dev:8443/par", "api.dev:8443/par"},
+		{"http://localhost:8080/xrpc/x", "localhost:8080/xrpc/x"},
+		{"https://[::1]:8443/par", "::1:8443/par"},
+		{"https://api.dev/par?x=1", "api.dev/par"}, // query never binds
+		{"not a url", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeHTU(c.in); got != c.want {
+			t.Fatalf("normalizeHTU(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestOAuthNonceRoundTrip(t *testing.T) {
 	svc := &Service{jwtKey: []byte("nonce-test")}
 	n := svc.mintNonce()
