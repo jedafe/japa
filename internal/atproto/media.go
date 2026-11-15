@@ -138,6 +138,16 @@ func (s *Service) refreshProfileRecord(ctx context.Context, accountID pgtype.UUI
 	rec.DisplayName = fresh.DisplayName
 	rec.Description = fresh.Description
 	s.enrichProfileBlobs(ctx, accountID, profile.AvatarMediaID, profile.BannerMediaID, rec)
+
+	// Profile tasks double as the identity-convergence point: a rename
+	// leaves the stored handle (and the network's #identity) stale until
+	// an unrelated read happens to re-sync — converge it deterministically
+	// on every profile write. Active-only: disabled/tombstone rows aren't
+	// re-enabled by an identity write.
+	if acct, err := s.store.q.GetAtprotoAccountByID(ctx, accountID); err == nil &&
+		acct.Status == AccountStatusActive {
+		s.syncHandle(ctx, acct.ID, acct.UserID, acct.Handle, profile.Username)
+	}
 }
 
 // enrichProfileBlobs attaches avatar/banner LexBlob refs to a profile

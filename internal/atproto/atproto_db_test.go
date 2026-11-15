@@ -290,7 +290,10 @@ func TestDBRenameResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnableAccount: %v", err)
 	}
-	renamed := uname + "_renamed"
+	// Handle-legal target ('x' suffix — '_' is §50-legal but DNS-illegal;
+	// the handle-illegal rename path is covered by
+	// TestDBRenameToHandleInvalidFallsBack).
+	renamed := uname + "x"
 	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, renamed, userID); err != nil {
 		t.Fatalf("rename user: %v", err)
 	}
@@ -380,8 +383,10 @@ func TestDBStaleClaimReclaimed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnableAccount (charlie): %v", err)
 	}
-	// Rename Charlie so his stored handle is orphaned.
-	movedName := charlieName + "_moved"
+	// Rename Charlie so his stored handle is orphaned — handle-legal
+	// target ('-m' suffix; a '_' rename exercises the uuid-fallback path
+	// covered by TestDBRenameToHandleInvalidFallsBack).
+	movedName := charlieName + "-m"
 	if _, err := d.Writer.Exec(ctx, `UPDATE users SET username = $1 WHERE id = $2`, movedName, charlieID); err != nil {
 		t.Fatalf("rename charlie: %v", err)
 	}

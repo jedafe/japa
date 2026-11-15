@@ -171,6 +171,17 @@ func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID,
 		return storedHandle
 	}
 	want := s.cfg.handleFor(liveUsername)
+	// §50 admits '_' — a rename into a handle-illegal name can't mint a
+	// verifiable {username}.{domain}, and writing it anyway both emits a
+	// bad #identity and wedges the freed username-derived handle on this
+	// row forever (its next owner gets ErrHandleTaken from a claim this
+	// account could never release). Fall back to the permanent
+	// uuid-derived handle — DNS-legal, and unclaimable by any §50
+	// username (the uuid form exceeds the 30-char cap). A rename back to
+	// a legal name re-derives the username handle on the next sync.
+	if !s.validHandle(liveUsername, want) {
+		want = s.cfg.handleFor("u-" + uuidString(userID))
+	}
 	if strings.EqualFold(storedHandle, want) {
 		return storedHandle
 	}

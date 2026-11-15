@@ -447,3 +447,56 @@ func TestGetBlobXRPC(t *testing.T) {
 		t.Fatalf("disabled: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// ── Rename into a handle-illegal username (§50 '_' vs DNS labels) ──
+
+func TestDBRenameToHandleInvalidFallsBack(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoNamedUser(t, ctx, d, "atprename", "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+
+	// Rename into a name that can't form a handle — '_' is §50-legal but
+	// DNS-illegal. The sync must not mint an unverifiable handle; the
+	// account falls back to the permanent uuid-derived one. (Email moves
+	// too — the global email unique index must not shadow the fixture.)
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE users SET username='atp_renamed', email='atp_renamed@test.dev' WHERE id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.GetMyAccount(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetMyAccount: %v", err)
+	}
+	want := "u-" + uuidString(userID) + ".test.dev"
+	if st.Handle != want {
+		t.Fatalf("handle = %q, want uuid fallback %q", st.Handle, want)
+	}
+
+	// The vacated username-derived handle is claimable again — a second
+	// member registering the old name opts in cleanly.
+	userB, _ := newAtprotoNamedUser(t, ctx, d, uname, "active")
+	if _, err := svc.EnableAccount(ctx, userB); err != nil {
+		t.Fatalf("EnableAccount on freed name: %v", err)
+	}
+	acctB := atprotoAccountFor(t, ctx, d, userB)
+	if acctB.Handle != uname+".test.dev" {
+		t.Fatalf("claimant handle = %q, want %q", acctB.Handle, uname+".test.dev")
+	}
+
+	// Renaming back to a handle-legal name converges to {username}.{domain}.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE users SET username='atpback' WHERE id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	st, err = svc.GetMyAccount(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetMyAccount: %v", err)
+	}
+	if st.Handle != "atpback.test.dev" {
+		t.Fatalf("handle = %q, want atpback.test.dev", st.Handle)
+	}
+}
