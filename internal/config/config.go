@@ -20,96 +20,97 @@ import (
 // Fields are intentionally flat — no nested structs — so it is easy to read
 // from environment variables and easy to inspect in logs or debug output.
 type Config struct {
-	DatabaseURL                 string // JC_DATABASE_URL — pgx connection string for PostgreSQL (writer/primary)
-	DatabaseReaderURL           string // JC_DATABASE_READER_URL — pgx connection string for read replica (empty = use DatabaseURL for reads too)
-	DBMaxConns                  int32  // JC_DB_MAX_CONNS — max connections per pgxpool (0 = default 25)
-	DBMinConns                  int32  // JC_DB_MIN_CONNS — min connections per pgxpool (0 = default 5)
-	DBMaxConnLifetimeMs         int    // JC_DB_MAX_CONN_LIFETIME_MS — max connection lifetime (0 = default 30m)
-	DBMaxConnIdleTimeMs         int    // JC_DB_MAX_CONN_IDLE_TIME_MS — max idle connection lifetime (0 = default 5m)
-	RedisAddr                   string // JC_VALKEY_ADDR (canonical, per JEOS stack.yaml) → JC_REDIS_ADDR (legacy alias) — Valkey/Redis address for cache and Asynq queues
-	RedisPassword               string // JC_REDIS_PASSWORD — optional auth password for Valkey/Redis
-	RedisDB                     int    // JC_REDIS_DB — Valkey/Redis database number (0 default)
-	RedisPoolSize               int    // JC_REDIS_POOL_SIZE — connection pool size (0 = valkey-go default)
-	RedisDialTimeoutMs          int    // JC_REDIS_DIAL_TIMEOUT_MS — dial timeout in milliseconds (0 = default)
-	RedisReadTimeoutMs          int    // JC_REDIS_READ_TIMEOUT_MS — read/write timeout in milliseconds (0 = default)
-	RedisTLSEnabled             bool   // JC_REDIS_TLS_ENABLED — enable TLS connection to Valkey/Redis
-	MeilisearchURL              string // JC_MEILISEARCH_URL — Meilisearch HTTP endpoint
-	MeilisearchKey              string // JC_MEILISEARCH_KEY — Meilisearch master key (empty for dev)
-	MeiliIndexPrefix            string // JC_MEILI_INDEX_PREFIX — optional index UID prefix so non-prod envs can share an instance
-	GeoIPDBPath                 string // JC_GEOIP_DB_PATH — path to the MaxMind GeoLite2 database file
-	GeoIPAnonDBPath             string // JC_GEOIP_ANON_DB_PATH — optional path to the GeoLite2-Anonymous-IP file (is_vpn, §37)
-	SpecCorpusDir               string // JC_SPEC_CORPUS_DIR — JEOS spec corpus root for the spec_doc RAG indexer (default ".jeos")
-	MaxmindAccountID            string // JC_MAXMIND_ACCOUNT_ID — MaxMind account ID (Basic Auth username for DB downloads)
-	MaxmindLicenseKey           string // JC_MAXMIND_LICENSE_KEY — license key for downloading GeoIP databases
-	GlitchtipDSN                string // JC_GLITCHTIP_DSN — GlitchTip DSN for error reporting
-	ImgproxyKey                 string // JC_IMGPROXY_KEY — signing key for imgproxy URL generation
-	ImgproxySalt                string // JC_IMGPROXY_SALT — salt for imgproxy URL signing
-	ImgproxyBaseURL             string // JC_IMGPROXY_BASE_URL — public-facing base URL for the imgproxy service
-	ImgproxyInternalURL         string // JC_IMGPROXY_INTERNAL_URL — internal Docker-network URL for imgproxy (e.g. http://imgproxy:8099); empty = use ImgproxyBaseURL
-	S3Endpoint                  string // JC_S3_ENDPOINT — S3-compatible object storage endpoint (SeaweedFS or compatible)
-	S3AccessKey                 string // JC_S3_ACCESS_KEY — S3 access key
-	S3SecretKey                 string // JC_S3_SECRET_KEY — S3 secret key
-	S3Bucket                    string // JC_S3_BUCKET — S3 bucket name for media storage
-	S3Region                    string // JC_S3_REGION — S3 region (placeholder; SeaweedFS ignores this)
-	MediaRoot                   string // JC_MEDIA_ROOT — local media storage root (default "data/media"; absolute paths recommended)
-	APIPublicURL                string // JC_API_PUBLIC_URL — public API base (e.g. https://api.japa.to); emitted into media serve/upload URLs for cross-origin frontends
-	VAPIDPublicKey              string // JC_VAPID_PUBLIC_KEY — VAPID public key for WebPush notifications
-	VAPIDPrivateKey             string // JC_VAPID_PRIVATE_KEY — VAPID private key for WebPush notifications
-	VAPIDSubject                string // JC_VAPID_SUBJECT — VAPID subject (mailto: or https: URL) for WebPush
-	HonchoURL                   string // JC_HONCHO_URL — Honcho agent memory service URL
-	ClamAVAddr                  string // JC_CLAMAV_ADDR — ClamAV daemon address (host:port), default localhost:3310
-	ReleaseSHA                  string // JC_RELEASE_SHA — git commit SHA, used for release tracking
-	DeploymentVersion           string // JC_DEPLOYMENT_VERSION — optional override for the deployment version reported by the control panel
-	Env                         string // JC_ENV — "development" or "production"
-	Port                        string // JC_PORT — HTTP listen port, defaults to 8080
-	JWTSecret                   string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
-	JWTKeyID                    string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
-	SiteName                    string // JC_SITE_NAME — site name for LLMS.txt and branding
-	SiteURL                     string // JC_SITE_URL — public-facing base URL (e.g. https://example.com)
-	SiteDescription             string // JC_SITE_DESCRIPTION — site description for LLMS.txt
-	OAuthGoogleID               string // JC_OAUTH_GOOGLE_CLIENT_ID — Google OAuth client ID
-	OAuthGoogleSecret           string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
-	OAuthGitHubID               string // JC_OAUTH_GITHUB_CLIENT_ID — GitHub OAuth client ID
-	OAuthGitHubSecret           string // JC_OAUTH_GITHUB_CLIENT_SECRET — GitHub OAuth client secret
-	OAuthAppleClientID          string // JC_OAUTH_APPLE_CLIENT_ID — Apple Sign-In client ID (Service ID)
-	OAuthAppleTeamID            string // JC_OAUTH_APPLE_TEAM_ID — Apple Developer Team ID
-	OAuthAppleKeyID             string // JC_OAUTH_APPLE_KEY_ID — Apple private key ID for client secret JWT
-	OAuthApplePrivateKeyPath    string // JC_OAUTH_APPLE_PRIVATE_KEY_PATH — path to .p8 private key file
-	OAuthFacebookAppID          string // JC_OAUTH_FACEBOOK_APP_ID — Facebook App ID
-	OAuthFacebookAppSecret      string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
-	OAuthRedirectBase           string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
-	MCPPublicURL                string // JC_MCP_PUBLIC_URL — public base URL of the API host serving MCP/OAuth (e.g. https://api.example.com); §120 issuer
-	FederationDomain            string // JC_FEDERATION_DOMAIN — ActivityPub acct handle domain (e.g. japa.to); default: host of JC_SITE_URL (§126)
-	ATProtoHandleDomain         string // JC_ATPROTO_HANDLE_DOMAIN — atproto handle domain; member handles are {username}.{domain} (§127)
-	ATProtoPDSURL               string // JC_ATPROTO_PDS_URL — public PDS base serving DID docs + XRPC sync; default: JC_API_PUBLIC_URL (§127)
-	ATProtoRelayURL             string // JC_ATPROTO_RELAY_URL — requestCrawl target; default https://bsky.network (§127)
-	ATProtoPLCURL               string // JC_ATPROTO_PLC_URL — did:plc directory; default https://plc.directory (§127 A6)
-	ATProtoJetstreamURL         string // JC_ATPROTO_JETSTREAM_URL — filtered inbound consumer; default jetstream2.us-east.bsky.network (§127 A5)
-	ATProtoAppViewURL           string // JC_ATPROTO_APPVIEW_URL — readback appview for the conformance check; default https://public.api.bsky.app (§127)
-	ATProtoInboundRetentionDays int    // JC_ATPROTO_INBOUND_RETENTION_DAYS — inbound ledger sweep window; default 30, ≤0 disables (§127 A5)
-	ATProtoSessionRetentionDays int    // JC_ATPROTO_SESSION_RETENTION_DAYS — dead atproto_sessions sweep window; default 30, ≤0 disables (§127 A6-4)
-	ATProtoOAuthReuseGraceSecs  int    // JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS — benign-retry grace for code/refresh replay; default 30, ≤0 disables (§127 A6-5)
-	EncryptionKey               string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
-	TOTPEncryptionKey           string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
-	StripeSecretKey             string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
-	StripeWebhookSecret         string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
-	NOWPaymentsIPNSecret        string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret
-	NOWPaymentsAPIKey           string // JC_NOWPAYMENTS_API_KEY — NOWPayments API key for invoice and payout calls
-	CircleAPIKey                string // JC_CIRCLE_API_KEY — Circle business API key for USDC payouts (required idempotencyKey — SEC-W-009)
-	PaystackSecretKey           string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
-	XiaomiAPIKey                string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
-	CORSOrigins                 string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
-	CookieDomain                string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
-	InternalToken               string // JC_INTERNAL_TOKEN — shared secret for internal service-to-service endpoints (render helpers)
-	UnsplashAccessKey           string // JC_UNSPLASH_ACCESS_KEY — Unsplash API access key
-	PexelsAPIKey                string // JC_PEXELS_API_KEY — Pexels API key
-	PixabayAPIKey               string // JC_PIXABAY_API_KEY — Pixabay API key
-	OpenverseClientID           string // JC_OPENVERSE_CLIENT_ID — Openverse OAuth client id (optional; anonymous quota applies without it; stored as client_id:client_secret in stock_providers.api_key_encrypted)
-	OpenverseClientSecret       string // JC_OPENVERSE_CLIENT_SECRET — Openverse OAuth client secret (optional)
-	StockCacheTTLSec            int    // JC_STOCK_CACHE_TTL_SECONDS — search result cache TTL (default 300)
-	StockCacheMaxEntries        int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
-	StockHTTPTimeoutSec         int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 30)
-	OwnerEmail                  string // JC_OWNER_EMAIL — email of the platform owner account; grants super_admin on registration and owner-only super_admin lifecycle control (§03 owner amendment)
+	DatabaseURL                  string // JC_DATABASE_URL — pgx connection string for PostgreSQL (writer/primary)
+	DatabaseReaderURL            string // JC_DATABASE_READER_URL — pgx connection string for read replica (empty = use DatabaseURL for reads too)
+	DBMaxConns                   int32  // JC_DB_MAX_CONNS — max connections per pgxpool (0 = default 25)
+	DBMinConns                   int32  // JC_DB_MIN_CONNS — min connections per pgxpool (0 = default 5)
+	DBMaxConnLifetimeMs          int    // JC_DB_MAX_CONN_LIFETIME_MS — max connection lifetime (0 = default 30m)
+	DBMaxConnIdleTimeMs          int    // JC_DB_MAX_CONN_IDLE_TIME_MS — max idle connection lifetime (0 = default 5m)
+	RedisAddr                    string // JC_VALKEY_ADDR (canonical, per JEOS stack.yaml) → JC_REDIS_ADDR (legacy alias) — Valkey/Redis address for cache and Asynq queues
+	RedisPassword                string // JC_REDIS_PASSWORD — optional auth password for Valkey/Redis
+	RedisDB                      int    // JC_REDIS_DB — Valkey/Redis database number (0 default)
+	RedisPoolSize                int    // JC_REDIS_POOL_SIZE — connection pool size (0 = valkey-go default)
+	RedisDialTimeoutMs           int    // JC_REDIS_DIAL_TIMEOUT_MS — dial timeout in milliseconds (0 = default)
+	RedisReadTimeoutMs           int    // JC_REDIS_READ_TIMEOUT_MS — read/write timeout in milliseconds (0 = default)
+	RedisTLSEnabled              bool   // JC_REDIS_TLS_ENABLED — enable TLS connection to Valkey/Redis
+	MeilisearchURL               string // JC_MEILISEARCH_URL — Meilisearch HTTP endpoint
+	MeilisearchKey               string // JC_MEILISEARCH_KEY — Meilisearch master key (empty for dev)
+	MeiliIndexPrefix             string // JC_MEILI_INDEX_PREFIX — optional index UID prefix so non-prod envs can share an instance
+	GeoIPDBPath                  string // JC_GEOIP_DB_PATH — path to the MaxMind GeoLite2 database file
+	GeoIPAnonDBPath              string // JC_GEOIP_ANON_DB_PATH — optional path to the GeoLite2-Anonymous-IP file (is_vpn, §37)
+	SpecCorpusDir                string // JC_SPEC_CORPUS_DIR — JEOS spec corpus root for the spec_doc RAG indexer (default ".jeos")
+	MaxmindAccountID             string // JC_MAXMIND_ACCOUNT_ID — MaxMind account ID (Basic Auth username for DB downloads)
+	MaxmindLicenseKey            string // JC_MAXMIND_LICENSE_KEY — license key for downloading GeoIP databases
+	GlitchtipDSN                 string // JC_GLITCHTIP_DSN — GlitchTip DSN for error reporting
+	ImgproxyKey                  string // JC_IMGPROXY_KEY — signing key for imgproxy URL generation
+	ImgproxySalt                 string // JC_IMGPROXY_SALT — salt for imgproxy URL signing
+	ImgproxyBaseURL              string // JC_IMGPROXY_BASE_URL — public-facing base URL for the imgproxy service
+	ImgproxyInternalURL          string // JC_IMGPROXY_INTERNAL_URL — internal Docker-network URL for imgproxy (e.g. http://imgproxy:8099); empty = use ImgproxyBaseURL
+	S3Endpoint                   string // JC_S3_ENDPOINT — S3-compatible object storage endpoint (SeaweedFS or compatible)
+	S3AccessKey                  string // JC_S3_ACCESS_KEY — S3 access key
+	S3SecretKey                  string // JC_S3_SECRET_KEY — S3 secret key
+	S3Bucket                     string // JC_S3_BUCKET — S3 bucket name for media storage
+	S3Region                     string // JC_S3_REGION — S3 region (placeholder; SeaweedFS ignores this)
+	MediaRoot                    string // JC_MEDIA_ROOT — local media storage root (default "data/media"; absolute paths recommended)
+	APIPublicURL                 string // JC_API_PUBLIC_URL — public API base (e.g. https://api.japa.to); emitted into media serve/upload URLs for cross-origin frontends
+	VAPIDPublicKey               string // JC_VAPID_PUBLIC_KEY — VAPID public key for WebPush notifications
+	VAPIDPrivateKey              string // JC_VAPID_PRIVATE_KEY — VAPID private key for WebPush notifications
+	VAPIDSubject                 string // JC_VAPID_SUBJECT — VAPID subject (mailto: or https: URL) for WebPush
+	HonchoURL                    string // JC_HONCHO_URL — Honcho agent memory service URL
+	ClamAVAddr                   string // JC_CLAMAV_ADDR — ClamAV daemon address (host:port), default localhost:3310
+	ReleaseSHA                   string // JC_RELEASE_SHA — git commit SHA, used for release tracking
+	DeploymentVersion            string // JC_DEPLOYMENT_VERSION — optional override for the deployment version reported by the control panel
+	Env                          string // JC_ENV — "development" or "production"
+	Port                         string // JC_PORT — HTTP listen port, defaults to 8080
+	JWTSecret                    string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
+	JWTKeyID                     string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
+	SiteName                     string // JC_SITE_NAME — site name for LLMS.txt and branding
+	SiteURL                      string // JC_SITE_URL — public-facing base URL (e.g. https://example.com)
+	SiteDescription              string // JC_SITE_DESCRIPTION — site description for LLMS.txt
+	OAuthGoogleID                string // JC_OAUTH_GOOGLE_CLIENT_ID — Google OAuth client ID
+	OAuthGoogleSecret            string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
+	OAuthGitHubID                string // JC_OAUTH_GITHUB_CLIENT_ID — GitHub OAuth client ID
+	OAuthGitHubSecret            string // JC_OAUTH_GITHUB_CLIENT_SECRET — GitHub OAuth client secret
+	OAuthAppleClientID           string // JC_OAUTH_APPLE_CLIENT_ID — Apple Sign-In client ID (Service ID)
+	OAuthAppleTeamID             string // JC_OAUTH_APPLE_TEAM_ID — Apple Developer Team ID
+	OAuthAppleKeyID              string // JC_OAUTH_APPLE_KEY_ID — Apple private key ID for client secret JWT
+	OAuthApplePrivateKeyPath     string // JC_OAUTH_APPLE_PRIVATE_KEY_PATH — path to .p8 private key file
+	OAuthFacebookAppID           string // JC_OAUTH_FACEBOOK_APP_ID — Facebook App ID
+	OAuthFacebookAppSecret       string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
+	OAuthRedirectBase            string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
+	MCPPublicURL                 string // JC_MCP_PUBLIC_URL — public base URL of the API host serving MCP/OAuth (e.g. https://api.example.com); §120 issuer
+	FederationDomain             string // JC_FEDERATION_DOMAIN — ActivityPub acct handle domain (e.g. japa.to); default: host of JC_SITE_URL (§126)
+	ATProtoHandleDomain          string // JC_ATPROTO_HANDLE_DOMAIN — atproto handle domain; member handles are {username}.{domain} (§127)
+	ATProtoPDSURL                string // JC_ATPROTO_PDS_URL — public PDS base serving DID docs + XRPC sync; default: JC_API_PUBLIC_URL (§127)
+	ATProtoRelayURL              string // JC_ATPROTO_RELAY_URL — requestCrawl target; default https://bsky.network (§127)
+	ATProtoPLCURL                string // JC_ATPROTO_PLC_URL — did:plc directory; default https://plc.directory (§127 A6)
+	ATProtoJetstreamURL          string // JC_ATPROTO_JETSTREAM_URL — filtered inbound consumer; default jetstream2.us-east.bsky.network (§127 A5)
+	ATProtoAppViewURL            string // JC_ATPROTO_APPVIEW_URL — readback appview for the conformance check; default https://public.api.bsky.app (§127)
+	ATProtoInboundRetentionDays  int    // JC_ATPROTO_INBOUND_RETENTION_DAYS — inbound ledger sweep window; default 30, ≤0 disables (§127 A5)
+	ATProtoSessionRetentionDays  int    // JC_ATPROTO_SESSION_RETENTION_DAYS — dead atproto_sessions sweep window; default 30, ≤0 disables (§127 A6-4)
+	ATProtoOAuthReuseGraceSecs   int    // JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS — benign-retry grace for code/refresh replay; default 30, ≤0 disables (§127 A6-5)
+	ATProtoOAuthLocalhostClients bool   // JC_ATPROTO_OAUTH_LOCALHOST_CLIENTS — spec's http://localhost dev client shape; default off (explicit opt-in — never infer from JC_ENV) (§127 A6-5)
+	EncryptionKey                string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
+	TOTPEncryptionKey            string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
+	StripeSecretKey              string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
+	StripeWebhookSecret          string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
+	NOWPaymentsIPNSecret         string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret
+	NOWPaymentsAPIKey            string // JC_NOWPAYMENTS_API_KEY — NOWPayments API key for invoice and payout calls
+	CircleAPIKey                 string // JC_CIRCLE_API_KEY — Circle business API key for USDC payouts (required idempotencyKey — SEC-W-009)
+	PaystackSecretKey            string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
+	XiaomiAPIKey                 string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
+	CORSOrigins                  string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
+	CookieDomain                 string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
+	InternalToken                string // JC_INTERNAL_TOKEN — shared secret for internal service-to-service endpoints (render helpers)
+	UnsplashAccessKey            string // JC_UNSPLASH_ACCESS_KEY — Unsplash API access key
+	PexelsAPIKey                 string // JC_PEXELS_API_KEY — Pexels API key
+	PixabayAPIKey                string // JC_PIXABAY_API_KEY — Pixabay API key
+	OpenverseClientID            string // JC_OPENVERSE_CLIENT_ID — Openverse OAuth client id (optional; anonymous quota applies without it; stored as client_id:client_secret in stock_providers.api_key_encrypted)
+	OpenverseClientSecret        string // JC_OPENVERSE_CLIENT_SECRET — Openverse OAuth client secret (optional)
+	StockCacheTTLSec             int    // JC_STOCK_CACHE_TTL_SECONDS — search result cache TTL (default 300)
+	StockCacheMaxEntries         int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
+	StockHTTPTimeoutSec          int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 30)
+	OwnerEmail                   string // JC_OWNER_EMAIL — email of the platform owner account; grants super_admin on registration and owner-only super_admin lifecycle control (§03 owner amendment)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -131,96 +132,97 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		DatabaseURL:                 os.Getenv("JC_DATABASE_URL"),
-		DatabaseReaderURL:           os.Getenv("JC_DATABASE_READER_URL"),
-		DBMaxConns:                  getEnvInt32("JC_DB_MAX_CONNS", 0),
-		DBMinConns:                  getEnvInt32("JC_DB_MIN_CONNS", 0),
-		DBMaxConnLifetimeMs:         getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
-		DBMaxConnIdleTimeMs:         getEnvInt("JC_DB_MAX_CONN_IDLE_TIME_MS", 0),
-		RedisAddr:                   getEnvWithFallback("JC_VALKEY_ADDR", "JC_REDIS_ADDR"),
-		RedisPassword:               os.Getenv("JC_REDIS_PASSWORD"),
-		RedisDB:                     getEnvInt("JC_REDIS_DB", 0),
-		RedisPoolSize:               getEnvInt("JC_REDIS_POOL_SIZE", 0),
-		RedisDialTimeoutMs:          getEnvInt("JC_REDIS_DIAL_TIMEOUT_MS", 0),
-		RedisReadTimeoutMs:          getEnvInt("JC_REDIS_READ_TIMEOUT_MS", 0),
-		RedisTLSEnabled:             getEnvBool("JC_REDIS_TLS_ENABLED", false),
-		MeilisearchURL:              os.Getenv("JC_MEILISEARCH_URL"),
-		MeilisearchKey:              os.Getenv("JC_MEILISEARCH_KEY"),
-		MeiliIndexPrefix:            os.Getenv("JC_MEILI_INDEX_PREFIX"),
-		GeoIPDBPath:                 os.Getenv("JC_GEOIP_DB_PATH"),
-		GeoIPAnonDBPath:             os.Getenv("JC_GEOIP_ANON_DB_PATH"),
-		SpecCorpusDir:               os.Getenv("JC_SPEC_CORPUS_DIR"),
-		MaxmindAccountID:            os.Getenv("JC_MAXMIND_ACCOUNT_ID"),
-		MaxmindLicenseKey:           os.Getenv("JC_MAXMIND_LICENSE_KEY"),
-		GlitchtipDSN:                os.Getenv("JC_GLITCHTIP_DSN"),
-		ImgproxyKey:                 os.Getenv("JC_IMGPROXY_KEY"),
-		ImgproxySalt:                os.Getenv("JC_IMGPROXY_SALT"),
-		ImgproxyBaseURL:             os.Getenv("JC_IMGPROXY_BASE_URL"),
-		ImgproxyInternalURL:         os.Getenv("JC_IMGPROXY_INTERNAL_URL"),
-		S3Endpoint:                  os.Getenv("JC_S3_ENDPOINT"),
-		S3AccessKey:                 os.Getenv("JC_S3_ACCESS_KEY"),
-		S3SecretKey:                 os.Getenv("JC_S3_SECRET_KEY"),
-		S3Bucket:                    os.Getenv("JC_S3_BUCKET"),
-		S3Region:                    os.Getenv("JC_S3_REGION"),
-		MediaRoot:                   os.Getenv("JC_MEDIA_ROOT"),
-		APIPublicURL:                os.Getenv("JC_API_PUBLIC_URL"),
-		VAPIDPublicKey:              os.Getenv("JC_VAPID_PUBLIC_KEY"),
-		VAPIDPrivateKey:             os.Getenv("JC_VAPID_PRIVATE_KEY"),
-		VAPIDSubject:                os.Getenv("JC_VAPID_SUBJECT"),
-		HonchoURL:                   os.Getenv("JC_HONCHO_URL"),
-		ClamAVAddr:                  os.Getenv("JC_CLAMAV_ADDR"),
-		ReleaseSHA:                  os.Getenv("JC_RELEASE_SHA"),
-		DeploymentVersion:           os.Getenv("JC_DEPLOYMENT_VERSION"),
-		Env:                         os.Getenv("JC_ENV"),
-		Port:                        os.Getenv("JC_PORT"),
-		JWTSecret:                   os.Getenv("JC_JWT_SECRET"),
-		JWTKeyID:                    os.Getenv("JC_JWT_KEY_ID"),
-		SiteName:                    getEnvWithFallback("JC_SITE_NAME", "JC_SITE_TITLE"),
-		SiteURL:                     os.Getenv("JC_SITE_URL"),
-		SiteDescription:             os.Getenv("JC_SITE_DESCRIPTION"),
-		OAuthGoogleID:               os.Getenv("JC_OAUTH_GOOGLE_CLIENT_ID"),
-		OAuthGoogleSecret:           os.Getenv("JC_OAUTH_GOOGLE_CLIENT_SECRET"),
-		OAuthGitHubID:               os.Getenv("JC_OAUTH_GITHUB_CLIENT_ID"),
-		OAuthGitHubSecret:           os.Getenv("JC_OAUTH_GITHUB_CLIENT_SECRET"),
-		OAuthAppleClientID:          os.Getenv("JC_OAUTH_APPLE_CLIENT_ID"),
-		OAuthAppleTeamID:            os.Getenv("JC_OAUTH_APPLE_TEAM_ID"),
-		OAuthAppleKeyID:             os.Getenv("JC_OAUTH_APPLE_KEY_ID"),
-		OAuthApplePrivateKeyPath:    os.Getenv("JC_OAUTH_APPLE_PRIVATE_KEY_PATH"),
-		OAuthFacebookAppID:          os.Getenv("JC_OAUTH_FACEBOOK_APP_ID"),
-		OAuthFacebookAppSecret:      os.Getenv("JC_OAUTH_FACEBOOK_APP_SECRET"),
-		OAuthRedirectBase:           os.Getenv("JC_OAUTH_REDIRECT_BASE"),
-		MCPPublicURL:                os.Getenv("JC_MCP_PUBLIC_URL"),
-		FederationDomain:            os.Getenv("JC_FEDERATION_DOMAIN"),
-		ATProtoHandleDomain:         os.Getenv("JC_ATPROTO_HANDLE_DOMAIN"),
-		ATProtoPDSURL:               os.Getenv("JC_ATPROTO_PDS_URL"),
-		ATProtoRelayURL:             getEnvDefault("JC_ATPROTO_RELAY_URL", "https://bsky.network"),
-		ATProtoPLCURL:               getEnvDefault("JC_ATPROTO_PLC_URL", "https://plc.directory"),
-		ATProtoJetstreamURL:         getEnvDefault("JC_ATPROTO_JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network/subscribe"),
-		ATProtoAppViewURL:           getEnvDefault("JC_ATPROTO_APPVIEW_URL", "https://public.api.bsky.app"),
-		ATProtoInboundRetentionDays: getEnvInt("JC_ATPROTO_INBOUND_RETENTION_DAYS", 30),
-		ATProtoSessionRetentionDays: getEnvInt("JC_ATPROTO_SESSION_RETENTION_DAYS", 30),
-		ATProtoOAuthReuseGraceSecs:  getEnvInt("JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS", 30),
-		EncryptionKey:               os.Getenv("JC_ENCRYPTION_KEY"),
-		TOTPEncryptionKey:           os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
-		StripeSecretKey:             os.Getenv("JC_STRIPE_SECRET_KEY"),
-		StripeWebhookSecret:         os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),
-		NOWPaymentsIPNSecret:        os.Getenv("JC_NOWPAYMENTS_IPN_SECRET"),
-		NOWPaymentsAPIKey:           os.Getenv("JC_NOWPAYMENTS_API_KEY"),
-		CircleAPIKey:                os.Getenv("JC_CIRCLE_API_KEY"),
-		PaystackSecretKey:           os.Getenv("JC_PAYSTACK_SECRET_KEY"),
-		XiaomiAPIKey:                os.Getenv("JC_XIAOMI_API_KEY"),
-		CORSOrigins:                 os.Getenv("JC_CORS_ORIGINS"),
-		CookieDomain:                os.Getenv("JC_COOKIE_DOMAIN"),
-		InternalToken:               os.Getenv("JC_INTERNAL_TOKEN"),
-		UnsplashAccessKey:           os.Getenv("JC_UNSPLASH_ACCESS_KEY"),
-		PexelsAPIKey:                os.Getenv("JC_PEXELS_API_KEY"),
-		PixabayAPIKey:               os.Getenv("JC_PIXABAY_API_KEY"),
-		OpenverseClientID:           os.Getenv("JC_OPENVERSE_CLIENT_ID"),
-		OpenverseClientSecret:       os.Getenv("JC_OPENVERSE_CLIENT_SECRET"),
-		StockCacheTTLSec:            getEnvInt("JC_STOCK_CACHE_TTL_SECONDS", 300),
-		StockCacheMaxEntries:        getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
-		StockHTTPTimeoutSec:         getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 30),
-		OwnerEmail:                  strings.ToLower(strings.TrimSpace(os.Getenv("JC_OWNER_EMAIL"))),
+		DatabaseURL:                  os.Getenv("JC_DATABASE_URL"),
+		DatabaseReaderURL:            os.Getenv("JC_DATABASE_READER_URL"),
+		DBMaxConns:                   getEnvInt32("JC_DB_MAX_CONNS", 0),
+		DBMinConns:                   getEnvInt32("JC_DB_MIN_CONNS", 0),
+		DBMaxConnLifetimeMs:          getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
+		DBMaxConnIdleTimeMs:          getEnvInt("JC_DB_MAX_CONN_IDLE_TIME_MS", 0),
+		RedisAddr:                    getEnvWithFallback("JC_VALKEY_ADDR", "JC_REDIS_ADDR"),
+		RedisPassword:                os.Getenv("JC_REDIS_PASSWORD"),
+		RedisDB:                      getEnvInt("JC_REDIS_DB", 0),
+		RedisPoolSize:                getEnvInt("JC_REDIS_POOL_SIZE", 0),
+		RedisDialTimeoutMs:           getEnvInt("JC_REDIS_DIAL_TIMEOUT_MS", 0),
+		RedisReadTimeoutMs:           getEnvInt("JC_REDIS_READ_TIMEOUT_MS", 0),
+		RedisTLSEnabled:              getEnvBool("JC_REDIS_TLS_ENABLED", false),
+		MeilisearchURL:               os.Getenv("JC_MEILISEARCH_URL"),
+		MeilisearchKey:               os.Getenv("JC_MEILISEARCH_KEY"),
+		MeiliIndexPrefix:             os.Getenv("JC_MEILI_INDEX_PREFIX"),
+		GeoIPDBPath:                  os.Getenv("JC_GEOIP_DB_PATH"),
+		GeoIPAnonDBPath:              os.Getenv("JC_GEOIP_ANON_DB_PATH"),
+		SpecCorpusDir:                os.Getenv("JC_SPEC_CORPUS_DIR"),
+		MaxmindAccountID:             os.Getenv("JC_MAXMIND_ACCOUNT_ID"),
+		MaxmindLicenseKey:            os.Getenv("JC_MAXMIND_LICENSE_KEY"),
+		GlitchtipDSN:                 os.Getenv("JC_GLITCHTIP_DSN"),
+		ImgproxyKey:                  os.Getenv("JC_IMGPROXY_KEY"),
+		ImgproxySalt:                 os.Getenv("JC_IMGPROXY_SALT"),
+		ImgproxyBaseURL:              os.Getenv("JC_IMGPROXY_BASE_URL"),
+		ImgproxyInternalURL:          os.Getenv("JC_IMGPROXY_INTERNAL_URL"),
+		S3Endpoint:                   os.Getenv("JC_S3_ENDPOINT"),
+		S3AccessKey:                  os.Getenv("JC_S3_ACCESS_KEY"),
+		S3SecretKey:                  os.Getenv("JC_S3_SECRET_KEY"),
+		S3Bucket:                     os.Getenv("JC_S3_BUCKET"),
+		S3Region:                     os.Getenv("JC_S3_REGION"),
+		MediaRoot:                    os.Getenv("JC_MEDIA_ROOT"),
+		APIPublicURL:                 os.Getenv("JC_API_PUBLIC_URL"),
+		VAPIDPublicKey:               os.Getenv("JC_VAPID_PUBLIC_KEY"),
+		VAPIDPrivateKey:              os.Getenv("JC_VAPID_PRIVATE_KEY"),
+		VAPIDSubject:                 os.Getenv("JC_VAPID_SUBJECT"),
+		HonchoURL:                    os.Getenv("JC_HONCHO_URL"),
+		ClamAVAddr:                   os.Getenv("JC_CLAMAV_ADDR"),
+		ReleaseSHA:                   os.Getenv("JC_RELEASE_SHA"),
+		DeploymentVersion:            os.Getenv("JC_DEPLOYMENT_VERSION"),
+		Env:                          os.Getenv("JC_ENV"),
+		Port:                         os.Getenv("JC_PORT"),
+		JWTSecret:                    os.Getenv("JC_JWT_SECRET"),
+		JWTKeyID:                     os.Getenv("JC_JWT_KEY_ID"),
+		SiteName:                     getEnvWithFallback("JC_SITE_NAME", "JC_SITE_TITLE"),
+		SiteURL:                      os.Getenv("JC_SITE_URL"),
+		SiteDescription:              os.Getenv("JC_SITE_DESCRIPTION"),
+		OAuthGoogleID:                os.Getenv("JC_OAUTH_GOOGLE_CLIENT_ID"),
+		OAuthGoogleSecret:            os.Getenv("JC_OAUTH_GOOGLE_CLIENT_SECRET"),
+		OAuthGitHubID:                os.Getenv("JC_OAUTH_GITHUB_CLIENT_ID"),
+		OAuthGitHubSecret:            os.Getenv("JC_OAUTH_GITHUB_CLIENT_SECRET"),
+		OAuthAppleClientID:           os.Getenv("JC_OAUTH_APPLE_CLIENT_ID"),
+		OAuthAppleTeamID:             os.Getenv("JC_OAUTH_APPLE_TEAM_ID"),
+		OAuthAppleKeyID:              os.Getenv("JC_OAUTH_APPLE_KEY_ID"),
+		OAuthApplePrivateKeyPath:     os.Getenv("JC_OAUTH_APPLE_PRIVATE_KEY_PATH"),
+		OAuthFacebookAppID:           os.Getenv("JC_OAUTH_FACEBOOK_APP_ID"),
+		OAuthFacebookAppSecret:       os.Getenv("JC_OAUTH_FACEBOOK_APP_SECRET"),
+		OAuthRedirectBase:            os.Getenv("JC_OAUTH_REDIRECT_BASE"),
+		MCPPublicURL:                 os.Getenv("JC_MCP_PUBLIC_URL"),
+		FederationDomain:             os.Getenv("JC_FEDERATION_DOMAIN"),
+		ATProtoHandleDomain:          os.Getenv("JC_ATPROTO_HANDLE_DOMAIN"),
+		ATProtoPDSURL:                os.Getenv("JC_ATPROTO_PDS_URL"),
+		ATProtoRelayURL:              getEnvDefault("JC_ATPROTO_RELAY_URL", "https://bsky.network"),
+		ATProtoPLCURL:                getEnvDefault("JC_ATPROTO_PLC_URL", "https://plc.directory"),
+		ATProtoJetstreamURL:          getEnvDefault("JC_ATPROTO_JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network/subscribe"),
+		ATProtoAppViewURL:            getEnvDefault("JC_ATPROTO_APPVIEW_URL", "https://public.api.bsky.app"),
+		ATProtoInboundRetentionDays:  getEnvInt("JC_ATPROTO_INBOUND_RETENTION_DAYS", 30),
+		ATProtoSessionRetentionDays:  getEnvInt("JC_ATPROTO_SESSION_RETENTION_DAYS", 30),
+		ATProtoOAuthReuseGraceSecs:   getEnvInt("JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS", 30),
+		ATProtoOAuthLocalhostClients: getEnvBool("JC_ATPROTO_OAUTH_LOCALHOST_CLIENTS", false),
+		EncryptionKey:                os.Getenv("JC_ENCRYPTION_KEY"),
+		TOTPEncryptionKey:            os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
+		StripeSecretKey:              os.Getenv("JC_STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:          os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),
+		NOWPaymentsIPNSecret:         os.Getenv("JC_NOWPAYMENTS_IPN_SECRET"),
+		NOWPaymentsAPIKey:            os.Getenv("JC_NOWPAYMENTS_API_KEY"),
+		CircleAPIKey:                 os.Getenv("JC_CIRCLE_API_KEY"),
+		PaystackSecretKey:            os.Getenv("JC_PAYSTACK_SECRET_KEY"),
+		XiaomiAPIKey:                 os.Getenv("JC_XIAOMI_API_KEY"),
+		CORSOrigins:                  os.Getenv("JC_CORS_ORIGINS"),
+		CookieDomain:                 os.Getenv("JC_COOKIE_DOMAIN"),
+		InternalToken:                os.Getenv("JC_INTERNAL_TOKEN"),
+		UnsplashAccessKey:            os.Getenv("JC_UNSPLASH_ACCESS_KEY"),
+		PexelsAPIKey:                 os.Getenv("JC_PEXELS_API_KEY"),
+		PixabayAPIKey:                os.Getenv("JC_PIXABAY_API_KEY"),
+		OpenverseClientID:            os.Getenv("JC_OPENVERSE_CLIENT_ID"),
+		OpenverseClientSecret:        os.Getenv("JC_OPENVERSE_CLIENT_SECRET"),
+		StockCacheTTLSec:             getEnvInt("JC_STOCK_CACHE_TTL_SECONDS", 300),
+		StockCacheMaxEntries:         getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
+		StockHTTPTimeoutSec:          getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 30),
+		OwnerEmail:                   strings.ToLower(strings.TrimSpace(os.Getenv("JC_OWNER_EMAIL"))),
 	}
 
 	if err := applyDefaults(&cfg); err != nil {

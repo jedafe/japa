@@ -726,7 +726,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		InboundRetentionDays:   cfg.ATProtoInboundRetentionDays,
 		SessionRetentionDays:   cfg.ATProtoSessionRetentionDays,
 		OAuthReuseGraceSeconds: cfg.ATProtoOAuthReuseGraceSecs,
-		Production:             cfg.IsProduction(),
+		OAuthLocalhostClients:  cfg.ATProtoOAuthLocalhostClients,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
 	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP

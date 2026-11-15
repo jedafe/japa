@@ -462,7 +462,7 @@ func (s *Service) fetchClientDoc(ctx context.Context, clientID string) (*oauthCl
 		return nil, oauthErr("invalid_client_id", "client_id must be a URL")
 	}
 	localhost := u.Scheme == "http" && u.Hostname() == "localhost" && u.Port() == "" &&
-		!s.cfg.Production // the dev loop is not a production client shape
+		s.cfg.OAuthLocalhostClients // dev loop — explicit opt-in only
 	if u.Scheme != "https" && !localhost {
 		return nil, oauthErr("invalid_client_id", "client_id must be an https URL")
 	}

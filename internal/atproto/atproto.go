@@ -91,10 +91,13 @@ type Config struct {
 	// retry rather than a theft signal. ≤0 disables — every stale-hash
 	// replay revokes.
 	OAuthReuseGraceSeconds int
-	// Production — JC_ENV=production: disables dev conveniences that
-	// would be attack surface on a live host (e.g. http://localhost
-	// client_ids in the OAuth flow).
-	Production bool
+	// OAuthLocalhostClients — JC_ATPROTO_OAUTH_LOCALHOST_CLIENTS
+	// (default off): enables the spec's http://localhost dev client
+	// shape in the OAuth flow. Deliberately NOT derived from JC_ENV —
+	// an unconfigured deployment defaults to development there, which
+	// would leave the localhost SSRF surface open on a live host; the
+	// exception must be an explicit opt-in.
+	OAuthLocalhostClients bool
 	// JWTSecret — JC_JWT_SECRET: HS256 key for the A6-4 access/refresh
 	// session tokens (scope claims keep the domain disjoint from the
 	// platform's own JWTs). Empty mints an ephemeral dev secret at

@@ -167,17 +167,18 @@ func TestClientBindingMatches(t *testing.T) {
 }
 
 func TestLocalhostClientIDProdGate(t *testing.T) {
-	// Dev keeps the spec's http://localhost client shape — the fetch
-	// itself may fail offline, but the gate must not reject it as an
-	// https-scheme violation.
-	dev := &Service{cfg: Config{}}
-	_, devErr := dev.fetchClientDoc(context.Background(), "http://localhost/x")
-	if devErr != nil && strings.Contains(devErr.Error(), "https URL") {
-		t.Fatalf("dev localhost client_id rejected at the scheme gate: %v", devErr)
+	// Default-off: an unconfigured deployment must not expose the
+	// spec's http://localhost dev client shape (SSRF surface).
+	def := &Service{cfg: Config{}}
+	if _, err := def.fetchClientDoc(context.Background(), "http://localhost/x"); err == nil {
+		t.Fatal("default config accepted an http://localhost client_id")
 	}
-	prod := &Service{cfg: Config{Production: true}}
-	if _, err := prod.fetchClientDoc(context.Background(), "http://localhost/x"); err == nil {
-		t.Fatal("production accepted an http://localhost client_id")
+	// Explicit opt-in: the gate stops rejecting (the fetch itself may
+	// still fail offline — anything but the https-scheme error is a pass).
+	on := &Service{cfg: Config{OAuthLocalhostClients: true}}
+	_, err := on.fetchClientDoc(context.Background(), "http://localhost/x")
+	if err != nil && strings.Contains(err.Error(), "https URL") {
+		t.Fatalf("opted-in localhost client_id rejected at the scheme gate: %v", err)
 	}
 }
 
