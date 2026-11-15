@@ -714,6 +714,7 @@ func (h *Handlers) HandleAuthorizationServerMetadata(w http.ResponseWriter, r *h
 		"revocation_endpoint":                              origin + "/oauth/revoke",
 		"registration_endpoint":                            origin + "/oauth/register",
 		"userinfo_endpoint":                                origin + "/oauth/userinfo",
+		"service_documentation":                            h.siteURL + "/docs",
 		"pushed_authorization_request_endpoint":            origin + "/oauth/par",
 		"require_pushed_authorization_requests":            true,
 		"response_types_supported":                         []string{"code"},

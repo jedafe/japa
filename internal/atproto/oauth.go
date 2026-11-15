@@ -853,6 +853,12 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		(grant.ClientJkt != nil && *grant.ClientJkt != clientJKT) {
 		return nil, oauthErr("invalid_client", "client key binding does not match the grant")
 	}
+	// Liveness before the CAS — a dead account must not churn grant
+	// rows the client can never use.
+	acct, err := s.sessionAccountByID(ctx, grant.AccountID)
+	if err != nil {
+		return nil, err
+	}
 	access := oauthRandom(oauthAccessTokenPrefix)
 	refresh := oauthRandom(oauthRefreshTokenPrefix)
 	row, err := s.store.q.RotateOAuthGrant(ctx, gen.RotateOAuthGrantParams{
@@ -865,10 +871,6 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		return nil, oauthErr("invalid_grant", "the refresh token is no longer current")
 	}
 	_ = row
-	acct, err := s.sessionAccountByID(ctx, grant.AccountID)
-	if err != nil {
-		return nil, err
-	}
 	return &oauthTokenResponse{
 		AccessToken:  access,
 		TokenType:    "DPoP",

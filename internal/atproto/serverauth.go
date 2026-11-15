@@ -188,7 +188,7 @@ func (s *Service) revokeExternalCredentials(ctx context.Context, accountID pgtyp
 	}
 	// A6-5: OAuth grants die the same death — a tombstoned identity can
 	// never authorize another token call.
-	if _, err := s.store.q.RevokeOAuthGrantsForAccount(ctx, accountID); err != nil {
+	if err := s.RevokeOAuthForAccount(ctx, accountID); err != nil {
 		slog.Warn("atproto: oauth grant revoke on tombstone failed", "account_id", accountID.String(), "error", err)
 	}
 	rows, err := s.store.q.ListAtprotoAppPasswords(ctx, accountID)
