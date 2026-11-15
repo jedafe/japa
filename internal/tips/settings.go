@@ -250,7 +250,10 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	// profile went inactive) must not advertise an enabled config — the
 	// create path rejects the tip anyway, so advertising it is a trap.
 	if owner.Type == RecipientUser {
-		if ok, err := s.CanReceive(ctx, owner.ID); err == nil && !ok {
+		// Fail-closed like the space branch below: an eligibility lookup
+		// error hides the button rather than advertising a config the
+		// create path would reject.
+		if ok, err := s.CanReceive(ctx, owner.ID); err != nil || !ok {
 			return cfg, nil
 		}
 	}
