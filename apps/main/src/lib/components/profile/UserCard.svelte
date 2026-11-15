@@ -10,6 +10,7 @@
 	import { ArrowRight, BadgeCheck, GraduationCap, MapPin } from 'lucide-svelte';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { verificationBadgeUrl, verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import FollowButton from '#lib/components/ui/FollowButton.svelte';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type { PublicUser } from '#lib/types/index.js';
@@ -72,7 +73,7 @@
 			{:else}
 				<span
 					class="absolute end-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
-					title={tierLabel}
+					title={badgeLabel}
 				>
 					<BadgeCheck size={16} />
 				</span>
@@ -102,8 +103,9 @@
 
 	<div class="flex flex-1 flex-col items-center px-5 pb-5 pt-2 text-center">
 		<a href="/u/{user.username}" class="group min-w-0">
-			<span class="block truncate text-base font-bold text-[var(--color-text)] group-hover:underline">
-				{user.display_name ?? user.username}
+			<span class="flex items-center justify-center gap-1 truncate text-base font-bold text-[var(--color-text)] group-hover:underline">
+				<span class="truncate">{user.display_name ?? user.username}</span>
+				<VerifiedBadge {verified} type={user.verification_type} scope="user" size={16} />
 			</span>
 			<span class="block truncate text-xs text-[var(--color-muted)]">@{user.username}</span>
 		</a>

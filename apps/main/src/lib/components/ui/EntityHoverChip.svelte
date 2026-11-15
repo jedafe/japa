@@ -34,13 +34,19 @@
 		isFollowing?: boolean;
 		/** Visual treatment: 'chip' (compact pill) or 'row' (source row with large avatar). */
 		variant?: 'chip' | 'row';
-		/** Secondary line shown under the name when variant='row'. */
-		secondary?: string;
+		/** Secondary line shown under the name when variant='row'. Accepts a
+		 *  string or a Snippet (e.g. to inline a badge beside an org name). */
+		secondary?: string | Snippet;
 		/** Optional custom trigger content. When provided, the default chip/row markup is skipped. */
 		trigger?: Snippet;
 		/** When set, trigger click opens this external URL in a new tab instead
 		 *  of navigating to the internal entity page (hover card still works). */
 		externalHref?: string;
+		/** §07 verification state already known by the caller — rendered inline
+		 *  on the default trigger and seeds the hover card until the detail
+		 *  fetch resolves. Only meaningful for 'user'/'organization' chips. */
+		verified?: boolean;
+		verificationType?: string | null;
 	}
 
 	let {
@@ -56,7 +62,9 @@
 		variant = 'chip',
 		secondary,
 		trigger,
-		externalHref
+		externalHref,
+		verified = false,
+		verificationType = null
 	}: Props = $props();
 
 	// Progressive enhancement: SSR and the first client render emit a plain
@@ -88,8 +96,10 @@
 	let detailLocation = $state<string | undefined>(undefined);
 	let detailWebsite = $state<string | undefined>(undefined);
 	let detailCreatedAt = $state<string | undefined>(undefined);
-	let detailVerified = $state<boolean | undefined>(undefined);
-	let detailVerificationType = $state<string | undefined>(undefined);
+	// svelte-ignore state_referenced_locally
+	let detailVerified = $state<boolean | undefined>(verified || undefined);
+	// svelte-ignore state_referenced_locally
+	let detailVerificationType = $state<string | undefined>(verificationType ?? undefined);
 	// Badge artwork scope — only users and organizations carry §07 badges.
 	const badgeScope = $derived(type === 'organization' ? 'organization' : 'user');
 	let detailFollowingCount = $state<number | undefined>(undefined);
@@ -334,9 +344,14 @@
 			</span>
 		{/if}
 		<div class="min-w-0 w-full">
-			<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
-			{#if secondary}
+			<p class="flex items-center gap-1 truncate text-sm font-semibold text-[var(--color-text)]">
+				<span class="truncate">{name}</span>
+				<VerifiedBadge verified={detailVerified ?? verified} type={detailVerificationType ?? verificationType} scope={badgeScope} size={14} />
+			</p>
+			{#if typeof secondary === 'string' && secondary}
 				<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
+			{:else if secondary && typeof secondary !== 'string'}
+				<div class="truncate text-xs text-[var(--color-muted)]">{@render secondary()}</div>
 			{/if}
 		</div>
 	{:else}
@@ -348,6 +363,7 @@
 			</span>
 		{/if}
 		<span class="truncate">{name}</span>
+		<VerifiedBadge verified={detailVerified ?? verified} type={detailVerificationType ?? verificationType} scope={badgeScope} size={12} />
 	{/if}
 {/snippet}
 

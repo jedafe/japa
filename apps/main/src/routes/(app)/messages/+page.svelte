@@ -2,6 +2,7 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount, tick } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -527,9 +528,15 @@
 								{/if}
 								<span class="min-w-0 flex-1">
 									<span class="flex items-center justify-between gap-2">
-										<span class="truncate text-sm font-medium text-[var(--color-text)]"
-											>{conv.other_display_name}</span
-										>
+										<span class="inline-flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+											<span class="truncate">{conv.other_display_name}</span>
+											<VerifiedBadge
+												verified={conv.other_verified}
+												type={conv.other_verification_type}
+												scope={conv.conversation_type === 'org' ? 'organization' : 'user'}
+												size={13}
+											/>
+										</span>
 										{#if conv.unread_count > 0}
 											<span
 												class="shrink-0 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-primary-contrast)]"
@@ -607,8 +614,14 @@
 						>
 					{/if}
 					<div class="min-w-0">
-						<p class="truncate text-sm font-medium text-[var(--color-text)]">
-							{activeConversation?.other_display_name}
+						<p class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+							<span class="truncate">{activeConversation?.other_display_name}</span>
+							<VerifiedBadge
+								verified={activeConversation?.other_verified}
+								type={activeConversation?.other_verification_type}
+								scope={activeConversation?.conversation_type === 'org' ? 'organization' : 'user'}
+								size={14}
+							/>
 						</p>
 						{#if activeConversation?.other_username}
 							<a

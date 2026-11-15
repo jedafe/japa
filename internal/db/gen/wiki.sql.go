@@ -1140,6 +1140,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        up.avatar_url AS submitted_by_avatar_url
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -1151,28 +1152,30 @@ LIMIT 1
 `
 
 type GetApprovedWikiRevisionRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	WikiPageID           pgtype.UUID        `json:"wiki_page_id"`
-	Content              []byte             `json:"content"`
-	Summary              *string            `json:"summary"`
-	Kind                 string             `json:"kind"`
-	Ops                  []byte             `json:"ops"`
-	TargetEntityType     *string            `json:"target_entity_type"`
-	TargetEntityID       pgtype.UUID        `json:"target_entity_id"`
-	Status               string             `json:"status"`
-	SubmittedBy          pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
-	ApplyError           *string            `json:"apply_error"`
-	AiGenerated          bool               `json:"ai_generated"`
-	AiModel              *string            `json:"ai_model"`
-	AiPromptHash         *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes      *string            `json:"hitl_review_notes"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	SubmittedByName      string             `json:"submitted_by_name"`
-	SubmittedByAvatarUrl *string            `json:"submitted_by_avatar_url"`
+	ID                          pgtype.UUID        `json:"id"`
+	WikiPageID                  pgtype.UUID        `json:"wiki_page_id"`
+	Content                     []byte             `json:"content"`
+	Summary                     *string            `json:"summary"`
+	Kind                        string             `json:"kind"`
+	Ops                         []byte             `json:"ops"`
+	TargetEntityType            *string            `json:"target_entity_type"`
+	TargetEntityID              pgtype.UUID        `json:"target_entity_id"`
+	Status                      string             `json:"status"`
+	SubmittedBy                 pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy                  pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt                  pgtype.Timestamptz `json:"reviewed_at"`
+	ApplyError                  *string            `json:"apply_error"`
+	AiGenerated                 bool               `json:"ai_generated"`
+	AiModel                     *string            `json:"ai_model"`
+	AiPromptHash                *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy              pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt              pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes             *string            `json:"hitl_review_notes"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	SubmittedByName             string             `json:"submitted_by_name"`
+	SubmittedByVerified         *bool              `json:"submitted_by_verified"`
+	SubmittedByVerificationType *string            `json:"submitted_by_verification_type"`
+	SubmittedByAvatarUrl        *string            `json:"submitted_by_avatar_url"`
 }
 
 // =====================
@@ -1205,6 +1208,8 @@ func (q *Queries) GetApprovedWikiRevision(ctx context.Context, pageID pgtype.UUI
 		&i.HitlReviewNotes,
 		&i.CreatedAt,
 		&i.SubmittedByName,
+		&i.SubmittedByVerified,
+		&i.SubmittedByVerificationType,
 		&i.SubmittedByAvatarUrl,
 	)
 	return i, err
@@ -1987,6 +1992,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -1995,28 +2001,30 @@ WHERE wr.id = $1
 `
 
 type GetWikiRevisionRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	WikiPageID       pgtype.UUID        `json:"wiki_page_id"`
-	Content          []byte             `json:"content"`
-	Summary          *string            `json:"summary"`
-	Kind             string             `json:"kind"`
-	Ops              []byte             `json:"ops"`
-	TargetEntityType *string            `json:"target_entity_type"`
-	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
-	Status           string             `json:"status"`
-	SubmittedBy      pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
-	ApplyError       *string            `json:"apply_error"`
-	AiGenerated      bool               `json:"ai_generated"`
-	AiModel          *string            `json:"ai_model"`
-	AiPromptHash     *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy   pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes  *string            `json:"hitl_review_notes"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	SubmittedByName  string             `json:"submitted_by_name"`
-	ReviewedByName   string             `json:"reviewed_by_name"`
+	ID                          pgtype.UUID        `json:"id"`
+	WikiPageID                  pgtype.UUID        `json:"wiki_page_id"`
+	Content                     []byte             `json:"content"`
+	Summary                     *string            `json:"summary"`
+	Kind                        string             `json:"kind"`
+	Ops                         []byte             `json:"ops"`
+	TargetEntityType            *string            `json:"target_entity_type"`
+	TargetEntityID              pgtype.UUID        `json:"target_entity_id"`
+	Status                      string             `json:"status"`
+	SubmittedBy                 pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy                  pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt                  pgtype.Timestamptz `json:"reviewed_at"`
+	ApplyError                  *string            `json:"apply_error"`
+	AiGenerated                 bool               `json:"ai_generated"`
+	AiModel                     *string            `json:"ai_model"`
+	AiPromptHash                *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy              pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt              pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes             *string            `json:"hitl_review_notes"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	SubmittedByName             string             `json:"submitted_by_name"`
+	SubmittedByVerified         *bool              `json:"submitted_by_verified"`
+	SubmittedByVerificationType *string            `json:"submitted_by_verification_type"`
+	ReviewedByName              string             `json:"reviewed_by_name"`
 }
 
 func (q *Queries) GetWikiRevision(ctx context.Context, id pgtype.UUID) (GetWikiRevisionRow, error) {
@@ -2044,6 +2052,8 @@ func (q *Queries) GetWikiRevision(ctx context.Context, id pgtype.UUID) (GetWikiR
 		&i.HitlReviewNotes,
 		&i.CreatedAt,
 		&i.SubmittedByName,
+		&i.SubmittedByVerified,
+		&i.SubmittedByVerificationType,
 		&i.ReviewedByName,
 	)
 	return i, err
@@ -3357,6 +3367,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -3373,28 +3384,30 @@ type ListWikiRevisionsParams struct {
 }
 
 type ListWikiRevisionsRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	WikiPageID       pgtype.UUID        `json:"wiki_page_id"`
-	Content          []byte             `json:"content"`
-	Summary          *string            `json:"summary"`
-	Kind             string             `json:"kind"`
-	Ops              []byte             `json:"ops"`
-	TargetEntityType *string            `json:"target_entity_type"`
-	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
-	Status           string             `json:"status"`
-	SubmittedBy      pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
-	ApplyError       *string            `json:"apply_error"`
-	AiGenerated      bool               `json:"ai_generated"`
-	AiModel          *string            `json:"ai_model"`
-	AiPromptHash     *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy   pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes  *string            `json:"hitl_review_notes"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	SubmittedByName  string             `json:"submitted_by_name"`
-	ReviewedByName   string             `json:"reviewed_by_name"`
+	ID                          pgtype.UUID        `json:"id"`
+	WikiPageID                  pgtype.UUID        `json:"wiki_page_id"`
+	Content                     []byte             `json:"content"`
+	Summary                     *string            `json:"summary"`
+	Kind                        string             `json:"kind"`
+	Ops                         []byte             `json:"ops"`
+	TargetEntityType            *string            `json:"target_entity_type"`
+	TargetEntityID              pgtype.UUID        `json:"target_entity_id"`
+	Status                      string             `json:"status"`
+	SubmittedBy                 pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy                  pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt                  pgtype.Timestamptz `json:"reviewed_at"`
+	ApplyError                  *string            `json:"apply_error"`
+	AiGenerated                 bool               `json:"ai_generated"`
+	AiModel                     *string            `json:"ai_model"`
+	AiPromptHash                *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy              pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt              pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes             *string            `json:"hitl_review_notes"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	SubmittedByName             string             `json:"submitted_by_name"`
+	SubmittedByVerified         *bool              `json:"submitted_by_verified"`
+	SubmittedByVerificationType *string            `json:"submitted_by_verification_type"`
+	ReviewedByName              string             `json:"reviewed_by_name"`
 }
 
 func (q *Queries) ListWikiRevisions(ctx context.Context, arg ListWikiRevisionsParams) ([]ListWikiRevisionsRow, error) {
@@ -3428,6 +3441,8 @@ func (q *Queries) ListWikiRevisions(ctx context.Context, arg ListWikiRevisionsPa
 			&i.HitlReviewNotes,
 			&i.CreatedAt,
 			&i.SubmittedByName,
+			&i.SubmittedByVerified,
+			&i.SubmittedByVerificationType,
 			&i.ReviewedByName,
 		); err != nil {
 			return nil, err
@@ -3449,6 +3464,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -3468,28 +3484,30 @@ type ListWikiRevisionsByTargetParams struct {
 }
 
 type ListWikiRevisionsByTargetRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	WikiPageID       pgtype.UUID        `json:"wiki_page_id"`
-	Content          []byte             `json:"content"`
-	Summary          *string            `json:"summary"`
-	Kind             string             `json:"kind"`
-	Ops              []byte             `json:"ops"`
-	TargetEntityType *string            `json:"target_entity_type"`
-	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
-	Status           string             `json:"status"`
-	SubmittedBy      pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
-	ApplyError       *string            `json:"apply_error"`
-	AiGenerated      bool               `json:"ai_generated"`
-	AiModel          *string            `json:"ai_model"`
-	AiPromptHash     *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy   pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes  *string            `json:"hitl_review_notes"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	SubmittedByName  string             `json:"submitted_by_name"`
-	ReviewedByName   string             `json:"reviewed_by_name"`
+	ID                          pgtype.UUID        `json:"id"`
+	WikiPageID                  pgtype.UUID        `json:"wiki_page_id"`
+	Content                     []byte             `json:"content"`
+	Summary                     *string            `json:"summary"`
+	Kind                        string             `json:"kind"`
+	Ops                         []byte             `json:"ops"`
+	TargetEntityType            *string            `json:"target_entity_type"`
+	TargetEntityID              pgtype.UUID        `json:"target_entity_id"`
+	Status                      string             `json:"status"`
+	SubmittedBy                 pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy                  pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt                  pgtype.Timestamptz `json:"reviewed_at"`
+	ApplyError                  *string            `json:"apply_error"`
+	AiGenerated                 bool               `json:"ai_generated"`
+	AiModel                     *string            `json:"ai_model"`
+	AiPromptHash                *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy              pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt              pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes             *string            `json:"hitl_review_notes"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	SubmittedByName             string             `json:"submitted_by_name"`
+	SubmittedByVerified         *bool              `json:"submitted_by_verified"`
+	SubmittedByVerificationType *string            `json:"submitted_by_verification_type"`
+	ReviewedByName              string             `json:"reviewed_by_name"`
 }
 
 func (q *Queries) ListWikiRevisionsByTarget(ctx context.Context, arg ListWikiRevisionsByTargetParams) ([]ListWikiRevisionsByTargetRow, error) {
@@ -3528,6 +3546,8 @@ func (q *Queries) ListWikiRevisionsByTarget(ctx context.Context, arg ListWikiRev
 			&i.HitlReviewNotes,
 			&i.CreatedAt,
 			&i.SubmittedByName,
+			&i.SubmittedByVerified,
+			&i.SubmittedByVerificationType,
 			&i.ReviewedByName,
 		); err != nil {
 			return nil, err

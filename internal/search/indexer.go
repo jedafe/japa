@@ -567,6 +567,8 @@ type userDocument struct {
 	Status      string `json:"status"`     // effective standing (GetUserProfile CASE)
 	URL         string `json:"url"`
 	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
+	Verified         bool   `json:"verified"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // IndexUser fetches a user profile and upserts it into the users index.
@@ -646,6 +648,10 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		Status:      row.Status,
 		URL:         "/u/" + row.Username,
 		CreatedAt:   row.CreatedAt.Time.Unix(),
+		Verified:    row.Verified,
+	}
+	if row.VerificationType != nil {
+		doc.VerificationType = *row.VerificationType
 	}
 
 	docs := []userDocument{doc}
@@ -811,6 +817,7 @@ type organizationDocument struct {
 	Description string `json:"excerpt"`
 	OrgType     string `json:"org_type"`
 	Verified    bool   `json:"verified"`
+	VerificationType string `json:"verification_type,omitempty"`
 	Status      string `json:"status"`
 	CountryCode string `json:"country_code"`
 	MemberCount int32  `json:"member_count"` // §54 autocomplete type-specific field
@@ -860,6 +867,11 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 		country = *row.CountryCode
 	}
 
+	vtype := ""
+	if row.VerificationType != nil {
+		vtype = *row.VerificationType
+	}
+
 	doc := organizationDocument{
 		ID: row.ID.String(),
 
@@ -870,6 +882,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 		Verified:    row.Verified,
 		Status:      row.Status,
 		CountryCode: country,
+		VerificationType: vtype,
 		MemberCount: row.MemberCount,
 		URL:         "/org/" + row.Slug,
 		CreatedAt:   row.CreatedAt.Time.Unix(),

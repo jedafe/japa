@@ -4,6 +4,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreVertical } from 'lucide-svelte';
 	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
@@ -550,9 +551,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							slug={thread.author_username}
 							name={authorLabel}
 							variant="row"
+							verified={thread.author_verified}
+							verificationType={thread.author_verification_type}
 						>
 							{#snippet trigger()}
-								<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+								<span class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-text-subtle)]">
+									{authorLabel}
+									<VerifiedBadge verified={thread.author_verified} type={thread.author_verification_type} scope="user" size={14} />
+								</span>
 							{/snippet}
 						</UserHoverCard>
 					{/if}

@@ -140,11 +140,13 @@ type OrgRef struct {
 	Name    string      `json:"name"`
 	Slug    string      `json:"slug"`
 	LogoURL string      `json:"logo_url,omitempty"`
+	Verified         bool   `json:"verified,omitempty"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // orgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
 // post is not org-attributed. The logo URL is resolved from storage bucket/path.
-func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *OrgRef {
+func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string, verified *bool, verificationType *string) *OrgRef {
 	if !orgID.Valid {
 		return nil
 	}
@@ -156,6 +158,14 @@ func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *Or
 
 	if slug != nil {
 		ref.Slug = *slug
+	}
+
+	if verified != nil {
+		ref.Verified = *verified
+	}
+
+	if verificationType != nil {
+		ref.VerificationType = *verificationType
 	}
 
 	return ref
@@ -272,7 +282,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 			AuthorUsername:    c.AuthorUsername,
 			AuthorAvatarURL:   c.AuthorAvatarUrl,
 			OrganizationID:    c.OrganizationID,
-			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath),
+			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
 			SpaceID:           c.SpaceID,
 			SpaceName:         c.SpaceName,
 			SpaceSlug:         c.SpaceSlug,
@@ -377,7 +387,7 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 			AuthorUsername:    c.AuthorUsername,
 			AuthorAvatarURL:   c.AuthorAvatarUrl,
 			OrganizationID:    c.OrganizationID,
-			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath),
+			Organization:      orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
 			SpaceID:           c.SpaceID,
 			SpaceName:         c.SpaceName,
 			SpaceSlug:         c.SpaceSlug,

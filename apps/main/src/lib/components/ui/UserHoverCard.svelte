@@ -19,6 +19,8 @@
 		count?: number;
 		isFollowing?: boolean;
 		class?: string;
+		verified?: boolean;
+		verificationType?: string | null;
 	}
 
 	let {
@@ -32,7 +34,9 @@
 		description,
 		count,
 		isFollowing = false,
-		class: classProp
+		class: classProp,
+		verified = false,
+		verificationType = null
 	}: Props = $props();
 </script>
 
@@ -49,4 +53,6 @@
 	{isFollowing}
 	class={classProp}
 	trigger={trigger}
+	{verified}
+	{verificationType}
 />

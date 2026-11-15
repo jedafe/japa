@@ -93,6 +93,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE COALESCE(su.public_username, su.username) END AS solved_by_username,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
  s.name AS space_name,
@@ -152,6 +154,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -206,6 +210,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level
@@ -246,6 +252,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -298,6 +306,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -410,7 +420,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -441,7 +453,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -461,7 +475,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.created_by_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id

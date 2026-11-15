@@ -320,7 +320,7 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,

@@ -16,6 +16,7 @@
 	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
 	import VoteRail from '#lib/components/forum/VoteRail.svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
@@ -402,6 +403,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					avatar={article.author_avatar_url}
 					variant="row"
 					class="shrink-0"
+					verified={article.author_verified}
+					verificationType={article.author_verification_type}
 				>
 					{#snippet trigger()}
 						{#if article.author_avatar_url}
@@ -432,9 +435,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							slug={article.author_username}
 							name={authorLabel}
 							variant="row"
+							verified={article.author_verified}
+							verificationType={article.author_verification_type}
 						>
 							{#snippet trigger()}
-								<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+								<span class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-text-subtle)]">
+									{authorLabel}
+									<VerifiedBadge verified={article.author_verified} type={article.author_verification_type} scope="user" size={13} />
+								</span>
 							{/snippet}
 						</UserHoverCard>
 					{:else}

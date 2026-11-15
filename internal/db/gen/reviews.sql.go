@@ -546,7 +546,9 @@ SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
  r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by, r.assigned_to,
  COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
- up.avatar_url AS author_avatar_url
+ up.avatar_url AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ u.verification_type AS author_verification_type
 FROM reviews r
 LEFT JOIN users u ON u.id = r.reviewer_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -565,21 +567,23 @@ type ListReviewsByEntityWithAuthorParams struct {
 }
 
 type ListReviewsByEntityWithAuthorRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	EntityType        string             `json:"entity_type"`
-	EntityID          pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID    pgtype.UUID        `json:"reviewer_user_id"`
-	Rating            int16              `json:"rating"`
-	Title             *string            `json:"title"`
-	Body              *string            `json:"body"`
-	Status            string             `json:"status"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy         pgtype.UUID        `json:"removed_by"`
-	AssignedTo        pgtype.UUID        `json:"assigned_to"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   *string            `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	EntityType             string             `json:"entity_type"`
+	EntityID               pgtype.UUID        `json:"entity_id"`
+	ReviewerUserID         pgtype.UUID        `json:"reviewer_user_id"`
+	Rating                 int16              `json:"rating"`
+	Title                  *string            `json:"title"`
+	Body                   *string            `json:"body"`
+	Status                 string             `json:"status"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	RemovedBy              pgtype.UUID        `json:"removed_by"`
+	AssignedTo             pgtype.UUID        `json:"assigned_to"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        *string            `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
 }
 
 // Reviews joined to users + user_profiles so the academy track reviews list
@@ -617,6 +621,8 @@ func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListRev
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 		); err != nil {
 			return nil, err
 		}

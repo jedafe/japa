@@ -184,7 +184,9 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
- CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -193,30 +195,32 @@ WHERE ft.id = $1
 `
 
 type GetAMAByIDRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AmaConfig         []byte             `json:"ama_config"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig              []byte             `json:"ama_config"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // =====================
@@ -250,6 +254,8 @@ func (q *Queries) GetAMAByID(ctx context.Context, id pgtype.UUID) (GetAMAByIDRow
 		&i.AmaConfig,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 	)
 	return i, err
 }
@@ -319,7 +325,9 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
- CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -345,30 +353,32 @@ type ListActiveAMAsParams struct {
 }
 
 type ListActiveAMAsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AmaConfig         []byte             `json:"ama_config"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig              []byte             `json:"ama_config"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) ([]ListActiveAMAsRow, error) {
@@ -410,6 +420,8 @@ func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) 
 			&i.AmaConfig,
 			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -428,7 +440,9 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
- CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -453,30 +467,32 @@ type ListClosedAMAsParams struct {
 }
 
 type ListClosedAMAsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AmaConfig         []byte             `json:"ama_config"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig              []byte             `json:"ama_config"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 func (q *Queries) ListClosedAMAs(ctx context.Context, arg ListClosedAMAsParams) ([]ListClosedAMAsRow, error) {
@@ -518,6 +534,8 @@ func (q *Queries) ListClosedAMAs(ctx context.Context, arg ListClosedAMAsParams) 
 			&i.AmaConfig,
 			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -566,7 +584,9 @@ RETURNING ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
  ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
- CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 `
 
 type UpdateAMAParams struct {
@@ -577,30 +597,32 @@ type UpdateAMAParams struct {
 }
 
 type UpdateAMARow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AmaConfig         []byte             `json:"ama_config"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig              []byte             `json:"ama_config"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // =====================
@@ -641,6 +663,8 @@ func (q *Queries) UpdateAMA(ctx context.Context, arg UpdateAMAParams) (UpdateAMA
 		&i.AmaConfig,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 	)
 	return i, err
 }

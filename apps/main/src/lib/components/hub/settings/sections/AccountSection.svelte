@@ -2,7 +2,8 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+		import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
 	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { patchAccount, putPreferences } from '#lib/api/hub.js';
@@ -98,7 +99,8 @@
 	<!-- §07 Verification Requests: profile verification entry point. -->
 	<div class="mt-6 border-t border-[var(--color-border)] pt-4">
 		{#if profile?.verified}
-			<p class="text-sm font-medium text-[var(--color-success)]">
+			<p class="flex items-center gap-1.5 text-sm font-medium text-[var(--color-success)]">
+				<VerifiedBadge verified type={profile.verification_type} scope="user" size={15} />
 				{t('settings.account.verified', 'Your profile is verified.')}
 			</p>
 		{:else}

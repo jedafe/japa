@@ -178,7 +178,9 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
  u.profile_type,
- u.is_synthetic
+ u.is_synthetic,
+ u.verified,
+ u.verification_type
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -216,16 +218,18 @@ type GetFollowersByEntityParams struct {
 }
 
 type GetFollowersByEntityRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	FollowerID  pgtype.UUID        `json:"follower_id"`
-	EntityType  string             `json:"entity_type"`
-	EntityID    pgtype.UUID        `json:"entity_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
-	ProfileType string             `json:"profile_type"`
-	IsSynthetic bool               `json:"is_synthetic"`
+	ID               pgtype.UUID        `json:"id"`
+	FollowerID       pgtype.UUID        `json:"follower_id"`
+	EntityType       string             `json:"entity_type"`
+	EntityID         pgtype.UUID        `json:"entity_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	AvatarUrl        string             `json:"avatar_url"`
+	ProfileType      string             `json:"profile_type"`
+	IsSynthetic      bool               `json:"is_synthetic"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // =====================
@@ -257,6 +261,8 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 			&i.AvatarUrl,
 			&i.ProfileType,
 			&i.IsSynthetic,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -290,7 +296,15 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
- END::text AS entity_avatar_url
+ END::text AS entity_avatar_url,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT verified FROM users WHERE id = f.entity_id), false)
+ WHEN 'organization' THEN COALESCE((SELECT verified FROM organizations WHERE id = f.entity_id), false)
+ ELSE false END::bool AS entity_verified,
+ CASE f.entity_type
+ WHEN 'user' THEN (SELECT verification_type FROM users WHERE id = f.entity_id)
+ WHEN 'organization' THEN (SELECT verification_type FROM organizations WHERE id = f.entity_id)
+ ELSE NULL END::text AS entity_verification_type
 FROM follows f
 LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = $1
@@ -329,15 +343,17 @@ type GetFollowingByUserParams struct {
 }
 
 type GetFollowingByUserRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	FollowerID        pgtype.UUID        `json:"follower_id"`
-	EntityType        string             `json:"entity_type"`
-	EntityID          pgtype.UUID        `json:"entity_id"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	EntityName        string             `json:"entity_name"`
-	EntitySlug        string             `json:"entity_slug"`
-	EntityDisplayName string             `json:"entity_display_name"`
-	EntityAvatarUrl   string             `json:"entity_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	FollowerID             pgtype.UUID        `json:"follower_id"`
+	EntityType             string             `json:"entity_type"`
+	EntityID               pgtype.UUID        `json:"entity_id"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	EntityName             string             `json:"entity_name"`
+	EntitySlug             string             `json:"entity_slug"`
+	EntityDisplayName      string             `json:"entity_display_name"`
+	EntityAvatarUrl        string             `json:"entity_avatar_url"`
+	EntityVerified         bool               `json:"entity_verified"`
+	EntityVerificationType string             `json:"entity_verification_type"`
 }
 
 func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUserParams) ([]GetFollowingByUserRow, error) {
@@ -364,6 +380,8 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 			&i.EntitySlug,
 			&i.EntityDisplayName,
 			&i.EntityAvatarUrl,
+			&i.EntityVerified,
+			&i.EntityVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -397,7 +415,15 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
- END::text AS entity_avatar_url
+ END::text AS entity_avatar_url,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT verified FROM users WHERE id = f.entity_id), false)
+ WHEN 'organization' THEN COALESCE((SELECT verified FROM organizations WHERE id = f.entity_id), false)
+ ELSE false END::bool AS entity_verified,
+ CASE f.entity_type
+ WHEN 'user' THEN (SELECT verification_type FROM users WHERE id = f.entity_id)
+ WHEN 'organization' THEN (SELECT verification_type FROM organizations WHERE id = f.entity_id)
+ ELSE NULL END::text AS entity_verification_type
 FROM follows f
 LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = $1 AND f.entity_type = $2
@@ -435,15 +461,17 @@ type GetFollowingByUserAndTypeParams struct {
 }
 
 type GetFollowingByUserAndTypeRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	FollowerID        pgtype.UUID        `json:"follower_id"`
-	EntityType        string             `json:"entity_type"`
-	EntityID          pgtype.UUID        `json:"entity_id"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	EntityName        string             `json:"entity_name"`
-	EntitySlug        string             `json:"entity_slug"`
-	EntityDisplayName string             `json:"entity_display_name"`
-	EntityAvatarUrl   string             `json:"entity_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	FollowerID             pgtype.UUID        `json:"follower_id"`
+	EntityType             string             `json:"entity_type"`
+	EntityID               pgtype.UUID        `json:"entity_id"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	EntityName             string             `json:"entity_name"`
+	EntitySlug             string             `json:"entity_slug"`
+	EntityDisplayName      string             `json:"entity_display_name"`
+	EntityAvatarUrl        string             `json:"entity_avatar_url"`
+	EntityVerified         bool               `json:"entity_verified"`
+	EntityVerificationType string             `json:"entity_verification_type"`
 }
 
 func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowingByUserAndTypeParams) ([]GetFollowingByUserAndTypeRow, error) {
@@ -471,6 +499,8 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 			&i.EntitySlug,
 			&i.EntityDisplayName,
 			&i.EntityAvatarUrl,
+			&i.EntityVerified,
+			&i.EntityVerificationType,
 		); err != nil {
 			return nil, err
 		}

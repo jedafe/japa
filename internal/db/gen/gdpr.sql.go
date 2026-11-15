@@ -955,6 +955,19 @@ func (q *Queries) DeleteUserTokens(ctx context.Context, userID pgtype.UUID) erro
 	return err
 }
 
+const deleteVerificationRequestsByRequester = `-- name: DeleteVerificationRequestsByRequester :exec
+DELETE FROM verification_requests WHERE requester_user_id = $1
+`
+
+// verification_requests.requester_user_id is NOT NULL; delete the user's submitted
+// requests so the pending/resolved review trail cannot re-identify them. The
+// evidence payload itself lives on form_submissions and is anonymized separately
+// (AnonymizeFormSubmissionsByUser).
+func (q *Queries) DeleteVerificationRequestsByRequester(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteVerificationRequestsByRequester, userID)
+	return err
+}
+
 const expireDataExport = `-- name: ExpireDataExport :exec
 UPDATE data_export_requests
 SET download_url = NULL,
@@ -3463,6 +3476,16 @@ WHERE submitter_user_id = $1
 // Nulls ticket submitter reference.
 func (q *Queries) NullifyTicketSubmitter(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, nullifyTicketSubmitter, userID)
+	return err
+}
+
+const nullifyVerificationRequestReviewer = `-- name: NullifyVerificationRequestReviewer :exec
+UPDATE verification_requests SET reviewed_by = NULL WHERE reviewed_by = $1
+`
+
+// verification_requests.reviewed_by is nullable; clear reviewer reference when an admin is erased.
+func (q *Queries) NullifyVerificationRequestReviewer(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyVerificationRequestReviewer, userID)
 	return err
 }
 

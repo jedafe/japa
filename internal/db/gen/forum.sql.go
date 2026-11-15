@@ -591,7 +591,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -605,22 +607,24 @@ type GetForumReplyByIDWithAuthorParams struct {
 }
 
 type GetForumReplyByIDWithAuthorRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ThreadID          pgtype.UUID        `json:"thread_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ViewerCanManage   bool               `json:"viewer_can_manage"`
-	Body              []byte             `json:"body"`
-	VoteScore         int32              `json:"vote_score"`
-	ViewCount         int32              `json:"view_count"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ThreadID               pgtype.UUID        `json:"thread_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ViewerCanManage        bool               `json:"viewer_can_manage"`
+	Body                   []byte             `json:"body"`
+	VoteScore              int32              `json:"vote_score"`
+	ViewCount              int32              `json:"view_count"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // Returns a single reply with author details. Used for the accepted-answer
@@ -647,6 +651,8 @@ func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, arg GetForumR
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 	)
 	return i, err
 }
@@ -802,6 +808,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE COALESCE(su.public_username, su.username) END AS solved_by_username,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
  s.name AS space_name,
@@ -824,39 +832,41 @@ LIMIT 1
 `
 
 type GetForumThreadBySlugWithDetailsRow struct {
-	ID                  pgtype.UUID        `json:"id"`
-	ContentID           pgtype.UUID        `json:"content_id"`
-	SpaceID             pgtype.UUID        `json:"space_id"`
-	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID       pgtype.UUID        `json:"parent_reply_id"`
-	Title               string             `json:"title"`
-	Slug                string             `json:"slug"`
-	Body                []byte             `json:"body"`
-	IsAnonymous         bool               `json:"is_anonymous"`
-	Solved              bool               `json:"solved"`
-	SolvedAt            pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID      pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore           int32              `json:"vote_score"`
-	ReplyCount          int32              `json:"reply_count"`
-	ViewCount           int32              `json:"view_count"`
-	BookmarkCount       int32              `json:"bookmark_count"`
-	EditWindowMinutes   int32              `json:"edit_window_minutes"`
-	IsEdited            bool               `json:"is_edited"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt           pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername      interface{}        `json:"author_username"`
-	AuthorDisplayName   interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl     interface{}        `json:"author_avatar_url"`
-	SolvedByUsername    interface{}        `json:"solved_by_username"`
-	SolvedByDisplayName interface{}        `json:"solved_by_display_name"`
-	SpaceName           *string            `json:"space_name"`
-	SpaceSlug           *string            `json:"space_slug"`
-	SpaceLevel          *string            `json:"space_level"`
-	ContentStatus       *string            `json:"content_status"`
-	ContentVisibility   *string            `json:"content_visibility"`
-	SeoIndexable        *bool              `json:"seo_indexable"`
-	CreatedByUserID     pgtype.UUID        `json:"created_by_user_id"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SolvedByUsername       interface{}        `json:"solved_by_username"`
+	SolvedByDisplayName    interface{}        `json:"solved_by_display_name"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              *string            `json:"space_slug"`
+	SpaceLevel             *string            `json:"space_level"`
+	ContentStatus          *string            `json:"content_status"`
+	ContentVisibility      *string            `json:"content_visibility"`
+	SeoIndexable           *bool              `json:"seo_indexable"`
+	CreatedByUserID        pgtype.UUID        `json:"created_by_user_id"`
 }
 
 // =====================
@@ -898,6 +908,8 @@ func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug stri
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.SolvedByUsername,
 		&i.SolvedByDisplayName,
 		&i.SpaceName,
@@ -1051,7 +1063,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.created_by_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -1062,22 +1076,24 @@ LIMIT 1
 `
 
 type GetTopReplyForThreadRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ThreadID          pgtype.UUID        `json:"thread_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	Body              []byte             `json:"body"`
-	VoteScore         int32              `json:"vote_score"`
-	ViewCount         int32              `json:"view_count"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ThreadID               pgtype.UUID        `json:"thread_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	Body                   []byte             `json:"body"`
+	VoteScore              int32              `json:"vote_score"`
+	ViewCount              int32              `json:"view_count"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByUserID        pgtype.UUID        `json:"created_by_user_id"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // Returns the highest-voted non-deleted reply for a thread. Used as the
@@ -1102,6 +1118,8 @@ func (q *Queries) GetTopReplyForThread(ctx context.Context, threadID pgtype.UUID
 		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 	)
 	return i, err
 }
@@ -1344,7 +1362,9 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
  CASE WHEN fr.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
- CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -1363,24 +1383,26 @@ type ListForumRepliesByThreadWithAuthorParams struct {
 }
 
 type ListForumRepliesByThreadWithAuthorRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ThreadID          pgtype.UUID        `json:"thread_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ViewerCanManage   bool               `json:"viewer_can_manage"`
-	Body              []byte             `json:"body"`
-	VoteScore         int32              `json:"vote_score"`
-	ViewCount         int32              `json:"view_count"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending        bool               `json:"ama_pending"`
-	AmaApprovedAt     pgtype.Timestamptz `json:"ama_approved_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+	ID                     pgtype.UUID        `json:"id"`
+	ThreadID               pgtype.UUID        `json:"thread_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ViewerCanManage        bool               `json:"viewer_can_manage"`
+	Body                   []byte             `json:"body"`
+	VoteScore              int32              `json:"vote_score"`
+	ViewCount              int32              `json:"view_count"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending             bool               `json:"ama_pending"`
+	AmaApprovedAt          pgtype.Timestamptz `json:"ama_approved_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // viewer_can_manage flags author-or-creator ownership for @viewer_id
@@ -1413,6 +1435,8 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg Li
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -1733,6 +1757,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -1789,35 +1815,37 @@ type ListForumThreadsByAuthorWithDetailsParams struct {
 }
 
 type ListForumThreadsByAuthorWithDetailsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	SpaceSlug         *string            `json:"space_slug"`
-	SpaceLevel        *string            `json:"space_level"`
-	SpaceVisibility   string             `json:"space_visibility"`
-	SpaceIsMember     bool               `json:"space_is_member"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              *string            `json:"space_slug"`
+	SpaceLevel             *string            `json:"space_level"`
+	SpaceVisibility        string             `json:"space_visibility"`
+	SpaceIsMember          bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg ListForumThreadsByAuthorWithDetailsParams) ([]ListForumThreadsByAuthorWithDetailsRow, error) {
@@ -1863,6 +1891,8 @@ func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg L
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
@@ -1973,6 +2003,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level
@@ -2016,33 +2048,35 @@ type ListForumThreadsBySpaceWithDetailsParams struct {
 }
 
 type ListForumThreadsBySpaceWithDetailsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	SpaceSlug         *string            `json:"space_slug"`
-	SpaceLevel        *string            `json:"space_level"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              *string            `json:"space_slug"`
+	SpaceLevel             *string            `json:"space_level"`
 }
 
 func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg ListForumThreadsBySpaceWithDetailsParams) ([]ListForumThreadsBySpaceWithDetailsRow, error) {
@@ -2087,6 +2121,8 @@ func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg Li
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
@@ -2197,6 +2233,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -2254,35 +2292,37 @@ type ListForumThreadsByTagWithDetailsParams struct {
 }
 
 type ListForumThreadsByTagWithDetailsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	SpaceSlug         *string            `json:"space_slug"`
-	SpaceLevel        *string            `json:"space_level"`
-	SpaceVisibility   string             `json:"space_visibility"`
-	SpaceIsMember     bool               `json:"space_is_member"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              *string            `json:"space_slug"`
+	SpaceLevel             *string            `json:"space_level"`
+	SpaceVisibility        string             `json:"space_visibility"`
+	SpaceIsMember          bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg ListForumThreadsByTagWithDetailsParams) ([]ListForumThreadsByTagWithDetailsRow, error) {
@@ -2328,6 +2368,8 @@ func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg List
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,
@@ -2353,6 +2395,8 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
+ (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -2410,35 +2454,37 @@ type ListForumThreadsWithDetailsParams struct {
 }
 
 type ListForumThreadsWithDetailsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	AuthorUsername    interface{}        `json:"author_username"`
-	AuthorDisplayName interface{}        `json:"author_display_name"`
-	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	SpaceSlug         *string            `json:"space_slug"`
-	SpaceLevel        *string            `json:"space_level"`
-	SpaceVisibility   string             `json:"space_visibility"`
-	SpaceIsMember     bool               `json:"space_is_member"`
+	ID                     pgtype.UUID        `json:"id"`
+	ContentID              pgtype.UUID        `json:"content_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	AuthorUserID           pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID          pgtype.UUID        `json:"parent_reply_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   []byte             `json:"body"`
+	IsAnonymous            bool               `json:"is_anonymous"`
+	Solved                 bool               `json:"solved"`
+	SolvedAt               pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID         pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore              int32              `json:"vote_score"`
+	ReplyCount             int32              `json:"reply_count"`
+	ViewCount              int32              `json:"view_count"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	EditWindowMinutes      int32              `json:"edit_window_minutes"`
+	IsEdited               bool               `json:"is_edited"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername         interface{}        `json:"author_username"`
+	AuthorDisplayName      interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              *string            `json:"space_slug"`
+	SpaceLevel             *string            `json:"space_level"`
+	SpaceVisibility        string             `json:"space_visibility"`
+	SpaceIsMember          bool               `json:"space_is_member"`
 }
 
 func (q *Queries) ListForumThreadsWithDetails(ctx context.Context, arg ListForumThreadsWithDetailsParams) ([]ListForumThreadsWithDetailsRow, error) {
@@ -2483,6 +2529,8 @@ func (q *Queries) ListForumThreadsWithDetails(ctx context.Context, arg ListForum
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceLevel,

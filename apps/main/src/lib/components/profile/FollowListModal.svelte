@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Modal } from '#lib/components/ui/index.js';
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { api } from '#lib/api/client.js';
 	import { X, UserCircle } from 'lucide-svelte';
 
@@ -15,6 +16,8 @@
 		display_name: string;
 		avatar_url?: string | null;
 		bio?: string | null;
+		verified?: boolean;
+		verification_type?: string | null;
 		/** Polymorphic entity type for following lists (followers are always 'user'). */
 		entity_type?: string;
 	}
@@ -27,6 +30,8 @@
 		display_name?: string;
 		avatar_url?: string | null;
 		bio?: string | null;
+		verified?: boolean;
+		verification_type?: string | null;
 	}
 
 	interface RawFollowing {
@@ -38,6 +43,8 @@
 		bio?: string | null;
 		is_following?: boolean;
 		entity_type?: string;
+		entity_verified?: boolean;
+		entity_verification_type?: string | null;
 	}
 
 	interface Props {
@@ -69,6 +76,8 @@
 				display_name: f.entity_display_name || f.entity_name || f.entity_slug,
 				avatar_url: f.entity_avatar_url,
 				bio: f.bio,
+				verified: f.entity_verified,
+				verification_type: f.entity_verification_type,
 				entity_type: f.entity_type
 			}));
 		}
@@ -78,6 +87,8 @@
 			display_name: f.display_name || f.username,
 			avatar_url: f.avatar_url,
 			bio: f.bio,
+			verified: f.verified,
+			verification_type: f.verification_type,
 			entity_type: 'user'
 		}));
 	}
@@ -239,8 +250,14 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-											{item.display_name || item.username}
+										<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+											<span class="truncate">{item.display_name || item.username}</span>
+											<VerifiedBadge
+												verified={item.verified}
+												type={item.verification_type}
+												scope={item.entity_type === 'organization' ? 'organization' : 'user'}
+												size={13}
+											/>
 										</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">
 											{itemHandle(item)}

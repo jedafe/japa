@@ -78,6 +78,8 @@ export interface JCEComparisonContent {
 	author_id?: string;
 	author_name?: string | null;
 	author_username?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
 	space_name?: string | null;

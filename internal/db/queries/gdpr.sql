@@ -623,6 +623,17 @@ DELETE FROM ownership_claims WHERE claimant_user_id = @user_id;
 -- ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
 UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = @user_id;
 
+-- name: DeleteVerificationRequestsByRequester :exec
+-- verification_requests.requester_user_id is NOT NULL; delete the user's submitted
+-- requests so the pending/resolved review trail cannot re-identify them. The
+-- evidence payload itself lives on form_submissions and is anonymized separately
+-- (AnonymizeFormSubmissionsByUser).
+DELETE FROM verification_requests WHERE requester_user_id = @user_id;
+
+-- name: NullifyVerificationRequestReviewer :exec
+-- verification_requests.reviewed_by is nullable; clear reviewer reference when an admin is erased.
+UPDATE verification_requests SET reviewed_by = NULL WHERE reviewed_by = @user_id;
+
 -- name: DeleteOrganizationMembersByUser :exec
 -- organization_members.user_id is NOT NULL; remove the erased user's memberships to
 -- prevent re-identification via the member roster. member_count on the org row is

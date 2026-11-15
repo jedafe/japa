@@ -2,6 +2,7 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { t } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import { Trophy, Lock, Medal } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, SelectField, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
@@ -130,6 +131,8 @@ import { ogCardUrl } from '#lib/seo/og.js';
 											slug={entry.username}
 											name={entry.display_name ?? entry.username}
 											avatar={entry.avatar_url}
+											verified={entry.verified}
+											verificationType={entry.verification_type}
 											class="inline-flex w-fit min-w-0 max-w-full items-center gap-2 text-start text-[var(--color-text)] hover:underline"
 										>
 											{#snippet trigger()}
@@ -142,7 +145,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 												{/if}
 												<span class="min-w-0 truncate">
 													{#if entry.display_name}
-														<span class="font-medium">{entry.display_name}</span>
+														<span class="inline-flex items-center gap-1 font-medium">{entry.display_name}<VerifiedBadge verified={entry.verified} type={entry.verification_type} scope="user" size={13} /></span>
 														<span class="text-[var(--color-muted)]">@{entry.username}</span>
 													{:else}
 														@{entry.username}

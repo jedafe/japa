@@ -5,6 +5,7 @@
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { Star } from 'lucide-svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { t } from '#lib/i18n/index.js';
 	import type { ServiceReview } from '#lib/types/index.js';
 
@@ -43,10 +44,15 @@
 					name={review.author_display_name ?? review.author_username}
 					avatar={review.author_avatar_url}
 					variant="row"
+					verified={review.author_verified}
+					verificationType={review.author_verification_type}
 					class="inline-flex max-w-full items-center text-start text-sm font-medium text-[var(--color-text)] hover:underline"
 				>
 					{#snippet trigger()}
-						<span>{authorName(review)}</span>
+						<span class="inline-flex items-center gap-1">
+							{authorName(review)}
+							<VerifiedBadge verified={review.author_verified} type={review.author_verification_type} scope="user" size={13} />
+						</span>
 					{/snippet}
 				</UserHoverCard>
 			{:else}

@@ -10,6 +10,7 @@
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, up.mentor_listing_content_id, COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type,
  up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
@@ -60,6 +61,7 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type,
  up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
@@ -119,6 +121,7 @@ WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -179,6 +182,7 @@ WITH mentors AS (
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
+ verified, verification_type,
  available_slots, total_count, area_overlap
 FROM mentors
 ORDER BY
@@ -195,6 +199,7 @@ WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -259,6 +264,7 @@ WITH mentors AS (
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
+ verified, verification_type,
  available_slots, total_count, bio_similarity, area_overlap,
  -- §102 fallback: a mentor without an embedding scores keyword-only at
  -- weight 1.0 (not 0.6) so they aren't penalised while their embedding
@@ -276,6 +282,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
  -- shadow-listing package price — power the mentors comparison dimensions.
@@ -320,6 +327,7 @@ ORDER BY u.username;
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
  -- shadow-listing package price — power the mentors comparison dimensions.

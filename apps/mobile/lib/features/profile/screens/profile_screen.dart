@@ -18,7 +18,16 @@ class ProfileScreen extends ConsumerWidget {
         data: (user) => ListView(
           children: [
             ListTile(
-                title: Text(user.username),
+                title: Row(children: [
+                  Flexible(child: Text(user.username, overflow: TextOverflow.ellipsis)),
+                  const SizedBox(width: 4),
+                  VerifiedBadge(
+                    verified: user.verified,
+                    badgeUrl: verificationBadgeUrl(
+                        ref.watch(verificationBadgesProvider), 'user', user.verificationType),
+                    size: 16,
+                  ),
+                ]),
                 subtitle: Text(user.email)),
             ListTile(
                 title: Text(t('compose.my_drafts')),

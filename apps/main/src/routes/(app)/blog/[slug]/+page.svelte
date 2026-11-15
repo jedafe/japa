@@ -184,6 +184,8 @@
 			authorName={article.author_name}
 			authorUsername={article.author_username}
 			authorAvatarUrl={article.author_avatar_url}
+			authorVerified={article.author_verified}
+			authorVerificationType={article.author_verification_type}
 			spaceName={article.space_name}
 			spaceSlug={article.space_slug}
 			authorId={article.author_id}

@@ -50,6 +50,7 @@
 	const self = $derived(data.self);
 	const form = $derived(data.form);
 	const types = $derived(data.types ?? []);
+	const selectedType = $derived(types.find((v) => v.value === requestedType));
 	const requests = $derived(data.requests ?? []);
 	const credits = $derived(data.credits ?? 0);
 	const blocked = $derived(data.blocked ?? null);
@@ -745,6 +746,12 @@
 										]}
 										onValueChange={(v) => requestedType = v}
 									/>
+									{#if selectedType?.badge_url}
+										<span class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
+											<img src={selectedType.badge_url} alt={selectedType.label} class="h-5 w-5" />
+											{selectedType.label}
+										</span>
+									{/if}
 								</div>
 							{/if}
 						{:else if step === reviewIndex}

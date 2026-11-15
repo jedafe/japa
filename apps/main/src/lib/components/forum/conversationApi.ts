@@ -54,6 +54,8 @@ export function commentToReply(c: Comment, contentId: string): ForumReply {
 		author_username: c.username || null,
 		author_display_name: c.display_name || null,
 		author_avatar_url: c.avatar_url || null,
+		author_verified: c.author_verified,
+		author_verification_type: c.author_verification_type,
 		is_pinned: c.is_pinned,
 		viewer_can_manage: c.viewer_can_manage
 	};

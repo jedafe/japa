@@ -5,6 +5,8 @@
 	// author_username, so a profile URL can't be built safely).
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { ArrowRight, BadgeCheck, Building2 } from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import { verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import type { ServiceListing } from '#lib/types/index.js';
 
@@ -42,17 +44,16 @@
 			<div class="min-w-0">
 				<p class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
 					<span class="truncate">{service.org_name ?? service.author_name}</span>
-					{#if service.is_verified}
-						<BadgeCheck
-							size={15}
-							class="shrink-0 text-[var(--color-primary-text)]"
-							aria-label={t('services.verified', 'Verified')}
-						/>
-					{/if}
+					<VerifiedBadge
+						verified={service.is_verified}
+						type={service.verification_type}
+						scope="service_listing"
+						size={15}
+					/>
 				</p>
 				{#if service.is_verified && service.verification_type}
 					<p class="text-xs text-[var(--color-muted)]">
-						{t('services.verified', 'Verified')} · {service.verification_type}
+						{t('services.verified', 'Verified')} · {verificationBadgeLabel('service_listing', service.verification_type) ?? service.verification_type}
 					</p>
 				{/if}
 			</div>

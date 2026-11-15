@@ -326,7 +326,7 @@ func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
 }
 
 const getOrgOwnerPublicProfile = `-- name: GetOrgOwnerPublicProfile :one
-SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, u.verified, u.verification_type
 FROM organizations o
 JOIN users u ON u.id = o.owner_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -334,10 +334,12 @@ WHERE o.id = $1 AND o.deleted_at IS NULL
 `
 
 type GetOrgOwnerPublicProfileRow struct {
-	ID          pgtype.UUID `json:"id"`
-	Username    string      `json:"username"`
-	DisplayName *string     `json:"display_name"`
-	AvatarUrl   *string     `json:"avatar_url"`
+	ID               pgtype.UUID `json:"id"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarUrl        *string     `json:"avatar_url"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 // Returns the org owner's public identity (username, display_name, avatar_url)
@@ -354,6 +356,8 @@ func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, organizationID p
 		&i.Username,
 		&i.DisplayName,
 		&i.AvatarUrl,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -842,7 +846,7 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationI
 }
 
 const listOrganizationMembers = `-- name: ListOrganizationMembers :many
-SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, u.verified, u.verification_type
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -864,14 +868,16 @@ type ListOrganizationMembersParams struct {
 }
 
 type ListOrganizationMembersRow struct {
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Role           string             `json:"role"`
-	InvitedBy      pgtype.UUID        `json:"invited_by"`
-	JoinedAt       pgtype.Timestamptz `json:"joined_at"`
-	Username       string             `json:"username"`
-	DisplayName    *string            `json:"display_name"`
-	AvatarUrl      *string            `json:"avatar_url"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Role             string             `json:"role"`
+	InvitedBy        pgtype.UUID        `json:"invited_by"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Platform-scoped via the users join (defense-in-depth, BUG-004).
@@ -893,6 +899,8 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizat
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -1432,7 +1440,8 @@ func (q *Queries) ListOwnershipClaimsForAdminPaged(ctx context.Context, arg List
 
 const listPublicOrganizationMembers = `-- name: ListPublicOrganizationMembers :many
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
- COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+ COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url,
+ u.verified, u.verification_type
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -1475,13 +1484,15 @@ type ListPublicOrganizationMembersParams struct {
 }
 
 type ListPublicOrganizationMembersRow struct {
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Role           string             `json:"role"`
-	JoinedAt       pgtype.Timestamptz `json:"joined_at"`
-	Username       string             `json:"username"`
-	DisplayName    *string            `json:"display_name"`
-	AvatarUrl      *string            `json:"avatar_url"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Role             string             `json:"role"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Public Members tab: ACTIVE members only (banned/suspended/deleted users
@@ -1508,6 +1519,8 @@ func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPub
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -1521,7 +1534,7 @@ func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPub
 
 const listPublicOrganizations = `-- name: ListPublicOrganizations :many
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
- country_code, verified, follower_count, member_count, created_at,
+ country_code, verified, verification_type, follower_count, member_count, created_at,
  CAST(owner_user_id IS NOT NULL AS bool) AS claimed
 FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL
@@ -1546,19 +1559,20 @@ type ListPublicOrganizationsParams struct {
 }
 
 type ListPublicOrganizationsRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	Tagline       *string            `json:"tagline"`
-	OrgType       string             `json:"org_type"`
-	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
-	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
-	CountryCode   *string            `json:"country_code"`
-	Verified      bool               `json:"verified"`
-	FollowerCount int32              `json:"follower_count"`
-	MemberCount   int32              `json:"member_count"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Claimed       bool               `json:"claimed"`
+	ID               pgtype.UUID        `json:"id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Tagline          *string            `json:"tagline"`
+	OrgType          string             `json:"org_type"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	CountryCode      *string            `json:"country_code"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	FollowerCount    int32              `json:"follower_count"`
+	MemberCount      int32              `json:"member_count"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Claimed          bool               `json:"claimed"`
 }
 
 // Public Discover "Organizations": ACTIVE orgs only. filter semantics:
@@ -1598,6 +1612,7 @@ func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrg
 			&i.HeaderMediaID,
 			&i.CountryCode,
 			&i.Verified,
+			&i.VerificationType,
 			&i.FollowerCount,
 			&i.MemberCount,
 			&i.CreatedAt,

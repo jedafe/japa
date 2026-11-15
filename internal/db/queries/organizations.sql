@@ -128,7 +128,7 @@ WHERE organization_id = $1 AND user_id = $2;
 
 -- name: ListOrganizationMembers :many
 -- Platform-scoped via the users join (defense-in-depth, BUG-004).
-SELECT om.*, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+SELECT om.*, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, u.verified, u.verification_type
 FROM organization_members om
 JOIN users u ON u.id = om.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -377,7 +377,7 @@ WHERE slug = @slug
 -- owner is shown even if their account is restricted (they are the org's
 -- leader regardless of their own account standing). Platform-scoped for
 -- defense-in-depth.
-SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+SELECT u.id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, u.verified, u.verification_type
 FROM organizations o
 JOIN users u ON u.id = o.owner_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -392,7 +392,8 @@ WHERE o.id = @organization_id AND o.deleted_at IS NULL;
 -- and 'followers' profiles they already follow. Org owners/admins always
 -- see the full roster — a hidden member would be un-moderatable otherwise.
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
- COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url
+ COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url,
+ u.verified, u.verification_type
 FROM organization_members om
 JOIN users u ON u.id = om.user_id AND u.status = 'active'
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -440,7 +441,7 @@ ORDER BY om.joined_at DESC;
 -- Ordered by created_at DESC (newest first). claimed is projected so the
 -- frontend can distinguish claimed vs unclaimed listings.
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
- country_code, verified, follower_count, member_count, created_at,
+ country_code, verified, verification_type, follower_count, member_count, created_at,
  CAST(owner_user_id IS NOT NULL AS bool) AS claimed
 FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL

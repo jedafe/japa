@@ -123,10 +123,12 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 // published on behalf of an organization.
 // Ref: japaconnect-engineering/sections/07-organization-profiles.md.
 type OrgRef struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Slug    string `json:"slug"`
-	LogoURL string `json:"logo_url,omitempty"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	LogoURL          string `json:"logo_url,omitempty"`
+	Verified         bool   `json:"verified,omitempty"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // SourceRef is the source attribution badge surfaced on daily feed cards when
@@ -700,12 +702,12 @@ func derefStr(p *string) string {
 
 // orgRefFrom builds a feed OrgRef from the joined organization columns, or nil
 // when the post is not org-attributed.
-func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *OrgRef {
+func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string, verified bool, verificationType string) *OrgRef {
 	if !orgID.Valid {
 		return nil
 	}
 
-	ref := &OrgRef{ID: uuidToString(orgID)}
+	ref := &OrgRef{ID: uuidToString(orgID), Verified: verified, VerificationType: verificationType}
 	if name != nil {
 		ref.Name = *name
 	}
@@ -939,7 +941,7 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,
@@ -984,7 +986,7 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,
@@ -1029,7 +1031,7 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,
@@ -1074,7 +1076,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.ContentCreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,
@@ -1119,7 +1121,7 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,
@@ -1164,7 +1166,7 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			SpaceName:              asString(r.SpaceName),
 			SpaceSlug:              r.SpaceSlug,
 			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath, r.OrganizationVerified, r.OrganizationVerificationType),
 			CreatedAt:              r.CreatedAt.Time.String(),
 			ViewCount:              r.ViewCount,
 			CommentCount:           r.CommentCount,

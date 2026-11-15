@@ -54,6 +54,7 @@
 	import { api } from '#lib/api/client.js';
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import ReactionButton from '#lib/components/ui/ReactionButton.svelte';
 	import VoteRail from '#lib/components/forum/VoteRail.svelte';
 	import ShareButton from '#lib/components/ui/ShareButton.svelte';
@@ -277,6 +278,18 @@
 >
 	<!-- Source row: avatar + entity name + secondary metadata -->
 	<div class="flex items-center gap-2">
+		{#snippet orgSecondary()}
+			<span class="inline-flex items-center gap-1">
+				{item.organization?.name}
+				<VerifiedBadge
+					verified={item.organization?.verified}
+					type={item.organization?.verification_type}
+					scope="organization"
+					size={12}
+				/>
+				<span>• {time}</span>
+			</span>
+		{/snippet}
 		<EntityHoverChip
 			type={sourceEntity.type}
 			id={sourceEntity.id}
@@ -284,7 +297,9 @@
 			name={sourceEntity.name}
 			avatar={sourceEntity.avatar}
 			variant="row"
-			secondary={secondary}
+			secondary={item.organization ? orgSecondary : secondary}
+			verified={item.author_verified}
+			verificationType={item.author_verification_type}
 		/>
 		<div class="ms-auto flex shrink-0 items-center gap-3">
 			<a

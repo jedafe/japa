@@ -68,10 +68,10 @@ export const load: PageServerLoad = async (event) => {
 	const typeScope = slug ? 'organization' : 'user';
 	const typesPromise =
 		slug || self
-			? apiGet<{ types: { value: string; label: string }[] }>(ctx, `/verification-requests/types?scope=${typeScope}`)
+			? apiGet<{ types: { value: string; label: string; badge_url?: string }[] }>(ctx, `/verification-requests/types?scope=${typeScope}`)
 					.then((r) => r?.types ?? [])
-					.catch(() => [] as { value: string; label: string }[])
-			: Promise.resolve([] as { value: string; label: string }[]);
+					.catch(() => [] as { value: string; label: string; badge_url?: string }[])
+			: Promise.resolve([] as { value: string; label: string; badge_url?: string }[]);
 	// Credit balance for the paid-form "pay with credits" option — lets the
 	// UI disable it before submit rather than failing with
 	// insufficient_credits after the user has filled the whole form.

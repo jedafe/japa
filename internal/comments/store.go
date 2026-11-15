@@ -605,6 +605,8 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 			Username:      rows[i].Username,
 			DisplayName:   rows[i].DisplayName,
 			AvatarUrl:     rows[i].AvatarUrl,
+			AuthorVerified:         rows[i].AuthorVerified,
+			AuthorVerificationType: rows[i].AuthorVerificationType,
 
 			ViewerCanManage: rows[i].ViewerCanManage,
 		}
@@ -640,6 +642,8 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 			Username:      rows[i].Username,
 			DisplayName:   rows[i].DisplayName,
 			AvatarUrl:     rows[i].AvatarUrl,
+			AuthorVerified:         rows[i].AuthorVerified,
+			AuthorVerificationType: rows[i].AuthorVerificationType,
 
 			ViewerCanManage: rows[i].ViewerCanManage,
 		}

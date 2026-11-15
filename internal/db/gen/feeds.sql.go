@@ -70,6 +70,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -166,6 +168,8 @@ type GetExploreFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -232,6 +236,8 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -439,6 +445,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -529,6 +537,8 @@ type GetForYouCandidatesRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -609,6 +619,8 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -684,6 +696,8 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -790,6 +804,8 @@ type GetPrimaryFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -861,6 +877,8 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -903,6 +921,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1000,6 +1020,8 @@ type GetProfileFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -1068,6 +1090,8 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -1131,6 +1155,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1215,6 +1241,8 @@ type GetRisingFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -1275,6 +1303,8 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -1318,6 +1348,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1413,6 +1445,8 @@ type GetSpaceFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -1478,6 +1512,8 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,
@@ -1541,6 +1577,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.organization_id,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ COALESCE(o.verified, false) AS organization_verified,
+ COALESCE(o.verification_type, '') AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1627,6 +1665,8 @@ type GetTopFeedRow struct {
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          bool               `json:"organization_verified"`
+	OrganizationVerificationType  string             `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
@@ -1689,6 +1729,8 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.OrganizationID,
 			&i.OrganizationName,
 			&i.OrganizationSlug,
+			&i.OrganizationVerified,
+			&i.OrganizationVerificationType,
 			&i.OrganizationLogoStorageBucket,
 			&i.OrganizationLogoStoragePath,
 			&i.SpaceAvatarStorageBucket,

@@ -38,6 +38,8 @@ export interface ContentArticle {
 	author_id?: string;
 	author_name?: string;
 	author_username?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	author_avatar_url?: string | null;
 	/** §68 — true when the author is an AI persona with disclosure_mode = 'disclosed'. */
 	author_ai_disclosed?: boolean;
@@ -129,6 +131,8 @@ export interface GuideListItem {
 	author_username?: string | null;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	guide_category?: string | null;

@@ -51,7 +51,9 @@ SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
  r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by, r.assigned_to,
  COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
- up.avatar_url AS author_avatar_url
+ up.avatar_url AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ u.verification_type AS author_verification_type
 FROM reviews r
 LEFT JOIN users u ON u.id = r.reviewer_user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id

@@ -2,6 +2,7 @@ library japaconnect_core;
 
 export 'api/client.dart';
 export 'api/api_error.dart';
+export 'api/verification_badges_provider.dart';
 export 'models/models.dart';
 export 'geo/models.dart';
 export 'geo/service.dart';
@@ -25,6 +26,7 @@ export 'widgets/jc_button.dart';
 export 'widgets/jc_icon_button.dart';
 export 'widgets/jc_text_field.dart';
 export 'widgets/jc_geo_selector.dart';
+export 'widgets/verified_badge.dart';
 export 'widgets/jc_country_selector.dart';
 export 'widgets/jc_state_selector.dart';
 export 'widgets/jc_city_selector.dart';

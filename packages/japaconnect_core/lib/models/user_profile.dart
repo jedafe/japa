@@ -6,6 +6,8 @@ class UserProfile {
   final String? bio;
   final String? avatarUrl;
   final String? timezone;
+  final bool verified;
+  final String? verificationType;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,6 +19,8 @@ class UserProfile {
     this.bio,
     this.avatarUrl,
     this.timezone,
+    this.verified = false,
+    this.verificationType,
     this.createdAt,
     this.updatedAt,
   });
@@ -30,6 +34,8 @@ class UserProfile {
       bio: json['bio'] as String?,
       avatarUrl: json['avatar_url'] as String?,
       timezone: json['timezone'] as String?,
+      verified: json['verified'] as bool? ?? false,
+      verificationType: json['verification_type'] as String?,
       createdAt: _parseDateTime(json['created_at']),
       updatedAt: _parseDateTime(json['updated_at']),
     );
@@ -51,6 +57,8 @@ class UserProfile {
       if (bio != null) 'bio': bio,
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (timezone != null) 'timezone': timezone,
+      'verified': verified,
+      if (verificationType != null) 'verification_type': verificationType,
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };

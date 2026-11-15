@@ -251,7 +251,9 @@ SELECT
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
- u.profile_type
+ u.profile_type,
+ u.verified,
+ u.verification_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -281,7 +283,9 @@ SELECT
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
- u.profile_type
+ u.profile_type,
+ u.verified,
+ u.verification_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id

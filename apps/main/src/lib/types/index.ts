@@ -209,6 +209,8 @@ export interface FeedOrganization {
 	name: string;
 	slug: string;
 	logo_url?: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** Source attribution badge surfaced on feed cards for promoted content. */
@@ -792,6 +794,9 @@ export interface ForumThread {
 	author_display_name: string | null;
 	/** Joined author avatar URL (null when is_anonymous or no avatar). */
 	author_avatar_url: string | null;
+	/** §07 author badge (false/null when is_anonymous). */
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	/** Joined space name (null when no space). */
 	space_name: string | null;
 	/** Joined space slug (null when no space). */
@@ -867,6 +872,9 @@ export interface ForumReply {
 	author_display_name: string | null;
 	/** Joined author avatar URL (null when is_anonymous or no avatar). */
 	author_avatar_url: string | null;
+	/** §07 author badge (false/null when is_anonymous). */
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	/** §88: true when the reply is a pending AMA question awaiting host approval. */
 	ama_pending?: boolean;
 	/** §88: when the pending AMA question was approved by the host. */
@@ -932,6 +940,9 @@ export interface Comment {
 	display_name: string;
 	/** Joined author avatar URL (empty string when absent). */
 	avatar_url: string;
+	/** §07 author badge — empty/false on anonymous comments (redacted). */
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	/** Number of published, non-deleted direct replies (Section 49). */
 	reply_count: number;
 	/** Delegated authorship: true when the viewer authors OR created the
@@ -1008,6 +1019,8 @@ export interface ProfilePost {
 	author_name?: string | null;
 	author_username?: string | null;
 	author_avatar_url?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	organization_id: string | null;
 	organization?: FeedOrganization | null;
 	space_id: string | null;
@@ -1224,6 +1237,8 @@ export interface OrgMember {
 		username: string;
 		display_name: string;
 		avatar_url?: string | null;
+		verified?: boolean;
+		verification_type?: string | null;
 	};
 	role: string;
 	joined_at: string;
@@ -1531,6 +1546,8 @@ export interface SpaceMember {
 	display_name: string | null;
 	avatar_url: string | null;
 	joined_at: string;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** GET /space-permission-presets item — gen.SpacePermissionPreset row. */
@@ -1635,6 +1652,8 @@ export interface SpaceContentItem {
 	author_username?: string | null;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1700,6 +1719,8 @@ export interface DMConversation {
 	other_username: string;
 	other_display_name: string;
 	other_avatar_url: string;
+	other_verified?: boolean;
+	other_verification_type?: string | null;
 	last_message_at: string | null;
 	last_message_preview: string | null;
 	unread_count: number;
@@ -1895,6 +1916,7 @@ export interface PublicOrgListItem {
 	org_type: string;
 	country_code: string | null;
 	verified: boolean;
+	verification_type?: string | null;
 	follower_count: number;
 	member_count: number;
 	created_at: string;
@@ -1955,6 +1977,8 @@ export interface TrendingUser extends TrendingSnapshotBase {
 	display_name: string | null;
 	avatar_url: string | null;
 	bio: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -3143,6 +3167,7 @@ export interface JobPoster {
 	name: string;
 	logo_url?: string;
 	verified?: boolean;
+	verification_type?: string | null;
 	website_url?: string;
 }
 
@@ -3313,6 +3338,8 @@ export interface LeaderboardEntry {
 	avatar_url?: string | null;
 	points: number;
 	rank: number;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 // --- Section 60: Referral System ---
@@ -3509,6 +3536,9 @@ export interface Story {
 	indexable?: boolean;
 	id: string;
 	author_id?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
+	verification_type?: string | null;
 	title: string;
 	slug: string;
 	body: string;
@@ -4248,6 +4278,7 @@ export interface MemberStage {
 	profession?: string;
 	interests?: string[];
 	verified?: boolean;
+	verification_type?: string | null;
 	cover_url?: string;
 	last_active_at?: string;
 	updated_at?: string;
@@ -4708,6 +4739,8 @@ export interface ServiceReview {
 	author_username: string;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	rating: number;
 	title?: string | null;
 	body?: string | null;
@@ -4727,6 +4760,8 @@ export interface Mentor {
 	username: string;
 	display_name: string | null;
 	avatar_url: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 	mentor_areas: string[];
 	mentor_bio: string | null;
 	mentor_since: string | null;
@@ -5189,6 +5224,7 @@ export interface CommunityOrg {
 	japaconnect_org_id?: string | null;
 	claim_status: string;
 	is_verified: boolean;
+	verification_type?: string | null;
 	is_active: boolean;
 	is_community_submitted: boolean;
 	status: string;

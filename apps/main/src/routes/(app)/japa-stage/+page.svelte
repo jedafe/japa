@@ -12,6 +12,7 @@
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import MessageUserDialog from '#lib/components/profile/MessageUserDialog.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
@@ -790,9 +791,7 @@
 			</UserHoverCard>
 			<a href="/u/{m.username}" class="mt-2 flex items-center gap-1.5 truncate text-base font-semibold text-[var(--color-text)] hover:underline">
 				<span class="truncate">{m.display_name ?? `@${m.username}`}</span>
-				{#if m.verified}
-					<BadgeCheck size={16} class="shrink-0 text-[var(--color-primary-text)]" aria-label={t('japa_stage.verified', 'Verified')} />
-				{/if}
+				<VerifiedBadge verified={m.verified} type={m.verification_type} scope="user" size={16} />
 			</a>
 			{#if m.destination_space_name}
 				<p class="mt-1 flex items-center gap-1.5 truncate text-sm text-[var(--color-muted)]">

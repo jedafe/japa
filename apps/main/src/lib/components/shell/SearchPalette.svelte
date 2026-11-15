@@ -6,6 +6,7 @@
 	import { Dialog, Command } from 'bits-ui';
 	import { Search, X, CornerDownLeft } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
 
@@ -20,6 +21,8 @@
 		username?: string;
 		display_name?: string;
 		name?: string;
+		verified?: boolean;
+		verification_type?: string | null;
 	}
 
 	interface Props {
@@ -136,7 +139,12 @@
 										onSelect={() => navigate(s)}
 										class="result"
 									>
-										<span class="result-title">{s.title ?? s.name ?? s.display_name ?? s.username ?? ''}</span>
+										<span class="result-title inline-flex items-center gap-1">
+											{s.title ?? s.name ?? s.display_name ?? s.username ?? ''}
+											{#if s.verified && (s.type === 'user' || s.type === 'organization')}
+												<VerifiedBadge verified type={s.verification_type} scope={s.type} size={13} />
+											{/if}
+										</span>
 										<span class="result-meta">
 											{#if s.content_type || s.type}
 												<span class="result-type">{s.content_type ?? s.type}</span>

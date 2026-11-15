@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t, i18n, siteName} from '#lib/i18n/index.js';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import {
 		Briefcase, MapPin, Clock, CheckCircle2, AlertCircle, ExternalLink, Pencil,
@@ -502,9 +503,7 @@
 							{:else}
 								<span class="font-medium text-[var(--color-text)]">{companyName}</span>
 							{/if}
-							{#if companyVerified}
-								<BadgeCheck size={15} class="text-[var(--color-primary-text)]" />
-							{/if}
+							<VerifiedBadge verified={companyVerified} type={data.org?.verification_type} scope="organization" size={15} />
 						</div>
 					{/if}
 					<div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-[var(--color-muted)]">
@@ -859,9 +858,7 @@
 								</div>
 								<div class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
 									<span class="truncate">{companyName}</span>
-									{#if companyVerified}
-										<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary-text)]" />
-									{/if}
+									<VerifiedBadge verified={companyVerified} type={data.org?.verification_type} scope="organization" size={13} />
 								</div>
 							</div>
 						</div>

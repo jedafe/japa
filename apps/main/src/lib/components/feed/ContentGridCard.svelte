@@ -223,6 +223,8 @@
 				avatar={item.author_avatar_url}
 				variant="row"
 				secondary={formattedDate}
+				verified={item.author_verified}
+				verificationType={item.author_verification_type}
 			/>
 
 			<div class="flex items-center gap-1">

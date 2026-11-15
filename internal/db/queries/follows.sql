@@ -45,7 +45,9 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  COALESCE(up.display_name, '') AS display_name,
  COALESCE(up.avatar_url, '') AS avatar_url,
  u.profile_type,
- u.is_synthetic
+ u.is_synthetic,
+ u.verified,
+ u.verification_type
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -95,7 +97,15 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
- END::text AS entity_avatar_url
+ END::text AS entity_avatar_url,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT verified FROM users WHERE id = f.entity_id), false)
+ WHEN 'organization' THEN COALESCE((SELECT verified FROM organizations WHERE id = f.entity_id), false)
+ ELSE false END::bool AS entity_verified,
+ CASE f.entity_type
+ WHEN 'user' THEN (SELECT verification_type FROM users WHERE id = f.entity_id)
+ WHEN 'organization' THEN (SELECT verification_type FROM organizations WHERE id = f.entity_id)
+ ELSE NULL END::text AS entity_verification_type
 FROM follows f
 LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = @follower_id
@@ -147,7 +157,15 @@ SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
  CASE f.entity_type
  WHEN 'source' THEN COALESCE((SELECT logo_url FROM intel_sources WHERE id = f.entity_id), '')
  ELSE COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')
- END::text AS entity_avatar_url
+ END::text AS entity_avatar_url,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT verified FROM users WHERE id = f.entity_id), false)
+ WHEN 'organization' THEN COALESCE((SELECT verified FROM organizations WHERE id = f.entity_id), false)
+ ELSE false END::bool AS entity_verified,
+ CASE f.entity_type
+ WHEN 'user' THEN (SELECT verification_type FROM users WHERE id = f.entity_id)
+ WHEN 'organization' THEN (SELECT verification_type FROM organizations WHERE id = f.entity_id)
+ ELSE NULL END::text AS entity_verification_type
 FROM follows f
 LEFT JOIN user_privacy_settings ups2 ON f.entity_type = 'user' AND ups2.user_id = f.entity_id
 WHERE f.follower_id = @follower_id AND f.entity_type = @entity_type

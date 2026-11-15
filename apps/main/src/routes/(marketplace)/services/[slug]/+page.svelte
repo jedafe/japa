@@ -11,6 +11,8 @@
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import { verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
@@ -1056,9 +1058,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 													class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
 												>
 													{mentorName}
-													{#if service.is_verified}
-														<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" />
-													{/if}
+													<VerifiedBadge verified={service.is_verified} type={service.verification_type} scope="service_listing" size={15} />
 												</span>
 												{#if mentor.title}
 													<span class="block truncate text-xs text-[var(--color-muted)]"
@@ -1096,9 +1096,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 											class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
 										>
 											{mentorName}
-											{#if service.is_verified}
-												<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" />
-											{/if}
+											<VerifiedBadge verified={service.is_verified} type={service.verification_type} scope="service_listing" size={15} />
 										</p>
 										{#if mentor.title}
 											<p class="truncate text-xs text-[var(--color-muted)]">{mentor.title}</p>
@@ -1365,8 +1363,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						{/if}
 						{#if service.is_verified && service.verification_type}
 							<span class="flex items-center gap-1 text-xs text-[var(--color-primary-text)]">
-								<BadgeCheck size={13} aria-hidden="true" />
-								{t('services.verified', 'Verified')} · {service.verification_type}
+								<VerifiedBadge verified type={service.verification_type} scope="service_listing" size={13} />
+								{t('services.verified', 'Verified')} · {verificationBadgeLabel('service_listing', service.verification_type) ?? service.verification_type}
 							</span>
 						{/if}
 						{#if service.claim_status && service.claim_status !== 'unclaimed'}
@@ -1382,9 +1380,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						class="mt-4 flex items-start gap-2 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl"
 					>
 						{service.title}
-						{#if service.is_verified}
-							<BadgeCheck size={26} class="mt-1.5 shrink-0 text-[var(--color-primary-text)]" />
-						{/if}
+						<VerifiedBadge verified={service.is_verified} type={service.verification_type} scope="service_listing" size={26} class="mt-1.5" />
 					</h1>
 
 					{#if heroExcerpt}

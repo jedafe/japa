@@ -232,6 +232,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        up.avatar_url AS submitted_by_avatar_url
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -250,6 +251,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -322,6 +324,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
@@ -342,6 +345,7 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
        COALESCE(u.public_username, u.username, '') AS submitted_by_name,
+       u.verified AS submitted_by_verified, u.verification_type AS submitted_by_verification_type,
        COALESCE(ru.public_username, ru.username, '') AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by

@@ -511,6 +511,8 @@ type ConversationInfo struct {
 	OtherUsername      string  `json:"other_username"`
 	OtherDisplayName   string  `json:"other_display_name"`
 	OtherAvatarURL     string  `json:"other_avatar_url"`
+	OtherVerified      bool    `json:"other_verified,omitempty"`
+	OtherVerificationType string `json:"other_verification_type,omitempty"`
 	LastMessageAt      *string `json:"last_message_at,omitempty"`
 	LastMessagePreview *string `json:"last_message_preview,omitempty"`
 	UnreadCount        int32   `json:"unread_count"`
@@ -1037,6 +1039,8 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 			OtherUsername:    r.OtherUsername,
 			OtherDisplayName: r.OtherDisplayName,
 			OtherAvatarURL:   r.OtherAvatarUrl,
+			OtherVerified:      r.OtherVerified,
+			OtherVerificationType: r.OtherVerificationType,
 			UnreadCount:      r.UnreadCount,
 			CreatedAt:        r.CreatedAt.Time.Format(time.RFC3339),
 			ConversationType: r.ConversationType,

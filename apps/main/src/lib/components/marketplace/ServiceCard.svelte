@@ -17,6 +17,7 @@
 		Star,
 		Wifi
 	} from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
@@ -192,7 +193,7 @@
 				<span
 					class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/95 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-contrast)] shadow-sm"
 				>
-					<BadgeCheck size={12} />
+					<VerifiedBadge verified={listing.is_verified} type={listing.verification_type} scope="service_listing" size={12} />
 					{t('services.verified', 'Verified')}
 				</span>
 			{/if}
@@ -221,9 +222,7 @@
 		<div class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
 			{#if listing.org_name}
 				<span class="truncate font-medium text-[var(--color-text-subtle)]">{listing.org_name}</span>
-				{#if listing.is_verified}
-					<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary-text)]" />
-				{/if}
+				<VerifiedBadge verified={listing.is_verified} type={listing.verification_type} scope="service_listing" size={13} />
 			{:else if listing.author_name}
 				<span class="truncate font-medium text-[var(--color-text-subtle)]"
 					>{isMentorship ? mentorName : listing.author_name}</span

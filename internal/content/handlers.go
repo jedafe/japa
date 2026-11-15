@@ -1583,7 +1583,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"space_name":          content.SpaceName,
 		"space_slug":          content.SpaceSlug,
 		"space_avatar_url":    mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
-		"organization":        orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
+		"organization":        orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath, content.OrganizationVerified, content.OrganizationVerificationType),
 		"excerpt":             ExcerptFromBody(content.Body, content.BodyHtml, 160),
 		// §43 page-level gate — the frontend emits noindex when false so
 		// thin/unpublished content can't be indexed via discovered URLs;

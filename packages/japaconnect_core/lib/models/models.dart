@@ -42,3 +42,4 @@ export '../api/generated/lib/api.dart'
         PublicContentIdCommentsGet200Response,
         PublicTrendingContentGet200Response,
         PublicUsersGet200Response;
+export 'verification_type.dart';

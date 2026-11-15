@@ -224,6 +224,8 @@
 			{authorName}
 			authorUsername={comparison.content.author_username}
 			authorAvatarUrl={comparison.content.author_avatar_url}
+			authorVerified={comparison.content.author_verified}
+			authorVerificationType={comparison.content.author_verification_type}
 			spaceName={comparison.content.space_name}
 			spaceSlug={comparison.content.space_slug}
 			authorId={comparison.content.author_id}

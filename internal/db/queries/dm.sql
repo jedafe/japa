@@ -63,6 +63,13 @@ SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
           CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END, o.name)::text AS other_display_name,
  COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.avatar_url
                WHEN dc.participant_1_id = @user_id THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
+ -- §07 badge: "other" entity resolves org vs user the same way as the name.
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN COALESCE(o.verified, false)
+       WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.verified, false)
+       ELSE COALESCE(u1.verified, false) END)::bool AS other_verified,
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.verification_type
+       WHEN dc.participant_1_id = @user_id THEN u2.verification_type
+       ELSE u1.verification_type END)::text AS other_verification_type,
  (CASE
     WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
     WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
@@ -262,7 +269,8 @@ WHERE id = @id;
 -- Lists pending DM requests for a recipient (BUG-003). Filters by
 -- recipient_id and status = 'pending' so the handler returns only
 -- actionable requests, not all conversations.
-SELECT dr.*, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+SELECT dr.*, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url,
+ u.verified AS requester_verified, u.verification_type AS requester_verification_type
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id

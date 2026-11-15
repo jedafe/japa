@@ -1066,6 +1066,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -1073,6 +1075,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  sm.storage_path AS space_avatar_storage_path,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ o.verified AS organization_verified,
+ o.verification_type AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  m.storage_bucket AS featured_storage_bucket,
@@ -1189,6 +1193,8 @@ type GetContentDetailBySlugRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorUsername                string             `json:"author_username"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	AuthorPersonaDisclosure       *string            `json:"author_persona_disclosure"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
@@ -1196,6 +1202,8 @@ type GetContentDetailBySlugRow struct {
 	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          *bool              `json:"organization_verified"`
+	OrganizationVerificationType  *string            `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	FeaturedStorageBucket         *string            `json:"featured_storage_bucket"`
@@ -1277,6 +1285,8 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.AuthorName,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.AuthorPersonaDisclosure,
 		&i.SpaceName,
 		&i.SpaceSlug,
@@ -1284,6 +1294,8 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.SpaceAvatarStoragePath,
 		&i.OrganizationName,
 		&i.OrganizationSlug,
+		&i.OrganizationVerified,
+		&i.OrganizationVerificationType,
 		&i.OrganizationLogoStorageBucket,
 		&i.OrganizationLogoStoragePath,
 		&i.FeaturedStorageBucket,
@@ -1324,6 +1336,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -1335,6 +1349,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  hm.storage_path AS header_storage_path,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ o.verified AS organization_verified,
+ o.verification_type AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
@@ -1446,6 +1462,8 @@ type GetContentDetailBySlugAndTypeRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorUsername                string             `json:"author_username"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	AuthorPersonaDisclosure       *string            `json:"author_persona_disclosure"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
@@ -1457,6 +1475,8 @@ type GetContentDetailBySlugAndTypeRow struct {
 	HeaderStoragePath             *string            `json:"header_storage_path"`
 	OrganizationName              *string            `json:"organization_name"`
 	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationVerified          *bool              `json:"organization_verified"`
+	OrganizationVerificationType  *string            `json:"organization_verification_type"`
 	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
 	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
 	TagsCsv                       string             `json:"tags_csv"`
@@ -1525,6 +1545,8 @@ func (q *Queries) GetContentDetailBySlugAndType(ctx context.Context, arg GetCont
 		&i.AuthorName,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.AuthorPersonaDisclosure,
 		&i.SpaceName,
 		&i.SpaceSlug,
@@ -1536,6 +1558,8 @@ func (q *Queries) GetContentDetailBySlugAndType(ctx context.Context, arg GetCont
 		&i.HeaderStoragePath,
 		&i.OrganizationName,
 		&i.OrganizationSlug,
+		&i.OrganizationVerified,
+		&i.OrganizationVerificationType,
 		&i.OrganizationLogoStorageBucket,
 		&i.OrganizationLogoStoragePath,
 		&i.TagsCsv,
@@ -2298,7 +2322,9 @@ SELECT c.id, c.title, c.slug, c.body, c.content_type,
  c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
  c.view_count, c.comment_count, c.share_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
- COALESCE(u.public_username, u.username, '') AS author_username
+ COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 WHERE c.intel_source_id = $1
@@ -2325,21 +2351,23 @@ type ListComparisonContentsBySourceIDParams struct {
 }
 
 type ListComparisonContentsBySourceIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Body           string             `json:"body"`
-	ContentType    string             `json:"content_type"`
-	Status         string             `json:"status"`
-	Visibility     string             `json:"visibility"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	ViewCount      int32              `json:"view_count"`
-	CommentCount   int32              `json:"comment_count"`
-	ShareCount     int32              `json:"share_count"`
-	VoteScore      int32              `json:"vote_score"`
-	AuthorUsername string             `json:"author_username"`
+	ID                     pgtype.UUID        `json:"id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	ContentType            string             `json:"content_type"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	VoteScore              int32              `json:"vote_score"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
 }
 
 // Source item feed: comparison contents linked to a canonical source.
@@ -2373,6 +2401,8 @@ func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg List
 			&i.ShareCount,
 			&i.VoteScore,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -2395,6 +2425,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  m.storage_path AS cover_storage_path,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -2445,46 +2477,48 @@ type ListContentByTagParams struct {
 }
 
 type ListContentByTagRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	ContentType        string             `json:"content_type"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	FieldValues        []byte             `json:"field_values"`
-	ContentHash        *string            `json:"content_hash"`
-	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl       *string            `json:"canonical_url"`
-	MetaTitle          *string            `json:"meta_title"`
-	MetaDescription    *string            `json:"meta_description"`
-	OgImageUrl         *string            `json:"og_image_url"`
-	SeoIndexable       bool               `json:"seo_indexable"`
-	FederateOptOut     bool               `json:"federate_opt_out"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	IsLocked           bool               `json:"is_locked"`
-	IsPinned           bool               `json:"is_pinned"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	ShareCount         int32              `json:"share_count"`
-	ReshareCount       int32              `json:"reshare_count"`
-	PublishAt          pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	Tags               interface{}        `json:"tags"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	CoverStorageBucket     *string            `json:"cover_storage_bucket"`
+	CoverStoragePath       *string            `json:"cover_storage_path"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              string             `json:"space_name"`
+	SpaceSlug              string             `json:"space_slug"`
+	Excerpt                string             `json:"excerpt"`
+	Tags                   interface{}        `json:"tags"`
 }
 
 // Composite cursor (created_at, id) avoids skipping items that share the
@@ -2546,6 +2580,8 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 			&i.CoverStoragePath,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -2721,6 +2757,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2767,49 +2805,51 @@ type ListContentsParams struct {
 }
 
 type ListContentsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	IsFeatured             bool               `json:"is_featured"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
 }
 
 func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]ListContentsRow, error) {
@@ -2872,6 +2912,8 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -2894,6 +2936,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2928,48 +2972,50 @@ type ListContentsByIDsParams struct {
 }
 
 type ListContentsByIDsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
 }
 
 // Fetches content rows by a list of IDs with the same JOINed enrichment
@@ -3035,6 +3081,8 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -3058,6 +3106,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  COALESCE(cs.vote_score, 0) AS vote_score,
@@ -3106,56 +3156,58 @@ type ListContentsBySlugsParams struct {
 }
 
 type ListContentsBySlugsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	ContentType        string             `json:"content_type"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	FieldValues        []byte             `json:"field_values"`
-	ContentHash        *string            `json:"content_hash"`
-	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl       *string            `json:"canonical_url"`
-	MetaTitle          *string            `json:"meta_title"`
-	MetaDescription    *string            `json:"meta_description"`
-	OgImageUrl         *string            `json:"og_image_url"`
-	SeoIndexable       bool               `json:"seo_indexable"`
-	FederateOptOut     bool               `json:"federate_opt_out"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	IsLocked           bool               `json:"is_locked"`
-	IsPinned           bool               `json:"is_pinned"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	ShareCount         int32              `json:"share_count"`
-	ReshareCount       int32              `json:"reshare_count"`
-	PublishAt          pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory      *string            `json:"guide_category"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	Purpose            interface{}        `json:"purpose"`
-	AuthorUsername     string             `json:"author_username"`
-	AuthorDisplayName  *string            `json:"author_display_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          *string            `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	VoteScore          int32              `json:"vote_score"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	Excerpt            string             `json:"excerpt"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	SpaceSlug              string             `json:"space_slug"`
+	VoteScore              int32              `json:"vote_score"`
+	BookmarkCount          int32              `json:"bookmark_count"`
+	VelocityScore          pgtype.Numeric     `json:"velocity_score"`
+	Excerpt                string             `json:"excerpt"`
+	CoverStorageBucket     *string            `json:"cover_storage_bucket"`
+	CoverStoragePath       *string            `json:"cover_storage_path"`
+	Tags                   interface{}        `json:"tags"`
 }
 
 // Fetches published content rows by a list of slugs with the same JOINed
@@ -3220,6 +3272,8 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.VoteScore,
@@ -3252,6 +3306,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  EXISTS(SELECT 1 FROM space_pinned_posts spp
   WHERE spp.space_id = $1 AND spp.content_id = c.id) AS is_pinned
@@ -3298,49 +3354,51 @@ type ListContentsBySpaceParams struct {
 }
 
 type ListContentsBySpaceRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	IsPinned          bool               `json:"is_pinned"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	IsFeatured             bool               `json:"is_featured"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	IsPinned               bool               `json:"is_pinned"`
 }
 
 // Lists content assigned to a given space via the authoritative
@@ -3405,6 +3463,8 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.IsPinned,
 		); err != nil {
@@ -3430,6 +3490,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -3495,49 +3557,51 @@ type ListContentsByTypeParams struct {
 }
 
 type ListContentsByTypeRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	IsFeatured        bool               `json:"is_featured"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	IsFeatured             bool               `json:"is_featured"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
 }
 
 // Lists content filtered by content_type with optional guide_category.
@@ -3617,6 +3681,8 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -3721,6 +3787,8 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
@@ -3760,52 +3828,54 @@ type ListFeaturedContentsByTypeParams struct {
 }
 
 type ListFeaturedContentsByTypeRow struct {
-	FeaturedID        pgtype.UUID        `json:"featured_id"`
-	FeaturedOrder     int32              `json:"featured_order"`
-	FeaturedUntil     pgtype.Timestamptz `json:"featured_until"`
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	VoteScore         int32              `json:"vote_score"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
+	FeaturedID             pgtype.UUID        `json:"featured_id"`
+	FeaturedOrder          int32              `json:"featured_order"`
+	FeaturedUntil          pgtype.Timestamptz `json:"featured_until"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	IsPinned               bool               `json:"is_pinned"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	VoteScore              int32              `json:"vote_score"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
 }
 
 // Featured rows from the generic content_featured junction, for the
@@ -3875,6 +3945,8 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -3965,6 +4037,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  true AS is_pinned
 FROM space_pinned_posts spp
@@ -3999,48 +4073,50 @@ type ListPinnedContentBySpaceParams struct {
 }
 
 type ListPinnedContentBySpaceRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	FederateOptOut    bool               `json:"federate_opt_out"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	Purpose           interface{}        `json:"purpose"`
-	AuthorUsername    string             `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	AuthorAvatarUrl   string             `json:"author_avatar_url"`
-	SpaceName         *string            `json:"space_name"`
-	IsPinned          bool               `json:"is_pinned"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	ContentType            string             `json:"content_type"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	FieldValues            []byte             `json:"field_values"`
+	ContentHash            *string            `json:"content_hash"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl           *string            `json:"canonical_url"`
+	MetaTitle              *string            `json:"meta_title"`
+	MetaDescription        *string            `json:"meta_description"`
+	OgImageUrl             *string            `json:"og_image_url"`
+	SeoIndexable           bool               `json:"seo_indexable"`
+	FederateOptOut         bool               `json:"federate_opt_out"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	IsLocked               bool               `json:"is_locked"`
+	ReadTimeMinutes        int32              `json:"read_time_minutes"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	ShareCount             int32              `json:"share_count"`
+	ReshareCount           int32              `json:"reshare_count"`
+	PublishAt              pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory          *string            `json:"guide_category"`
+	JourneyStage           *string            `json:"journey_stage"`
+	VisaRoute              *string            `json:"visa_route"`
+	SourceCountry          *string            `json:"source_country"`
+	TargetCountry          *string            `json:"target_country"`
+	Purpose                interface{}        `json:"purpose"`
+	AuthorUsername         string             `json:"author_username"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	SpaceName              *string            `json:"space_name"`
+	IsPinned               bool               `json:"is_pinned"`
 }
 
 // Returns the pinned content rows for a space (space_pinned_posts joined to
@@ -4104,6 +4180,8 @@ func (q *Queries) ListPinnedContentBySpace(ctx context.Context, arg ListPinnedCo
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.IsPinned,
 		); err != nil {
@@ -4129,6 +4207,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -4148,6 +4228,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
  LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path
 FROM contents c
@@ -4217,6 +4298,8 @@ type ListPublishedContentByAuthorRow struct {
 	AuthorName               string             `json:"author_name"`
 	AuthorUsername           string             `json:"author_username"`
 	AuthorAvatarUrl          string             `json:"author_avatar_url"`
+	AuthorVerified           bool               `json:"author_verified"`
+	AuthorVerificationType   string             `json:"author_verification_type"`
 	SpaceName                string             `json:"space_name"`
 	SpaceSlug                string             `json:"space_slug"`
 	SpaceAvatarStorageBucket *string            `json:"space_avatar_storage_bucket"`
@@ -4235,6 +4318,8 @@ type ListPublishedContentByAuthorRow struct {
 	OrgName                  *string            `json:"org_name"`
 	OrgSlug                  *string            `json:"org_slug"`
 	OrgLogoMediaID           pgtype.UUID        `json:"org_logo_media_id"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
 	OrgLogoStorageBucket     *string            `json:"org_logo_storage_bucket"`
 	OrgLogoStoragePath       *string            `json:"org_logo_storage_path"`
 }
@@ -4295,6 +4380,8 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 			&i.AuthorName,
 			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceAvatarStorageBucket,
@@ -4313,6 +4400,8 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 			&i.OrgName,
 			&i.OrgSlug,
 			&i.OrgLogoMediaID,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.OrgLogoStorageBucket,
 			&i.OrgLogoStoragePath,
 		); err != nil {
@@ -4338,6 +4427,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -4357,6 +4448,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
  LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path
 FROM contents c
@@ -4426,6 +4518,8 @@ type ListPublishedContentByOrganizationRow struct {
 	AuthorName               string             `json:"author_name"`
 	AuthorUsername           string             `json:"author_username"`
 	AuthorAvatarUrl          string             `json:"author_avatar_url"`
+	AuthorVerified           bool               `json:"author_verified"`
+	AuthorVerificationType   string             `json:"author_verification_type"`
 	SpaceName                string             `json:"space_name"`
 	SpaceSlug                string             `json:"space_slug"`
 	SpaceAvatarStorageBucket *string            `json:"space_avatar_storage_bucket"`
@@ -4444,6 +4538,8 @@ type ListPublishedContentByOrganizationRow struct {
 	OrgName                  *string            `json:"org_name"`
 	OrgSlug                  *string            `json:"org_slug"`
 	OrgLogoMediaID           pgtype.UUID        `json:"org_logo_media_id"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
 	OrgLogoStorageBucket     *string            `json:"org_logo_storage_bucket"`
 	OrgLogoStoragePath       *string            `json:"org_logo_storage_path"`
 }
@@ -4502,6 +4598,8 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 			&i.AuthorName,
 			&i.AuthorUsername,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.SpaceAvatarStorageBucket,
@@ -4520,6 +4618,8 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 			&i.OrgName,
 			&i.OrgSlug,
 			&i.OrgLogoMediaID,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.OrgLogoStorageBucket,
 			&i.OrgLogoStoragePath,
 		); err != nil {

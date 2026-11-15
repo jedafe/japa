@@ -332,6 +332,7 @@
 						hueSeed={user.id}
 						round
 						verified={!!user.verified}
+						verificationType={user.verification_type}
 						meta={[
 							{ icon: GraduationCap, text: tierLabel },
 							...(user.location ? [{ icon: MapPin, text: user.location }] : []),

@@ -89,6 +89,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -96,6 +98,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  sm.storage_path AS space_avatar_storage_path,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ o.verified AS organization_verified,
+ o.verification_type AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  m.storage_bucket AS featured_storage_bucket,
@@ -179,6 +183,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
@@ -190,6 +196,8 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  hm.storage_path AS header_storage_path,
  o.name AS organization_name,
  o.slug AS organization_slug,
+ o.verified AS organization_verified,
+ o.verification_type AS organization_verification_type,
  om.storage_bucket AS organization_logo_storage_bucket,
  om.storage_path AS organization_logo_storage_path,
  COALESCE(string_agg(DISTINCT t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
@@ -268,6 +276,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -317,6 +327,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -354,6 +366,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  COALESCE(cs.vote_score, 0) AS vote_score,
@@ -411,6 +425,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -472,6 +488,8 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
@@ -514,6 +532,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  EXISTS(SELECT 1 FROM space_pinned_posts spp
   WHERE spp.space_id = @space_id AND spp.content_id = c.id) AS is_pinned
@@ -679,7 +699,9 @@ SELECT c.id, c.title, c.slug, c.body, c.content_type,
  c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
  c.view_count, c.comment_count, c.share_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
- COALESCE(u.public_username, u.username, '') AS author_username
+ COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 WHERE c.intel_source_id = @intel_source_id
@@ -857,6 +879,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
  true AS is_pinned
 FROM space_pinned_posts spp
@@ -1089,6 +1113,8 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  m.storage_path AS cover_storage_path,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -1214,6 +1240,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1233,6 +1261,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
  LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path
 FROM contents c
@@ -1268,6 +1297,8 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -1287,6 +1318,7 @@ SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
  COALESCE(cs.velocity_score, 0) AS velocity_score,
  LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
  o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
  om.storage_bucket AS org_logo_storage_bucket,
  om.storage_path AS org_logo_storage_path
 FROM contents c

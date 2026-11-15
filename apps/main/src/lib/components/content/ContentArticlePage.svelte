@@ -7,6 +7,7 @@
 	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
@@ -322,6 +323,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			authorName={article.author_name}
 			authorUsername={article.author_username}
 			authorAvatarUrl={article.author_avatar_url}
+			authorVerified={article.author_verified}
+			authorVerificationType={article.author_verification_type}
 			spaceName={article.space_name}
 			spaceSlug={article.space_slug}
 			authorId={article.author_id}
@@ -422,6 +425,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					name={authorName}
 					avatar={article.author_avatar_url}
 					variant="row"
+					verified={article.author_verified}
+					verificationType={article.author_verification_type}
 				>
 					{#snippet trigger()}
 						{#if article.author_avatar_url}
@@ -429,7 +434,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						{:else}
 							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
-						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
+						<span class="inline-flex items-center gap-1 font-medium text-[var(--color-text)]">
+							{authorName}
+							<VerifiedBadge verified={article.author_verified} type={article.author_verification_type} scope="user" size={14} />
+						</span>
 					{/snippet}
 				</UserHoverCard>
 				{#if article.author_ai_disclosed}

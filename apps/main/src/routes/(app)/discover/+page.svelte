@@ -156,6 +156,7 @@
 							fallback={org.name.charAt(0).toUpperCase()}
 							hueSeed={org.id}
 							verified={org.verified}
+							verificationType={org.verification_type}
 							meta={meta(
 								{ icon: Users, text: count('profile.followers', '{n} followers', org.follower_count) },
 								{ icon: Building2, text: count('meta.members', '{n} members', org.member_count) }

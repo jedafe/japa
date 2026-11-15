@@ -286,6 +286,7 @@ const getSuggestedUsers = `-- name: GetSuggestedUsers :many
 SELECT DISTINCT u.id, COALESCE(u.public_username, u.username, '') AS username,
  COALESCE(NULLIF(up.display_name, ''), u.public_username, u.username, '') AS display_name,
  up.avatar_url, up.bio,
+ u.verified, u.verification_type,
  COUNT(DISTINCT sm2.space_id) AS shared_spaces,
  COUNT(DISTINCT CASE WHEN sp.geo_code = $3 THEN sm2.space_id END) AS geo_shared_spaces
 FROM users u
@@ -312,13 +313,15 @@ type GetSuggestedUsersParams struct {
 }
 
 type GetSuggestedUsersRow struct {
-	ID              pgtype.UUID `json:"id"`
-	Username        string      `json:"username"`
-	DisplayName     string      `json:"display_name"`
-	AvatarUrl       *string     `json:"avatar_url"`
-	Bio             *string     `json:"bio"`
-	SharedSpaces    int64       `json:"shared_spaces"`
-	GeoSharedSpaces int64       `json:"geo_shared_spaces"`
+	ID               pgtype.UUID `json:"id"`
+	Username         string      `json:"username"`
+	DisplayName      string      `json:"display_name"`
+	AvatarUrl        *string     `json:"avatar_url"`
+	Bio              *string     `json:"bio"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
+	SharedSpaces     int64       `json:"shared_spaces"`
+	GeoSharedSpaces  int64       `json:"geo_shared_spaces"`
 }
 
 // =====================
@@ -345,6 +348,8 @@ func (q *Queries) GetSuggestedUsers(ctx context.Context, arg GetSuggestedUsersPa
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Bio,
+			&i.Verified,
+			&i.VerificationType,
 			&i.SharedSpaces,
 			&i.GeoSharedSpaces,
 		); err != nil {
@@ -693,11 +698,12 @@ func (q *Queries) GetTrendingTags(ctx context.Context, arg GetTrendingTagsParams
 
 const getTrendingUsers = `-- name: GetTrendingUsers :many
 SELECT id, entity_id, score, "window", geo_code, computed_at,
- user_id AS id, username, display_name, avatar_url, bio
+ user_id AS id, username, display_name, avatar_url, bio, verified, verification_type
 FROM (
  SELECT DISTINCT ON (u.id)
  ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
- u.id AS user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, up.bio
+ u.id AS user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, up.bio,
+ u.verified, u.verification_type
  FROM trending_snapshots ts
  JOIN users u ON u.id = ts.entity_id
  LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -720,17 +726,19 @@ type GetTrendingUsersParams struct {
 }
 
 type GetTrendingUsersRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	EntityID    pgtype.UUID        `json:"entity_id"`
-	Score       float64            `json:"score"`
-	Window      string             `json:"window"`
-	GeoCode     *string            `json:"geo_code"`
-	ComputedAt  pgtype.Timestamptz `json:"computed_at"`
-	ID_2        pgtype.UUID        `json:"id_2"`
-	Username    string             `json:"username"`
-	DisplayName *string            `json:"display_name"`
-	AvatarUrl   *string            `json:"avatar_url"`
-	Bio         *string            `json:"bio"`
+	ID               pgtype.UUID        `json:"id"`
+	EntityID         pgtype.UUID        `json:"entity_id"`
+	Score            float64            `json:"score"`
+	Window           string             `json:"window"`
+	GeoCode          *string            `json:"geo_code"`
+	ComputedAt       pgtype.Timestamptz `json:"computed_at"`
+	ID_2             pgtype.UUID        `json:"id_2"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	Bio              *string            `json:"bio"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 func (q *Queries) GetTrendingUsers(ctx context.Context, arg GetTrendingUsersParams) ([]GetTrendingUsersRow, error) {
@@ -754,6 +762,8 @@ func (q *Queries) GetTrendingUsers(ctx context.Context, arg GetTrendingUsersPara
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Bio,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}

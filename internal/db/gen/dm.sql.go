@@ -414,7 +414,8 @@ func (q *Queries) GetOrgIDForListingContext(ctx context.Context, id pgtype.UUID)
 }
 
 const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
-SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, COALESCE(u.public_username, u.username, '') AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url,
+ u.verified AS requester_verified, u.verification_type AS requester_verification_type
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -453,18 +454,20 @@ type GetPendingMessageRequestsParams struct {
 }
 
 type GetPendingMessageRequestsRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	RequesterID          pgtype.UUID        `json:"requester_id"`
-	RecipientID          pgtype.UUID        `json:"recipient_id"`
-	ConversationID       pgtype.UUID        `json:"conversation_id"`
-	PreviewMessage       string             `json:"preview_message"`
-	Status               string             `json:"status"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
-	RequesterUsername    string             `json:"requester_username"`
-	RequesterDisplayName *string            `json:"requester_display_name"`
-	RequesterAvatarUrl   *string            `json:"requester_avatar_url"`
+	ID                        pgtype.UUID        `json:"id"`
+	RequesterID               pgtype.UUID        `json:"requester_id"`
+	RecipientID               pgtype.UUID        `json:"recipient_id"`
+	ConversationID            pgtype.UUID        `json:"conversation_id"`
+	PreviewMessage            string             `json:"preview_message"`
+	Status                    string             `json:"status"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	ResolvedAt                pgtype.Timestamptz `json:"resolved_at"`
+	RequesterUsername         string             `json:"requester_username"`
+	RequesterDisplayName      *string            `json:"requester_display_name"`
+	RequesterAvatarUrl        *string            `json:"requester_avatar_url"`
+	RequesterVerified         bool               `json:"requester_verified"`
+	RequesterVerificationType *string            `json:"requester_verification_type"`
 }
 
 // Lists pending DM requests for a recipient (BUG-003). Filters by
@@ -502,6 +505,8 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 			&i.RequesterUsername,
 			&i.RequesterDisplayName,
 			&i.RequesterAvatarUrl,
+			&i.RequesterVerified,
+			&i.RequesterVerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -579,6 +584,13 @@ SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
           CASE WHEN dc.participant_1_id = $1 THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END, o.name)::text AS other_display_name,
  COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN o.avatar_url
                WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
+ -- §07 badge: "other" entity resolves org vs user the same way as the name.
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN COALESCE(o.verified, false)
+       WHEN dc.participant_1_id = $1 THEN COALESCE(u2.verified, false)
+       ELSE COALESCE(u1.verified, false) END)::bool AS other_verified,
+ (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = $1 THEN o.verification_type
+       WHEN dc.participant_1_id = $1 THEN u2.verification_type
+       ELSE u1.verification_type END)::text AS other_verification_type,
  (CASE
     WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count
     WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
@@ -667,23 +679,25 @@ type GetUserConversationsParams struct {
 }
 
 type GetUserConversationsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Participant1ID     pgtype.UUID        `json:"participant_1_id"`
-	Participant2ID     pgtype.UUID        `json:"participant_2_id"`
-	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
-	LastMessagePreview *string            `json:"last_message_preview"`
-	P1UnreadCount      int32              `json:"p1_unread_count"`
-	P2UnreadCount      int32              `json:"p2_unread_count"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	ConversationType   string             `json:"conversation_type"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            string             `json:"org_name"`
-	OrgSlug            string             `json:"org_slug"`
-	OtherUsername      string             `json:"other_username"`
-	OtherDisplayName   string             `json:"other_display_name"`
-	OtherAvatarUrl     string             `json:"other_avatar_url"`
-	UnreadCount        int32              `json:"unread_count"`
+	ID                    pgtype.UUID        `json:"id"`
+	Participant1ID        pgtype.UUID        `json:"participant_1_id"`
+	Participant2ID        pgtype.UUID        `json:"participant_2_id"`
+	LastMessageAt         pgtype.Timestamptz `json:"last_message_at"`
+	LastMessagePreview    *string            `json:"last_message_preview"`
+	P1UnreadCount         int32              `json:"p1_unread_count"`
+	P2UnreadCount         int32              `json:"p2_unread_count"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	ConversationType      string             `json:"conversation_type"`
+	OrgID                 pgtype.UUID        `json:"org_id"`
+	OrgName               string             `json:"org_name"`
+	OrgSlug               string             `json:"org_slug"`
+	OtherUsername         string             `json:"other_username"`
+	OtherDisplayName      string             `json:"other_display_name"`
+	OtherAvatarUrl        string             `json:"other_avatar_url"`
+	OtherVerified         bool               `json:"other_verified"`
+	OtherVerificationType string             `json:"other_verification_type"`
+	UnreadCount           int32              `json:"unread_count"`
 }
 
 // other_display_name / other_avatar_url are COALESCEd — the LEFT JOIN to
@@ -736,6 +750,8 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 			&i.OtherUsername,
 			&i.OtherDisplayName,
 			&i.OtherAvatarUrl,
+			&i.OtherVerified,
+			&i.OtherVerificationType,
 			&i.UnreadCount,
 		); err != nil {
 			return nil, err

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Modal } from '#lib/components/ui/index.js';
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { api } from '#lib/api/client.js';
 	import { X, UserCircle } from 'lucide-svelte';
 
@@ -14,6 +15,8 @@
 		avatar_url?: string | null;
 		bio?: string | null;
 		is_following?: boolean;
+		verified?: boolean;
+		verification_type?: string | null;
 	}
 
 	interface Props {
@@ -156,8 +159,9 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-											{item.display_name}
+										<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+											<span class="truncate">{item.display_name}</span>
+											<VerifiedBadge verified={item.verified} type={item.verification_type} scope="user" size={13} />
 										</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">
 											@{item.username}

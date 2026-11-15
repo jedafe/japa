@@ -792,7 +792,9 @@ SELECT
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
- u.profile_type
+ u.profile_type,
+ u.verified,
+ u.verification_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -822,12 +824,14 @@ type LeaderboardAllTimeParams struct {
 }
 
 type LeaderboardAllTimeRow struct {
-	UserID        pgtype.UUID `json:"user_id"`
-	PointsBalance int64       `json:"points_balance"`
-	Username      string      `json:"username"`
-	DisplayName   *string     `json:"display_name"`
-	AvatarUrl     *string     `json:"avatar_url"`
-	ProfileType   string      `json:"profile_type"`
+	UserID           pgtype.UUID `json:"user_id"`
+	PointsBalance    int64       `json:"points_balance"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarUrl        *string     `json:"avatar_url"`
+	ProfileType      string      `json:"profile_type"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 // =====================================================================
@@ -856,6 +860,8 @@ func (q *Queries) LeaderboardAllTime(ctx context.Context, arg LeaderboardAllTime
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.ProfileType,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -874,7 +880,9 @@ SELECT
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
- u.profile_type
+ u.profile_type,
+ u.verified,
+ u.verification_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -902,12 +910,14 @@ type LeaderboardByPeriodParams struct {
 }
 
 type LeaderboardByPeriodRow struct {
-	UserID       pgtype.UUID `json:"user_id"`
-	PeriodPoints int64       `json:"period_points"`
-	Username     string      `json:"username"`
-	DisplayName  *string     `json:"display_name"`
-	AvatarUrl    *string     `json:"avatar_url"`
-	ProfileType  string      `json:"profile_type"`
+	UserID           pgtype.UUID `json:"user_id"`
+	PeriodPoints     int64       `json:"period_points"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarUrl        *string     `json:"avatar_url"`
+	ProfileType      string      `json:"profile_type"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 func (q *Queries) LeaderboardByPeriod(ctx context.Context, arg LeaderboardByPeriodParams) ([]LeaderboardByPeriodRow, error) {
@@ -926,6 +936,8 @@ func (q *Queries) LeaderboardByPeriod(ctx context.Context, arg LeaderboardByPeri
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.ProfileType,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}

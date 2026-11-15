@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { Pencil } from 'lucide-svelte';
 	import FollowButton from '#lib/components/ui/FollowButton.svelte';
 
@@ -8,6 +9,8 @@
 		/** Author username for the profile link. When absent, the avatar/name is not linked. */
 		authorUsername?: string | null;
 		authorAvatarUrl?: string | null;
+		authorVerified?: boolean;
+		authorVerificationType?: string | null;
 		spaceName?: string | null;
 		/** Slug of the primary space so the "Writing in" text can link to it. */
 		spaceSlug?: string | null;
@@ -26,6 +29,8 @@
 		authorName,
 		authorUsername = null,
 		authorAvatarUrl,
+		authorVerified = false,
+		authorVerificationType = null,
 		spaceName,
 		spaceSlug = null,
 		authorId = null,
@@ -47,7 +52,10 @@
 				{authorName?.charAt(0) ?? '?'}
 			</span>
 		{/if}
-		<h3 class="mt-3 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
+		<h3 class="mt-3 flex items-center gap-1 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">
+			{authorName ?? t('blog.anonymous', 'Anonymous')}
+			<VerifiedBadge verified={authorVerified} type={authorVerificationType} scope="user" size={15} />
+		</h3>
 	{/snippet}
 
 	<div class="flex flex-col items-center text-center">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
 	import { t } from '#lib/i18n/index.js';
@@ -85,7 +86,7 @@
 						<h1 class="text-lg font-semibold text-[var(--color-text)]">{org.name}</h1>
 						{#if org.is_verified}
 							<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
-								<BadgeCheck size={12} />
+								<VerifiedBadge verified type={org.verification_type} scope="organization" size={12} />
 								{t('community_locator.verified', 'Verified')}
 							</span>
 						{/if}

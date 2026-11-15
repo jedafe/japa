@@ -9,6 +9,7 @@
 		Share2,
 		MoreHorizontal,
 		Check, Flag, Pin } from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
@@ -360,6 +361,8 @@
 				name={authorLabel}
 				avatar={reply.author_avatar_url}
 				variant="row"
+				verified={reply.author_verified}
+				verificationType={reply.author_verification_type}
 			>
 				{#snippet trigger()}
 					{#if reply.author_avatar_url}
@@ -406,7 +409,10 @@
 									{t('ama.pending', 'Pending')}
 								</span>
 							{/if}
-							<span class="font-bold text-[var(--color-text)]">{authorLabel}</span>
+							<span class="inline-flex items-center gap-1 font-bold text-[var(--color-text)]">
+								{authorLabel}
+								<VerifiedBadge verified={reply.author_verified} type={reply.author_verification_type} scope="user" size={13} />
+							</span>
 							{#if authorHandle}
 								<span class="text-[var(--color-text-subtle)]">{authorHandle}</span>
 							{/if}

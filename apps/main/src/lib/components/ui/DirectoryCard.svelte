@@ -11,7 +11,7 @@
 	 * Ref: japaconnect-engineering/sections/23-main-site-frontend.md
 	 */
 	import type { Snippet } from 'svelte';
-	import { BadgeCheck } from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
@@ -37,6 +37,7 @@
 		/** Circular avatar — people/profiles. Square (rounded) for orgs/spaces. */
 		round?: boolean;
 		verified?: boolean;
+		verificationType?: string | null;
 		/** Seed for the deterministic avatar tint — defaults to href. */
 		hueSeed?: string;
 		/** Explicit avatar tint (e.g. a tag's admin-set hex color). When set,
@@ -74,6 +75,7 @@
 		icon = undefined,
 		round = false,
 		verified = false,
+		verificationType = null,
 		hueSeed = '',
 		tintColor = null,
 		meta = [],
@@ -125,6 +127,8 @@
 				description={description}
 				count={entityCount}
 				isFollowing={entityIsFollowing}
+				{verified}
+				{verificationType}
 				class="flex min-w-0 flex-1 items-center gap-3 text-start"
 			>
 				{#snippet trigger()}
@@ -167,9 +171,12 @@
 		<span class="min-w-0 flex-1">
 			<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 				<span class="truncate">{title}</span>
-				{#if verified}
-					<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" aria-label={t('organizations.verified', 'Verified')} />
-				{/if}
+				<VerifiedBadge
+					{verified}
+					type={verificationType}
+					scope={entityType === 'organization' ? 'organization' : 'user'}
+					size={15}
+				/>
 			</span>
 			{#if subtitle}
 				<span class="block truncate text-xs text-[var(--color-muted)]">{subtitle}</span>

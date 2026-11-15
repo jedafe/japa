@@ -1222,7 +1222,8 @@ WHERE space_id = @space_id AND user_id = @user_id;
 -- SPACES-015: platform-scoped for defense-in-depth.
 SELECT sm.id, sm.space_id, sm.user_id, sm.assigned_by,
  sm.assigned_by_user_id, sm.created_at,
- COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name
+ COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name,
+ u.verified AS user_verified, u.verification_type AS user_verification_type
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1252,7 +1253,8 @@ SELECT EXISTS (
 -- and 'followers' profiles they already follow. Space owners and
 -- moderators always see the full roster — a hidden member would be
 -- un-moderatable otherwise.
-SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at,
+ u.verified, u.verification_type
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1355,7 +1357,8 @@ WHERE sps.space_id = @space_id
 -- =====================
 
 -- name: ListSpaceJoinRequests :many
-SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+ u.verified, u.verification_type
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -1368,6 +1371,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- space_id is included so the admin panel can build a composite request id
 -- (space_id::user_id) for the approve/reject endpoints.
 SELECT sm.space_id, sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+ u.verified, u.verification_type,
  s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id

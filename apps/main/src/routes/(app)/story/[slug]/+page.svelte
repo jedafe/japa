@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	//      ADR-058 Exception #1 (dev.to reading layout — CPT singles)
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -294,9 +295,7 @@
 
 			<div class="flex items-start gap-2">
 				<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{story.title}</h1>
-				{#if story.verified}
-					<BadgeCheck size={22} class="mt-2 shrink-0 text-[var(--color-primary-text)]" />
-				{/if}
+				<VerifiedBadge verified={story.verified} type={story.verification_type} scope="user" size={22} class="mt-2" />
 			</div>
 
 			{#if story.featured_image_url}

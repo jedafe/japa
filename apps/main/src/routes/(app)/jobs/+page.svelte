@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
@@ -575,7 +576,7 @@
 												<span class="min-w-0">
 													<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 														<span class="truncate">{company || poster.name}</span>
-														{#if poster.verified}<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />{/if}
+														<VerifiedBadge verified={poster.verified} type={poster.verification_type} scope={poster.kind === 'organization' ? 'organization' : 'user'} size={14} />
 													</span>
 													{#if secondary}
 														<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>

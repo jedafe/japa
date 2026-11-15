@@ -477,6 +477,8 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 				r.Username = ""
 				r.DisplayName = ""
 				r.AvatarUrl = ""
+				r.AuthorVerified = false
+				r.AuthorVerificationType = ""
 			})
 
 		// C-009: tombstone soft-deleted replies (body scrubbed server-side).
@@ -528,6 +530,8 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			c.Username = ""
 			c.DisplayName = ""
 			c.AvatarUrl = ""
+			c.AuthorVerified = false
+			c.AuthorVerificationType = ""
 		})
 
 	// C-009: tombstone soft-deleted comments that still have live replies.
@@ -803,6 +807,8 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			row.Username = ""
 			row.DisplayName = ""
 			row.AvatarUrl = ""
+			row.AuthorVerified = false
+			row.AuthorVerificationType = ""
 		}
 		row.CreatedByUserID = pgtype.UUID{}
 		h.resolveLiterals(r, &row)

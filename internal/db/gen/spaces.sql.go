@@ -2262,6 +2262,7 @@ func (q *Queries) IsUserSpaceMember(ctx context.Context, arg IsUserSpaceMemberPa
 
 const listAllSpaceJoinRequests = `-- name: ListAllSpaceJoinRequests :many
 SELECT sm.space_id, sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+ u.verified, u.verification_type,
  s.name AS space_name
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
@@ -2278,14 +2279,16 @@ type ListAllSpaceJoinRequestsParams struct {
 }
 
 type ListAllSpaceJoinRequestsRow struct {
-	SpaceID     pgtype.UUID        `json:"space_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Username    string             `json:"username"`
-	DisplayName *string            `json:"display_name"`
-	AvatarUrl   *string            `json:"avatar_url"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
-	Status      string             `json:"status"`
-	SpaceName   *string            `json:"space_name"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
+	Status           string             `json:"status"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	SpaceName        *string            `json:"space_name"`
 }
 
 // Admin-wide pending join requests across every space in the admin's platform.
@@ -2308,6 +2311,8 @@ func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, arg ListAllSpace
 			&i.AvatarUrl,
 			&i.JoinedAt,
 			&i.Status,
+			&i.Verified,
+			&i.VerificationType,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -2859,7 +2864,8 @@ func (q *Queries) ListSpaceAncestors(ctx context.Context, spaceID pgtype.UUID) (
 const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
 
 
-SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
+ u.verified, u.verification_type
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -2875,12 +2881,14 @@ type ListSpaceJoinRequestsParams struct {
 }
 
 type ListSpaceJoinRequestsRow struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	Username    string             `json:"username"`
-	DisplayName *string            `json:"display_name"`
-	AvatarUrl   *string            `json:"avatar_url"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
-	Status      string             `json:"status"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
+	Status           string             `json:"status"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // =====================
@@ -2905,6 +2913,8 @@ func (q *Queries) ListSpaceJoinRequests(ctx context.Context, arg ListSpaceJoinRe
 			&i.AvatarUrl,
 			&i.JoinedAt,
 			&i.Status,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -2953,7 +2963,8 @@ func (q *Queries) ListSpaceMemberUserIDs(ctx context.Context, arg ListSpaceMembe
 }
 
 const listSpaceMembersWithProfile = `-- name: ListSpaceMembersWithProfile :many
-SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at
+SELECT sm.user_id, COALESCE(u.public_username, u.username, '') AS username, up.display_name, up.avatar_url, sm.joined_at,
+ u.verified, u.verification_type
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -2997,11 +3008,13 @@ type ListSpaceMembersWithProfileParams struct {
 }
 
 type ListSpaceMembersWithProfileRow struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	Username    string             `json:"username"`
-	DisplayName *string            `json:"display_name"`
-	AvatarUrl   *string            `json:"avatar_url"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	DisplayName      *string            `json:"display_name"`
+	AvatarUrl        *string            `json:"avatar_url"`
+	JoinedAt         pgtype.Timestamptz `json:"joined_at"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // SPACES-007: only list approved members, not pending join requests.
@@ -3030,6 +3043,8 @@ func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpace
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.JoinedAt,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -3044,7 +3059,8 @@ func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpace
 const listSpaceModerators = `-- name: ListSpaceModerators :many
 SELECT sm.id, sm.space_id, sm.user_id, sm.assigned_by,
  sm.assigned_by_user_id, sm.created_at,
- COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name
+ COALESCE(u.public_username, u.username, '') AS user_username, up.display_name AS user_display_name,
+ u.verified AS user_verified, u.verification_type AS user_verification_type
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
@@ -3053,14 +3069,16 @@ ORDER BY sm.created_at ASC
 `
 
 type ListSpaceModeratorsRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	SpaceID          pgtype.UUID        `json:"space_id"`
-	UserID           pgtype.UUID        `json:"user_id"`
-	AssignedBy       string             `json:"assigned_by"`
-	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UserUsername     string             `json:"user_username"`
-	UserDisplayName  *string            `json:"user_display_name"`
+	ID                   pgtype.UUID        `json:"id"`
+	SpaceID              pgtype.UUID        `json:"space_id"`
+	UserID               pgtype.UUID        `json:"user_id"`
+	AssignedBy           string             `json:"assigned_by"`
+	AssignedByUserID     pgtype.UUID        `json:"assigned_by_user_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UserUsername         string             `json:"user_username"`
+	UserDisplayName      *string            `json:"user_display_name"`
+	UserVerified         bool               `json:"user_verified"`
+	UserVerificationType *string            `json:"user_verification_type"`
 }
 
 // SPACES-015: platform-scoped for defense-in-depth.
@@ -3082,6 +3100,8 @@ func (q *Queries) ListSpaceModerators(ctx context.Context, spaceID pgtype.UUID) 
 			&i.CreatedAt,
 			&i.UserUsername,
 			&i.UserDisplayName,
+			&i.UserVerified,
+			&i.UserVerificationType,
 		); err != nil {
 			return nil, err
 		}

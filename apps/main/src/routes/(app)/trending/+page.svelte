@@ -2,6 +2,7 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
@@ -251,6 +252,8 @@
 								slug={item.username}
 								name={item.display_name ?? item.username}
 								avatar={item.avatar_url}
+								verified={item.verified}
+								verificationType={item.verification_type}
 								class="group inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
@@ -273,9 +276,10 @@
 									</span>
 									<span class="min-w-0 flex-1">
 										<span
-											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
+											class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 										>
-											{item.display_name ?? item.username}
+											<span class="truncate">{item.display_name ?? item.username}</span>
+											<VerifiedBadge verified={item.verified} type={item.verification_type} scope="user" size={13} />
 										</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">
 											@{item.username}

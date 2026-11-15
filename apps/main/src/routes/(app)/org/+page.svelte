@@ -369,6 +369,7 @@
 							fallback={org.name.charAt(0).toUpperCase()}
 							hueSeed={org.id}
 							verified={org.verified}
+							verificationType={org.verification_type}
 							meta={[
 								{ icon: Users, text: (org.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(org.follower_count)) },
 								{ icon: Building2, text: (org.member_count === 1 ? t('profile.members_one', '{n} member') : t('profile.members', '{n} members')).replace('{n}', String(org.member_count)) },

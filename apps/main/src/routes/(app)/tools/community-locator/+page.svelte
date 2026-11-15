@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { untrack, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { t, siteName } from '#lib/i18n/index.js';
@@ -659,7 +660,7 @@
 											<span class="text-sm font-semibold text-[var(--color-text)]">{org.name}</span>
 											{#if org.is_verified}
 												<span class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] rounded">
-													<BadgeCheck size={12} />
+													<VerifiedBadge verified type={org.verification_type} scope="organization" size={12} />
 													{t('community_locator.verified', 'Verified')}
 												</span>
 											{/if}

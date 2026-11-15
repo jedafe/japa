@@ -59,6 +59,7 @@ const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type,
  up.profession, up.website_url,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
@@ -117,6 +118,8 @@ type GetMentorByUsernameRow struct {
 	DisplayName           *string            `json:"display_name"`
 	AvatarUrl             *string            `json:"avatar_url"`
 	Username              string             `json:"username"`
+	Verified              bool               `json:"verified"`
+	VerificationType      *string            `json:"verification_type"`
 	Profession            *string            `json:"profession"`
 	WebsiteUrl            *string            `json:"website_url"`
 	AvailableSlots        int32              `json:"available_slots"`
@@ -154,6 +157,8 @@ func (q *Queries) GetMentorByUsername(ctx context.Context, username string) (Get
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.Username,
+		&i.Verified,
+		&i.VerificationType,
 		&i.Profession,
 		&i.WebsiteUrl,
 		&i.AvailableSlots,
@@ -200,6 +205,7 @@ const getMentorProfile = `-- name: GetMentorProfile :one
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, up.mentor_listing_content_id, COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type,
  up.profession, up.website_url,
  -- 000829 mentor card fields (§114 detail-page rebuild).
  up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
@@ -223,6 +229,8 @@ type GetMentorProfileRow struct {
 	AvatarUrl              *string            `json:"avatar_url"`
 	MentorListingContentID pgtype.UUID        `json:"mentor_listing_content_id"`
 	Username               string             `json:"username"`
+	Verified               bool               `json:"verified"`
+	VerificationType       *string            `json:"verification_type"`
 	Profession             *string            `json:"profession"`
 	WebsiteUrl             *string            `json:"website_url"`
 	Location               *string            `json:"location"`
@@ -260,6 +268,8 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 		&i.AvatarUrl,
 		&i.MentorListingContentID,
 		&i.Username,
+		&i.Verified,
+		&i.VerificationType,
 		&i.Profession,
 		&i.WebsiteUrl,
 		&i.Location,
@@ -281,6 +291,7 @@ const getMentorsByIDs = `-- name: GetMentorsByIDs :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
  -- shadow-listing package price — power the mentors comparison dimensions.
@@ -333,6 +344,8 @@ type GetMentorsByIDsRow struct {
 	Username              string             `json:"username"`
 	Profession            *string            `json:"profession"`
 	WebsiteUrl            *string            `json:"website_url"`
+	Verified              bool               `json:"verified"`
+	VerificationType      *string            `json:"verification_type"`
 	AvailableSlots        int32              `json:"available_slots"`
 	Location              *string            `json:"location"`
 	MentorTitle           *string            `json:"mentor_title"`
@@ -376,6 +389,8 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, userIds []pgtype.UUID) ([
 			&i.Username,
 			&i.Profession,
 			&i.WebsiteUrl,
+			&i.Verified,
+			&i.VerificationType,
 			&i.AvailableSlots,
 			&i.Location,
 			&i.MentorTitle,
@@ -431,6 +446,7 @@ WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  COALESCE(
@@ -491,6 +507,7 @@ WITH mentors AS (
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
+ verified, verification_type,
  available_slots, total_count, area_overlap
 FROM mentors
 ORDER BY
@@ -522,6 +539,8 @@ type ListMentorsRow struct {
 	Username          string             `json:"username"`
 	Profession        *string            `json:"profession"`
 	WebsiteUrl        *string            `json:"website_url"`
+	Verified          bool               `json:"verified"`
+	VerificationType  *string            `json:"verification_type"`
 	AvailableSlots    int32              `json:"available_slots"`
 	TotalCount        int64              `json:"total_count"`
 	AreaOverlap       interface{}        `json:"area_overlap"`
@@ -564,6 +583,8 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 			&i.Username,
 			&i.Profession,
 			&i.WebsiteUrl,
+			&i.Verified,
+			&i.VerificationType,
 			&i.AvailableSlots,
 			&i.TotalCount,
 			&i.AreaOverlap,
@@ -583,6 +604,7 @@ WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  COUNT(*) OVER() AS total_count,
  CASE WHEN up.mentor_embedding IS NOT NULL
@@ -647,6 +669,7 @@ WITH mentors AS (
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
  display_name, avatar_url, username, profession, website_url,
+ verified, verification_type,
  available_slots, total_count, bio_similarity, area_overlap,
  -- §102 fallback: a mentor without an embedding scores keyword-only at
  -- weight 1.0 (not 0.6) so they aren't penalised while their embedding
@@ -680,6 +703,8 @@ type ListMentorsByMatchRow struct {
 	Username          string             `json:"username"`
 	Profession        *string            `json:"profession"`
 	WebsiteUrl        *string            `json:"website_url"`
+	Verified          bool               `json:"verified"`
+	VerificationType  *string            `json:"verification_type"`
 	AvailableSlots    int32              `json:"available_slots"`
 	TotalCount        int64              `json:"total_count"`
 	BioSimilarity     float64            `json:"bio_similarity"`
@@ -719,6 +744,8 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 			&i.Username,
 			&i.Profession,
 			&i.WebsiteUrl,
+			&i.Verified,
+			&i.VerificationType,
 			&i.AvailableSlots,
 			&i.TotalCount,
 			&i.BioSimilarity,
@@ -799,6 +826,7 @@ const searchMentors = `-- name: SearchMentors :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, COALESCE(u.public_username, u.username, '') AS username, up.profession, up.website_url,
+ u.verified, u.verification_type,
  (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
  -- 000940: mentor card fields (000829) + location + mentees-helped count +
  -- shadow-listing package price — power the mentors comparison dimensions.
@@ -857,6 +885,8 @@ type SearchMentorsRow struct {
 	Username              string             `json:"username"`
 	Profession            *string            `json:"profession"`
 	WebsiteUrl            *string            `json:"website_url"`
+	Verified              bool               `json:"verified"`
+	VerificationType      *string            `json:"verification_type"`
 	AvailableSlots        int32              `json:"available_slots"`
 	Location              *string            `json:"location"`
 	MentorTitle           *string            `json:"mentor_title"`
@@ -899,6 +929,8 @@ func (q *Queries) SearchMentors(ctx context.Context, arg SearchMentorsParams) ([
 			&i.Username,
 			&i.Profession,
 			&i.WebsiteUrl,
+			&i.Verified,
+			&i.VerificationType,
 			&i.AvailableSlots,
 			&i.Location,
 			&i.MentorTitle,

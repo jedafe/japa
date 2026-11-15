@@ -1655,6 +1655,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("nullifying ownership claim reviewer: %w", err)
 		}
 
+		// verification_requests.requester_user_id is NOT NULL; delete the user's
+		// submitted requests. Evidence PII on form_submissions is scrubbed by
+		// AnonymizeFormSubmissionsByUser (BUG-019 path).
+		if err := q.DeleteVerificationRequestsByRequester(ctx,
+			userID,
+		); err != nil {
+			return fmt.Errorf("deleting verification requests: %w", err)
+		}
+
+		// verification_requests.reviewed_by is nullable; clear reviewer reference
+		// when an admin is erased.
+		if err := q.NullifyVerificationRequestReviewer(ctx,
+			userID,
+		); err != nil {
+			return fmt.Errorf("nullifying verification request reviewer: %w", err)
+		}
+
 		// organization_members.user_id is NOT NULL; remove the erased user's memberships
 		// to prevent re-identification via the member roster.
 		if err := q.DeleteOrganizationMembersByUser(ctx, userID); err != nil {
