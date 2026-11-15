@@ -79,6 +79,23 @@ func (q *Queries) CreateAtprotoSession(ctx context.Context, arg CreateAtprotoSes
 	return i, err
 }
 
+const deleteStaleAtprotoSessions = `-- name: DeleteStaleAtprotoSessions :execrows
+DELETE FROM atproto_sessions
+WHERE (revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => $1::int))
+   OR refresh_expires_at < now() - make_interval(days => $1::int)
+`
+
+// Daily sweep: dead sessions (revoked, or long past refresh expiry)
+// are pure audit — hard-delete is safe, nothing reads them back.
+// The grace window keeps rows around long enough for forensics.
+func (q *Queries) DeleteStaleAtprotoSessions(ctx context.Context, days int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleAtprotoSessions, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAtprotoAccountStatusStats = `-- name: GetAtprotoAccountStatusStats :one
 SELECT a.status AS account_status,
        COALESCE((SELECT c.cid FROM atproto_repo_commits c
@@ -182,7 +199,8 @@ func (q *Queries) GetAtprotoSessionAccount(ctx context.Context, identifier strin
 
 const getAtprotoSessionByID = `-- name: GetAtprotoSessionByID :one
 SELECT s.id, s.account_id, s.app_password_id, s.refresh_hash, s.user_agent, s.last_ip, s.created_at, s.refresh_expires_at, s.revoked_at, a.did, a.handle, a.user_id, a.status AS account_status,
-       a.disabled_reason, a.previous_did, u.email AS user_email
+       a.disabled_reason, a.previous_did, u.email AS user_email,
+       u.status AS user_status
 FROM atproto_sessions s
 JOIN atproto_accounts a ON a.id = s.account_id
 JOIN users u ON u.id = a.user_id
@@ -206,6 +224,7 @@ type GetAtprotoSessionByIDRow struct {
 	DisabledReason   *string            `json:"disabled_reason"`
 	PreviousDid      *string            `json:"previous_did"`
 	UserEmail        string             `json:"user_email"`
+	UserStatus       string             `json:"user_status"`
 }
 
 // refreshSession/deleteSession resolve the refresh JWT's jti → row.
@@ -232,6 +251,7 @@ func (q *Queries) GetAtprotoSessionByID(ctx context.Context, id pgtype.UUID) (Ge
 		&i.DisabledReason,
 		&i.PreviousDid,
 		&i.UserEmail,
+		&i.UserStatus,
 	)
 	return i, err
 }

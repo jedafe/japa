@@ -95,6 +95,11 @@ type Config struct {
 	// 30): the consumer's daily sweep deletes atproto_inbound audit rows
 	// older than this. Zero/negative disables the sweep.
 	InboundRetentionDays int
+	// SessionRetentionDays — JC_ATPROTO_SESSION_RETENTION_DAYS (default
+	// 30): the same daily sweep hard-deletes atproto_sessions rows dead
+	// (revoked or refresh-expired) for longer than this. Live sessions
+	// are never touched. Zero/negative disables.
+	SessionRetentionDays int
 }
 
 // pdsURL resolves the PDS public base: configured PDS URL wins, else the

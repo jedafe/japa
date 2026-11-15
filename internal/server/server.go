@@ -724,6 +724,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		AppViewURL:           cfg.ATProtoAppViewURL,
 		JWTSecret:            cfg.JWTSecret,
 		InboundRetentionDays: cfg.ATProtoInboundRetentionDays,
+		SessionRetentionDays: cfg.ATProtoSessionRetentionDays,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
 	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP

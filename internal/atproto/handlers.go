@@ -38,6 +38,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "handle_taken", "Handle already claimed")
 	case errors.Is(err, ErrAdminDisabled):
 		errpkg.WriteError(w, http.StatusForbidden, "admin_disabled", "Account disabled by an administrator")
+	case errors.Is(err, ErrAuthRequired):
+		errpkg.WriteError(w, http.StatusUnauthorized, "auth_required", "Authentication required")
 	case errors.Is(err, ErrMisconfigured):
 		slog.Error("atproto misconfigured", "err", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "AT Protocol is not configured")

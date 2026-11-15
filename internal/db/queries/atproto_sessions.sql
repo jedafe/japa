@@ -62,7 +62,8 @@ RETURNING *;
 -- names the old did in sub — it's valid, and rotation re-mints on the
 -- current one.
 SELECT s.*, a.did, a.handle, a.user_id, a.status AS account_status,
-       a.disabled_reason, a.previous_did, u.email AS user_email
+       a.disabled_reason, a.previous_did, u.email AS user_email,
+       u.status AS user_status
 FROM atproto_sessions s
 JOIN atproto_accounts a ON a.id = s.account_id
 JOIN users u ON u.id = a.user_id
@@ -96,6 +97,14 @@ WHERE account_id = @account_id AND revoked_at IS NULL;
 -- credential must log out the clients holding it.
 UPDATE atproto_sessions SET revoked_at = now()
 WHERE app_password_id = @app_password_id AND revoked_at IS NULL;
+
+-- name: DeleteStaleAtprotoSessions :execrows
+-- Daily sweep: dead sessions (revoked, or long past refresh expiry)
+-- are pure audit — hard-delete is safe, nothing reads them back.
+-- The grace window keeps rows around long enough for forensics.
+DELETE FROM atproto_sessions
+WHERE (revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => @days::int))
+   OR refresh_expires_at < now() - make_interval(days => @days::int);
 
 -- name: GetAtprotoAccountStatusStats :one
 -- checkAccountStatus: the repo/material counts migration tooling diffs

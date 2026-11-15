@@ -49,6 +49,11 @@ func (s *Service) ServiceAuth(ctx context.Context, acct *SessionAccount, aud, lx
 	expiry := now.Add(time.Minute)
 	if exp > 0 {
 		expiry = time.Unix(exp, 0)
+		// A past exp is a client bug, not a clamp — answer the error
+		// rather than hand back an already-dead token.
+		if !expiry.After(now) {
+			return "", ErrInvalidID
+		}
 		if expiry.After(now.Add(maxServiceAuthTTL)) {
 			expiry = now.Add(maxServiceAuthTTL)
 		}

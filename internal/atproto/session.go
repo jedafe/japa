@@ -128,6 +128,16 @@ func refreshHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// pendingHash — the unique pre-token placeholder for refresh_hash.
+// The 'pending:' prefix can never collide with a real sha256 hex.
+func pendingHash() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "pending:" + hex.EncodeToString(b), nil
+}
+
 // SessionAccount is the authenticated-account view every authed XRPC
 // endpoint resolves once — did/handle/status plus the member email
 // getSession echoes back.
@@ -162,6 +172,9 @@ func (a *SessionAccount) activeStatus() (bool, string) {
 // fail AuthRequired; disabled accounts authenticate (the client needs
 // the session to call activateAccount).
 func (s *Service) AuthenticateAccess(ctx context.Context, authHeader string) (*SessionAccount, error) {
+	if !s.featureOn(ctx) {
+		return nil, ErrAuthRequired
+	}
 	raw := bearerToken(authHeader)
 	if raw == "" {
 		return nil, ErrAuthRequired
@@ -182,7 +195,10 @@ func (s *Service) sessionAccountByDID(ctx context.Context, did string) (*Session
 	if err != nil {
 		return nil, ErrAuthRequired
 	}
-	if acct.Status == AccountStatusTombstone {
+	// A tombstoned account or a non-active member (banned/deleted) holds
+	// no working credential — the federated identity is as dead as the
+	// platform row that owns it.
+	if acct.Status == AccountStatusTombstone || acct.UserStatus != "active" {
 		return nil, ErrAuthRequired
 	}
 	return &SessionAccount{
@@ -224,7 +240,10 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 	if err != nil {
 		return nil, "", "", fmt.Errorf("atproto: session account: %w", err)
 	}
-	if acct.Status == AccountStatusTombstone {
+	// Tombstoned account — or a banned/deleted member behind it — gets
+	// the same opaque failure as a wrong password: minting a session
+	// would prove the credential itself is valid (an oracle).
+	if acct.Status == AccountStatusTombstone || acct.UserStatus != "active" {
 		_ = jauth.VerifyPassword(sessionDummyHash, password)
 		return nil, "", "", ErrAuthRequired
 	}
@@ -233,11 +252,12 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 	if err != nil {
 		return nil, "", "", fmt.Errorf("atproto: app passwords: %w", err)
 	}
+	// Verify EVERY live row — an early break leaks which ordinal
+	// matched via bcrypt-count timing (which app password is in use).
 	var matched *gen.AtprotoAppPassword
 	for i := range pws {
-		if jauth.VerifyPassword(pws[i].PasswordHash, password) == nil {
+		if jauth.VerifyPassword(pws[i].PasswordHash, password) == nil && matched == nil {
 			matched = &pws[i]
-			break
 		}
 	}
 	if matched == nil {
@@ -248,11 +268,17 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 	}
 	_ = s.store.q.TouchAtprotoAppPassword(ctx, matched.ID)
 
-	// Session row first — its id is the refresh jti.
+	// Session row first — its id is the refresh jti. refresh_hash is
+	// UNIQUE so a per-row placeholder stands in until the CAS below —
+	// two concurrent logins must not collide on an empty constant.
+	placeholder, err := pendingHash()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("atproto: session placeholder: %w", err)
+	}
 	sess, err := s.store.q.CreateAtprotoSession(ctx, gen.CreateAtprotoSessionParams{
 		AccountID:        acct.ID,
 		AppPasswordID:    matched.ID,
-		RefreshHash:      "", // rewritten below once the JWT exists
+		RefreshHash:      placeholder,
 		UserAgent:        strPtr(userAgent),
 		LastIp:           strPtr(ip),
 		RefreshExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTokenTTL), Valid: true},
@@ -271,7 +297,7 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 	if n, err := s.store.q.RotateAtprotoSession(ctx, gen.RotateAtprotoSessionParams{
 		ID:      sess.ID,
 		NewHash: refreshHash(refresh),
-		OldHash: "",
+		OldHash: placeholder,
 	}); err != nil || n == 0 {
 		// Don't strand an empty-hash row — it can never refresh anyway.
 		_, _ = s.store.q.RevokeAtprotoSession(ctx, sess.ID)
@@ -294,6 +320,9 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 // whole session is revoked and the refresh fails either way, so the
 // attacker and the legitimate client both fall off.
 func (s *Service) RefreshSession(ctx context.Context, authHeader string) (*SessionAccount, string, string, error) {
+	if !s.featureOn(ctx) {
+		return nil, "", "", ErrAuthRequired
+	}
 	raw := bearerToken(authHeader)
 	if raw == "" {
 		return nil, "", "", ErrAuthRequired
@@ -328,8 +357,9 @@ func (s *Service) RefreshSession(ctx context.Context, authHeader string) (*Sessi
 		return nil, "", "", ErrAuthRequired
 	}
 	// A session minted mid-erasure (createSession in-flight while the
-	// tombstone CAS landed) must die at first refresh, not live on.
-	if sess.AccountStatus == AccountStatusTombstone {
+	// tombstone CAS landed) — or one whose member got banned/deleted
+	// since — must die at first refresh, not live on.
+	if sess.AccountStatus == AccountStatusTombstone || sess.UserStatus != "active" {
 		_, _ = s.store.q.RevokeAtprotoSession(ctx, sess.ID)
 		return nil, "", "", ErrAuthRequired
 	}
@@ -378,6 +408,9 @@ func (s *Service) RefreshSession(ctx context.Context, authHeader string) (*Sessi
 // a second call on the same row still 200s (real-PDS semantics: the
 // client can't tell revoked from dead).
 func (s *Service) DeleteSession(ctx context.Context, authHeader string) error {
+	if !s.featureOn(ctx) {
+		return ErrAuthRequired
+	}
 	raw := bearerToken(authHeader)
 	if raw == "" {
 		return ErrAuthRequired
@@ -403,6 +436,11 @@ func (s *Service) DeleteSession(ctx context.Context, authHeader string) error {
 // appPasswordAlphabet is RFC 4648 base32 lowercase — no 0/1/8/9/b/l/o
 // lookalikes — matching the real PDS's xxxx-xxxx-xxxx-xxxx shape.
 const appPasswordAlphabet = "abcdefghijklmnopqrstuvwxyz234567"
+
+// maxAppPasswords caps live app passwords per account — every login
+// pays one bcrypt per live row, so an unbounded list is a self-serve
+// amplification knob.
+const maxAppPasswords = 50
 
 // mintAppPassword generates the shown-once secret.
 func mintAppPassword() (string, error) {
@@ -433,8 +471,18 @@ type AppPasswordView struct {
 // account — the plaintext returns once and only the bcrypt persists.
 // A name collision with a live password is a conflict (real-PDS rule).
 func (s *Service) CreateAppPassword(ctx context.Context, accountID pgtype.UUID, name string) (*AppPasswordView, string, error) {
+	if !s.featureOn(ctx) {
+		return nil, "", ErrAuthRequired
+	}
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 64 {
+		return nil, "", ErrInvalidID
+	}
+	live, err := s.store.q.ListAtprotoLiveAppPasswords(ctx, accountID)
+	if err != nil {
+		return nil, "", fmt.Errorf("atproto: app passwords: %w", err)
+	}
+	if len(live) >= maxAppPasswords {
 		return nil, "", ErrInvalidID
 	}
 	plain, err := mintAppPassword()

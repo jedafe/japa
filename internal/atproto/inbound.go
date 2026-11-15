@@ -108,13 +108,23 @@ func (s *Service) StartJetstreamConsumer(ctx context.Context) {
 				continue
 			}
 		}
-		// Ledger retention — daily sweep; the table is pure audit so nothing
-		// reads stale rows back for correctness. Zero/negative disables.
-		if s.cfg.InboundRetentionDays > 0 && time.Since(lastSweep) >= 24*time.Hour {
-			if n, serr := gen.New(s.db.Writer).DeleteStaleAtprotoInbound(ctx, int32(s.cfg.InboundRetentionDays)); serr != nil {
-				slog.Warn("atproto: inbound retention sweep failed", "error", serr)
-			} else if n > 0 {
-				slog.Info("atproto: pruned inbound ledger", "rows", n)
+		// Ledger retention — daily sweep; the tables are pure audit so
+		// nothing reads stale rows back for correctness. Each knob is
+		// independent: zero/negative disables that sweep only.
+		if time.Since(lastSweep) >= 24*time.Hour {
+			if s.cfg.InboundRetentionDays > 0 {
+				if n, serr := gen.New(s.db.Writer).DeleteStaleAtprotoInbound(ctx, int32(s.cfg.InboundRetentionDays)); serr != nil {
+					slog.Warn("atproto: inbound retention sweep failed", "error", serr)
+				} else if n > 0 {
+					slog.Info("atproto: pruned inbound ledger", "rows", n)
+				}
+			}
+			if s.cfg.SessionRetentionDays > 0 {
+				if n, serr := gen.New(s.db.Writer).DeleteStaleAtprotoSessions(ctx, int32(s.cfg.SessionRetentionDays)); serr != nil {
+					slog.Warn("atproto: session retention sweep failed", "error", serr)
+				} else if n > 0 {
+					slog.Info("atproto: pruned dead sessions", "rows", n)
+				}
 			}
 			lastSweep = time.Now()
 		}

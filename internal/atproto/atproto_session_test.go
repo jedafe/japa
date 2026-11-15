@@ -309,6 +309,32 @@ func TestDBDeleteSession(t *testing.T) {
 	}
 }
 
+// A suspended member's credentials die at every gate — login refuses
+// (no oracle that the password was valid), a live session can't
+// refresh, and outstanding access tokens stop resolving.
+func TestDBSuspendedMemberCredentialsDie(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newAtprotoService(t, d)
+	userID, sess, plain := enableWithAppPassword(t, ctx, d, svc)
+
+	_, access, refresh, err := svc.CreateSession(ctx, sess.DID, plain, "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	setUserStatus(t, ctx, d, userID, "suspended")
+
+	if _, _, _, err := svc.CreateSession(ctx, sess.DID, plain, "", ""); !errors.Is(err, ErrAuthRequired) {
+		t.Fatalf("suspended createSession err = %v, want ErrAuthRequired", err)
+	}
+	if _, _, _, err := svc.RefreshSession(ctx, "Bearer "+refresh); !errors.Is(err, ErrAuthRequired) {
+		t.Fatalf("suspended refresh err = %v, want ErrAuthRequired", err)
+	}
+	if _, err := svc.AuthenticateAccess(ctx, "Bearer "+access); !errors.Is(err, ErrAuthRequired) {
+		t.Fatalf("suspended access err = %v, want ErrAuthRequired", err)
+	}
+}
+
 func TestDBDisabledAccountSessionLifecycle(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
