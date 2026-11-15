@@ -13,7 +13,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '#lib/feed/time.js';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import {
 		Plus,
 		Trophy,
@@ -24,7 +24,8 @@
 		Cake,
 		BadgeCheck,
 		Sparkles,
-		Heart
+		Heart,
+		Filter
 	} from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '#lib/types/index.js';
 	import { milestoneOptions } from '#lib/achievement.js';
@@ -114,10 +115,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		goto(`/achievements?${params.toString()}`, { reset: false });
 	}
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	function buildPageUrl(filters: { dest: string; milestone: string; sort: string }, nextPage: number): string {
 		const params = new URLSearchParams();
@@ -163,7 +161,17 @@ import { ogCardUrl } from '#lib/seo/og.js';
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="achievements-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<PageAction
 				href={data.authed ? '/achievements/new' : '/login?redirect=/achievements'}
 				icon={Plus}
@@ -172,15 +180,14 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		{/snippet}
 	</ListPageBar>
 
-	<!-- List -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filter panel -->
-			<div id="achievements-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
 				applyFilters();
+				filtersModalOpen = false;
 			}}
 			class="flex flex-wrap items-center gap-3"
 		>
@@ -222,8 +229,11 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				{/if}
 			</div>
 		</form>
-			</div>
-		{/if}
+		{/snippet}
+	</Modal>
+
+	<!-- List -->
+	<div class="mx-auto w-full max-w-3xl p-4">
 
 		{#if data.loadError}
 			<EmptyState

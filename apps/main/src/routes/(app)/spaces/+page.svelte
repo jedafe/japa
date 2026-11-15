@@ -62,7 +62,7 @@
 		joinedOnly = data.joined ?? false;
 	});
 
-	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /sources).
+	// Filter panel (ListPageBar + Filters modal pattern — same as /blog, /sources).
 	// `joined` is a scope tab now, not a filter, so it doesn't light the dot.
 	const hasActiveFilters = $derived(
 		!!selectedCountry || !!selectedState || !!selectedCity || !!selectedSort ||

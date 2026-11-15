@@ -7,9 +7,9 @@
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
-	import { CalendarClock, X } from 'lucide-svelte';
+	import { CalendarClock, X, Filter } from 'lucide-svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, PageAction } from '#lib/components/ui/index.js';
 	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { VisaProcessingStats, TrendPoint } from '#lib/types/index.js';
 	import type { PageData } from './$types';
@@ -44,10 +44,7 @@
 
 	const hasFilters = $derived(!!(filters.dest || filters.origin || filters.visa || filters.consulate));
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	// The stats endpoint returns an array of period rows (one per month
 	// bucket). Derive the latest period for headline display, matching the
@@ -160,7 +157,17 @@
 <div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
 	<ListPageBar title={t('visa_timelines.heading', 'Visa Timeline Tracker')}>
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="visa-timelines-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<PageAction
 				href={data.authed ? '/visa-timelines/my' : '/login?redirect=/visa-timelines/my'}
 				icon={CalendarClock}
@@ -169,15 +176,14 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="space-y-5 p-4">
-		{#if showFilters}
-		<!-- Filter panel -->
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
 		<form
 			id="visa-timelines-filter-panel"
-			onsubmit={applyFilters}
-			class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
 		>
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<Autocomplete
 					placeholder={t('visa_timelines.destination', 'Destination')}
 					ariaLabel={t('visa_timelines.destination', 'Destination')}
@@ -236,8 +242,10 @@
 				</div>
 			{/if}
 		</form>
-		{/if}
+		{/snippet}
+	</Modal>
 
+	<div class="space-y-5 p-4">
 		{#if data.loadError}
 			<div class="rounded-[var(--radius)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
 				{t('visa_timelines.load_error', 'Could not load statistics. Please try again later.')}

@@ -2,7 +2,7 @@
 	/**
 	 * Slim list-page header bar in the /blog style — a bordered, blurred strip
 	 * hosting UrlTabs (or a compact title) on the left and page controls
-	 * (FilterToggle, primary actions) on the right.
+	 * (Filters button, primary actions) on the right.
 	 *
 	 * Ref: ADR-058 (unified app shell center-column tab bar).
 	 */
@@ -13,7 +13,7 @@
 		title?: string;
 		/** Left-side content (typically <UrlTabs>); overrides `title`. */
 		children?: Snippet;
-		/** Right-side controls (FilterToggle, primary action buttons/links). */
+		/** Right-side controls (Filters button, primary action buttons/links). */
 		actions?: Snippet;
 	}
 

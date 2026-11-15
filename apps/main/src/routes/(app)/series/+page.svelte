@@ -3,13 +3,13 @@
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { BookOpen, ArrowRight, Search, X } from 'lucide-svelte';
+	import { BookOpen, ArrowRight, Search, X, Filter } from 'lucide-svelte';
 	import {
 		EmptyState,
 		ListPageBar,
+		Modal,
 		UrlTabs,
-		type UrlTab,
-		FilterToggle
+		type UrlTab
 	} from '#lib/components/ui/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
@@ -17,10 +17,9 @@
 	let { data }: { data: PageData } = $props();
 
 	let q = $state('');
-	let showFilters = $state(false);
+	let filtersModalOpen = $state(false);
 	$effect(() => {
 		q = data.q ?? '';
-		if (data.q || data.contentType) showFilters = true;
 	});
 
 	const title = $derived(t('series.title', 'Series — {site}'));
@@ -103,20 +102,27 @@
 	<ListPageBar>
 		<UrlTabs {tabs} value={data.tab} onValueChange={switchTab} class="!border-b-0 !bg-transparent" />
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="series-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filters: content type + sort via AutocompleteSelect (Rule 16 —
-			     type options are server-fetched from GET /content-types). -->
-			<div
-				id="series-filter-panel"
-				class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
-			>
-				<div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
-					<div class="relative min-w-0">
+	<!-- Filters modal: content type + sort via AutocompleteSelect (Rule 16 —
+	     type options are server-fetched from GET /content-types). -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<div>
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<div class="relative min-w-0 sm:col-span-2">
 						<input
 							id="series-search"
 							type="search"
@@ -158,8 +164,10 @@
 					</div>
 				{/if}
 			</div>
-		{/if}
+		{/snippet}
+	</Modal>
 
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.tab === 'mine' && !data.authed}
 			<EmptyState
 				icon={BookOpen}

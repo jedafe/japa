@@ -1,9 +1,9 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
-	import { PenSquare, Tag, X } from 'lucide-svelte';
+	import { PenSquare, Tag, X, Filter } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
@@ -150,10 +150,7 @@
 		statusOptions.find((o) => o.id === data.status)?.label ?? null
 	);
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title} {canonical} {robots} />
@@ -169,7 +166,17 @@
 		/>
 		{#snippet actions()}
 			{#if data.sort !== 'featured'}
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="forum-filter-panel" />
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 			{/if}
 			{#if data.authed}
 				<PageAction
@@ -187,12 +194,10 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters && data.sort !== 'featured'}
-			<div
-				id="forum-filter-panel"
-				class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
-			>
+	{#if data.sort !== 'featured'}
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+			<div class="flex flex-wrap items-center gap-3">
 				<div class="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
 					<div class="w-44">
 						<Autocomplete
@@ -219,7 +224,11 @@
 					</div>
 				{/if}
 			</div>
-		{/if}
+			{/snippet}
+		</Modal>
+	{/if}
+
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.sort === 'featured'}
 			{#if data.loadError}
 				<p class="py-12 text-center text-[var(--color-text-subtle)]">

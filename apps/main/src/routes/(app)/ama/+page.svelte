@@ -4,14 +4,14 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { MessageSquare, Plus, Circle, CircleSlash, Loader2 } from 'lucide-svelte';
+	import { MessageSquare, Plus, Circle, CircleSlash, Loader2, Filter } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { i18n } from '#lib/i18n/index.js';
 	import { relativeTime } from '#lib/feed/time.js';
-	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { EmptyState, LoadingSkeleton, ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { AMAThread, Space } from '#lib/types/index.js';
@@ -176,10 +176,7 @@
 	);
 
 	const hasFilters = $derived(!!destFilter || !!professionFilter);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('ama.filter_all', 'All countries');
@@ -210,18 +207,27 @@
 	<ListPageBar>
 		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="ama-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			{#if canStart}
 				<PageAction href="/ama/new" icon={Plus} label={t('ama.start', 'Start an AMA')} />
 			{/if}
 		{/snippet}
 	</ListPageBar>
 
-	<!-- List -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filters (BUG-006: dest/profession filter UI per §88 Geo Awareness) -->
-			<div id="ama-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+	<!-- Filters modal (BUG-006: dest/profession filter UI per §88 Geo Awareness) -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<div class="flex flex-wrap items-center gap-3">
 		<div class="w-52">
 			<Autocomplete
 				placeholder={t('ama.filter_destination', 'Destination')}
@@ -249,9 +255,12 @@
 				onClear={() => { professionFilter = ''; applyFilters(); }}
 			/>
 		</div>
-			</div>
-		{/if}
+		</div>
+		{/snippet}
+	</Modal>
 
+	<!-- List -->
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.loadError}
 			<EmptyState
 				icon={MessageSquare}

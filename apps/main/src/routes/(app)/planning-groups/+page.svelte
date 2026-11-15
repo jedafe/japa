@@ -6,8 +6,8 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Users, Plus, Plane, Calendar, Lock, Unlock } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { Users, Plus, Plane, Calendar, Lock, Unlock, Filter } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { PageData } from './$types';
 
@@ -69,10 +69,7 @@
 	);
 
 	const hasFilters = $derived(!!data.filters.dest || !!data.filters.visa);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('planning_groups.filter_destination_all', 'All countries');
@@ -103,7 +100,17 @@
 	<ListPageBar>
 		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="planning-groups-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<PageAction
 				href={data.authed ? '/planning-groups/new' : '/login?redirect=/planning-groups'}
 				icon={Plus}
@@ -112,11 +119,13 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filter panel -->
-			<div id="planning-groups-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="flex flex-wrap items-center gap-3">
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<form
+			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
+			class="flex flex-wrap items-center gap-3"
+		>
 			<div class="w-52">
 				<Autocomplete
 					placeholder={t('planning_groups.filter_destination', 'Destination')}
@@ -153,9 +162,10 @@
 				</a>
 			{/if}
 		</form>
-			</div>
-		{/if}
+		{/snippet}
+	</Modal>
 
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('planning_groups.load_error', 'Failed to load planning groups. Please try again later.')}

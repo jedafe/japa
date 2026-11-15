@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
-	import { ArrowRight, BookOpen, ChevronDown, PenSquare, X } from 'lucide-svelte';
-	import { EmptyState, FilterToggle, ListPageBar, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import { ArrowRight, BookOpen, ChevronDown, PenSquare, X, Filter } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, Modal, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import type { FeedItem } from '#lib/types/index.js';
@@ -147,10 +147,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	);
 	const hasActiveFilters = $derived(!!data.category);
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	// Roadmap tab: group guides by journey_stage in the canonical §87 japa
 	// stage order; guides without a stage land in a trailing "General" group.
@@ -236,7 +233,17 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		/>
 		{#snippet actions()}
 			{#if categoryFilterApplies}
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="guides-filter-panel" />
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 			{/if}
 			{#if data.authed}
 				<PageAction
@@ -254,40 +261,41 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters && categoryFilterApplies}
-			<!-- Category filter — admin-configured options from GET /content-types
-			     (§14), same FilterToggle/Autocomplete pattern as /blog and /thread. -->
-			<div
-				id="guides-filter-panel"
-				class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
-			>
-				<div class="w-56">
-					<Autocomplete
-						id="guides-category"
-						placeholder={t('guides.filter_category_all', 'All categories')}
-						ariaLabel={t('guides.filter_category', 'Category')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={categoryFetcher}
-						initialFetcher={categoryFetcher}
-						selectedId={data.category || null}
-						selectedLabel={selectedCategoryLabel}
-						onSelect={(item) => applyCategory(item.id)}
-						onClear={() => applyCategory('')}
-					/>
+	{#if categoryFilterApplies}
+		<!-- Category filter modal — admin-configured options from GET
+		     /content-types (§14), same pattern as /blog and /thread. -->
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+				<div class="flex flex-wrap items-center gap-3">
+					<div class="w-56">
+						<Autocomplete
+							id="guides-category"
+							placeholder={t('guides.filter_category_all', 'All categories')}
+							ariaLabel={t('guides.filter_category', 'Category')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={categoryFetcher}
+							initialFetcher={categoryFetcher}
+							selectedId={data.category || null}
+							selectedLabel={selectedCategoryLabel}
+							onSelect={(item) => applyCategory(item.id)}
+							onClear={() => applyCategory('')}
+						/>
+					</div>
+					{#if hasActiveFilters}
+						<button
+							type="button"
+							onclick={() => applyCategory('')}
+							class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+						>
+							<X size={12} /> {t('common.clear_filters', 'Clear filters')}
+						</button>
+					{/if}
 				</div>
-				{#if hasActiveFilters}
-					<button
-						type="button"
-						onclick={() => applyCategory('')}
-						class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
-					>
-						<X size={12} /> {t('common.clear_filters', 'Clear filters')}
-					</button>
-				{/if}
-			</div>
-		{/if}
+			{/snippet}
+		</Modal>
+	{/if}
 
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.tab === 'series'}
 			{#if data.series.length === 0}
 				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />

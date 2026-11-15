@@ -4,7 +4,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TriangleAlert, Plus, Pin, X, Check, Bell } from 'lucide-svelte';
+	import { TriangleAlert, Plus, Pin, X, Check, Bell, Filter } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
@@ -12,7 +12,7 @@
 	import { relativeTime } from '#lib/feed/time.js';
 	import { i18n } from '#lib/i18n/index.js';
 	import { scamTypeLabel, scamPlatformLabel } from '#lib/enumOptions.js';
-	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { EmptyState, LoadingSkeleton, ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, ScamStatus } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -105,7 +105,7 @@
 		...(data.scamTypes ?? []).map((v) => ({ value: v, label: scamTypeLabel(t, v) }))
 	]);
 
-	let showFilters = $state(false);
+	let filtersModalOpen = $state(false);
 	let subscribingDest = $state(false);
 	let mySubscriptions = $state<ScamAlertSubscription[]>(untrack(() => data.mySubscriptions) ?? []);
 	const destSubscribed = $derived(
@@ -127,9 +127,6 @@
 	}
 	let submittedDismissed = $state(false);
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
 
 	// ?submitted=1 is a one-shot flag — strip it from the URL once the banner
 	// is acknowledged so a refresh/back-nav does not resurrect it.
@@ -204,7 +201,17 @@
 					class="rounded-[var(--radius)] px-3 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 				>{t('scam_alerts.my_reports', 'My reports')}</a>
 			{/if}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scam-alerts-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<PageAction
 				href="/scam-alerts/new"
 				icon={Plus}
@@ -213,32 +220,13 @@
 		{/snippet}
 	</ListPageBar>
 
-	<!-- List -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showSubmitted}
-			<div class="mb-4 rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
-				<div class="flex items-start gap-2">
-					<Check size={16} class="mt-0.5 shrink-0" />
-					<div class="flex-1">
-						<p class="font-medium">{t('scam_alerts.submitted_title', 'Report submitted')}</p>
-						<p class="opacity-90">{t('scam_alerts.submitted_body', 'Your report is under review and will appear once a moderator confirms it.')}</p>
-					</div>
-					<button
-						type="button"
-						aria-label={t('common.dismiss', 'Dismiss')}
-						onclick={() => (submittedDismissed = true)}
-						class="shrink-0 text-emerald-700/70 hover:text-emerald-700"
-					>
-						<X size={14} />
-					</button>
-				</div>
-			</div>
-		{/if}
-
-		{#if showFilters}
-			<!-- Filter panel -->
-			<div id="scam-alerts-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="flex flex-wrap items-center gap-3">
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<form
+			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
+			class="flex flex-wrap items-center gap-3"
+		>
 		<div class="w-52">
 			<Autocomplete
 				placeholder={t('scam_alerts.filter_destination', 'Destination country')}
@@ -273,6 +261,28 @@
 			</button>
 		{/if}
 	</form>
+		{/snippet}
+	</Modal>
+
+	<!-- List -->
+	<div class="mx-auto w-full max-w-3xl p-4">
+		{#if showSubmitted}
+			<div class="mb-4 rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
+				<div class="flex items-start gap-2">
+					<Check size={16} class="mt-0.5 shrink-0" />
+					<div class="flex-1">
+						<p class="font-medium">{t('scam_alerts.submitted_title', 'Report submitted')}</p>
+						<p class="opacity-90">{t('scam_alerts.submitted_body', 'Your report is under review and will appear once a moderator confirms it.')}</p>
+					</div>
+					<button
+						type="button"
+						aria-label={t('common.dismiss', 'Dismiss')}
+						onclick={() => (submittedDismissed = true)}
+						class="shrink-0 text-emerald-700/70 hover:text-emerald-700"
+					>
+						<X size={14} />
+					</button>
+				</div>
 			</div>
 		{/if}
 

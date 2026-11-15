@@ -7,10 +7,10 @@
 	import { i18n } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { HandHeart, Plus, MapPin, Clock, X } from 'lucide-svelte';
+	import { HandHeart, Plus, MapPin, Clock, X, Filter } from 'lucide-svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { mutualAidPostTypeLabel, mutualAidCategoryLabel } from '#lib/enumOptions.js';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
@@ -49,10 +49,7 @@
 	]);
 	const activeTab = $derived(data.filters.type || 'all');
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	function selectType(v: string) {
 		const params = new URLSearchParams();
@@ -230,7 +227,17 @@
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="mutual-aid-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			{#if data.authed}
 				<PageAction
 					href="/mutual-aid/new?type=offer"
@@ -254,12 +261,10 @@
 		{/snippet}
 	</ListPageBar>
 
-	<!-- Content -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filter panel -->
-			<div id="mutual-aid-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters}>
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<form onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}>
 		<div class="flex flex-wrap items-center gap-3">
 			<div class="w-52">
 				<Autocomplete
@@ -302,9 +307,11 @@
 			</div>
 		</div>
 	</form>
-			</div>
-		{/if}
+		{/snippet}
+	</Modal>
 
+	<!-- Content -->
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.loadError}
 			<EmptyState
 				icon={HandHeart}

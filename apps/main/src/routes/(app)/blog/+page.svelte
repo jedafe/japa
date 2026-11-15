@@ -2,8 +2,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
-	import { BookOpen, ArrowRight, X } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '#lib/components/ui/index.js';
+	import { BookOpen, ArrowRight, Filter } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, Modal, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import type { FeedItem, BlogSeries } from '#lib/types/index.js';
 	import ContentGridCard from '#lib/components/feed/ContentGridCard.svelte';
 	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
@@ -41,12 +41,7 @@
 	let filterSpaceId = $state('');
 	let filterAuthorId = $state('');
 	let filterSeriesId = $state('');
-	let showFilters = $state(false);
-
-	// Auto-open the filter bar when a filter is already active from the URL.
-	$effect(() => {
-		if (activeFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	// Sync local filter state with the URL-driven server data on navigation.
 	$effect(() => {
@@ -292,88 +287,88 @@
 		/>
 		{#snippet actions()}
 			{#if data.tab === 'latest' || data.tab === 'top'}
-				<FilterToggle bind:show={showFilters} active={activeFilters} controls="blog-filter-panel" />
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if activeFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 			{/if}
 		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if data.tab === 'latest' || data.tab === 'top'}
-			{#if showFilters}
-				<div id="blog-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-					<div class="grid gap-3 sm:flex sm:flex-wrap sm:items-end">
-						<div class="min-w-0 flex-1">
-							<Autocomplete
-								id="blog-filter-tag"
-								placeholder={t('blog.filter.tag_placeholder', 'All tags')}
-								ariaLabel={t('blog.filter.tag', 'Tag')}
-								emptyMessage={t('blog.filter.no_tags', 'No tags found')}
-								fetcher={tagFetcher}
-								initialFetcher={async () => toTagItems(tags)}
-								selectedId={filterTag || null}
-								selectedLabel={tagSelectedLabel}
-								onSelect={(item) => { filterTag = item.id; applyFilters(); }}
-								onClear={() => { filterTag = ''; applyFilters(); }}
-							/>
-						</div>
-						<div class="min-w-0 flex-1">
-							<Autocomplete
-								id="blog-filter-space"
-								placeholder={t('blog.filter.space_placeholder', 'All spaces')}
-								ariaLabel={t('blog.filter.space', 'Space')}
-								emptyMessage={t('blog.filter.no_spaces', 'No spaces found')}
-								fetcher={spaceFetcher}
-								initialFetcher={async () => toSpaceItems(spaces)}
-								selectedId={filterSpaceId || null}
-								selectedLabel={spaceSelectedLabel}
-								onSelect={(item) => { filterSpaceId = item.id; applyFilters(); }}
-								onClear={() => { filterSpaceId = ''; applyFilters(); }}
-							/>
-						</div>
-						<div class="min-w-0 flex-1">
-							<Autocomplete
-								id="blog-filter-author"
-								placeholder={t('blog.filter.author_placeholder', 'All authors')}
-								ariaLabel={t('blog.filter.author', 'Author')}
-								emptyMessage={t('blog.filter.no_authors', 'No authors found')}
-								fetcher={authorFetcher}
-								initialFetcher={async () => toUserItems(users)}
-								selectedId={filterAuthorId || null}
-								selectedLabel={authorSelectedLabel}
-								onSelect={(item) => { filterAuthorId = item.id; applyFilters(); }}
-								onClear={() => { filterAuthorId = ''; applyFilters(); }}
-							/>
-						</div>
-						<div class="min-w-0 flex-1">
-							<Autocomplete
-								id="blog-filter-series"
-								placeholder={t('blog.filter.series_placeholder', 'All series')}
-								ariaLabel={t('blog.filter.series', 'Series')}
-								emptyMessage={t('blog.filter.no_series', 'No series found')}
-								fetcher={seriesFetcher}
-								initialFetcher={async () => toSeriesItems(series)}
-								selectedId={filterSeriesId || null}
-								selectedLabel={seriesSelectedLabel}
-								onSelect={(item) => { filterSeriesId = item.id; applyFilters(); }}
-								onClear={() => { filterSeriesId = ''; applyFilters(); }}
-							/>
-						</div>
-						<div class="flex items-center gap-2">
-							{#if activeFilters}
-								<button
-									type="button"
-									onclick={clearFilters}
-									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-								>
-									<X size={14} /> {t('blog.filter.clear', 'Clear')}
-								</button>
-							{/if}
-						</div>
-					</div>
+	{#if data.tab === 'latest' || data.tab === 'top'}
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<Autocomplete
+						id="blog-filter-tag"
+						placeholder={t('blog.filter.tag_placeholder', 'All tags')}
+						ariaLabel={t('blog.filter.tag', 'Tag')}
+						emptyMessage={t('blog.filter.no_tags', 'No tags found')}
+						fetcher={tagFetcher}
+						initialFetcher={async () => toTagItems(tags)}
+						selectedId={filterTag || null}
+						selectedLabel={tagSelectedLabel}
+						onSelect={(item) => { filterTag = item.id; applyFilters(); }}
+						onClear={() => { filterTag = ''; applyFilters(); }}
+					/>
+					<Autocomplete
+						id="blog-filter-space"
+						placeholder={t('blog.filter.space_placeholder', 'All spaces')}
+						ariaLabel={t('blog.filter.space', 'Space')}
+						emptyMessage={t('blog.filter.no_spaces', 'No spaces found')}
+						fetcher={spaceFetcher}
+						initialFetcher={async () => toSpaceItems(spaces)}
+						selectedId={filterSpaceId || null}
+						selectedLabel={spaceSelectedLabel}
+						onSelect={(item) => { filterSpaceId = item.id; applyFilters(); }}
+						onClear={() => { filterSpaceId = ''; applyFilters(); }}
+					/>
+					<Autocomplete
+						id="blog-filter-author"
+						placeholder={t('blog.filter.author_placeholder', 'All authors')}
+						ariaLabel={t('blog.filter.author', 'Author')}
+						emptyMessage={t('blog.filter.no_authors', 'No authors found')}
+						fetcher={authorFetcher}
+						initialFetcher={async () => toUserItems(users)}
+						selectedId={filterAuthorId || null}
+						selectedLabel={authorSelectedLabel}
+						onSelect={(item) => { filterAuthorId = item.id; applyFilters(); }}
+						onClear={() => { filterAuthorId = ''; applyFilters(); }}
+					/>
+					<Autocomplete
+						id="blog-filter-series"
+						placeholder={t('blog.filter.series_placeholder', 'All series')}
+						ariaLabel={t('blog.filter.series', 'Series')}
+						emptyMessage={t('blog.filter.no_series', 'No series found')}
+						fetcher={seriesFetcher}
+						initialFetcher={async () => toSeriesItems(series)}
+						selectedId={filterSeriesId || null}
+						selectedLabel={seriesSelectedLabel}
+						onSelect={(item) => { filterSeriesId = item.id; applyFilters(); }}
+						onClear={() => { filterSeriesId = ''; applyFilters(); }}
+					/>
 				</div>
-			{/if}
-		{/if}
+				{#if activeFilters}
+					<button
+						type="button"
+						onclick={clearFilters}
+						class="mt-3 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+					>
+						{t('common.clear_filters', 'Clear filters')}
+					</button>
+				{/if}
+			{/snippet}
+		</Modal>
+	{/if}
 
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.tab === 'series'}
 			{#if data.loadError}
 				<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('blog.load_error', 'Failed to load posts. Please try again later.')}</p>

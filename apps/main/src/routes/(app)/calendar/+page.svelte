@@ -20,10 +20,11 @@
 		X,
 		ChevronLeft,
 		ChevronRight,
-		Repeat
+		Repeat,
+		Filter
 	} from 'lucide-svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import type { CalendarEntry, CalendarCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
@@ -55,7 +56,7 @@
 		{ value: 'week', label: t('calendar.view_week', 'Week') }
 	]);
 
-	let showFilters = $state(false);
+	let filtersModalOpen = $state(false);
 
 	// Local filter inputs seeded from URL params.
 	let destInput = $state(untrack(() => data.filters.dest));
@@ -155,10 +156,6 @@
 	const hasActiveFilters = $derived(
 		!!data.filters.dest || !!data.filters.category || !!data.filters.from || !!data.filters.to
 	);
-
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
 
 	async function toggleSave(entry: CalendarEntry) {
 		if (!authed) return;
@@ -459,7 +456,17 @@
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="calendar-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			{#if authed}
 				<button
 					type="button"
@@ -492,12 +499,13 @@
 		{/snippet}
 	</ListPageBar>
 
-	<!-- Content -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-			<!-- Filter panel -->
-			<div id="calendar-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+	<!-- Filters modal -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<form
+			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
+			class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+		>
 			<Autocomplete
 				placeholder={t('calendar.filter_dest_all', 'All countries')}
 				ariaLabel={t('calendar.filter_dest_all', 'All countries')}
@@ -552,9 +560,11 @@
 				</button>
 			</div>
 		{/if}
-			</div>
-		{/if}
+		{/snippet}
+	</Modal>
 
+	<!-- Content -->
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if actionError}
 			<p class="mb-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 				{actionError}

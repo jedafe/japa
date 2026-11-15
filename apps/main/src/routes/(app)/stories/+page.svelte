@@ -8,9 +8,9 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
-	import { BookOpen, PenSquare, ArrowRight, Loader2, X } from 'lucide-svelte';
+	import { BookOpen, PenSquare, ArrowRight, Loader2, X, Filter } from 'lucide-svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { FeedItem, Story } from '#lib/types/index.js';
 	import type { GuideListItem } from '#lib/types/content.js';
@@ -101,10 +101,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		!!data.filters.origin || !!data.filters.dest || !!data.filters.visa || !!data.filters.profession
 	);
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'top', label: t('stories.sort_top', 'Top') },
@@ -275,7 +272,17 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		<UrlTabs {tabs} value={activeTab} onValueChange={(v) => switchTab(v)} class="!border-b-0 !bg-transparent" />
 		{#snippet actions()}
 			{#if data.tab !== 'featured' && data.tab !== 'series'}
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="stories-filter-panel" />
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 			{/if}
 			<PageAction
 				href={data.authed ? '/studio/create?type=story' : '/login?redirect=/studio%2Fcreate%3Ftype%3Dstory'}
@@ -285,12 +292,14 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		{/snippet}
 	</ListPageBar>
 
-	<!-- Story list -->
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters && data.tab !== 'featured' && data.tab !== 'series'}
-			<!-- Filters (autocomplete for all four: origin, dest, visa, profession) -->
-			<div id="stories-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+	{#if data.tab !== 'featured' && data.tab !== 'series'}
+		<!-- Filters modal (autocomplete for all four: origin, dest, visa, profession) -->
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+		<form
+			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
+			class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+		>
 			<Autocomplete
 				placeholder={t('stories.filter_origin_all', 'All origins')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -346,9 +355,12 @@ import { ogCardUrl } from '#lib/seo/og.js';
 				</button>
 			</div>
 		{/if}
-			</div>
-		{/if}
+			{/snippet}
+		</Modal>
+	{/if}
 
+	<!-- Story list -->
+	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.tab === 'series'}
 			{#if data.series.length === 0}
 				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />

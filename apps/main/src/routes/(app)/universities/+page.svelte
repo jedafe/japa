@@ -135,7 +135,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		!!countryParam || !!stateParam || !!cityParam || sortParam !== 'newest'
 	);
 
-	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	// Filter panel (ListPageBar + Filters modal pattern — same as /blog, /guides).
 	let filtersModalOpen = $state(false);
 	let searchModalOpen = $state(false);
 	const showingStart = $derived(total === 0 ? 0 : (currentPage - 1) * data.pageSize + 1);
@@ -404,7 +404,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	</EntityHero>
 
 
-	<!-- Filter bar: ListPageBar + FilterToggle pattern, same as /guides -->
+	<!-- Filter bar: ListPageBar + Filters modal pattern, same as /guides -->
 	<ListPageBar>
 		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
 			{total} {t('universities.results', 'universities')}

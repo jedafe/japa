@@ -16,11 +16,12 @@
 		Check,
 		ShieldCheck,
 		Lock,
-		Headset
+		Headset,
+		Filter
 	} from 'lucide-svelte';
 	import {
 		EmptyState,
-		FilterToggle,
+		Modal,
 		PageAction,
 		SelectField,
 		UrlTabs,
@@ -300,10 +301,7 @@
 			!!data.filters.includeUnavailable
 	);
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	let submittedDismissed = $state(false);
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
@@ -380,7 +378,17 @@
 			/>
 		{/if}
 		<div class="ms-auto flex items-center gap-2">
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="services-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<SelectField
 				value={data.filters.sort}
 				options={sortOptions}
@@ -405,14 +413,15 @@
 		</div>
 	</div>
 
-	<!-- Filter panel (compact row grid) — all controls write the same URL
-	     params the directory page used. -->
-	{#if showFilters}
-		<div
-			id="services-filter-panel"
-			class="mb-5 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
-		>
-			<form onsubmit={applyFilters} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" role="search">
+	<!-- Filters modal — all controls write the same URL params the
+	     directory page used. -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<form
+				onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
+				class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+				role="search"
+			>
 				<Autocomplete
 					placeholder={t('services.filter_dest', 'All countries')}
 					ariaLabel={t('services.filter_dest', 'All countries')}
@@ -529,8 +538,8 @@
 					<X size={12} /> {t('common.clear_filters', 'Clear filters')}
 				</button>
 			{/if}
-		</div>
-	{/if}
+		{/snippet}
+	</Modal>
 
 	{#if showSubmitted}
 		<div

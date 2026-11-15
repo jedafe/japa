@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
-	import { Hash, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, DirectoryCard, FilterToggle, type SearchSuggestion } from '#lib/components/ui/index.js';
+	import { Hash, ShieldX, ChevronLeft, ChevronRight, Filter } from 'lucide-svelte';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, Modal, type SearchSuggestion } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
@@ -55,12 +55,9 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		{ value: 'content', label: t('tags.sort_content', 'Most Content') }
 	]);
 
-	// Filter toggle panel (same as /blog, /guides).
+	// Filters open in a modal (the /sources pattern).
 	const hasActiveFilters = $derived(!!selectedSort);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
 
 	// pageNum is the 0-based target index; the API's ?page= is 1-based
 	// (api-routes-catalog: page=1 is the first page), so URLs emit pageNum+1.
@@ -143,7 +140,17 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 					{t('tags.subtitle', 'Follow tags to shape your feed.')}
 				</p>
 			</div>
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="tags-filter-panel" />
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 		</div>
 
 		<form class="mt-3" action="/tags" method="get" role="search">
@@ -159,22 +166,24 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		</form>
 	</div>
 
-	{#if showFilters}
-		<!-- Sort filter (moved from always-visible chips to the toggle panel) -->
-		<div id="tags-filter-panel" class="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
-			{#each sortOptions as so (so.value)}
-				<button
-					type="button"
-					onclick={() => { selectedSort = so.value; onFilterChange(); }}
-					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedSort === so.value
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
-				>
-					{so.label}
-				</button>
-			{/each}
-		</div>
-	{/if}
+	<!-- Filters modal — sort chips (the /sources pattern). -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<div class="flex flex-wrap gap-2">
+				{#each sortOptions as so (so.value)}
+					<button
+						type="button"
+						onclick={() => { selectedSort = so.value; onFilterChange(); }}
+						class="rounded-full border px-3 py-1 text-xs transition-colors {selectedSort === so.value
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
+					>
+						{so.label}
+					</button>
+				{/each}
+			</div>
+		{/snippet}
+	</Modal>
 
 	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if data.forbidden}
