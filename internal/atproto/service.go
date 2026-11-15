@@ -2,6 +2,7 @@ package atproto
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,15 +31,25 @@ type Service struct {
 	flags    features.FlagEvaluator
 	media    MediaReader
 	notifier Notifier
+	jwtKey   []byte // A6-4 session HS256 secret (ephemeral when unconfigured)
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB, cfg Config) *Service {
-	return &Service{
+	s := &Service{
 		cfg:   cfg,
 		db:    database,
 		store: newStore(gen.New(database.Writer)),
 	}
+	if cfg.JWTSecret != "" {
+		s.jwtKey = []byte(cfg.JWTSecret)
+	} else {
+		// Ephemeral dev secret — sessions die on restart, mirroring the
+		// platform's empty-JWT_SECRET behavior.
+		s.jwtKey = make([]byte, 32)
+		_, _ = rand.Read(s.jwtKey)
+	}
+	return s
 }
 
 // SetValkey wires the Valkey client for DID doc caching.

@@ -714,6 +714,16 @@ type AtprotoAccount struct {
 	PreviousDid        *string            `json:"previous_did"`
 }
 
+type AtprotoAppPassword struct {
+	ID           pgtype.UUID        `json:"id"`
+	AccountID    pgtype.UUID        `json:"account_id"`
+	Name         string             `json:"name"`
+	PasswordHash string             `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt   pgtype.Timestamptz `json:"last_used_at"`
+	RevokedAt    pgtype.Timestamptz `json:"revoked_at"`
+}
+
 type AtprotoBlob struct {
 	AccountID pgtype.UUID        `json:"account_id"`
 	Cid       string             `json:"cid"`
@@ -817,6 +827,18 @@ type AtprotoRepoEvent struct {
 	Kind      string             `json:"kind"`
 	Payload   []byte             `json:"payload"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AtprotoSession struct {
+	ID               pgtype.UUID        `json:"id"`
+	AccountID        pgtype.UUID        `json:"account_id"`
+	AppPasswordID    pgtype.UUID        `json:"app_password_id"`
+	RefreshHash      string             `json:"refresh_hash"`
+	UserAgent        *string            `json:"user_agent"`
+	LastIp           *string            `json:"last_ip"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	RefreshExpiresAt pgtype.Timestamptz `json:"refresh_expires_at"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type AttestationCommunityUpdate struct {

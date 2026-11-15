@@ -722,6 +722,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		PLCURL:               cfg.ATProtoPLCURL,
 		JetstreamURL:         cfg.ATProtoJetstreamURL,
 		AppViewURL:           cfg.ATProtoAppViewURL,
+		JWTSecret:            cfg.JWTSecret,
 		InboundRetentionDays: cfg.ATProtoInboundRetentionDays,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
@@ -4047,6 +4048,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/xrpc/com.atproto.sync.getRepoStatus", atprotoHandlers.GetRepoStatus)
 		r.Get("/xrpc/com.atproto.sync.listRepos", atprotoHandlers.ListRepos)
 		r.Get("/xrpc/com.atproto.sync.subscribeRepos", atprotoHandlers.SubscribeRepos)
+		// §127 A6-4: external-client sessions (app-password login) +
+		// A6-3 portability endpoints. createSession is the only public
+		// one; the rest authenticate on the Bearer JWTs it mints.
+		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Post("/xrpc/com.atproto.server.createSession", atprotoHandlers.CreateSession)
+		r.Post("/xrpc/com.atproto.server.refreshSession", atprotoHandlers.RefreshSession)
+		r.Post("/xrpc/com.atproto.server.deleteSession", atprotoHandlers.DeleteSession)
+		r.Get("/xrpc/com.atproto.server.getSession", atprotoHandlers.GetSession)
+		r.Post("/xrpc/com.atproto.server.createAppPassword", atprotoHandlers.CreateAppPasswordXRPC)
+		r.Get("/xrpc/com.atproto.server.listAppPasswords", atprotoHandlers.ListAppPasswords)
+		r.Post("/xrpc/com.atproto.server.revokeAppPassword", atprotoHandlers.RevokeAppPassword)
+		r.Get("/xrpc/com.atproto.server.getServiceAuth", atprotoHandlers.GetServiceAuth)
+		r.Get("/xrpc/com.atproto.server.checkAccountStatus", atprotoHandlers.CheckAccountStatus)
+		r.Post("/xrpc/com.atproto.server.activateAccount", atprotoHandlers.ActivateAccount)
+		r.Post("/xrpc/com.atproto.server.deactivateAccount", atprotoHandlers.DeactivateAccount)
+		// §127 A6-4: external clients call app.bsky.* on the PDS —
+		// read-proxy GETs to the configured appview; writes 501.
+		// r.Handle registers every verb so the handler's own non-GET
+		// check answers 501 rather than chi's bare 405.
+		r.Handle("/xrpc/app.bsky.*", http.HandlerFunc(atprotoHandlers.ProxyAppView))
+		r.Handle("/xrpc/com.atproto.repo.*", http.HandlerFunc(atprotoHandlers.ProxyAppView))
 	})
 
 	// API routes go through platform resolution
@@ -4910,6 +4931,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto", atprotoHandlers.GetMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto", atprotoHandlers.EnableMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto", atprotoHandlers.DisableMyAccount)
+				// §127 A6-3/A6-4: repo export + app-password management
+				// (the bootstrap path for external-client sessions —
+				// members mint app passwords under JapaConnect auth).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto/export", atprotoHandlers.ExportMyRepo)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto/app-passwords", atprotoHandlers.ListMyAppPasswords)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto/app-passwords", atprotoHandlers.CreateMyAppPassword)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto/app-passwords/{id}", atprotoHandlers.DeleteMyAppPassword)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)

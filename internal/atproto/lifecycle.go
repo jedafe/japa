@@ -290,6 +290,10 @@ func (s *Service) TombstoneAccount(ctx context.Context, account gen.AtprotoAccou
 	if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusTombstone, nil); err != nil {
 		return fmt.Errorf("atproto: tombstone: %w", err)
 	}
+	// A6-4: external credentials can't outlive the identity — revoke
+	// every session + app password. Outstanding access tokens expire
+	// naturally (2h ceiling); refreshes die immediately.
+	s.revokeExternalCredentials(ctx, account.ID)
 	s.emitAccountEvent(ctx, account.Did, false, "deleted")
 	s.emitTombstoneEvent(ctx, account.Did)
 	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))

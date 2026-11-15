@@ -85,6 +85,12 @@ type Config struct {
 	// check indexes through — the same target cmd/atproto-conformance
 	// uses.
 	AppViewURL string
+	// JWTSecret — JC_JWT_SECRET: HS256 key for the A6-4 access/refresh
+	// session tokens (scope claims keep the domain disjoint from the
+	// platform's own JWTs). Empty mints an ephemeral dev secret at
+	// service construction — sessions die on restart, mirroring the
+	// main JWTSecret empty→random dev behavior.
+	JWTSecret string
 	// InboundRetentionDays — JC_ATPROTO_INBOUND_RETENTION_DAYS (default
 	// 30): the consumer's daily sweep deletes atproto_inbound audit rows
 	// older than this. Zero/negative disables the sweep.
