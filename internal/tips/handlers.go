@@ -1304,15 +1304,25 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// kofiAmountToMinor converts Ko-fi's major-unit amount string to the
-// currency's minor units using the ISO-4217 exponent (currencyExponent) —
-// a fixed ×100 would inflate JPY-type donations 100×.
+// majorToMinor converts a major-unit amount to the currency's ISO-4217
+// minor units using currencyExponent — a fixed ×100 would inflate JPY-type
+// donations 100×. Non-positive, non-finite, or absurd inputs are rejected
+// so malformed external amounts can never import as zero-amount tips.
+func majorToMinor(major float64, currency string) (int64, error) {
+	if math.IsNaN(major) || math.IsInf(major, 0) || major <= 0 || major > 1e15 {
+		return 0, ErrInvalidAmount
+	}
+	return int64(math.Round(major * math.Pow(10, float64(currencyExponent(currency))))), nil
+}
+
+// kofiAmountToMinor parses Ko-fi's major-unit amount string and converts
+// via majorToMinor.
 func kofiAmountToMinor(amount, currency string) (int64, error) {
 	f, err := strconv.ParseFloat(amount, 64)
 	if err != nil {
 		return 0, err
 	}
-	return int64(math.Round(f * math.Pow(10, float64(currencyExponent(currency))))), nil
+	return majorToMinor(f, currency)
 }
 
 // ProductDomains handles GET /api/v1/tips/product-domains — public list of

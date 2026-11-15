@@ -254,6 +254,14 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 			return cfg, nil
 		}
 	}
+	// Same trap for spaces: once a space loses §05 tip eligibility
+	// (suspended, turned paid, wiki-only…) the create path rejects every
+	// tip — advertise disabled rather than an unusable button.
+	if owner.Type == RecipientSpace {
+		if _, err := s.store.getSpaceTipRecipient(ctx, owner.ID); err != nil {
+			return cfg, nil
+		}
+	}
 	if !st.TipsEnabled {
 		return cfg, nil
 	}
@@ -281,6 +289,13 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		case RecipientOrganization:
 			// The org's owner account carries the paying tier.
 			if id, oerr := s.store.getOrgOwnerID(ctx, owner.ID); oerr == nil && id.Valid {
+				externalOK = s.perms != nil && s.perms.Can(ctx, id, "tips.receive")
+			} else {
+				externalOK = false
+			}
+		case RecipientSpace:
+			// The space's tip wallet owner carries the paying tier.
+			if id, oerr := s.store.getSpaceTipOwner(ctx, owner.ID); oerr == nil && id.Valid {
 				externalOK = s.perms != nil && s.perms.Can(ctx, id, "tips.receive")
 			} else {
 				externalOK = false
@@ -410,16 +425,21 @@ func (s *Service) ListLinks(ctx context.Context, owner Owner) ([]ExternalLink, e
 // ensureExternalEligible gates external donation sources — external link
 // writes and OC/Ko-fi/BMC connects — to paying tiers. Unlike CanReceive the
 // implicit mentor tips.receive grant does not qualify: external methods are
-// a subscription perk, not a mentor perk. For organization owners the paying
-// entity is the org's owner account, not the acting admin — a non-paying
-// admin may still manage settings on behalf of a paying org.
+// a subscription perk, not a mentor perk. For organization and space owners
+// the paying entity is the wallet owner, not the acting admin — a non-paying
+// admin may still manage settings on behalf of a paying owner.
 func (s *Service) ensureExternalEligible(ctx context.Context, owner Owner, actorID pgtype.UUID) error {
 	if owner.Type == RecipientPlatform {
 		return nil // platform row is tips.moderate-administered — always eligible
 	}
 	subject := actorID
-	if owner.Type == RecipientOrganization {
+	switch owner.Type {
+	case RecipientOrganization:
 		if id, err := s.store.getOrgOwnerID(ctx, owner.ID); err == nil && id.Valid {
+			subject = id
+		}
+	case RecipientSpace:
+		if id, err := s.store.getSpaceTipOwner(ctx, owner.ID); err == nil && id.Valid {
 			subject = id
 		}
 	}

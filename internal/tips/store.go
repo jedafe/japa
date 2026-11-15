@@ -36,10 +36,8 @@ type tipStore interface {
 
 	getTip(ctx context.Context, id pgtype.UUID) (gen.Tip, error)
 	getTipByIdempotencyKey(ctx context.Context, senderID pgtype.UUID, key string) (gen.Tip, error)
-	getTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) (gen.Tip, error)
 	getTipByOCContributionID(ctx context.Context, ocID string) (gen.Tip, error)
 	insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error)
-	updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error
 	refundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error)
 	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error
 	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error
@@ -220,14 +218,6 @@ func (s *Store) getTipByIdempotencyKey(ctx context.Context, senderID pgtype.UUID
 	return row, nil
 }
 
-func (s *Store) getTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) (gen.Tip, error) {
-	row, err := s.read.GetTipByPaymentID(ctx, paymentID)
-	if err != nil {
-		return gen.Tip{}, mapNotFound(err, ErrNotFound)
-	}
-	return row, nil
-}
-
 func (s *Store) getTipByOCContributionID(ctx context.Context, ocID string) (gen.Tip, error) {
 	row, err := s.read.GetTipByOCContributionID(ctx, &ocID)
 	if err != nil {
@@ -246,10 +236,6 @@ func (s *Store) insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, 
 		return gen.Tip{}, err
 	}
 	return t, nil
-}
-
-func (s *Store) updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error {
-	return s.write.UpdateTipStatus(ctx, gen.UpdateTipStatusParams{ID: id, Status: status})
 }
 
 // refundPendingTip flips pending→refunded atomically and reports rows

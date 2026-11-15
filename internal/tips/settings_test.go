@@ -29,6 +29,7 @@ type fakeStore struct {
 	mentorErr      error
 	orgOwner       pgtype.UUID
 	spaceRecipient pgtype.UUID
+	spaceOwner     pgtype.UUID
 	kofiSecret     string
 	kofiOwner      Owner
 	ocSecretRow    gen.TipSetting
@@ -59,6 +60,9 @@ func (f *fakeStore) getSpaceModerator(_ context.Context, _, _ pgtype.UUID) (bool
 	return false, nil
 }
 func (f *fakeStore) getSpaceTipOwner(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	if f.spaceOwner.Valid {
+		return f.spaceOwner, nil
+	}
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getSpaceTipRecipient(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
@@ -138,9 +142,6 @@ func (f *fakeStore) getTipByIdempotencyKey(context.Context, pgtype.UUID, string)
 	}
 	return gen.Tip{}, ErrNotFound
 }
-func (f *fakeStore) getTipByPaymentID(context.Context, pgtype.UUID) (gen.Tip, error) {
-	return gen.Tip{}, ErrNotFound
-}
 func (f *fakeStore) getTipByOCContributionID(_ context.Context, ocID string) (gen.Tip, error) {
 	if t, ok := f.ocTips[ocID]; ok {
 		return t, nil
@@ -151,7 +152,6 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 	f.inserted = append(f.inserted, p)
 	return gen.Tip{Method: p.Method, Status: p.Status}, nil
 }
-func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error { return nil }
 func (f *fakeStore) refundPendingTip(context.Context, pgtype.UUID) (int64, error) {
 	return 1, nil
 }
@@ -230,6 +230,15 @@ func (f *fakeStore) clawbackTip(context.Context, pgtype.UUID, pgtype.UUID) error
 type fakePerms struct{ grants map[string]bool }
 
 func (p fakePerms) Can(_ context.Context, _ pgtype.UUID, node string) bool { return p.grants[node] }
+
+// fakePermsByUser scopes grants per user — needed where the subject under
+// test differs from the actor (org/space external eligibility checks the
+// wallet owner's grant, not the acting admin's).
+type fakePermsByUser map[pgtype.UUID]map[string]bool
+
+func (p fakePermsByUser) Can(_ context.Context, u pgtype.UUID, node string) bool {
+	return p[u][node]
+}
 
 func uid(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
@@ -420,6 +429,101 @@ func (f *fakeStore) getContentTitle(context.Context, pgtype.UUID) (string, error
 }
 func (f *fakeStore) insertAuditLog(context.Context, pgtype.UUID, string, string, string, string) error {
 	return nil
+}
+
+// Space external sources (links, OC connects) bill the wallet owner's
+// paying tier — the subject must be getSpaceTipOwner, not the acting admin.
+func TestEnsureExternalEligibleSpaceSubject(t *testing.T) {
+	ownerID := uid(t, "11111111-1111-1111-1111-111111111111")
+	adminID := uid(t, "22222222-2222-2222-2222-222222222222")
+	spaceID := uid(t, "33333333-3333-3333-3333-333333333333")
+
+	// Paying owner + non-paying admin actor → eligible (owner's grant rules).
+	fs := newFakeStore()
+	fs.spaceOwner = ownerID
+	svc := &Service{store: fs, perms: fakePermsByUser{
+		ownerID: {"tips.receive": true},
+		adminID: {"spaces.admin": true},
+	}}
+	if err := svc.ensureExternalEligible(context.Background(), SpaceOwner(spaceID), adminID); err != nil {
+		t.Fatalf("paying owner's space should be eligible via admin actor: %v", err)
+	}
+
+	// Inverse: actor holds tips.receive but the wallet owner does not →
+	// the space still must not advertise external sources.
+	fs2 := newFakeStore()
+	fs2.spaceOwner = ownerID
+	denied := &Service{store: fs2, perms: fakePermsByUser{
+		ownerID: {},
+		adminID: {"tips.receive": true, "spaces.admin": true},
+	}}
+	if err := denied.ensureExternalEligible(context.Background(), SpaceOwner(spaceID), adminID); err != ErrNotEligible {
+		t.Fatalf("non-paying owner's space should be ErrNotEligible, got %v", err)
+	}
+}
+
+// PublicConfig for a space must not advertise enabled on an ineligible
+// space, nor external sources when the wallet owner's grant lapsed.
+func TestPublicConfigSpaceGates(t *testing.T) {
+	ownerID := uid(t, "11111111-1111-1111-1111-111111111111")
+	spaceID := uid(t, "33333333-3333-3333-3333-333333333333")
+	settingID := uid(t, "44444444-4444-4444-4444-444444444444")
+	slug := "spacecollective"
+
+	newSpaceSvc := func(withPerm bool) (*Service, *fakeStore) {
+		fs := newFakeStore()
+		fs.spaceOwner = ownerID
+		fs.spaceRecipient = ownerID // eligible space
+		fs.settings[key(RecipientSpace, spaceID)] = gen.TipSetting{
+			ID: settingID, OwnerType: RecipientSpace, OwnerID: spaceID,
+			TipsEnabled: true, AcceptExternal: true, OcCollectiveSlug: &slug,
+		}
+		fs.links[settingID] = []gen.TipExternalLink{{Kind: "paypal", Label: "PayPal", Url: "https://paypal.me/x"}}
+		perms := fakePermsByUser{}
+		if withPerm {
+			perms[ownerID] = map[string]bool{"tips.receive": true}
+		}
+		return &Service{store: fs, perms: perms}, fs
+	}
+
+	// Eligible space + paying owner → enabled, external surfaces shown.
+	svc, _ := newSpaceSvc(true)
+	cfg, err := svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if !cfg.Enabled || len(cfg.ExternalLinks) != 1 || cfg.OCCollectiveSlug == nil {
+		t.Fatalf("expected enabled config with external surfaces, got %+v", cfg)
+	}
+
+	// Paying owner but ineligible space → disabled projection.
+	svc, fs := newSpaceSvc(true)
+	fs.spaceRecipient = pgtype.UUID{} // getSpaceTipRecipient → ErrNotFound
+	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if cfg.Enabled || len(cfg.Methods) != 0 {
+		t.Fatalf("ineligible space should not advertise tips, got %+v", cfg)
+	}
+
+	// Eligible space but owner's tips.receive lapsed → enabled minus external.
+	svc, _ = newSpaceSvc(false)
+	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Fatal("eligible space with lapsed external grant stays tippable")
+	}
+	if cfg.OCCollectiveSlug != nil || len(cfg.ExternalLinks) != 0 {
+		t.Fatalf("external surfaces should be stripped, got %+v", cfg)
+	}
+	for _, m := range cfg.Methods {
+		if m == MethodOpenCollective {
+			t.Fatal("opencollective method should be stripped when externalOK fails")
+		}
+	}
 }
 
 func (f *fakeStore) getSettingsByKofiWebhookSecret(_ context.Context, secret string) (gen.TipSetting, error) {

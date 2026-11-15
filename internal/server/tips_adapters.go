@@ -224,7 +224,7 @@ func (a tipsBMCAdapter) ListSupporters(ctx context.Context, token string, page i
 	}
 	out := make([]tips.BMCSupporter, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, tips.BMCSupporter{ID: r.ID, AmountCents: r.AmountCents, Currency: r.Currency, Name: r.Name, Email: r.Email})
+		out = append(out, tips.BMCSupporter{ID: r.ID, Coffees: r.Coffees, CoffeePrice: r.CoffeePrice, Currency: r.Currency, Name: r.Name, Email: r.Email})
 	}
 	return out, more, nil
 }

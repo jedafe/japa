@@ -362,10 +362,13 @@ type Service struct {
 	siteURL     string
 }
 
-// BMCSupporter is one imported Buy Me a Coffee donation.
+// BMCSupporter is one imported Buy Me a Coffee donation. The amount stays
+// in raw major units (Coffees × CoffeePrice, denominated in Currency) —
+// majorToMinor owns the ISO-4217 conversion at import time.
 type BMCSupporter struct {
 	ID          string
-	AmountCents int64
+	Coffees     float64
+	CoffeePrice float64
 	Currency    string
 	Name        string
 	Email       string

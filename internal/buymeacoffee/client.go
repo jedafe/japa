@@ -14,10 +14,14 @@ import (
 
 const baseURL = "https://www.buymeacoffee.com/api/v1"
 
-// Supporter is one imported donation.
+// Supporter is one imported donation. The amount stays in raw major units
+// (Coffees × CoffeePrice, denominated in Currency) — the tips service owns
+// the ISO-4217 minor-unit conversion so JPY-class currencies don't inflate
+// 100× and malformed prices can't land as zero-amount tips.
 type Supporter struct {
 	ID          string // transaction_id (falls back to support_id)
-	AmountCents int64
+	Coffees     float64
+	CoffeePrice float64
 	Currency    string
 	Name        string
 	Email       string
@@ -122,7 +126,8 @@ func (c *Client) ListSupporters(ctx context.Context, token string, page int) ([]
 		}
 		out = append(out, Supporter{
 			ID:          id,
-			AmountCents: int64(anyFloat(s.SupportCoffees) * anyFloat(s.CoffeePrice) * 100),
+			Coffees:     anyFloat(s.SupportCoffees),
+			CoffeePrice: anyFloat(s.CoffeePrice),
 			Currency:    currency,
 			Name:        name,
 			Email:       email,

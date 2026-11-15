@@ -5,6 +5,7 @@ package tips
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -37,6 +38,41 @@ func TestKofiAmountToMinor(t *testing.T) {
 	}
 	if _, err := kofiAmountToMinor("abc", "USD"); err == nil {
 		t.Error("unparseable amount should error")
+	}
+	for _, bad := range []string{"0", "-5", "NaN", "1e30"} {
+		if _, err := kofiAmountToMinor(bad, "USD"); err == nil {
+			t.Errorf("amount %q should error, not import", bad)
+		}
+	}
+}
+
+// majorToMinor powers the BMC import conversion — coffees × coffee_price
+// is a major-unit product, so the same exponent + validity rules apply.
+func TestMajorToMinor(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		major    float64
+		currency string
+		want     int64
+	}{
+		{15.00, "USD", 1500}, // 3 coffees × $5
+		{500, "JPY", 500},    // 1 coffee × ¥500
+		{1.234, "KWD", 1234}, // 3-decimal currency
+		{12.50, "NGN", 1250},
+	}
+	for _, tc := range cases {
+		got, err := majorToMinor(tc.major, tc.currency)
+		if err != nil {
+			t.Fatalf("majorToMinor(%v, %q): %v", tc.major, tc.currency, err)
+		}
+		if got != tc.want {
+			t.Errorf("majorToMinor(%v, %q) = %d, want %d", tc.major, tc.currency, got, tc.want)
+		}
+	}
+	for _, bad := range []float64{0, -3, math.NaN(), math.Inf(1), 1e16} {
+		if _, err := majorToMinor(bad, "USD"); err == nil {
+			t.Errorf("major %v should error, not import as a tip", bad)
+		}
 	}
 }
 

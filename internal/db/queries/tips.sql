@@ -96,9 +96,6 @@ SELECT * FROM tips WHERE id = @id FOR UPDATE;
 UPDATE tips SET status = 'refunded', updated_at = now()
 WHERE id = @id AND status = 'pending';
 
--- name: GetTipByPaymentID :one
-SELECT * FROM tips WHERE payment_id = @payment_id;
-
 -- name: GetTipByOCContributionID :one
 SELECT * FROM tips WHERE oc_contribution_id = @oc_contribution_id;
 

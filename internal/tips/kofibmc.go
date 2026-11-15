@@ -91,6 +91,9 @@ func (s *Service) ConnectBMC(ctx context.Context, owner Owner, actorID pgtype.UU
 	if s.bmc == nil {
 		return nil, ErrOCNotConnected
 	}
+	if slug != "" && !ocSlugPattern.MatchString(slug) {
+		return nil, ErrInvalidLink
+	}
 	if _, _, err := s.bmc.ListSupporters(ctx, token, 1); err != nil {
 		return nil, ErrBMCAccess
 	}
@@ -191,9 +194,14 @@ func (s *Service) syncBMCOne(ctx context.Context, row gen.TipSetting) error {
 		}
 		newCount := 0
 		for _, sp := range supporters {
+			minor, aerr := majorToMinor(sp.Coffees*sp.CoffeePrice, sp.Currency)
+			if aerr != nil {
+				slog.Warn("tips: bmc supporter import skipped", "owner", owner.ID.String(), "supporter", sp.ID, "error", aerr)
+				continue
+			}
 			imported, err := s.importContribution(ctx, owner, MethodBuyMeACoffee, OCContribution{
 				ID:          "bmc:" + sp.ID,
-				AmountCents: sp.AmountCents,
+				AmountCents: minor,
 				Currency:    sp.Currency,
 				FromName:    sp.Name,
 				FromEmail:   sp.Email,

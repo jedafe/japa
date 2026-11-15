@@ -576,42 +576,6 @@ func (q *Queries) GetTipByOCContributionID(ctx context.Context, ocContributionID
 	return i, err
 }
 
-const getTipByPaymentID = `-- name: GetTipByPaymentID :one
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE payment_id = $1
-`
-
-func (q *Queries) GetTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) (Tip, error) {
-	row := q.db.QueryRow(ctx, getTipByPaymentID, paymentID)
-	var i Tip
-	err := row.Scan(
-		&i.ID,
-		&i.SenderUserID,
-		&i.ExternalSenderName,
-		&i.RecipientType,
-		&i.RecipientUserID,
-		&i.RecipientOrganizationID,
-		&i.ContentID,
-		&i.Method,
-		&i.CreditsAmount,
-		&i.FiatAmount,
-		&i.FiatCurrency,
-		&i.FeeAmount,
-		&i.NetCredits,
-		&i.PaymentID,
-		&i.OcContributionID,
-		&i.Message,
-		&i.IsAnonymous,
-		&i.Status,
-		&i.IdempotencyKey,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CheckoutUrl,
-		&i.RecipientSpaceID,
-		&i.RecipientWalletUserID,
-	)
-	return i, err
-}
-
 const getTipExternalLinkByID = `-- name: GetTipExternalLinkByID :one
 SELECT id, tip_settings_id, kind, label, url, position, created_at, click_count FROM tip_external_links WHERE id = $1
 `
