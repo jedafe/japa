@@ -15,9 +15,11 @@ CREATE TABLE atproto_remote_actors (
 );
 CREATE INDEX idx_atproto_remote_actors_handle ON atproto_remote_actors(handle);
 
--- Audit ledger for every Jetstream event addressed at a member repo. The
--- (event_uri, operation) pair is the natural dedupe key: a create→delete pair
--- shares the URI but not the operation.
+-- Audit ledger for actionable Jetstream events — irrelevant upstream traffic
+-- rolls back before commit and never lands a row (network-wide volume makes
+-- auditing everything unaffordable). The (event_uri, operation, event_seq)
+-- triple is the natural dedupe key: replays carry the same upstream time_us
+-- while a legit create→delete→create sequence flows through.
 CREATE TABLE atproto_inbound (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     event_uri   text NOT NULL,

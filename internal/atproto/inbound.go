@@ -516,12 +516,18 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, ev *jetstr
 		}); err != nil {
 			return "error", "follow upsert: " + err.Error(), nil
 		}
+		// Action lands on the member's own profile — remote actors have no
+		// local page, and the frontend only navigates in-app paths.
+		action := ""
+		if owner, oerr := q.GetUserByID(ctx, acct.UserID); oerr == nil && owner.Username != "" {
+			action = "/u/" + owner.Username
+		}
 		return "processed", "", []notifyIntent{{
 			recipientID: acct.UserID, nType: "new_follower", actorID: actor.ID,
 			subjectType: "user", subjectID: acct.UserID,
 			title:  "Bluesky follower",
 			body:   actorHandleBody(actor) + " followed you on Bluesky",
-			action: "/atproto",
+			action: action,
 		}}
 	case "delete":
 		if _, err := q.UndoAtprotoRemoteFollow(ctx, uri); err != nil {
