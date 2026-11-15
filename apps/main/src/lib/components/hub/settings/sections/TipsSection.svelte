@@ -3,16 +3,17 @@
 	// thank-you message, external links CRUD, Open Collective connect.
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { t } from '#lib/i18n/index.js';
 	import {
-		getMyTipSettings, updateMyTipSettings, createTipLink, deleteTipLink,
-		connectOC, disconnectOC,
-		getOrgTipSettings, updateOrgTipSettings, createOrgTipLink, deleteOrgTipLink,
-		connectOrgOC, disconnectOrgOC,
+		getMyTipSettings, updateMyTipSettings, createTipLink, updateTipLink, deleteTipLink,
+		connectOC, disconnectOC, connectKofi, disconnectKofi, connectBMC, disconnectBMC,
+		getOrgTipSettings, updateOrgTipSettings, createOrgTipLink, updateOrgTipLink, deleteOrgTipLink,
+		connectOrgOC, disconnectOrgOC, connectOrgKofi, disconnectOrgKofi, connectOrgBMC, disconnectOrgBMC,
 		listTipProductDomains,
 		type TipSettings, type TipExternalLink, type TipProductDomain
 	} from '#lib/api/tips.js';
-	import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-svelte';
+	import { CheckCircle2, ExternalLink, Loader2, Pencil, Plus, Trash2, X } from 'lucide-svelte';
 	import { SelectField } from '#lib/components/ui/index.js';
 
 	// orgId scopes the section to an organization's tip settings (org
@@ -29,11 +30,21 @@
 	let linkLabel = $state('');
 	let linkUrl = $state('');
 	let linkKind = $state<TipExternalLink['kind']>('paypal');
+	let editLinkId = $state<string | null>(null);
+	let editLabel = $state('');
+	let editUrl = $state('');
 	let ocSlug = $state('');
 	let ocToken = $state('');
 	let ocBusy = $state(false);
+	let kofiBusy = $state(false);
+	let bmcToken = $state('');
+	let bmcSlug = $state('');
+	let bmcBusy = $state(false);
 	let eligible = $state(true);
 	let productDomains = $state<TipProductDomain[]>([]);
+	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
+	const kofiFlag = $derived(features['tips.kofi'] ?? false);
+	const bmcFlag = $derived(features['tips.buymeacoffee'] ?? false);
 
 	onMount(async () => {
 		const res = orgId ? await getOrgTipSettings(orgId) : await getMyTipSettings();
@@ -140,6 +151,78 @@
 			settings.oc_webhook_url = null;
 		}
 	}
+
+	function startEdit(link: TipExternalLink) {
+		editLinkId = link.id ?? null;
+		editLabel = link.label;
+		editUrl = link.url;
+	}
+
+	async function saveEdit() {
+		if (!editLinkId) return;
+		const link = links.find((l) => l.id === editLinkId);
+		if (!link) return;
+		const body = { ...link, label: editLabel, url: editUrl };
+		const res = orgId
+			? await updateOrgTipLink(orgId, editLinkId, body)
+			: await updateTipLink(editLinkId, body);
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		if (res.data) links = links.map((l) => (l.id === editLinkId ? res.data! : l));
+		editLinkId = null;
+	}
+
+	async function kofiConnect(rotate = false) {
+		kofiBusy = true;
+		const res = orgId
+			? await connectOrgKofi(orgId, { rotate_secret: rotate })
+			: await connectKofi({ rotate_secret: rotate });
+		kofiBusy = false;
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		if (res.data) settings = res.data;
+	}
+
+	async function kofiDisconnect() {
+		kofiBusy = true;
+		if (orgId) await disconnectOrgKofi(orgId);
+		else await disconnectKofi();
+		kofiBusy = false;
+		if (settings) {
+			settings.kofi_webhook_url = null;
+			settings.kofi_verification_token = null;
+		}
+	}
+
+	async function bmcConnect() {
+		if (!bmcToken) return;
+		bmcBusy = true;
+		const res = orgId
+			? await connectOrgBMC(orgId, { api_token: bmcToken, page_slug: bmcSlug || undefined })
+			: await connectBMC({ api_token: bmcToken, page_slug: bmcSlug || undefined });
+		bmcBusy = false;
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		if (res.data) settings = res.data;
+		bmcToken = '';
+	}
+
+	async function bmcDisconnect() {
+		bmcBusy = true;
+		if (orgId) await disconnectOrgBMC(orgId);
+		else await disconnectBMC();
+		bmcBusy = false;
+		if (settings) {
+			settings.has_bmc_token = false;
+			settings.bmc_page_slug = null;
+		}
+	}
 </script>
 
 {#if loading}
@@ -201,12 +284,27 @@
 		<div class="rounded-lg border border-border p-4">
 			<h3 class="mb-3 text-sm font-semibold">{t('tips.external_links')}</h3>
 			{#each links as link (link.id)}
-				<div class="mb-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
-					<span class="flex items-center gap-2"><ExternalLink class="size-4" />{link.label} — {link.url}</span>
-					<button type="button" onclick={() => removeLink(link.id!)} class="text-destructive hover:opacity-70">
-						<Trash2 class="size-4" />
-					</button>
-				</div>
+				{#if editLinkId === link.id}
+					<div class="mb-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+						<input bind:value={editLabel} placeholder={t('tips.link_label')} class="w-32 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+						<input bind:value={editUrl} placeholder="https://" class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+						<button type="button" onclick={saveEdit} class="shrink-0 rounded-md bg-primary px-2 py-1 text-primary-foreground"><CheckCircle2 class="size-4" /></button>
+						<button type="button" onclick={() => (editLinkId = null)} class="shrink-0 text-muted-foreground hover:opacity-70"><X class="size-4" /></button>
+					</div>
+				{:else}
+					<div class="mb-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+						<span class="flex min-w-0 items-center gap-2"><ExternalLink class="size-4 shrink-0" /><span class="truncate">{link.label} — {link.url}</span></span>
+						<span class="flex shrink-0 items-center gap-2">
+							<span class="text-xs text-muted-foreground">{t('tips.link_clicks', '{n} clicks').replace('{n}', String(link.click_count ?? 0))}</span>
+							<button type="button" onclick={() => startEdit(link)} class="text-muted-foreground hover:opacity-70" title={t('tips.link_edit', 'Edit link')}>
+								<Pencil class="size-4" />
+							</button>
+							<button type="button" onclick={() => removeLink(link.id!)} class="text-destructive hover:opacity-70">
+								<Trash2 class="size-4" />
+							</button>
+						</span>
+					</div>
+				{/if}
 			{/each}
 			<div class="mt-3 flex flex-wrap gap-2">
 				<SelectField
@@ -266,5 +364,66 @@
 				</button>
 			</div>
 		</div>
+
+		{#if kofiFlag}
+			<div class="rounded-lg border border-border p-4">
+				<h3 class="mb-3 text-sm font-semibold">Ko-fi</h3>
+				<p class="mb-3 text-xs text-muted-foreground">
+					{t('tips.kofi_hint', 'Paste these values into your Ko-fi dashboard — incoming Ko-fi donations are imported automatically.')}
+				</p>
+				{#if settings.kofi_webhook_url}
+					<div class="mb-2 flex items-center gap-2 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+						<span class="min-w-0 flex-1 truncate">{t('tips.kofi_webhook', 'Webhook URL')}: …{settings.kofi_webhook_url.slice(-12)}</span>
+						<button type="button" class="shrink-0 text-[var(--color-primary-text)] hover:opacity-70"
+							onclick={() => navigator.clipboard.writeText(settings?.kofi_webhook_url ?? '')}>
+							{t('tips.oc_webhook_copy', 'Copy')}
+						</button>
+						<button type="button" class="shrink-0 text-amber-600 hover:opacity-70" disabled={kofiBusy}
+							onclick={() => kofiConnect(true)}
+							title={t('tips.oc_rotate_hint', 'Regenerate the webhook URL — the old one stops working immediately')}>
+							{t('tips.oc_rotate', 'Rotate')}
+						</button>
+					</div>
+					{#if settings.kofi_verification_token}
+						<div class="mb-3 flex items-center gap-2 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+							<span class="min-w-0 flex-1 truncate">{t('tips.kofi_token', 'Verification token')}: {settings.kofi_verification_token}</span>
+							<button type="button" class="shrink-0 text-[var(--color-primary-text)] hover:opacity-70"
+								onclick={() => navigator.clipboard.writeText(settings?.kofi_verification_token ?? '')}>
+								{t('tips.oc_webhook_copy', 'Copy')}
+							</button>
+						</div>
+					{/if}
+					<button type="button" onclick={kofiDisconnect} disabled={kofiBusy} class="text-sm text-destructive hover:opacity-70">{t('tips.oc_disconnect')}</button>
+				{:else}
+					<button type="button" onclick={() => kofiConnect(false)} disabled={kofiBusy}
+						class="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">
+						{t('tips.kofi_connect', 'Connect Ko-fi')}
+					</button>
+				{/if}
+			</div>
+		{/if}
+
+		{#if bmcFlag}
+			<div class="rounded-lg border border-border p-4">
+				<h3 class="mb-3 text-sm font-semibold">Buy Me a Coffee</h3>
+				<p class="mb-3 text-xs text-muted-foreground">
+					{t('tips.bmc_hint', 'Connect a personal access token — supporters are imported automatically on a schedule.')}
+				</p>
+				{#if settings.has_bmc_token}
+					<div class="mb-3 flex items-center justify-between text-sm">
+						<span>{settings.bmc_page_slug ?? ''}{settings.bmc_page_slug ? ' — ' : ''}{t('tips.bmc_connected', 'connected')}</span>
+						<button type="button" onclick={bmcDisconnect} disabled={bmcBusy} class="text-destructive hover:opacity-70">{t('tips.oc_disconnect')}</button>
+					</div>
+				{/if}
+				<div class="flex gap-2">
+					<input bind:value={bmcToken} type="password" placeholder={t('tips.bmc_token', 'Personal access token')} class="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm" />
+					<input bind:value={bmcSlug} placeholder={t('tips.bmc_slug', 'page slug (optional)')} class="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm" />
+					<button type="button" onclick={bmcConnect} disabled={bmcBusy || !bmcToken}
+						class="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">
+						{t('tips.bmc_connect', 'Connect')}
+					</button>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}

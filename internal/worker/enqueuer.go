@@ -496,7 +496,7 @@ var taskTypeCatalog = []struct {
 	{TypePaymentSyncSettlement, "critical", "Replay payment-success fan-out for synchronous (credit/zero-amount) settlements"},
 	{TypeTipsNotifyReceived, "default", "Notify recipient that a tip was received"},
 	{TypeTipsOCSync, "low", "Scheduled poll — import new Open Collective contributions"},
-	{TypeTipsStaleSweep, "low", "Fail pending fiat tips past the checkout TTL"},
+	{TypeTipsStaleSweep, "default", "Fail pending fiat tips past the checkout TTL"},
 	{TypeTipsRecordLinkClick, "default", "Persist external tip link click event + increment click_count"},
 	{TypeTipsBMCSync, "low", "Poll Buy Me a Coffee supporters and import donations"},
 	// §113 Public Product Roadmap (ADR-127)

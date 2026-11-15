@@ -8,6 +8,7 @@ export interface TipExternalLink {
 	label: string;
 	url: string;
 	position?: number;
+	click_count?: number;
 }
 
 export interface TipConfig {
@@ -30,6 +31,10 @@ export interface TipSettings {
 	oc_collective_slug?: string | null;
 	has_oc_token?: boolean;
 	oc_webhook_url?: string | null;
+	kofi_webhook_url?: string | null;
+	kofi_verification_token?: string | null;
+	has_bmc_token?: boolean;
+	bmc_page_slug?: string | null;
 	min_tip_amount: number;
 	thank_you_message?: string | null;
 }
@@ -99,10 +104,29 @@ export const connectOC = (body: { collective_slug: string; api_token?: string; r
 	api.put<TipSettings>('/me/tip-settings/opencollective', body);
 export const disconnectOC = () => api.delete<void>('/me/tip-settings/opencollective');
 
+// Ko-fi — PUT returns the settings row carrying kofi_webhook_url +
+// kofi_verification_token (both go into the owner's Ko-fi dashboard).
+export const connectKofi = (body: { rotate_secret?: boolean } = {}) =>
+	api.put<TipSettings>('/me/tip-settings/kofi', body);
+export const disconnectKofi = () => api.delete<void>('/me/tip-settings/kofi');
+
+// Buy Me a Coffee — api_token is verified against the BMC API server-side.
+export const connectBMC = (body: { api_token: string; page_slug?: string }) =>
+	api.put<TipSettings>('/me/tip-settings/buymeacoffee', body);
+export const disconnectBMC = () => api.delete<void>('/me/tip-settings/buymeacoffee');
+
 export const listTipsSent = (page = 1, pageSize = 20) =>
 	api.get<Tip[]>(`/me/tips/sent?page=${page}&page_size=${pageSize}`);
 export const listTipsReceived = (page = 1, pageSize = 20) =>
 	api.get<Tip[]>(`/me/tips/received?page=${page}&page_size=${pageSize}`);
+
+// Space tips received — owner/moderator ledger (§05 amendment).
+export const listSpaceTips = (slug: string, page = 1, pageSize = 20) =>
+	api.get<Tip[]>(`/spaces/${slug}/tips?page=${page}&page_size=${pageSize}`);
+
+// Space tip-settings PATCH — owner-only, full settings patch (§05 amendment).
+export const updateSpaceTipSettings = (slug: string, body: Partial<TipSettings>) =>
+	api.patch<TipSettings>(`/spaces/${slug}/tip-settings`, body);
 
 export const newIdempotencyKey = () => crypto.randomUUID();
 
@@ -121,6 +145,14 @@ export const connectOrgOC = (orgId: string, body: { collective_slug: string; api
 	api.put<TipSettings>(`/organizations/${orgId}/tip-settings/opencollective`, body);
 export const disconnectOrgOC = (orgId: string) =>
 	api.delete<void>(`/organizations/${orgId}/tip-settings/opencollective`);
+export const connectOrgKofi = (orgId: string, body: { rotate_secret?: boolean } = {}) =>
+	api.put<TipSettings>(`/organizations/${orgId}/tip-settings/kofi`, body);
+export const disconnectOrgKofi = (orgId: string) =>
+	api.delete<void>(`/organizations/${orgId}/tip-settings/kofi`);
+export const connectOrgBMC = (orgId: string, body: { api_token: string; page_slug?: string }) =>
+	api.put<TipSettings>(`/organizations/${orgId}/tip-settings/buymeacoffee`, body);
+export const disconnectOrgBMC = (orgId: string) =>
+	api.delete<void>(`/organizations/${orgId}/tip-settings/buymeacoffee`);
 
 /* ---- Fiat minor-unit helpers (ISO-4217 exponents — mirror backend
    currencyExponent(): JPY/KRW/VND/XOF/XAF=0, BHD/JOD/KWD/OMR=3, else 2). ---- */

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '#lib/api/client.js';
-	import type { TipConfig, TipSettings } from '#lib/api/tips.js';
+	import { fiatDisplay, listSpaceTips, type Tip, type TipConfig, type TipSettings } from '#lib/api/tips.js';
 	import { t } from '#lib/i18n/index.js';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -116,10 +116,19 @@
 	// paid membership — the backend returns tips_not_allowed/monetization_conflict.
 	let tipsEnabled = $state(false);
 	let acceptCredits = $state(true);
+	let acceptFiat = $state(false);
+	let minTip = $state(0);
+	let thankYou = $state('');
 	let tipsLoaded = $state(false);
 	let tipsSaving = $state(false);
 	let tipsError = $state('');
 	let tipsSaved = $state(false);
+	let spaceTips = $state<Tip[]>([]);
+	let spaceTipsLoaded = $state(false);
+
+	// Fiat providers §17 can register — a space advertises fiat when any
+	// provider method appears in the public config's methods list.
+	const fiatMethods = ['stripe', 'paystack', 'nowpayments', 'manual_transfer'];
 
 	$effect(() => {
 		if (isOwner && space.level === 'custom' && !tipsLoaded) {
@@ -128,8 +137,21 @@
 				if (!res.error && res.data) {
 					tipsEnabled = res.data.enabled ?? false;
 					acceptCredits = res.data.methods?.includes('credits') ?? true;
+					acceptFiat = res.data.methods?.some((m) => fiatMethods.includes(m)) ?? false;
+					minTip = res.data.min_tip_amount ?? 0;
+					thankYou = res.data.thank_you_message ?? '';
 				}
 				tipsLoaded = true;
+			})();
+		}
+	});
+
+	$effect(() => {
+		if (isOwner && space.level === 'custom' && tipsEnabled && !spaceTipsLoaded) {
+			void (async () => {
+				const res = await listSpaceTips(space.slug, 1, 10);
+				if (!res.error && res.data) spaceTips = res.data;
+				spaceTipsLoaded = true;
 			})();
 		}
 	});
@@ -141,6 +163,9 @@
 		const res = await api.patch<TipSettings>(`/spaces/${space.slug}/tip-settings`, {
 			tips_enabled: tipsEnabled,
 			accept_credits: acceptCredits,
+			accept_fiat: acceptFiat,
+			min_tip_amount: minTip,
+			thank_you_message: thankYou || null,
 		});
 		tipsSaving = false;
 		if (res.error) {
@@ -149,6 +174,13 @@
 			tipsSaved = true;
 			setTimeout(() => (tipsSaved = false), 2500);
 		}
+	}
+
+	function spaceTipAmount(tip: Tip): string {
+		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
+		if (tip.method === 'points') return tip.points_amount != null ? `${tip.points_amount} pts` : '—';
+		if (tip.fiat_amount != null) return fiatDisplay(tip.fiat_amount, tip.fiat_currency ?? '');
+		return '—';
 	}
 	let saved = $state(false);
 	let error = $state('');
@@ -1025,6 +1057,20 @@
 						<input type="checkbox" bind:checked={acceptCredits} class="rounded" />
 						{t('space.tips_credits', 'Accept credits')}
 					</label>
+					<label class="flex items-center gap-2">
+						<input type="checkbox" bind:checked={acceptFiat} class="rounded" />
+						{t('space.tips_fiat', 'Accept card / bank')}
+					</label>
+					<label class="block">
+						<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('space.tips_min', 'Minimum tip amount')}</span>
+						<input type="number" min="0" bind:value={minTip}
+							class="w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm" />
+					</label>
+					<label class="block">
+						<span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('space.tips_thanks', 'Thank-you message')}</span>
+						<input type="text" maxlength="200" bind:value={thankYou}
+							class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm" />
+					</label>
 				</div>
 			{/if}
 
@@ -1036,6 +1082,31 @@
 			>
 				{tipsSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
 			</button>
+
+			{#if tipsEnabled && spaceTipsLoaded}
+				<div class="mt-5">
+					<h4 class="mb-2 text-xs font-semibold text-[var(--color-muted)]">
+						{t('space.tips_received', 'Tips received')}
+					</h4>
+					{#if spaceTips.length === 0}
+						<p class="text-xs text-[var(--color-muted)]">{t('space.tips_empty', 'No tips yet')}</p>
+					{:else}
+						<ul class="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+							{#each spaceTips as tip (tip.id)}
+								<li class="flex items-center justify-between px-3 py-2 text-sm">
+									<span class="min-w-0 truncate text-[var(--color-text)]">
+										{tip.sender_name || t('space.tips_anonymous', 'Someone')}
+									</span>
+									<span class="ml-3 shrink-0 text-right">
+										<span class="block font-medium">{spaceTipAmount(tip)}</span>
+										<span class="block text-xs capitalize text-[var(--color-muted)]">{tip.method} · {tip.status}</span>
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 		</fieldset>
 	{/if}
 
