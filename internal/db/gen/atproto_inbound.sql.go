@@ -80,7 +80,10 @@ func (q *Queries) DeleteStaleAtprotoInbound(ctx context.Context, days int32) (in
 }
 
 const getAtprotoAccountByDID = `-- name: GetAtprotoAccountByDID :one
-SELECT id, user_id, did, handle, status FROM atproto_accounts WHERE did = $1 AND status = 'active'
+SELECT id, user_id, did, handle, status FROM atproto_accounts
+WHERE (did = $1 OR previous_did = $1) AND status = 'active'
+ORDER BY (did = $1) DESC
+LIMIT 1
 `
 
 type GetAtprotoAccountByDIDRow struct {
@@ -91,7 +94,9 @@ type GetAtprotoAccountByDIDRow struct {
 	Status string      `json:"status"`
 }
 
-// Follow subjects resolve by DID string (at:// URIs embed the member's did).
+// Follow subjects resolve by DID string (at:// URIs embed the member's
+// did). previous_did matches A6-2's old-DID provenance: a remote follow
+// issued against the pre-migration did:web still reaches the member.
 func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAtprotoAccountByDIDRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoAccountByDID, did)
 	var i GetAtprotoAccountByDIDRow

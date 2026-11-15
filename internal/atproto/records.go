@@ -119,7 +119,7 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 	s.enrichProfileBlobs(ctx, account.ID, profile.AvatarMediaID, profile.BannerMediaID, rec)
 	// Same convergence the task path runs in refreshProfileRecord — a
 	// reconcile can be the first write after a rename.
-	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Handle, user.Username)
+	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
 	if _, err := s.PutRecord(ctx, account.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{}); err != nil {
 		return err
 	}

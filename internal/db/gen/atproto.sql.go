@@ -55,9 +55,11 @@ func (q *Queries) CountAtprotoConformanceRuns(ctx context.Context) (int64, error
 
 const createAtprotoAccount = `-- name: CreateAtprotoAccount :one
 INSERT INTO atproto_accounts (
-    user_id, handle, did, signing_key_enc, public_key_multibase
+    user_id, handle, did, signing_key_enc, public_key_multibase,
+    plc_rotation_key_enc
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1, $2, $3, $4, $5,
+    $6
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
@@ -65,7 +67,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     disabled_at = NULL,
     updated_at = now()
 WHERE atproto_accounts.status <> 'tombstone'
-RETURNING id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason
+RETURNING id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason, plc_rotation_key_enc, previous_did
 `
 
 type CreateAtprotoAccountParams struct {
@@ -74,6 +76,7 @@ type CreateAtprotoAccountParams struct {
 	Did                string      `json:"did"`
 	SigningKeyEnc      string      `json:"signing_key_enc"`
 	PublicKeyMultibase string      `json:"public_key_multibase"`
+	PlcRotationKeyEnc  *string     `json:"plc_rotation_key_enc"`
 }
 
 // Opt-in insert; ON CONFLICT reactivates a disabled row (key custody is
@@ -87,6 +90,7 @@ func (q *Queries) CreateAtprotoAccount(ctx context.Context, arg CreateAtprotoAcc
 		arg.Did,
 		arg.SigningKeyEnc,
 		arg.PublicKeyMultibase,
+		arg.PlcRotationKeyEnc,
 	)
 	var i AtprotoAccount
 	err := row.Scan(
@@ -102,12 +106,14 @@ func (q *Queries) CreateAtprotoAccount(ctx context.Context, arg CreateAtprotoAcc
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 	)
 	return i, err
 }
 
 const getAtprotoAccountAnyUserStatus = `-- name: GetAtprotoAccountAnyUserStatus :one
-SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason FROM atproto_accounts WHERE user_id = $1
+SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason, plc_rotation_key_enc, previous_did FROM atproto_accounts WHERE user_id = $1
 `
 
 // Lifecycle sync + erasure: the account row regardless of user status —
@@ -129,12 +135,14 @@ func (q *Queries) GetAtprotoAccountAnyUserStatus(ctx context.Context, userID pgt
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 	)
 	return i, err
 }
 
 const getAtprotoAccountByHandle = `-- name: GetAtprotoAccountByHandle :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, a.plc_rotation_key_enc, a.previous_did, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE (lower(a.handle) = lower($1) OR lower(u.username) = $2)
@@ -162,6 +170,8 @@ type GetAtprotoAccountByHandleRow struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
 	DisabledReason     *string            `json:"disabled_reason"`
+	PlcRotationKeyEnc  *string            `json:"plc_rotation_key_enc"`
+	PreviousDid        *string            `json:"previous_did"`
 	LiveUsername       string             `json:"live_username"`
 }
 
@@ -193,13 +203,45 @@ func (q *Queries) GetAtprotoAccountByHandle(ctx context.Context, arg GetAtprotoA
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 		&i.LiveUsername,
 	)
 	return i, err
 }
 
+const getAtprotoAccountByPreviousDID = `-- name: GetAtprotoAccountByPreviousDID :one
+SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason, plc_rotation_key_enc, previous_did FROM atproto_accounts
+WHERE previous_did = $1 AND status <> 'tombstone'
+`
+
+// A6-2 fallback: old-DID provenance resolution for late remote
+// replies/follows and old-did XRPC lookups. Tombstone rows resolve
+// nothing — their records are retracted and their identity is gone.
+func (q *Queries) GetAtprotoAccountByPreviousDID(ctx context.Context, previousDid *string) (AtprotoAccount, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountByPreviousDID, previousDid)
+	var i AtprotoAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Handle,
+		&i.Did,
+		&i.SigningKeyEnc,
+		&i.PublicKeyMultibase,
+		&i.Status,
+		&i.RepoSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisabledAt,
+		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
+	)
+	return i, err
+}
+
 const getAtprotoAccountByUserID = `-- name: GetAtprotoAccountByUserID :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, a.plc_rotation_key_enc, a.previous_did
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE a.user_id = $1
@@ -224,12 +266,55 @@ func (q *Queries) GetAtprotoAccountByUserID(ctx context.Context, userID pgtype.U
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
+	)
+	return i, err
+}
+
+const getAtprotoAccountPLCMaterial = `-- name: GetAtprotoAccountPLCMaterial :one
+SELECT a.id, a.user_id, a.did, a.handle, a.status,
+       a.public_key_multibase, a.plc_rotation_key_enc,
+       u.username AS live_username
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.id = $1
+`
+
+type GetAtprotoAccountPLCMaterialRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	UserID             pgtype.UUID `json:"user_id"`
+	Did                string      `json:"did"`
+	Handle             string      `json:"handle"`
+	Status             string      `json:"status"`
+	PublicKeyMultibase string      `json:"public_key_multibase"`
+	PlcRotationKeyEnc  *string     `json:"plc_rotation_key_enc"`
+	LiveUsername       string      `json:"live_username"`
+}
+
+// The plc op inputs for an account: current DID/handle/status, the repo
+// signing pubkey (verificationMethods.atproto), rotation-key
+// ciphertext, and the member's live username (the genesis op's
+// alsoKnownAs carries the CURRENT desired handle, not a stale stored
+// one). Narrow read — no key material leaves the service layer.
+func (q *Queries) GetAtprotoAccountPLCMaterial(ctx context.Context, id pgtype.UUID) (GetAtprotoAccountPLCMaterialRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountPLCMaterial, id)
+	var i GetAtprotoAccountPLCMaterialRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Did,
+		&i.Handle,
+		&i.Status,
+		&i.PublicKeyMultibase,
+		&i.PlcRotationKeyEnc,
+		&i.LiveUsername,
 	)
 	return i, err
 }
 
 const getAtprotoHandleClaim = `-- name: GetAtprotoHandleClaim :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, a.plc_rotation_key_enc, a.previous_did, u.username AS live_username
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE lower(a.handle) = lower($1)
@@ -249,6 +334,8 @@ type GetAtprotoHandleClaimRow struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
 	DisabledReason     *string            `json:"disabled_reason"`
+	PlcRotationKeyEnc  *string            `json:"plc_rotation_key_enc"`
+	PreviousDid        *string            `json:"previous_did"`
 	LiveUsername       string             `json:"live_username"`
 }
 
@@ -271,18 +358,23 @@ func (q *Queries) GetAtprotoHandleClaim(ctx context.Context, handle string) (Get
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 		&i.LiveUsername,
 	)
 	return i, err
 }
 
 const getAtprotoIdentityByDID = `-- name: GetAtprotoIdentityByDID :one
-SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, u.username AS live_username
+SELECT a.id, a.user_id, a.handle, a.did, a.signing_key_enc, a.public_key_multibase, a.status, a.repo_seq, a.created_at, a.updated_at, a.disabled_at, a.disabled_reason, a.plc_rotation_key_enc, a.previous_did, u.username AS live_username,
+       COALESCE(CASE WHEN a.did = $1 THEN a.did ELSE a.previous_did END, '')::text AS matched_did
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = $1
+WHERE (a.did = $1 OR a.previous_did = $1)
   AND a.status IN ('active', 'disabled')
   AND u.status = 'active'
+ORDER BY (a.did = $1) DESC
+LIMIT 1
 `
 
 type GetAtprotoIdentityByDIDRow struct {
@@ -298,7 +390,10 @@ type GetAtprotoIdentityByDIDRow struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
 	DisabledReason     *string            `json:"disabled_reason"`
+	PlcRotationKeyEnc  *string            `json:"plc_rotation_key_enc"`
+	PreviousDid        *string            `json:"previous_did"`
 	LiveUsername       string             `json:"live_username"`
+	MatchedDid         string             `json:"matched_did"`
 }
 
 // did:web document resolution. The :u:{user_uuid} path component IS
@@ -307,6 +402,10 @@ type GetAtprotoIdentityByDIDRow struct {
 // 'disabled' accounts keep their document (upstream deactivated-repo
 // semantics — prior signed content stays verifiable); tombstone rows
 // and non-'active' users resolve nothing.
+// previous_did matches keep serving the pre-migration did:web doc after
+// an A6-2 swap (§127): embedded at://{old_did} refs in records stay
+// resolvable. matched_did tells the caller WHICH did the document is
+// for — a previous_did hit must still declare the old did as its id.
 func (q *Queries) GetAtprotoIdentityByDID(ctx context.Context, did string) (GetAtprotoIdentityByDIDRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoIdentityByDID, did)
 	var i GetAtprotoIdentityByDIDRow
@@ -323,7 +422,10 @@ func (q *Queries) GetAtprotoIdentityByDID(ctx context.Context, did string) (GetA
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 		&i.LiveUsername,
+		&i.MatchedDid,
 	)
 	return i, err
 }
@@ -332,7 +434,9 @@ const getAtprotoRepoRefByDID = `-- name: GetAtprotoRepoRefByDID :one
 SELECT a.id, a.did, a.status AS account_status, u.status AS user_status
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = $1
+WHERE a.did = $1 OR a.previous_did = $1
+ORDER BY (a.did = $1) DESC
+LIMIT 1
 `
 
 type GetAtprotoRepoRefByDIDRow struct {
@@ -365,7 +469,9 @@ SELECT a.status AS account_status, u.status AS user_status,
         ORDER BY c.seq DESC LIMIT 1), '')::text AS head_rev
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = $1
+WHERE a.did = $1 OR a.previous_did = $1
+ORDER BY (a.did = $1) DESC
+LIMIT 1
 `
 
 type GetAtprotoRepoStatusByDIDRow struct {
@@ -644,6 +750,76 @@ func (q *Queries) PickAtprotoConformanceTarget(ctx context.Context) (PickAtproto
 	var i PickAtprotoConformanceTargetRow
 	err := row.Scan(&i.Did, &i.HasPosts)
 	return i, err
+}
+
+const rewriteAtprotoRecordDIDPrefix = `-- name: RewriteAtprotoRecordDIDPrefix :execrows
+UPDATE atproto_records
+SET uri = 'at://' || $1 || substr(uri, length('at://' || $2) + 1)
+WHERE account_id = $3
+  AND uri LIKE 'at://' || $2 || '/%'
+`
+
+type RewriteAtprotoRecordDIDPrefixParams struct {
+	NewDid    *string     `json:"new_did"`
+	OldDid    *string     `json:"old_did"`
+	AccountID pgtype.UUID `json:"account_id"`
+}
+
+// The URI rewrite half of the A6-2 swap — runs in the same tx so the
+// index never straddles two identities. 'at://{did}' is the authority
+// prefix; the /collection/rkey tail is preserved verbatim.
+func (q *Queries) RewriteAtprotoRecordDIDPrefix(ctx context.Context, arg RewriteAtprotoRecordDIDPrefixParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rewriteAtprotoRecordDIDPrefix, arg.NewDid, arg.OldDid, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setAtprotoAccountRotationKey = `-- name: SetAtprotoAccountRotationKey :execrows
+UPDATE atproto_accounts
+SET plc_rotation_key_enc = $1, updated_at = now()
+WHERE id = $2 AND plc_rotation_key_enc IS NULL
+`
+
+type SetAtprotoAccountRotationKeyParams struct {
+	PlcRotationKeyEnc *string     `json:"plc_rotation_key_enc"`
+	ID                pgtype.UUID `json:"id"`
+}
+
+// First-write-wins rotation-key custody: the IS NULL guard stops a
+// racing provisioning attempt from clobbering a key a submitted op
+// already references. Zero rows = key already set (treat as success).
+func (q *Queries) SetAtprotoAccountRotationKey(ctx context.Context, arg SetAtprotoAccountRotationKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAtprotoAccountRotationKey, arg.PlcRotationKeyEnc, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const swapAtprotoAccountDID = `-- name: SwapAtprotoAccountDID :execrows
+UPDATE atproto_accounts
+SET did = $1, previous_did = $2, updated_at = now()
+WHERE id = $3 AND did = $2
+`
+
+type SwapAtprotoAccountDIDParams struct {
+	NewDid string      `json:"new_did"`
+	OldDid *string     `json:"old_did"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// The A6-2 identity swap: CAS on the expected current DID so a double
+// run can't regress a newer swap. previous_did preserves the outgoing
+// identity for old-URI provenance; a did:web→did:web retry is the only
+// path that could clobber it and the caller early-returns before that.
+func (q *Queries) SwapAtprotoAccountDID(ctx context.Context, arg SwapAtprotoAccountDIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, swapAtprotoAccountDID, arg.NewDid, arg.OldDid, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAtprotoAccountHandle = `-- name: UpdateAtprotoAccountHandle :exec

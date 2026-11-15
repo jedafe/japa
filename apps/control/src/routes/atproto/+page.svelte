@@ -13,7 +13,7 @@
 	import type { DataTableColumn, DataTableRowAction } from '#lib/api/types.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/auth.svelte.js';
-	import { Ban, CircleCheck, CircleX, Play, RotateCcw, Search, Skull } from 'lucide-svelte';
+	import { Ban, CircleCheck, CircleX, Globe, Play, RotateCcw, Search, Skull } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 
 	type AtprotoAccount = {
@@ -123,18 +123,21 @@
 	];
 
 	// ── Lifecycle actions (atproto.accounts.manage) ──────────────────────
-	// POST /control/atproto/accounts/{id}/{disable,reactivate,tombstone} —
+	// POST /control/atproto/accounts/{id}/{disable,reactivate,tombstone,migrate-plc} —
 	// tombstone is the terminal erasure path: it requires typing the
 	// account's handle into the confirm modal.
 	const canManage = $derived(hasPermission('atproto.accounts.manage'));
 	let confirmOpen = $state(false);
 	let confirmAction = $state<{
-		type: 'disable' | 'reactivate' | 'tombstone';
+		type: 'disable' | 'reactivate' | 'tombstone' | 'migrate-plc';
 		account: AtprotoAccount;
 	} | null>(null);
 	let actionBusy = $state(false);
 
-	function openConfirm(type: 'disable' | 'reactivate' | 'tombstone', account: AtprotoAccount) {
+	function openConfirm(
+		type: 'disable' | 'reactivate' | 'tombstone' | 'migrate-plc',
+		account: AtprotoAccount
+	) {
 		confirmAction = { type, account };
 		confirmOpen = true;
 	}
@@ -154,6 +157,16 @@
 			icon: RotateCcw as never,
 			onClick: (row) => openConfirm('reactivate', row as unknown as AtprotoAccount),
 			hidden: (row) => (row as unknown as AtprotoAccount).status !== 'disabled'
+		},
+		{
+			// did:plc rows have already swapped — the task would no-op.
+			label: t('atproto.action_migrate_plc', 'Migrate to did:plc'),
+			icon: Globe as never,
+			onClick: (row) => openConfirm('migrate-plc', row as unknown as AtprotoAccount),
+			hidden: (row) => {
+				const a = row as unknown as AtprotoAccount;
+				return a.status === 'tombstone' || a.did.startsWith('did:plc:');
+			}
 		},
 		{
 			label: t('atproto.action_tombstone', 'Tombstone'),
@@ -183,6 +196,15 @@
 					consequence: t(
 						'atproto.reactivate_detail',
 						'{handle} returns to active and its repo reconciles to canonical eligibility.'
+					).replace('{handle}', handle),
+					confirmText: ''
+				};
+			case 'migrate-plc':
+				return {
+					title: t('atproto.migrate_plc_title', 'Migrate to did:plc?'),
+					consequence: t(
+						'atproto.migrate_plc_detail',
+						'{handle} moves to a self-authenticating did:plc — the signing key and repo survive unchanged; the did:web keeps resolving for old references.'
 					).replace('{handle}', handle),
 					confirmText: ''
 				};

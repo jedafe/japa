@@ -162,29 +162,41 @@ func (s *Service) validHandle(username, handle string) bool {
 }
 
 // syncHandle lazily reconciles the stored handle with the member's live
-// username after a rename — the DID itself is immutable
-// (did:web:…:u:{user_uuid} never changes). Returns the handle to
-// emit in docs. Idempotent; on contention the stale value is served.
-// userID (the account's owner — NOT the row PK) keys the jc:atp:did:*
-// doc cache, which is addressed by the did:web u/{user_uuid} path.
-func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID, storedHandle, liveUsername string) string {
-	if liveUsername == "" || s.cfg.handleDomain() == "" {
+// username after a rename — the DID itself is immutable. Returns the
+// handle to emit in docs. Idempotent; on contention the stale value is
+// served. userID (the account's owner — NOT the row PK) keys the
+// jc:atp:did:* doc cache, which is addressed by the did:web u/{user_uuid}
+// path.
+//
+// acctDID is the account's CURRENT DID (post-A6-2 it can be did:plc):
+// #identity emits against it, and did:plc accounts must submit the
+// directory update op BEFORE the local write — alsoKnownAs lives in the
+// signed op log, so a directory failure keeps the OLD handle rather
+// than advertising one the network can't verify.
+func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID, acctDID, storedHandle, liveUsername string) string {
+	want, ok := s.desiredHandle(userID, liveUsername)
+	if !ok {
 		return storedHandle
-	}
-	want := s.cfg.handleFor(liveUsername)
-	// §50 admits '_' — a rename into a handle-illegal name can't mint a
-	// verifiable {username}.{domain}, and writing it anyway both emits a
-	// bad #identity and wedges the freed username-derived handle on this
-	// row forever (its next owner gets ErrHandleTaken from a claim this
-	// account could never release). Fall back to the permanent
-	// uuid-derived handle — DNS-legal, and unclaimable by any §50
-	// username (the uuid form exceeds the 30-char cap). A rename back to
-	// a legal name re-derives the username handle on the next sync.
-	if !s.validHandle(liveUsername, want) {
-		want = s.cfg.handleFor("u-" + uuidString(userID))
 	}
 	if strings.EqualFold(storedHandle, want) {
 		return storedHandle
+	}
+	if strings.HasPrefix(acctDID, plcDIDPrefix) {
+		// Claim check first: submitting an update op for a handle
+		// another row still legitimately holds would advertise an
+		// unclaimable identity. A stale claim is released before the op
+		// (releaseStaleClaim emits that row's own #identity).
+		if claimed, err := s.store.handleClaim(ctx, want); err == nil && claimed.ID != accountID {
+			if strings.EqualFold(s.cfg.handleFor(claimed.LiveUsername), want) {
+				return storedHandle // genuinely held — nothing to sync
+			}
+			s.releaseStaleClaim(ctx, want, accountID)
+		}
+		if err := s.plcUpdateHandle(ctx, accountID, want); err != nil {
+			slog.Warn("atproto: plc handle update failed; keeping stored handle",
+				"account_id", accountID.String(), "handle", want, "error", err)
+			return storedHandle
+		}
 	}
 	if err := s.store.setAccountHandle(ctx, accountID, want); err != nil {
 		// The wanted handle is claimed by another row. When that claim is
@@ -203,8 +215,9 @@ func (s *Service) syncHandle(ctx context.Context, accountID, userID pgtype.UUID,
 	s.invalidateAccount(ctx, storedHandle, id)
 	s.invalidateAccount(ctx, want, id)
 	// §127 A3: handle changes ride #identity — relays/appviews refresh
-	// their handle→DID caches off it.
-	s.emitIdentityEvent(ctx, s.cfg.didFor(id), want)
+	// their handle→DID caches off it. Emitted on the account's CURRENT
+	// did (did:web pre-migration, did:plc after).
+	s.emitIdentityEvent(ctx, acctDID, want)
 	return want
 }
 
@@ -222,6 +235,14 @@ func (s *Service) releaseStaleClaim(ctx context.Context, handle string, accountI
 	live := s.cfg.handleFor(claimed.LiveUsername)
 	if strings.EqualFold(live, handle) {
 		return // live-aligned claim — the handle is genuinely held
+	}
+	// did:plc claims move the directory first — writing the handle
+	// without the op would drift alsoKnownAs from the signed log.
+	if strings.HasPrefix(claimed.Did, plcDIDPrefix) {
+		if err := s.plcUpdateHandle(ctx, claimed.ID, live); err != nil {
+			slog.Warn("atproto: stale claim plc update failed", "account_id", claimed.ID.String(), "handle", live, "error", err)
+			return
+		}
 	}
 	if err := s.store.setAccountHandle(ctx, claimed.ID, live); err != nil {
 		slog.Warn("atproto: stale claim release failed", "account_id", claimed.ID.String(), "handle", handle, "error", err)
@@ -262,7 +283,7 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 	// claim just migrated to the member's live username — the requested
 	// handle is now unclaimed. Returning the row's DID here would cache
 	// (and prove) the wrong account for a freed handle.
-	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.UserID, account.Handle, account.LiveUsername), handle) {
+	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername), handle) {
 		return "", ErrNotFound
 	}
 	if s.vk != nil {
@@ -300,8 +321,12 @@ func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, e
 		return nil, fmt.Errorf("atproto: account lookup: %w", err)
 	}
 
-	// alsoKnownAs emits the live handle (synced on read after renames).
-	doc := didDocument(account.Did, s.syncHandle(ctx, account.ID, account.UserID, account.Handle, account.LiveUsername),
+	// The document's id is the RESOLVED did — for an A6-2-migrated
+	// account matched_did is previous_did (the did:web this URL claims
+	// to describe); the account's current did:plc lives in the PLC
+	// directory, not here. alsoKnownAs emits the live handle (synced on
+	// read after renames).
+	doc := didDocument(account.MatchedDid, s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername),
 		account.PublicKeyMultibase, s.cfg.pdsURL())
 	s.cacheSet(ctx, cacheKey, doc, 10*time.Minute)
 	return doc, nil
@@ -347,7 +372,7 @@ func (s *Service) GetMyAccount(ctx context.Context, userID pgtype.UUID) (Account
 	if err != nil {
 		return AccountStatus{}, fmt.Errorf("atproto: my user: %w", err)
 	}
-	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Handle, user.Username)
+	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
 	return s.statusFor(account), nil
 }
 
@@ -403,15 +428,34 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		if strings.EqualFold(s.cfg.handleFor(claimed.LiveUsername), handle) {
 			return AccountStatus{}, ErrHandleTaken
 		}
-		s.syncHandle(ctx, claimed.ID, claimed.UserID, claimed.Handle, claimed.LiveUsername)
+		s.syncHandle(ctx, claimed.ID, claimed.UserID, claimed.Did, claimed.Handle, claimed.LiveUsername)
+	}
+
+	// §127 A6-2: provision did:plc at opt-in. The directory unreachable
+	// or the op rejected falls back to did:web — opt-in is never blocked
+	// by directory health; atproto:plc_migrate converges the account in
+	// place afterward. The rotation ciphertext stores either way so the
+	// retry signs with the same key (deterministic op → same DID).
+	did := s.cfg.didFor(uuidString(userID))
+	var rotEnc *string
+	if pDid, rEnc, perr := s.provisionNewPLC(ctx, handle, pubMultibase); perr == nil {
+		did = pDid
+		rotEnc = &rEnc
+	} else {
+		slog.Warn("atproto: did:plc provisioning failed — did:web fallback",
+			"user_id", userID.String(), "error", perr)
+		if rEnc != "" {
+			rotEnc = &rEnc
+		}
 	}
 
 	account, err := s.store.createAccount(ctx, gen.CreateAtprotoAccountParams{
 		UserID:             userID,
 		Handle:             handle,
-		Did:                s.cfg.didFor(uuidString(userID)),
+		Did:                did,
 		SigningKeyEnc:      privEnc,
 		PublicKeyMultibase: pubMultibase,
+		PlcRotationKeyEnc:  rotEnc,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -449,6 +493,10 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 	// publishing (or a backfill-provisioned member) has an eligible
 	// backlog no emit ever saw; a fresh signup's run is a cheap no-op.
 	worker.EnqueueAtprotoReconcileRepo(ctx, account.ID)
+	// §127 A6-2: the did:web fallback converges to did:plc in place.
+	if !strings.HasPrefix(account.Did, plcDIDPrefix) {
+		worker.EnqueueAtprotoPlcMigrate(ctx, account.ID)
+	}
 	return s.statusFor(account), nil
 }
 
@@ -476,7 +524,7 @@ func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccoun
 		s.invalidateAccount(ctx, existing.Handle, uuidString(existing.UserID))
 		s.emitAccountEvent(ctx, existing.Did, true, "")
 	}
-	existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Handle, liveUsername)
+	existing.Handle = s.syncHandle(ctx, existing.ID, existing.UserID, existing.Did, existing.Handle, liveUsername)
 	if err := s.ensureRepoInitialized(ctx, &existing); err != nil {
 		return AccountStatus{}, err
 	}
@@ -485,6 +533,11 @@ func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccoun
 		// Records frozen mid-mutation while the account was disabled
 		// converge to canonical eligibility (§127 Lifecycle reconcile).
 		worker.EnqueueAtprotoReconcileRepo(ctx, existing.ID)
+	}
+	// §127 A6-2: pre-plc accounts converge to did:plc on every active
+	// path — idempotent, a no-op once the swap has landed.
+	if !strings.HasPrefix(existing.Did, plcDIDPrefix) {
+		worker.EnqueueAtprotoPlcMigrate(ctx, existing.ID)
 	}
 	return s.statusFor(existing), nil
 }
@@ -688,5 +741,28 @@ func (s *Service) AdminTombstoneAccount(ctx context.Context, accountID pgtype.UU
 		return AccountStatus{}, err
 	}
 	account.Status = AccountStatusTombstone
+	return s.statusFor(account), nil
+}
+
+// AdminMigratePLC serves the control did:plc lever (§127 A6-2) —
+// enqueues atproto:plc_migrate for the account. did:plc rows answer
+// with their status unchanged (idempotent no-op); tombstone is gone.
+func (s *Service) AdminMigratePLC(ctx context.Context, accountID pgtype.UUID) (AccountStatus, error) {
+	if !s.featureOn(ctx) {
+		return AccountStatus{}, ErrNotFound
+	}
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return AccountStatus{}, fmt.Errorf("atproto: admin migrate-plc lookup: %w", err)
+	}
+	if account.Status == AccountStatusTombstone {
+		return AccountStatus{}, ErrNotFound
+	}
+	if !strings.HasPrefix(account.Did, plcDIDPrefix) {
+		worker.EnqueueAtprotoPlcMigrate(ctx, accountID)
+	}
 	return s.statusFor(account), nil
 }

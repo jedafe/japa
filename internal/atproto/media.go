@@ -146,7 +146,7 @@ func (s *Service) refreshProfileRecord(ctx context.Context, accountID pgtype.UUI
 	// re-enabled by an identity write.
 	if acct, err := s.store.q.GetAtprotoAccountByID(ctx, accountID); err == nil &&
 		acct.Status == AccountStatusActive {
-		s.syncHandle(ctx, acct.ID, acct.UserID, acct.Handle, profile.Username)
+		s.syncHandle(ctx, acct.ID, acct.UserID, acct.Did, acct.Handle, profile.Username)
 	}
 }
 

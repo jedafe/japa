@@ -163,5 +163,10 @@ UPDATE atproto_remote_follows SET undone_at = now()
 WHERE remote_actor_id = @remote_actor_id AND undone_at IS NULL;
 
 -- name: GetAtprotoAccountByDID :one
--- Follow subjects resolve by DID string (at:// URIs embed the member's did).
-SELECT id, user_id, did, handle, status FROM atproto_accounts WHERE did = @did AND status = 'active';
+-- Follow subjects resolve by DID string (at:// URIs embed the member's
+-- did). previous_did matches A6-2's old-DID provenance: a remote follow
+-- issued against the pre-migration did:web still reaches the member.
+SELECT id, user_id, did, handle, status FROM atproto_accounts
+WHERE (did = @did OR previous_did = @did) AND status = 'active'
+ORDER BY (did = @did) DESC
+LIMIT 1;

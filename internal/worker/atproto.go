@@ -27,6 +27,7 @@ type atprotoRepoWriter interface {
 	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) (bool, error)
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
 	ReconcileRepo(ctx context.Context, accountID pgtype.UUID) error
+	MigratePLC(ctx context.Context, accountID pgtype.UUID) error
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -363,5 +364,55 @@ func HandleAtprotoDeleteRecord(ctx context.Context, t *asynq.Task) error {
 		return skipIfPermanent(err)
 	}
 	slog.Info("task:atproto:delete_record: committed", "uri", payload.URI)
+	return nil
+}
+
+// EnqueueAtprotoPlcMigrate fires atproto:plc_migrate for one account
+// (§127 A6-2): provision a did:plc — rotation-key custody, signed
+// genesis op, directory submit, in-place did swap. Idempotent; a
+// re-enqueue on an already-did:plc account no-ops. Fire-and-forget
+// (Rule 8); a nil enqueuer is a no-op.
+func EnqueueAtprotoPlcMigrate(ctx context.Context, accountID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"account_id": accountID.String()})
+	if err != nil {
+		slog.Warn("worker: atproto plc_migrate enqueue marshal failed", "account_id", accountID.String(), "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeAtprotoPlcMigrate, payload); err != nil {
+		slog.Warn("worker: atproto plc_migrate enqueue failed", "account_id", accountID.String(), "error", err)
+	}
+}
+
+// HandleAtprotoPlcMigrate processes atproto:plc_migrate (§127 A6-2):
+// run the idempotent provisioning core for one account. Transient
+// directory errors retry; a tombstoned/gone account or a rejected op
+// skips permanently.
+func HandleAtprotoPlcMigrate(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:atproto:plc_migrate")
+
+	if atprotoSvc == nil {
+		slog.Warn("task:atproto:plc_migrate: service not registered, dropping task")
+		return nil
+	}
+
+	var payload struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:atproto:plc_migrate: invalid payload", "error", err)
+		return err
+	}
+	accountID, err := scanUUID(payload.AccountID)
+	if err != nil {
+		return fmt.Errorf("task:atproto:plc_migrate: %w: %w", err, asynq.SkipRetry)
+	}
+	if err := atprotoSvc.MigratePLC(ctx, accountID); err != nil {
+		slog.Error("task:atproto:plc_migrate: migrate failed", "account_id", payload.AccountID, "error", err)
+		return skipIfPermanent(err)
+	}
+	slog.Info("task:atproto:plc_migrate: done", "account_id", payload.AccountID)
 	return nil
 }

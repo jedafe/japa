@@ -196,6 +196,13 @@ func (h *Handlers) AdminReactivateAccount(w http.ResponseWriter, r *http.Request
 	h.adminLifecycle(w, r, h.service.AdminReactivateAccount)
 }
 
+// AdminMigratePLC serves POST /control/atproto/accounts/{id}/migrate-plc —
+// the did:web→did:plc backfill lever. Enqueues atproto:plc_migrate; the
+// response is the account's current status (the swap lands async).
+func (h *Handlers) AdminMigratePLC(w http.ResponseWriter, r *http.Request) {
+	h.adminLifecycle(w, r, h.service.AdminMigratePLC)
+}
+
 // AdminTombstoneAccount serves POST /control/atproto/accounts/{id}/tombstone —
 // the terminal erasure path; the control UI must confirm before calling.
 func (h *Handlers) AdminTombstoneAccount(w http.ResponseWriter, r *http.Request) {

@@ -220,6 +220,7 @@ const (
 	TypeAtprotoLifecycleSync    = "atproto:lifecycle_sync"    // default (§127 lifecycle: users.status → account freeze/reactivate)
 	TypeAtprotoReconcileRepo    = "atproto:reconcile_repo"    // default (§127 A4: converge indexed records to eligibility on reactivation)
 	TypeAtprotoJetstreamConsume = "atproto:jetstream_consume" // daemon (§127 A5) — not an asynq task; runs as a supervised goroutine in the server process
+	TypeAtprotoPlcMigrate       = "atproto:plc_migrate"       // default (§127 A6-2: provision did:plc for one account — rotation key, genesis op, did swap)
 	TypeFederationAutoOptin     = "federation:auto_optin"     // default (§126 auto opt-in: provision federated identity at registration)
 	TypeFederationBackfillOptin = "federation:backfill_optin" // default (§126 backfill: converge existing members, paged)
 )
@@ -458,6 +459,7 @@ var handlerRegistry = []struct {
 	{TypeAtprotoRequestCrawl, HandleAtprotoRequestCrawl},
 	{TypeAtprotoLifecycleSync, HandleAtprotoLifecycleSync},
 	{TypeAtprotoReconcileRepo, HandleAtprotoReconcileRepo},
+	{TypeAtprotoPlcMigrate, HandleAtprotoPlcMigrate},
 	{TypeFederationAutoOptin, HandleFederationAutoOptin},
 	{TypeFederationBackfillOptin, HandleFederationBackfillOptin},
 }

@@ -10161,6 +10161,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/atproto/accounts/{id}/reactivate", atprotoHandlers.AdminReactivateAccount)
 				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.manage")).
 					Post("/atproto/accounts/{id}/tombstone", atprotoHandlers.AdminTombstoneAccount)
+				// A6-2 — the did:web→did:plc backfill lever; idempotent
+				// enqueue of atproto:plc_migrate.
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.manage")).
+					Post("/atproto/accounts/{id}/migrate-plc", atprotoHandlers.AdminMigratePLC)
 			})
 		})
 	})

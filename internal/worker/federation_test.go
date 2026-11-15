@@ -50,6 +50,8 @@ func (f *fakeProvisioner) SyncUserLifecycle(_ context.Context, _ pgtype.UUID) (b
 	return fakeUserActive, nil
 }
 
+func (f *fakeProvisioner) MigratePLC(_ context.Context, _ pgtype.UUID) error { return nil }
+
 // setAutoOptinSeams injects fakes into the package-level seams the handler
 // reads and restores them on cleanup.
 func setAutoOptinSeams(t *testing.T, s settingsReader, c FeatureChecker, fed federationProvisioner, atp atprotoRepoWriter) {

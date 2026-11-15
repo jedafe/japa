@@ -710,6 +710,8 @@ type AtprotoAccount struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
 	DisabledReason     *string            `json:"disabled_reason"`
+	PlcRotationKeyEnc  *string            `json:"plc_rotation_key_enc"`
+	PreviousDid        *string            `json:"previous_did"`
 }
 
 type AtprotoBlob struct {

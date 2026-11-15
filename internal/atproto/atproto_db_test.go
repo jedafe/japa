@@ -106,6 +106,10 @@ func newAtprotoService(t *testing.T, d *db.DB) *Service {
 		APIBase:      "https://api.test.dev",
 		SiteBase:     "https://test.dev",
 		HandleDomain: "test.dev",
+		// A6-2: opt-in tries the PLC directory first — point it at a
+		// dead address so tests take the did:web fallback path
+		// deterministically (instant refusal, never a real directory).
+		PLCURL: "http://127.0.0.1:1",
 	})
 }
 
@@ -750,10 +754,7 @@ func newAtprotoContent(t *testing.T, ctx context.Context, d *db.DB, authorID pgt
 // atprotoAccountFor reads the member's account row.
 func atprotoAccountFor(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID) gen.AtprotoAccount {
 	t.Helper()
-	var a gen.AtprotoAccount
-	err := d.Writer.QueryRow(ctx, `SELECT * FROM atproto_accounts WHERE user_id = $1`, userID).Scan(
-		&a.ID, &a.UserID, &a.Handle, &a.Did, &a.SigningKeyEnc, &a.PublicKeyMultibase,
-		&a.Status, &a.RepoSeq, &a.CreatedAt, &a.UpdatedAt, &a.DisabledAt, &a.DisabledReason)
+	a, err := gen.New(d.Writer).GetAtprotoAccountAnyUserStatus(ctx, userID)
 	if err != nil {
 		t.Fatalf("read account: %v", err)
 	}

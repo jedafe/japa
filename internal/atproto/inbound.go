@@ -508,10 +508,10 @@ func (s *Service) createRemoteComment(ctx context.Context, q *gen.Queries, ev *j
 	}
 	// Reply targets: the parent is a member post → attach to its content;
 	// otherwise the root might be ours (reply deeper in the thread).
-	rec, err := q.GetAtprotoRecordByURI(ctx, parentURI)
+	rec, err := s.resolveLocalRecordURI(ctx, q, parentURI)
 	if err != nil {
 		if root := recStr(c.Record, "reply", "root", "uri"); root != "" && root != parentURI {
-			rec, err = q.GetAtprotoRecordByURI(ctx, root)
+			rec, err = s.resolveLocalRecordURI(ctx, q, root)
 		}
 	}
 	if err != nil || !rec.ContentID.Valid {
@@ -620,7 +620,7 @@ func (s *Service) dispatchLike(ctx context.Context, q *gen.Queries, ev *jetstrea
 		if subject == "" {
 			return "rejected", "missing subject", nil
 		}
-		rec, err := q.GetAtprotoRecordByURI(ctx, subject)
+		rec, err := s.resolveLocalRecordURI(ctx, q, subject)
 		if err != nil || !rec.ContentID.Valid {
 			return "ignored", "like target is not a member record", nil
 		}
@@ -740,4 +740,29 @@ func didShort(actor gen.AtprotoRemoteActor) string {
 		return actor.Did[:24] + "…"
 	}
 	return actor.Did
+}
+
+// resolveLocalRecordURI resolves an at:// record URI against the member
+// record index, with A6-2 old-DID provenance: remote replies/likes can
+// target URIs minted under a pre-migration did:web forever. On a miss
+// whose authority segment matches some account's previous_did, the
+// lookup retries under the account's current DID.
+func (s *Service) resolveLocalRecordURI(ctx context.Context, q *gen.Queries, uri string) (gen.GetAtprotoRecordByURIRow, error) {
+	rec, err := q.GetAtprotoRecordByURI(ctx, uri)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return rec, err
+	}
+	rest, ok := strings.CutPrefix(uri, "at://")
+	if !ok {
+		return rec, err
+	}
+	authority, tail, ok := strings.Cut(rest, "/")
+	if !ok || authority == "" || tail == "" {
+		return rec, err
+	}
+	acct, aerr := q.GetAtprotoAccountByPreviousDID(ctx, &authority)
+	if aerr != nil {
+		return rec, err
+	}
+	return q.GetAtprotoRecordByURI(ctx, "at://"+acct.Did+"/"+tail)
 }

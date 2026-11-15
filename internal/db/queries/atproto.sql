@@ -54,12 +54,19 @@ WHERE a.user_id = @user_id
 -- 'disabled' accounts keep their document (upstream deactivated-repo
 -- semantics — prior signed content stays verifiable); tombstone rows
 -- and non-'active' users resolve nothing.
-SELECT a.*, u.username AS live_username
+-- previous_did matches keep serving the pre-migration did:web doc after
+-- an A6-2 swap (§127): embedded at://{old_did} refs in records stay
+-- resolvable. matched_did tells the caller WHICH did the document is
+-- for — a previous_did hit must still declare the old did as its id.
+SELECT a.*, u.username AS live_username,
+       COALESCE(CASE WHEN a.did = @did THEN a.did ELSE a.previous_did END, '')::text AS matched_did
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = @did
+WHERE (a.did = @did OR a.previous_did = @did)
   AND a.status IN ('active', 'disabled')
-  AND u.status = 'active';
+  AND u.status = 'active'
+ORDER BY (a.did = @did) DESC
+LIMIT 1;
 
 -- name: GetAtprotoRepoRefByDID :one
 -- Sync-surface repo lookup — deliberately unfiltered by status so the
@@ -69,7 +76,9 @@ WHERE a.did = @did
 SELECT a.id, a.did, a.status AS account_status, u.status AS user_status
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = @did;
+WHERE a.did = @did OR a.previous_did = @did
+ORDER BY (a.did = @did) DESC
+LIMIT 1;
 
 -- name: GetAtprotoRepoStatusByDID :one
 -- getRepoStatus: account + user status + head rev in one read. The
@@ -80,7 +89,9 @@ SELECT a.status AS account_status, u.status AS user_status,
         ORDER BY c.seq DESC LIMIT 1), '')::text AS head_rev
 FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
-WHERE a.did = @did;
+WHERE a.did = @did OR a.previous_did = @did
+ORDER BY (a.did = @did) DESC
+LIMIT 1;
 
 -- name: ListAtprotoRepos :many
 -- listRepos: hosted-repo census. Tombstone rows are gone from the
@@ -114,9 +125,11 @@ SELECT * FROM atproto_accounts WHERE user_id = @user_id;
 -- refuses to resurrect a tombstoned row: a conflict against tombstone
 -- yields no RETURNING row (ErrNoRows → caller maps tombstone-terminal).
 INSERT INTO atproto_accounts (
-    user_id, handle, did, signing_key_enc, public_key_multibase
+    user_id, handle, did, signing_key_enc, public_key_multibase,
+    plc_rotation_key_enc
 ) VALUES (
-    @user_id, @handle, @did, @signing_key_enc, @public_key_multibase
+    @user_id, @handle, @did, @signing_key_enc, @public_key_multibase,
+    @plc_rotation_key_enc
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
@@ -135,6 +148,52 @@ SET status = @status,
     disabled_at = CASE WHEN @status = 'active' THEN NULL ELSE now() END,
     updated_at = now()
 WHERE id = @id;
+
+-- name: GetAtprotoAccountByPreviousDID :one
+-- A6-2 fallback: old-DID provenance resolution for late remote
+-- replies/follows and old-did XRPC lookups. Tombstone rows resolve
+-- nothing — their records are retracted and their identity is gone.
+SELECT * FROM atproto_accounts
+WHERE previous_did = @previous_did AND status <> 'tombstone';
+
+-- name: GetAtprotoAccountPLCMaterial :one
+-- The plc op inputs for an account: current DID/handle/status, the repo
+-- signing pubkey (verificationMethods.atproto), rotation-key
+-- ciphertext, and the member's live username (the genesis op's
+-- alsoKnownAs carries the CURRENT desired handle, not a stale stored
+-- one). Narrow read — no key material leaves the service layer.
+SELECT a.id, a.user_id, a.did, a.handle, a.status,
+       a.public_key_multibase, a.plc_rotation_key_enc,
+       u.username AS live_username
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.id = @id;
+
+-- name: SetAtprotoAccountRotationKey :execrows
+-- First-write-wins rotation-key custody: the IS NULL guard stops a
+-- racing provisioning attempt from clobbering a key a submitted op
+-- already references. Zero rows = key already set (treat as success).
+UPDATE atproto_accounts
+SET plc_rotation_key_enc = @plc_rotation_key_enc, updated_at = now()
+WHERE id = @id AND plc_rotation_key_enc IS NULL;
+
+-- name: SwapAtprotoAccountDID :execrows
+-- The A6-2 identity swap: CAS on the expected current DID so a double
+-- run can't regress a newer swap. previous_did preserves the outgoing
+-- identity for old-URI provenance; a did:web→did:web retry is the only
+-- path that could clobber it and the caller early-returns before that.
+UPDATE atproto_accounts
+SET did = @new_did, previous_did = @old_did, updated_at = now()
+WHERE id = @id AND did = @old_did;
+
+-- name: RewriteAtprotoRecordDIDPrefix :execrows
+-- The URI rewrite half of the A6-2 swap — runs in the same tx so the
+-- index never straddles two identities. 'at://{did}' is the authority
+-- prefix; the /collection/rkey tail is preserved verbatim.
+UPDATE atproto_records
+SET uri = 'at://' || @new_did || substr(uri, length('at://' || @old_did) + 1)
+WHERE account_id = @account_id
+  AND uri LIKE 'at://' || @old_did || '/%';
 
 -- name: ListAtprotoAccounts :many
 -- Admin list — signing_key_enc selected but sanitized in the service

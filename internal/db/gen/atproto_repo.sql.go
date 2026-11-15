@@ -71,7 +71,7 @@ func (q *Queries) DeleteAtprotoRecord(ctx context.Context, arg DeleteAtprotoReco
 }
 
 const getAtprotoAccountByID = `-- name: GetAtprotoAccountByID :one
-SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason FROM atproto_accounts WHERE id = $1
+SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason, plc_rotation_key_enc, previous_did FROM atproto_accounts WHERE id = $1
 `
 
 func (q *Queries) GetAtprotoAccountByID(ctx context.Context, id pgtype.UUID) (AtprotoAccount, error) {
@@ -90,6 +90,8 @@ func (q *Queries) GetAtprotoAccountByID(ctx context.Context, id pgtype.UUID) (At
 		&i.UpdatedAt,
 		&i.DisabledAt,
 		&i.DisabledReason,
+		&i.PlcRotationKeyEnc,
+		&i.PreviousDid,
 	)
 	return i, err
 }
