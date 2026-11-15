@@ -2414,6 +2414,12 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	threshold := *input.BudgetThresholdUSD
 
 	data, _ := json.Marshal(threshold)
+	// No-op for this key today — every raw system_settings upsert runs the
+	// encrypted-keys transform so a future registered key can never leak
+	// plaintext through a bypassed write path.
+	if stored, encErr := config.EncryptSettingValue(aiBudgetThresholdKey, data); encErr == nil {
+		data = stored
+	}
 	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`, aiBudgetThresholdKey, string(data)); err != nil {
 		slog.Error("control: update ai budget", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")

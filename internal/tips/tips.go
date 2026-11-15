@@ -191,30 +191,31 @@ type PublicConfig struct {
 
 // Tip is the service-level tip record.
 type Tip struct {
-	ID                 pgtype.UUID        `json:"id"`
-	SenderUserID       pgtype.UUID        `json:"sender_user_id,omitempty"`
-	SenderName         string             `json:"sender_name"`
-	ExternalSenderName *string            `json:"external_sender_name,omitempty"`
-	RecipientType      string             `json:"recipient_type"`
-	RecipientUserID    pgtype.UUID        `json:"recipient_user_id,omitempty"`
-	RecipientOrgID     pgtype.UUID        `json:"recipient_organization_id,omitempty"`
-	RecipientSpaceID   pgtype.UUID        `json:"recipient_space_id,omitempty"`
-	RecipientName      string             `json:"recipient_name,omitempty"`
-	ContentID          pgtype.UUID        `json:"content_id,omitempty"`
-	Method             string             `json:"method"`
-	CreditsAmount      int64              `json:"credits_amount"`
-	PointsAmount       int64              `json:"points_amount,omitempty"`
-	FiatAmount         *int64             `json:"fiat_amount,omitempty"`
-	FiatCurrency       *string            `json:"fiat_currency,omitempty"`
-	FeeAmount          int64              `json:"fee_amount"`
-	NetCredits         int64              `json:"net_credits"`
-	PaymentID          pgtype.UUID        `json:"payment_id,omitempty"`
-	OcContributionID   *string            `json:"oc_contribution_id,omitempty"`
-	Message            *string            `json:"message,omitempty"`
-	IsAnonymous        bool               `json:"is_anonymous"`
-	Status             string             `json:"status"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at,omitempty"`
+	ID                    pgtype.UUID        `json:"id"`
+	SenderUserID          pgtype.UUID        `json:"sender_user_id,omitempty"`
+	SenderName            string             `json:"sender_name"`
+	ExternalSenderName    *string            `json:"external_sender_name,omitempty"`
+	RecipientType         string             `json:"recipient_type"`
+	RecipientUserID       pgtype.UUID        `json:"recipient_user_id,omitempty"`
+	RecipientWalletUserID pgtype.UUID        `json:"recipient_wallet_user_id,omitempty"`
+	RecipientOrgID        pgtype.UUID        `json:"recipient_organization_id,omitempty"`
+	RecipientSpaceID      pgtype.UUID        `json:"recipient_space_id,omitempty"`
+	RecipientName         string             `json:"recipient_name,omitempty"`
+	ContentID             pgtype.UUID        `json:"content_id,omitempty"`
+	Method                string             `json:"method"`
+	CreditsAmount         int64              `json:"credits_amount"`
+	PointsAmount          int64              `json:"points_amount,omitempty"`
+	FiatAmount            *int64             `json:"fiat_amount,omitempty"`
+	FiatCurrency          *string            `json:"fiat_currency,omitempty"`
+	FeeAmount             int64              `json:"fee_amount"`
+	NetCredits            int64              `json:"net_credits"`
+	PaymentID             pgtype.UUID        `json:"payment_id,omitempty"`
+	OcContributionID      *string            `json:"oc_contribution_id,omitempty"`
+	Message               *string            `json:"message,omitempty"`
+	IsAnonymous           bool               `json:"is_anonymous"`
+	Status                string             `json:"status"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at,omitempty"`
 }
 
 // CreateTipInput is the POST /tips payload.

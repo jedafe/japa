@@ -1596,9 +1596,14 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM tips WHERE sender_user_id = @user_id ORDER BY created_at DESC) t;
 
 -- name: GdprExportTipsReceived :one
+-- Mirrors ListTipsReceived: wallet snapshot + NULL-guarded legacy org-owner
+-- fallback so the export covers everything the received ledger shows.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id
          OR recipient_wallet_user_id = @user_id
+         OR (recipient_wallet_user_id IS NULL
+             AND recipient_organization_id IN
+                 (SELECT id FROM organizations WHERE owner_user_id = @user_id))
       ORDER BY created_at DESC) t;
 
 -- name: ReassignTipsRecipientToPlaceholder :exec

@@ -1543,9 +1543,14 @@ const gdprExportTipsReceived = `-- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE recipient_user_id = $1
          OR recipient_wallet_user_id = $1
+         OR (recipient_wallet_user_id IS NULL
+             AND recipient_organization_id IN
+                 (SELECT id FROM organizations WHERE owner_user_id = $1))
       ORDER BY created_at DESC) t
 `
 
+// Mirrors ListTipsReceived: wallet snapshot + NULL-guarded legacy org-owner
+// fallback so the export covers everything the received ledger shows.
 func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportTipsReceived, userID)
 	var data interface{}

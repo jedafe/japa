@@ -45,6 +45,7 @@ export interface Tip {
 	sender_name?: string;
 	recipient_type: string;
 	recipient_user_id?: string | null;
+	recipient_wallet_user_id?: string | null;
 	recipient_org_id?: string | null;
 	recipient_name?: string;
 	content_id?: string | null;
