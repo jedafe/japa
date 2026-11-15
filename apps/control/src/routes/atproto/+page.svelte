@@ -8,10 +8,12 @@
 	import PageHeader from '#lib/components/PageHeader.svelte';
 	import MetricCard from '#lib/components/MetricCard.svelte';
 	import DataTable from '#lib/components/DataTable.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 	import { api, apiList } from '#lib/api.js';
-	import type { DataTableColumn } from '#lib/api/types.js';
+	import type { DataTableColumn, DataTableRowAction } from '#lib/api/types.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
-	import { CircleCheck, CircleX, Play, Search } from 'lucide-svelte';
+	import { hasPermission } from '#lib/stores/auth.svelte.js';
+	import { Ban, CircleCheck, CircleX, Play, RotateCcw, Search, Skull } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 
 	type AtprotoAccount = {
@@ -119,6 +121,103 @@
 			render: (v) => new Date(v as string).toLocaleString()
 		}
 	];
+
+	// ── Lifecycle actions (atproto.accounts.manage) ──────────────────────
+	// POST /control/atproto/accounts/{id}/{disable,reactivate,tombstone} —
+	// tombstone is the terminal erasure path: it requires typing the
+	// account's handle into the confirm modal.
+	const canManage = $derived(hasPermission('atproto.accounts.manage'));
+	let confirmOpen = $state(false);
+	let confirmAction = $state<{
+		type: 'disable' | 'reactivate' | 'tombstone';
+		account: AtprotoAccount;
+	} | null>(null);
+	let actionBusy = $state(false);
+
+	function openConfirm(type: 'disable' | 'reactivate' | 'tombstone', account: AtprotoAccount) {
+		confirmAction = { type, account };
+		confirmOpen = true;
+	}
+
+	const accountActions: DataTableRowAction[] = [
+		{
+			label: t('atproto.action_disable', 'Force disable'),
+			icon: Ban as never,
+			onClick: (row) => openConfirm('disable', row as unknown as AtprotoAccount),
+			hidden: (row) => (row as unknown as AtprotoAccount).status !== 'active'
+		},
+		{
+			label: t('atproto.action_reactivate', 'Reactivate'),
+			icon: RotateCcw as never,
+			onClick: (row) => openConfirm('reactivate', row as unknown as AtprotoAccount),
+			hidden: (row) => (row as unknown as AtprotoAccount).status !== 'disabled'
+		},
+		{
+			label: t('atproto.action_tombstone', 'Tombstone'),
+			icon: Skull as never,
+			variant: 'destructive',
+			onClick: (row) => openConfirm('tombstone', row as unknown as AtprotoAccount),
+			hidden: (row) => (row as unknown as AtprotoAccount).status === 'tombstone'
+		}
+	];
+
+	const confirmCopy = $derived.by(() => {
+		if (!confirmAction) return { title: '', consequence: '', confirmText: '' };
+		const handle = confirmAction.account.handle;
+		switch (confirmAction.type) {
+			case 'disable':
+				return {
+					title: t('atproto.disable_title', 'Force disable account?'),
+					consequence: t(
+						'atproto.disable_detail',
+						'{handle} is deactivated network-wide. The member cannot re-enable it — only an admin reactivate lifts this.'
+					).replace('{handle}', handle),
+					confirmText: ''
+				};
+			case 'reactivate':
+				return {
+					title: t('atproto.reactivate_title', 'Reactivate account?'),
+					consequence: t(
+						'atproto.reactivate_detail',
+						'{handle} returns to active and its repo reconciles to canonical eligibility.'
+					).replace('{handle}', handle),
+					confirmText: ''
+				};
+			default:
+				return {
+					title: t('atproto.tombstone_title', 'Tombstone account?'),
+					consequence: t(
+						'atproto.tombstone_detail',
+						'{handle} is permanently erased: every record is retracted in a signed commit, blobs are purged, and a #tombstone frame tells relays to drop the repo. This cannot be undone. Type the handle to confirm.'
+					).replace('{handle}', handle),
+					confirmText: handle
+				};
+		}
+	});
+
+	async function runAccountAction() {
+		if (!confirmAction || actionBusy) return;
+		actionBusy = true;
+		try {
+			const { type, account } = confirmAction;
+			const res = await api<{ status: string }>(
+				`/control/atproto/accounts/${account.id}/${type}`,
+				{ method: 'POST' }
+			);
+			if (res.ok) {
+				confirmAction = null;
+				pageError = '';
+				loadAccounts();
+				api<Stats>('/control/atproto/stats').then((r) => {
+					if (r.ok) stats = r.data;
+				});
+			} else {
+				pageError = res.error;
+			}
+		} finally {
+			actionBusy = false;
+		}
+	}
 
 	// ── Conformance run ────────────────────────────────────────────────────
 	let target = $state('');
@@ -364,6 +463,7 @@
 			bind:pageSize={acctPageSize}
 			loading={accountsLoading}
 			selectable={false}
+			rowActions={canManage ? accountActions : []}
 			emptyMessage={t('atproto.no_accounts', 'No AT Protocol accounts yet')}
 			getRowId={(row) => (row as AtprotoAccount).id}
 		/>
@@ -387,3 +487,14 @@
 		/>
 	</div>
 </div>
+
+{#if confirmAction}
+	<ConfirmModal
+		bind:open={confirmOpen}
+		title={confirmCopy.title}
+		consequence={confirmCopy.consequence}
+		confirmText={confirmCopy.confirmText}
+		onConfirm={runAccountAction}
+		onCancel={() => (confirmAction = null)}
+	/>
+{/if}
