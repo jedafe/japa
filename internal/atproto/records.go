@@ -111,7 +111,7 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 		return fmt.Errorf("atproto: user profile: %w", err)
 	}
 	rec := profileRecord(user.Username, profile, account.CreatedAt.Time)
-	s.enrichProfileBlobs(ctx, account.ID, rec)
+	s.enrichProfileBlobs(ctx, account.ID, profile.AvatarMediaID, profile.BannerMediaID, rec)
 	if _, err := s.PutRecord(ctx, account.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{}); err != nil {
 		return err
 	}
@@ -392,10 +392,12 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 	if err != nil {
 		return "", permanent(err)
 	}
-	// A4: profile records carry blob refs the pre-marshaled payload can't —
-	// attach them at write time from live profile media.
+	// A4: profile records carry blob refs the pre-marshaled payload can't,
+	// and the payload's text fields can be stale by execution time
+	// (back-to-back edits, delayed media replays) — rebuild the whole
+	// record from the live row at write time.
 	if prof, ok := rec.(*bsky.ActorProfile); ok {
-		s.enrichProfileBlobs(ctx, accountID, prof)
+		s.refreshProfileRecord(ctx, accountID, prof)
 	}
 	// A record task carrying content_id must target the repo that owns
 	// the content — otherwise the index would link someone else's row

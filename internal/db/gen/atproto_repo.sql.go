@@ -315,9 +315,10 @@ func (q *Queries) GetAtprotoUserProfile(ctx context.Context, userID pgtype.UUID)
 }
 
 const getAtprotoUserProfileByAccount = `-- name: GetAtprotoUserProfileByAccount :one
-SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id
+SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id, u.username
 FROM user_profiles p
 JOIN atproto_accounts a ON a.user_id = p.user_id
+JOIN users u ON u.id = a.user_id
 WHERE a.id = $1
 `
 
@@ -326,11 +327,13 @@ type GetAtprotoUserProfileByAccountRow struct {
 	Bio           *string     `json:"bio"`
 	AvatarMediaID pgtype.UUID `json:"avatar_media_id"`
 	BannerMediaID pgtype.UUID `json:"banner_media_id"`
+	Username      string      `json:"username"`
 }
 
 // Account-keyed variant: the publish_record task path holds only the
 // account_id — profile blob enrichment (A4 avatar/banner) resolves the
-// member's media ids through it.
+// member's media ids through it, and the task-time refresh re-derives
+// display_name/bio (plus the username fallback) from committed state.
 func (q *Queries) GetAtprotoUserProfileByAccount(ctx context.Context, accountID pgtype.UUID) (GetAtprotoUserProfileByAccountRow, error) {
 	row := q.db.QueryRow(ctx, getAtprotoUserProfileByAccount, accountID)
 	var i GetAtprotoUserProfileByAccountRow
@@ -339,6 +342,7 @@ func (q *Queries) GetAtprotoUserProfileByAccount(ctx context.Context, accountID 
 		&i.Bio,
 		&i.AvatarMediaID,
 		&i.BannerMediaID,
+		&i.Username,
 	)
 	return i, err
 }

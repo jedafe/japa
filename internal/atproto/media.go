@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
@@ -113,25 +114,44 @@ func (s *Service) imageEmbed(ctx context.Context, accountID, contentID pgtype.UU
 	return &bsky.FeedPost_Embed{EmbedImages: &bsky.EmbedImages{Images: images}}
 }
 
+// refreshProfileRecord re-derives a task-payload profile record from the
+// member's live row before the commit lands — the payload snapshot is
+// frozen at enqueue time, so back-to-back edits or a delayed media replay
+// would otherwise write stale text. Attach of avatar/banner blob refs
+// runs through the same live row. A missing profile row keeps the
+// payload fields (username-fallback record — the member has no stored
+// profile to be stale against).
+func (s *Service) refreshProfileRecord(ctx context.Context, accountID pgtype.UUID, rec *bsky.ActorProfile) {
+	profile, err := s.store.q.GetAtprotoUserProfileByAccount(ctx, accountID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("atproto: profile refresh", "account_id", accountID.String(), "error", err)
+		}
+		return
+	}
+	// createdAt stays payload-derived — atproto_accounts.created_at is
+	// immutable, so the snapshot can't be stale there.
+	fresh := profileRecord(profile.Username, gen.GetAtprotoUserProfileRow{
+		DisplayName: profile.DisplayName,
+		Bio:         profile.Bio,
+	}, time.Now())
+	rec.DisplayName = fresh.DisplayName
+	rec.Description = fresh.Description
+	s.enrichProfileBlobs(ctx, accountID, profile.AvatarMediaID, profile.BannerMediaID, rec)
+}
+
 // enrichProfileBlobs attaches avatar/banner LexBlob refs to a profile
 // record at write time — both profile paths (opt-in publishProfile and
 // the pre-marshaled publish_record payload) run through here so the
 // task JSON never has to carry blob material. Member removals converge:
 // a profile with no avatar_media_id leaves Avatar nil, and the record
 // write drops the old ref.
-func (s *Service) enrichProfileBlobs(ctx context.Context, accountID pgtype.UUID, rec *bsky.ActorProfile) {
+func (s *Service) enrichProfileBlobs(ctx context.Context, accountID, avatarMediaID, bannerMediaID pgtype.UUID, rec *bsky.ActorProfile) {
 	if s.media == nil {
 		return
 	}
-	profile, err := s.store.q.GetAtprotoUserProfileByAccount(ctx, accountID)
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("atproto: profile media ids", "account_id", accountID.String(), "error", err)
-		}
-		return
-	}
 	ids := make([]pgtype.UUID, 0, 2)
-	for _, id := range []pgtype.UUID{profile.AvatarMediaID, profile.BannerMediaID} {
+	for _, id := range []pgtype.UUID{avatarMediaID, bannerMediaID} {
 		if id.Valid {
 			ids = append(ids, id)
 		}
@@ -155,10 +175,10 @@ func (s *Service) enrichProfileBlobs(ctx context.Context, accountID pgtype.UUID,
 		}
 		return s.blobForMedia(ctx, accountID, m.StorageBucket, m.StoragePath, m.MimeType, m.FileSizeBytes)
 	}
-	if profile.AvatarMediaID.Valid {
-		rec.Avatar = put(profile.AvatarMediaID)
+	if avatarMediaID.Valid {
+		rec.Avatar = put(avatarMediaID)
 	}
-	if profile.BannerMediaID.Valid {
-		rec.Banner = put(profile.BannerMediaID)
+	if bannerMediaID.Valid {
+		rec.Banner = put(bannerMediaID)
 	}
 }

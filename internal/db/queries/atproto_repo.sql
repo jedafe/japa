@@ -137,10 +137,12 @@ WHERE user_id = @user_id;
 -- name: GetAtprotoUserProfileByAccount :one
 -- Account-keyed variant: the publish_record task path holds only the
 -- account_id — profile blob enrichment (A4 avatar/banner) resolves the
--- member's media ids through it.
-SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id
+-- member's media ids through it, and the task-time refresh re-derives
+-- display_name/bio (plus the username fallback) from committed state.
+SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id, u.username
 FROM user_profiles p
 JOIN atproto_accounts a ON a.user_id = p.user_id
+JOIN users u ON u.id = a.user_id
 WHERE a.id = @account_id;
 
 -- name: ListAtprotoContentImages :many

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/atproto"
@@ -859,6 +860,51 @@ func (s *Service) enqueueAtprotoProfile(ctx context.Context, userID pgtype.UUID)
 	if err := s.enqueuer.Enqueue(worker.TypeAtprotoPublishRecord, payload); err != nil {
 		slog.Warn("users: failed to enqueue atproto:publish_record for profile", "user_id", userID.String(), "error", err)
 	}
+
+	// A profile media still unconfirmed when the task lands is skipped by
+	// the write-time blob attach — dropping an existing avatar ref until
+	// the next trigger. The upload → confirm → PATCH sequence races the
+	// confirm call by design (separate HTTP steps), so schedule one delayed
+	// replay: the record converges once confirmation lands instead of
+	// clearing the ref permanently.
+	if s.profileMediaPending(ctx, q, profile) {
+		if err := s.enqueuer.Enqueue(worker.TypeAtprotoPublishRecord, payload,
+			asynq.ProcessIn(profileMediaReplayDelay)); err != nil {
+			slog.Warn("users: failed to enqueue delayed atproto profile replay", "user_id", userID.String(), "error", err)
+		}
+	}
+}
+
+// profileMediaReplayDelay bounds the upload→confirm window for a profile
+// media replay. Confirmation is a synchronous client call, so the gap is
+// seconds in practice; 90s leaves comfortable margin.
+const profileMediaReplayDelay = 90 * time.Second
+
+// profileMediaPending reports whether a media id the profile record will
+// project (avatar_media_id / banner_media_id) exists but is not yet
+// confirmed — the transient state between upload and ConfirmUpload.
+// Read failures and absent/deleted rows are NOT pending: a missing row is
+// a permanent skip, not something a delayed retry can change.
+func (s *Service) profileMediaPending(ctx context.Context, q *gen.Queries, profile gen.GetAtprotoUserProfileRow) bool {
+	var ids []pgtype.UUID
+	for _, id := range []pgtype.UUID{profile.AvatarMediaID, profile.BannerMediaID} {
+		if id.Valid {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	rows, err := q.GetMediaByIDs(ctx, ids)
+	if err != nil {
+		return false
+	}
+	for _, m := range rows {
+		if !m.Confirmed {
+			return true
+		}
+	}
+	return false
 }
 
 // avatarExtMIME maps the extension tokens allowed by
@@ -2576,6 +2622,13 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// Enqueued after commit so we don't index a row that might roll back.
 	if result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged {
 		s.enqueueUserSearchIndex(userID)
+	}
+
+	// §127 A2/A4: re-project app.bsky.actor.profile — this endpoint mutates
+	// the same fields UpdateProfile does (display_name via SetUserDisplayName)
+	// plus username, which feeds the record's displayName fallback.
+	if result.UsernameChanged || result.DisplayNameChanged {
+		s.enqueueAtprotoProfile(ctx, userID)
 	}
 
 	return result, nil
