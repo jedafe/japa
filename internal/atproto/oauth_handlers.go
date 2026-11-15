@@ -154,6 +154,10 @@ func (h *Handlers) HandlePAR(w http.ResponseWriter, r *http.Request) {
 		writeOAuthErr(w, http.StatusBadRequest, "invalid_client_metadata", "client metadata must set dpop_bound_access_tokens")
 		return
 	}
+	if len(doc.GrantTypes) > 0 && !hasScopeWord(strings.Join(doc.GrantTypes, " "), "authorization_code") {
+		writeOAuthErr(w, http.StatusBadRequest, "invalid_client_metadata", "client metadata must declare the authorization_code grant")
+		return
+	}
 
 	// Confidential clients authenticate on every endpoint call.
 	clientJKT := ""
@@ -468,6 +472,7 @@ button{flex:1;padding:.65rem 1rem;border-radius:8px;border:0;font-size:.95rem;cu
 </style></head><body><div class="card">`)
 	b.WriteString(`<h1>` + html.EscapeString(clientHost) + `</h1>`)
 	b.WriteString(`<p class="muted">wants to sign in to your account on ` + html.EscapeString(siteName) + `:</p>`)
+	b.WriteString(`<p class="muted" style="word-break:break-all">Client: ` + html.EscapeString(row.ClientID) + `</p>`)
 	b.WriteString(`<div class="acct"><strong>` + html.EscapeString("@"+account.Handle) + `</strong><br><span class="muted">` + html.EscapeString(account.Did) + `</span></div>`)
 	b.WriteString(`<p class="muted">This grants it:</p><ul>`)
 	for _, s := range scopes {
@@ -605,6 +610,22 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 	if !IsAtprotoToken(tok) {
 		w.WriteHeader(http.StatusOK)
 		return
+	}
+	// The atproto profile applies DPoP to the AS endpoints — a presented
+	// proof must verify (fresh nonce included); absent proof is tolerated
+	// so a client that simply drops the token still succeeds, matching
+	// RFC 7009's always-200 posture.
+	if r.Header.Get("DPoP") != "" {
+		proof, err := h.service.verifyDPoP(r.Context(), r)
+		h.service.setNonceHeader(w)
+		if err != nil {
+			h.writeOAuthServiceErr(w, err)
+			return
+		}
+		if err := h.service.checkNonce(proof); err != nil {
+			h.writeOAuthServiceErr(w, err)
+			return
+		}
 	}
 	// Confidential clients authenticate the revocation; public clients
 	// revoke by possession (the token hash is the credential).

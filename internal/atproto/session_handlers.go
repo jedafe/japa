@@ -48,7 +48,7 @@ func xrpcAuthErr(w http.ResponseWriter, err error) {
 func (h *Handlers) requireSession(w http.ResponseWriter, r *http.Request) *SessionAccount {
 	var acct *SessionAccount
 	var err error
-	if strings.HasPrefix(r.Header.Get("Authorization"), "DPoP ") {
+	if ah := r.Header.Get("Authorization"); len(ah) > 5 && strings.EqualFold(ah[:5], "dpop ") {
 		acct, err = h.service.AuthenticateDPoP(r.Context(), r, w)
 	} else {
 		acct, err = h.service.AuthenticateAccess(r.Context(), r.Header.Get("Authorization"))

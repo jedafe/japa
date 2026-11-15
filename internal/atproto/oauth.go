@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
 )
@@ -405,6 +406,11 @@ func (s *Service) fetchClientDoc(ctx context.Context, clientID string) (*oauthCl
 		if raw, err := s.vk.Get(ctx, cacheKey).Bytes(); err == nil {
 			var doc oauthClientDoc
 			if json.Unmarshal(raw, &doc) == nil && doc.ClientID == clientID {
+				// jwksResolved is unexported — rehydrate it from the
+				// serialized JWKS (resolved keys are folded in at fetch).
+				if doc.JWKS != nil {
+					doc.jwksResolved = doc.JWKS.Keys
+				}
 				return &doc, nil
 			}
 		}
@@ -624,9 +630,13 @@ func (s *Service) verifyClientAssertion(ctx context.Context, doc *oauthClientDoc
 	}
 	kid, _ := hdr["kid"].(string)
 
+	keys := doc.jwksResolved
+	if len(keys) == 0 && doc.JWKS != nil {
+		keys = doc.JWKS.Keys // cache-hit docs carry keys only via JWKS
+	}
 	var pub *ecdsa.PublicKey
 	var keyJWK map[string]any
-	for _, k := range doc.jwksResolved {
+	for _, k := range keys {
 		if kk, _ := k["kty"].(string); kk != "EC" {
 			continue
 		}
@@ -848,7 +858,7 @@ func (s *Service) AuthenticateDPoP(ctx context.Context, r *http.Request, w http.
 		return nil, ErrAuthRequired
 	}
 	raw := ""
-	if ah := r.Header.Get("Authorization"); strings.HasPrefix(ah, "DPoP ") {
+	if ah := r.Header.Get("Authorization"); len(ah) > 5 && strings.EqualFold(ah[:5], "dpop ") {
 		raw = strings.TrimSpace(ah[5:])
 	}
 	if !strings.HasPrefix(raw, oauthAccessTokenPrefix) {
@@ -866,8 +876,9 @@ func (s *Service) AuthenticateDPoP(ctx context.Context, r *http.Request, w http.
 		if w != nil {
 			s.setNonceHeader(w)
 			code := "invalid_token"
-			if errors.Is(err, ErrOAuthNonce) {
-				code = "use_dpop_nonce"
+			var oe *oauthError
+			if errors.As(err, &oe) && oe.code != "" {
+				code = oe.code
 			}
 			w.Header().Set("WWW-Authenticate", `DPoP algs="ES256", error="`+code+`"`)
 		}
@@ -981,8 +992,8 @@ func (s *Service) CreateOAuthRequest(ctx context.Context, p *gen.CreateOAuthRequ
 }
 
 func isUniqueViolation(err error) bool {
-	return strings.Contains(err.Error(), "duplicate key") ||
-		strings.Contains(err.Error(), "unique constraint")
+	var pge *pgconn.PgError
+	return errors.As(err, &pge) && pge.Code == "23505"
 }
 
 // ExchangeCode consumes a code (CAS) and verifies the exchange request
