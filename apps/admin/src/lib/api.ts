@@ -2899,3 +2899,15 @@ export const productTypesAdminApi = {
 	delete: (slug: string) =>
 		api<unknown>(`/admin/product-types/${slug}`, { method: 'DELETE' }),
 };
+
+// §127 — AT Protocol admin (mini-PDS): account list/stats plus the A3
+// conformance readback that cmd/atproto-conformance runs as the release
+// gate; runs persist server-side so the dashboard shows when appview
+// indexing last broke.
+export const atprotoAdminApi = {
+	listAccounts: (params?: string) => apiRaw(`/admin/atproto/accounts${params ? `?${params}` : ''}`),
+	getStats: () => api<unknown>('/admin/atproto/stats'),
+	runConformance: (body: { handle?: string; did?: string }) =>
+		api<unknown>('/admin/atproto/conformance', { method: 'POST', body }),
+	listConformanceRuns: (params?: string) => apiRaw(`/admin/atproto/conformance${params ? `?${params}` : ''}`),
+};

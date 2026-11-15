@@ -2500,3 +2500,117 @@ func TestDBAdminSearchEscapesWildcards(t *testing.T) {
 		t.Fatalf("literal search: %+v, %v", rows, err)
 	}
 }
+
+// Conformance runs: the admin surface runs the same appview checks as
+// the CLI, persists every run (pass or fail), and serves them back
+// through history. A stub appview stands in for public.api.bsky.app.
+func TestDBConformanceRun(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	adminID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	contentID := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, contentID); err != nil {
+		t.Fatalf("PublishContent: %v", err)
+	}
+
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.actor.getProfile":
+			json.NewEncoder(w).Encode(map[string]any{"did": acct.Did, "handle": acct.Handle})
+		case "/xrpc/app.bsky.feed.getAuthorFeed":
+			json.NewEncoder(w).Encode(map[string]any{"feed": []any{map[string]any{"post": map[string]any{}}}})
+		default:
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(stub.Close)
+	confsvc := NewService(d, Config{
+		PDSURL: "https://api.test.dev", APIBase: "https://api.test.dev",
+		SiteBase: "https://test.dev", HandleDomain: "test.dev",
+		AppViewURL: stub.URL,
+	})
+
+	// Explicit DID — all checks pass, run persisted.
+	run, res, err := confsvc.RunConformanceCheck(ctx, "", acct.Did, adminID)
+	if err != nil {
+		t.Fatalf("RunConformanceCheck: %v", err)
+	}
+	if !res.Passed || !run.Passed || run.Actor != acct.Did || run.Did != acct.Did {
+		t.Fatalf("passing run = %+v / %+v", res, run)
+	}
+	if len(res.Checks) != 4 {
+		t.Fatalf("checks = %+v", res.Checks)
+	}
+	for _, c := range res.Checks {
+		if !c.Pass {
+			t.Fatalf("check %s failed: %s", c.Name, c.Detail)
+		}
+	}
+	if !run.RunBy.Valid || run.RunBy != adminID {
+		t.Fatalf("run_by = %+v, want %v", run.RunBy, adminID)
+	}
+
+	// Explicit handle resolves the same DID.
+	_, res, err = confsvc.RunConformanceCheck(ctx, acct.Handle, "", adminID)
+	if err != nil || !res.Passed || res.DID != acct.Did {
+		t.Fatalf("handle run = %+v, %v", res, err)
+	}
+
+	// Auto-pick — picks SOME active account; the stub answers for our
+	// account regardless, so assert the run shape rather than the target.
+	_, res, err = confsvc.RunConformanceCheck(ctx, "", "", adminID)
+	if err != nil {
+		t.Fatalf("auto-pick run: %v", err)
+	}
+	if len(res.Checks) != 4 || res.Actor == "" {
+		t.Fatalf("auto-pick result = %+v", res)
+	}
+
+	// History returns every run newest-first.
+	runs, total, err := confsvc.ListConformanceRuns(ctx, 50, 0)
+	if err != nil {
+		t.Fatalf("ListConformanceRuns: %v", err)
+	}
+	if total < 3 || len(runs) < 3 {
+		t.Fatalf("history: total=%d len=%d", total, len(runs))
+	}
+	for i := 1; i < len(runs); i++ {
+		if runs[i].CreatedAt.Time.After(runs[i-1].CreatedAt.Time) {
+			t.Fatalf("history not newest-first at %d", i)
+		}
+	}
+
+	// A failing appview still persists the run — a FAIL in history is
+	// the signal the page exists to show.
+	badStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"did": acct.Did, "handle": "handle.invalid"})
+	}))
+	t.Cleanup(badStub.Close)
+	badsvc := NewService(d, Config{
+		PDSURL: "https://api.test.dev", APIBase: "https://api.test.dev",
+		SiteBase: "https://test.dev", HandleDomain: "test.dev",
+		AppViewURL: badStub.URL,
+	})
+	run, res, err = badsvc.RunConformanceCheck(ctx, "", acct.Did, adminID)
+	if err != nil {
+		t.Fatalf("failing run: %v", err)
+	}
+	if res.Passed || run.Passed {
+		t.Fatalf("handle.invalid run passed: %+v / %+v", res, run)
+	}
+	var failedNames []string
+	for _, c := range res.Checks {
+		if !c.Pass {
+			failedNames = append(failedNames, c.Name)
+		}
+	}
+	if len(failedNames) == 0 {
+		t.Fatal("no checks failed on handle.invalid")
+	}
+}

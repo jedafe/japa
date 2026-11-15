@@ -720,6 +720,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		RelayURL:     cfg.ATProtoRelayURL,
 		PLCURL:       cfg.ATProtoPLCURL,
 		JetstreamURL: cfg.ATProtoJetstreamURL,
+		AppViewURL:   cfg.ATProtoAppViewURL,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
 	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP
@@ -4895,6 +4896,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto", atprotoHandlers.DisableMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/accounts", atprotoHandlers.ListAccounts)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/stats", atprotoHandlers.GetStats)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Post("/admin/atproto/conformance", atprotoHandlers.RunConformanceCheck)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/conformance", atprotoHandlers.ListConformanceRuns)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)

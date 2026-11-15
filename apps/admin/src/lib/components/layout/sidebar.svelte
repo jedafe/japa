@@ -288,7 +288,8 @@
 			{ path: "/data-exports", label: t("nav.data_exports", "Data Exports"), icon: Download, permission: "gdpr.data_exports.view" },
 			{ path: "/data-imports", label: t("nav.data_imports", "Data Imports"), icon: FileUp, permission: "gdpr.data_exports.view" },
 				{ path: "/deletions", label: t("nav.deletions", "Account Deletions"), icon: Trash2, permission: "gdpr.deletions.view" },
-				{ path: "/gdpr", label: t("nav.gdpr", "GDPR Compliance"), icon: Accessibility, permission: "gdpr.deletions.view" }
+				{ path: "/gdpr", label: t("nav.gdpr", "GDPR Compliance"), icon: Accessibility, permission: "gdpr.deletions.view" },
+				{ path: "/atproto", label: t("nav.atproto", "AT Protocol"), icon: Rss, permission: "atproto.accounts.view" }
 			]
 		}
 	];

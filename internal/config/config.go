@@ -85,6 +85,7 @@ type Config struct {
 	ATProtoRelayURL          string // JC_ATPROTO_RELAY_URL — requestCrawl target; default https://bsky.network (§127)
 	ATProtoPLCURL            string // JC_ATPROTO_PLC_URL — did:plc directory; default https://plc.directory (§127 A6)
 	ATProtoJetstreamURL      string // JC_ATPROTO_JETSTREAM_URL — filtered inbound consumer; default jetstream2.us-east.bsky.network (§127 A5)
+	ATProtoAppViewURL        string // JC_ATPROTO_APPVIEW_URL — readback appview for the conformance check; default https://public.api.bsky.app (§127)
 	EncryptionKey            string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
 	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
 	StripeSecretKey          string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
@@ -192,6 +193,7 @@ func Load() (Config, error) {
 		ATProtoRelayURL:          getEnvDefault("JC_ATPROTO_RELAY_URL", "https://bsky.network"),
 		ATProtoPLCURL:            getEnvDefault("JC_ATPROTO_PLC_URL", "https://plc.directory"),
 		ATProtoJetstreamURL:      getEnvDefault("JC_ATPROTO_JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network/subscribe"),
+		ATProtoAppViewURL:        getEnvDefault("JC_ATPROTO_APPVIEW_URL", "https://public.api.bsky.app"),
 		EncryptionKey:            os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:        os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),

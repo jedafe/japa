@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const atprotoDIDHasPosts = `-- name: AtprotoDIDHasPosts :one
+SELECT EXISTS (
+    SELECT 1 FROM atproto_records r
+    JOIN atproto_accounts a ON a.id = r.account_id
+    WHERE a.did = $1 AND r.collection = 'app.bsky.feed.post'
+)
+`
+
+// Post check needs "did we project any feed.post for this DID" — an
+// empty appview feed only fails when our own index holds posts.
+func (q *Queries) AtprotoDIDHasPosts(ctx context.Context, did string) (bool, error) {
+	row := q.db.QueryRow(ctx, atprotoDIDHasPosts, did)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const countAtprotoAccounts = `-- name: CountAtprotoAccounts :one
 SELECT COUNT(*)::bigint
 FROM atproto_accounts a
@@ -20,6 +37,17 @@ WHERE ($1::text = '' OR a.handle ILIKE '%' || $1 || '%' OR u.username ILIKE '%' 
 
 func (q *Queries) CountAtprotoAccounts(ctx context.Context, q_ string) (int64, error) {
 	row := q.db.QueryRow(ctx, countAtprotoAccounts, q_)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countAtprotoConformanceRuns = `-- name: CountAtprotoConformanceRuns :one
+SELECT COUNT(*)::bigint FROM atproto_conformance_runs
+`
+
+func (q *Queries) CountAtprotoConformanceRuns(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAtprotoConformanceRuns)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -388,6 +416,42 @@ func (q *Queries) GetAtprotoStats(ctx context.Context) (GetAtprotoStatsRow, erro
 	return i, err
 }
 
+const insertAtprotoConformanceRun = `-- name: InsertAtprotoConformanceRun :one
+INSERT INTO atproto_conformance_runs (actor, did, checks, passed, run_by)
+VALUES ($1, $2, $3::jsonb, $4, $5)
+RETURNING id, actor, did, checks, passed, run_by, created_at
+`
+
+type InsertAtprotoConformanceRunParams struct {
+	Actor  string      `json:"actor"`
+	Did    string      `json:"did"`
+	Checks []byte      `json:"checks"`
+	Passed bool        `json:"passed"`
+	RunBy  pgtype.UUID `json:"run_by"`
+}
+
+// §127 admin: persist a conformance run result (checks as jsonb array).
+func (q *Queries) InsertAtprotoConformanceRun(ctx context.Context, arg InsertAtprotoConformanceRunParams) (AtprotoConformanceRun, error) {
+	row := q.db.QueryRow(ctx, insertAtprotoConformanceRun,
+		arg.Actor,
+		arg.Did,
+		arg.Checks,
+		arg.Passed,
+		arg.RunBy,
+	)
+	var i AtprotoConformanceRun
+	err := row.Scan(
+		&i.ID,
+		&i.Actor,
+		&i.Did,
+		&i.Checks,
+		&i.Passed,
+		&i.RunBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listAtprotoAccounts = `-- name: ListAtprotoAccounts :many
 SELECT a.id, a.user_id, a.handle, a.did, a.public_key_multibase,
        a.status, a.repo_seq, a.signing_key_enc,
@@ -456,6 +520,46 @@ func (q *Queries) ListAtprotoAccounts(ctx context.Context, arg ListAtprotoAccoun
 	return items, nil
 }
 
+const listAtprotoConformanceRuns = `-- name: ListAtprotoConformanceRuns :many
+SELECT id, actor, did, checks, passed, run_by, created_at
+FROM atproto_conformance_runs
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListAtprotoConformanceRunsParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+func (q *Queries) ListAtprotoConformanceRuns(ctx context.Context, arg ListAtprotoConformanceRunsParams) ([]AtprotoConformanceRun, error) {
+	rows, err := q.db.Query(ctx, listAtprotoConformanceRuns, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AtprotoConformanceRun
+	for rows.Next() {
+		var i AtprotoConformanceRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.Actor,
+			&i.Did,
+			&i.Checks,
+			&i.Passed,
+			&i.RunBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAtprotoRepos = `-- name: ListAtprotoRepos :many
 SELECT a.did, a.status AS account_status, u.status AS user_status,
        head.cid AS head_cid, head.rev AS head_rev
@@ -466,7 +570,8 @@ JOIN LATERAL (
     WHERE c.account_id = a.id
     ORDER BY c.seq DESC LIMIT 1
 ) head ON true
-WHERE ($1::text = '' OR a.did > $1)
+WHERE a.status <> 'tombstone'
+  AND ($1::text = '' OR a.did > $1)
 ORDER BY a.did
 LIMIT $2
 `
@@ -484,7 +589,9 @@ type ListAtprotoReposRow struct {
 	HeadRev       string `json:"head_rev"`
 }
 
-// listRepos: hosted-repo census. Repos without a single commit have no
+// listRepos: hosted-repo census. Tombstone rows are gone from the
+// network (excluded); disabled accounts list with active:false so
+// consumers see the freeze. Repos without a single commit have no
 // network presence (head/rev are required output fields) — the lateral
 // join excludes them. Cursor is opaque: the last returned did.
 func (q *Queries) ListAtprotoRepos(ctx context.Context, arg ListAtprotoReposParams) ([]ListAtprotoReposRow, error) {
@@ -511,6 +618,32 @@ func (q *Queries) ListAtprotoRepos(ctx context.Context, arg ListAtprotoReposPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const pickAtprotoConformanceTarget = `-- name: PickAtprotoConformanceTarget :one
+SELECT a.did, EXISTS (
+    SELECT 1 FROM atproto_records r
+    WHERE r.account_id = a.id AND r.collection = 'app.bsky.feed.post'
+) AS has_posts
+FROM atproto_accounts a
+WHERE a.status = 'active'
+ORDER BY has_posts DESC, a.created_at ASC
+LIMIT 1
+`
+
+type PickAtprotoConformanceTargetRow struct {
+	Did      string `json:"did"`
+	HasPosts bool   `json:"has_posts"`
+}
+
+// Auto-pick for the admin check + cmd/atproto-conformance: an active
+// account, preferring one with at least one projected feed.post so the
+// post-indexed check is meaningful.
+func (q *Queries) PickAtprotoConformanceTarget(ctx context.Context) (PickAtprotoConformanceTargetRow, error) {
+	row := q.db.QueryRow(ctx, pickAtprotoConformanceTarget)
+	var i PickAtprotoConformanceTargetRow
+	err := row.Scan(&i.Did, &i.HasPosts)
+	return i, err
 }
 
 const updateAtprotoAccountHandle = `-- name: UpdateAtprotoAccountHandle :exec

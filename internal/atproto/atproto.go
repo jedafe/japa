@@ -74,6 +74,11 @@ type Config struct {
 	// JetstreamURL — JC_ATPROTO_JETSTREAM_URL; filtered inbound
 	// consumer endpoint (A5).
 	JetstreamURL string
+	// AppViewURL — JC_ATPROTO_APPVIEW_URL (default
+	// https://public.api.bsky.app): readback appview the conformance
+	// check indexes through — the same target cmd/atproto-conformance
+	// uses.
+	AppViewURL string
 }
 
 // pdsURL resolves the PDS public base: configured PDS URL wins, else the
@@ -115,6 +120,15 @@ func stripPort(hostport string) string {
 // siteBase returns the canonical site origin — page links in records
 // (post text, canonical_url anchors) hang off it.
 func (c Config) siteBase() string { return strings.TrimRight(c.SiteBase, "/") }
+
+// appviewURL returns the readback appview base the conformance check
+// queries — empty falls back to the public Bluesky appview.
+func (c Config) appviewURL() string {
+	if c.AppViewURL != "" {
+		return strings.TrimRight(c.AppViewURL, "/")
+	}
+	return "https://public.api.bsky.app"
+}
 
 // pdsHost returns the host component of the PDS URL — the did:web
 // method-specific-id's leading segment.

@@ -163,3 +163,40 @@ SELECT
     (SELECT COUNT(*) FROM atproto_records)::bigint AS total_records,
     (SELECT COUNT(*) FROM atproto_repo_commits)::bigint AS total_commits,
     (SELECT COUNT(*) FROM atproto_repo_events)::bigint AS total_repo_events;
+
+-- name: InsertAtprotoConformanceRun :one
+-- §127 admin: persist a conformance run result (checks as jsonb array).
+INSERT INTO atproto_conformance_runs (actor, did, checks, passed, run_by)
+VALUES (@actor, @did, @checks::jsonb, @passed, @run_by)
+RETURNING id, actor, did, checks, passed, run_by, created_at;
+
+-- name: ListAtprotoConformanceRuns :many
+SELECT id, actor, did, checks, passed, run_by, created_at
+FROM atproto_conformance_runs
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAtprotoConformanceRuns :one
+SELECT COUNT(*)::bigint FROM atproto_conformance_runs;
+
+-- name: PickAtprotoConformanceTarget :one
+-- Auto-pick for the admin check + cmd/atproto-conformance: an active
+-- account, preferring one with at least one projected feed.post so the
+-- post-indexed check is meaningful.
+SELECT a.did, EXISTS (
+    SELECT 1 FROM atproto_records r
+    WHERE r.account_id = a.id AND r.collection = 'app.bsky.feed.post'
+) AS has_posts
+FROM atproto_accounts a
+WHERE a.status = 'active'
+ORDER BY has_posts DESC, a.created_at ASC
+LIMIT 1;
+
+-- name: AtprotoDIDHasPosts :one
+-- Post check needs "did we project any feed.post for this DID" — an
+-- empty appview feed only fails when our own index holds posts.
+SELECT EXISTS (
+    SELECT 1 FROM atproto_records r
+    JOIN atproto_accounts a ON a.id = r.account_id
+    WHERE a.did = @did AND r.collection = 'app.bsky.feed.post'
+);

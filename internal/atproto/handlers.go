@@ -213,3 +213,47 @@ func parseLimitOffset(r *http.Request, defLimit, maxLimit int) (int, int) {
 	}
 	return limit, offset
 }
+
+// RunConformanceCheck serves POST /api/v1/admin/atproto/conformance —
+// the §127 release-gate readback from the admin UI. {handle?, did?}
+// picks the target; an empty body auto-picks an active account. The
+// run persists to atproto_conformance_runs either way — history exists
+// so admins can see when appview indexing last broke, and a failing
+// run must not vanish just because it failed.
+func (h *Handlers) RunConformanceCheck(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Handle string `json:"handle"`
+		DID    string `json:"did"`
+	}
+	// Empty body is legal (auto-pick) — a malformed body is not.
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+			return
+		}
+	}
+	run, res, err := h.service.RunConformanceCheck(r.Context(), input.Handle, input.DID, user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"run": run, "result": res})
+}
+
+// ListConformanceRuns serves GET /api/v1/admin/atproto/conformance.
+func (h *Handlers) ListConformanceRuns(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r, 20, 100)
+	runs, total, err := h.service.ListConformanceRuns(r.Context(), int32(limit), int32(offset))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": runs,
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset, "total_pages": totalPages(total, int32(limit))},
+	})
+}

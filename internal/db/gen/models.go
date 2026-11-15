@@ -727,6 +727,16 @@ type AtprotoCommitBlock struct {
 	Cid       string      `json:"cid"`
 }
 
+type AtprotoConformanceRun struct {
+	ID        pgtype.UUID        `json:"id"`
+	Actor     string             `json:"actor"`
+	Did       string             `json:"did"`
+	Checks    []byte             `json:"checks"`
+	Passed    bool               `json:"passed"`
+	RunBy     pgtype.UUID        `json:"run_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type AtprotoRecord struct {
 	Uri        string             `json:"uri"`
 	AccountID  pgtype.UUID        `json:"account_id"`
