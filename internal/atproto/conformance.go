@@ -3,7 +3,7 @@ package atproto
 // Conformance — the §127 A3 release-gate readback: after first publish,
 // verify the network actually indexes a member account by reading it
 // back through a real appview (handle resolves, DID matches, a post is
-// indexed). The same checks power POST /admin/atproto/conformance
+// indexed). The same checks power POST /control/atproto/conformance
 // (persisted runs, admin dashboard) and cmd/atproto-conformance (the
 // pre-announcement gate) — one implementation, two surfaces.
 //

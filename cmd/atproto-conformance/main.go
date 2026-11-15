@@ -4,7 +4,7 @@
 // resolves (not handle.invalid), the profile resolves, and a post is
 // indexed — the detection loop for atproto's silent non-indexing
 // failure mode (ADR-139 Risks). The checks themselves live in
-// internal/atproto and also serve POST /admin/atproto/conformance.
+// internal/atproto and also serve POST /control/atproto/conformance.
 //
 // Usage:
 //

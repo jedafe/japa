@@ -4894,10 +4894,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto", atprotoHandlers.GetMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto", atprotoHandlers.EnableMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto", atprotoHandlers.DisableMyAccount)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/accounts", atprotoHandlers.ListAccounts)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/stats", atprotoHandlers.GetStats)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Post("/admin/atproto/conformance", atprotoHandlers.RunConformanceCheck)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).Get("/admin/atproto/conformance", atprotoHandlers.ListConformanceRuns)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)
@@ -10128,6 +10124,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/wallet/currencies/{code}", walletHandlers.ControlUpdateCurrency)
 			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
 				Delete("/wallet/currencies/{code}", walletHandlers.ControlDeleteCurrency)
+
+			// AT Protocol (Section 127) — ops surface for the hosted mini-PDS:
+			// account inventory, stats, and the appview conformance check that
+			// doubles as the release gate. Requires feature.atproto on.
+			r.With(features.Gate(featureChecker, "feature.atproto")).Group(func(r chi.Router) {
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).
+					Get("/atproto/accounts", atprotoHandlers.ListAccounts)
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).
+					Get("/atproto/stats", atprotoHandlers.GetStats)
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).
+					Post("/atproto/conformance", atprotoHandlers.RunConformanceCheck)
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).
+					Get("/atproto/conformance", atprotoHandlers.ListConformanceRuns)
+			})
 		})
 	})
 

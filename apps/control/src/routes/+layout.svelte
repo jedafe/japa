@@ -55,6 +55,7 @@
 		BrainCircuit,
 		BarChart3,
 		Compass,
+		Network,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -247,6 +248,7 @@
 		{ href: '/cron', icon: Clock },
 		{ href: '/seeds', icon: Sprout },
 		{ href: '/deployments', icon: Rocket },
+		{ href: '/atproto', icon: Network },
 		{ href: '/currencies', icon: Coins },
 		{ href: '/intelligence', icon: BrainCircuit }
 	];
@@ -268,6 +270,7 @@
 		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip', defaultLabel: 'Cron Jobs', defaultTooltip: 'Scheduled job management' },
 		'/seeds': { label: 'nav.seeds', tooltip: 'nav.seeds_tooltip', defaultLabel: 'Seeds', defaultTooltip: 'Seed & enrichment jobs (geo, wiki, attractions)' },
 		'/deployments': { label: 'nav.deployments', tooltip: 'nav.deployments_tooltip', defaultLabel: 'Deployments', defaultTooltip: 'Deployment version history' },
+		'/atproto': { label: 'nav.atproto', tooltip: 'nav.atproto_tooltip', defaultLabel: 'AT Protocol', defaultTooltip: 'Mini-PDS accounts and appview conformance' },
 		'/oauth-clients': { label: 'nav.oauth_clients', tooltip: 'nav.oauth_clients_tooltip', defaultLabel: 'OAuth Clients', defaultTooltip: 'OAuth provider client management' },
 		'/extensions': { label: 'nav.extensions', tooltip: 'nav.extensions_tooltip', defaultLabel: 'Extensions', defaultTooltip: 'Platform extensions and integrations' },
 		'/webhooks': { label: 'nav.webhooks', tooltip: 'nav.webhooks_tooltip', defaultLabel: 'Webhooks', defaultTooltip: 'Webhook endpoint management' },

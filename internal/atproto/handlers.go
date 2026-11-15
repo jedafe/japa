@@ -148,10 +148,10 @@ func (h *Handlers) DisableMyAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Admin (/api/v1/admin/atproto — auth + atproto.accounts.view)
+// Control panel (/control/atproto — control.panel.access + atproto.accounts.view)
 // ---------------------------------------------------------------------------
 
-// ListAccounts serves GET /api/v1/admin/atproto/accounts.
+// ListAccounts serves GET /control/atproto/accounts.
 func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffset(r, 20, 100)
 	accounts, total, err := h.service.ListAccounts(r.Context(), r.URL.Query().Get("q"), int32(limit), int32(offset))
@@ -165,7 +165,7 @@ func (h *Handlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetStats serves GET /api/v1/admin/atproto/stats.
+// GetStats serves GET /control/atproto/stats.
 func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.service.Stats(r.Context())
 	if err != nil {
@@ -214,7 +214,7 @@ func parseLimitOffset(r *http.Request, defLimit, maxLimit int) (int, int) {
 	return limit, offset
 }
 
-// RunConformanceCheck serves POST /api/v1/admin/atproto/conformance —
+// RunConformanceCheck serves POST /control/atproto/conformance —
 // the §127 release-gate readback from the admin UI. {handle?, did?}
 // picks the target; an empty body auto-picks an active account. The
 // run persists to atproto_conformance_runs either way — history exists
@@ -244,7 +244,7 @@ func (h *Handlers) RunConformanceCheck(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"run": run, "result": res})
 }
 
-// ListConformanceRuns serves GET /api/v1/admin/atproto/conformance.
+// ListConformanceRuns serves GET /control/atproto/conformance.
 func (h *Handlers) ListConformanceRuns(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffset(r, 20, 100)
 	runs, total, err := h.service.ListConformanceRuns(r.Context(), int32(limit), int32(offset))
