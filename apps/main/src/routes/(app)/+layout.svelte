@@ -22,7 +22,6 @@
 	import StickyAnchorAd from '#lib/components/ads/StickyAnchorAd.svelte';
 	import NextActionBar from '#lib/components/shell/NextActionBar.svelte';
 	import NextActionPopup from '#lib/components/shell/NextActionPopup.svelte';
-	import JourneyContextBar from '#lib/components/feed/JourneyContextBar.svelte';
 	import JourneyOnboardingModal from '#lib/components/feed/JourneyOnboardingModal.svelte';
 	import AdConversionTracker from '#lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '#lib/lightbox.svelte.js';
@@ -307,9 +306,6 @@
 		features={data.features}
 	/>
 	<main>
-		{#if !data.user}
-			<JourneyContextBar />
-		{/if}
 		{@render children()}
 	</main>
 	{#if !page.data.guestHome && !page.data.hasGuestHomeBlock}
@@ -350,12 +346,6 @@
 		features={data.features}
 	>
 		<NextActionBar />
-		{#if !data.user && !exception}
-			<!-- Guest journey context bar — guests only; members render
-			     nothing. Suppressed on workbench surfaces (create/studio/
-			     settings/dashboard) like the sidebars. -->
-			<JourneyContextBar />
-		{/if}
 		{@render children()}
 	</AppShell>
 	{#if isPublishedPage && !publishedHasOwnFooter}
@@ -417,9 +407,10 @@
 {/if}
 
 <!-- Guest journey onboarding (design §6.1): mounted shell-wide so the
-     60s auto-prompt fires on any guest surface, not just /explore. The
-     component self-gates — no auto-open for members or guests with a
-     declared destination; skipped on the roadmap host's compact shell. -->
+     60s auto-prompt fires on any guest surface — JourneyContextBar stays
+     on /explore, only the modal is global. The component self-gates — no
+     auto-open for members or guests with a declared destination; skipped
+     on the roadmap host's compact shell. -->
 {#if !data.user && !data.isRoadmapHost}
 	<JourneyOnboardingModal />
 {/if}
