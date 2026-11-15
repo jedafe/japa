@@ -68,6 +68,24 @@ func TestComposePostTextShrinksExcerptNotURL(t *testing.T) {
 	}
 }
 
+func TestComposePostTextDropsUnfittableURL(t *testing.T) {
+	// A member-supplied canonical_url has no length bound — one longer
+	// than the cap minus the title can't anchor the tail intact, so the
+	// whole URL drops (no partial link) rather than shipping over-limit.
+	url := "https://test.dev/blog/" + strings.Repeat("u", 300)
+	title := strings.Repeat("t", 120)
+	text := composePostText(title, "excerpt", url)
+	if utf8.RuneCountInString(text) > postTextRunes {
+		t.Fatalf("%d runes > cap", utf8.RuneCountInString(text))
+	}
+	if strings.Contains(text, "test.dev/blog/") {
+		t.Fatalf("partial url kept: %q", text)
+	}
+	if f := linkFacet(text, url); f != nil {
+		t.Fatalf("facet on dropped url")
+	}
+}
+
 // ── Media → blob → embed (DB) ──
 
 // fakeMediaReader serves canned object bytes keyed "bucket/path".

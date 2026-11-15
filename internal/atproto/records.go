@@ -170,9 +170,9 @@ func (s *Service) postRecord(row gen.GetAtprotoProjectableContentRow, embed *bsk
 // the excerpt gives before the URL does, so a whole link always anchors
 // the post tail (the facet target must survive to be clickable).
 func composePostText(title, excerpt, pageURL string) string {
-	join := func(ex string) string {
+	join := func(ex, url string) string {
 		parts := make([]string, 0, 3)
-		for _, p := range []string{truncateRunes(title, 120), ex, pageURL} {
+		for _, p := range []string{truncateRunes(title, 120), ex, url} {
 			if p != "" {
 				parts = append(parts, p)
 			}
@@ -180,12 +180,18 @@ func composePostText(title, excerpt, pageURL string) string {
 		return strings.Join(parts, "\n\n")
 	}
 	excerpt = truncateRunes(excerpt, 140)
-	text := join(excerpt)
+	text := join(excerpt, pageURL)
 	if over := utf8.RuneCountInString(text) - postTextRunes; over > 0 {
-		// Shrink the excerpt by the overflow (… marks the cut); title+URL
-		// alone can't approach the cap, so the join always fits after.
+		// Shrink the excerpt by the overflow (… marks the cut).
 		excerpt = truncateRunes(excerpt, max(0, utf8.RuneCountInString(excerpt)-over))
-		text = join(excerpt)
+		text = join(excerpt, pageURL)
+	}
+	// A URL that still can't fit intact (a member-supplied canonical_url
+	// has no length bound) is dropped whole, never cut — a partial link
+	// would silently point nowhere. title+excerpt alone can't reach the
+	// cap, and linkFacet's suffix check yields no facet automatically.
+	if utf8.RuneCountInString(text) > postTextRunes {
+		text = join(excerpt, "")
 	}
 	return text
 }
