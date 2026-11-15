@@ -117,16 +117,28 @@ func objectDocument(c gen.GetFederatableContentByIDRow, actorURL, followersURL, 
 	if objType == "Article" && c.Title != "" {
 		doc["name"] = c.Title
 	}
-	// §126: the featured (else header) image rides as an Image attachment so
+	// §126: the featured (else header) image rides as an attachment so
 	// remote timelines render a preview card. URLs go through the media
-	// helper (imgproxy-signed when configured, serve endpoint otherwise) —
-	// never assembled here.
-	if u := imageAttachmentURL(c); u != nil {
-		att := map[string]any{"type": "Image", "url": *u}
-		if mime := imageAttachmentMIME(c); mime != nil {
+	// helpers — imgproxy-signed for images, the serve endpoint for other
+	// binaries — never assembled here. A non-image asset is typed
+	// Document rather than mislabelled Image.
+	if bucket, path, mime := attachmentMedia(c); bucket != nil && path != nil {
+		att := map[string]any{"type": "Image"}
+		if mime != nil && !strings.HasPrefix(*mime, "image/") {
+			att["type"] = "Document"
 			att["mediaType"] = *mime
+			att["url"] = media.ServeURL(*bucket, *path)
+		} else {
+			if mime != nil {
+				att["mediaType"] = *mime
+			}
+			if u := media.URLFromParts(bucket, path, media.ImageProxyOpts{}); u != nil {
+				att["url"] = *u
+			}
 		}
-		doc["attachment"] = []any{att}
+		if _, ok := att["url"]; ok {
+			doc["attachment"] = []any{att}
+		}
 	}
 	if c.PublishedAt.Valid {
 		doc["published"] = c.PublishedAt.Time.UTC().Format(time.RFC3339)
@@ -137,27 +149,14 @@ func objectDocument(c gen.GetFederatableContentByIDRow, actorURL, followersURL, 
 	return doc
 }
 
-// imageAttachmentURL resolves the AP attachment URL — featured image first,
-// header image as fallback.
-func imageAttachmentURL(c gen.GetFederatableContentByIDRow) *string {
-	if u := media.URLFromParts(c.FeaturedBucket, c.FeaturedPath, media.ImageProxyOpts{}); u != nil {
-		return u
+// attachmentMedia picks the featured media row, falling back to the
+// header row — bucket/path/mime always come from the same row so url and
+// mediaType can't describe different assets.
+func attachmentMedia(c gen.GetFederatableContentByIDRow) (bucket, path, mime *string) {
+	if c.FeaturedBucket != nil && c.FeaturedPath != nil {
+		return c.FeaturedBucket, c.FeaturedPath, c.FeaturedMime
 	}
-	return media.URLFromParts(c.HeaderBucket, c.HeaderPath, media.ImageProxyOpts{})
-}
-
-// imageAttachmentMIME reports the stored MIME of whichever image won —
-// only emitted when it names an image/* type (remote servers use it for
-// content negotiation).
-func imageAttachmentMIME(c gen.GetFederatableContentByIDRow) *string {
-	mime := c.FeaturedMime
-	if c.FeaturedBucket == nil || c.FeaturedPath == nil {
-		mime = c.HeaderMime
-	}
-	if mime == nil || !strings.HasPrefix(*mime, "image/") {
-		return nil
-	}
-	return mime
+	return c.HeaderBucket, c.HeaderPath, c.HeaderMime
 }
 
 // objectURLFromActor derives the canonical object @id from the actor URL.

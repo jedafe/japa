@@ -327,7 +327,11 @@ func parseLimitOffset(r *http.Request) (limit, offset, page int32) {
 		return limit, offset, offset/limit + 1
 	}
 	page = 1
+	// Bound page — (page-1)*limit must not overflow int32.
 	if v, err := strconv.ParseInt(r.URL.Query().Get("page"), 10, 32); err == nil && v > 1 {
+		if v > 1_000_000 {
+			v = 1_000_000
+		}
 		page = int32(v)
 	}
 	return limit, (page - 1) * limit, page

@@ -574,8 +574,13 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// The upsert's WHERE guard declined — a concurrent tombstone
-			// row exists for this user. Same contract as the branch above.
+			// The upsert's WHERE guard declined — either a tombstone row
+			// (erasure, terminal) or a concurrent enable that already
+			// wrote 'active' between our lookup and insert. Re-read to
+			// tell them apart.
+			if existing, lerr := s.store.actorByUserID(ctx, userID); lerr == nil && existing.Status == ActorStatusActive {
+				return s.statusFor(ctx, existing, username), nil
+			}
 			return FederationStatus{}, ErrNotFound
 		}
 		return FederationStatus{}, fmt.Errorf("federation: create actor: %w", err)

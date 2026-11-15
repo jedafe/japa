@@ -300,7 +300,7 @@ func TestObjectDocumentNoteVsArticle(t *testing.T) {
 func TestObjectDocumentImageAttachment(t *testing.T) {
 	str := func(s string) *string { return &s }
 	base := gen.GetFederatableContentByIDRow{
-		ContentType:   "story",
+		ContentType:    "story",
 		FeaturedBucket: str("media"),
 		FeaturedPath:   str("featured/x.webp"),
 		FeaturedMime:   str("image/webp"),
@@ -336,8 +336,17 @@ func TestObjectDocumentImageAttachment(t *testing.T) {
 		t.Errorf("header mime not carried: %v", atts[0])
 	}
 
-	// No image → no attachment key at all (no-nulls rule).
+	// A non-image featured asset is typed Document, not mislabelled Image.
+	base.FeaturedBucket, base.FeaturedPath, base.FeaturedMime = str("media"), str("clip/z.mp4"), str("video/mp4")
 	base.HeaderBucket, base.HeaderPath, base.HeaderMime = nil, nil, nil
+	doc = objectDocument(base, "a", "f", "s", "u")
+	att = doc["attachment"].([]any)[0].(map[string]any)
+	if att["type"] != "Document" || att["mediaType"] != "video/mp4" {
+		t.Errorf("video attachment should be Document, got %v", att)
+	}
+
+	// No image → no attachment key at all (no-nulls rule).
+	base.FeaturedBucket, base.FeaturedPath, base.FeaturedMime = nil, nil, nil
 	doc = objectDocument(base, "a", "f", "s", "u")
 	if _, ok := doc["attachment"]; ok {
 		t.Error("attachment should be absent when no image exists")
@@ -532,19 +541,20 @@ func TestParsePage(t *testing.T) {
 
 func TestParseLimitOffsetAdmin(t *testing.T) {
 	cases := []struct {
-		raw                       string
+		raw                          string
 		wantLimit, wantOff, wantPage int32
 	}{
 		{"", 20, 0, 1},
 		{"?limit=50", 50, 0, 1},
-		{"?limit=999", 20, 0, 1},           // over max → default
-		{"?page=2", 20, 20, 2},             // page is 1-based → (page-1)*limit
+		{"?limit=999", 20, 0, 1}, // over max → default
+		{"?page=2", 20, 20, 2},   // page is 1-based → (page-1)*limit
 		{"?page=3&limit=10", 10, 20, 3},
-		{"?page=0", 20, 0, 1},              // invalid → page 1
+		{"?page=0", 20, 0, 1}, // invalid → page 1
 		{"?page=-4", 20, 0, 1},
-		{"?offset=40", 20, 40, 3},          // legacy offset honored
-		{"?offset=40&page=2", 20, 40, 3},   // explicit offset wins over page
+		{"?offset=40", 20, 40, 3},        // legacy offset honored
+		{"?offset=40&page=2", 20, 40, 3}, // explicit offset wins over page
 		{"?page=abc", 20, 0, 1},
+		{"?page=2147483647", 20, 19999980, 1000000}, // capped — offset must not overflow int32
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest("GET", "/admin/federation/actors"+tc.raw, nil)
