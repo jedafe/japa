@@ -186,6 +186,7 @@ func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
 			PrimaryGoals: []OnboardingOption{
 				{Value: "work", LabelKey: "onboarding.goal_work"},
 				{Value: "study", LabelKey: "onboarding.goal_study"},
+				{Value: "visit", LabelKey: "onboarding.goal_visit"},
 				{Value: "business", LabelKey: "onboarding.goal_business"},
 				{Value: "family", LabelKey: "onboarding.goal_family"},
 				{Value: "lifestyle", LabelKey: "onboarding.goal_lifestyle"},
