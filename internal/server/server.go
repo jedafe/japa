@@ -4888,8 +4888,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Delete("/admin/federation/instances/{id}", federationHandlers.DeleteBlock)
 			})
 
-			// Section 127 — AT Protocol mini-PDS (ADR-139). Member opt-in +
-			// admin management; the public PDS surface is at root.
+			// Section 127 — AT Protocol mini-PDS (ADR-139). Member opt-in; the
+			// ops surface lives under /control/atproto, the public PDS at root.
 			r.With(features.Gate(featureChecker, "feature.atproto")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto", atprotoHandlers.GetMyAccount)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto", atprotoHandlers.EnableMyAccount)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
+	gen "github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -172,7 +173,7 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, stats)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // writeTypedJSON is shared with the federation package's convention:
@@ -241,7 +242,18 @@ func (h *Handlers) RunConformanceCheck(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"run": run, "result": res})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"run":    conformanceRunView{AtprotoConformanceRun: run, Checks: run.Checks},
+		"result": res,
+	}})
+}
+
+// conformanceRunView reshapes a stored run for the wire: the checks
+// column scans as []byte (jsonb), which encoding/json would emit as a
+// base64 string — RawMessage keeps it the array the UI renders.
+type conformanceRunView struct {
+	gen.AtprotoConformanceRun
+	Checks json.RawMessage `json:"checks"`
 }
 
 // ListConformanceRuns serves GET /control/atproto/conformance.
@@ -252,8 +264,12 @@ func (h *Handlers) ListConformanceRuns(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
+	out := make([]conformanceRunView, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, conformanceRunView{AtprotoConformanceRun: run, Checks: run.Checks})
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": runs,
+		"data": out,
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset, "total_pages": totalPages(total, int32(limit))},
 	})
 }

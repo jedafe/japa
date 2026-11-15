@@ -2614,3 +2614,31 @@ func TestDBConformanceRun(t *testing.T) {
 		t.Fatal("no checks failed on handle.invalid")
 	}
 }
+
+// The wire view must emit checks as a JSON array — the raw []byte would
+// marshal as base64 and break the history UI's parse.
+func TestConformanceRunViewJSON(t *testing.T) {
+	checks := []byte(`[{"name":"profile","pass":true,"detail":"ok"}]`)
+	v := conformanceRunView{
+		AtprotoConformanceRun: gen.AtprotoConformanceRun{
+			Actor:  "alice.test.dev",
+			Did:    "did:web:test.dev:atproto:u:x",
+			Checks: checks,
+			Passed: true,
+		},
+		Checks: checks,
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal view: %v", err)
+	}
+	var decoded struct {
+		Checks []ConformanceCheck `json:"checks"`
+	}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("view checks not a JSON array: %v — %s", err, out)
+	}
+	if len(decoded.Checks) != 1 || decoded.Checks[0].Name != "profile" {
+		t.Fatalf("view checks mangled: %s", out)
+	}
+}

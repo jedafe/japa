@@ -84,8 +84,11 @@
 	});
 
 	function searchAccounts() {
-		acctPage = 0;
-		loadAccounts();
+		// acctPage=0 already retriggers the $effect fetch — calling
+		// loadAccounts() here too would double-fetch; only needed when
+		// the page didn't change (already on page 0).
+		if (acctPage === 0) loadAccounts();
+		else acctPage = 0;
 	}
 
 	const accountColumns: DataTableColumn[] = [
