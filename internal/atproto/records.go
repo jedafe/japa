@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/syntax"
@@ -102,6 +103,7 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 		return fmt.Errorf("atproto: user profile: %w", err)
 	}
 	rec := profileRecord(user.Username, profile, account.CreatedAt.Time)
+	s.enrichProfileBlobs(ctx, account.ID, rec)
 	if _, err := s.PutRecord(ctx, account.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{}); err != nil {
 		return err
 	}
@@ -109,8 +111,9 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 }
 
 // profileRecord projects user_profiles → app.bsky.actor.profile.
-// displayName falls back to the username; avatar/banner are blob refs
-// and arrive with A4's media pipeline. Both strings cap at the
+// displayName falls back to the username; avatar/banner blob refs are
+// attached at write time by enrichProfileBlobs (A4). Both strings cap
+// at the
 // lexicon's maxGraphemes (64/256) — a raw rune cap overshoots on
 // emoji/ZWJ sequences, which the network would reject at validation.
 func profileRecord(username string, p gen.GetAtprotoUserProfileRow, accountCreated time.Time) *bsky.ActorProfile {
@@ -139,29 +142,70 @@ func ProfileRecordJSON(displayName, bio *string, username string, createdAt time
 }
 
 // postRecord projects a contents row → app.bsky.feed.post: title,
-// markdown-stripped excerpt, and the canonical page URL, bounded by the
-// lexicon's grapheme limit. Facets/embeds are A4 (UTF-8 byte-offset
-// correctness is its own risk surface per §127).
-func (s *Service) postRecord(row gen.GetAtprotoProjectableContentRow) *bsky.FeedPost {
-	var sb strings.Builder
-	if t := strings.TrimSpace(row.Title); t != "" {
-		sb.WriteString(truncateRunes(t, 120))
-		sb.WriteString("\n\n")
-	}
-	sb.WriteString(truncateRunes(stripMarkdown(row.Body), 140))
-	if sb.Len() > 0 {
-		sb.WriteString("\n\n")
-	}
-	sb.WriteString(s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
+// markdown-stripped excerpt, and the canonical page URL — the URL always
+// survives truncation whole (the excerpt shrinks first) so the link facet
+// never covers a cut-off address. Facet offsets index BYTES, not runes —
+// multi-byte text before the URL shifts them (§127 A4's named risk).
+func (s *Service) postRecord(row gen.GetAtprotoProjectableContentRow, embed *bsky.FeedPost_Embed) *bsky.FeedPost {
+	pageURL := s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl)
+	text := composePostText(strings.TrimSpace(row.Title), stripMarkdown(row.Body), pageURL)
 
 	created := row.CreatedAt.Time
 	if row.PublishedAt.Valid {
 		created = row.PublishedAt.Time
 	}
-	return &bsky.FeedPost{
+	rec := &bsky.FeedPost{
 		LexiconTypeID: CollectionPost,
-		Text:          truncateRunes(strings.TrimSpace(sb.String()), postTextRunes),
+		Text:          text,
 		CreatedAt:     created.UTC().Format(time.RFC3339),
+		Embed:         embed,
+	}
+	if facet := linkFacet(text, pageURL); facet != nil {
+		rec.Facets = []*bsky.RichtextFacet{facet}
+	}
+	return rec
+}
+
+// composePostText joins title/excerpt/URL within the grapheme cap —
+// the excerpt gives before the URL does, so a whole link always anchors
+// the post tail (the facet target must survive to be clickable).
+func composePostText(title, excerpt, pageURL string) string {
+	join := func(ex string) string {
+		parts := make([]string, 0, 3)
+		for _, p := range []string{truncateRunes(title, 120), ex, pageURL} {
+			if p != "" {
+				parts = append(parts, p)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	}
+	excerpt = truncateRunes(excerpt, 140)
+	text := join(excerpt)
+	if over := utf8.RuneCountInString(text) - postTextRunes; over > 0 {
+		// Shrink the excerpt by the overflow (… marks the cut); title+URL
+		// alone can't approach the cap, so the join always fits after.
+		excerpt = truncateRunes(excerpt, max(0, utf8.RuneCountInString(excerpt)-over))
+		text = join(excerpt)
+	}
+	return text
+}
+
+// linkFacet emits the app.bsky.richtext.facet#link covering the URL at
+// the text tail. Byte offsets are trivially exact — the URL is the
+// suffix — and nil when truncation dropped it (facet on a partial URL
+// would point nowhere).
+func linkFacet(text, pageURL string) *bsky.RichtextFacet {
+	if pageURL == "" || !strings.HasSuffix(text, pageURL) {
+		return nil
+	}
+	return &bsky.RichtextFacet{
+		Index: &bsky.RichtextFacet_ByteSlice{
+			ByteStart: int64(len(text) - len(pageURL)),
+			ByteEnd:   int64(len(text)),
+		},
+		Features: []*bsky.RichtextFacet_Features_Elem{{
+			RichtextFacet_Link: &bsky.RichtextFacet_Link{Uri: pageURL},
+		}},
 	}
 }
 
@@ -209,7 +253,11 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	if err != nil {
 		return "", fmt.Errorf("atproto: projectable content: %w", err)
 	}
-	rec := s.postRecord(row)
+	// A4: blob puts run before the repo write — blobs aren't signed repo
+	// data, so they persist outside the commit tx (an aborted commit leaves
+	// unreferenced blobs, which is harmless: CIDs are content-addressed and
+	// a retry reuses them).
+	rec := s.postRecord(row, s.imageEmbed(ctx, accountID, contentID))
 	rkey := contentRkey(contentID)
 
 	// The eligibility re-check runs inside the repo tx, on the same
@@ -329,6 +377,11 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 	rec, err := decodeRecord(collection, raw)
 	if err != nil {
 		return "", permanent(err)
+	}
+	// A4: profile records carry blob refs the pre-marshaled payload can't —
+	// attach them at write time from live profile media.
+	if prof, ok := rec.(*bsky.ActorProfile); ok {
+		s.enrichProfileBlobs(ctx, accountID, prof)
 	}
 	// A record task carrying content_id must target the repo that owns
 	// the content — otherwise the index would link someone else's row

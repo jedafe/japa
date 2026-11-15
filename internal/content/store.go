@@ -54,10 +54,14 @@ type CreateContentInput struct {
 	MetaDescription *string
 	OgImageUrl      *string //nolint:revive // matches sqlc-generated field name
 	SeoIndexable    bool
-	Status          string
-	Visibility      string
-	PublishAt       pgtype.Timestamptz
-	GuideCategory   *string
+	// FederateOptOut is the member's per-content "don't federate" flag
+	// (§127 A4 / §126) — gates the atproto feed.post and AP object
+	// projections; default false = federatable.
+	FederateOptOut bool
+	Status         string
+	Visibility     string
+	PublishAt      pgtype.Timestamptz
+	GuideCategory  *string
 	// Journey-aware recommendation metadata (§14 / ADR-064a).
 	JourneyStage  *string
 	VisaRoute     *string
@@ -1224,9 +1228,12 @@ type UpdateContentInput struct {
 	MetaDescription *string
 	OgImageUrl      *string //nolint:revive // matches sqlc-generated field name
 	SeoIndexable    *bool
-	Status          string
-	Visibility      string
-	PublishAt       pgtype.Timestamptz
+	// FederateOptOut is *bool like the other toggle columns: omitted
+	// preserves the stored flag, non-nil writes it (§127 A4).
+	FederateOptOut *bool
+	Status         string
+	Visibility     string
+	PublishAt      pgtype.Timestamptz
 	// ClearPublishAt NULLs publish_at. An invalid PublishAt means "keep the
 	// stored schedule" — publish_at is otherwise managed by ScheduleContent
 	// and the PATCH publish_at field.
@@ -1787,6 +1794,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	if isPublic {
 		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
 	}
+	// §127 A4: flipping federate_opt_out on a row that stays public-live
+	// tombstones the projected record — the publish emit above only
+	// enqueues a task whose eligibility re-check skips, which leaves the
+	// old record live. The delete emit resolves by index rows, so an
+	// opt-out with nothing projected is a harmless no-op.
+	if content.FederateOptOut && !existing.FederateOptOut {
+		s.emitAtprotoDelete(ctx, content.ID)
+	}
 
 	return content, nil
 }
@@ -1822,6 +1837,7 @@ func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing
 		GeoSpaceID:         primarySpaceID,
 		VideoSourceID:      input.VideoSourceID,
 		SeoIndexable:       input.SeoIndexable,
+		FederateOptOut:     input.FederateOptOut,
 		Status:             input.Status,
 		Visibility:         input.Visibility,
 		ReadTimeMinutes:    ComputeReadTime(input.Body),

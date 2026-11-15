@@ -1377,6 +1377,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// operator has configured storage via the Control Panel (Section 34).
 	// When the settings are absent the env-var-based client is retained.
 	mediaService.ReconfigureS3FromSettings(context.Background())
+	// §127 A4: the mini-PDS embed/avatar pipeline reads stored media bytes
+	// through this seam (S3 or local, whichever media is configured for).
+	atprotoService.SetMediaReader(mediaService)
 	// Wire the admin-configurable CDN base URL (media.cdn.base_url) into the
 	// package-level media.MediaURL so all callers (tags, blog, feed, widgets,
 	// seo) honour the system_setting without each needing a *media.Service.
@@ -4029,6 +4032,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/xrpc/com.atproto.sync.getBlocks", atprotoHandlers.GetBlocks)
 		r.Get("/xrpc/com.atproto.sync.getLatestCommit", atprotoHandlers.GetLatestCommit)
 		r.Get("/xrpc/com.atproto.sync.getRecord", atprotoHandlers.GetRecord)
+		r.Get("/xrpc/com.atproto.sync.getBlob", atprotoHandlers.GetBlob)
 		r.Get("/xrpc/com.atproto.sync.getRepoStatus", atprotoHandlers.GetRepoStatus)
 		r.Get("/xrpc/com.atproto.sync.listRepos", atprotoHandlers.ListRepos)
 		r.Get("/xrpc/com.atproto.sync.subscribeRepos", atprotoHandlers.SubscribeRepos)

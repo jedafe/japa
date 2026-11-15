@@ -374,6 +374,22 @@ func lexiconRepoStatus(accountStatus, userStatus string) (active bool, status st
 	}
 }
 
+// BlobForDID serves getBlob (A4): the media blob bytes for a CID under
+// the account the `did` param names. DID resolution and inactive-account
+// states ride accountForDID (RepoDeactivated/Suspended/Takendown); a CID
+// that isn't a legal CID string is InvalidRequest, and one that parses
+// but isn't stored is ErrNotFound (the handler names it BlobNotFound).
+func (s *Service) BlobForDID(ctx context.Context, did, blobCid string) (mime string, data []byte, err error) {
+	account, err := s.accountForDID(ctx, did)
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := cid.Parse(blobCid); err != nil {
+		return "", nil, ErrInvalidID
+	}
+	return s.GetBlob(ctx, account.ID, blobCid)
+}
+
 // RepoStatus serves getRepoStatus: the relay calls it on the
 // inactive-recheck path — answering with the right status word keeps a
 // frozen repo's straggler commits from being dropped as unverifiable.

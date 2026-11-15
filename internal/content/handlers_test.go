@@ -405,8 +405,8 @@ const (
 	argMetaTitle       = 11
 	argMetaDescription = 12
 	argOgImageUrl      = 13 //nolint:revive // matches sqlc-generated field name
-	argPublishAt       = 18
-	argOrganizationID  = 22
+	argPublishAt       = 19
+	argOrganizationID  = 23
 )
 
 func argStringPtr(t *testing.T, args []any, i int) *string {
@@ -814,7 +814,7 @@ func TestUpdateContentBotAuthorSkipsReviewQueue(t *testing.T) {
 	editorID := newUUID(t)
 	botID := newUUID(t)
 	contentID := newUUID(t)
-	const argStatus = 15
+	const argStatus = 16
 
 	prev := func(author pgtype.UUID) *gen.GetContentByIDRow {
 		return &gen.GetContentByIDRow{

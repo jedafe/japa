@@ -317,6 +317,23 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 	return buf[:read], nil
 }
 
+// ReadObject returns a stored object's bytes, at most maxBytes — callers
+// pass cap+1 when they need to detect oversize (a result longer than the
+// cap means "skip", not "use"). Used by the atproto blob projection (§127
+// A4): S3 GET when configured, local filesystem otherwise — the same
+// dual-source rule as fetchFileHeader.
+func (s *Service) ReadObject(ctx context.Context, bucket, path string, maxBytes int64) ([]byte, error) {
+	if s.s3 != nil {
+		return s.fetchFromS3(ctx, bucket, path, maxBytes)
+	}
+	f, err := openLocalFile(bucket, path)
+	if err != nil {
+		return nil, fmt.Errorf("open file %s/%s: %w", bucket, path, err)
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, maxBytes))
+}
+
 // objectSizeBytes returns the stored object's real size — S3 HEAD when the
 // client is configured, local stat otherwise. Returns errObjectMissing when
 // the object definitively does not exist; other errors mean the size could

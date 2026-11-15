@@ -214,10 +214,10 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 }
 
 const createContent = `-- name: CreateContent :one
-INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, COALESCE($25, false), $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id, federate_opt_out) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, COALESCE($25, false), $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, COALESCE($38, false))
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -264,6 +264,7 @@ type CreateContentParams struct {
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	FederateOptOut  interface{}        `json:"federate_opt_out"`
 }
 
 type CreateContentRow struct {
@@ -286,6 +287,7 @@ type CreateContentRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -353,6 +355,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.IntelSourceID,
 		arg.IntelRecordID,
 		arg.CreatedByUserID,
+		arg.FederateOptOut,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -375,6 +378,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -756,7 +760,7 @@ func (q *Queries) GetContentByHash(ctx context.Context, arg GetContentByHashPara
 const getContentByID = `-- name: GetContentByID :one
 SELECT id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -787,6 +791,7 @@ type GetContentByIDRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -840,6 +845,7 @@ func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetConten
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -934,7 +940,7 @@ func (q *Queries) GetContentByIntelRecord(ctx context.Context, intelRecordID pgt
 const getContentBySlug = `-- name: GetContentBySlug :one
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -969,6 +975,7 @@ type GetContentBySlugRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1012,6 +1019,7 @@ func (q *Queries) GetContentBySlug(ctx context.Context, slug string) (GetContent
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -1039,7 +1047,7 @@ const getContentDetailBySlug = `-- name: GetContentDetailBySlug :one
 SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -1146,6 +1154,7 @@ type GetContentDetailBySlugRow struct {
 	MetaDescription               *string            `json:"meta_description"`
 	OgImageUrl                    *string            `json:"og_image_url"`
 	SeoIndexable                  bool               `json:"seo_indexable"`
+	FederateOptOut                bool               `json:"federate_opt_out"`
 	Status                        string             `json:"status"`
 	Visibility                    string             `json:"visibility"`
 	IsLocked                      bool               `json:"is_locked"`
@@ -1233,6 +1242,7 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -1298,7 +1308,7 @@ const getContentDetailBySlugAndType = `-- name: GetContentDetailBySlugAndType :o
 SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -1412,6 +1422,7 @@ type GetContentDetailBySlugAndTypeRow struct {
 	MetaDescription               *string            `json:"meta_description"`
 	OgImageUrl                    *string            `json:"og_image_url"`
 	SeoIndexable                  bool               `json:"seo_indexable"`
+	FederateOptOut                bool               `json:"federate_opt_out"`
 	Status                        string             `json:"status"`
 	Visibility                    string             `json:"visibility"`
 	IsLocked                      bool               `json:"is_locked"`
@@ -1490,6 +1501,7 @@ func (q *Queries) GetContentDetailBySlugAndType(ctx context.Context, arg GetCont
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -2375,7 +2387,7 @@ func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg List
 const listContentByTag = `-- name: ListContentByTag :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at,
@@ -2451,6 +2463,7 @@ type ListContentByTagRow struct {
 	MetaDescription    *string            `json:"meta_description"`
 	OgImageUrl         *string            `json:"og_image_url"`
 	SeoIndexable       bool               `json:"seo_indexable"`
+	FederateOptOut     bool               `json:"federate_opt_out"`
 	Status             string             `json:"status"`
 	Visibility         string             `json:"visibility"`
 	IsLocked           bool               `json:"is_locked"`
@@ -2515,6 +2528,7 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -2698,7 +2712,7 @@ func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 const listContents = `-- name: ListContents :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -2771,6 +2785,7 @@ type ListContentsRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -2833,6 +2848,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -2871,7 +2887,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 const listContentsByIDs = `-- name: ListContentsByIDs :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -2930,6 +2946,7 @@ type ListContentsByIDsRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -2995,6 +3012,7 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -3032,7 +3050,7 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 const listContentsBySlugs = `-- name: ListContentsBySlugs :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -3106,6 +3124,7 @@ type ListContentsBySlugsRow struct {
 	MetaDescription    *string            `json:"meta_description"`
 	OgImageUrl         *string            `json:"og_image_url"`
 	SeoIndexable       bool               `json:"seo_indexable"`
+	FederateOptOut     bool               `json:"federate_opt_out"`
 	Status             string             `json:"status"`
 	Visibility         string             `json:"visibility"`
 	IsLocked           bool               `json:"is_locked"`
@@ -3178,6 +3197,7 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -3223,7 +3243,7 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 const listContentsBySpace = `-- name: ListContentsBySpace :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -3296,6 +3316,7 @@ type ListContentsBySpaceRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -3361,6 +3382,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -3399,7 +3421,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 const listContentsByType = `-- name: ListContentsByType :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -3491,6 +3513,7 @@ type ListContentsByTypeRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -3570,6 +3593,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -3689,7 +3713,7 @@ const listFeaturedContentsByType = `-- name: ListFeaturedContentsByType :many
 SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -3757,6 +3781,7 @@ type ListFeaturedContentsByTypeRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -3826,6 +3851,7 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -3932,7 +3958,7 @@ func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 const listPinnedContentBySpace = `-- name: ListPinnedContentBySpace :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -3991,6 +4017,7 @@ type ListPinnedContentBySpaceRow struct {
 	MetaDescription   *string            `json:"meta_description"`
 	OgImageUrl        *string            `json:"og_image_url"`
 	SeoIndexable      bool               `json:"seo_indexable"`
+	FederateOptOut    bool               `json:"federate_opt_out"`
 	Status            string             `json:"status"`
 	Visibility        string             `json:"visibility"`
 	IsLocked          bool               `json:"is_locked"`
@@ -4055,6 +4082,7 @@ func (q *Queries) ListPinnedContentBySpace(ctx context.Context, arg ListPinnedCo
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -4804,7 +4832,7 @@ SET author_id = $1, field_values = $2, updated_at = now()
 WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -4836,6 +4864,7 @@ type ReassignSingleContentAuthorRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -4885,6 +4914,7 @@ func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignS
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -4954,7 +4984,7 @@ SET status = 'scheduled', publish_at = $1, updated_at = now()
 WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -4985,6 +5015,7 @@ type ScheduleContentRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -5031,6 +5062,7 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -5056,7 +5088,7 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 const searchContentsBySpace = `-- name: SearchContentsBySpace :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
@@ -5119,6 +5151,7 @@ type SearchContentsBySpaceRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -5178,6 +5211,7 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -5210,7 +5244,7 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 const searchContentsByTypeAndSpace = `-- name: SearchContentsByTypeAndSpace :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
@@ -5267,6 +5301,7 @@ type SearchContentsByTypeAndSpaceRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -5327,6 +5362,7 @@ func (q *Queries) SearchContentsByTypeAndSpace(ctx context.Context, arg SearchCo
 			&i.MetaDescription,
 			&i.OgImageUrl,
 			&i.SeoIndexable,
+			&i.FederateOptOut,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -5448,26 +5484,27 @@ SET author_id = $1, title = $2, slug = $3, body = $4, body_html = $5,
  meta_description = $13,
  og_image_url = $14,
  seo_indexable = COALESCE($15, seo_indexable),
- status = $16, visibility = $17, read_time_minutes = $18,
- publish_at = $19, published_at = $20,
- is_locked = $21, is_pinned = $22,
- organization_id = $23,
- guide_category = CASE WHEN $24::bool THEN NULL
-                   ELSE COALESCE($25, guide_category) END,
- ai_generated_at = COALESCE($26, ai_generated_at),
- ai_model = COALESCE($27, ai_model),
- journey_stage = COALESCE($28, journey_stage),
- visa_route = COALESCE($29, visa_route),
- source_country = COALESCE($30, source_country),
- target_country = COALESCE($31, target_country),
- video_source_id = COALESCE($32, video_source_id),
- intel_source_id = COALESCE($33, intel_source_id),
- intel_record_id = COALESCE($34, intel_record_id),
+ federate_opt_out = COALESCE($16, federate_opt_out),
+ status = $17, visibility = $18, read_time_minutes = $19,
+ publish_at = $20, published_at = $21,
+ is_locked = $22, is_pinned = $23,
+ organization_id = $24,
+ guide_category = CASE WHEN $25::bool THEN NULL
+                   ELSE COALESCE($26, guide_category) END,
+ ai_generated_at = COALESCE($27, ai_generated_at),
+ ai_model = COALESCE($28, ai_model),
+ journey_stage = COALESCE($29, journey_stage),
+ visa_route = COALESCE($30, visa_route),
+ source_country = COALESCE($31, source_country),
+ target_country = COALESCE($32, target_country),
+ video_source_id = COALESCE($33, video_source_id),
+ intel_source_id = COALESCE($34, intel_source_id),
+ intel_record_id = COALESCE($35, intel_record_id),
  updated_at = now()
-WHERE id = $35 AND deleted_at IS NULL
+WHERE id = $36 AND deleted_at IS NULL
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -5491,6 +5528,7 @@ type UpdateContentParams struct {
 	MetaDescription    *string            `json:"meta_description"`
 	OgImageUrl         *string            `json:"og_image_url"`
 	SeoIndexable       *bool              `json:"seo_indexable"`
+	FederateOptOut     *bool              `json:"federate_opt_out"`
 	Status             string             `json:"status"`
 	Visibility         string             `json:"visibility"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
@@ -5533,6 +5571,7 @@ type UpdateContentRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -5573,6 +5612,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.MetaDescription,
 		arg.OgImageUrl,
 		arg.SeoIndexable,
+		arg.FederateOptOut,
 		arg.Status,
 		arg.Visibility,
 		arg.ReadTimeMinutes,
@@ -5615,6 +5655,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -5665,7 +5706,7 @@ SET status = $1, updated_at = now(),
 WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -5696,6 +5737,7 @@ type UpdateContentStatusRow struct {
 	MetaDescription *string            `json:"meta_description"`
 	OgImageUrl      *string            `json:"og_image_url"`
 	SeoIndexable    bool               `json:"seo_indexable"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -5738,6 +5780,7 @@ func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStat
 		&i.MetaDescription,
 		&i.OgImageUrl,
 		&i.SeoIndexable,
+		&i.FederateOptOut,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,

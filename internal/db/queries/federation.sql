@@ -213,6 +213,7 @@ WHERE c.author_id = @author_id
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[])
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -224,6 +225,7 @@ WHERE c.author_id = @author_id
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[]);
 
 -- name: GetFederatableContentByID :one
@@ -235,6 +237,7 @@ WHERE c.id = @id
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[]);
 
 -- name: InsertFederationDelivery :one

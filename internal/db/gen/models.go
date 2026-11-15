@@ -1310,6 +1310,7 @@ type Content struct {
 	UpvoteCount     int32              `json:"upvote_count"`
 	DownvoteCount   int32              `json:"downvote_count"`
 	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	FederateOptOut  bool               `json:"federate_opt_out"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.

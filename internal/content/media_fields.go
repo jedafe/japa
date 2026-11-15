@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"regexp"
 
-	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/jackc/pgx/v5/pgtype"
+	gen "github.com/jedafe/japa/internal/db/gen"
 )
 
 // Ref: japaconnect-engineering/sections/14-content-type-system.md
@@ -355,5 +355,3 @@ func customFieldMediaRefs(ctx context.Context, q *gen.Queries, src MediaRefSourc
 
 	return refs, nil
 }
-
-

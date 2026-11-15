@@ -39,6 +39,21 @@ func (q *Queries) CountAtprotoRecords(ctx context.Context, accountID pgtype.UUID
 	return column_1, err
 }
 
+const deleteAtprotoBlobsForAccount = `-- name: DeleteAtprotoBlobsForAccount :execrows
+DELETE FROM atproto_blobs WHERE account_id = $1
+`
+
+// A4 erasure: blob bytes are member media — they must not outlive the
+// tombstone (§127 Content pipeline). Erasure is the only caller; blobs
+// are content-addressed and immutable, never updated.
+func (q *Queries) DeleteAtprotoBlobsForAccount(ctx context.Context, accountID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAtprotoBlobsForAccount, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteAtprotoRecord = `-- name: DeleteAtprotoRecord :exec
 DELETE FROM atproto_records
 WHERE account_id = $1 AND collection = $2 AND rkey = $3
@@ -123,6 +138,7 @@ WHERE c.id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
 `
 
@@ -274,6 +290,35 @@ func (q *Queries) GetAtprotoUserProfile(ctx context.Context, userID pgtype.UUID)
 	return i, err
 }
 
+const getAtprotoUserProfileByAccount = `-- name: GetAtprotoUserProfileByAccount :one
+SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id
+FROM user_profiles p
+JOIN atproto_accounts a ON a.user_id = p.user_id
+WHERE a.id = $1
+`
+
+type GetAtprotoUserProfileByAccountRow struct {
+	DisplayName   *string     `json:"display_name"`
+	Bio           *string     `json:"bio"`
+	AvatarMediaID pgtype.UUID `json:"avatar_media_id"`
+	BannerMediaID pgtype.UUID `json:"banner_media_id"`
+}
+
+// Account-keyed variant: the publish_record task path holds only the
+// account_id — profile blob enrichment (A4 avatar/banner) resolves the
+// member's media ids through it.
+func (q *Queries) GetAtprotoUserProfileByAccount(ctx context.Context, accountID pgtype.UUID) (GetAtprotoUserProfileByAccountRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoUserProfileByAccount, accountID)
+	var i GetAtprotoUserProfileByAccountRow
+	err := row.Scan(
+		&i.DisplayName,
+		&i.Bio,
+		&i.AvatarMediaID,
+		&i.BannerMediaID,
+	)
+	return i, err
+}
+
 const insertAtprotoBlob = `-- name: InsertAtprotoBlob :one
 INSERT INTO atproto_blobs (account_id, cid, mime, size, data)
 VALUES ($1, $2, $3, $4, $5)
@@ -363,6 +408,80 @@ func (q *Queries) InsertAtprotoRepoCommit(ctx context.Context, arg InsertAtproto
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listAtprotoContentImages = `-- name: ListAtprotoContentImages :many
+SELECT id, mime_type, storage_bucket, storage_path, alt_text, width_px, height_px, file_size_bytes, field_rank, position FROM (
+  SELECT DISTINCT ON (m.id)
+    m.id, m.mime_type, m.storage_bucket, m.storage_path,
+    m.alt_text, m.width_px, m.height_px, m.file_size_bytes,
+    CASE cmf.field_key WHEN 'featured_image' THEN 0
+                       WHEN 'header_image' THEN 1
+                       WHEN 'item_media' THEN 2
+                       WHEN 'body_block' THEN 3
+                       ELSE 4 END AS field_rank,
+    cmf.position
+  FROM content_media_fields cmf
+  JOIN media m ON m.id = cmf.media_id
+  WHERE cmf.content_id = $1
+    AND m.deleted_at IS NULL
+    AND m.confirmed
+    AND m.mime_type LIKE 'image/%'
+    AND m.mime_type <> 'image/svg+xml'
+  ORDER BY m.id, field_rank, cmf.position
+) ranked
+ORDER BY field_rank, position
+LIMIT 4
+`
+
+type ListAtprotoContentImagesRow struct {
+	ID            pgtype.UUID `json:"id"`
+	MimeType      string      `json:"mime_type"`
+	StorageBucket string      `json:"storage_bucket"`
+	StoragePath   string      `json:"storage_path"`
+	AltText       *string     `json:"alt_text"`
+	WidthPx       *int32      `json:"width_px"`
+	HeightPx      *int32      `json:"height_px"`
+	FileSizeBytes int64       `json:"file_size_bytes"`
+	FieldRank     int32       `json:"field_rank"`
+	Position      int32       `json:"position"`
+}
+
+// A4 feed.post embed source: a content row's image media in embed order —
+// featured/header first, then item/body blocks by position, deduped on
+// media_id (DISTINCT ON keeps the highest-priority field_key), capped at
+// the lexicon's 4-image embed limit. Confirmed, non-deleted raster images
+// only: unconfirmed media is unscanned/unreviewed, and SVG is neither a
+// legal embed type nor safe to serve through the network.
+func (q *Queries) ListAtprotoContentImages(ctx context.Context, contentID pgtype.UUID) ([]ListAtprotoContentImagesRow, error) {
+	rows, err := q.db.Query(ctx, listAtprotoContentImages, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtprotoContentImagesRow
+	for rows.Next() {
+		var i ListAtprotoContentImagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MimeType,
+			&i.StorageBucket,
+			&i.StoragePath,
+			&i.AltText,
+			&i.WidthPx,
+			&i.HeightPx,
+			&i.FileSizeBytes,
+			&i.FieldRank,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAtprotoRecords = `-- name: ListAtprotoRecords :many

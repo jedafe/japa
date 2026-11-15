@@ -132,6 +132,24 @@ func (h *Handlers) GetRecord(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// GetBlob serves GET /xrpc/com.atproto.sync.getBlob?did=&cid= (A4) —
+// the media blob bytes under their stored mime. Bytes, not JSON: the
+// response is the blob itself so appviews can hand it to image pipelines.
+func (h *Handlers) GetBlob(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	mime, data, err := h.service.BlobForDID(r.Context(), q.Get("did"), q.Get("cid"))
+	if err != nil {
+		xrpcNotFound(w, err, "BlobNotFound")
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	// Blobs are content-addressed and immutable — cache hard.
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 // GetRepoStatus serves GET /xrpc/com.atproto.sync.getRepoStatus?did= —
 // the relay's inactive-recheck: reports whether a hosted repo is
 // servable and, when not, which inactive state it's in.

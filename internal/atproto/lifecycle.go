@@ -159,6 +159,13 @@ func (s *Service) EraseAccount(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("atproto: erase records: %w", err)
 	}
 
+	// A4/GDPR: blob bytes are member media — they must not outlive the
+	// tombstone. Purge before the status flip so a failure stays retryable
+	// (a tombstoned account early-returns above).
+	if _, err := s.store.q.DeleteAtprotoBlobsForAccount(ctx, account.ID); err != nil {
+		return fmt.Errorf("atproto: erase blobs: %w", err)
+	}
+
 	if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusTombstone, nil); err != nil {
 		return fmt.Errorf("atproto: tombstone: %w", err)
 	}

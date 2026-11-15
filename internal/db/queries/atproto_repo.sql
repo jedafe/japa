@@ -109,6 +109,7 @@ WHERE c.id = @id
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[]);
 
 -- name: GetAtprotoRecordsByContent :many
@@ -129,3 +130,47 @@ WHERE r.content_id = @content_id
 SELECT display_name, bio, avatar_media_id, banner_media_id
 FROM user_profiles
 WHERE user_id = @user_id;
+
+-- name: GetAtprotoUserProfileByAccount :one
+-- Account-keyed variant: the publish_record task path holds only the
+-- account_id — profile blob enrichment (A4 avatar/banner) resolves the
+-- member's media ids through it.
+SELECT p.display_name, p.bio, p.avatar_media_id, p.banner_media_id
+FROM user_profiles p
+JOIN atproto_accounts a ON a.user_id = p.user_id
+WHERE a.id = @account_id;
+
+-- name: ListAtprotoContentImages :many
+-- A4 feed.post embed source: a content row's image media in embed order —
+-- featured/header first, then item/body blocks by position, deduped on
+-- media_id (DISTINCT ON keeps the highest-priority field_key), capped at
+-- the lexicon's 4-image embed limit. Confirmed, non-deleted raster images
+-- only: unconfirmed media is unscanned/unreviewed, and SVG is neither a
+-- legal embed type nor safe to serve through the network.
+SELECT * FROM (
+  SELECT DISTINCT ON (m.id)
+    m.id, m.mime_type, m.storage_bucket, m.storage_path,
+    m.alt_text, m.width_px, m.height_px, m.file_size_bytes,
+    CASE cmf.field_key WHEN 'featured_image' THEN 0
+                       WHEN 'header_image' THEN 1
+                       WHEN 'item_media' THEN 2
+                       WHEN 'body_block' THEN 3
+                       ELSE 4 END AS field_rank,
+    cmf.position
+  FROM content_media_fields cmf
+  JOIN media m ON m.id = cmf.media_id
+  WHERE cmf.content_id = @content_id
+    AND m.deleted_at IS NULL
+    AND m.confirmed
+    AND m.mime_type LIKE 'image/%'
+    AND m.mime_type <> 'image/svg+xml'
+  ORDER BY m.id, field_rank, cmf.position
+) ranked
+ORDER BY field_rank, position
+LIMIT 4;
+
+-- name: DeleteAtprotoBlobsForAccount :execrows
+-- A4 erasure: blob bytes are member media — they must not outlive the
+-- tombstone (§127 Content pipeline). Erasure is the only caller; blobs
+-- are content-addressed and immutable, never updated.
+DELETE FROM atproto_blobs WHERE account_id = @account_id;

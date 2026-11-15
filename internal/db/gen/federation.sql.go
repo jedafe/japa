@@ -18,6 +18,7 @@ WHERE c.author_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
 `
 
@@ -286,6 +287,7 @@ WHERE c.id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
 `
 
@@ -746,6 +748,7 @@ WHERE c.author_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT $4 OFFSET $3

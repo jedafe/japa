@@ -77,7 +77,7 @@ type MentionNotifier interface {
 
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
-	Service             *Service
+	Service *Service
 	// SiteURL is the public site base (JC_SITE_URL) — the fallback origin
 	// for absolute URLs built into responses (e.g. ItemList item anchors).
 	// Trusted X-Forwarded-* headers take precedence via
@@ -1012,6 +1012,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		MetaDescription *string         `json:"meta_description"`
 		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
 		SeoIndexable    *bool           `json:"seo_indexable"`
+		FederateOptOut  *bool           `json:"federate_opt_out"`
 		Status          string          `json:"status"`
 		Visibility      string          `json:"visibility"`
 		PublishAt       *string         `json:"publish_at"`
@@ -1206,6 +1207,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.SeoIndexable != nil {
 		createInput.SeoIndexable = *input.SeoIndexable
+	}
+	if input.FederateOptOut != nil {
+		createInput.FederateOptOut = *input.FederateOptOut
 	}
 
 	// §79: story moderators may create stories already published/scheduled;
@@ -1543,6 +1547,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"meta_description":  content.MetaDescription,
 		"og_image_url":      content.OgImageUrl,
 		"seo_indexable":     content.SeoIndexable,
+		"federate_opt_out":  content.FederateOptOut,
 		"status":            content.Status,
 		"visibility":        content.Visibility,
 		"is_locked":         content.IsLocked,
@@ -2014,6 +2019,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		MetaDescription *string         `json:"meta_description"`
 		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
 		SeoIndexable    *bool           `json:"seo_indexable"`
+		FederateOptOut  *bool           `json:"federate_opt_out"`
 		Status          string          `json:"status"`
 		Visibility      string          `json:"visibility"`
 		PublishAt       *string         `json:"publish_at"`
@@ -2147,6 +2153,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		MetaDescription: input.MetaDescription,
 		OgImageUrl:      input.OgImageUrl,
 		SeoIndexable:    input.SeoIndexable,
+		FederateOptOut:  input.FederateOptOut,
 		Status:          input.Status,
 		Visibility:      input.Visibility,
 		IsLocked:        input.IsLocked,

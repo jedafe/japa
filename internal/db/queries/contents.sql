@@ -1,8 +1,8 @@
 -- name: CreateContent :one
-INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id) VALUES (@author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html, @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(header_image_id), sqlc.narg(featured_image_id), sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description), sqlc.narg(og_image_url), @seo_indexable, @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at), sqlc.narg(guide_category), COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at), sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at), sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country), sqlc.narg(video_source_id), sqlc.narg(intel_source_id), sqlc.narg(intel_record_id), sqlc.narg(created_by_user_id))
+INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id, created_by_user_id, federate_opt_out) VALUES (@author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html, @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(header_image_id), sqlc.narg(featured_image_id), sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description), sqlc.narg(og_image_url), @seo_indexable, @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at), sqlc.narg(guide_category), COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at), sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at), sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country), sqlc.narg(video_source_id), sqlc.narg(intel_source_id), sqlc.narg(intel_record_id), sqlc.narg(created_by_user_id), COALESCE(sqlc.narg(federate_opt_out), false))
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -13,7 +13,7 @@ RETURNING id, author_id, organization_id, space_id, content_type, title, slug, b
 -- name: GetContentByID :one
 SELECT id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -46,7 +46,7 @@ WHERE content_hash = @content_hash
 -- name: GetContentBySlug :one
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -70,7 +70,7 @@ WHERE c.slug = @slug AND c.deleted_at IS NULL;
 SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -163,7 +163,7 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.
 SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count,
  (SELECT COUNT(*)
@@ -259,7 +259,7 @@ SELECT EXISTS(SELECT 1 FROM contents WHERE slug = @slug AND deleted_at IS NULL);
 -- name: ListContents :many
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -310,7 +310,7 @@ LIMIT @page_limit;
 -- Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -346,7 +346,7 @@ LIMIT @page_limit;
 -- to render the next steps from a readiness assessment in slug order, paginated.
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -402,7 +402,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- non-cursor sorts.
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -464,7 +464,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -505,7 +505,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- returned is the requested space, regardless of whether it is the primary.
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -553,7 +553,7 @@ LIMIT @page_limit;
 -- content_spaces table (BUG-010), with visibility gating.
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
@@ -590,7 +590,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- authoritative content_spaces table (BUG-010), with visibility gating.
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
@@ -626,6 +626,7 @@ SET author_id = @author_id, title = @title, slug = @slug, body = @body, body_htm
  meta_description = sqlc.narg(meta_description),
  og_image_url = sqlc.narg(og_image_url),
  seo_indexable = COALESCE(sqlc.narg(seo_indexable), seo_indexable),
+ federate_opt_out = COALESCE(sqlc.narg(federate_opt_out), federate_opt_out),
  status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
  publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
  is_locked = @is_locked, is_pinned = @is_pinned,
@@ -645,7 +646,7 @@ SET author_id = @author_id, title = @title, slug = @slug, body = @body, body_htm
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -659,7 +660,7 @@ SET status = @status, updated_at = now(),
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -718,7 +719,7 @@ SET author_id = @author_id, field_values = @field_values, updated_at = now()
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -734,7 +735,7 @@ SET status = 'scheduled', publish_at = @publish_at, updated_at = now()
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
- canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
  status, visibility, is_locked, is_pinned, read_time_minutes,
  view_count, comment_count, share_count, reshare_count, publish_at, published_at,
  created_at, updated_at, guide_category,
@@ -849,7 +850,7 @@ ORDER BY spp.position ASC, spp.created_at ASC;
 -- requested space (BUG-010 junction semantics).
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -1080,7 +1081,7 @@ ON CONFLICT (content_id, space_id) DO UPDATE SET is_primary = true;
 -- same fields as the main feed queries (feeds.sql).
 SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
- c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at,
