@@ -21,6 +21,7 @@ export 'bookmark.dart';
 export 'wallet.dart';
 export 'preferences.dart';
 export 'feature_flags.dart';
+export 'menu.dart';
 export 'realtime_event.dart';
 export 'jce.dart';
 export '../api/generated/lib/api.dart'

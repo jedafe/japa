@@ -210,12 +210,9 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 
 // EraseAccount is the GDPR erasure path — called by the gdpr service
 // before the user row's physical delete, while key custody still
-// exists: every indexed record retracts in one signed commit (the
-// #commit frame carries the delete ops, so the network sees the
-// content leave), then the account tombstones and #account{deleted}
-// announces the end-state. Erasure-mode repo writes are what make this
-// reachable: the lifecycle freeze may already have disabled the
-// account, and only tombstone is past signing.
+// exists. It delegates to the shared tombstone core; erasure-mode repo
+// writes are what make this reachable: the lifecycle freeze may already
+// have disabled the account, and only tombstone is past signing.
 func (s *Service) EraseAccount(ctx context.Context, userID pgtype.UUID) error {
 	account, err := s.store.q.GetAtprotoAccountAnyUserStatus(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -224,11 +221,25 @@ func (s *Service) EraseAccount(ctx context.Context, userID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("atproto: erase account lookup: %w", err)
 	}
+	return s.TombstoneAccount(ctx, account)
+}
+
+// TombstoneAccount is the shared A6-1 erasure core (§127) — GDPR
+// EraseAccount and admin force-tombstone both run it. Order: one signed
+// commit retracts every indexed record (the #commit frame carries the
+// delete ops while signing-key custody still exists), blob bytes purge
+// BEFORE the status flip so a failure stays retryable (a tombstoned
+// account early-returns forever — orphaned media would be
+// unrecoverable), then status flips to 'tombstone' and the network sees
+// the end-state as #account{deleted} → #tombstone: relays drop the
+// repo's records wholesale on the tombstone frame rather than replaying
+// per-record deletes. Terminal — no path downgrades or resurrects it.
+func (s *Service) TombstoneAccount(ctx context.Context, account gen.AtprotoAccount) error {
 	if account.Status == AccountStatusTombstone {
 		return nil
 	}
 
-	err = s.withRepoWrite(ctx, account.ID, repoWriteErasure, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {
+	err := s.withRepoWrite(ctx, account.ID, repoWriteErasure, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {
 		recs, err := q.ListAtprotoRecords(ctx, account.ID)
 		if err != nil {
 			return nil, fmt.Errorf("atproto: erase records list: %w", err)
@@ -263,7 +274,8 @@ func (s *Service) EraseAccount(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("atproto: tombstone: %w", err)
 	}
 	s.emitAccountEvent(ctx, account.Did, false, "deleted")
+	s.emitTombstoneEvent(ctx, account.Did)
 	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
-	slog.Info("atproto account erased", "did", account.Did)
+	slog.Info("atproto account tombstoned", "did", account.Did)
 	return nil
 }

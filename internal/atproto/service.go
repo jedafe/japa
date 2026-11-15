@@ -460,6 +460,12 @@ func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccoun
 	if existing.Status == AccountStatusTombstone {
 		return AccountStatus{}, ErrNotFound
 	}
+	// An admin force-disable holds past member opt-in — only an admin
+	// reactivate lifts it (§127 A6-1). 'member'/NULL/'lifecycle' rows
+	// still re-enable here.
+	if existing.DisabledReason != nil && *existing.DisabledReason == DisableReasonAdmin {
+		return AccountStatus{}, ErrAdminDisabled
+	}
 	wasActive := existing.Status == AccountStatusActive
 	if !wasActive {
 		if uerr := s.store.setAccountStatus(ctx, existing.ID, AccountStatusActive, nil); uerr != nil {
@@ -600,4 +606,86 @@ func (s *Service) ListAccounts(ctx context.Context, q string, limit, offset int3
 // Stats returns account counters for the admin dashboard.
 func (s *Service) Stats(ctx context.Context) (gen.GetAtprotoStatsRow, error) {
 	return s.store.stats(ctx)
+}
+
+// AdminDisableAccount force-disables any non-tombstone account
+// (§127 A6-1, atproto.accounts.manage). disabled_reason='admin' means
+// neither the member endpoint nor lifecycle sync lifts the freeze —
+// only AdminReactivateAccount does. The active→disabled transition
+// emits #account{active:false,status:"deactivated"}; an already-
+// disabled row escalates its reason to 'admin' without a duplicate
+// frame (the network-visible state didn't change).
+func (s *Service) AdminDisableAccount(ctx context.Context, accountID pgtype.UUID) (AccountStatus, error) {
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return AccountStatus{}, fmt.Errorf("atproto: admin disable lookup: %w", err)
+	}
+	if account.Status == AccountStatusTombstone {
+		return AccountStatus{}, ErrNotFound // terminal — nothing downgrades it
+	}
+	wasActive := account.Status == AccountStatusActive
+	reasonEscalates := account.DisabledReason == nil || *account.DisabledReason != DisableReasonAdmin
+	if wasActive || reasonEscalates {
+		reason := DisableReasonAdmin
+		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusDisabled, &reason); err != nil {
+			return AccountStatus{}, fmt.Errorf("atproto: admin disable: %w", err)
+		}
+		account.Status = AccountStatusDisabled
+		account.DisabledReason = &reason
+	}
+	if wasActive {
+		s.emitAccountEvent(ctx, account.Did, false, "deactivated")
+	}
+	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
+	return s.statusFor(account), nil
+}
+
+// AdminReactivateAccount lifts any non-tombstone freeze — member,
+// lifecycle, or admin — emitting #account{active:true} and enqueuing
+// requestCrawl + reconcile_repo so records frozen mid-mutation converge
+// (§127 A6-1). Tombstone is terminal and refuses.
+func (s *Service) AdminReactivateAccount(ctx context.Context, accountID pgtype.UUID) (AccountStatus, error) {
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return AccountStatus{}, fmt.Errorf("atproto: admin reactivate lookup: %w", err)
+	}
+	if account.Status == AccountStatusTombstone {
+		return AccountStatus{}, ErrNotFound // terminal — admin ops never resurrect
+	}
+	if account.Status != AccountStatusActive {
+		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusActive, nil); err != nil {
+			return AccountStatus{}, fmt.Errorf("atproto: admin reactivate: %w", err)
+		}
+		account.Status = AccountStatusActive
+		account.DisabledReason = nil
+		s.emitAccountEvent(ctx, account.Did, true, "")
+		worker.EnqueueAtprotoRequestCrawl(ctx, account.ID)
+		worker.EnqueueAtprotoReconcileRepo(ctx, account.ID)
+	}
+	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
+	return s.statusFor(account), nil
+}
+
+// AdminTombstoneAccount runs the shared erasure core — the retraction
+// commit, blob purge, status flip, and #account{deleted} → #tombstone
+// frames (§127 A6-1). Terminal; member endpoints never resurrect it.
+func (s *Service) AdminTombstoneAccount(ctx context.Context, accountID pgtype.UUID) (AccountStatus, error) {
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AccountStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return AccountStatus{}, fmt.Errorf("atproto: admin tombstone lookup: %w", err)
+	}
+	if err := s.TombstoneAccount(ctx, account); err != nil {
+		return AccountStatus{}, err
+	}
+	account.Status = AccountStatusTombstone
+	return s.statusFor(account), nil
 }

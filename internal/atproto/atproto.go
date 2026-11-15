@@ -27,12 +27,15 @@ const (
 )
 
 // DisableReason values for atproto_accounts.disabled_reason — WHO froze
-// the account (001147). 'member' re-enables only via member opt-in;
-// 'lifecycle' re-enables when the user returns to 'active'. A NULL
-// reason reads as member-initiated — every pre-column disable was.
+// the account (001147, 'admin' added 001158). 'member' re-enables only
+// via member opt-in; 'lifecycle' re-enables when the user returns to
+// 'active'; 'admin' re-enables only via an admin lifecycle op — neither
+// the member endpoint nor lifecycle sync lifts it. A NULL reason reads
+// as member-initiated — every pre-column disable was.
 const (
 	DisableReasonMember    = "member"
 	DisableReasonLifecycle = "lifecycle"
+	DisableReasonAdmin     = "admin"
 )
 
 // repoInactiveError names the lexicon error for a repo that exists but
@@ -49,6 +52,9 @@ var (
 	ErrInvalidID     = errors.New("invalid atproto account id")
 	ErrHandleTaken   = errors.New("atproto handle already claimed")
 	ErrMisconfigured = errors.New("atproto pds url or handle domain not configured")
+	// ErrAdminDisabled refuses member self re-enable — an admin force-
+	// disable (disabled_reason='admin') lifts only via admin reactivate.
+	ErrAdminDisabled = errors.New("atproto account disabled by admin")
 )
 
 // Config carries the JC_ATPROTO_* deployment values (internal/config),

@@ -40,9 +40,10 @@ import (
 
 // Event kinds — atproto_repo_events.kind CHECK constraint.
 const (
-	EventKindCommit   = "commit"
-	EventKindIdentity = "identity"
-	EventKindAccount  = "account"
+	EventKindCommit    = "commit"
+	EventKindIdentity  = "identity"
+	EventKindAccount   = "account"
+	EventKindTombstone = "tombstone"
 )
 
 // Frame header ops — subscribeRepos's two-part frame: {op,t} map then
@@ -97,6 +98,68 @@ func (s *Service) emitIdentityEvent(ctx context.Context, did, handle string) {
 		Did:    did,
 		Handle: &handle,
 	})
+}
+
+// tombstoneFrameBody is com.atproto.sync.subscribeRepos#tombstone —
+// {seq, did, time}. The pinned indigo generates no type for this legacy
+// frame, so the body marshals by hand with the same cbg primitives the
+// generated marshalers use.
+type tombstoneFrameBody struct {
+	Seq  int64  `json:"seq"`
+	Did  string `json:"did"`
+	Time string `json:"time"`
+}
+
+// MarshalCBOR writes the lexicon body — a 3-key map {seq,did,time}.
+func (t *tombstoneFrameBody) MarshalCBOR(w io.Writer) error {
+	cw := cbg.NewCborWriter(w)
+	if err := cw.WriteMajorTypeHeader(cbg.MajMap, 3); err != nil {
+		return err
+	}
+	key := func(k string) error {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(k))); err != nil {
+			return err
+		}
+		_, err := cw.WriteString(k)
+		return err
+	}
+	str := func(v string) error {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(v))); err != nil {
+			return err
+		}
+		_, err := cw.WriteString(v)
+		return err
+	}
+	if err := key("seq"); err != nil {
+		return err
+	}
+	if t.Seq >= 0 {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.Seq)); err != nil {
+			return err
+		}
+	} else {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.Seq-1)); err != nil {
+			return err
+		}
+	}
+	if err := key("did"); err != nil {
+		return err
+	}
+	if err := str(t.Did); err != nil {
+		return err
+	}
+	if err := key("time"); err != nil {
+		return err
+	}
+	return str(t.Time)
+}
+
+// emitTombstoneEvent appends the #tombstone frame — the lexicon's
+// whole-repo erasure signal; relays drop the repo's records wholesale
+// instead of replaying per-record deletes. Emitted after a tombstoned
+// repo's retraction commit (GDPR erasure, admin force-tombstone).
+func (s *Service) emitTombstoneEvent(ctx context.Context, did string) {
+	s.emitEvent(ctx, did, EventKindTombstone, &tombstoneFrameBody{Did: did})
 }
 
 // emitAccountEvent announces an activation/deactivation — status is the
@@ -320,6 +383,13 @@ func frameBytes(row gen.AtprotoRepoEvent) ([]byte, error) {
 		}
 		b.Seq, b.Time = row.Seq, stamp
 		msgType, body = "#account", &b
+	case EventKindTombstone:
+		var b tombstoneFrameBody
+		if err := json.Unmarshal(row.Payload, &b); err != nil {
+			return nil, fmt.Errorf("atproto: tombstone payload: %w", err)
+		}
+		b.Seq, b.Time = row.Seq, stamp
+		msgType, body = "#tombstone", &b
 	default:
 		return nil, fmt.Errorf("atproto: unknown event kind %q", row.Kind)
 	}
