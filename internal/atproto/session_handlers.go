@@ -210,9 +210,12 @@ func (h *Handlers) GetServiceAuth(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var exp int64
 	if raw := q.Get("exp"); raw != "" {
-		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
-			exp = n
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			xrpcError(w, http.StatusBadRequest, "InvalidRequest", "invalid exp")
+			return
 		}
+		exp = n
 	}
 	token, err := h.service.ServiceAuth(r.Context(), acct, q.Get("aud"), q.Get("lxm"), exp)
 	if err != nil {
