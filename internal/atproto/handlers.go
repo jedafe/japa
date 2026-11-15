@@ -1,6 +1,7 @@
 package atproto
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -34,6 +36,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid account id")
 	case errors.Is(err, ErrHandleTaken):
 		errpkg.WriteError(w, http.StatusConflict, "handle_taken", "Handle already claimed")
+	case errors.Is(err, ErrAdminDisabled):
+		errpkg.WriteError(w, http.StatusForbidden, "admin_disabled", "Account disabled by an administrator")
 	case errors.Is(err, ErrMisconfigured):
 		slog.Error("atproto misconfigured", "err", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "AT Protocol is not configured")
@@ -174,6 +178,45 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
+// ---------------------------------------------------------------------------
+// Admin lifecycle (§127 A6-1 — atproto.accounts.manage)
+// ---------------------------------------------------------------------------
+
+// AdminDisableAccount serves POST /control/atproto/accounts/{id}/disable —
+// a force-disable the member endpoint cannot lift.
+func (h *Handlers) AdminDisableAccount(w http.ResponseWriter, r *http.Request) {
+	h.adminLifecycle(w, r, h.service.AdminDisableAccount)
+}
+
+// AdminReactivateAccount serves POST /control/atproto/accounts/{id}/reactivate —
+// lifts any non-tombstone freeze (member, lifecycle, or admin).
+func (h *Handlers) AdminReactivateAccount(w http.ResponseWriter, r *http.Request) {
+	h.adminLifecycle(w, r, h.service.AdminReactivateAccount)
+}
+
+// AdminTombstoneAccount serves POST /control/atproto/accounts/{id}/tombstone —
+// the terminal erasure path; the control UI must confirm before calling.
+func (h *Handlers) AdminTombstoneAccount(w http.ResponseWriter, r *http.Request) {
+	h.adminLifecycle(w, r, h.service.AdminTombstoneAccount)
+}
+
+// adminLifecycle shares {id} parsing + the status envelope across the
+// three atproto.accounts.manage ops.
+func (h *Handlers) adminLifecycle(w http.ResponseWriter, r *http.Request,
+	fn func(context.Context, pgtype.UUID) (AccountStatus, error)) {
+	var id pgtype.UUID
+	if !idRe.MatchString(chi.URLParam(r, "id")) || id.Scan(chi.URLParam(r, "id")) != nil {
+		handleServiceErr(w, ErrInvalidID)
+		return
+	}
+	st, err := fn(r.Context(), id)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, st)
 }
 
 // writeTypedJSON is shared with the federation package's convention:

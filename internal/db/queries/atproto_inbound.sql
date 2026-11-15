@@ -117,6 +117,51 @@ WHERE remote_uri = @remote_uri AND deleted_at IS NULL;
 UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE remote_uri = @remote_uri AND deleted_at IS NULL;
 
+-- name: SoftDeleteAtprotoCommentsByActor :many
+-- A6-1 remote-actor tombstone propagation (§127): a Jetstream
+-- account{active:false} tombstones every live remote comment by the
+-- actor in one pass — same shape as the per-comment delete arm
+-- (is_pinned clears). RETURNING feeds the counter unwind: each row's
+-- content_id/parent_id decrements exactly the counters its create
+-- bumped, and rows deleted only here (parents included) are skipped by
+-- the by-N decrement guards the same way the single-delete path skips
+-- already-deleted parents.
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
+WHERE remote_atproto_actor_id = @remote_atproto_actor_id AND deleted_at IS NULL
+RETURNING id, content_id, parent_id;
+
+-- name: DecrementContentCommentCountBy :exec
+-- Bulk variant of DecrementContentCommentCount for the remote-actor
+-- tombstone unwind — drops the count by the number of comments removed.
+UPDATE contents SET comment_count = GREATEST(comment_count - @n, 0)
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: DecrementLinkedContentCommentCountBy :exec
+-- Bulk variant of DecrementLinkedContentCommentCount — @thread_id is the
+-- deleted comments' content_id (the discussion thread row), same
+-- propagation direction as the per-comment path.
+UPDATE contents SET comment_count = GREATEST(0, comment_count - @n)
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = @thread_id);
+
+-- name: DecrementCommentReplyCountBy :exec
+-- Bulk variant of DecrementCommentReplyCount — a parent just tombstoned
+-- in the same propagation pass fails the deleted_at guard here exactly
+-- like an earlier-deleted parent fails it on the single-delete path.
+UPDATE comments
+SET reply_count = GREATEST(reply_count - @n, 0), updated_at = now()
+WHERE id = @parent_id AND deleted_at IS NULL;
+
+-- name: UndoAtprotoRemoteLikesByActor :execrows
+-- Tombstone propagation: every live like by the actor undoes at once —
+-- the undone_at IS NULL predicate keeps replays idempotent.
+UPDATE atproto_remote_likes SET undone_at = now()
+WHERE remote_actor_id = @remote_actor_id AND undone_at IS NULL;
+
+-- name: UndoAtprotoRemoteFollowsByActor :execrows
+-- Tombstone propagation: every live follow by the actor undoes at once.
+UPDATE atproto_remote_follows SET undone_at = now()
+WHERE remote_actor_id = @remote_actor_id AND undone_at IS NULL;
+
 -- name: GetAtprotoAccountByDID :one
 -- Follow subjects resolve by DID string (at:// URIs embed the member's did).
 SELECT id, user_id, did, handle, status FROM atproto_accounts WHERE did = @did AND status = 'active';

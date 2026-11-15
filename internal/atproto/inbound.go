@@ -30,6 +30,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	jdb "github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/klauspost/compress/zstd"
 )
@@ -236,16 +237,81 @@ func (s *Service) handleIdentityEvent(ctx context.Context, ev *jetstreamEvent) {
 }
 
 // handleAccountEvent mirrors upstream `account` deactivation/reactivation
-// onto the tracked actor row. Full tombstone propagation (unwinding the
-// actor's comments/likes) is A6 scope — this is provenance bookkeeping.
+// onto the tracked actor row — and on deactivation propagates the
+// tombstone (§127 A6-1): in one tx the actor's live remote comments
+// soft-delete with their denormalized counters unwound, and their live
+// likes/follows take undone_at. Reactivation clears deactivated_at only —
+// no restore walk: Jetstream replays creates and the stream re-ingests
+// naturally. Untracked DIDs stay a no-op; account events never mint rows.
 func (s *Service) handleAccountEvent(ctx context.Context, ev *jetstreamEvent) {
 	if ev.Account.DID == "" {
 		return
 	}
-	if _, err := gen.New(s.db.Writer).SetAtprotoRemoteActorDeactivated(ctx,
-		gen.SetAtprotoRemoteActorDeactivatedParams{Active: ev.Account.Active, Did: ev.Account.DID}); err != nil {
-		slog.Warn("atproto: account deactivation update failed", "did", ev.Account.DID, "error", err)
+	err := jdb.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		actor, err := q.GetAtprotoRemoteActorByDID(ctx, ev.Account.DID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // untracked DID — no propagation targets exist
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := q.SetAtprotoRemoteActorDeactivated(ctx,
+			gen.SetAtprotoRemoteActorDeactivatedParams{Active: ev.Account.Active, Did: ev.Account.DID}); err != nil {
+			return err
+		}
+		if ev.Account.Active {
+			return nil
+		}
+		return s.propagateRemoteActorTombstone(ctx, q, actor.ID)
+	})
+	if err != nil {
+		slog.Warn("atproto: account event propagation failed", "did", ev.Account.DID, "error", err)
 	}
+}
+
+// propagateRemoteActorTombstone unwinds a deactivated remote actor's
+// inbound footprint inside the caller's tx. Every live remote comment
+// tombstones and the denormalized counters its create bumped unwind —
+// content count, linked-discussion count, parent reply count, the same
+// triple the per-comment delete arm maintains — and live likes/follows
+// take undone_at. Provenance rows stay: the ledger and remote_* tables
+// are the audit trail, erasure only ends their visibility.
+func (s *Service) propagateRemoteActorTombstone(ctx context.Context, q *gen.Queries, actorID pgtype.UUID) error {
+	dels, err := q.SoftDeleteAtprotoCommentsByActor(ctx, actorID)
+	if err != nil {
+		return fmt.Errorf("comments: %w", err)
+	}
+	contentN := map[pgtype.UUID]int32{}
+	parentN := map[pgtype.UUID]int32{}
+	for _, d := range dels {
+		contentN[d.ContentID]++
+		if d.ParentID.Valid {
+			parentN[d.ParentID]++
+		}
+	}
+	for cid, n := range contentN {
+		if err := q.DecrementContentCommentCountBy(ctx,
+			gen.DecrementContentCommentCountByParams{ID: cid, N: n}); err != nil {
+			return fmt.Errorf("content count: %w", err)
+		}
+		if err := q.DecrementLinkedContentCommentCountBy(ctx,
+			gen.DecrementLinkedContentCommentCountByParams{ThreadID: cid, N: n}); err != nil {
+			return fmt.Errorf("linked count: %w", err)
+		}
+	}
+	for pid, n := range parentN {
+		if err := q.DecrementCommentReplyCountBy(ctx,
+			gen.DecrementCommentReplyCountByParams{ParentID: pid, N: n}); err != nil {
+			return fmt.Errorf("reply count: %w", err)
+		}
+	}
+	if _, err := q.UndoAtprotoRemoteLikesByActor(ctx, actorID); err != nil {
+		return fmt.Errorf("likes: %w", err)
+	}
+	if _, err := q.UndoAtprotoRemoteFollowsByActor(ctx, actorID); err != nil {
+		return fmt.Errorf("follows: %w", err)
+	}
+	return nil
 }
 
 // notifyIntent defers a §35 notification until after the dispatch transaction

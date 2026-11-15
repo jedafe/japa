@@ -11,6 +11,60 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const decrementCommentReplyCountBy = `-- name: DecrementCommentReplyCountBy :exec
+UPDATE comments
+SET reply_count = GREATEST(reply_count - $1, 0), updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type DecrementCommentReplyCountByParams struct {
+	N        int32       `json:"n"`
+	ParentID pgtype.UUID `json:"parent_id"`
+}
+
+// Bulk variant of DecrementCommentReplyCount — a parent just tombstoned
+// in the same propagation pass fails the deleted_at guard here exactly
+// like an earlier-deleted parent fails it on the single-delete path.
+func (q *Queries) DecrementCommentReplyCountBy(ctx context.Context, arg DecrementCommentReplyCountByParams) error {
+	_, err := q.db.Exec(ctx, decrementCommentReplyCountBy, arg.N, arg.ParentID)
+	return err
+}
+
+const decrementContentCommentCountBy = `-- name: DecrementContentCommentCountBy :exec
+UPDATE contents SET comment_count = GREATEST(comment_count - $1, 0)
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type DecrementContentCommentCountByParams struct {
+	N  int32       `json:"n"`
+	ID pgtype.UUID `json:"id"`
+}
+
+// Bulk variant of DecrementContentCommentCount for the remote-actor
+// tombstone unwind — drops the count by the number of comments removed.
+func (q *Queries) DecrementContentCommentCountBy(ctx context.Context, arg DecrementContentCommentCountByParams) error {
+	_, err := q.db.Exec(ctx, decrementContentCommentCountBy, arg.N, arg.ID)
+	return err
+}
+
+const decrementLinkedContentCommentCountBy = `-- name: DecrementLinkedContentCommentCountBy :exec
+UPDATE contents SET comment_count = GREATEST(0, comment_count - $1)
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = $2)
+`
+
+type DecrementLinkedContentCommentCountByParams struct {
+	N        int32       `json:"n"`
+	ThreadID pgtype.UUID `json:"thread_id"`
+}
+
+// Bulk variant of DecrementLinkedContentCommentCount — @thread_id is the
+// deleted comments' content_id (the discussion thread row), same
+// propagation direction as the per-comment path.
+func (q *Queries) DecrementLinkedContentCommentCountBy(ctx context.Context, arg DecrementLinkedContentCommentCountByParams) error {
+	_, err := q.db.Exec(ctx, decrementLinkedContentCommentCountBy, arg.N, arg.ThreadID)
+	return err
+}
+
 const deleteStaleAtprotoInbound = `-- name: DeleteStaleAtprotoInbound :execrows
 DELETE FROM atproto_inbound WHERE created_at < now() - make_interval(days => $1)
 `
@@ -295,6 +349,46 @@ func (q *Queries) SoftDeleteAtprotoCommentByRemoteURI(ctx context.Context, remot
 	return result.RowsAffected(), nil
 }
 
+const softDeleteAtprotoCommentsByActor = `-- name: SoftDeleteAtprotoCommentsByActor :many
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
+WHERE remote_atproto_actor_id = $1 AND deleted_at IS NULL
+RETURNING id, content_id, parent_id
+`
+
+type SoftDeleteAtprotoCommentsByActorRow struct {
+	ID        pgtype.UUID `json:"id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	ParentID  pgtype.UUID `json:"parent_id"`
+}
+
+// A6-1 remote-actor tombstone propagation (§127): a Jetstream
+// account{active:false} tombstones every live remote comment by the
+// actor in one pass — same shape as the per-comment delete arm
+// (is_pinned clears). RETURNING feeds the counter unwind: each row's
+// content_id/parent_id decrements exactly the counters its create
+// bumped, and rows deleted only here (parents included) are skipped by
+// the by-N decrement guards the same way the single-delete path skips
+// already-deleted parents.
+func (q *Queries) SoftDeleteAtprotoCommentsByActor(ctx context.Context, remoteAtprotoActorID pgtype.UUID) ([]SoftDeleteAtprotoCommentsByActorRow, error) {
+	rows, err := q.db.Query(ctx, softDeleteAtprotoCommentsByActor, remoteAtprotoActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SoftDeleteAtprotoCommentsByActorRow
+	for rows.Next() {
+		var i SoftDeleteAtprotoCommentsByActorRow
+		if err := rows.Scan(&i.ID, &i.ContentID, &i.ParentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const undoAtprotoRemoteFollow = `-- name: UndoAtprotoRemoteFollow :execrows
 UPDATE atproto_remote_follows SET undone_at = now() WHERE follow_uri = $1 AND undone_at IS NULL
 `
@@ -307,12 +401,41 @@ func (q *Queries) UndoAtprotoRemoteFollow(ctx context.Context, followUri string)
 	return result.RowsAffected(), nil
 }
 
+const undoAtprotoRemoteFollowsByActor = `-- name: UndoAtprotoRemoteFollowsByActor :execrows
+UPDATE atproto_remote_follows SET undone_at = now()
+WHERE remote_actor_id = $1 AND undone_at IS NULL
+`
+
+// Tombstone propagation: every live follow by the actor undoes at once.
+func (q *Queries) UndoAtprotoRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, undoAtprotoRemoteFollowsByActor, remoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const undoAtprotoRemoteLike = `-- name: UndoAtprotoRemoteLike :execrows
 UPDATE atproto_remote_likes SET undone_at = now() WHERE like_uri = $1 AND undone_at IS NULL
 `
 
 func (q *Queries) UndoAtprotoRemoteLike(ctx context.Context, likeUri string) (int64, error) {
 	result, err := q.db.Exec(ctx, undoAtprotoRemoteLike, likeUri)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const undoAtprotoRemoteLikesByActor = `-- name: UndoAtprotoRemoteLikesByActor :execrows
+UPDATE atproto_remote_likes SET undone_at = now()
+WHERE remote_actor_id = $1 AND undone_at IS NULL
+`
+
+// Tombstone propagation: every live like by the actor undoes at once —
+// the undone_at IS NULL predicate keeps replays idempotent.
+func (q *Queries) UndoAtprotoRemoteLikesByActor(ctx context.Context, remoteActorID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, undoAtprotoRemoteLikesByActor, remoteActorID)
 	if err != nil {
 		return 0, err
 	}

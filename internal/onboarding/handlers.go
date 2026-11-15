@@ -12,12 +12,15 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers holds dependencies for onboarding HTTP handlers.
 type Handlers struct {
 	Service *Service
-	lit     literalResolver // nil disables literal resolution (§14)
+	lit     literalResolver      // nil disables literal resolution (§14)
+	redis   valkeycompat.Cmdable // nil disables cache invalidation (tests)
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -47,6 +50,36 @@ func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// WithRedis sets the Redis client used to invalidate the VisitorContext and
+// recommendations caches after a journey-class write (ADR-064a). Returns the
+// receiver for chaining.
+func (h *Handlers) WithRedis(rdb valkeycompat.Cmdable) *Handlers {
+	h.redis = rdb
+	return h
+}
+
+// invalidateVisitorCache deletes the VisitorContext and recommendations cache
+// entries for the given user (ADR-064a). Mirrors the pattern in
+// internal/japastage/handlers.go — onboarding promotes primary_goal/japa_status
+// into japa_intent/japa_stage (ADR-128), which alters archetype resolution, so
+// cached contexts must be evicted rather than served stale until TTL.
+func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.AuthenticatedUser) {
+	if h.redis == nil {
+		return
+	}
+
+	if user.SessionID != "" {
+		_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:%s", user.SessionID)).Err()
+		_ = h.redis.Del(ctx, valkey.MustKey("recommendations:%s", user.SessionID)).Err()
+	}
+
+	_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
+	_ = h.redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
+	// ADR-128: suggested-space ranking is intent-aware, so an intent change
+	// must also drop the suggestions entry.
+	_ = h.redis.Del(ctx, valkey.MustKey("suggestions:spaces:%s", user.UserID.String())).Err()
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -104,6 +137,14 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 	if err := h.Service.UpdateStep(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Steps 1–2 are where japa_status/primary_goal/destination_country write
+	// through to journey class + geo profile fields (Service.UpdateStep) —
+	// drop the cached VisitorContext so personalization reflects the answers
+	// on the next request instead of after the 30-minute TTL.
+	if req.Step == 1 || req.Step == 2 {
+		h.invalidateVisitorCache(r.Context(), user)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})

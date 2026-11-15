@@ -405,7 +405,10 @@ func (s *Service) RepoStatus(ctx context.Context, did string) (RepoStatusResult,
 		return RepoStatusResult{}, fmt.Errorf("atproto: repo status: %w", err)
 	}
 	if row.AccountStatus == AccountStatusTombstone {
-		return RepoStatusResult{}, ErrNotFound
+		// A6-1: the repo is gone, but relays hit getRepoStatus on their
+		// inactive-recheck path and need the explicit end-state rather
+		// than RepoNotFound — "deleted" is the lexicon's tombstone word.
+		return RepoStatusResult{Active: false, Status: "deleted"}, nil
 	}
 	active, status := lexiconRepoStatus(row.AccountStatus, row.UserStatus)
 	out := RepoStatusResult{Active: active, Status: status}

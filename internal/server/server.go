@@ -3698,7 +3698,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// canonical journey columns so both vocabularies stay aligned.
 	usersService.SetJourneyClassWriter(japaStageService)
 
-	onboardingHandlers := onboarding.NewHandlers(onboardingService)
+	onboardingHandlers := onboarding.NewHandlers(onboardingService).WithRedis(vkClient.Redis())
 	onboardingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in onboarding responses
 
 	// SEO & Performance subsystem (Section 26).
@@ -10153,6 +10153,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/atproto/conformance", atprotoHandlers.RunConformanceCheck)
 				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.view")).
 					Get("/atproto/conformance", atprotoHandlers.ListConformanceRuns)
+				// A6-1 lifecycle ops — force-disable holds past member
+				// self re-enable; tombstone is terminal erasure.
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.manage")).
+					Post("/atproto/accounts/{id}/disable", atprotoHandlers.AdminDisableAccount)
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.manage")).
+					Post("/atproto/accounts/{id}/reactivate", atprotoHandlers.AdminReactivateAccount)
+				r.With(rbac.RequirePermission(rbacResolver, "atproto.accounts.manage")).
+					Post("/atproto/accounts/{id}/tombstone", atprotoHandlers.AdminTombstoneAccount)
 			})
 		})
 	})
