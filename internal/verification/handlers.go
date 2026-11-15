@@ -53,6 +53,7 @@ func parseInt32(s string) int32 {
 type submitRequest struct {
 	EntityType       string  `json:"entity_type"`
 	OrganizationID   *string `json:"organization_id"`
+	ServiceListingID *string `json:"service_listing_id"`
 	RequestedType    *string `json:"requested_type"`
 	FormSubmissionID string  `json:"form_submission_id"`
 }
@@ -78,6 +79,7 @@ func (h *Handlers) SubmitRequest(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SubmitRequest(r.Context(), user.UserID, SubmitInput{
 		EntityType:       req.EntityType,
 		OrganizationID:   req.OrganizationID,
+		ServiceListingID: req.ServiceListingID,
 		RequestedType:    req.RequestedType,
 		FormSubmissionID: req.FormSubmissionID,
 	})

@@ -5,16 +5,18 @@
 
 -- name: CreateVerificationRequest :one
 INSERT INTO verification_requests
-  (requester_user_id, entity_type, organization_id, requested_type, form_submission_id)
-VALUES ($1, $2, sqlc.narg(organization_id), sqlc.narg(requested_type), $3)
+  (requester_user_id, entity_type, organization_id, service_listing_id, requested_type, form_submission_id)
+VALUES ($1, $2, sqlc.narg(organization_id), sqlc.narg(service_listing_id), sqlc.narg(requested_type), $3)
 RETURNING *;
 
 -- name: GetVerificationRequestByID :one
 -- Requester-scoped fetch needs only vr.*; joins provide display context.
-SELECT vr.*, u.username AS requester_username, o.name AS org_name, o.slug AS org_slug
+SELECT vr.*, u.username AS requester_username, o.name AS org_name, o.slug AS org_slug,
+       sl.title AS listing_title, sl.slug AS listing_slug
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE vr.id = $1;
 
 -- name: GetPendingVerificationRequestForOrg :one
@@ -27,15 +29,35 @@ SELECT id FROM verification_requests
 WHERE requester_user_id = $1 AND status = 'pending' AND entity_type = 'user'
 LIMIT 1;
 
+-- name: GetPendingVerificationRequestForListing :one
+SELECT id FROM verification_requests
+WHERE service_listing_id = $1 AND status = 'pending' AND entity_type = 'service_listing'
+LIMIT 1;
+
+-- name: GetServiceListingForVerification :one
+-- Submit-time resolution for entity_type='service_listing': the listing must
+-- exist (service_listing_meta row + live content) so ownership and the
+-- already-verified check can run against it. author_id covers member-authored
+-- listings; org_id covers org-owned ones (membership re-checked in service).
+SELECT c.id, c.title, c.slug, c.author_id, c.created_by_user_id,
+       m.org_id, m.is_verified
+FROM service_listing_meta m
+JOIN contents c ON c.id = m.content_id
+WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status NOT IN ('draft','archived')
+LIMIT 1;
+
 -- name: ListVerificationRequestsByRequester :many
 -- Requests filed by one user (GET /me/verification-requests). Requesters have
 -- no other way to discover their request IDs — same contract as
 -- ListOwnershipClaimsByClaimant.
-SELECT vr.id, vr.entity_type, vr.organization_id, vr.requested_type, vr.status,
+SELECT vr.id, vr.entity_type, vr.organization_id, vr.service_listing_id,
+       vr.requested_type, vr.status,
        vr.resolution_note, vr.created_at, vr.reviewed_at, vr.form_submission_id,
-       o.name AS org_name, o.slug AS org_slug
+       o.name AS org_name, o.slug AS org_slug,
+       sl.title AS listing_title, sl.slug AS listing_slug
 FROM verification_requests vr
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE vr.requester_user_id = $1
 ORDER BY vr.created_at DESC;
 
@@ -47,16 +69,21 @@ ORDER BY vr.created_at DESC;
 SELECT vr.*, u.username AS requester_username, u.email AS requester_email,
        u.verified AS requester_verified,
        o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified,
+       sl.title AS listing_title, sl.slug AS listing_slug,
+       sm.is_verified AS listing_verified,
        rv.username AS reviewed_by_username
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
+LEFT JOIN service_listing_meta sm ON sm.content_id = vr.service_listing_id
 LEFT JOIN users rv ON rv.id = vr.reviewed_by
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
-                    OR o.name ILIKE '%' || $3 || '%')
+                    OR o.name ILIKE '%' || $3 || '%'
+                    OR sl.title ILIKE '%' || $3 || '%')
 ORDER BY
   CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text = 'desc' THEN u.username END DESC,
   CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text <> 'desc' THEN u.username END ASC,
@@ -76,11 +103,13 @@ LIMIT $4 OFFSET $5;
 SELECT count(*) FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
-                    OR o.name ILIKE '%' || $3 || '%');
+                    OR o.name ILIKE '%' || $3 || '%'
+                    OR sl.title ILIKE '%' || $3 || '%');
 
 -- name: ReviewVerificationRequest :execrows
 -- Only pending requests are reviewable; withdrawn/approved/rejected are

@@ -5305,6 +5305,7 @@ type VerificationRequest struct {
 	ResolutionNote   *string            `json:"resolution_note"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	ServiceListingID pgtype.UUID        `json:"service_listing_id"`
 }
 
 type VerificationType struct {

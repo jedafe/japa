@@ -1030,6 +1030,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				input.OrganizationID = &in.OrganizationID
 			}
 
+			if in.ServiceListingID != "" {
+				input.ServiceListingID = &in.ServiceListingID
+			}
+
 			if in.RequestedType != "" {
 				input.RequestedType = &in.RequestedType
 			}

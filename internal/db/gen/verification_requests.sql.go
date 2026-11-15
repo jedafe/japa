@@ -15,11 +15,13 @@ const countVerificationRequests = `-- name: CountVerificationRequests :one
 SELECT count(*) FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
-                    OR o.name ILIKE '%' || $3 || '%')
+                    OR o.name ILIKE '%' || $3 || '%'
+                    OR sl.title ILIKE '%' || $3 || '%')
 `
 
 type CountVerificationRequestsParams struct {
@@ -38,9 +40,9 @@ func (q *Queries) CountVerificationRequests(ctx context.Context, arg CountVerifi
 const createVerificationRequest = `-- name: CreateVerificationRequest :one
 
 INSERT INTO verification_requests
-  (requester_user_id, entity_type, organization_id, requested_type, form_submission_id)
-VALUES ($1, $2, $4, $5, $3)
-RETURNING id, requester_user_id, entity_type, organization_id, requested_type, form_submission_id, status, reviewed_by, resolution_note, created_at, reviewed_at
+  (requester_user_id, entity_type, organization_id, service_listing_id, requested_type, form_submission_id)
+VALUES ($1, $2, $4, $5, $6, $3)
+RETURNING id, requester_user_id, entity_type, organization_id, requested_type, form_submission_id, status, reviewed_by, resolution_note, created_at, reviewed_at, service_listing_id
 `
 
 type CreateVerificationRequestParams struct {
@@ -48,6 +50,7 @@ type CreateVerificationRequestParams struct {
 	EntityType       string      `json:"entity_type"`
 	FormSubmissionID pgtype.UUID `json:"form_submission_id"`
 	OrganizationID   pgtype.UUID `json:"organization_id"`
+	ServiceListingID pgtype.UUID `json:"service_listing_id"`
 	RequestedType    *string     `json:"requested_type"`
 }
 
@@ -61,6 +64,7 @@ func (q *Queries) CreateVerificationRequest(ctx context.Context, arg CreateVerif
 		arg.EntityType,
 		arg.FormSubmissionID,
 		arg.OrganizationID,
+		arg.ServiceListingID,
 		arg.RequestedType,
 	)
 	var i VerificationRequest
@@ -76,8 +80,22 @@ func (q *Queries) CreateVerificationRequest(ctx context.Context, arg CreateVerif
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ReviewedAt,
+		&i.ServiceListingID,
 	)
 	return i, err
+}
+
+const getPendingVerificationRequestForListing = `-- name: GetPendingVerificationRequestForListing :one
+SELECT id FROM verification_requests
+WHERE service_listing_id = $1 AND status = 'pending' AND entity_type = 'service_listing'
+LIMIT 1
+`
+
+func (q *Queries) GetPendingVerificationRequestForListing(ctx context.Context, serviceListingID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingVerificationRequestForListing, serviceListingID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getPendingVerificationRequestForOrg = `-- name: GetPendingVerificationRequestForOrg :one
@@ -106,11 +124,51 @@ func (q *Queries) GetPendingVerificationRequestForUser(ctx context.Context, requ
 	return id, err
 }
 
+const getServiceListingForVerification = `-- name: GetServiceListingForVerification :one
+SELECT c.id, c.title, c.slug, c.author_id, c.created_by_user_id,
+       m.org_id, m.is_verified
+FROM service_listing_meta m
+JOIN contents c ON c.id = m.content_id
+WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status NOT IN ('draft','archived')
+LIMIT 1
+`
+
+type GetServiceListingForVerificationRow struct {
+	ID              pgtype.UUID `json:"id"`
+	Title           string      `json:"title"`
+	Slug            string      `json:"slug"`
+	AuthorID        pgtype.UUID `json:"author_id"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
+	OrgID           pgtype.UUID `json:"org_id"`
+	IsVerified      bool        `json:"is_verified"`
+}
+
+// Submit-time resolution for entity_type='service_listing': the listing must
+// exist (service_listing_meta row + live content) so ownership and the
+// already-verified check can run against it. author_id covers member-authored
+// listings; org_id covers org-owned ones (membership re-checked in service).
+func (q *Queries) GetServiceListingForVerification(ctx context.Context, id pgtype.UUID) (GetServiceListingForVerificationRow, error) {
+	row := q.db.QueryRow(ctx, getServiceListingForVerification, id)
+	var i GetServiceListingForVerificationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.AuthorID,
+		&i.CreatedByUserID,
+		&i.OrgID,
+		&i.IsVerified,
+	)
+	return i, err
+}
+
 const getVerificationRequestByID = `-- name: GetVerificationRequestByID :one
-SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, u.username AS requester_username, o.name AS org_name, o.slug AS org_slug
+SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, vr.service_listing_id, u.username AS requester_username, o.name AS org_name, o.slug AS org_slug,
+       sl.title AS listing_title, sl.slug AS listing_slug
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE vr.id = $1
 `
 
@@ -126,9 +184,12 @@ type GetVerificationRequestByIDRow struct {
 	ResolutionNote    *string            `json:"resolution_note"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	ServiceListingID  pgtype.UUID        `json:"service_listing_id"`
 	RequesterUsername string             `json:"requester_username"`
 	OrgName           *string            `json:"org_name"`
 	OrgSlug           *string            `json:"org_slug"`
+	ListingTitle      *string            `json:"listing_title"`
+	ListingSlug       *string            `json:"listing_slug"`
 }
 
 // Requester-scoped fetch needs only vr.*; joins provide display context.
@@ -147,9 +208,12 @@ func (q *Queries) GetVerificationRequestByID(ctx context.Context, id pgtype.UUID
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ReviewedAt,
+		&i.ServiceListingID,
 		&i.RequesterUsername,
 		&i.OrgName,
 		&i.OrgSlug,
+		&i.ListingTitle,
+		&i.ListingSlug,
 	)
 	return i, err
 }
@@ -187,19 +251,24 @@ func (q *Queries) GetVerificationRequestSubmission(ctx context.Context, id pgtyp
 }
 
 const listVerificationRequests = `-- name: ListVerificationRequests :many
-SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, u.username AS requester_username, u.email AS requester_email,
+SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, vr.service_listing_id, u.username AS requester_username, u.email AS requester_email,
        u.verified AS requester_verified,
        o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified,
+       sl.title AS listing_title, sl.slug AS listing_slug,
+       sm.is_verified AS listing_verified,
        rv.username AS reviewed_by_username
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
+LEFT JOIN service_listing_meta sm ON sm.content_id = vr.service_listing_id
 LEFT JOIN users rv ON rv.id = vr.reviewed_by
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
-                    OR o.name ILIKE '%' || $3 || '%')
+                    OR o.name ILIKE '%' || $3 || '%'
+                    OR sl.title ILIKE '%' || $3 || '%')
 ORDER BY
   CASE WHEN $6::text = 'requester' AND $7::text = 'desc' THEN u.username END DESC,
   CASE WHEN $6::text = 'requester' AND $7::text <> 'desc' THEN u.username END ASC,
@@ -238,12 +307,16 @@ type ListVerificationRequestsRow struct {
 	ResolutionNote     *string            `json:"resolution_note"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ServiceListingID   pgtype.UUID        `json:"service_listing_id"`
 	RequesterUsername  string             `json:"requester_username"`
 	RequesterEmail     string             `json:"requester_email"`
 	RequesterVerified  bool               `json:"requester_verified"`
 	OrgName            *string            `json:"org_name"`
 	OrgSlug            *string            `json:"org_slug"`
 	OrgVerified        *bool              `json:"org_verified"`
+	ListingTitle       *string            `json:"listing_title"`
+	ListingSlug        *string            `json:"listing_slug"`
+	ListingVerified    *bool              `json:"listing_verified"`
 	ReviewedByUsername *string            `json:"reviewed_by_username"`
 }
 
@@ -280,12 +353,16 @@ func (q *Queries) ListVerificationRequests(ctx context.Context, arg ListVerifica
 			&i.ResolutionNote,
 			&i.CreatedAt,
 			&i.ReviewedAt,
+			&i.ServiceListingID,
 			&i.RequesterUsername,
 			&i.RequesterEmail,
 			&i.RequesterVerified,
 			&i.OrgName,
 			&i.OrgSlug,
 			&i.OrgVerified,
+			&i.ListingTitle,
+			&i.ListingSlug,
+			&i.ListingVerified,
 			&i.ReviewedByUsername,
 		); err != nil {
 			return nil, err
@@ -299,11 +376,14 @@ func (q *Queries) ListVerificationRequests(ctx context.Context, arg ListVerifica
 }
 
 const listVerificationRequestsByRequester = `-- name: ListVerificationRequestsByRequester :many
-SELECT vr.id, vr.entity_type, vr.organization_id, vr.requested_type, vr.status,
+SELECT vr.id, vr.entity_type, vr.organization_id, vr.service_listing_id,
+       vr.requested_type, vr.status,
        vr.resolution_note, vr.created_at, vr.reviewed_at, vr.form_submission_id,
-       o.name AS org_name, o.slug AS org_slug
+       o.name AS org_name, o.slug AS org_slug,
+       sl.title AS listing_title, sl.slug AS listing_slug
 FROM verification_requests vr
 LEFT JOIN organizations o ON o.id = vr.organization_id
+LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 WHERE vr.requester_user_id = $1
 ORDER BY vr.created_at DESC
 `
@@ -312,6 +392,7 @@ type ListVerificationRequestsByRequesterRow struct {
 	ID               pgtype.UUID        `json:"id"`
 	EntityType       string             `json:"entity_type"`
 	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	ServiceListingID pgtype.UUID        `json:"service_listing_id"`
 	RequestedType    *string            `json:"requested_type"`
 	Status           string             `json:"status"`
 	ResolutionNote   *string            `json:"resolution_note"`
@@ -320,6 +401,8 @@ type ListVerificationRequestsByRequesterRow struct {
 	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
 	OrgName          *string            `json:"org_name"`
 	OrgSlug          *string            `json:"org_slug"`
+	ListingTitle     *string            `json:"listing_title"`
+	ListingSlug      *string            `json:"listing_slug"`
 }
 
 // Requests filed by one user (GET /me/verification-requests). Requesters have
@@ -338,6 +421,7 @@ func (q *Queries) ListVerificationRequestsByRequester(ctx context.Context, reque
 			&i.ID,
 			&i.EntityType,
 			&i.OrganizationID,
+			&i.ServiceListingID,
 			&i.RequestedType,
 			&i.Status,
 			&i.ResolutionNote,
@@ -346,6 +430,8 @@ func (q *Queries) ListVerificationRequestsByRequester(ctx context.Context, reque
 			&i.FormSubmissionID,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.ListingTitle,
+			&i.ListingSlug,
 		); err != nil {
 			return nil, err
 		}

@@ -48,13 +48,21 @@
 
 	const org = $derived(data.org);
 	const self = $derived(data.self);
+	const listing = $derived(data.listing);
 	const form = $derived(data.form);
 	const types = $derived(data.types ?? []);
 	const selectedType = $derived(types.find((v) => v.value === requestedType));
 	const requests = $derived(data.requests ?? []);
 	const credits = $derived(data.credits ?? 0);
 	const blocked = $derived(data.blocked ?? null);
-	const isRequestMode = $derived(Boolean(org) || self);
+	const isRequestMode = $derived(Boolean(org) || self || Boolean(listing));
+
+	// Shared entity descriptor for the three request modes — drives the
+	// POST payload, the paid-checkout session marker, and the display labels.
+	const entityType = $derived(org ? 'organization' : listing ? 'service_listing' : 'user');
+	const entityKey = $derived(org ? `org:${org.slug}` : listing ? `listing:${listing.slug}` : 'self');
+	const entityName = $derived(org ? org.name : listing ? listing.title : '');
+	const entityParam = $derived(org ? `org=${org.slug}` : listing ? `listing=${listing.slug}` : 'self=1');
 
 	let withdrawing = $state('');
 	let listError = $state('');
@@ -140,9 +148,8 @@
 					entity?: string;
 				};
 				// Only resume when the marker belongs to this entity — a stale
-				// marker from another org/self flow must not mis-link the request.
-				const entity = org ? `org:${org.slug}` : 'self';
-				if (m.submission_id && (!m.entity || m.entity === entity)) {
+				// marker from another org/self/listing flow must not mis-link the request.
+				if (m.submission_id && (!m.entity || m.entity === entityKey)) {
 					submissionId = m.submission_id;
 					if (m.requested_type) requestedType = m.requested_type;
 				}
@@ -165,8 +172,9 @@
 	async function resumeCreateRequest() {
 		for (let i = 0; i < 8; i++) {
 			const res = await api.post('/verification-requests', {
-				entity_type: org ? 'organization' : 'user',
+				entity_type: entityType,
 				organization_id: org?.id,
+				service_listing_id: listing?.id,
 				requested_type: requestedType || undefined,
 				form_submission_id: submissionId
 			});
@@ -367,15 +375,16 @@
 				// with ?paid=1 so resumeCreateRequest can link the paid
 				// submission to the verification request.
 				const ret = safeSameOriginHref(
-					`${page.url.origin}/verification-request?${org ? `org=${org.slug}` : 'self=1'}&paid=1`
+					`${page.url.origin}/verification-request?${entityParam}&paid=1`
 				);
 				if (ret) body.return_url = ret;
 				// §06 link intent: the payment webhook auto-creates the request
 				// when payment confirms — covers the user never returning.
 				body.link = {
 					kind: 'verification_request',
-					entity_type: org ? 'organization' : 'user',
+					entity_type: entityType,
 					organization_id: org?.id ?? '',
+					service_listing_id: listing?.id ?? '',
 					requested_type: requestedType || ''
 				};
 			}
@@ -399,7 +408,7 @@
 					JSON.stringify({
 						submission_id: res.data.id,
 						requested_type: requestedType || undefined,
-						entity: org ? `org:${org.slug}` : 'self'
+						entity: entityKey
 					})
 				);
 				submissionId = res.data.id;
@@ -422,8 +431,9 @@
 		loading = true;
 		try {
 			const res = await api.post('/verification-requests', {
-				entity_type: org ? 'organization' : 'user',
+				entity_type: entityType,
 				organization_id: org?.id,
+				service_listing_id: listing?.id,
 				requested_type: requestedType || undefined,
 				form_submission_id: submissionId
 			});
@@ -492,6 +502,8 @@
 								<div class="min-w-0">
 									{#if req.entity_type === 'organization' && req.org_slug}
 										<a href="/org/{req.org_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{req.org_name}</a>
+									{:else if req.entity_type === 'service_listing' && req.listing_slug}
+										<a href="/services/{req.listing_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{req.listing_title}</a>
 									{:else}
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{t('verification_request.profile_request', 'Profile verification')}</span>
 									{/if}
@@ -544,7 +556,9 @@
 					title={t('verification_request.already_verified_title', 'Already verified')}
 					body={org
 						? t('verification_request.already_verified_org_body', 'This organization already has a verification badge.')
-						: t('verification_request.already_verified_body', 'Your profile already has a verification badge.')}
+						: listing
+							? t('verification_request.already_verified_listing_body', 'This listing already has a verification badge.')
+							: t('verification_request.already_verified_body', 'Your profile already has a verification badge.')}
 				/>
 			{:else if blocked === 'pending_exists'}
 				<EmptyState
@@ -560,6 +574,12 @@
 					icon={ShieldCheck}
 					title={t('verification_request.not_org_admin_title', 'Owners and admins only')}
 					body={t('verification_request.not_org_admin_body', 'Only the owner or an admin of this organization can request verification.')}
+				/>
+			{:else if blocked === 'not_listing_owner'}
+				<EmptyState
+					icon={ShieldCheck}
+					title={t('verification_request.not_listing_owner_title', 'Listing owner only')}
+					body={t('verification_request.not_listing_owner_body', 'Only the listing author or an owner/admin of the owning organization can request verification.')}
 				/>
 			{:else if blocked === 'no_permission'}
 				<EmptyState
@@ -600,6 +620,11 @@
 						{#if org}
 						<a href="/org/{org.slug}" class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 							{t('verification_request.back_to_org', 'Back to organization')}
+						</a>
+						{/if}
+						{#if listing}
+						<a href="/services/{listing.slug}" class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							{t('verification_request.back_to_listing', 'Back to listing')}
 						</a>
 						{/if}
 					<a href="/verification-request" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
@@ -723,9 +748,10 @@
 							</span>
 								<div class="min-w-0">
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">
-									{org ? org.name : t('verification_request.profile_request', 'Profile verification')}
+									{org ? org.name : listing ? listing.title : t('verification_request.profile_request', 'Profile verification')}
 									</p>
 								{#if org}<p class="truncate text-xs text-[var(--color-muted)]">/{org.slug}</p>{/if}
+								{#if listing}<p class="truncate text-xs text-[var(--color-muted)]">/services/{listing.slug}</p>{/if}
 								</div>
 							</div>
 
@@ -775,7 +801,9 @@
 									<dd class="text-end text-sm text-[var(--color-text)]">
 										{org
 											? org.name
-											: t('verification_request.profile_request', 'Profile verification')}
+											: listing
+												? listing.title
+												: t('verification_request.profile_request', 'Profile verification')}
 									</dd>
 								</div>
 							<div class="flex items-start justify-between gap-4 px-4 py-2.5">

@@ -5831,8 +5831,11 @@ export interface NextAction {
 /** GET /me/verification-requests row (§07 Verification Requests). */
 export interface MyVerificationRequest {
 	id: string;
-	entity_type: 'organization' | 'user' | string;
+	entity_type: 'organization' | 'user' | 'service_listing' | string;
 	organization_id?: string | null;
+	service_listing_id?: string | null;
+	listing_title?: string | null;
+	listing_slug?: string | null;
 	requested_type?: string | null;
 	status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | string;
 	resolution_note?: string | null;

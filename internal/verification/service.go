@@ -99,13 +99,17 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 //     request exists for that org.
 //   - entity_type 'user': always the caller's own profile; caller not already
 //     verified; no pending request exists for the caller.
+//   - entity_type 'service_listing': the listing exists and is live, the
+//     requester is the listing author or an owner/admin member of the owning
+//     org, the listing is not already verified, and no pending request exists
+//     for that listing (001157).
 //
 // The linked form submission must exist, belong to the requester, and still be
 // status='new' (BUG-009 equivalent — a submission is consumed by exactly one
 // request).
 func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, input SubmitInput) (gen.VerificationRequest, error) {
-	if input.EntityType != EntityTypeOrganization && input.EntityType != EntityTypeUser {
-		return gen.VerificationRequest{}, fmt.Errorf("%w: entity_type must be 'organization' or 'user'", errpkg.ErrInvalid)
+	if input.EntityType != EntityTypeOrganization && input.EntityType != EntityTypeUser && input.EntityType != EntityTypeServiceListing {
+		return gen.VerificationRequest{}, fmt.Errorf("%w: entity_type must be 'organization', 'user' or 'service_listing'", errpkg.ErrInvalid)
 	}
 
 	// requested_type is validated against the managed taxonomy for the
@@ -116,6 +120,7 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 	}
 
 	var orgID pgtype.UUID
+	var listingID pgtype.UUID
 	var org *gen.Organization
 
 	switch input.EntityType {
@@ -170,6 +175,9 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		if input.OrganizationID != nil && *input.OrganizationID != "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id must be omitted for entity_type 'user'", errpkg.ErrInvalid)
 		}
+		if input.ServiceListingID != nil && *input.ServiceListingID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: service_listing_id must be omitted for entity_type 'user'", errpkg.ErrInvalid)
+		}
 
 		verified, err := s.store.GetUserVerified(ctx, requesterID)
 		if err != nil {
@@ -181,6 +189,53 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 
 		if _, err := s.store.GetPendingForUser(ctx, requesterID); err == nil {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: you already have a pending verification request", errpkg.ErrDuplicate)
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return gen.VerificationRequest{}, fmt.Errorf("checking pending requests: %w", err)
+		}
+
+	case EntityTypeServiceListing:
+		if input.ServiceListingID == nil || *input.ServiceListingID == "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: service_listing_id is required for entity_type 'service_listing'", errpkg.ErrInvalid)
+		}
+		if input.OrganizationID != nil && *input.OrganizationID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id must be omitted for entity_type 'service_listing'", errpkg.ErrInvalid)
+		}
+		if err := listingID.Scan(*input.ServiceListingID); err != nil {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: invalid service_listing_id", errpkg.ErrInvalid)
+		}
+
+		listing, err := s.store.GetServiceListingForVerification(ctx, listingID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.VerificationRequest{}, fmt.Errorf("%w: service listing not found", errpkg.ErrNotFound)
+			}
+			return gen.VerificationRequest{}, fmt.Errorf("fetching service listing: %w", err)
+		}
+		if listing.IsVerified {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: listing is already verified", errpkg.ErrInvalidStatusTransition)
+		}
+
+		// Requester must be the listing author or an owner/admin member of
+		// the owning org (mirrors the §98 edit_own surface — the badge asks
+		// reviewers to trust whoever controls the listing).
+		allowed := listing.AuthorID == requesterID ||
+			(listing.CreatedByUserID.Valid && listing.CreatedByUserID == requesterID)
+		if !allowed && listing.OrgID.Valid {
+			role, err := s.store.GetOrganizationMemberRole(ctx, listing.OrgID, requesterID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return gen.VerificationRequest{}, fmt.Errorf("%w: only the listing author or an owner/admin of the owning organization may request verification", errpkg.ErrForbidden)
+				}
+				return gen.VerificationRequest{}, fmt.Errorf("checking membership: %w", err)
+			}
+			allowed = role == "owner" || role == "admin"
+		}
+		if !allowed {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: only the listing author or an owner/admin of the owning organization may request verification", errpkg.ErrForbidden)
+		}
+
+		if _, err := s.store.GetPendingForListing(ctx, listingID); err == nil {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: a pending verification request already exists for this listing", errpkg.ErrDuplicate)
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return gen.VerificationRequest{}, fmt.Errorf("checking pending requests: %w", err)
 		}
@@ -229,6 +284,7 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		RequesterUserID:  requesterID,
 		EntityType:       input.EntityType,
 		OrganizationID:   orgID,
+		ServiceListingID: listingID,
 		RequestedType:    strPtr(input.RequestedType),
 		FormSubmissionID: submissionID,
 	})
@@ -336,8 +392,8 @@ func (s *Service) AdminList(ctx context.Context, status, entityType, search, sor
 	if status != "" && status != StatusPending && status != StatusApproved && status != StatusRejected && status != StatusWithdrawn {
 		return nil, 0, fmt.Errorf("%w: status must be one of pending|approved|rejected|withdrawn", errpkg.ErrInvalid)
 	}
-	if entityType != "" && entityType != EntityTypeOrganization && entityType != EntityTypeUser {
-		return nil, 0, fmt.Errorf("%w: entity_type must be organization|user", errpkg.ErrInvalid)
+	if entityType != "" && entityType != EntityTypeOrganization && entityType != EntityTypeUser && entityType != EntityTypeServiceListing {
+		return nil, 0, fmt.Errorf("%w: entity_type must be organization|user|service_listing", errpkg.ErrInvalid)
 	}
 	if sortDir != "" && sortDir != "asc" && sortDir != "desc" {
 		sortDir = ""
@@ -389,8 +445,8 @@ func (s *Service) ReviewRequest(ctx context.Context, id, reviewerID pgtype.UUID,
 	})
 
 	// Gamification v2 — an approved member request earns identity.verified
-	// (Verified Member badge). Org requests don't award member badges.
-	if input.Status == StatusApproved && !row.OrganizationID.Valid {
+	// (Verified Member badge). Org/listing requests don't award member badges.
+	if input.Status == StatusApproved && row.EntityType == EntityTypeUser {
 		s.emitApprovedActivity(ctx, row)
 	}
 
@@ -407,8 +463,11 @@ func notePtr(note string) *string {
 }
 
 func entityID(row gen.GetVerificationRequestByIDRow) any {
-	if row.OrganizationID.Valid {
+	switch row.EntityType {
+	case EntityTypeOrganization:
 		return row.OrganizationID
+	case EntityTypeServiceListing:
+		return row.ServiceListingID
 	}
 	return row.RequesterUserID
 }

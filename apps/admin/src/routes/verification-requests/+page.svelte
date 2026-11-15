@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from "#lib/components/entity/index.js";
 	import { Modal } from "#lib/components/ui/modal/index.js";
 	import { Button } from "#lib/components/ui/button/index.js";
-	import { verificationAdminApi, organisationsAdminApi, type VerificationTypeItem } from "#lib/api.js";
+	import { verificationAdminApi, organisationsAdminApi, serviceDirectoryAdminApi, type VerificationTypeItem } from "#lib/api.js";
 	import { Tabs, TabsContent } from "#lib/components/ui/tabs/index.js";
 	import BadgeTypesPanel from "./BadgeTypesPanel.svelte";
 	import { t } from "#lib/stores/i18n.svelte.js";
@@ -20,6 +20,7 @@
 		requester_user_id: string;
 		entity_type: string;
 		organization_id?: string | null;
+		service_listing_id?: string | null;
 		requested_type?: string | null;
 		form_submission_id: string;
 		status: string;
@@ -32,6 +33,9 @@
 		org_name?: string | null;
 		org_slug?: string | null;
 		org_verified?: boolean | null;
+		listing_title?: string | null;
+		listing_slug?: string | null;
+		listing_verified?: boolean | null;
 		reviewed_by_username?: string | null;
 	};
 
@@ -63,11 +67,11 @@
 		}).catch(() => {});
 	});
 
-	// Grant modal options — scoped to the target request's entity_type
-	// (organization rows see organization types, users see user types).
+	// Grant modal options — verification_types.scope maps 1:1 to entity_type
+	// (organization rows see organization types, listings see service_listing).
 	const grantTypeOptions = $derived(
 		types
-			.filter((ty) => ty.scope === (grantTarget?.entity_type === "organization" ? "organization" : "user"))
+			.filter((ty) => ty.scope === (grantTarget?.entity_type ?? "user"))
 			.map((ty) => ({ value: ty.value, label: ty.label }))
 	);
 
@@ -80,10 +84,14 @@
 	}
 
 	const entityVerified = (row: VRequest) =>
-		row.entity_type === "organization" ? !!row.org_verified : !!row.requester_verified;
+		row.entity_type === "organization"
+			? !!row.org_verified
+			: row.entity_type === "service_listing"
+				? !!row.listing_verified
+				: !!row.requester_verified;
 
 	const entityLabel = (row: VRequest) =>
-		row.entity_type + (row.org_name ? ` — ${row.org_name}` : "");
+		row.entity_type + (row.org_name ? ` — ${row.org_name}` : "") + (row.listing_title ? ` — ${row.listing_title}` : "");
 
 	// Evidence (view modal) — the linked form submission is fetched per row.
 	// viewTargetId guards against a slow fetch for a previously-opened row
@@ -139,7 +147,9 @@
 		successMessage = "";
 		const res = grantTarget.entity_type === "organization" && grantTarget.organization_id
 			? await organisationsAdminApi.verify(grantTarget.organization_id, { verification_type: grantType || undefined })
-			: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
+			: grantTarget.entity_type === "service_listing" && grantTarget.service_listing_id
+				? await serviceDirectoryAdminApi.verify(grantTarget.service_listing_id, { verification_type: grantType || undefined })
+				: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
 		busy = false;
 		if (!res.ok) { pageError = res.error; return; }
 		showGrantModal = false;
@@ -223,7 +233,8 @@
 				label: t("vreq.col.entity", "Entity"),
 				options: [
 					{ value: "organization", label: t("vreq.entity_organization", "Organization") },
-					{ value: "user", label: t("vreq.entity_user", "User") }
+					{ value: "user", label: t("vreq.entity_user", "User") },
+					{ value: "service_listing", label: t("vreq.entity_service_listing", "Service listing") }
 				]
 			}
 		],

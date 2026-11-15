@@ -1,8 +1,10 @@
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-// /verification-request — auth-gated. Three modes:
-//   ?org={slug}  → org verification request form (owner/admin members only)
-//   ?self=1      → profile verification request form
-//   (none)       → "My verification requests" list (GET /me/verification-requests)
+// /verification-request — auth-gated. Four modes:
+//   ?org={slug}     → org verification request form (owner/admin members only)
+//   ?self=1         → profile verification request form
+//   ?listing={slug} → service-listing verification request form (listing author
+//                     or owner/admin member of the owning org — 001157)
+//   (none)          → "My verification requests" list (GET /me/verification-requests)
 // The dynamic form comes from the Form Builder via GET
 // /forms/verification-request/embed (system_settings 'verification.form_slug').
 // The submission is created client-side via POST /forms/{id}/submissions
@@ -22,13 +24,15 @@ import type {
 	FormEmbed,
 	MyVerificationRequest,
 	MeProfile,
-	ComposerOrganization
+	ComposerOrganization,
+	ServiceListing
 } from '#lib/types/index.js';
 
 export type VerificationBlock =
 	| 'already_verified'
 	| 'pending_exists'
 	| 'not_org_admin'
+	| 'not_listing_owner'
 	| 'no_permission'
 	| null;
 
@@ -40,7 +44,9 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.url.searchParams.get('org');
 	const self = event.url.searchParams.get('self') === '1';
+	const listingSlug = event.url.searchParams.get('listing');
 	const paid = event.url.searchParams.get('paid') === '1';
+	const formMode = Boolean(slug) || self || Boolean(listingSlug);
 
 	// Requester-scoped list — fetched in every mode: it drives both the
 	// bare-mode list view and the pending-request pre-check in form mode.
@@ -52,7 +58,7 @@ export const load: PageServerLoad = async (event) => {
 	// The slug is admin-configurable (verification.form_slug); resolve it
 	// from the public site settings instead of hardcoding (Rule 16).
 	const formPromise =
-		slug || self
+		formMode
 			? apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
 					.then((s) => {
 						const formSlug =
@@ -65,9 +71,9 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve(null);
 	// Badge-type vocabulary for the suggested-type select (Rule 16) —
 	// managed taxonomy (001013), scoped to the request's entity type.
-	const typeScope = slug ? 'organization' : 'user';
+	const typeScope = slug ? 'organization' : listingSlug ? 'service_listing' : 'user';
 	const typesPromise =
-		slug || self
+		formMode
 			? apiGet<{ types: { value: string; label: string; badge_url?: string }[] }>(ctx, `/verification-requests/types?scope=${typeScope}`)
 					.then((r) => r?.types ?? [])
 					.catch(() => [] as { value: string; label: string; badge_url?: string }[])
@@ -76,16 +82,17 @@ export const load: PageServerLoad = async (event) => {
 	// UI disable it before submit rather than failing with
 	// insufficient_credits after the user has filled the whole form.
 	const creditsPromise =
-		slug || self
+		formMode
 			? apiGet<{ balance: number }>(ctx, '/me/wallet/credits')
 					.then((r) => r?.balance ?? 0)
 					.catch(() => 0)
 			: Promise.resolve(0);
 
-	if (!slug && !self) {
+	if (!formMode) {
 		return {
 			org: null,
 			self: false,
+			listing: null,
 			form: null,
 			types: [],
 			credits: 0,
@@ -104,6 +111,19 @@ export const load: PageServerLoad = async (event) => {
 			throw error(status === 404 ? 404 : 500, {
 				code: status === 404 ? 'not_found' : 'server_error',
 				message: status === 404 ? 'Organization not found' : 'Failed to load organization'
+			});
+		}
+	}
+
+	let listing: ServiceListing | null = null;
+	if (listingSlug) {
+		try {
+			listing = await apiGet<ServiceListing>(ctx, `/services/${encodeURIComponent(listingSlug)}`);
+		} catch (e) {
+			const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
+			throw error(status === 404 ? 404 : 500, {
+				code: status === 404 ? 'not_found' : 'server_error',
+				message: status === 404 ? 'Listing not found' : 'Failed to load listing'
 			});
 		}
 	}
@@ -147,6 +167,24 @@ export const load: PageServerLoad = async (event) => {
 				})
 				.catch(() => {})
 		);
+	} else if (listing) {
+		if (listing.is_verified) blocked = 'already_verified';
+		// Requester must be the listing author or an owner/admin member of
+		// the owning org — same eligibility as POST /verification-requests.
+		checks.push(
+			apiList<ComposerOrganization>(ctx, '/me/organizations?page_size=100')
+				.then(({ items }) => {
+					if (blocked) return;
+					const isAuthor = listing!.author_id === event.locals.user!.id;
+					const orgRole = listing!.org_id
+						? items.find((o) => o.id === listing!.org_id)?.member_role
+						: undefined;
+					if (!isAuthor && orgRole !== 'owner' && orgRole !== 'admin') {
+						blocked = 'not_listing_owner';
+					}
+				})
+				.catch(() => {})
+		);
 	} else {
 		// Profile request: verified flag lives on /me (SessionUser lacks it).
 		checks.push(
@@ -172,10 +210,12 @@ export const load: PageServerLoad = async (event) => {
 				r.status === 'pending' &&
 				(org
 					? r.entity_type === 'organization' && r.organization_id === org.id
-					: r.entity_type === 'user')
+					: listing
+						? r.entity_type === 'service_listing' && r.service_listing_id === listing.id
+						: r.entity_type === 'user')
 		);
 		if (pending) blocked = 'pending_exists';
 	}
 
-	return { org, self, form, types, credits, blocked, resumePayment: paid, requests };
+	return { org, self, listing, form, types, credits, blocked, resumePayment: paid, requests };
 };

@@ -2331,7 +2331,8 @@ export const serviceDirectoryAdminApi = {
 		apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number } }>(
 			`/admin/services${params ? `?${params}` : ''}`
 		),
-	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),
+	verify: (id: string, body: { verification_type?: string } = {}) =>
+		api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body }),
 	unverify: (id: string) => api<unknown>(`/admin/services/${id}/unverify`, { method: 'PATCH', body: {} }),
 	publish: (id: string) => api<unknown>(`/admin/services/${id}/publish`, { method: 'PATCH', body: {} }),
 	unpublish: (id: string) => api<unknown>(`/admin/services/${id}/unpublish`, { method: 'PATCH', body: {} }),
@@ -2849,6 +2850,10 @@ export const verificationAdminApi = {
 			org_name?: string | null;
 			org_slug?: string | null;
 			org_verified?: boolean | null;
+			service_listing_id?: string | null;
+			listing_title?: string | null;
+			listing_slug?: string | null;
+			listing_verified?: boolean | null;
 				reviewed_by_username?: string | null;
 		 }[];
 			meta: { total: number; page: number; page_size: number; page_count: number };

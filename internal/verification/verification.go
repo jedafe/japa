@@ -16,8 +16,9 @@ import (
 
 // Entity types stored on verification_requests.entity_type.
 const (
-	EntityTypeOrganization = "organization"
-	EntityTypeUser         = "user"
+	EntityTypeOrganization   = "organization"
+	EntityTypeUser           = "user"
+	EntityTypeServiceListing = "service_listing"
 )
 
 // Request status values (same lifecycle vocabulary as ownership_claims).
@@ -35,8 +36,7 @@ const (
 )
 
 // Scopes on verification_types.scope (migration 001013). entity_type on a
-// request maps 1:1 to the scope of the same name; service listings are
-// verified out-of-band (no request flow) but share the taxonomy.
+// request maps 1:1 to the scope of the same name.
 const (
 	ScopeOrganization   = "organization"
 	ScopeUser           = "user"
@@ -82,6 +82,7 @@ func IsValidType(s string) bool {
 type SubmitInput struct {
 	EntityType       string
 	OrganizationID   *string
+	ServiceListingID *string
 	RequestedType    *string
 	FormSubmissionID string
 }

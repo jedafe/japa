@@ -4874,6 +4874,7 @@
   "vreq.status_rejected": "Rejected",
   "vreq.status_withdrawn": "Withdrawn",
   "vreq.entity_organization": "Organization",
+  "vreq.entity_service_listing": "Service listing",
   "vreq.entity_user": "User",
   "vreq.col.badge": "Badge",
   "vreq.col.reviewed_by": "Reviewed by",

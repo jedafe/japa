@@ -154,10 +154,11 @@ func RegisterTaskEnqueuer(e *Enqueuer) {
 // import internal/verification or internal/organizations (import cycle), so
 // the server bootstrap registers an adapter via RegisterSubmissionLinker.
 type SubmissionLinkInput struct {
-	Kind           string `json:"kind"` // "verification_request" | "org_claim"
-	EntityType     string `json:"entity_type"`
-	OrganizationID string `json:"organization_id"`
-	RequestedType  string `json:"requested_type"`
+	Kind             string `json:"kind"` // "verification_request" | "org_claim"
+	EntityType       string `json:"entity_type"`
+	OrganizationID   string `json:"organization_id"`
+	ServiceListingID string `json:"service_listing_id"`
+	RequestedType    string `json:"requested_type"`
 }
 
 // submissionLinker creates the business record for a paid submission whose

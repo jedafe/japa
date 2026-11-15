@@ -39,6 +39,17 @@ func (s *Store) GetPendingForUser(ctx context.Context, userID pgtype.UUID) (pgty
 	return s.read.GetPendingVerificationRequestForUser(ctx, userID)
 }
 
+// GetPendingForListing returns the pending request for a service listing, if any.
+func (s *Store) GetPendingForListing(ctx context.Context, listingID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetPendingVerificationRequestForListing(ctx, listingID)
+}
+
+// GetServiceListingForVerification resolves a listing for the submit-time
+// eligibility check (existence, is_verified, ownership inputs).
+func (s *Store) GetServiceListingForVerification(ctx context.Context, listingID pgtype.UUID) (gen.GetServiceListingForVerificationRow, error) {
+	return s.read.GetServiceListingForVerification(ctx, listingID)
+}
+
 // ListByRequester returns all requests filed by a user, newest first.
 func (s *Store) ListByRequester(ctx context.Context, userID pgtype.UUID) ([]gen.ListVerificationRequestsByRequesterRow, error) {
 	return s.read.ListVerificationRequestsByRequester(ctx, userID)
