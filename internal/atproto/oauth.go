@@ -48,10 +48,10 @@ const (
 	oauthRefreshPublicTTL = 14 * 24 * time.Hour
 	oauthRefreshConfidTTL = 180 * 24 * time.Hour
 	oauthPARTTL           = 10 * time.Minute
-	// oauthRefreshReuseGrace is the stale-refresh window matching
-	// §120's 30s reuse-grace: a prev-hash replay inside it is a
-	// benign concurrent retry, outside it is theft.
-	oauthRefreshReuseGrace = 30 * time.Second
+	// oauthReuseGrace is the stale-replay window matching §120's 30s
+	// reuse-grace: a prev-hash refresh or consumed-code replay inside
+	// it is a benign concurrent retry, outside it is theft.
+	oauthReuseGrace        = 30 * time.Second
 	oauthCodeExchangeTTL   = 5 * time.Minute // enforced by ConsumeOAuthCode
 	oauthDPoPMaxSkew       = 5 * time.Minute
 	oauthNonceMaxAge       = 10 * time.Minute
@@ -259,7 +259,7 @@ func normalizeHTU(u string) string {
 	if err != nil || p.Hostname() == "" {
 		return ""
 	}
-	host := p.Hostname()
+	host := strings.ToLower(p.Hostname()) // DNS names are case-insensitive
 	if port := p.Port(); port != "" &&
 		!((p.Scheme == "https" && port == "443") || (p.Scheme == "http" && port == "80")) {
 		host += ":" + port
@@ -504,6 +504,10 @@ func (s *Service) fetchURL(ctx context.Context, rawURL string, maxBytes int64) (
 		return nil, 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	// Empty User-Agents get 403'd by some metadata hosts (WAF defaults).
+	if u, err := url.Parse(rawURL); err == nil && u.Hostname() != "" {
+		req.Header.Set("User-Agent", "JapaConnect-PDS/1.0")
+	}
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -835,7 +839,7 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		// an older replay revokes the family (§120 grace posture).
 		if grant.PrevRefreshHash != nil && *grant.PrevRefreshHash == hash {
 			inGrace := grant.RefreshRotatedAt.Valid &&
-				time.Since(grant.RefreshRotatedAt.Time) < oauthRefreshReuseGrace
+				time.Since(grant.RefreshRotatedAt.Time) < oauthReuseGrace
 			if !inGrace {
 				_, _ = s.store.q.RevokeOAuthGrant(ctx, grant.ID)
 			}
@@ -1055,12 +1059,18 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Replay path — the code mapped to an already-consumed
-			// request. The grant it minted dies with the detection;
-			// sibling grants on the same client×account survive.
+			// request. Inside the reuse grace a concurrent exchange
+			// retry is benign (the winner's grant stands); an older
+			// replay is theft and the grant it minted dies — sibling
+			// grants on the same client×account survive either way.
 			if prev, perr := s.store.q.GetOAuthRequestByCodeHash(ctx, &hash); perr == nil {
-				_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, gen.RevokeOAuthGrantsForRequestParams{
-					RequestUri: &prev.RequestUri, AccountID: prev.AccountID, ClientID: prev.ClientID,
-				})
+				inGrace := prev.CodeUsedAt.Valid &&
+					time.Since(prev.CodeUsedAt.Time) < oauthReuseGrace
+				if !inGrace {
+					_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, gen.RevokeOAuthGrantsForRequestParams{
+						RequestUri: &prev.RequestUri, AccountID: prev.AccountID, ClientID: prev.ClientID,
+					})
+				}
 			}
 			return nil, oauthErr("invalid_grant", "the authorization code is invalid, expired, or already used")
 		}

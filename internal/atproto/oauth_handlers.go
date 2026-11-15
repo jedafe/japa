@@ -190,6 +190,15 @@ func (h *Handlers) HandlePAR(w http.ResponseWriter, r *http.Request) {
 		writeOAuthErr(w, http.StatusBadRequest, "invalid_scope", "scope exceeds the client's declared scope")
 		return
 	}
+	// Even an undeclared-scope doc can't mint junk: the granted words are
+	// the atproto scope plus transition:* values (unknown transition:*
+	// stays forward-compatible as new scopes appear).
+	for _, word := range strings.Fields(scope) {
+		if word != "atproto" && !strings.HasPrefix(word, "transition:") {
+			writeOAuthErr(w, http.StatusBadRequest, "invalid_scope", "unsupported scope value")
+			return
+		}
+	}
 	state := f.Get("state")
 	if state == "" || len(state) > 512 {
 		writeOAuthErr(w, http.StatusBadRequest, "invalid_request", "state is required")
@@ -704,6 +713,7 @@ func (h *Handlers) HandleAuthorizationServerMetadata(w http.ResponseWriter, r *h
 		"token_endpoint":                                   origin + "/oauth/token",
 		"revocation_endpoint":                              origin + "/oauth/revoke",
 		"registration_endpoint":                            origin + "/oauth/register",
+		"userinfo_endpoint":                                origin + "/oauth/userinfo",
 		"pushed_authorization_request_endpoint":            origin + "/oauth/par",
 		"require_pushed_authorization_requests":            true,
 		"response_types_supported":                         []string{"code"},

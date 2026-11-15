@@ -407,18 +407,34 @@ func TestOAuthEndToEnd(t *testing.T) {
 		t.Fatalf("second exchange: %v", err)
 	}
 
-	// --- Code replay: same code again → invalid_grant AND grant 1 dies
-	// (spec: replay kills the session it minted) while grant 2 lives.
-	req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token", strings.NewReader(exForm))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", tokenHTU, svc.mintNonce(), ""))
-	rec = httptest.NewRecorder()
-	h.HandleToken(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("code replay: got %d body %s", rec.Code, rec.Body.String())
+	// --- Code replay inside the reuse grace: a concurrent exchange
+	// retry is benign — invalid_grant, but the minted grant stands and
+	// sibling grants are untouched.
+	replayCode := func() {
+		req = httptest.NewRequest(http.MethodPost, "http://api.test.dev/oauth/token", strings.NewReader(exForm))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("DPoP", makeDPoP(t, dpopKey, "POST", tokenHTU, svc.mintNonce(), ""))
+		rec = httptest.NewRecorder()
+		h.HandleToken(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("code replay: got %d body %s", rec.Code, rec.Body.String())
+		}
 	}
+	replayCode()
+	if grant, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken)); gerr != nil || grant.RevokedAt.Valid {
+		t.Fatal("in-grace code replay revoked the minted grant")
+	}
+
+	// --- Past-grace replay = theft: backdate the code consumption,
+	// replay again → the grant it minted dies, sibling survives.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_oauth_requests SET code_used_at = now() - interval '1 minute' WHERE request_uri = $1`,
+		parResp.RequestURI); err != nil {
+		t.Fatalf("backdate code_used_at: %v", err)
+	}
+	replayCode()
 	if grant, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(tok.AccessToken)); gerr != nil || !grant.RevokedAt.Valid {
-		t.Fatal("code replay left the minted grant live")
+		t.Fatal("past-grace code replay left the minted grant live")
 	}
 	if grant, gerr := svc.store.q.GetOAuthGrantByAccessHash(ctx, oauthHash(resp2.AccessToken)); gerr != nil || grant.RevokedAt.Valid {
 		t.Fatal("code replay revoked a sibling grant")
