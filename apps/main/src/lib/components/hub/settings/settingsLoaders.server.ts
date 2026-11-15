@@ -236,4 +236,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// repeater (same source as the Location section's country picker).
 		countries: (await apiList<GeoCountry>(ctx, '/geo/countries').then((r) => r.items).catch(() => []))
 	}),
+
+	// §126 / ADR-138: member federation state — {enabled, status, actor_url,
+	// handle, follower_count, created_at}. Best-effort: degrades to null so
+	// the section renders the enable CTA.
+	federation: async (ctx) => ({
+		status: await apiGet<unknown>(ctx, '/me/federation').catch(() => null)
+	}),
 };

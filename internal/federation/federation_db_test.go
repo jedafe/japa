@@ -2,12 +2,14 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 )
@@ -245,7 +247,7 @@ func TestDBAdminListHidesPrivateKey(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 
-	rows, total, err := svc.ListActors(ctx, "fedtest_", 50, 0)
+	rows, total, err := svc.ListActors(ctx, "fedtest_", "created_at", "desc", 50, 0)
 	if err != nil {
 		t.Fatalf("ListActors: %v", err)
 	}
@@ -334,5 +336,157 @@ func TestDBInstanceBlockCRUD(t *testing.T) {
 
 	if err := svc.DeleteBlock(ctx, block.ID); err != nil {
 		t.Errorf("DeleteBlock: %v", err)
+	}
+}
+
+func TestDBTombstoneNeverResurrected(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	// M2's erasure path writes status='tombstone' — simulate it directly.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federated_actors SET status = 'tombstone' WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+
+	// Re-opting-in must NOT revive an erased identity.
+	if _, err := svc.EnableFederation(ctx, userID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("enable over tombstone: got %v, want ErrNotFound", err)
+	}
+	var status string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status FROM federated_actors WHERE user_id = $1`, userID).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != "tombstone" {
+		t.Fatalf("tombstone resurrected to %q", status)
+	}
+
+	// Disabled → re-enable still works (the only legal reactivation).
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federated_actors SET status = 'disabled' WHERE user_id = $1`, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	st, err := svc.EnableFederation(ctx, userID)
+	if err != nil || !st.Enabled {
+		t.Fatalf("disabled re-enable should work, got %+v %v", st, err)
+	}
+}
+
+func TestDBAutoProvisionMissingUser(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	// A user hard-deleted between enqueue and task execution — pgx.ErrNoRows
+	// must surface as ErrNotFound so the task ends clean, not retry to DLQ.
+	ghost := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	if err := svc.AutoProvision(ctx, ghost); err != nil {
+		t.Fatalf("AutoProvision missing user: got %v, want nil (clean skip)", err)
+	}
+	if _, err := svc.EnableFederation(ctx, ghost); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("EnableFederation missing user: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestDBCollectionsAndFollowerCountExcludeSuspended(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	targetID, targetUname := newFederationUser(t, ctx, d, "active")
+	followerID, followerName := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+
+	if _, err := svc.EnableFederation(ctx, targetID); err != nil {
+		t.Fatalf("enable target: %v", err)
+	}
+	fst, err := svc.EnableFederation(ctx, followerID)
+	if err != nil {
+		t.Fatalf("enable follower: %v", err)
+	}
+	followerActorURL := fst.ActorURL
+
+	// followerID follows targetID — follower shows up in the target's
+	// followers collection because they're themselves federated.
+	if _, err := d.Writer.Exec(ctx,
+		`INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, 'user', $2)`,
+		followerID, targetID); err != nil {
+		t.Fatalf("insert follow: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(),
+			`DELETE FROM follows WHERE follower_id = $1 AND entity_type = 'user' AND entity_id = $2`,
+			followerID, targetID)
+	})
+
+	page, err := svc.Followers(ctx, targetUname, 1)
+	if err != nil {
+		t.Fatalf("followers: %v", err)
+	}
+	items, _ := page["orderedItems"].([]any)
+	found := false
+	for _, it := range items {
+		if it == followerActorURL {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("federated follower %s missing from collection %v", followerName, items)
+	}
+	if page["totalItems"].(int64) != 1 {
+		t.Fatalf("totalItems: %v", page["totalItems"])
+	}
+
+	// follower_count on /me/federation mirrors the collection total.
+	st, err := svc.GetMyFederation(ctx, targetID)
+	if err != nil || st.FollowerCount != 1 {
+		t.Fatalf("follower_count: got %+v %v", st, err)
+	}
+
+	// Suspend the follower — their actor URL must leave the collection
+	// (the doc 404s; listing it would be a dangling reference).
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, followerID); err != nil {
+		t.Fatalf("suspend follower: %v", err)
+	}
+	page, err = svc.Followers(ctx, targetUname, 1)
+	if err != nil {
+		t.Fatalf("followers after suspend: %v", err)
+	}
+	if page["totalItems"].(int64) != 0 {
+		t.Fatalf("suspended follower still counted: %v", page["totalItems"])
+	}
+	if items, _ := page["orderedItems"].([]any); len(items) != 0 {
+		t.Fatalf("suspended follower still listed: %v", items)
+	}
+	st, err = svc.GetMyFederation(ctx, targetID)
+	if err != nil || st.FollowerCount != 0 {
+		t.Fatalf("follower_count after suspend: got %+v %v", st, err)
+	}
+
+	// Same predicate on the following side: a suspended member the target
+	// follows must drop out of their following collection.
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'active' WHERE id = $1`, followerID); err != nil {
+		t.Fatalf("restore follower: %v", err)
+	}
+	followingPage, err := svc.Following(ctx, followerName, 1)
+	if err != nil {
+		t.Fatalf("following: %v", err)
+	}
+	if followingPage["totalItems"].(int64) != 1 {
+		t.Fatalf("following totalItems: %v", followingPage["totalItems"])
+	}
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, targetID); err != nil {
+		t.Fatalf("suspend target: %v", err)
+	}
+	followingPage, err = svc.Following(ctx, followerName, 1)
+	if err != nil {
+		t.Fatalf("following after suspend: %v", err)
+	}
+	if followingPage["totalItems"].(int64) != 0 {
+		t.Fatalf("suspended followee still counted: %v", followingPage["totalItems"])
 	}
 }

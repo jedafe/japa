@@ -3423,6 +3423,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire general settings so UpdateProfile enforces
 	// users.allowed_avatar_types on avatar_media_id assignments (Rule 3).
 	usersService.SetSettings(settingsService)
+	// §126: drop jc:fed:webfinger|actor docs for both handles on rename.
+	usersService.SetFederationCache(federationService)
 	// Phase 3: API-key-scoped bookmark surface — the adapter composes the
 	// users/content bookmark services and the shared engagement enqueuer.
 	publicAPIHandlers.SetBookmarkService(&publicBookmarkAdapter{

@@ -47,8 +47,10 @@ func (s *Store) setActorStatus(ctx context.Context, id pgtype.UUID, status strin
 	return s.write.UpdateFederatedActorStatus(ctx, gen.UpdateFederatedActorStatusParams{ID: id, Status: status})
 }
 
-func (s *Store) listActors(ctx context.Context, q string, limit, offset int32) ([]gen.ListFederatedActorsRow, error) {
-	return s.read.ListFederatedActors(ctx, gen.ListFederatedActorsParams{Q: q, PageLimit: limit, PageOffset: offset})
+func (s *Store) listActors(ctx context.Context, q, sortKey, sortDir string, limit, offset int32) ([]gen.ListFederatedActorsRow, error) {
+	return s.read.ListFederatedActors(ctx, gen.ListFederatedActorsParams{
+		Q: q, SortKey: sortKey, SortDir: sortDir, PageLimit: limit, PageOffset: offset,
+	})
 }
 
 func (s *Store) countActors(ctx context.Context, q string) (int64, error) {

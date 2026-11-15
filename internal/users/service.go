@@ -71,7 +71,23 @@ type Service struct {
 	// webhooks fans user.verified / user.unverified events out to subscribed
 	// endpoints (Section 12). Optional — nil-safe.
 	webhooks userWebhookEmitter
+	// fedCache drops cached ActivityPub WebFinger/actor docs when a member
+	// renames (§126). Implemented by *federation.Service; wired via
+	// SetFederationCache. Optional — nil-safe.
+	fedCache federationDocInvalidator
 }
+
+// federationDocInvalidator drops cached WebFinger/actor docs for one or
+// more handles (jc:fed:webfinger:*, jc:fed:actor:*). Implemented by
+// *federation.Service; injected at server wiring so users never imports
+// the federation package.
+type federationDocInvalidator interface {
+	InvalidateActorIdentity(ctx context.Context, usernames ...string)
+}
+
+// SetFederationCache wires the federation doc invalidator used on username
+// changes. Called once during server setup.
+func (s *Service) SetFederationCache(i federationDocInvalidator) { s.fedCache = i }
 
 // SetOwnerEmail wires the JC_OWNER_EMAIL designation. Called once during
 // server setup.
@@ -2337,6 +2353,11 @@ type UpdateAccountResult struct {
 
 	// Username personalizes the ADR-055 email_changed notice ({{.UserName}}).
 	Username string `json:"-"`
+
+	// OldUsername/NewUsername carry a rename out of the transaction so the
+	// §126 federation doc cache can drop keys for both old and new handles.
+	OldUsername string `json:"-"`
+	NewUsername string `json:"-"`
 }
 
 // ErrNotGroupMember is returned when a user picks a public role group they do
@@ -2441,6 +2462,8 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 				}
 
 				txResult.UsernameChanged = true
+				txResult.OldUsername = acct.Username
+				txResult.NewUsername = newUsername
 			}
 		}
 
@@ -2624,6 +2647,13 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// Enqueued after commit so we don't index a row that might roll back.
 	if result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged {
 		s.enqueueUserSearchIndex(userID)
+	}
+
+	// §126: a rename orphans the old handle's cached WebFinger/actor docs
+	// and may collide with docs cached under the newly claimed handle —
+	// drop both so lookups resolve immediately, not after the 5-min TTL.
+	if result.UsernameChanged && s.fedCache != nil {
+		s.fedCache.InvalidateActorIdentity(ctx, result.OldUsername, result.NewUsername)
 	}
 
 	// §127 A2/A4: re-project app.bsky.actor.profile — this endpoint mutates

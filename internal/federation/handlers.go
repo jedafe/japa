@@ -200,17 +200,38 @@ func (h *Handlers) DisableMyFederation(w http.ResponseWriter, r *http.Request) {
 // Admin (/api/v1/admin/federation/*)
 // ---------------------------------------------------------------------------
 
+// actorSortKeys is the DataTable sort whitelist for the admin actors list —
+// each key has a CASE arm in ListFederatedActors (unlisted sorts fall back
+// to created_at DESC server-side).
+var actorSortKeys = map[string]bool{
+	"created_at": true,
+	"username":   true,
+	"status":     true,
+	"actor_url":  true,
+}
+
 // ListActors serves GET /api/v1/admin/federation/actors.
 func (h *Handlers) ListActors(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseLimitOffset(r)
-	rows, total, err := h.service.ListActors(r.Context(), r.URL.Query().Get("q"), limit, offset)
+	limit, offset, page := parseLimitOffset(r)
+	sortKey := r.URL.Query().Get("sort")
+	if !actorSortKeys[sortKey] {
+		sortKey = "created_at"
+	}
+	sortDir := r.URL.Query().Get("dir")
+	if sortDir == "" {
+		sortDir = r.URL.Query().Get("sort_dir")
+	}
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "desc"
+	}
+	rows, total, err := h.service.ListActors(r.Context(), r.URL.Query().Get("q"), sortKey, sortDir, limit, offset)
 	if err != nil {
 		handleServiceErr(w, err)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
-		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset, "total_pages": totalPages(total, limit)},
+		"meta": map[string]any{"total": total, "page": page, "total_pages": totalPages(total, limit)},
 	})
 }
 
@@ -226,7 +247,7 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 
 // ListBlocks serves GET /api/v1/admin/federation/instances.
 func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseLimitOffset(r)
+	limit, offset, page := parseLimitOffset(r)
 	rows, total, err := h.service.ListBlocks(r.Context(), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleServiceErr(w, err)
@@ -234,7 +255,7 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
-		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset, "total_pages": totalPages(total, limit)},
+		"meta": map[string]any{"total": total, "page": page, "total_pages": totalPages(total, limit)},
 	})
 }
 
@@ -291,16 +312,25 @@ func parsePage(r *http.Request) int {
 	return n
 }
 
-func parseLimitOffset(r *http.Request) (int32, int32) {
-	limit := int64(20)
-	offset := int64(0)
+// parseLimitOffset resolves the admin DataTable contract (?page=&limit=;
+// ?offset= still honored for older callers) into limit + row offset + the
+// 1-based page number echoed back in meta.
+func parseLimitOffset(r *http.Request) (limit, offset, page int32) {
+	limit = 20
 	if v, err := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32); err == nil && v > 0 && v <= 100 {
-		limit = v
+		limit = int32(v)
 	}
+	// Explicit offset wins; page= maps to (page-1)*limit per the repo's
+	// DataTable convention (page is 1-based).
 	if v, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 32); err == nil && v >= 0 {
-		offset = v
+		offset = int32(v)
+		return limit, offset, offset/limit + 1
 	}
-	return int32(limit), int32(offset)
+	page = 1
+	if v, err := strconv.ParseInt(r.URL.Query().Get("page"), 10, 32); err == nil && v > 1 {
+		page = int32(v)
+	}
+	return limit, (page - 1) * limit, page
 }
 
 func totalPages(total int64, limit int32) int32 {

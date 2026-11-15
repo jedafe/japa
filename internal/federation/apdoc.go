@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // AP document builders (§126). Documents are map[string]any so optional
@@ -66,7 +67,9 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 		doc["name"] = *p.DisplayName
 	}
 	if p.Bio != nil && *p.Bio != "" {
-		doc["summary"] = *p.Bio
+		// §126: summary is HTML-escaped — the bio is plain text, and remote
+		// renderers that don't sanitize must not receive raw markup.
+		doc["summary"] = html.EscapeString(*p.Bio)
 	}
 	if p.UserCreatedAt.Valid {
 		doc["published"] = p.UserCreatedAt.Time.UTC().Format(time.RFC3339)
@@ -114,6 +117,17 @@ func objectDocument(c gen.GetFederatableContentByIDRow, actorURL, followersURL, 
 	if objType == "Article" && c.Title != "" {
 		doc["name"] = c.Title
 	}
+	// §126: the featured (else header) image rides as an Image attachment so
+	// remote timelines render a preview card. URLs go through the media
+	// helper (imgproxy-signed when configured, serve endpoint otherwise) —
+	// never assembled here.
+	if u := imageAttachmentURL(c); u != nil {
+		att := map[string]any{"type": "Image", "url": *u}
+		if mime := imageAttachmentMIME(c); mime != nil {
+			att["mediaType"] = *mime
+		}
+		doc["attachment"] = []any{att}
+	}
 	if c.PublishedAt.Valid {
 		doc["published"] = c.PublishedAt.Time.UTC().Format(time.RFC3339)
 	}
@@ -121,6 +135,29 @@ func objectDocument(c gen.GetFederatableContentByIDRow, actorURL, followersURL, 
 		doc["updated"] = c.UpdatedAt.Time.UTC().Format(time.RFC3339)
 	}
 	return doc
+}
+
+// imageAttachmentURL resolves the AP attachment URL — featured image first,
+// header image as fallback.
+func imageAttachmentURL(c gen.GetFederatableContentByIDRow) *string {
+	if u := media.URLFromParts(c.FeaturedBucket, c.FeaturedPath, media.ImageProxyOpts{}); u != nil {
+		return u
+	}
+	return media.URLFromParts(c.HeaderBucket, c.HeaderPath, media.ImageProxyOpts{})
+}
+
+// imageAttachmentMIME reports the stored MIME of whichever image won —
+// only emitted when it names an image/* type (remote servers use it for
+// content negotiation).
+func imageAttachmentMIME(c gen.GetFederatableContentByIDRow) *string {
+	mime := c.FeaturedMime
+	if c.FeaturedBucket == nil || c.FeaturedPath == nil {
+		mime = c.HeaderMime
+	}
+	if mime == nil || !strings.HasPrefix(*mime, "image/") {
+		return nil
+	}
+	return mime
 }
 
 // objectURLFromActor derives the canonical object @id from the actor URL.

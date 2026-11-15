@@ -64,6 +64,7 @@ const countLocalFederatedFollowers = `-- name: CountLocalFederatedFollowers :one
 SELECT COUNT(*)::bigint
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.follower_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.entity_type = 'user' AND f.entity_id = $1
 `
 
@@ -78,6 +79,7 @@ const countLocalFederatedFollowing = `-- name: CountLocalFederatedFollowing :one
 SELECT COUNT(*)::bigint
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.entity_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.follower_id = $1 AND f.entity_type = 'user'
 `
 
@@ -117,6 +119,7 @@ INSERT INTO federated_actors (
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
     updated_at = now()
+WHERE federated_actors.status = 'disabled'
 RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at
 `
 
@@ -134,6 +137,9 @@ type CreateFederatedActorParams struct {
 	ManuallyApprovesFollowers bool        `json:"manually_approves_followers"`
 }
 
+// Only a disabled actor re-activates on conflict — a tombstone (M2 erasure)
+// row is terminal and must never be resurrected. The WHERE makes RETURNING
+// emit no row in that case (pgx.ErrNoRows → ErrNotFound in the service).
 func (q *Queries) CreateFederatedActor(ctx context.Context, arg CreateFederatedActorParams) (FederatedActor, error) {
 	row := q.db.QueryRow(ctx, createFederatedActor,
 		arg.UserID,
@@ -281,8 +287,12 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 const getFederatableContentByID = `-- name: GetFederatableContentByID :one
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.featured_image_id, c.header_image_id,
-       c.published_at, c.updated_at, c.created_at
+       c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
 FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
 WHERE c.id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -309,6 +319,12 @@ type GetFederatableContentByIDRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	FeaturedBucket  *string            `json:"featured_bucket"`
+	FeaturedPath    *string            `json:"featured_path"`
+	FeaturedMime    *string            `json:"featured_mime"`
+	HeaderBucket    *string            `json:"header_bucket"`
+	HeaderPath      *string            `json:"header_path"`
+	HeaderMime      *string            `json:"header_mime"`
 }
 
 func (q *Queries) GetFederatableContentByID(ctx context.Context, arg GetFederatableContentByIDParams) (GetFederatableContentByIDRow, error) {
@@ -327,6 +343,12 @@ func (q *Queries) GetFederatableContentByID(ctx context.Context, arg GetFederata
 		&i.PublishedAt,
 		&i.UpdatedAt,
 		&i.CreatedAt,
+		&i.FeaturedBucket,
+		&i.FeaturedPath,
+		&i.FeaturedMime,
+		&i.HeaderBucket,
+		&i.HeaderPath,
+		&i.HeaderMime,
 	)
 	return i, err
 }
@@ -742,8 +764,12 @@ func (q *Queries) ListDueFederationDeliveries(ctx context.Context, pageLimit int
 
 const listFederatableContentByAuthor = `-- name: ListFederatableContentByAuthor :many
 SELECT c.id, c.content_type, c.title, c.slug, c.body_html, c.canonical_url,
-       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at
+       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
 FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
 WHERE c.author_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -773,10 +799,17 @@ type ListFederatableContentByAuthorRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	FeaturedBucket  *string            `json:"featured_bucket"`
+	FeaturedPath    *string            `json:"featured_path"`
+	FeaturedMime    *string            `json:"featured_mime"`
+	HeaderBucket    *string            `json:"header_bucket"`
+	HeaderPath      *string            `json:"header_path"`
+	HeaderMime      *string            `json:"header_mime"`
 }
 
 // Outbox source rows (§126): published, public, non-deleted contents on the
-// federatable type allowlist.
+// federatable type allowlist. Media joins resolve the featured/header image
+// for the AP attachment (spec: featured/header image as Image attachment).
 func (q *Queries) ListFederatableContentByAuthor(ctx context.Context, arg ListFederatableContentByAuthorParams) ([]ListFederatableContentByAuthorRow, error) {
 	rows, err := q.db.Query(ctx, listFederatableContentByAuthor,
 		arg.AuthorID,
@@ -803,6 +836,12 @@ func (q *Queries) ListFederatableContentByAuthor(ctx context.Context, arg ListFe
 			&i.PublishedAt,
 			&i.UpdatedAt,
 			&i.CreatedAt,
+			&i.FeaturedBucket,
+			&i.FeaturedPath,
+			&i.FeaturedMime,
+			&i.HeaderBucket,
+			&i.HeaderPath,
+			&i.HeaderMime,
 		); err != nil {
 			return nil, err
 		}
@@ -820,14 +859,24 @@ FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR fa.actor_url ILIKE '%' || $1 || '%')
-ORDER BY fa.created_at DESC
-LIMIT $3 OFFSET $2
+ORDER BY
+  CASE WHEN $2 = 'asc' THEN CASE $3
+    WHEN 'username' THEN u.username WHEN 'status' THEN fa.status WHEN 'actor_url' THEN fa.actor_url END
+  END ASC NULLS LAST,
+  CASE WHEN $2 = 'desc' THEN CASE $3
+    WHEN 'username' THEN u.username WHEN 'status' THEN fa.status WHEN 'actor_url' THEN fa.actor_url END
+  END DESC NULLS LAST,
+  CASE WHEN $3 = 'created_at' AND $2 = 'asc' THEN fa.created_at END ASC NULLS LAST,
+  fa.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type ListFederatedActorsParams struct {
-	Q          string `json:"q"`
-	PageOffset int32  `json:"page_offset"`
-	PageLimit  int32  `json:"page_limit"`
+	Q          string      `json:"q"`
+	SortDir    interface{} `json:"sort_dir"`
+	SortKey    interface{} `json:"sort_key"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListFederatedActorsRow struct {
@@ -851,11 +900,18 @@ type ListFederatedActorsRow struct {
 	AvatarUrl                 *string            `json:"avatar_url"`
 }
 
-// Admin DataTable: ?q= matches username/actor_url; sorted newest first.
+// Admin DataTable: ?q= matches username/actor_url; page/limit/sort/dir contract
+// (sort whitelisted handler-side to created_at|username|status|actor_url).
 // u.email deliberately excluded — actor management needs the handle, not
 // PII (admins who need email use the users surface).
 func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActorsParams) ([]ListFederatedActorsRow, error) {
-	rows, err := q.db.Query(ctx, listFederatedActors, arg.Q, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listFederatedActors,
+		arg.Q,
+		arg.SortDir,
+		arg.SortKey,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -936,6 +992,7 @@ const listLocalFederatedFollowerURLs = `-- name: ListLocalFederatedFollowerURLs 
 SELECT fa.actor_url
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.follower_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.entity_type = 'user' AND f.entity_id = $1
 ORDER BY f.created_at DESC
 LIMIT $3 OFFSET $2
@@ -948,7 +1005,8 @@ type ListLocalFederatedFollowerURLsParams struct {
 }
 
 // Local followers of the actor's user who are themselves federated — their
-// actor URLs appear in the AP followers collection too.
+// actor URLs appear in the AP followers collection too. The users join keeps
+// suspended/deleted followers out of the collection (their docs 404 anyway).
 func (q *Queries) ListLocalFederatedFollowerURLs(ctx context.Context, arg ListLocalFederatedFollowerURLsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listLocalFederatedFollowerURLs, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -973,6 +1031,7 @@ const listLocalFederatedFollowingURLs = `-- name: ListLocalFederatedFollowingURL
 SELECT fa.actor_url
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.entity_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.follower_id = $1 AND f.entity_type = 'user'
 ORDER BY f.created_at DESC
 LIMIT $3 OFFSET $2

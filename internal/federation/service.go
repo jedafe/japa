@@ -113,8 +113,8 @@ func (s *Service) handleDomain() string {
 	if s.cfg.HandleDomain != "" {
 		return s.cfg.HandleDomain
 	}
-	if u, err := url.Parse(s.cfg.SiteBase); err == nil && u.Host != "" {
-		return u.Host
+	if u, err := url.Parse(s.cfg.SiteBase); err == nil && u.Hostname() != "" {
+		return u.Hostname()
 	}
 	return ""
 }
@@ -388,13 +388,19 @@ func (s *Service) ObjectDocument(ctx context.Context, contentID pgtype.UUID) (ma
 // objectFromListRow maps an outbox row to its AP object document.
 func (s *Service) objectFromListRow(row gen.ListFederatableContentByAuthorRow, actor gen.FederatedActor) map[string]any {
 	return objectDocument(gen.GetFederatableContentByIDRow{
-		ID:          row.ID,
-		ContentType: row.ContentType,
-		Title:       row.Title,
-		Slug:        row.Slug,
-		BodyHtml:    row.BodyHtml,
-		PublishedAt: row.PublishedAt,
-		UpdatedAt:   row.UpdatedAt,
+		ID:             row.ID,
+		ContentType:    row.ContentType,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		BodyHtml:       row.BodyHtml,
+		PublishedAt:    row.PublishedAt,
+		UpdatedAt:      row.UpdatedAt,
+		FeaturedBucket: row.FeaturedBucket,
+		FeaturedPath:   row.FeaturedPath,
+		FeaturedMime:   row.FeaturedMime,
+		HeaderBucket:   row.HeaderBucket,
+		HeaderPath:     row.HeaderPath,
+		HeaderMime:     row.HeaderMime,
 	}, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
 }
 
@@ -452,12 +458,13 @@ func (s *Service) NodeInfo(ctx context.Context) (map[string]any, error) {
 
 // FederationStatus is the member-facing view of their actor state.
 type FederationStatus struct {
-	Enabled   bool   `json:"enabled"`
-	Status    string `json:"status"`
-	ActorURL  string `json:"actor_url,omitempty"`
-	Handle    string `json:"handle,omitempty"`
-	PublicKey string `json:"-"`
-	CreatedAt string `json:"created_at,omitempty"`
+	Enabled       bool   `json:"enabled"`
+	Status        string `json:"status"`
+	ActorURL      string `json:"actor_url,omitempty"`
+	Handle        string `json:"handle,omitempty"`
+	FollowerCount int64  `json:"follower_count"`
+	PublicKey     string `json:"-"`
+	CreatedAt     string `json:"created_at,omitempty"`
 }
 
 // GetMyFederation returns the caller's federation state.
@@ -473,18 +480,28 @@ func (s *Service) GetMyFederation(ctx context.Context, userID pgtype.UUID) (Fede
 	if err != nil {
 		return FederationStatus{}, fmt.Errorf("federation: my user: %w", err)
 	}
-	return s.statusFor(actor, user.Username), nil
+	return s.statusFor(ctx, actor, user.Username), nil
 }
 
 // statusFor builds the member-facing actor view. The handle uses the live
 // username — preferred_username is a creation-time snapshot that can lag
-// a rename.
-func (s *Service) statusFor(actor gen.FederatedActor, username string) FederationStatus {
+// a rename. follower_count mirrors the followers collection total (remote
+// accepted + local federated); a count error degrades to 0 rather than
+// failing the status read.
+func (s *Service) statusFor(ctx context.Context, actor gen.FederatedActor, username string) FederationStatus {
 	st := FederationStatus{
 		Enabled:  actor.Status == ActorStatusActive,
 		Status:   actor.Status,
 		ActorURL: actor.ActorUrl,
 		Handle:   username + "@" + s.handleDomain(),
+	}
+	if s.store != nil {
+		if remote, err := s.store.countRemoteFollowers(ctx, actor.ID); err == nil {
+			st.FollowerCount += remote
+		}
+		if local, err := s.store.countLocalFollowers(ctx, actor.UserID); err == nil {
+			st.FollowerCount += local
+		}
 	}
 	if actor.CreatedAt.Valid {
 		st.CreatedAt = actor.CreatedAt.Time.UTC().Format(time.RFC3339)
@@ -498,6 +515,9 @@ func (s *Service) statusFor(actor gen.FederatedActor, username string) Federatio
 func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (FederationStatus, error) {
 	user, err := s.store.userByID(ctx, userID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return FederationStatus{}, ErrNotFound
+		}
 		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
 	}
 	if user.Status != "active" {
@@ -507,14 +527,21 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 
 	existing, err := s.store.actorByUserID(ctx, userID)
 	if err == nil {
-		if existing.Status != ActorStatusActive {
+		switch existing.Status {
+		case ActorStatusActive:
+			// Idempotent no-op.
+		case ActorStatusDisabled:
 			if uerr := s.store.setActorStatus(ctx, existing.ID, ActorStatusActive); uerr != nil {
 				return FederationStatus{}, fmt.Errorf("federation: reactivate: %w", uerr)
 			}
 			existing.Status = ActorStatusActive
-			s.invalidateActorCache(ctx, existing.PreferredUsername)
+			s.invalidateActorCache(ctx, existing.PreferredUsername, username)
+		default:
+			// A tombstone row (M2 erasure) is terminal — re-opting-in must
+			// never resurrect an erased identity.
+			return FederationStatus{}, ErrNotFound
 		}
-		return s.statusFor(existing, username), nil
+		return s.statusFor(ctx, existing, username), nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return FederationStatus{}, fmt.Errorf("federation: lookup actor: %w", err)
@@ -546,11 +573,16 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 		ManuallyApprovesFollowers: s.approvesFollowers(ctx, userID),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The upsert's WHERE guard declined — a concurrent tombstone
+			// row exists for this user. Same contract as the branch above.
+			return FederationStatus{}, ErrNotFound
+		}
 		return FederationStatus{}, fmt.Errorf("federation: create actor: %w", err)
 	}
 
 	slog.Info("federation actor enabled", "user_id", userID.String(), "actor_url", actorURL)
-	return s.statusFor(actor, username), nil
+	return s.statusFor(ctx, actor, username), nil
 }
 
 // AutoProvision creates the caller's actor only when none exists — the
@@ -595,19 +627,21 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 		}
 		return FederationStatus{}, fmt.Errorf("federation: lookup actor: %w", err)
 	}
+	user, err := s.store.userByID(ctx, userID)
+	if err != nil {
+		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
+	}
 	if actor.Status != ActorStatusDisabled {
 		if err := s.store.setActorStatus(ctx, actor.ID, ActorStatusDisabled); err != nil {
 			return FederationStatus{}, fmt.Errorf("federation: disable: %w", err)
 		}
 	}
-	s.invalidateActorCache(ctx, actor.PreferredUsername)
+	// Drop docs cached under both the creation-time handle and the live
+	// username — a renamed member's old keys must not keep serving.
+	s.invalidateActorCache(ctx, actor.PreferredUsername, user.Username)
 	actor.Status = ActorStatusDisabled
 
-	user, err := s.store.userByID(ctx, userID)
-	if err != nil {
-		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
-	}
-	return s.statusFor(actor, user.Username), nil
+	return s.statusFor(ctx, actor, user.Username), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -620,9 +654,10 @@ type AdminActorRow struct {
 	Handle string `json:"handle"`
 }
 
-// ListActors returns the admin DataTable page of federated actors.
-func (s *Service) ListActors(ctx context.Context, q string, limit, offset int32) ([]AdminActorRow, int64, error) {
-	rows, err := s.store.listActors(ctx, q, limit, offset)
+// ListActors returns the admin DataTable page of federated actors. sortKey
+// is handler-whitelisted; sortDir is 'asc'|'desc'.
+func (s *Service) ListActors(ctx context.Context, q, sortKey, sortDir string, limit, offset int32) ([]AdminActorRow, int64, error) {
+	rows, err := s.store.listActors(ctx, q, sortKey, sortDir, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("federation: list actors: %w", err)
 	}
@@ -705,18 +740,34 @@ func (s *Service) cacheSet(ctx context.Context, key string, doc map[string]any, 
 	_ = s.vk.Set(ctx, key, raw, ttl).Err()
 }
 
-// invalidateActorCache drops a username's webfinger/actor doc cache on
-// status transitions so disabled actors stop serving immediately.
+// invalidateActorCache drops webfinger/actor doc cache entries for every
+// supplied username so status transitions stop serving immediately — both
+// the creation-time preferred_username and the live username must be
+// passed, since docs are keyed under whichever handle resolved.
 // One DEL per key: valkey-go rejects multi-key commands spanning
 // different hash slots (panics) — same convention as users/handlers.go.
-func (s *Service) invalidateActorCache(ctx context.Context, username string) {
+func (s *Service) invalidateActorCache(ctx context.Context, usernames ...string) {
 	if s.vk == nil {
 		return
 	}
-	u := strings.ToLower(username)
-	for _, k := range [2]string{"jc:fed:webfinger:" + u, "jc:fed:actor:" + u} {
-		_ = s.vk.Del(ctx, k).Err()
+	seen := make(map[string]bool, len(usernames))
+	for _, username := range usernames {
+		u := strings.ToLower(username)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		for _, k := range [2]string{"jc:fed:webfinger:" + u, "jc:fed:actor:" + u} {
+			_ = s.vk.Del(ctx, k).Err()
+		}
 	}
+}
+
+// InvalidateActorIdentity drops cached WebFinger/actor docs for each given
+// handle. Called by the users service on rename so neither the vacated nor
+// the newly claimed username serves a stale document (jc:fed:* keys).
+func (s *Service) InvalidateActorIdentity(ctx context.Context, usernames ...string) {
+	s.invalidateActorCache(ctx, usernames...)
 }
 
 // RemoteCacheKey is the catalogued jc:fed:remote:{sha256(actor_url)} key.

@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -11,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // The service tests below exercise the pure document builders and URL
@@ -232,6 +236,22 @@ func TestActorDocumentOmitsEmptyOptionals(t *testing.T) {
 	}
 }
 
+func TestActorDocumentEscapesSummary(t *testing.T) {
+	// §126: summary is HTML-escaped — the bio is plain text and remote
+	// renderers must not receive markup they could inject.
+	row := testActorProfileRow()
+	bio := `<script>alert(1)</script> & "quotes"`
+	row.Bio = &bio
+	doc := actorDocument(row, "https://japa.to")
+	if doc["summary"] != `&lt;script&gt;alert(1)&lt;/script&gt; &amp; &#34;quotes&#34;` {
+		t.Errorf("summary not escaped: %v", doc["summary"])
+	}
+	raw, _ := json.Marshal(doc)
+	if strings.Contains(string(raw), `<script>`) {
+		t.Error("actor document embeds unescaped bio markup")
+	}
+}
+
 // --- objects + collections --------------------------------------------------
 
 func TestObjectDocumentNoteVsArticle(t *testing.T) {
@@ -274,6 +294,53 @@ func TestObjectDocumentNoteVsArticle(t *testing.T) {
 		if strings.Contains(string(raw), k) {
 			t.Errorf("object emits %s — optional keys must be absent", k)
 		}
+	}
+}
+
+func TestObjectDocumentImageAttachment(t *testing.T) {
+	str := func(s string) *string { return &s }
+	base := gen.GetFederatableContentByIDRow{
+		ContentType:   "story",
+		FeaturedBucket: str("media"),
+		FeaturedPath:   str("featured/x.webp"),
+		FeaturedMime:   str("image/webp"),
+	}
+	doc := objectDocument(base, "https://api.japa.to/federation/actors/alice",
+		"https://api.japa.to/federation/actors/alice/followers",
+		"https://japa.to", "https://japa.to/story/x")
+	atts, ok := doc["attachment"].([]any)
+	if !ok || len(atts) != 1 {
+		t.Fatalf("expected one attachment, got %v", doc["attachment"])
+	}
+	att := atts[0].(map[string]any)
+	if att["type"] != "Image" {
+		t.Errorf("attachment type: %v", att["type"])
+	}
+	if att["mediaType"] != "image/webp" {
+		t.Errorf("mediaType: %v", att["mediaType"])
+	}
+	url, _ := att["url"].(string)
+	if url == "" || strings.Contains(url, " ") {
+		t.Errorf("attachment url malformed: %q", url)
+	}
+
+	// Header image is the fallback when no featured image exists.
+	base.FeaturedBucket, base.FeaturedPath, base.FeaturedMime = nil, nil, nil
+	base.HeaderBucket, base.HeaderPath, base.HeaderMime = str("media"), str("header/y.jpg"), str("image/jpeg")
+	doc = objectDocument(base, "a", "f", "s", "u")
+	atts, _ = doc["attachment"].([]any)
+	if len(atts) != 1 {
+		t.Fatalf("header fallback should emit one attachment, got %v", doc["attachment"])
+	}
+	if atts[0].(map[string]any)["mediaType"] != "image/jpeg" {
+		t.Errorf("header mime not carried: %v", atts[0])
+	}
+
+	// No image → no attachment key at all (no-nulls rule).
+	base.HeaderBucket, base.HeaderPath, base.HeaderMime = nil, nil, nil
+	doc = objectDocument(base, "a", "f", "s", "u")
+	if _, ok := doc["attachment"]; ok {
+		t.Error("attachment should be absent when no image exists")
 	}
 }
 
@@ -370,6 +437,12 @@ func TestHandleDomainDerivation(t *testing.T) {
 		t.Errorf("expected host of SiteBase, got %q", got)
 	}
 
+	// Dev-style SiteBase with a port — the handle domain must drop it.
+	withPort := &Service{cfg: Config{SiteBase: "http://localhost:3000"}}
+	if got := withPort.handleDomain(); got != "localhost" {
+		t.Errorf("port should be stripped, got %q", got)
+	}
+
 	empty := &Service{}
 	if got := empty.handleDomain(); got != "" {
 		t.Errorf("expected empty domain, got %q", got)
@@ -422,7 +495,7 @@ func TestFederationStatusNeverSerializesKeys(t *testing.T) {
 		PrivateKeyEnc:     "CIPHERTEXT",
 		Status:            ActorStatusActive,
 	}
-	st := s.statusFor(actor, "alice")
+	st := s.statusFor(context.Background(), actor, "alice")
 	raw, err := json.Marshal(st)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -453,6 +526,80 @@ func TestParsePage(t *testing.T) {
 		req := httptest.NewRequest("GET", "/x/outbox"+raw, nil)
 		if got := parsePage(req); got != want {
 			t.Errorf("%s: got %d, want %d", raw, got, want)
+		}
+	}
+}
+
+func TestParseLimitOffsetAdmin(t *testing.T) {
+	cases := []struct {
+		raw                       string
+		wantLimit, wantOff, wantPage int32
+	}{
+		{"", 20, 0, 1},
+		{"?limit=50", 50, 0, 1},
+		{"?limit=999", 20, 0, 1},           // over max → default
+		{"?page=2", 20, 20, 2},             // page is 1-based → (page-1)*limit
+		{"?page=3&limit=10", 10, 20, 3},
+		{"?page=0", 20, 0, 1},              // invalid → page 1
+		{"?page=-4", 20, 0, 1},
+		{"?offset=40", 20, 40, 3},          // legacy offset honored
+		{"?offset=40&page=2", 20, 40, 3},   // explicit offset wins over page
+		{"?page=abc", 20, 0, 1},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/admin/federation/actors"+tc.raw, nil)
+		limit, off, page := parseLimitOffset(req)
+		if limit != tc.wantLimit || off != tc.wantOff || page != tc.wantPage {
+			t.Errorf("%s: got (limit=%d off=%d page=%d), want (%d, %d, %d)",
+				tc.raw, limit, off, page, tc.wantLimit, tc.wantOff, tc.wantPage)
+		}
+	}
+}
+
+func TestActorSortKeysWhitelist(t *testing.T) {
+	for _, k := range []string{"created_at", "username", "status", "actor_url"} {
+		if !actorSortKeys[k] {
+			t.Errorf("sort key %q missing from whitelist", k)
+		}
+	}
+}
+
+func TestInvalidateActorCacheAllHandles(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("valkey.NewClient: %v", err)
+	}
+	t.Cleanup(vk.Close)
+
+	s := testService()
+	s.SetValkey(valkeycompat.NewAdapter(vk))
+	ctx := context.Background()
+
+	// Docs cached under the OLD and NEW handles after a rename — a status
+	// transition must drop both, plus an unrelated key must survive.
+	for _, u := range []string{"oldhandle", "newhandle", "someoneelse"} {
+		s.cacheSet(ctx, "jc:fed:webfinger:"+u, map[string]any{"u": u}, time.Minute)
+		s.cacheSet(ctx, "jc:fed:actor:"+u, map[string]any{"u": u}, time.Minute)
+	}
+	s.invalidateActorCache(ctx, "OldHandle", "newhandle") // case-insensitive + dedupe
+
+	for _, k := range []string{"jc:fed:webfinger:oldhandle", "jc:fed:actor:oldhandle",
+		"jc:fed:webfinger:newhandle", "jc:fed:actor:newhandle"} {
+		if mr.Exists(k) {
+			t.Errorf("%s should be invalidated", k)
+		}
+	}
+	for _, k := range []string{"jc:fed:webfinger:someoneelse", "jc:fed:actor:someoneelse"} {
+		if !mr.Exists(k) {
+			t.Errorf("%s must not be touched", k)
 		}
 	}
 }

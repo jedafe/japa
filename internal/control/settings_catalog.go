@@ -218,7 +218,10 @@ var settingsCatalog = map[string]settingMeta{
 	// Control panel ops
 	"control.seed_ops": {Type: "json", DefaultValue: seedOpsDefaultJSON, Description: `JSON array of seed/enrichment ops shown on Control → Seeds; replaces the built-in catalog when non-empty. Entries: {kind,title,description,enqueueable,task_type?,command?,static?,params[]}; task_type must be in the seed-task allowlist (non-allowlisted ops are served enqueueable:false). Param types: text|number|checkbox|select (select uses options[]).`, Panel: "control"},
 	// Federation
-	"federation.auto_optin": {Type: "bool", DefaultValue: "true", Description: "Auto-provision a federated identity for every new member at registration (AP actor under feature.federation; atproto account under feature.atproto). False = explicit member opt-in only. New signups only — never backfills or resurrects an opt-out.", Panel: "control"},
+	"federation.auto_optin":           {Type: "bool", DefaultValue: "true", Description: "Auto-provision a federated identity for every new member at registration (AP actor under feature.federation; atproto account under feature.atproto). False = explicit member opt-in only. New signups only — never backfills or resurrects an opt-out.", Panel: "control"},
+	"federation.outbox_page_size":     {Type: "int", DefaultValue: "20", Description: "Items per OrderedCollectionPage on actor outbox/followers/following collections (§126). Hot-reloadable.", Panel: "control"},
+	"federation.delivery.max_attempts": {Type: "int", DefaultValue: "8", Description: "Outbound delivery attempts before a federation_deliveries row goes dead (M2 worker).", Panel: "control"},
+	"federation.instances.mode":       {Type: "string", DefaultValue: "open", Description: "open (blocklist enforcement) or allowlist (default-deny inbound). M2 inbound gate — no effect in M1.", Panel: "control"},
 	// Ads
 	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},

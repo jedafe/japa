@@ -63,16 +63,21 @@ INSERT INTO federated_actors (
     @public_key_id, @inbox_url, @outbox_url, @followers_url, @following_url,
     @manually_approves_followers
 )
+-- Only a disabled actor re-activates on conflict — a tombstone (M2 erasure)
+-- row is terminal and must never be resurrected. The WHERE makes RETURNING
+-- emit no row in that case (pgx.ErrNoRows → ErrNotFound in the service).
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
     updated_at = now()
+WHERE federated_actors.status = 'disabled'
 RETURNING *;
 
 -- name: UpdateFederatedActorStatus :exec
 UPDATE federated_actors SET status = @status, updated_at = now() WHERE id = @id;
 
 -- name: ListFederatedActors :many
--- Admin DataTable: ?q= matches username/actor_url; sorted newest first.
+-- Admin DataTable: ?q= matches username/actor_url; page/limit/sort/dir contract
+-- (sort whitelisted handler-side to created_at|username|status|actor_url).
 -- u.email deliberately excluded — actor management needs the handle, not
 -- PII (admins who need email use the users surface).
 SELECT fa.*, u.username, up.display_name, up.avatar_url
@@ -80,7 +85,15 @@ FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE (@q::text = '' OR u.username ILIKE '%' || @q || '%' OR fa.actor_url ILIKE '%' || @q || '%')
-ORDER BY fa.created_at DESC
+ORDER BY
+  CASE WHEN @sort_dir = 'asc' THEN CASE @sort_key
+    WHEN 'username' THEN u.username WHEN 'status' THEN fa.status WHEN 'actor_url' THEN fa.actor_url END
+  END ASC NULLS LAST,
+  CASE WHEN @sort_dir = 'desc' THEN CASE @sort_key
+    WHEN 'username' THEN u.username WHEN 'status' THEN fa.status WHEN 'actor_url' THEN fa.actor_url END
+  END DESC NULLS LAST,
+  CASE WHEN @sort_key = 'created_at' AND @sort_dir = 'asc' THEN fa.created_at END ASC NULLS LAST,
+  fa.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountFederatedActors :one
@@ -174,10 +187,12 @@ WHERE ff.local_actor_id = @local_actor_id
 
 -- name: ListLocalFederatedFollowerURLs :many
 -- Local followers of the actor's user who are themselves federated — their
--- actor URLs appear in the AP followers collection too.
+-- actor URLs appear in the AP followers collection too. The users join keeps
+-- suspended/deleted followers out of the collection (their docs 404 anyway).
 SELECT fa.actor_url
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.follower_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.entity_type = 'user' AND f.entity_id = @user_id
 ORDER BY f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -186,6 +201,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::bigint
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.follower_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.entity_type = 'user' AND f.entity_id = @user_id;
 
 -- name: ListLocalFederatedFollowingURLs :many
@@ -193,6 +209,7 @@ WHERE f.entity_type = 'user' AND f.entity_id = @user_id;
 SELECT fa.actor_url
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.entity_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.follower_id = @user_id AND f.entity_type = 'user'
 ORDER BY f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -201,14 +218,20 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::bigint
 FROM follows f
 JOIN federated_actors fa ON fa.user_id = f.entity_id AND fa.status = 'active'
+JOIN users fu ON fu.id = fa.user_id AND fu.status = 'active'
 WHERE f.follower_id = @user_id AND f.entity_type = 'user';
 
 -- name: ListFederatableContentByAuthor :many
 -- Outbox source rows (§126): published, public, non-deleted contents on the
--- federatable type allowlist.
+-- federatable type allowlist. Media joins resolve the featured/header image
+-- for the AP attachment (spec: featured/header image as Image attachment).
 SELECT c.id, c.content_type, c.title, c.slug, c.body_html, c.canonical_url,
-       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at
+       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
 FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
 WHERE c.author_id = @author_id
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -231,8 +254,12 @@ WHERE c.author_id = @author_id
 -- name: GetFederatableContentByID :one
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.featured_image_id, c.header_image_id,
-       c.published_at, c.updated_at, c.created_at
+       c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
 FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
 WHERE c.id = @id
   AND c.status = 'published'
   AND c.visibility = 'public'
