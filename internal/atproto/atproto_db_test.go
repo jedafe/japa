@@ -2067,21 +2067,33 @@ func TestDBGetRepoStatusEndpoint(t *testing.T) {
 	}
 	setUserStatus(t, ctx, d, userID, "active")
 
-	// Tombstone reads as unhosted.
+	// A6-1: tombstone returns the explicit deleted end-state — relays hit
+	// getRepoStatus on their inactive-recheck path and need more than
+	// RepoNotFound. Other sync reads still answer not-found.
 	if _, err := d.Writer.Exec(ctx,
 		`UPDATE atproto_accounts SET status = 'tombstone' WHERE user_id = $1`, userID); err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
 	out, err = svc.RepoStatus(ctx, acct.Did)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("tombstone status = %+v, %v — want ErrNotFound", out, err)
+	if err != nil || out.Active || out.Status != "deleted" || out.Rev != "" {
+		t.Fatalf("tombstone status = %+v, %v — want {active:false,status:deleted}", out, err)
 	}
 
 	rec := httptest.NewRecorder()
 	h.GetRepoStatus(rec, httptest.NewRequest(http.MethodGet,
 		"/xrpc/com.atproto.sync.getRepoStatus?did="+acct.Did, nil))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "RepoNotFound") {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("getRepoStatus tombstone: %d %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Active bool   `json:"active"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode tombstone status: %v", err)
+	}
+	if body.Active || body.Status != "deleted" {
+		t.Fatalf("getRepoStatus tombstone body = %+v — want deleted", body)
 	}
 }
 
