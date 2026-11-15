@@ -35,7 +35,12 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 	if tip.Status == StatusCompleted {
 		return nil
 	}
-	if tip.Status != StatusPending {
+	// 'failed' is revive-allowed: the sweep fails pending tips past the
+	// checkout TTL, but a payment can still succeed afterwards (manual
+	// transfer confirmed days late, provider webhook replay). The payment
+	// succeeded — the donor paid — so the tip must settle, not strand as
+	// failed with money taken and no credits issued.
+	if tip.Status != StatusPending && tip.Status != StatusFailed {
 		return ErrInvalidStatus
 	}
 

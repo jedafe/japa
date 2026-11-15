@@ -279,7 +279,11 @@ func (s *Service) syncCollective(ctx context.Context, owner Owner, slug, token s
 				FromEmail:   c.FromEmail,
 			})
 			if err != nil {
-				return err
+				// Skip-and-log: one unimportable row must not abort the rest of
+				// the owner's history — a persistent bad row would otherwise
+				// poison every subsequent sync cycle.
+				slog.Warn("tips: oc contribution import skipped", "owner", owner.ID.String(), "contribution", c.ID, "error", err)
+				continue
 			}
 			if imported {
 				newCount++

@@ -101,9 +101,11 @@ UPDATE tips SET payment_id = @payment_id, checkout_url = @checkout_url, updated_
 WHERE id = @id;
 
 -- name: SettleTip :exec
--- Conditional on pending so a settle racing a fail/refund can't resurrect.
+-- Conditional on pending/failed: a settle racing a refund still can't
+-- resurrect (refunded is excluded), but a swept-failed tip revives when its
+-- payment genuinely succeeds (manual_transfer, provider replay).
 UPDATE tips SET status = 'completed', net_credits = @net_credits, updated_at = now()
-WHERE id = @id AND status = 'pending';
+WHERE id = @id AND status IN ('pending', 'failed');
 
 -- name: ListTipsSent :many
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id

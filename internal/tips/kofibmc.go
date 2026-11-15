@@ -199,7 +199,10 @@ func (s *Service) syncBMCOne(ctx context.Context, row gen.TipSetting) error {
 				FromEmail:   sp.Email,
 			})
 			if err != nil {
-				return err
+				// Skip-and-log: one unimportable supporter must not abort the
+				// rest of the owner's history.
+				slog.Warn("tips: bmc supporter import skipped", "owner", owner.ID.String(), "supporter", sp.ID, "error", err)
+				continue
 			}
 			if imported {
 				newCount++

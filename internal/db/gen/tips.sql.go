@@ -1297,7 +1297,7 @@ func (q *Queries) SetOCCredentials(ctx context.Context, arg SetOCCredentialsPara
 
 const settleTip = `-- name: SettleTip :exec
 UPDATE tips SET status = 'completed', net_credits = $1, updated_at = now()
-WHERE id = $2 AND status = 'pending'
+WHERE id = $2 AND status IN ('pending', 'failed')
 `
 
 type SettleTipParams struct {
@@ -1305,7 +1305,9 @@ type SettleTipParams struct {
 	ID         pgtype.UUID `json:"id"`
 }
 
-// Conditional on pending so a settle racing a fail/refund can't resurrect.
+// Conditional on pending/failed: a settle racing a refund still can't
+// resurrect (refunded is excluded), but a swept-failed tip revives when its
+// payment genuinely succeeds (manual_transfer, provider replay).
 func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
 	_, err := q.db.Exec(ctx, settleTip, arg.NetCredits, arg.ID)
 	return err
