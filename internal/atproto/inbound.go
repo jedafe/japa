@@ -239,95 +239,29 @@ func recStr(rec map[string]any, path ...string) string {
 	return s
 }
 
-// dispatchPost normalizes app.bsky.feed.post commits: creates that reply to a
-// member post become remote comments; deletes tombstone the matched comment.
+// maxRemoteCommentText caps remote reply text — far above the lexicon's 3000
+// bytes but well under the 200KB TipTap body ceiling the local path enforces.
+const maxRemoteCommentText = 50_000
+
+// maxCommentDepth mirrors the local §49 reply cap (store.go: depth > 3 →
+// ErrMaxDepth); remote replies deeper than the cap attach top-level instead.
+const maxCommentDepth = 3
+
+// dispatchPost normalizes app.bsky.feed.post commits: creates/updates that
+// reply to a member post become remote comments; deletes tombstone them.
 func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
 	c := ev.Commit
 	q := gen.New(s.db.Writer)
 	switch c.Operation {
-	case "create":
-		parentURI := recStr(c.Record, "reply", "parent", "uri")
-		if parentURI == "" {
-			return "ignored", "not a reply"
-		}
-		// Reply targets: the parent is a member post → attach to its content;
-		// otherwise the root might be ours (reply deeper in the thread).
-		rec, err := q.GetAtprotoRecordByURI(ctx, parentURI)
-		if err != nil {
-			if root := recStr(c.Record, "reply", "root", "uri"); root != "" && root != parentURI {
-				rec, err = q.GetAtprotoRecordByURI(ctx, root)
+	case "create", "update":
+		if c.Operation == "update" {
+			if status, msg, handled := s.updateRemoteComment(ctx, q, uri, c.Record); handled {
+				return status, msg
 			}
+			// Update for a comment we never saw — the record is complete, so
+			// fall through to the create path (missed-create catch-up).
 		}
-		if err != nil || !rec.ContentID.Valid {
-			return "ignored", "reply target is not a member record"
-		}
-		actor, err := s.resolveRemoteActor(ctx, ev.DID)
-		if err != nil {
-			return "error", "remote actor: " + err.Error()
-		}
-		body := recStr(c.Record, "text")
-		if body == "" {
-			return "rejected", "empty reply text"
-		}
-		// Nest under a prior remote comment when the parent URI is one — but
-		// only when that comment belongs to the same content row (a remote
-		// reply could point at a comment on an unrelated thread).
-		var parentID pgtype.UUID
-		depth := int32(0)
-		if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &parentURI); perr == nil && pc.ContentID == rec.ContentID {
-			parentID = pc.ID
-			depth = pc.Depth + 1
-		}
-		// comments.body is ProseMirror JSON — wrap the remote plain text.
-		docJSON, _ := json.Marshal(map[string]any{
-			"type": "doc",
-			"content": []any{map[string]any{
-				"type":    "paragraph",
-				"content": []any{map[string]any{"type": "text", "text": body}},
-			}},
-		})
-		_, err = q.InsertAtprotoRemoteComment(ctx, gen.InsertAtprotoRemoteCommentParams{
-			ContentID:            rec.ContentID,
-			Body:                 docJSON,
-			Depth:                depth,
-			RemoteAtprotoActorID: actor.ID,
-			RemoteUri:            &uri,
-			ParentID:             parentID,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return "ignored", "comment already ingested"
-			}
-			return "error", "comment insert: " + err.Error()
-		}
-		// Mirror the local create path's denormalized counters (§49 BUG-008,
-		// unified-discussion bubbling) — a trigger-free path must bump them.
-		_ = q.IncrementContentCommentCount(ctx, rec.ContentID)
-		_ = q.IncrementLinkedContentCommentCount(ctx, rec.ContentID)
-		if parentID.Valid {
-			_ = q.IncrementCommentReplyCount(ctx, parentID)
-		}
-		s.notifyInbound(ctx, rec, actor, "post_reply", "Bluesky reply", "replied to your post on Bluesky")
-		return "processed", ""
-	case "update":
-		// Remote edits carry the full record — refresh the local copy.
-		body := recStr(c.Record, "text")
-		if body == "" {
-			return "rejected", "empty reply text"
-		}
-		docJSON, _ := json.Marshal(map[string]any{
-			"type": "doc",
-			"content": []any{map[string]any{
-				"type":    "paragraph",
-				"content": []any{map[string]any{"type": "text", "text": body}},
-			}},
-		})
-		if _, err := q.UpdateAtprotoRemoteCommentBody(ctx, gen.UpdateAtprotoRemoteCommentBodyParams{
-			RemoteUri: &uri, Body: docJSON,
-		}); err != nil {
-			return "error", "comment update: " + err.Error()
-		}
-		return "processed", ""
+		return s.createRemoteComment(ctx, ev, uri)
 	case "delete":
 		// Tombstone + unwind the counters the create path bumped.
 		prev, perr := q.GetAtprotoCommentByRemoteURI(ctx, &uri)
@@ -335,15 +269,125 @@ func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri stri
 			return "error", "comment delete: " + err.Error()
 		}
 		if perr == nil && !prev.DeletedAt.Valid {
-			_ = q.DecrementContentCommentCount(ctx, prev.ContentID)
-			_ = q.DecrementLinkedContentCommentCount(ctx, prev.ContentID)
+			s.bumpCounter(q.DecrementContentCommentCount(ctx, prev.ContentID))
+			s.bumpCounter(q.DecrementLinkedContentCommentCount(ctx, prev.ContentID))
 			if prev.ParentID.Valid {
-				_ = q.DecrementCommentReplyCount(ctx, prev.ParentID)
+				s.bumpCounter(q.DecrementCommentReplyCount(ctx, prev.ParentID))
 			}
 		}
 		return "processed", ""
 	}
 	return "ignored", "unsupported operation"
+}
+
+// createRemoteComment normalizes a reply-create (or a create-fallback update)
+// into a remote comment + notification.
+func (s *Service) createRemoteComment(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+	c := ev.Commit
+	q := gen.New(s.db.Writer)
+	parentURI := recStr(c.Record, "reply", "parent", "uri")
+	if parentURI == "" {
+		return "ignored", "not a reply"
+	}
+	// Reply targets: the parent is a member post → attach to its content;
+	// otherwise the root might be ours (reply deeper in the thread).
+	rec, err := q.GetAtprotoRecordByURI(ctx, parentURI)
+	if err != nil {
+		if root := recStr(c.Record, "reply", "root", "uri"); root != "" && root != parentURI {
+			rec, err = q.GetAtprotoRecordByURI(ctx, root)
+		}
+	}
+	if err != nil || !rec.ContentID.Valid {
+		return "ignored", "reply target is not a member record"
+	}
+	actor, err := s.resolveRemoteActor(ctx, ev.DID)
+	if err != nil {
+		return "error", "remote actor: " + err.Error()
+	}
+	body := recStr(c.Record, "text")
+	if body == "" {
+		return "rejected", "empty reply text"
+	}
+	if len(body) > maxRemoteCommentText {
+		return "rejected", "reply text too large"
+	}
+	// Nest under a prior remote comment when the parent URI is one — but only
+	// on the same content row, and only while the local depth cap allows;
+	// deeper remote threads attach top-level instead of violating §49.
+	var parentID pgtype.UUID
+	depth := int32(0)
+	if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &parentURI); perr == nil &&
+		pc.ContentID == rec.ContentID && !pc.DeletedAt.Valid && pc.Depth < maxCommentDepth {
+		parentID = pc.ID
+		depth = pc.Depth + 1
+	}
+	_, err = q.InsertAtprotoRemoteComment(ctx, gen.InsertAtprotoRemoteCommentParams{
+		ContentID:            rec.ContentID,
+		Body:                 proseMirrorDoc(body),
+		Depth:                depth,
+		RemoteAtprotoActorID: actor.ID,
+		RemoteUri:            &uri,
+		ParentID:             parentID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "ignored", "comment already ingested"
+		}
+		return "error", "comment insert: " + err.Error()
+	}
+	// Mirror the local create path's denormalized counters (§49 BUG-008,
+	// unified-discussion bubbling) — a trigger-free path must bump them.
+	s.bumpCounter(q.IncrementContentCommentCount(ctx, rec.ContentID))
+	s.bumpCounter(q.IncrementLinkedContentCommentCount(ctx, rec.ContentID))
+	if parentID.Valid {
+		s.bumpCounter(q.IncrementCommentReplyCount(ctx, parentID))
+	}
+	s.notifyInbound(ctx, rec, actor, "post_reply", "Bluesky reply", "replied to your post on Bluesky")
+	return "processed", ""
+}
+
+// updateRemoteComment refreshes an existing remote comment's body. The
+// boolean reports whether the op was handled (true) or should fall through
+// to the create path because no local row matched.
+func (s *Service) updateRemoteComment(ctx context.Context, q *gen.Queries, uri string, record map[string]any) (string, string, bool) {
+	body := recStr(record, "text")
+	if body == "" {
+		return "rejected", "empty reply text", true
+	}
+	if len(body) > maxRemoteCommentText {
+		return "rejected", "reply text too large", true
+	}
+	n, err := q.UpdateAtprotoRemoteCommentBody(ctx, gen.UpdateAtprotoRemoteCommentBodyParams{
+		RemoteUri: &uri, Body: proseMirrorDoc(body),
+	})
+	if err != nil {
+		return "error", "comment update: " + err.Error(), true
+	}
+	if n == 0 {
+		return "", "", false // never saw the create — treat as catch-up
+	}
+	return "processed", "", true
+}
+
+// proseMirrorDoc wraps remote plain text into the TipTap/ProseMirror doc
+// shape comments.body stores.
+func proseMirrorDoc(text string) []byte {
+	docJSON, _ := json.Marshal(map[string]any{
+		"type": "doc",
+		"content": []any{map[string]any{
+			"type":    "paragraph",
+			"content": []any{map[string]any{"type": "text", "text": text}},
+		}},
+	})
+	return docJSON
+}
+
+// bumpCounter logs denormalized-counter failures — a drift here silently
+// desyncs feed cards and thread counters.
+func (s *Service) bumpCounter(err error) {
+	if err != nil {
+		slog.Warn("atproto: inbound counter bump failed", "error", err)
+	}
 }
 
 // dispatchLike normalizes app.bsky.feed.like commits whose subject resolves

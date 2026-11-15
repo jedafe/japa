@@ -124,7 +124,9 @@ func (q *Queries) GetAtprotoRemoteLikeByURI(ctx context.Context, likeUri string)
 const insertAtprotoInbound = `-- name: InsertAtprotoInbound :one
 INSERT INTO atproto_inbound (event_uri, event_seq, did, collection, operation, payload)
 VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-ON CONFLICT (event_uri, operation, event_seq) DO NOTHING
+ON CONFLICT (event_uri, operation, event_seq)
+DO UPDATE SET status = 'received', error = NULL
+WHERE atproto_inbound.status = 'error'
 RETURNING id
 `
 
@@ -143,6 +145,9 @@ type InsertAtprotoInboundParams struct {
 // sequence through, so an ErrNoRows return means the event was already
 // recorded. status starts at 'received' and transitions to
 // processed/ignored/rejected/error after dispatch.
+// Errored rows are retryable: replay resets them to 'received' so dispatch
+// runs again (all normalizers are idempotent). processed/ignored/rejected
+// rows stay terminal.
 func (q *Queries) InsertAtprotoInbound(ctx context.Context, arg InsertAtprotoInboundParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, insertAtprotoInbound,
 		arg.EventUri,
@@ -218,11 +223,12 @@ func (q *Queries) InsertAtprotoRemoteComment(ctx context.Context, arg InsertAtpr
 }
 
 const softDeleteAtprotoCommentByRemoteURI = `-- name: SoftDeleteAtprotoCommentByRemoteURI :execrows
-UPDATE comments SET deleted_at = now()
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE remote_uri = $1 AND deleted_at IS NULL
 `
 
-// Remote delete ops tombstone the local row the same way member deletes do.
+// Remote delete ops tombstone the local row the same way member deletes do —
+// is_pinned clears too, mirroring SoftDeleteComment.
 func (q *Queries) SoftDeleteAtprotoCommentByRemoteURI(ctx context.Context, remoteUri *string) (int64, error) {
 	result, err := q.db.Exec(ctx, softDeleteAtprotoCommentByRemoteURI, remoteUri)
 	if err != nil {

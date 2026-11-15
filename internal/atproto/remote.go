@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,6 +36,9 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // the cached profile from the AppView when missing or stale. A failed fetch
 // still returns the bare DID-keyed row so attribution never blocks processing.
 func (s *Service) resolveRemoteActor(ctx context.Context, did string) (gen.AtprotoRemoteActor, error) {
+	if !strings.HasPrefix(did, "did:") || len(did) > 256 {
+		return gen.AtprotoRemoteActor{}, fmt.Errorf("atproto: malformed remote did %q", did)
+	}
 	q := gen.New(s.db.Writer)
 
 	if existing, err := q.GetAtprotoRemoteActorByDID(ctx, did); err == nil {

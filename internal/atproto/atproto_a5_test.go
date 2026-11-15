@@ -388,3 +388,64 @@ func TestDBInboundReplayNewSeqNoDupNotify(t *testing.T) {
 		t.Fatalf("replay ledger status=%s", status)
 	}
 }
+
+// TestDBInboundUpdateOps — an update op refreshes the comment body with
+// is_edited; an update for an unseen URI falls through to the create path.
+func TestDBInboundUpdateOps(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, uri := a5Fixture(t, ctx)
+	svc.SetNotifier(&captureNotifier{})
+
+	remoteDID := fmt.Sprintf("did:plc:upd%d", time.Now().UnixNano())
+	replyURI := "at://" + remoteDID + "/app.bsky.feed.post/u1"
+	svc.handleCommit(ctx, commitEventWithURI(remoteDID, "u1", 900, colFeedPost, map[string]any{
+		"text":  "original text",
+		"reply": map[string]any{"parent": map[string]any{"uri": uri}},
+	}))
+
+	d := testDB(t)
+	// Edit lands → body refreshes + is_edited set.
+	upd := commitEventWithURI(remoteDID, "u1", 901, colFeedPost, map[string]any{
+		"text":  "edited text",
+		"reply": map[string]any{"parent": map[string]any{"uri": uri}},
+	})
+	upd.Commit.Operation = "update"
+	svc.handleCommit(ctx, upd)
+
+	var body []byte
+	var edited bool
+	_ = d.Writer.QueryRow(ctx, `SELECT body, is_edited FROM comments WHERE remote_uri = $1`, replyURI).Scan(&body, &edited)
+	if !strings.Contains(string(body), "edited text") || !edited {
+		t.Fatalf("update not applied: body=%q edited=%v", body, edited)
+	}
+
+	// Update for a never-seen reply → creates the comment (catch-up).
+	upd2 := commitEventWithURI(remoteDID, "u2", 902, colFeedPost, map[string]any{
+		"text":  "missed create",
+		"reply": map[string]any{"parent": map[string]any{"uri": uri}},
+	})
+	upd2.Commit.Operation = "update"
+	svc.handleCommit(ctx, upd2)
+	var exists bool
+	_ = d.Writer.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM comments WHERE remote_uri = $1)`,
+		"at://"+remoteDID+"/app.bsky.feed.post/u2").Scan(&exists)
+	if !exists {
+		t.Fatalf("update-fallback create missing")
+	}
+
+	// Update on a deleted comment must not resurrect it.
+	del := commitEventWithURI(remoteDID, "u1", 903, colFeedPost, nil)
+	del.Commit.Operation = "delete"
+	svc.handleCommit(ctx, del)
+	upd3 := commitEventWithURI(remoteDID, "u1", 904, colFeedPost, map[string]any{
+		"text":  "zombie",
+		"reply": map[string]any{"parent": map[string]any{"uri": uri}},
+	})
+	upd3.Commit.Operation = "update"
+	svc.handleCommit(ctx, upd3)
+	var deleted *time.Time
+	_ = d.Writer.QueryRow(ctx, `SELECT deleted_at FROM comments WHERE remote_uri = $1`, replyURI).Scan(&deleted)
+	if deleted == nil {
+		t.Fatalf("update resurrected a deleted comment")
+	}
+}

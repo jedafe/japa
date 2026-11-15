@@ -27,7 +27,12 @@ SELECT * FROM atproto_remote_actors WHERE did = @did;
 -- processed/ignored/rejected/error after dispatch.
 INSERT INTO atproto_inbound (event_uri, event_seq, did, collection, operation, payload)
 VALUES (@event_uri, @event_seq, @did, @collection, @operation, @payload::jsonb)
-ON CONFLICT (event_uri, operation, event_seq) DO NOTHING
+ON CONFLICT (event_uri, operation, event_seq)
+-- Errored rows are retryable: replay resets them to 'received' so dispatch
+-- runs again (all normalizers are idempotent). processed/ignored/rejected
+-- rows stay terminal.
+DO UPDATE SET status = 'received', error = NULL
+WHERE atproto_inbound.status = 'error'
 RETURNING id;
 
 -- name: UpdateAtprotoInboundStatus :exec
@@ -87,8 +92,9 @@ UPDATE comments SET body = @body, is_edited = true, edited_at = now(), updated_a
 WHERE remote_uri = @remote_uri AND deleted_at IS NULL;
 
 -- name: SoftDeleteAtprotoCommentByRemoteURI :execrows
--- Remote delete ops tombstone the local row the same way member deletes do.
-UPDATE comments SET deleted_at = now()
+-- Remote delete ops tombstone the local row the same way member deletes do —
+-- is_pinned clears too, mirroring SoftDeleteComment.
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE remote_uri = @remote_uri AND deleted_at IS NULL;
 
 -- name: GetAtprotoAccountByDID :one
