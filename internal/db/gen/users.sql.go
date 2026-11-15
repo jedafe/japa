@@ -2766,7 +2766,7 @@ func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]L
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT u.id, u.email, u.username, u.profile_type, u.verified,
+SELECT u.id, u.email, u.username, u.profile_type, u.verified, u.verification_type,
  CASE
  WHEN EXISTS (
  SELECT 1 FROM user_operation_bans uob
@@ -2830,16 +2830,17 @@ type ListUsersParams struct {
 }
 
 type ListUsersRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	Username      string             `json:"username"`
-	ProfileType   string             `json:"profile_type"`
-	Verified      bool               `json:"verified"`
-	Status        interface{}        `json:"status"`
-	FollowerCount int32              `json:"follower_count"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	Groups        interface{}        `json:"groups"`
+	ID               pgtype.UUID        `json:"id"`
+	Email            string             `json:"email"`
+	Username         string             `json:"username"`
+	ProfileType      string             `json:"profile_type"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Status           interface{}        `json:"status"`
+	FollowerCount    int32              `json:"follower_count"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Groups           interface{}        `json:"groups"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
@@ -2865,6 +2866,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 			&i.Username,
 			&i.ProfileType,
 			&i.Verified,
+			&i.VerificationType,
 			&i.Status,
 			&i.FollowerCount,
 			&i.CreatedAt,

@@ -126,6 +126,8 @@
 							subtitle="@{person.username}"
 							description={person.bio}
 							imageUrl={person.avatar_url}
+							verified={person.verified}
+							verificationType={person.verification_type}
 							fallback={(person.display_name || person.username).charAt(0).toUpperCase()}
 							hueSeed={person.id}
 							round

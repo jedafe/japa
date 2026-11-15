@@ -81,6 +81,8 @@
 			author_name: g.author_display_name ?? g.author_username ?? '',
 			author_username: g.author_username,
 			author_avatar_url: g.author_avatar_url,
+			author_verified: g.author_verified,
+			author_verification_type: g.author_verification_type,
 			space_id: g.space_id ?? undefined,
 			space_name: g.space_name ?? undefined,
 			excerpt: g.purpose ?? undefined,

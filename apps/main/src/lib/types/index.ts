@@ -1005,6 +1005,8 @@ export interface ProfileFollowing {
 	display_name: string;
 	avatar_url: string | null;
 	is_following?: boolean;
+	verified?: boolean;
+	verification_type?: string | null;
 	entity_type?: string;
 	/** Follow-row timestamp — used for newest/oldest sorting on the tab. */
 	created_at?: string;
@@ -1863,6 +1865,8 @@ export interface SuggestedUser {
 	avatar_url?: string | null;
 	bio?: string | null;
 	shared_spaces: number;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** GET /suggestions/spaces item — SuggestedSpace. */
@@ -3220,6 +3224,8 @@ export interface JobApplication {
 	applicant_id?: string;
 	applicant_username?: string;
 	applicant_email?: string;
+	applicant_verified?: boolean;
+	applicant_verification_type?: string | null;
 	status: string;
 	employer_notes?: string;
 	applied_at: string;
@@ -4002,6 +4008,8 @@ export interface MemberDTO {
 	joined_at: string;
 	username?: string;
 	avatar_url?: string;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 export interface PlanningCheckin {
@@ -4011,6 +4019,8 @@ export interface PlanningCheckin {
 	note: string;
 	created_at: string;
 	username?: string;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 // --- Section 83: Visa Timeline Tracker ---
@@ -4164,6 +4174,8 @@ export interface MutualAidPost {
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 }
 
 // --- Section 86: Community Calendar ---
@@ -4326,6 +4338,8 @@ export interface AMAThread {
 	author_user_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	is_anonymous?: boolean;
 	ama_config: unknown;
 	created_at: string;
@@ -4682,12 +4696,16 @@ export interface ServiceBooking {
 	booker_username?: string;
 	booker_display_name?: string;
 	booker_avatar?: string;
+	booker_verified?: boolean;
+	booker_verification_type?: string | null;
 	/** Provider dimension (000824) — populated on user-provider (mentorship)
 	 *  bookings; org fields are empty on those rows. */
 	provider_user_id?: string;
 	provider_username?: string;
 	provider_display_name?: string;
 	provider_avatar?: string;
+	provider_verified?: boolean;
+	provider_verification_type?: string | null;
 	/** Mentorship request context — the mentee's target space + goals
 	 *  (meta->>'goals' with the note column as fallback for migrated rows). */
 	destination_space_id?: string;
@@ -4699,6 +4717,8 @@ export interface ServiceBooking {
 	org_id: string;
 	org_name?: string;
 	org_slug?: string;
+	org_verified?: boolean;
+	org_verification_type?: string | null;
 	intent: 'inquiry' | 'booking' | string;
 	party_size: number;
 	preferred_dates?: { start_on: string; end_on: string; flexible: boolean } | null;

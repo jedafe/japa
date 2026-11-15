@@ -65,6 +65,8 @@
 			author_name: post.author_name,
 			author_username: post.author_username,
 			author_avatar_url: post.author_avatar_url,
+			author_verified: post.author_verified,
+			author_verification_type: post.author_verification_type,
 			organization: post.organization,
 			space_id: post.space_id,
 			space_name: post.space_name,

@@ -8,6 +8,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { UrlTabs, type UrlTab, AutocompleteSelect } from '#lib/components/ui/index.js';
 	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image, BadgeCheck } from 'lucide-svelte';
 	import { untrack } from 'svelte';
@@ -649,7 +650,7 @@
 								</div>
 							{/if}
 							<div class="min-w-0">
-								<p class="truncate text-sm font-medium text-[var(--color-text)]">{m.user.display_name ?? m.user.username}</p>
+								<p class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{m.user.display_name ?? m.user.username}</span><VerifiedBadge verified={m.user.verified} type={m.user.verification_type} size={13} /></p>
 								<p class="truncate text-xs text-[var(--color-muted)]">@{m.user.username}</p>
 							</div>
 						</div>

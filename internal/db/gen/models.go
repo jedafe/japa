@@ -762,14 +762,15 @@ type AtprotoRecord struct {
 }
 
 type AtprotoRemoteActor struct {
-	ID          pgtype.UUID        `json:"id"`
-	Did         string             `json:"did"`
-	Handle      *string            `json:"handle"`
-	DisplayName *string            `json:"display_name"`
-	AvatarUrl   *string            `json:"avatar_url"`
-	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID            pgtype.UUID        `json:"id"`
+	Did           string             `json:"did"`
+	Handle        *string            `json:"handle"`
+	DisplayName   *string            `json:"display_name"`
+	AvatarUrl     *string            `json:"avatar_url"`
+	FetchedAt     pgtype.Timestamptz `json:"fetched_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
 }
 
 type AtprotoRemoteFollow struct {

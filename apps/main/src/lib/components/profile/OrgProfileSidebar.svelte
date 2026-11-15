@@ -2,6 +2,7 @@
 	import { Users } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { OrgMember } from '#lib/types/index.js';
 
 	interface Props {
@@ -33,7 +34,7 @@
 							</span>
 						{/if}
 						<span class="min-w-0 flex-1">
-							<span class="block truncate text-sm text-[var(--color-text)]">{member.user.display_name ?? member.user.username}</span>
+							<span class="flex items-center gap-1 truncate text-sm text-[var(--color-text)]"><span class="truncate">{member.user.display_name ?? member.user.username}</span><VerifiedBadge verified={member.user.verified} type={member.user.verification_type} size={13} /></span>
 							<span class="block text-xs text-[var(--color-muted)] capitalize">{t(`org_admin.role.${member.role}`, member.role)}</span>
 						</span>
 					</a>

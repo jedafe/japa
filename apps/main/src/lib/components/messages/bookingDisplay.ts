@@ -42,6 +42,9 @@ export interface BookingCounterpart {
 	name: string;
 	username: string;
 	avatar: string;
+	verified: boolean;
+	verificationType?: string | null;
+	scope: 'user' | 'organization';
 }
 
 /**
@@ -54,18 +57,29 @@ export function bookingCounterpart(b: ServiceBooking, role: 'sent' | 'received')
 		return {
 			name: b.booker_display_name || b.booker_username || '',
 			username: b.booker_username ?? '',
-			avatar: b.booker_avatar ?? ''
+			avatar: b.booker_avatar ?? '',
+			verified: !!b.booker_verified,
+			verificationType: b.booker_verification_type ?? null,
+			scope: 'user'
+		};
+	}
+	if (b.org_name) {
+		return {
+			name: b.org_name,
+			username: b.provider_username ?? '',
+			avatar: b.provider_avatar ?? '',
+			verified: !!b.org_verified,
+			verificationType: b.org_verification_type ?? null,
+			scope: 'organization'
 		};
 	}
 	return {
-		name:
-			b.org_name ||
-			b.provider_display_name ||
-			b.provider_username ||
-			b.booker_display_name ||
-			'',
+		name: b.provider_display_name || b.provider_username || b.booker_display_name || '',
 		username: b.provider_username ?? '',
-		avatar: b.provider_avatar ?? ''
+		avatar: b.provider_avatar ?? '',
+		verified: !!b.provider_verified,
+		verificationType: b.provider_verification_type ?? null,
+		scope: 'user'
 	};
 }
 

@@ -23,6 +23,7 @@
 		ClipboardList
 	} from 'lucide-svelte';
 	import { EmptyState } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { PlanningMilestone, PlanningCheckin } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -401,7 +402,7 @@
 						{#each checkins as c (c.id)}
 							<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
 								<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
-									<span class="font-medium text-[var(--color-text-subtle)]">{c.username ?? t('planning_groups.member', 'Member')}</span>
+									<span class="inline-flex items-center gap-1 font-medium text-[var(--color-text-subtle)]">{c.username ?? t('planning_groups.member', 'Member')}<VerifiedBadge verified={c.verified} type={c.verification_type} size={12} /></span>
 									<span>{new Date(c.created_at).toLocaleDateString()}</span>
 								</div>
 								<p class="mt-1 text-sm text-[var(--color-text)]">{c.note}</p>
@@ -422,7 +423,7 @@
 					<ul class="mt-3 flex flex-wrap gap-2">
 						{#each members as m (m.user_id)}
 							<li class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text)]">
-								{m.username}
+								{m.username}<VerifiedBadge verified={m.verified} type={m.verification_type} size={12} />
 								{#if m.user_id === group.owner_id}
 									<span class="font-medium text-[var(--color-primary-text)]">★</span>
 								{/if}

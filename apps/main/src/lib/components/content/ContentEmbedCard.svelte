@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	// Internal-content embed card — mounted into
 	// `div[data-type="content-embed"][data-content-slug]` placeholders by
 	// hydrateContentEmbeds on view pages. Fetches the live article via
@@ -24,6 +25,8 @@
 		author_name?: string | null;
 		author_username?: string | null;
 		author_avatar_url?: string | null;
+		author_verified?: boolean;
+		author_verification_type?: string | null;
 	}
 
 	interface Props {
@@ -80,6 +83,9 @@
 							<img src={content.author_avatar_url} alt="" class="ce-avatar" loading="lazy" />
 						{/if}
 						<span class="ce-author">{authorName}</span>
+						{#if content?.author_verified}
+							<VerifiedBadge verified type={content.author_verification_type} />
+						{/if}
 					</div>
 				{/if}
 			</div>

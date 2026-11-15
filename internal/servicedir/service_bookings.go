@@ -56,12 +56,16 @@ type BookingDTO struct {
 	BookerUsername    string `json:"booker_username,omitempty"`
 	BookerDisplayName string `json:"booker_display_name,omitempty"`
 	BookerAvatar      string `json:"booker_avatar,omitempty"`
+	BookerVerified    bool   `json:"booker_verified,omitempty"`
+	BookerVerificationType *string `json:"booker_verification_type,omitempty"`
 	// Provider dimension (000824) — populated on user-provider
 	// (mentorship) bookings; org fields are empty on those rows.
 	ProviderUserID       string `json:"provider_user_id,omitempty"`
 	ProviderUsername     string `json:"provider_username,omitempty"`
 	ProviderDisplayName  string `json:"provider_display_name,omitempty"`
 	ProviderAvatar       string `json:"provider_avatar,omitempty"`
+	ProviderVerified     bool   `json:"provider_verified,omitempty"`
+	ProviderVerificationType *string `json:"provider_verification_type,omitempty"`
 	DestinationSpaceID   string `json:"destination_space_id,omitempty"`
 	DestinationSpaceName string `json:"destination_space_name,omitempty"`
 	// Goals carries the mentorship request's goals verbatim — read from
@@ -76,6 +80,8 @@ type BookingDTO struct {
 	OrgID            string               `json:"org_id"`
 	OrgName          string               `json:"org_name,omitempty"`
 	OrgSlug          string               `json:"org_slug,omitempty"`
+	OrgVerified      bool                 `json:"org_verified,omitempty"`
+	OrgVerificationType *string           `json:"org_verification_type,omitempty"`
 	Intent           string               `json:"intent"`
 	PartySize        int32                `json:"party_size"`
 	PreferredDates   *PreferredDatesInput `json:"preferred_dates,omitempty"`
@@ -241,6 +247,9 @@ func bookingToDTO(r BookingRow) BookingDTO {
 		dto.BookerAvatar = *r.BookerAvatar
 	}
 
+	dto.BookerVerified = r.BookerVerified
+	dto.BookerVerificationType = r.BookerVerificationType
+
 	if r.ProviderUserID.Valid {
 		dto.ProviderUserID = r.ProviderUserID.String()
 	}
@@ -248,6 +257,10 @@ func bookingToDTO(r BookingRow) BookingDTO {
 	if r.ProviderUsername != nil {
 		dto.ProviderUsername = *r.ProviderUsername
 	}
+	dto.ProviderVerified = r.ProviderVerified
+	dto.ProviderVerificationType = r.ProviderVerificationType
+	dto.OrgVerified = r.OrgVerified
+	dto.OrgVerificationType = r.OrgVerificationType
 
 	if r.ProviderDisplayName != nil {
 		dto.ProviderDisplayName = *r.ProviderDisplayName

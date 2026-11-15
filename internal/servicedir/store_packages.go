@@ -233,15 +233,21 @@ type BookingRow struct {
 	OrgSlug           *string
 	DepartureStartsOn pgtype.Date
 	DepartureEndsOn   pgtype.Date
-	BookerUsername    *string
-	BookerDisplayName *string
-	BookerAvatar      *string
+	BookerUsername         *string
+	BookerDisplayName      *string
+	BookerAvatar           *string
+	BookerVerified         bool
+	BookerVerificationType *string
 	// Provider display joins (000824) — populated by the detail, by-org,
 	// and by-provider list queries; nil on org-owned rows.
-	ProviderUsername     *string
-	ProviderDisplayName  *string
-	ProviderAvatar       *string
-	DestinationSpaceName *string
+	ProviderUsername         *string
+	ProviderDisplayName      *string
+	ProviderAvatar           *string
+	ProviderVerified         bool
+	ProviderVerificationType *string
+	OrgVerified              bool
+	OrgVerificationType      *string
+	DestinationSpaceName     *string
 
 	// Marketplace booking snapshots (spec §2.3/§2.4). TierID/TierName/
 	// TierPriceAmount freeze the selected pricing tier — TierName carries
@@ -311,9 +317,15 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
+	row.BookerVerified = r.BookerVerified != nil && *r.BookerVerified
+	row.BookerVerificationType = r.BookerVerificationType
 	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
+	row.ProviderVerified = r.ProviderVerified != nil && *r.ProviderVerified
+	row.ProviderVerificationType = r.ProviderVerificationType
+	row.OrgVerified = r.OrgVerified != nil && *r.OrgVerified
+	row.OrgVerificationType = r.OrgVerificationType
 	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
@@ -353,6 +365,10 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
+	row.ProviderVerified = r.ProviderVerified != nil && *r.ProviderVerified
+	row.ProviderVerificationType = r.ProviderVerificationType
+	row.OrgVerified = r.OrgVerified != nil && *r.OrgVerified
+	row.OrgVerificationType = r.OrgVerificationType
 	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
@@ -390,9 +406,15 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
+	row.BookerVerified = r.BookerVerified != nil && *r.BookerVerified
+	row.BookerVerificationType = r.BookerVerificationType
 	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
+	row.ProviderVerified = r.ProviderVerified != nil && *r.ProviderVerified
+	row.ProviderVerificationType = r.ProviderVerificationType
+	row.OrgVerified = r.OrgVerified != nil && *r.OrgVerified
+	row.OrgVerificationType = r.OrgVerificationType
 	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
@@ -435,9 +457,15 @@ func bookingRowFromProvider(r gen.ListServiceBookingsByProviderUserRow) BookingR
 	row.BookerUsername = strPtr(r.BookerUsername)
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
+	row.BookerVerified = r.BookerVerified != nil && *r.BookerVerified
+	row.BookerVerificationType = r.BookerVerificationType
 	row.ProviderUsername = strPtr(r.ProviderUsername)
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
+	row.ProviderVerified = r.ProviderVerified != nil && *r.ProviderVerified
+	row.ProviderVerificationType = r.ProviderVerificationType
+	row.OrgVerified = r.OrgVerified != nil && *r.OrgVerified
+	row.OrgVerificationType = r.OrgVerificationType
 	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
@@ -477,9 +505,15 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 	row.BookerUsername = r.BookerUsername
 	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
+	row.BookerVerified = r.BookerVerified != nil && *r.BookerVerified
+	row.BookerVerificationType = r.BookerVerificationType
 	row.ProviderUsername = r.ProviderUsername
 	row.ProviderDisplayName = r.ProviderDisplayName
 	row.ProviderAvatar = r.ProviderAvatar
+	row.ProviderVerified = r.ProviderVerified != nil && *r.ProviderVerified
+	row.ProviderVerificationType = r.ProviderVerificationType
+	row.OrgVerified = r.OrgVerified != nil && *r.OrgVerified
+	row.OrgVerificationType = r.OrgVerificationType
 	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row

@@ -45,6 +45,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
  cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
  u.username AS reporter_username, up.display_name AS reporter_display_name,
+ u.verified AS reporter_verified, u.verification_type AS reporter_verification_type,
  COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
  COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
           FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
@@ -197,6 +198,8 @@ WITH scoped AS (
            cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
            ru.username AS reporter_username,
            rup.display_name AS reporter_display_name,
+           ru.verified AS reporter_verified,
+           ru.verification_type AS reporter_verification_type,
            COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
            COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
@@ -242,7 +245,7 @@ WITH scoped AS (
 )
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
        status, reviewed_by, resolution_note, resolved_at, created_at,
-       reporter_username, reporter_display_name,
+       reporter_username, reporter_display_name, reporter_verified, reporter_verification_type,
        entity_title, entity_excerpt, entity_slug, thread_slug, entity_content_type, entity_author_username,
        resolved_space_id, entity_space_name, entity_space_slug,
        scope_assigned, scope_space, scope_tag
@@ -318,6 +321,8 @@ SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.n
        cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
        ru.username AS reporter_username,
        rup.display_name AS reporter_display_name,
+       ru.verified AS reporter_verified,
+       ru.verification_type AS reporter_verification_type,
        COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
        COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),

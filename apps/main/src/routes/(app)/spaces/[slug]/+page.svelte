@@ -150,6 +150,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			author_name: item.author_display_name || item.author_username || null,
 			author_username: item.author_username ?? null,
 			author_avatar_url: item.author_avatar_url || null,
+			author_verified: item.author_verified,
+			author_verification_type: item.author_verification_type,
 			created_at: item.published_at,
 			view_count: item.view_count,
 			comment_count: item.comment_count,

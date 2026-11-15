@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md,
 	// sections/102-mentorship-matching.md (000824 — mentorship bookings are
 	// user-provider service_bookings rows)
@@ -343,6 +344,9 @@
 						</a>
 					{:else}
 						{counterpart.name || '—'}
+					{/if}
+					{#if counterpart.verified}
+						<VerifiedBadge verified type={counterpart.verificationType} scope={counterpart.scope} />
 					{/if}
 				</dd>
 			</div>

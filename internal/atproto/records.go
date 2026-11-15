@@ -102,6 +102,11 @@ func (s *Service) federatableTypesFor(ctx context.Context) []string {
 // publishProfile writes the member's app.bsky.actor.profile — rkey
 // "self", so repeated calls are upserts, not duplicates.
 func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccount) error {
+	if !s.featureOn(ctx) {
+		// Same freeze PublishContent enforces — reconcile_repo reaches
+		// this path ungated via lifecycle reactivation.
+		return permanent(fmt.Errorf("atproto: feature.atproto disabled"))
+	}
 	user, err := s.store.userByID(ctx, account.UserID)
 	if err != nil {
 		return fmt.Errorf("atproto: profile user: %w", err)

@@ -72,6 +72,7 @@ DELETE FROM reactions WHERE reaction_key = @key;
 -- reaction_key returns all keys. Deleted users are excluded.
 SELECT r.reaction_key, r.created_at, u.id AS user_id,
        u.username, COALESCE(up.display_name, '') AS display_name,
+       u.verified, u.verification_type,
        up.avatar_media_id
 FROM reactions r
 JOIN users u ON u.id = r.user_id AND u.status != 'deleted'

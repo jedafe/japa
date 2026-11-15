@@ -80,6 +80,8 @@
 			author_id: post.author_id ?? '',
 			author_name: post.author_name,
 			author_avatar_url: post.author_avatar_url,
+			author_verified: post.author_verified,
+			author_verification_type: post.author_verification_type,
 			space_id: post.space_id,
 			space_name: post.space_name,
 			space_slug: post.space_slug,

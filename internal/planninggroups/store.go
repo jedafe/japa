@@ -65,12 +65,14 @@ type PlanningGroup struct {
 
 // PlanningGroupMember represents a single planning_group_members row.
 type PlanningGroupMember struct {
-	GroupID       pgtype.UUID
-	UserID        pgtype.UUID
-	DepartureDate pgtype.Date
-	JoinedAt      pgtype.Timestamptz
-	Username      *string
-	AvatarURL     *string
+	GroupID          pgtype.UUID
+	UserID           pgtype.UUID
+	DepartureDate    pgtype.Date
+	JoinedAt         pgtype.Timestamptz
+	Username         *string
+	AvatarURL        *string
+	Verified         bool
+	VerificationType *string
 }
 
 // PlanningGroupMilestone represents a single planning_group_milestones row.
@@ -86,12 +88,14 @@ type PlanningGroupMilestone struct {
 
 // PlanningGroupCheckin represents a single planning_group_checkins row.
 type PlanningGroupCheckin struct {
-	ID        pgtype.UUID
-	GroupID   pgtype.UUID
-	UserID    pgtype.UUID
-	Note      string
-	CreatedAt pgtype.Timestamptz
-	Username  *string
+	ID               pgtype.UUID
+	GroupID          pgtype.UUID
+	UserID           pgtype.UUID
+	Note             string
+	CreatedAt        pgtype.Timestamptz
+	Username         *string
+	Verified         bool
+	VerificationType *string
 }
 
 // CreateGroup inserts a new planning group and returns the created row.
@@ -448,7 +452,7 @@ WHERE group_id = $1 AND user_id = $2
 func (s *Store) GetMembers(ctx context.Context, groupID pgtype.UUID) ([]PlanningGroupMember, error) {
 	const q = `
 SELECT m.group_id, m.user_id, m.departure_date, m.joined_at,
-       u.username, up.avatar_url
+       u.username, up.avatar_url, u.verified, u.verification_type
 FROM planning_group_members m
 LEFT JOIN users u ON u.id = m.user_id
 LEFT JOIN user_profiles up ON up.user_id = m.user_id
@@ -469,7 +473,7 @@ ORDER BY m.joined_at ASC
 		var m PlanningGroupMember
 		if err := rows.Scan(
 			&m.GroupID, &m.UserID, &m.DepartureDate, &m.JoinedAt,
-			&m.Username, &m.AvatarURL,
+			&m.Username, &m.AvatarURL, &m.Verified, &m.VerificationType,
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan member: %w", err)
 		}
@@ -630,7 +634,7 @@ RETURNING id, group_id, user_id, note, created_at
 func (s *Store) ListCheckins(ctx context.Context, groupID pgtype.UUID) ([]PlanningGroupCheckin, error) {
 	const q = `
 SELECT c.id, c.group_id, c.user_id, c.note, c.created_at,
-       u.username
+       u.username, u.verified, u.verification_type
 FROM planning_group_checkins c
 LEFT JOIN users u ON u.id = c.user_id
 WHERE c.group_id = $1
@@ -651,7 +655,7 @@ ORDER BY c.created_at DESC
 		var c PlanningGroupCheckin
 		if err := rows.Scan(
 			&c.ID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
-			&c.Username,
+			&c.Username, &c.Verified, &c.VerificationType,
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan checkin: %w", err)
 		}

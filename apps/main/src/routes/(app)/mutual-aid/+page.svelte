@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import { HandHeart, Plus, MapPin, Clock, X } from 'lucide-svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { mutualAidPostTypeLabel, mutualAidCategoryLabel } from '#lib/enumOptions.js';
@@ -360,8 +361,8 @@
 									{t('mutual_aid.expires', 'Expires')} {relativeTime(post.expires_at, new Date(), i18n.locale)}
 								</span>
 							{/if}
-							<span class="text-[var(--color-text-subtle)]">
-								{post.author_name}
+							<span class="inline-flex items-center gap-1 text-[var(--color-text-subtle)]">
+								{post.author_name}<VerifiedBadge verified={post.author_verified} type={post.author_verification_type} size={13} />
 							</span>
 							<span>·</span>
 							<span>{relativeTime(post.created_at, new Date(), i18n.locale)}</span>

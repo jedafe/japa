@@ -233,6 +233,8 @@ type ApplicationResult struct {
 	ApplicantID       string  `json:"applicant_id,omitempty"`
 	ApplicantUsername string  `json:"applicant_username,omitempty"`
 	ApplicantEmail    string  `json:"applicant_email,omitempty"`
+	ApplicantVerified bool    `json:"applicant_verified"`
+	ApplicantVerificationType *string `json:"applicant_verification_type"`
 	Status            string  `json:"status"`
 	EmployerNotes     *string `json:"employer_notes,omitempty"`
 	AppliedAt         string  `json:"applied_at"`
@@ -2673,6 +2675,8 @@ func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) Applicatio
 		ApplicantID:       row.ApplicantID.String(),
 		ApplicantUsername: row.ApplicantUsername,
 		ApplicantEmail:    row.ApplicantEmail,
+		ApplicantVerified: row.ApplicantVerified,
+		ApplicantVerificationType: row.ApplicantVerificationType,
 		Status:            row.Status,
 		EmployerNotes:     row.EmployerNotes,
 		Submission:        decodeSubmissionFields(row.SubmissionFields),
@@ -2696,6 +2700,8 @@ func applicationResultFromAdminRow(row gen.AdminListJobApplicationsRow) Applicat
 		JobID:             row.JobID.String(),
 		ApplicantID:       row.ApplicantID.String(),
 		ApplicantUsername: row.ApplicantUsername,
+		ApplicantVerified: row.ApplicantVerified,
+		ApplicantVerificationType: row.ApplicantVerificationType,
 		JobTitle:          row.JobTitle,
 		Status:            row.Status,
 		EmployerNotes:     row.EmployerNotes,

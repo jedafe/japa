@@ -34,6 +34,8 @@ export interface ModerationQueueItem {
 	created_at: string;
 	reporter_username: string | null;
 	reporter_display_name: string | null;
+	reporter_verified?: boolean;
+	reporter_verification_type?: string | null;
 	entity_title: string;
 	entity_excerpt: string | null;
 	entity_slug: string;

@@ -98,13 +98,13 @@ func (q *Queries) AdminCountServiceListings(ctx context.Context, arg AdminCountS
 
 const adminListServiceBookings = `-- name: AdminListServiceBookings :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        pu.username AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -174,60 +174,66 @@ type AdminListServiceBookingsParams struct {
 }
 
 type AdminListServiceBookingsRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID          pgtype.UUID        `json:"departure_id"`
-	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
-	OrgID                pgtype.UUID        `json:"org_id"`
-	Intent               string             `json:"intent"`
-	PartySize            int32              `json:"party_size"`
-	PreferredDates       []byte             `json:"preferred_dates"`
-	Note                 *string            `json:"note"`
-	Status               string             `json:"status"`
-	PurchaseMode         string             `json:"purchase_mode"`
-	PaymentID            pgtype.UUID        `json:"payment_id"`
-	TotalPrice           *int64             `json:"total_price"`
-	FeeAmount            *int64             `json:"fee_amount"`
-	FeeCurrency          *string            `json:"fee_currency"`
-	AgentBalanceDue      *int64             `json:"agent_balance_due"`
-	OrgResponseNote      *string            `json:"org_response_note"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason         *string            `json:"cancel_reason"`
-	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason        *string            `json:"dispute_reason"`
-	TierID               pgtype.UUID        `json:"tier_id"`
-	CouponID             pgtype.UUID        `json:"coupon_id"`
-	CouponCode           *string            `json:"coupon_code"`
-	DiscountAmount       *int64             `json:"discount_amount"`
-	TierName             *string            `json:"tier_name"`
-	TierPriceAmount      *int64             `json:"tier_price_amount"`
-	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
-	Meta                 []byte             `json:"meta"`
-	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle         string             `json:"listing_title"`
-	ListingSlug          string             `json:"listing_slug"`
-	ListingKind          string             `json:"listing_kind"`
-	OrgName              *string            `json:"org_name"`
-	OrgSlug              *string            `json:"org_slug"`
-	PaymentStatus        *string            `json:"payment_status"`
-	PaymentProvider      *string            `json:"payment_provider"`
-	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       *string            `json:"booker_username"`
-	BookerDisplayName    *string            `json:"booker_display_name"`
-	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     *string            `json:"provider_username"`
-	ProviderDisplayName  *string            `json:"provider_display_name"`
-	ProviderAvatar       *string            `json:"provider_avatar"`
-	DestinationSpaceName *string            `json:"destination_space_name"`
-	EffectiveTierName    string             `json:"effective_tier_name"`
+	ID                       pgtype.UUID        `json:"id"`
+	ListingMetaID            pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID              pgtype.UUID        `json:"departure_id"`
+	BookerUserID             pgtype.UUID        `json:"booker_user_id"`
+	OrgID                    pgtype.UUID        `json:"org_id"`
+	Intent                   string             `json:"intent"`
+	PartySize                int32              `json:"party_size"`
+	PreferredDates           []byte             `json:"preferred_dates"`
+	Note                     *string            `json:"note"`
+	Status                   string             `json:"status"`
+	PurchaseMode             string             `json:"purchase_mode"`
+	PaymentID                pgtype.UUID        `json:"payment_id"`
+	TotalPrice               *int64             `json:"total_price"`
+	FeeAmount                *int64             `json:"fee_amount"`
+	FeeCurrency              *string            `json:"fee_currency"`
+	AgentBalanceDue          *int64             `json:"agent_balance_due"`
+	OrgResponseNote          *string            `json:"org_response_note"`
+	ExpiresAt                pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt              pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt              pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt              pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason             *string            `json:"cancel_reason"`
+	AnonymizedAt             pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt               pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason            *string            `json:"dispute_reason"`
+	TierID                   pgtype.UUID        `json:"tier_id"`
+	CouponID                 pgtype.UUID        `json:"coupon_id"`
+	CouponCode               *string            `json:"coupon_code"`
+	DiscountAmount           *int64             `json:"discount_amount"`
+	TierName                 *string            `json:"tier_name"`
+	TierPriceAmount          *int64             `json:"tier_price_amount"`
+	ProviderUserID           pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID       pgtype.UUID        `json:"destination_space_id"`
+	Meta                     []byte             `json:"meta"`
+	ListingContentID         pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle             string             `json:"listing_title"`
+	ListingSlug              string             `json:"listing_slug"`
+	ListingKind              string             `json:"listing_kind"`
+	OrgName                  *string            `json:"org_name"`
+	OrgSlug                  *string            `json:"org_slug"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
+	PaymentStatus            *string            `json:"payment_status"`
+	PaymentProvider          *string            `json:"payment_provider"`
+	DepartureStartsOn        pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn          pgtype.Date        `json:"departure_ends_on"`
+	BookerUsername           *string            `json:"booker_username"`
+	BookerDisplayName        *string            `json:"booker_display_name"`
+	BookerAvatar             *string            `json:"booker_avatar"`
+	BookerVerified           *bool              `json:"booker_verified"`
+	BookerVerificationType   *string            `json:"booker_verification_type"`
+	ProviderUsername         *string            `json:"provider_username"`
+	ProviderDisplayName      *string            `json:"provider_display_name"`
+	ProviderAvatar           *string            `json:"provider_avatar"`
+	ProviderVerified         *bool              `json:"provider_verified"`
+	ProviderVerificationType *string            `json:"provider_verification_type"`
+	DestinationSpaceName     *string            `json:"destination_space_name"`
+	EffectiveTierName        string             `json:"effective_tier_name"`
 }
 
 // Admin view — all bookings, any payment state. kind/provider_user_id/
@@ -297,6 +303,8 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.PaymentStatus,
 			&i.PaymentProvider,
 			&i.DepartureStartsOn,
@@ -304,9 +312,13 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 			&i.BookerUsername,
 			&i.BookerDisplayName,
 			&i.BookerAvatar,
+			&i.BookerVerified,
+			&i.BookerVerificationType,
 			&i.ProviderUsername,
 			&i.ProviderDisplayName,
 			&i.ProviderAvatar,
+			&i.ProviderVerified,
+			&i.ProviderVerificationType,
 			&i.DestinationSpaceName,
 			&i.EffectiveTierName,
 		); err != nil {
@@ -2625,13 +2637,13 @@ const getServiceBookingDetail = `-- name: GetServiceBookingDetail :one
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title,
        c.slug AS listing_slug,
        sm.listing_kind, sm.capacity AS package_capacity,
-       o.name AS org_name, o.slug AS org_slug,
+       o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -2650,61 +2662,69 @@ WHERE sb.id = $1
 `
 
 type GetServiceBookingDetailRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID          pgtype.UUID        `json:"departure_id"`
-	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
-	OrgID                pgtype.UUID        `json:"org_id"`
-	Intent               string             `json:"intent"`
-	PartySize            int32              `json:"party_size"`
-	PreferredDates       []byte             `json:"preferred_dates"`
-	Note                 *string            `json:"note"`
-	Status               string             `json:"status"`
-	PurchaseMode         string             `json:"purchase_mode"`
-	PaymentID            pgtype.UUID        `json:"payment_id"`
-	TotalPrice           *int64             `json:"total_price"`
-	FeeAmount            *int64             `json:"fee_amount"`
-	FeeCurrency          *string            `json:"fee_currency"`
-	AgentBalanceDue      *int64             `json:"agent_balance_due"`
-	OrgResponseNote      *string            `json:"org_response_note"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason         *string            `json:"cancel_reason"`
-	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason        *string            `json:"dispute_reason"`
-	TierID               pgtype.UUID        `json:"tier_id"`
-	CouponID             pgtype.UUID        `json:"coupon_id"`
-	CouponCode           *string            `json:"coupon_code"`
-	DiscountAmount       *int64             `json:"discount_amount"`
-	TierName             *string            `json:"tier_name"`
-	TierPriceAmount      *int64             `json:"tier_price_amount"`
-	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
-	Meta                 []byte             `json:"meta"`
-	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle         string             `json:"listing_title"`
-	ListingSlug          string             `json:"listing_slug"`
-	ListingKind          string             `json:"listing_kind"`
-	PackageCapacity      *int32             `json:"package_capacity"`
-	OrgName              *string            `json:"org_name"`
-	OrgSlug              *string            `json:"org_slug"`
-	PaymentStatus        *string            `json:"payment_status"`
-	PaymentProvider      *string            `json:"payment_provider"`
-	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       string             `json:"booker_username"`
-	BookerDisplayName    *string            `json:"booker_display_name"`
-	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     string             `json:"provider_username"`
-	ProviderDisplayName  *string            `json:"provider_display_name"`
-	ProviderAvatar       *string            `json:"provider_avatar"`
-	DestinationSpaceName *string            `json:"destination_space_name"`
-	EffectiveTierName    string             `json:"effective_tier_name"`
+	ID                         pgtype.UUID        `json:"id"`
+	ListingMetaID              pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID                pgtype.UUID        `json:"departure_id"`
+	BookerUserID               pgtype.UUID        `json:"booker_user_id"`
+	OrgID                      pgtype.UUID        `json:"org_id"`
+	Intent                     string             `json:"intent"`
+	PartySize                  int32              `json:"party_size"`
+	PreferredDates             []byte             `json:"preferred_dates"`
+	Note                       *string            `json:"note"`
+	Status                     string             `json:"status"`
+	PurchaseMode               string             `json:"purchase_mode"`
+	PaymentID                  pgtype.UUID        `json:"payment_id"`
+	TotalPrice                 *int64             `json:"total_price"`
+	FeeAmount                  *int64             `json:"fee_amount"`
+	FeeCurrency                *string            `json:"fee_currency"`
+	AgentBalanceDue            *int64             `json:"agent_balance_due"`
+	OrgResponseNote            *string            `json:"org_response_note"`
+	ExpiresAt                  pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt                pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt                pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt                pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason               *string            `json:"cancel_reason"`
+	AnonymizedAt               pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt                 pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason              *string            `json:"dispute_reason"`
+	TierID                     pgtype.UUID        `json:"tier_id"`
+	CouponID                   pgtype.UUID        `json:"coupon_id"`
+	CouponCode                 *string            `json:"coupon_code"`
+	DiscountAmount             *int64             `json:"discount_amount"`
+	TierName                   *string            `json:"tier_name"`
+	TierPriceAmount            *int64             `json:"tier_price_amount"`
+	ProviderUserID             pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID         pgtype.UUID        `json:"destination_space_id"`
+	Meta                       []byte             `json:"meta"`
+	ListingContentID           pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle               string             `json:"listing_title"`
+	ListingSlug                string             `json:"listing_slug"`
+	ListingKind                string             `json:"listing_kind"`
+	PackageCapacity            *int32             `json:"package_capacity"`
+	OrgName                    *string            `json:"org_name"`
+	OrgSlug                    *string            `json:"org_slug"`
+	OrgVerified                *bool              `json:"org_verified"`
+	OrgVerificationType        *string            `json:"org_verification_type"`
+	PaymentStatus              *string            `json:"payment_status"`
+	PaymentProvider            *string            `json:"payment_provider"`
+	DepartureStartsOn          pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn            pgtype.Date        `json:"departure_ends_on"`
+	BookerUsername             string             `json:"booker_username"`
+	BookerDisplayName          *string            `json:"booker_display_name"`
+	BookerAvatar               *string            `json:"booker_avatar"`
+	BookerVerified             *bool              `json:"booker_verified"`
+	BookerVerificationType     *string            `json:"booker_verification_type"`
+	ProviderUsername           string             `json:"provider_username"`
+	ProviderDisplayName        *string            `json:"provider_display_name"`
+	ProviderAvatar             *string            `json:"provider_avatar"`
+	ProviderVerified           *bool              `json:"provider_verified"`
+	ProviderVerificationType   *string            `json:"provider_verification_type"`
+	ProviderVerified_2         *bool              `json:"provider_verified_2"`
+	ProviderVerificationType_2 *string            `json:"provider_verification_type_2"`
+	DestinationSpaceName       *string            `json:"destination_space_name"`
+	EffectiveTierName          string             `json:"effective_tier_name"`
 }
 
 // Detail join for display: listing title/slug/content_id, org name,
@@ -2759,6 +2779,8 @@ func (q *Queries) GetServiceBookingDetail(ctx context.Context, id pgtype.UUID) (
 		&i.PackageCapacity,
 		&i.OrgName,
 		&i.OrgSlug,
+		&i.OrgVerified,
+		&i.OrgVerificationType,
 		&i.PaymentStatus,
 		&i.PaymentProvider,
 		&i.DepartureStartsOn,
@@ -2766,9 +2788,15 @@ func (q *Queries) GetServiceBookingDetail(ctx context.Context, id pgtype.UUID) (
 		&i.BookerUsername,
 		&i.BookerDisplayName,
 		&i.BookerAvatar,
+		&i.BookerVerified,
+		&i.BookerVerificationType,
 		&i.ProviderUsername,
 		&i.ProviderDisplayName,
 		&i.ProviderAvatar,
+		&i.ProviderVerified,
+		&i.ProviderVerificationType,
+		&i.ProviderVerified_2,
+		&i.ProviderVerificationType_2,
 		&i.DestinationSpaceName,
 		&i.EffectiveTierName,
 	)
@@ -3932,12 +3960,12 @@ func (q *Queries) ListPendingBookingsDueReminder(ctx context.Context, pageLimit 
 
 const listServiceBookingsByOrg = `-- name: ListServiceBookingsByOrg :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -3972,58 +4000,66 @@ type ListServiceBookingsByOrgParams struct {
 }
 
 type ListServiceBookingsByOrgRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID          pgtype.UUID        `json:"departure_id"`
-	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
-	OrgID                pgtype.UUID        `json:"org_id"`
-	Intent               string             `json:"intent"`
-	PartySize            int32              `json:"party_size"`
-	PreferredDates       []byte             `json:"preferred_dates"`
-	Note                 *string            `json:"note"`
-	Status               string             `json:"status"`
-	PurchaseMode         string             `json:"purchase_mode"`
-	PaymentID            pgtype.UUID        `json:"payment_id"`
-	TotalPrice           *int64             `json:"total_price"`
-	FeeAmount            *int64             `json:"fee_amount"`
-	FeeCurrency          *string            `json:"fee_currency"`
-	AgentBalanceDue      *int64             `json:"agent_balance_due"`
-	OrgResponseNote      *string            `json:"org_response_note"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason         *string            `json:"cancel_reason"`
-	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason        *string            `json:"dispute_reason"`
-	TierID               pgtype.UUID        `json:"tier_id"`
-	CouponID             pgtype.UUID        `json:"coupon_id"`
-	CouponCode           *string            `json:"coupon_code"`
-	DiscountAmount       *int64             `json:"discount_amount"`
-	TierName             *string            `json:"tier_name"`
-	TierPriceAmount      *int64             `json:"tier_price_amount"`
-	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
-	Meta                 []byte             `json:"meta"`
-	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle         string             `json:"listing_title"`
-	ListingSlug          string             `json:"listing_slug"`
-	ListingKind          string             `json:"listing_kind"`
-	OrgName              *string            `json:"org_name"`
-	OrgSlug              *string            `json:"org_slug"`
-	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       string             `json:"booker_username"`
-	BookerDisplayName    *string            `json:"booker_display_name"`
-	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     string             `json:"provider_username"`
-	ProviderDisplayName  *string            `json:"provider_display_name"`
-	ProviderAvatar       *string            `json:"provider_avatar"`
-	DestinationSpaceName *string            `json:"destination_space_name"`
-	EffectiveTierName    string             `json:"effective_tier_name"`
+	ID                         pgtype.UUID        `json:"id"`
+	ListingMetaID              pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID                pgtype.UUID        `json:"departure_id"`
+	BookerUserID               pgtype.UUID        `json:"booker_user_id"`
+	OrgID                      pgtype.UUID        `json:"org_id"`
+	Intent                     string             `json:"intent"`
+	PartySize                  int32              `json:"party_size"`
+	PreferredDates             []byte             `json:"preferred_dates"`
+	Note                       *string            `json:"note"`
+	Status                     string             `json:"status"`
+	PurchaseMode               string             `json:"purchase_mode"`
+	PaymentID                  pgtype.UUID        `json:"payment_id"`
+	TotalPrice                 *int64             `json:"total_price"`
+	FeeAmount                  *int64             `json:"fee_amount"`
+	FeeCurrency                *string            `json:"fee_currency"`
+	AgentBalanceDue            *int64             `json:"agent_balance_due"`
+	OrgResponseNote            *string            `json:"org_response_note"`
+	ExpiresAt                  pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt                pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt                pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt                pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason               *string            `json:"cancel_reason"`
+	AnonymizedAt               pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt                 pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason              *string            `json:"dispute_reason"`
+	TierID                     pgtype.UUID        `json:"tier_id"`
+	CouponID                   pgtype.UUID        `json:"coupon_id"`
+	CouponCode                 *string            `json:"coupon_code"`
+	DiscountAmount             *int64             `json:"discount_amount"`
+	TierName                   *string            `json:"tier_name"`
+	TierPriceAmount            *int64             `json:"tier_price_amount"`
+	ProviderUserID             pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID         pgtype.UUID        `json:"destination_space_id"`
+	Meta                       []byte             `json:"meta"`
+	ListingContentID           pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle               string             `json:"listing_title"`
+	ListingSlug                string             `json:"listing_slug"`
+	ListingKind                string             `json:"listing_kind"`
+	OrgName                    *string            `json:"org_name"`
+	OrgSlug                    *string            `json:"org_slug"`
+	OrgVerified                *bool              `json:"org_verified"`
+	OrgVerificationType        *string            `json:"org_verification_type"`
+	DepartureStartsOn          pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn            pgtype.Date        `json:"departure_ends_on"`
+	BookerUsername             string             `json:"booker_username"`
+	BookerDisplayName          *string            `json:"booker_display_name"`
+	BookerAvatar               *string            `json:"booker_avatar"`
+	BookerVerified             *bool              `json:"booker_verified"`
+	BookerVerificationType     *string            `json:"booker_verification_type"`
+	ProviderUsername           string             `json:"provider_username"`
+	ProviderDisplayName        *string            `json:"provider_display_name"`
+	ProviderAvatar             *string            `json:"provider_avatar"`
+	ProviderVerified           *bool              `json:"provider_verified"`
+	ProviderVerificationType   *string            `json:"provider_verification_type"`
+	ProviderVerified_2         *bool              `json:"provider_verified_2"`
+	ProviderVerificationType_2 *string            `json:"provider_verification_type_2"`
+	DestinationSpaceName       *string            `json:"destination_space_name"`
+	EffectiveTierName          string             `json:"effective_tier_name"`
 }
 
 // Org inbox — paid bookings only appear once money actually moved
@@ -4093,14 +4129,22 @@ func (q *Queries) ListServiceBookingsByOrg(ctx context.Context, arg ListServiceB
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.DepartureStartsOn,
 			&i.DepartureEndsOn,
 			&i.BookerUsername,
 			&i.BookerDisplayName,
 			&i.BookerAvatar,
+			&i.BookerVerified,
+			&i.BookerVerificationType,
 			&i.ProviderUsername,
 			&i.ProviderDisplayName,
 			&i.ProviderAvatar,
+			&i.ProviderVerified,
+			&i.ProviderVerificationType,
+			&i.ProviderVerified_2,
+			&i.ProviderVerificationType_2,
 			&i.DestinationSpaceName,
 			&i.EffectiveTierName,
 		); err != nil {
@@ -4116,13 +4160,13 @@ func (q *Queries) ListServiceBookingsByOrg(ctx context.Context, arg ListServiceB
 
 const listServiceBookingsByProviderUser = `-- name: ListServiceBookingsByProviderUser :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -4156,60 +4200,68 @@ type ListServiceBookingsByProviderUserParams struct {
 }
 
 type ListServiceBookingsByProviderUserRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID          pgtype.UUID        `json:"departure_id"`
-	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
-	OrgID                pgtype.UUID        `json:"org_id"`
-	Intent               string             `json:"intent"`
-	PartySize            int32              `json:"party_size"`
-	PreferredDates       []byte             `json:"preferred_dates"`
-	Note                 *string            `json:"note"`
-	Status               string             `json:"status"`
-	PurchaseMode         string             `json:"purchase_mode"`
-	PaymentID            pgtype.UUID        `json:"payment_id"`
-	TotalPrice           *int64             `json:"total_price"`
-	FeeAmount            *int64             `json:"fee_amount"`
-	FeeCurrency          *string            `json:"fee_currency"`
-	AgentBalanceDue      *int64             `json:"agent_balance_due"`
-	OrgResponseNote      *string            `json:"org_response_note"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason         *string            `json:"cancel_reason"`
-	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason        *string            `json:"dispute_reason"`
-	TierID               pgtype.UUID        `json:"tier_id"`
-	CouponID             pgtype.UUID        `json:"coupon_id"`
-	CouponCode           *string            `json:"coupon_code"`
-	DiscountAmount       *int64             `json:"discount_amount"`
-	TierName             *string            `json:"tier_name"`
-	TierPriceAmount      *int64             `json:"tier_price_amount"`
-	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
-	Meta                 []byte             `json:"meta"`
-	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle         string             `json:"listing_title"`
-	ListingSlug          string             `json:"listing_slug"`
-	ListingKind          string             `json:"listing_kind"`
-	OrgName              *string            `json:"org_name"`
-	OrgSlug              *string            `json:"org_slug"`
-	PaymentStatus        *string            `json:"payment_status"`
-	PaymentProvider      *string            `json:"payment_provider"`
-	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername       string             `json:"booker_username"`
-	BookerDisplayName    *string            `json:"booker_display_name"`
-	BookerAvatar         *string            `json:"booker_avatar"`
-	ProviderUsername     string             `json:"provider_username"`
-	ProviderDisplayName  *string            `json:"provider_display_name"`
-	ProviderAvatar       *string            `json:"provider_avatar"`
-	DestinationSpaceName *string            `json:"destination_space_name"`
-	EffectiveTierName    string             `json:"effective_tier_name"`
+	ID                         pgtype.UUID        `json:"id"`
+	ListingMetaID              pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID                pgtype.UUID        `json:"departure_id"`
+	BookerUserID               pgtype.UUID        `json:"booker_user_id"`
+	OrgID                      pgtype.UUID        `json:"org_id"`
+	Intent                     string             `json:"intent"`
+	PartySize                  int32              `json:"party_size"`
+	PreferredDates             []byte             `json:"preferred_dates"`
+	Note                       *string            `json:"note"`
+	Status                     string             `json:"status"`
+	PurchaseMode               string             `json:"purchase_mode"`
+	PaymentID                  pgtype.UUID        `json:"payment_id"`
+	TotalPrice                 *int64             `json:"total_price"`
+	FeeAmount                  *int64             `json:"fee_amount"`
+	FeeCurrency                *string            `json:"fee_currency"`
+	AgentBalanceDue            *int64             `json:"agent_balance_due"`
+	OrgResponseNote            *string            `json:"org_response_note"`
+	ExpiresAt                  pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt                pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt                pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt                pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason               *string            `json:"cancel_reason"`
+	AnonymizedAt               pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt                 pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason              *string            `json:"dispute_reason"`
+	TierID                     pgtype.UUID        `json:"tier_id"`
+	CouponID                   pgtype.UUID        `json:"coupon_id"`
+	CouponCode                 *string            `json:"coupon_code"`
+	DiscountAmount             *int64             `json:"discount_amount"`
+	TierName                   *string            `json:"tier_name"`
+	TierPriceAmount            *int64             `json:"tier_price_amount"`
+	ProviderUserID             pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID         pgtype.UUID        `json:"destination_space_id"`
+	Meta                       []byte             `json:"meta"`
+	ListingContentID           pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle               string             `json:"listing_title"`
+	ListingSlug                string             `json:"listing_slug"`
+	ListingKind                string             `json:"listing_kind"`
+	OrgName                    *string            `json:"org_name"`
+	OrgSlug                    *string            `json:"org_slug"`
+	OrgVerified                *bool              `json:"org_verified"`
+	OrgVerificationType        *string            `json:"org_verification_type"`
+	PaymentStatus              *string            `json:"payment_status"`
+	PaymentProvider            *string            `json:"payment_provider"`
+	DepartureStartsOn          pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn            pgtype.Date        `json:"departure_ends_on"`
+	BookerUsername             string             `json:"booker_username"`
+	BookerDisplayName          *string            `json:"booker_display_name"`
+	BookerAvatar               *string            `json:"booker_avatar"`
+	BookerVerified             *bool              `json:"booker_verified"`
+	BookerVerificationType     *string            `json:"booker_verification_type"`
+	ProviderUsername           string             `json:"provider_username"`
+	ProviderDisplayName        *string            `json:"provider_display_name"`
+	ProviderAvatar             *string            `json:"provider_avatar"`
+	ProviderVerified           *bool              `json:"provider_verified"`
+	ProviderVerificationType   *string            `json:"provider_verification_type"`
+	ProviderVerified_2         *bool              `json:"provider_verified_2"`
+	ProviderVerificationType_2 *string            `json:"provider_verification_type_2"`
+	DestinationSpaceName       *string            `json:"destination_space_name"`
+	EffectiveTierName          string             `json:"effective_tier_name"`
 }
 
 // User-provider inbox (000824): the counterpart of ListServiceBookingsByOrg
@@ -4277,6 +4329,8 @@ func (q *Queries) ListServiceBookingsByProviderUser(ctx context.Context, arg Lis
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.PaymentStatus,
 			&i.PaymentProvider,
 			&i.DepartureStartsOn,
@@ -4284,9 +4338,15 @@ func (q *Queries) ListServiceBookingsByProviderUser(ctx context.Context, arg Lis
 			&i.BookerUsername,
 			&i.BookerDisplayName,
 			&i.BookerAvatar,
+			&i.BookerVerified,
+			&i.BookerVerificationType,
 			&i.ProviderUsername,
 			&i.ProviderDisplayName,
 			&i.ProviderAvatar,
+			&i.ProviderVerified,
+			&i.ProviderVerificationType,
+			&i.ProviderVerified_2,
+			&i.ProviderVerificationType_2,
 			&i.DestinationSpaceName,
 			&i.EffectiveTierName,
 		); err != nil {
@@ -4302,11 +4362,11 @@ func (q *Queries) ListServiceBookingsByProviderUser(ctx context.Context, arg Lis
 
 const listServiceBookingsByUser = `-- name: ListServiceBookingsByUser :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, sb.tier_id, sb.coupon_id, sb.coupon_code, sb.discount_amount, sb.tier_name, sb.tier_price_amount, sb.provider_user_id, sb.destination_space_id, sb.meta, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -4337,57 +4397,61 @@ type ListServiceBookingsByUserParams struct {
 }
 
 type ListServiceBookingsByUserRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID          pgtype.UUID        `json:"departure_id"`
-	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
-	OrgID                pgtype.UUID        `json:"org_id"`
-	Intent               string             `json:"intent"`
-	PartySize            int32              `json:"party_size"`
-	PreferredDates       []byte             `json:"preferred_dates"`
-	Note                 *string            `json:"note"`
-	Status               string             `json:"status"`
-	PurchaseMode         string             `json:"purchase_mode"`
-	PaymentID            pgtype.UUID        `json:"payment_id"`
-	TotalPrice           *int64             `json:"total_price"`
-	FeeAmount            *int64             `json:"fee_amount"`
-	FeeCurrency          *string            `json:"fee_currency"`
-	AgentBalanceDue      *int64             `json:"agent_balance_due"`
-	OrgResponseNote      *string            `json:"org_response_note"`
-	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason         *string            `json:"cancel_reason"`
-	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason        *string            `json:"dispute_reason"`
-	TierID               pgtype.UUID        `json:"tier_id"`
-	CouponID             pgtype.UUID        `json:"coupon_id"`
-	CouponCode           *string            `json:"coupon_code"`
-	DiscountAmount       *int64             `json:"discount_amount"`
-	TierName             *string            `json:"tier_name"`
-	TierPriceAmount      *int64             `json:"tier_price_amount"`
-	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
-	Meta                 []byte             `json:"meta"`
-	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle         string             `json:"listing_title"`
-	ListingSlug          string             `json:"listing_slug"`
-	ListingKind          string             `json:"listing_kind"`
-	OrgName              *string            `json:"org_name"`
-	OrgSlug              *string            `json:"org_slug"`
-	PaymentStatus        *string            `json:"payment_status"`
-	PaymentProvider      *string            `json:"payment_provider"`
-	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
-	ProviderUsername     string             `json:"provider_username"`
-	ProviderDisplayName  *string            `json:"provider_display_name"`
-	ProviderAvatar       *string            `json:"provider_avatar"`
-	DestinationSpaceName *string            `json:"destination_space_name"`
-	EffectiveTierName    string             `json:"effective_tier_name"`
+	ID                       pgtype.UUID        `json:"id"`
+	ListingMetaID            pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID              pgtype.UUID        `json:"departure_id"`
+	BookerUserID             pgtype.UUID        `json:"booker_user_id"`
+	OrgID                    pgtype.UUID        `json:"org_id"`
+	Intent                   string             `json:"intent"`
+	PartySize                int32              `json:"party_size"`
+	PreferredDates           []byte             `json:"preferred_dates"`
+	Note                     *string            `json:"note"`
+	Status                   string             `json:"status"`
+	PurchaseMode             string             `json:"purchase_mode"`
+	PaymentID                pgtype.UUID        `json:"payment_id"`
+	TotalPrice               *int64             `json:"total_price"`
+	FeeAmount                *int64             `json:"fee_amount"`
+	FeeCurrency              *string            `json:"fee_currency"`
+	AgentBalanceDue          *int64             `json:"agent_balance_due"`
+	OrgResponseNote          *string            `json:"org_response_note"`
+	ExpiresAt                pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt              pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt              pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt              pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason             *string            `json:"cancel_reason"`
+	AnonymizedAt             pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt               pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason            *string            `json:"dispute_reason"`
+	TierID                   pgtype.UUID        `json:"tier_id"`
+	CouponID                 pgtype.UUID        `json:"coupon_id"`
+	CouponCode               *string            `json:"coupon_code"`
+	DiscountAmount           *int64             `json:"discount_amount"`
+	TierName                 *string            `json:"tier_name"`
+	TierPriceAmount          *int64             `json:"tier_price_amount"`
+	ProviderUserID           pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID       pgtype.UUID        `json:"destination_space_id"`
+	Meta                     []byte             `json:"meta"`
+	ListingContentID         pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle             string             `json:"listing_title"`
+	ListingSlug              string             `json:"listing_slug"`
+	ListingKind              string             `json:"listing_kind"`
+	OrgName                  *string            `json:"org_name"`
+	OrgSlug                  *string            `json:"org_slug"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
+	PaymentStatus            *string            `json:"payment_status"`
+	PaymentProvider          *string            `json:"payment_provider"`
+	DepartureStartsOn        pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn          pgtype.Date        `json:"departure_ends_on"`
+	ProviderUsername         string             `json:"provider_username"`
+	ProviderDisplayName      *string            `json:"provider_display_name"`
+	ProviderAvatar           *string            `json:"provider_avatar"`
+	ProviderVerified         *bool              `json:"provider_verified"`
+	ProviderVerificationType *string            `json:"provider_verification_type"`
+	DestinationSpaceName     *string            `json:"destination_space_name"`
+	EffectiveTierName        string             `json:"effective_tier_name"`
 }
 
 // Booker history. kind filters sm.listing_kind ('service'|'package'|
@@ -4451,6 +4515,8 @@ func (q *Queries) ListServiceBookingsByUser(ctx context.Context, arg ListService
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
 			&i.PaymentStatus,
 			&i.PaymentProvider,
 			&i.DepartureStartsOn,
@@ -4458,6 +4524,8 @@ func (q *Queries) ListServiceBookingsByUser(ctx context.Context, arg ListService
 			&i.ProviderUsername,
 			&i.ProviderDisplayName,
 			&i.ProviderAvatar,
+			&i.ProviderVerified,
+			&i.ProviderVerificationType,
 			&i.DestinationSpaceName,
 			&i.EffectiveTierName,
 		); err != nil {

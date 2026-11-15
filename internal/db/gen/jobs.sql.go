@@ -74,6 +74,8 @@ const adminListJobApplications = `-- name: AdminListJobApplications :many
 SELECT
  ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  u.username AS applicant_username,
+ u.verified AS applicant_verified,
+ u.verification_type AS applicant_verification_type,
  c.title AS job_title
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
@@ -92,16 +94,18 @@ type AdminListJobApplicationsParams struct {
 }
 
 type AdminListJobApplicationsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	JobID             pgtype.UUID        `json:"job_id"`
-	ApplicantID       pgtype.UUID        `json:"applicant_id"`
-	SubmissionID      pgtype.UUID        `json:"submission_id"`
-	Status            string             `json:"status"`
-	EmployerNotes     *string            `json:"employer_notes"`
-	AppliedAt         pgtype.Timestamptz `json:"applied_at"`
-	StatusUpdatedAt   pgtype.Timestamptz `json:"status_updated_at"`
-	ApplicantUsername string             `json:"applicant_username"`
-	JobTitle          string             `json:"job_title"`
+	ID                        pgtype.UUID        `json:"id"`
+	JobID                     pgtype.UUID        `json:"job_id"`
+	ApplicantID               pgtype.UUID        `json:"applicant_id"`
+	SubmissionID              pgtype.UUID        `json:"submission_id"`
+	Status                    string             `json:"status"`
+	EmployerNotes             *string            `json:"employer_notes"`
+	AppliedAt                 pgtype.Timestamptz `json:"applied_at"`
+	StatusUpdatedAt           pgtype.Timestamptz `json:"status_updated_at"`
+	ApplicantUsername         string             `json:"applicant_username"`
+	ApplicantVerified         bool               `json:"applicant_verified"`
+	ApplicantVerificationType *string            `json:"applicant_verification_type"`
+	JobTitle                  string             `json:"job_title"`
 }
 
 // =====================================================================
@@ -131,6 +135,8 @@ func (q *Queries) AdminListJobApplications(ctx context.Context, arg AdminListJob
 			&i.AppliedAt,
 			&i.StatusUpdatedAt,
 			&i.ApplicantUsername,
+			&i.ApplicantVerified,
+			&i.ApplicantVerificationType,
 			&i.JobTitle,
 		); err != nil {
 			return nil, err
@@ -311,6 +317,8 @@ SELECT
  ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  u.username AS applicant_username,
  u.email AS applicant_email,
+ u.verified AS applicant_verified,
+ u.verification_type AS applicant_verification_type,
  fs.field_values AS submission_fields
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
@@ -329,17 +337,19 @@ type ListJobApplicationsByJobParams struct {
 }
 
 type ListJobApplicationsByJobRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	JobID             pgtype.UUID        `json:"job_id"`
-	ApplicantID       pgtype.UUID        `json:"applicant_id"`
-	SubmissionID      pgtype.UUID        `json:"submission_id"`
-	Status            string             `json:"status"`
-	EmployerNotes     *string            `json:"employer_notes"`
-	AppliedAt         pgtype.Timestamptz `json:"applied_at"`
-	StatusUpdatedAt   pgtype.Timestamptz `json:"status_updated_at"`
-	ApplicantUsername string             `json:"applicant_username"`
-	ApplicantEmail    string             `json:"applicant_email"`
-	SubmissionFields  []byte             `json:"submission_fields"`
+	ID                        pgtype.UUID        `json:"id"`
+	JobID                     pgtype.UUID        `json:"job_id"`
+	ApplicantID               pgtype.UUID        `json:"applicant_id"`
+	SubmissionID              pgtype.UUID        `json:"submission_id"`
+	Status                    string             `json:"status"`
+	EmployerNotes             *string            `json:"employer_notes"`
+	AppliedAt                 pgtype.Timestamptz `json:"applied_at"`
+	StatusUpdatedAt           pgtype.Timestamptz `json:"status_updated_at"`
+	ApplicantUsername         string             `json:"applicant_username"`
+	ApplicantEmail            string             `json:"applicant_email"`
+	ApplicantVerified         bool               `json:"applicant_verified"`
+	ApplicantVerificationType *string            `json:"applicant_verification_type"`
+	SubmissionFields          []byte             `json:"submission_fields"`
 }
 
 // =====================================================================
@@ -370,6 +380,8 @@ func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobAppli
 			&i.StatusUpdatedAt,
 			&i.ApplicantUsername,
 			&i.ApplicantEmail,
+			&i.ApplicantVerified,
+			&i.ApplicantVerificationType,
 			&i.SubmissionFields,
 		); err != nil {
 			return nil, err

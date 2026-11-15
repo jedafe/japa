@@ -6,6 +6,7 @@
 	import { enhance } from '$app/forms';
 	import { Briefcase, FileText, ArrowLeft } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import SelectField from '#lib/components/ui/SelectField.svelte';
 	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
 	import type { PageData } from './$types';
@@ -94,8 +95,9 @@
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-									{app.applicant_username ?? app.applicant_email ?? app.applicant_id ?? t('jobs.unknown_applicant', 'Applicant')}
+								<span class="flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+									<span class="truncate">{app.applicant_username ?? app.applicant_email ?? app.applicant_id ?? t('jobs.unknown_applicant', 'Applicant')}</span>
+									<VerifiedBadge verified={app.applicant_verified} type={app.applicant_verification_type} size={13} />
 								</span>
 								<p class="mt-1 text-xs text-[var(--color-muted)]">
 									{t('jobs.applied_on', 'Applied')} <RelativeTime iso={app.applied_at} />

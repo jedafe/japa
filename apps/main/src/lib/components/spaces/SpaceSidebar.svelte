@@ -8,6 +8,7 @@
 	import AchievementWidget from '#lib/components/spaces/AchievementWidget.svelte';
 	import TipButton from '#lib/components/tips/TipButton.svelte';
 	import SpaceFollowListModal from '#lib/components/spaces/SpaceFollowListModal.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { Space, SpaceMember, SpaceRule, Achievement } from '#lib/types/index.js';
 
 	interface Props {
@@ -300,7 +301,7 @@
 								</span>
 							{/if}
 							<span class="min-w-0">
-								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
+								<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{member.display_name ?? member.username}</span><VerifiedBadge verified={member.verified} type={member.verification_type} size={13} /></span>
 								<span class="block truncate text-xs text-[var(--color-muted)]">@{member.username}</span>
 							</span>
 						</a>

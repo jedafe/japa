@@ -242,7 +242,7 @@ ON CONFLICT (user_id) DO UPDATE SET
  updated_at = now();
 
 -- name: ListUsers :many
-SELECT u.id, u.email, u.username, u.profile_type, u.verified,
+SELECT u.id, u.email, u.username, u.profile_type, u.verified, u.verification_type,
  CASE
  WHEN EXISTS (
  SELECT 1 FROM user_operation_bans uob

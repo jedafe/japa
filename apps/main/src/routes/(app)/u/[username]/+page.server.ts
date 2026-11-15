@@ -30,6 +30,8 @@ type RawFollowing = {
 	entity_name: string;
 	entity_display_name?: string;
 	entity_avatar_url?: string;
+	entity_verified?: boolean;
+	entity_verification_type?: string | null;
 	is_following?: boolean;
 	entity_type?: string;
 	created_at?: string;
@@ -300,6 +302,8 @@ export const load: PageServerLoad = async (event) => {
 					username: f.entity_slug, // user-type: == username; else slug
 					display_name: f.entity_display_name || f.entity_name,
 					avatar_url: f.entity_avatar_url || null,
+					verified: f.entity_verified,
+					verification_type: f.entity_verification_type,
 					is_following: f.is_following,
 					entity_type: f.entity_type, // tells the template how to link + which FollowButton entityType to use
 					created_at: f.created_at

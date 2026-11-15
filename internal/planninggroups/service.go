@@ -42,11 +42,13 @@ type PlanningGroupDTO struct {
 
 // MemberDTO is the API response shape for a planning group member.
 type MemberDTO struct {
-	UserID        string `json:"user_id"`
-	DepartureDate string `json:"departure_date,omitempty"`
-	JoinedAt      string `json:"joined_at"`
-	Username      string `json:"username,omitempty"`
-	AvatarURL     string `json:"avatar_url,omitempty"`
+	UserID           string  `json:"user_id"`
+	DepartureDate    string  `json:"departure_date,omitempty"`
+	JoinedAt         string  `json:"joined_at"`
+	Username         string  `json:"username,omitempty"`
+	AvatarURL        string  `json:"avatar_url,omitempty"`
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
 }
 
 // MilestoneDTO is the API response shape for a planning group milestone.
@@ -62,12 +64,14 @@ type MilestoneDTO struct {
 
 // CheckinDTO is the API response shape for a planning group check-in.
 type CheckinDTO struct {
-	ID        string `json:"id"`
-	GroupID   string `json:"group_id"`
-	UserID    string `json:"user_id"`
-	Note      string `json:"note"`
-	CreatedAt string `json:"created_at"`
-	Username  string `json:"username,omitempty"`
+	ID               string  `json:"id"`
+	GroupID          string  `json:"group_id"`
+	UserID           string  `json:"user_id"`
+	Note             string  `json:"note"`
+	CreatedAt        string  `json:"created_at"`
+	Username         string  `json:"username,omitempty"`
+	Verified         bool    `json:"verified"`
+	VerificationType *string `json:"verification_type"`
 }
 
 // CreateGroupInput is the request body for POST /planning-groups.
@@ -829,6 +833,9 @@ func memberToDTO(m PlanningGroupMember) MemberDTO {
 		dto.AvatarURL = *m.AvatarURL
 	}
 
+	dto.Verified = m.Verified
+	dto.VerificationType = m.VerificationType
+
 	return dto
 }
 
@@ -857,6 +864,9 @@ func checkinToDTO(c PlanningGroupCheckin) CheckinDTO {
 	if c.Username != nil {
 		dto.Username = *c.Username
 	}
+
+	dto.Verified = c.Verified
+	dto.VerificationType = c.VerificationType
 
 	return dto
 }

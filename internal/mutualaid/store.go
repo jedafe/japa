@@ -95,12 +95,14 @@ type Post struct {
 // returned by list and get queries.
 type PostRow struct {
 	Post
-	AuthorName    *string
-	AuthorAvatar  *string
-	DestSpaceName *string
-	DestSpaceCode *string
-	CitySpaceName *string
-	CitySpaceCode *string
+	AuthorName             *string
+	AuthorAvatar           *string
+	AuthorVerified         bool
+	AuthorVerificationType *string
+	DestSpaceName          *string
+	DestSpaceCode          *string
+	CitySpaceName          *string
+	CitySpaceCode          *string
 }
 
 // CreatePostInput holds the fields for inserting a new post.
@@ -184,6 +186,7 @@ SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        cs.name AS city_space_name, cs.geo_code AS city_space_code
 FROM mutual_aid_posts m
@@ -203,6 +206,7 @@ LIMIT 1
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.AuthorVerified, &r.AuthorVerificationType,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceName, &r.CitySpaceCode,
 	)
@@ -227,6 +231,7 @@ SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        cs.name AS city_space_name, cs.geo_code AS city_space_code
 FROM mutual_aid_posts m
@@ -246,6 +251,7 @@ LIMIT 1
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.AuthorVerified, &r.AuthorVerificationType,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceName, &r.CitySpaceCode,
 	)
@@ -320,6 +326,7 @@ SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        cs.name AS city_space_name, cs.geo_code AS city_space_code
 FROM mutual_aid_posts m
@@ -527,6 +534,7 @@ SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        cs.name AS city_space_name, cs.geo_code AS city_space_code
 FROM mutual_aid_posts m

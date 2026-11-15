@@ -389,6 +389,7 @@ func (q *Queries) ListReactionTypes(ctx context.Context) ([]ReactionType, error)
 const listReactorsByEntity = `-- name: ListReactorsByEntity :many
 SELECT r.reaction_key, r.created_at, u.id AS user_id,
        u.username, COALESCE(up.display_name, '') AS display_name,
+       u.verified, u.verification_type,
        up.avatar_media_id
 FROM reactions r
 JOIN users u ON u.id = r.user_id AND u.status != 'deleted'
@@ -408,12 +409,14 @@ type ListReactorsByEntityParams struct {
 }
 
 type ListReactorsByEntityRow struct {
-	ReactionKey   string             `json:"reaction_key"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"display_name"`
-	AvatarMediaID pgtype.UUID        `json:"avatar_media_id"`
+	ReactionKey      string             `json:"reaction_key"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	AvatarMediaID    pgtype.UUID        `json:"avatar_media_id"`
 }
 
 // "Who reacted" rows — user display info joined to each reaction so the
@@ -440,6 +443,8 @@ func (q *Queries) ListReactorsByEntity(ctx context.Context, arg ListReactorsByEn
 			&i.UserID,
 			&i.Username,
 			&i.DisplayName,
+			&i.Verified,
+			&i.VerificationType,
 			&i.AvatarMediaID,
 		); err != nil {
 			return nil, err

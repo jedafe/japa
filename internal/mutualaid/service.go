@@ -43,9 +43,11 @@ type PostDTO struct {
 	ExpiresAt          string `json:"expires_at"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
-	AuthorID           string `json:"author_id,omitempty"`
-	AuthorName         string `json:"author_name,omitempty"`
-	AuthorAvatar       string `json:"author_avatar,omitempty"`
+	AuthorID               string  `json:"author_id,omitempty"`
+	AuthorName             string  `json:"author_name,omitempty"`
+	AuthorAvatar           string  `json:"author_avatar,omitempty"`
+	AuthorVerified         bool    `json:"author_verified"`
+	AuthorVerificationType *string `json:"author_verification_type"`
 }
 
 // CreatePostRequest is the request body for POST /mutual-aid.
@@ -597,6 +599,9 @@ func rowToDTO(r PostRow) PostDTO {
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+
+	dto.AuthorVerified = r.AuthorVerified
+	dto.AuthorVerificationType = r.AuthorVerificationType
 
 	return dto
 }

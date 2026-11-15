@@ -921,13 +921,13 @@ WHERE id = @id;
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        c.slug AS listing_slug,
        sm.listing_kind, sm.capacity AS package_capacity,
-       o.name AS org_name, o.slug AS org_slug,
+       o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -965,11 +965,11 @@ RETURNING *;
 -- 'mentorship'); NULL means all kinds.
 -- name: ListServiceBookingsByUser :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -1003,12 +1003,12 @@ WHERE sb.booker_user_id = @booker_user_id
 -- record of work that happened).
 -- name: ListServiceBookingsByOrg :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -1054,13 +1054,13 @@ WHERE sb.org_id = @org_id
 -- the provider's work queue. kind filters sm.listing_kind.
 -- name: ListServiceBookingsByProviderUser :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        COALESCE(u.public_username, u.username, '') AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        COALESCE(pu.public_username, pu.username, '') AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
@@ -1143,13 +1143,13 @@ WHERE user_id = @user_id;
 -- (booker) over kind='mentorship' rows.
 -- name: AdminListServiceBookings :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
-       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified, o.verification_type AS org_verification_type,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username, up.display_name AS booker_display_name,
-       up.avatar_url AS booker_avatar,
+       up.avatar_url AS booker_avatar, u.verified AS booker_verified, u.verification_type AS booker_verification_type,
        pu.username AS provider_username, pup.display_name AS provider_display_name,
-       pup.avatar_url AS provider_avatar,
+       pup.avatar_url AS provider_avatar, pu.verified AS provider_verified, pu.verification_type AS provider_verification_type,
        dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb

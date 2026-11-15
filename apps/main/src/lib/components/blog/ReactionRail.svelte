@@ -8,6 +8,7 @@
 	import { actAsPersona } from '#lib/stores/actAsPersona.svelte.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { shareContrastColor } from '#lib/utils/shareColor.js';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import TipButton from '#lib/components/tips/TipButton.svelte';
@@ -70,7 +71,7 @@
 
 	// "Who reacted" — clicking a reaction row's count expands the reactor
 	// list (GET /content/{id}/reactors?key=). dev.to parity.
-	type Reactor = { user_id: string; username: string; display_name: string; reaction_key: string };
+	type Reactor = { user_id: string; username: string; display_name: string; reaction_key: string; verified?: boolean; verification_type?: string | null };
 	const REACTORS_PAGE_SIZE = 10;
 	let expandedKey = $state<string | null>(null);
 	let reactors = $state<Reactor[]>([]);
@@ -544,8 +545,8 @@
 										<p class="text-xs text-[var(--color-text-subtle)]">—</p>
 									{:else}
 										{#each reactors as u (u.user_id)}
-											<div class="truncate py-0.5 text-xs text-[var(--color-text)]">
-												{u.display_name || u.username}
+											<div class="flex items-center gap-1 truncate py-0.5 text-xs text-[var(--color-text)]">
+												<span class="truncate">{u.display_name || u.username}</span><VerifiedBadge verified={u.verified} type={u.verification_type} size={12} />
 											</div>
 										{/each}
 									{/if}

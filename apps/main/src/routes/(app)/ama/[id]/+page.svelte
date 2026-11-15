@@ -9,6 +9,7 @@
 	import { tiptapBodyToHtml, tiptapExcerpt } from '#lib/tiptap/serialize.js';
 	import { api } from '#lib/api/client.js';
 	import { EmptyState } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
 	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
@@ -216,7 +217,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 						{#if session.author_avatar}
 							<img src={session.author_avatar} alt="" class="h-6 w-6 rounded-full object-cover" />
 						{/if}
-						<span class="font-medium text-[var(--color-text)]">{hostName}</span>
+						<span class="inline-flex items-center gap-1 font-medium text-[var(--color-text)]">{hostName}{#if !session.is_anonymous}<VerifiedBadge verified={session.author_verified} type={session.author_verification_type} size={13} />{/if}</span>
 					</div>
 					{#if cfg?.host_profession}
 						<span>{cfg.host_profession}</span>

@@ -24,6 +24,7 @@
 	} from 'lucide-svelte';
 	import { bookmarkLabel, bookmarkUrl } from '#lib/components/profile/bookmarks.js';
 	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type {
 		Badge,
@@ -41,6 +42,8 @@
 		username: string;
 		display_name: string;
 		avatar_url?: string | null;
+		verified?: boolean;
+		verification_type?: string | null;
 	}
 
 	interface Props {
@@ -269,7 +272,7 @@
 							</span>
 						{/if}
 						<span class="min-w-0 flex-1">
-							<span class="block truncate text-sm font-medium text-[var(--color-text)]">{c.display_name ?? c.username}</span>
+							<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{c.display_name ?? c.username}</span><VerifiedBadge verified={c.verified} type={c.verification_type} size={13} /></span>
 							<span class="block truncate text-xs text-[var(--color-muted)]">@{c.username}</span>
 						</span>
 					</a>

@@ -13,6 +13,7 @@
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { Shield, Search, Loader2, X, Flag, Check, ListFilter } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { ModerationQueueItem } from './+page.server';
@@ -613,7 +614,7 @@
 							{/if}
 							<p class="mt-1 text-xs text-[var(--color-muted)]">
 								{t('studio.moderation.reported_by', 'Reported by')}
-								{item.reporter_display_name ?? item.reporter_username ?? t('studio.moderation.anonymous', 'anonymous')}
+								{item.reporter_display_name ?? item.reporter_username ?? t('studio.moderation.anonymous', 'anonymous')}<VerifiedBadge verified={item.reporter_verified} type={item.reporter_verification_type} size={12} />
 								· {formatDate(item.created_at)}
 								{#if item.entity_author_username}
 									· {t('studio.moderation.author', 'author')}: {item.entity_author_username}

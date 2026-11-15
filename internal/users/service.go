@@ -1307,6 +1307,7 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sort
 			ProfileType:   u.ProfileType,
 			Status:        parseString(u.Status),
 			Verified:      u.Verified,
+			VerificationType: u.VerificationType,
 			FollowerCount: u.FollowerCount,
 			Groups:        groups,
 			IsOwner:       auth.IsOwnerEmail(u.Email, s.ownerEmail),

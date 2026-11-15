@@ -55,6 +55,8 @@
 			author_name: data.user.display_name,
 			author_username: data.user.username,
 			author_avatar_url: data.user.avatar_url,
+			author_verified: data.user.verified,
+			author_verification_type: data.user.verification_type,
 			created_at: post.published_at ?? post.created_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,
@@ -399,6 +401,8 @@
 		username: string;
 		display_name: string;
 		avatar_url?: string | null;
+		verified?: boolean;
+		verification_type?: string | null;
 		is_following?: boolean;
 	}
 	const connections = $derived.by(() => {
@@ -409,6 +413,8 @@
 				username: f.username,
 				display_name: f.display_name ?? f.username,
 				avatar_url: f.avatar_url,
+				verified: f.verified,
+				verification_type: f.verification_type,
 				is_following: f.is_following
 			});
 		}
@@ -423,6 +429,8 @@
 					username: f.username,
 					display_name: f.display_name ?? f.username,
 					avatar_url: f.avatar_url,
+					verified: f.verified,
+					verification_type: f.verification_type,
 					is_following: f.is_following
 				});
 			}

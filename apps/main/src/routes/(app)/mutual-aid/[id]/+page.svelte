@@ -18,6 +18,7 @@
 	import { api } from '#lib/api/client.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -222,7 +223,7 @@
 
 		<!-- Meta -->
 		<div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
-			<span class="font-medium text-[var(--color-text-subtle)]">{post.author_name}</span>
+			<span class="inline-flex items-center gap-1 font-medium text-[var(--color-text-subtle)]">{post.author_name}<VerifiedBadge verified={post.author_verified} type={post.author_verification_type} size={13} /></span>
 			<span>·</span>
 			<span>{relativeTime(post.created_at, new Date(), i18n.locale)}</span>
 			{#if post.destination_space_name || post.city_space_name}

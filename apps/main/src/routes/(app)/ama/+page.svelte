@@ -12,6 +12,7 @@
 	import { i18n } from '#lib/i18n/index.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { AMAThread, Space } from '#lib/types/index.js';
 	import type { PageData } from './$types';
@@ -296,8 +297,9 @@
 								{#if session.author_avatar}
 									<img src={session.author_avatar} alt="" class="h-5 w-5 rounded-full object-cover" />
 								{/if}
-								<span class="font-medium text-[var(--color-text)]">
+								<span class="inline-flex items-center gap-1 font-medium text-[var(--color-text)]">
 									{session.author_name || t('ama.host', 'Host')}
+									{#if !session.is_anonymous}<VerifiedBadge verified={session.author_verified} type={session.author_verification_type} size={13} />{/if}
 								</span>
 							</div>
 							{#if cfg?.host_profession}

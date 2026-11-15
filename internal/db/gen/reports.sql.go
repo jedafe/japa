@@ -313,6 +313,8 @@ SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.n
        cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
        ru.username AS reporter_username,
        rup.display_name AS reporter_display_name,
+       ru.verified AS reporter_verified,
+       ru.verification_type AS reporter_verification_type,
        COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
        COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
@@ -365,32 +367,34 @@ type GetModerationQueueItemParams struct {
 }
 
 type GetModerationQueueItemRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
-	EntityType           string             `json:"entity_type"`
-	EntityID             pgtype.UUID        `json:"entity_id"`
-	Reason               string             `json:"reason"`
-	Notes                *string            `json:"notes"`
-	EvidenceUrls         []string           `json:"evidence_urls"`
-	Status               string             `json:"status"`
-	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote       *string            `json:"resolution_note"`
-	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	ReporterUsername     *string            `json:"reporter_username"`
-	ReporterDisplayName  *string            `json:"reporter_display_name"`
-	EntityTitle          string             `json:"entity_title"`
-	EntityExcerpt        string             `json:"entity_excerpt"`
-	EntitySlug           string             `json:"entity_slug"`
-	ThreadSlug           string             `json:"thread_slug"`
-	EntityContentType    string             `json:"entity_content_type"`
-	EntityAuthorUsername *string            `json:"entity_author_username"`
-	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
-	EntitySpaceName      *string            `json:"entity_space_name"`
-	EntitySpaceSlug      *string            `json:"entity_space_slug"`
-	ScopeAssigned        bool               `json:"scope_assigned"`
-	ScopeSpace           bool               `json:"scope_space"`
-	ScopeTag             bool               `json:"scope_tag"`
+	ID                       pgtype.UUID        `json:"id"`
+	ReporterUserID           pgtype.UUID        `json:"reporter_user_id"`
+	EntityType               string             `json:"entity_type"`
+	EntityID                 pgtype.UUID        `json:"entity_id"`
+	Reason                   string             `json:"reason"`
+	Notes                    *string            `json:"notes"`
+	EvidenceUrls             []string           `json:"evidence_urls"`
+	Status                   string             `json:"status"`
+	ReviewedBy               pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote           *string            `json:"resolution_note"`
+	ResolvedAt               pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername         *string            `json:"reporter_username"`
+	ReporterDisplayName      *string            `json:"reporter_display_name"`
+	ReporterVerified         *bool              `json:"reporter_verified"`
+	ReporterVerificationType *string            `json:"reporter_verification_type"`
+	EntityTitle              string             `json:"entity_title"`
+	EntityExcerpt            string             `json:"entity_excerpt"`
+	EntitySlug               string             `json:"entity_slug"`
+	ThreadSlug               string             `json:"thread_slug"`
+	EntityContentType        string             `json:"entity_content_type"`
+	EntityAuthorUsername     *string            `json:"entity_author_username"`
+	ResolvedSpaceID          pgtype.UUID        `json:"resolved_space_id"`
+	EntitySpaceName          *string            `json:"entity_space_name"`
+	EntitySpaceSlug          *string            `json:"entity_space_slug"`
+	ScopeAssigned            bool               `json:"scope_assigned"`
+	ScopeSpace               bool               `json:"scope_space"`
+	ScopeTag                 bool               `json:"scope_tag"`
 }
 
 // Single report with the same scope flags + entity preview. The handler checks
@@ -418,6 +422,8 @@ func (q *Queries) GetModerationQueueItem(ctx context.Context, arg GetModerationQ
 		&i.CreatedAt,
 		&i.ReporterUsername,
 		&i.ReporterDisplayName,
+		&i.ReporterVerified,
+		&i.ReporterVerificationType,
 		&i.EntityTitle,
 		&i.EntityExcerpt,
 		&i.EntitySlug,
@@ -552,6 +558,8 @@ WITH scoped AS (
            cr.evidence_urls, cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
            ru.username AS reporter_username,
            rup.display_name AS reporter_display_name,
+           ru.verified AS reporter_verified,
+           ru.verification_type AS reporter_verification_type,
            COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
            COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
                     FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
@@ -597,7 +605,7 @@ WITH scoped AS (
 )
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
        status, reviewed_by, resolution_note, resolved_at, created_at,
-       reporter_username, reporter_display_name,
+       reporter_username, reporter_display_name, reporter_verified, reporter_verification_type,
        entity_title, entity_excerpt, entity_slug, thread_slug, entity_content_type, entity_author_username,
        resolved_space_id, entity_space_name, entity_space_slug,
        scope_assigned, scope_space, scope_tag
@@ -638,32 +646,34 @@ type ListModerationQueueParams struct {
 }
 
 type ListModerationQueueRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
-	EntityType           string             `json:"entity_type"`
-	EntityID             pgtype.UUID        `json:"entity_id"`
-	Reason               string             `json:"reason"`
-	Notes                *string            `json:"notes"`
-	EvidenceUrls         []string           `json:"evidence_urls"`
-	Status               string             `json:"status"`
-	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote       *string            `json:"resolution_note"`
-	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	ReporterUsername     *string            `json:"reporter_username"`
-	ReporterDisplayName  *string            `json:"reporter_display_name"`
-	EntityTitle          string             `json:"entity_title"`
-	EntityExcerpt        string             `json:"entity_excerpt"`
-	EntitySlug           string             `json:"entity_slug"`
-	ThreadSlug           string             `json:"thread_slug"`
-	EntityContentType    string             `json:"entity_content_type"`
-	EntityAuthorUsername *string            `json:"entity_author_username"`
-	ResolvedSpaceID      pgtype.UUID        `json:"resolved_space_id"`
-	EntitySpaceName      *string            `json:"entity_space_name"`
-	EntitySpaceSlug      *string            `json:"entity_space_slug"`
-	ScopeAssigned        bool               `json:"scope_assigned"`
-	ScopeSpace           bool               `json:"scope_space"`
-	ScopeTag             bool               `json:"scope_tag"`
+	ID                       pgtype.UUID        `json:"id"`
+	ReporterUserID           pgtype.UUID        `json:"reporter_user_id"`
+	EntityType               string             `json:"entity_type"`
+	EntityID                 pgtype.UUID        `json:"entity_id"`
+	Reason                   string             `json:"reason"`
+	Notes                    *string            `json:"notes"`
+	EvidenceUrls             []string           `json:"evidence_urls"`
+	Status                   string             `json:"status"`
+	ReviewedBy               pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote           *string            `json:"resolution_note"`
+	ResolvedAt               pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername         *string            `json:"reporter_username"`
+	ReporterDisplayName      *string            `json:"reporter_display_name"`
+	ReporterVerified         *bool              `json:"reporter_verified"`
+	ReporterVerificationType *string            `json:"reporter_verification_type"`
+	EntityTitle              string             `json:"entity_title"`
+	EntityExcerpt            string             `json:"entity_excerpt"`
+	EntitySlug               string             `json:"entity_slug"`
+	ThreadSlug               string             `json:"thread_slug"`
+	EntityContentType        string             `json:"entity_content_type"`
+	EntityAuthorUsername     *string            `json:"entity_author_username"`
+	ResolvedSpaceID          pgtype.UUID        `json:"resolved_space_id"`
+	EntitySpaceName          *string            `json:"entity_space_name"`
+	EntitySpaceSlug          *string            `json:"entity_space_slug"`
+	ScopeAssigned            bool               `json:"scope_assigned"`
+	ScopeSpace               bool               `json:"scope_space"`
+	ScopeTag                 bool               `json:"scope_tag"`
 }
 
 func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQueueParams) ([]ListModerationQueueRow, error) {
@@ -705,6 +715,8 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 			&i.CreatedAt,
 			&i.ReporterUsername,
 			&i.ReporterDisplayName,
+			&i.ReporterVerified,
+			&i.ReporterVerificationType,
 			&i.EntityTitle,
 			&i.EntityExcerpt,
 			&i.EntitySlug,
@@ -732,6 +744,7 @@ const listReports = `-- name: ListReports :many
 SELECT cr.id, cr.reporter_user_id, cr.entity_type, cr.entity_id, cr.reason, cr.notes, cr.evidence_urls,
  cr.status, cr.reviewed_by, cr.resolution_note, cr.resolved_at, cr.created_at,
  u.username AS reporter_username, up.display_name AS reporter_display_name,
+ u.verified AS reporter_verified, u.verification_type AS reporter_verification_type,
  COALESCE(c.title, pc.title, s.name, tu.username, isrc.name, rt.title, '') AS entity_title,
  COALESCE(LEFT(c.body, 240), LEFT((SELECT string_agg(DISTINCT n #>> '{}', ' ')
           FROM jsonb_path_query(cm.body, '$.** ? (@.text.type() == "string").text') AS n), 240),
@@ -783,28 +796,30 @@ type ListReportsParams struct {
 }
 
 type ListReportsRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	ReporterUserID       pgtype.UUID        `json:"reporter_user_id"`
-	EntityType           string             `json:"entity_type"`
-	EntityID             pgtype.UUID        `json:"entity_id"`
-	Reason               string             `json:"reason"`
-	Notes                *string            `json:"notes"`
-	EvidenceUrls         []string           `json:"evidence_urls"`
-	Status               string             `json:"status"`
-	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote       *string            `json:"resolution_note"`
-	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	ReporterUsername     *string            `json:"reporter_username"`
-	ReporterDisplayName  *string            `json:"reporter_display_name"`
-	EntityTitle          string             `json:"entity_title"`
-	EntityExcerpt        string             `json:"entity_excerpt"`
-	EntitySlug           string             `json:"entity_slug"`
-	ThreadSlug           string             `json:"thread_slug"`
-	EntityContentType    string             `json:"entity_content_type"`
-	EntityAuthorUsername *string            `json:"entity_author_username"`
-	EntitySpaceName      *string            `json:"entity_space_name"`
-	EntitySpaceSlug      *string            `json:"entity_space_slug"`
+	ID                       pgtype.UUID        `json:"id"`
+	ReporterUserID           pgtype.UUID        `json:"reporter_user_id"`
+	EntityType               string             `json:"entity_type"`
+	EntityID                 pgtype.UUID        `json:"entity_id"`
+	Reason                   string             `json:"reason"`
+	Notes                    *string            `json:"notes"`
+	EvidenceUrls             []string           `json:"evidence_urls"`
+	Status                   string             `json:"status"`
+	ReviewedBy               pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote           *string            `json:"resolution_note"`
+	ResolvedAt               pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	ReporterUsername         *string            `json:"reporter_username"`
+	ReporterDisplayName      *string            `json:"reporter_display_name"`
+	ReporterVerified         *bool              `json:"reporter_verified"`
+	ReporterVerificationType *string            `json:"reporter_verification_type"`
+	EntityTitle              string             `json:"entity_title"`
+	EntityExcerpt            string             `json:"entity_excerpt"`
+	EntitySlug               string             `json:"entity_slug"`
+	ThreadSlug               string             `json:"thread_slug"`
+	EntityContentType        string             `json:"entity_content_type"`
+	EntityAuthorUsername     *string            `json:"entity_author_username"`
+	EntitySpaceName          *string            `json:"entity_space_name"`
+	EntitySpaceSlug          *string            `json:"entity_space_slug"`
 }
 
 // Admin report queue — resolves the reported entity's title/excerpt/link so
@@ -840,6 +855,8 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Lis
 			&i.CreatedAt,
 			&i.ReporterUsername,
 			&i.ReporterDisplayName,
+			&i.ReporterVerified,
+			&i.ReporterVerificationType,
 			&i.EntityTitle,
 			&i.EntityExcerpt,
 			&i.EntitySlug,

@@ -44,6 +44,8 @@ SELECT
  ja.*,
  u.username AS applicant_username,
  u.email AS applicant_email,
+ u.verified AS applicant_verified,
+ u.verification_type AS applicant_verification_type,
  fs.field_values AS submission_fields
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
@@ -87,6 +89,8 @@ WHERE applicant_id = @user_id;
 SELECT
  ja.*,
  u.username AS applicant_username,
+ u.verified AS applicant_verified,
+ u.verification_type AS applicant_verification_type,
  c.title AS job_title
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
