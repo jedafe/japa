@@ -737,6 +737,19 @@ type AtprotoConformanceRun struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AtprotoInbound struct {
+	ID         pgtype.UUID        `json:"id"`
+	EventUri   string             `json:"event_uri"`
+	EventSeq   int64              `json:"event_seq"`
+	Did        string             `json:"did"`
+	Collection string             `json:"collection"`
+	Operation  string             `json:"operation"`
+	Payload    []byte             `json:"payload"`
+	Status     string             `json:"status"`
+	Error      *string            `json:"error"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type AtprotoRecord struct {
 	Uri        string             `json:"uri"`
 	AccountID  pgtype.UUID        `json:"account_id"`
@@ -746,6 +759,36 @@ type AtprotoRecord struct {
 	ContentID  pgtype.UUID        `json:"content_id"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AtprotoRemoteActor struct {
+	ID          pgtype.UUID        `json:"id"`
+	Did         string             `json:"did"`
+	Handle      *string            `json:"handle"`
+	DisplayName *string            `json:"display_name"`
+	AvatarUrl   *string            `json:"avatar_url"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AtprotoRemoteFollow struct {
+	ID            pgtype.UUID        `json:"id"`
+	AccountID     pgtype.UUID        `json:"account_id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	FollowUri     string             `json:"follow_uri"`
+	UndoneAt      pgtype.Timestamptz `json:"undone_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type AtprotoRemoteLike struct {
+	ID            pgtype.UUID        `json:"id"`
+	AccountID     pgtype.UUID        `json:"account_id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	LikeUri       string             `json:"like_uri"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	UndoneAt      pgtype.Timestamptz `json:"undone_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type AtprotoRepoBlock struct {
@@ -1042,28 +1085,30 @@ type ChecklistProgress struct {
 }
 
 type Comment struct {
-	ID              pgtype.UUID        `json:"id"`
-	ContentID       pgtype.UUID        `json:"content_id"`
-	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
-	ParentID        pgtype.UUID        `json:"parent_id"`
-	Body            []byte             `json:"body"`
-	Depth           int32              `json:"depth"`
-	VoteScore       int32              `json:"vote_score"`
-	IsPinned        bool               `json:"is_pinned"`
-	IsEdited        bool               `json:"is_edited"`
-	EditedAt        pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	IsAnonymous     bool               `json:"is_anonymous"`
-	ReplyCount      int32              `json:"reply_count"`
-	Status          string             `json:"status"`
-	RemovedBy       pgtype.UUID        `json:"removed_by"`
-	RemovedReason   *string            `json:"removed_reason"`
-	ViewCount       int32              `json:"view_count"`
-	UpvoteCount     int32              `json:"upvote_count"`
-	DownvoteCount   int32              `json:"downvote_count"`
-	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	ID                   pgtype.UUID        `json:"id"`
+	ContentID            pgtype.UUID        `json:"content_id"`
+	AuthorUserID         pgtype.UUID        `json:"author_user_id"`
+	ParentID             pgtype.UUID        `json:"parent_id"`
+	Body                 []byte             `json:"body"`
+	Depth                int32              `json:"depth"`
+	VoteScore            int32              `json:"vote_score"`
+	IsPinned             bool               `json:"is_pinned"`
+	IsEdited             bool               `json:"is_edited"`
+	EditedAt             pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous          bool               `json:"is_anonymous"`
+	ReplyCount           int32              `json:"reply_count"`
+	Status               string             `json:"status"`
+	RemovedBy            pgtype.UUID        `json:"removed_by"`
+	RemovedReason        *string            `json:"removed_reason"`
+	ViewCount            int32              `json:"view_count"`
+	UpvoteCount          int32              `json:"upvote_count"`
+	DownvoteCount        int32              `json:"downvote_count"`
+	CreatedByUserID      pgtype.UUID        `json:"created_by_user_id"`
+	RemoteAtprotoActorID pgtype.UUID        `json:"remote_atproto_actor_id"`
+	RemoteUri            *string            `json:"remote_uri"`
 }
 
 type CommentView struct {

@@ -867,6 +867,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetValkey(vkClient)
 	notificationService.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in live WS payloads
 
+	// §127 A5 — Jetstream inbound: remote likes/follows/replies notify via
+	// the §35 pipeline; the consumer is a supervised daemon goroutine gated
+	// on feature.atproto + JC_ATPROTO_JETSTREAM_URL.
+	atprotoService.SetNotifier(notificationService)
+	go atprotoService.StartJetstreamConsumer(context.Background())
+
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
 	authHandlers.SetTierManager(tierService)

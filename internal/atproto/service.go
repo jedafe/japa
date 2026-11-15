@@ -29,6 +29,7 @@ type Service struct {
 	vk    valkeycompat.Cmdable
 	flags features.FlagEvaluator
 	media MediaReader
+	notifier Notifier
 }
 
 // NewService creates a Service backed by the given database pool.

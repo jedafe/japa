@@ -227,6 +227,35 @@ func (q *Queries) GetAtprotoRecord(ctx context.Context, uri string) (AtprotoReco
 	return i, err
 }
 
+const getAtprotoRecordByURI = `-- name: GetAtprotoRecordByURI :one
+SELECT r.uri, r.account_id, r.content_id, r.cid
+FROM atproto_records r
+JOIN atproto_accounts a ON a.id = r.account_id AND a.status = 'active'
+WHERE r.uri = $1
+`
+
+type GetAtprotoRecordByURIRow struct {
+	Uri       string      `json:"uri"`
+	AccountID pgtype.UUID `json:"account_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	Cid       string      `json:"cid"`
+}
+
+// Inbound resolution (§127 A5): remote events carry the subject as an ATURI
+// (at://did/collection/rkey); the index row's stored URI is the canonical
+// match and also yields the owning account for notification routing.
+func (q *Queries) GetAtprotoRecordByURI(ctx context.Context, uri string) (GetAtprotoRecordByURIRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRecordByURI, uri)
+	var i GetAtprotoRecordByURIRow
+	err := row.Scan(
+		&i.Uri,
+		&i.AccountID,
+		&i.ContentID,
+		&i.Cid,
+	)
+	return i, err
+}
+
 const getAtprotoRecordsByContent = `-- name: GetAtprotoRecordsByContent :many
 SELECT r.account_id, r.uri
 FROM atproto_records r

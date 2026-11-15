@@ -12,11 +12,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, 
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.id = @id;
 
@@ -36,11 +39,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = @content_id
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -74,11 +80,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.content_id = @content_id
@@ -100,11 +109,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  0::smallint AS user_vote,
  false AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.parent_id = @parent_id AND c.content_id = @content_id
@@ -130,11 +142,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = @content_id
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -164,11 +179,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = @content_id
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -197,11 +215,14 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = @viewer_id OR c.created_by_user_id = @viewer_id), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, '') AS username,
- COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(u.public_username, u.username, ra.handle, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
-JOIN users u ON u.id = c.author_user_id
+LEFT JOIN users u ON u.id = c.author_user_id
+LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.parent_id = @parent_id AND c.content_id = @content_id
  AND (c.deleted_at IS NULL OR c.reply_count > 0)

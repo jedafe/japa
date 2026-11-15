@@ -219,6 +219,7 @@ const (
 	TypeAtprotoRequestCrawl     = "atproto:request_crawl"     // default (§127 A3: relay requestCrawl on activation)
 	TypeAtprotoLifecycleSync    = "atproto:lifecycle_sync"    // default (§127 lifecycle: users.status → account freeze/reactivate)
 	TypeAtprotoReconcileRepo    = "atproto:reconcile_repo"    // default (§127 A4: converge indexed records to eligibility on reactivation)
+	TypeAtprotoJetstreamConsume = "atproto:jetstream_consume" // daemon (§127 A5) — not an asynq task; runs as a supervised goroutine in the server process
 	TypeFederationAutoOptin     = "federation:auto_optin"     // default (§126 auto opt-in: provision federated identity at registration)
 	TypeFederationBackfillOptin = "federation:backfill_optin" // default (§126 backfill: converge existing members, paged)
 )

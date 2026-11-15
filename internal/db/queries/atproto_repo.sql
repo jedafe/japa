@@ -129,6 +129,15 @@ JOIN atproto_accounts a ON a.id = r.account_id AND a.status = 'active'
 WHERE r.content_id = @content_id
   AND r.collection = 'app.bsky.feed.post';
 
+-- name: GetAtprotoRecordByURI :one
+-- Inbound resolution (§127 A5): remote events carry the subject as an ATURI
+-- (at://did/collection/rkey); the index row's stored URI is the canonical
+-- match and also yields the owning account for notification routing.
+SELECT r.uri, r.account_id, r.content_id, r.cid
+FROM atproto_records r
+JOIN atproto_accounts a ON a.id = r.account_id AND a.status = 'active'
+WHERE r.uri = @uri;
+
 -- name: GetAtprotoUserProfile :one
 SELECT display_name, bio, avatar_media_id, banner_media_id
 FROM user_profiles
