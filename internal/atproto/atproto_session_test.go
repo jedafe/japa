@@ -130,6 +130,15 @@ func TestDBCreateSessionAndGetSession(t *testing.T) {
 	if _, _, _, err := svc.CreateSession(ctx, sess.Handle, plain, "", ""); err != nil {
 		t.Fatalf("CreateSession by handle: %v", err)
 	}
+	// By account email (lexicon identifier form) and with a leading
+	// '@' — clients paste handles that way.
+	email := strings.TrimSuffix(sess.Handle, ".test.dev") + "@test.dev"
+	if _, _, _, err := svc.CreateSession(ctx, email, plain, "", ""); err != nil {
+		t.Fatalf("CreateSession by email: %v", err)
+	}
+	if _, _, _, err := svc.CreateSession(ctx, "@"+sess.Handle, plain, "", ""); err != nil {
+		t.Fatalf("CreateSession with @handle: %v", err)
+	}
 	// And bare username.
 	uname, _ := newAtprotoNamedUser(t, ctx, d, "sessuser", "active")
 	if _, err := svc.EnableAccount(ctx, uname); err != nil {
@@ -382,6 +391,10 @@ func TestDBDisabledAccountSessionLifecycle(t *testing.T) {
 	if err := svc.ActivateAccount(ctx, authed2); !errors.Is(err, ErrAdminDisabled) {
 		t.Fatalf("activate admin-disabled err = %v, want ErrAdminDisabled", err)
 	}
+	// Admin-disabled surfaces the lexicon 'takendown', not 'deactivated'.
+	if active, st := authed2.activeStatus(); active || st != "takendown" {
+		t.Fatalf("admin-disabled active/status = %v/%q", active, st)
+	}
 }
 
 func TestDBServiceAuth(t *testing.T) {
@@ -473,6 +486,18 @@ func TestDBExportRepo(t *testing.T) {
 	// A CAR stream is CBOR, not JSON — the export isn't an error body.
 	if car[0] == '{' {
 		t.Fatal("export returned JSON — expected CAR bytes")
+	}
+	// Deactivated members still export — migration flow deactivates
+	// first, and the repo must not gate on repoAvailability.
+	if err := svc.DeactivateAccount(ctx, &SessionAccount{AccountID: sess.AccountID, UserID: userID, Status: AccountStatusActive}); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	car2, _, err := svc.ExportRepo(ctx, userID)
+	if err != nil {
+		t.Fatalf("export while deactivated: %v", err)
+	}
+	if len(car2) != len(car) {
+		t.Fatalf("deactivated export len = %d, want %d", len(car2), len(car))
 	}
 }
 

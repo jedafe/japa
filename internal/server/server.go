@@ -4065,10 +4065,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Post("/xrpc/com.atproto.server.deactivateAccount", atprotoHandlers.DeactivateAccount)
 		// §127 A6-4: external clients call app.bsky.* on the PDS —
 		// read-proxy GETs to the configured appview; writes 501.
-		// r.Handle registers every verb so the handler's own non-GET
-		// check answers 501 rather than chi's bare 405.
+		// com.atproto.repo.* is PDS-local space — always 501, never
+		// proxied. r.Handle registers every verb so the handlers' own
+		// checks answer 501 rather than chi's bare 405.
 		r.Handle("/xrpc/app.bsky.*", http.HandlerFunc(atprotoHandlers.ProxyAppView))
-		r.Handle("/xrpc/com.atproto.repo.*", http.HandlerFunc(atprotoHandlers.ProxyAppView))
+		r.Handle("/xrpc/com.atproto.repo.*", http.HandlerFunc(atprotoHandlers.ProxyRepo))
 	})
 
 	// API routes go through platform resolution

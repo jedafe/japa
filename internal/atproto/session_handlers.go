@@ -140,29 +140,18 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateAppPasswordXRPC serves POST /xrpc/com.atproto.server.
-// createAppPassword — the external-client path; the member API offers
-// the same mint under JapaConnect session auth.
+// createAppPassword — REFUSED on this PDS. Every external session is
+// an app-password session — non-privileged in the lexicon model —
+// and minting a fresh credential from one would let a stolen password
+// spawn credentials that outlive its own revocation. The member API
+// (/api/v1/me/atproto/app-passwords, JapaConnect auth) is the only
+// mint path; list/revoke below still work for the session holder.
 func (h *Handlers) CreateAppPasswordXRPC(w http.ResponseWriter, r *http.Request) {
-	acct := h.requireSession(w, r)
-	if acct == nil {
+	if h.requireSession(w, r) == nil {
 		return
 	}
-	var input comatproto.ServerCreateAppPassword_Input
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		xrpcError(w, http.StatusBadRequest, "InvalidRequest", "invalid JSON body")
-		return
-	}
-	view, plain, err := h.service.CreateAppPassword(r.Context(), acct.AccountID, input.Name)
-	if err != nil {
-		xrpcAuthErr(w, err)
-		return
-	}
-	writeTypedJSON(w, http.StatusOK, "application/json", &comatproto.ServerCreateAppPassword_AppPassword{
-		Name:       view.Name,
-		Password:   plain,
-		CreatedAt:  view.CreatedAt.UTC().Format("2006-01-02T15:04:05.000Z"),
-		Privileged: nil,
-	})
+	xrpcError(w, http.StatusBadRequest, "InvalidRequest",
+		"app passwords are managed in JapaConnect account settings")
 }
 
 // ListAppPasswords serves GET /xrpc/com.atproto.server.listAppPasswords.

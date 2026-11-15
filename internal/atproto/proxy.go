@@ -19,18 +19,30 @@ import (
 )
 
 // appviewHTTPClient bounds the upstream hop — a hung appview must not
-// pin our request handler.
-var appviewHTTPClient = &http.Client{Timeout: 15 * time.Second}
+// pin our request handler. Redirects are NOT followed: a 3xx could
+// bounce the fetch to an arbitrary origin (SSRF by redirect chain) —
+// we mirror the status + Location verbatim and let the client decide.
+var appviewHTTPClient = &http.Client{
+	Timeout:       15 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// ProxyRepo answers every /xrpc/com.atproto.repo.* call 501 — that
+// namespace is PDS-LOCAL lexicon space (repo.getRecord/listRecords/
+// describeRepo plus every write): an AppView can't serve it, so
+// proxying would let upstream answer for our names. Read-mostly
+// external login leans on app.bsky.* instead.
+func (h *Handlers) ProxyRepo(w http.ResponseWriter, r *http.Request) {
+	xrpcError(w, http.StatusNotImplemented, "MethodNotImplemented",
+		"writes originate on japa.to — this PDS is read-mostly for external clients")
+}
 
 // ProxyAppView forwards GET /xrpc/app.bsky.{nsid}?{query} to the
 // configured appview and mirrors status + content-type + body back.
-// Everything else on /xrpc/app.bsky.* — plus any com.atproto.repo.*
-// write an external client attempts — answers 501 so the client sees
-// a lexicon error, not a silent black hole.
+// Non-GET app.bsky verbs answer 501.
 func (h *Handlers) ProxyAppView(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		xrpcError(w, http.StatusNotImplemented, "MethodNotImplemented",
-			"writes originate on japa.to — this PDS is read-mostly for external clients")
+		h.ProxyRepo(w, r)
 		return
 	}
 	base := strings.TrimRight(h.service.cfg.AppViewURL, "/")
@@ -62,7 +74,8 @@ func (h *Handlers) ProxyAppView(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	for k, vv := range resp.Header {
 		lk := strings.ToLower(k)
-		if lk == "content-type" || lk == "cache-control" || lk == "atproto-content-labelers" {
+		if lk == "content-type" || lk == "cache-control" ||
+			lk == "atproto-content-labelers" || lk == "location" {
 			for _, v := range vv {
 				w.Header().Add(k, v)
 			}

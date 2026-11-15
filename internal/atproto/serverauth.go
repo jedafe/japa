@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	jcrypto "github.com/jedafe/japa/internal/crypto"
@@ -38,8 +39,17 @@ func (s *Service) ServiceAuth(ctx context.Context, acct *SessionAccount, aud, lx
 	if !s.featureOn(ctx) {
 		return "", ErrAuthRequired
 	}
-	if aud == "" {
+	// aud is the destination's DID — the lexicon parameter type; a
+	// non-did aud mints a token no service can accept anyway.
+	if !strings.HasPrefix(aud, "did:") {
 		return "", ErrInvalidID
+	}
+	// lxm, when present, is the lexicon method the token authorizes —
+	// must parse as an NSID.
+	if lxm != "" {
+		if _, err := syntax.ParseNSID(lxm); err != nil {
+			return "", ErrInvalidID
+		}
 	}
 	// A deactivated (disabled) account still mints service auth — the
 	// standard migration flow deactivates then exports, and the
@@ -145,8 +155,12 @@ func (s *Service) ActivateAccount(ctx context.Context, acct *SessionAccount) err
 }
 
 // ExportRepo streams the member's full repo CAR — the migration/
-// backup artifact. Same bytes public getRepo serves; the member route
-// exists so the UI can offer an authenticated download affordance.
+// backup artifact. Same bytes public getRepo serves for an active
+// account — but it must NOT go through RepoCARSince: that path's
+// availability gate answers RepoDeactivated on a disabled account,
+// and the standard migration flow deactivates-then-exports. The
+// member's own data is always exportable; tombstone is the only
+// terminal state.
 func (s *Service) ExportRepo(ctx context.Context, userID pgtype.UUID) ([]byte, string, error) {
 	acct, err := s.store.q.GetAtprotoAccountAnyUserStatus(ctx, userID)
 	if err != nil {
@@ -158,7 +172,7 @@ func (s *Service) ExportRepo(ctx context.Context, userID pgtype.UUID) ([]byte, s
 	if acct.Status == AccountStatusTombstone {
 		return nil, "", ErrNotFound
 	}
-	car, err := s.RepoCARSince(ctx, acct.Did, "")
+	car, err := s.RepoCAR(ctx, acct.ID)
 	if err != nil {
 		return nil, "", err
 	}

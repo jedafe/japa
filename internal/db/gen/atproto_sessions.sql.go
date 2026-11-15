@@ -154,11 +154,13 @@ FROM atproto_accounts a
 JOIN users u ON u.id = a.user_id
 WHERE lower(a.handle) = lower($1)
    OR lower(u.username) = lower($1)
+   OR lower(u.email) = lower($1)
    OR a.did = $1
    OR a.previous_did = $1
 ORDER BY (a.did = $1) DESC,
          (lower(a.handle) = lower($1)) DESC,
-         (lower(u.username) = lower($1)) DESC
+         (lower(u.username) = lower($1)) DESC,
+         (lower(u.email) = lower($1)) DESC
 LIMIT 1
 `
 
@@ -174,10 +176,11 @@ type GetAtprotoSessionAccountRow struct {
 	UserStatus     string      `json:"user_status"`
 }
 
-// createSession identifier resolution: handle, live username, current
-// DID, or a pre-migration previous_did all name the account (bare
-// usernames resolve through the users join — bsky.app login accepts
-// 'alice' as readily as 'alice.japa.to'). Any account status returns:
+// createSession identifier resolution: handle, live username, member
+// email, current DID, or a pre-migration previous_did all name the
+// account (bare usernames resolve through the users join — bsky.app
+// login accepts 'alice' as readily as 'alice.japa.to'; the lexicon
+// also admits the account email). Any account status returns:
 // disabled rows mint sessions (the client needs them to reactivate);
 // only tombstone hides. user_id + email ride along for session output.
 func (q *Queries) GetAtprotoSessionAccount(ctx context.Context, identifier string) (GetAtprotoSessionAccountRow, error) {

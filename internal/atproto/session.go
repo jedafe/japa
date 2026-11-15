@@ -114,13 +114,13 @@ func (s *Service) parseSessionJWT(raw, wantScope string) (jwt.MapClaims, error) 
 	return claims, nil
 }
 
-// bearerToken extracts the JWT from an Authorization: Bearer header.
+// bearerToken extracts the JWT from an Authorization: Bearer header —
+// the scheme is case-insensitive per RFC 7235.
 func bearerToken(header string) string {
-	const p = "Bearer "
-	if !strings.HasPrefix(header, p) {
+	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
 		return ""
 	}
-	return strings.TrimSpace(header[len(p):])
+	return strings.TrimSpace(header[7:])
 }
 
 func refreshHash(token string) string {
@@ -225,8 +225,12 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 	if !s.featureOn(ctx) {
 		return nil, "", "", ErrAuthRequired
 	}
-	identifier = strings.TrimSpace(identifier)
-	if identifier == "" || password == "" {
+	identifier = strings.TrimPrefix(strings.TrimSpace(identifier), "@")
+	// 253 = DNS-name max — nothing longer can be a real handle or did.
+	// bcrypt silently truncates at 72 bytes; an overlong password can
+	// never match a 19-char app password, so reject it pre-verify.
+	if identifier == "" || len(identifier) > 253 ||
+		password == "" || len(password) > 72 {
 		return nil, "", "", ErrAuthRequired
 	}
 	acct, err := s.store.q.GetAtprotoSessionAccount(ctx, identifier)
@@ -279,7 +283,7 @@ func (s *Service) CreateSession(ctx context.Context, identifier, password, userA
 		AccountID:        acct.ID,
 		AppPasswordID:    matched.ID,
 		RefreshHash:      placeholder,
-		UserAgent:        strPtr(userAgent),
+		UserAgent:        strPtr(truncate(userAgent, 512)),
 		LastIp:           strPtr(ip),
 		RefreshExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTokenTTL), Valid: true},
 	})
@@ -578,6 +582,15 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// truncate bounds a free-form client string before it hits a column —
+// a multi-megabyte User-Agent must not land in the session row.
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 // sessionDummyHash is a cost-12 bcrypt of a fixed non-credential
