@@ -155,7 +155,7 @@ ORDER BY cfga.position ASC;
 SELECT id, group_id, entity_class, entity_id, position, created_at
 FROM custom_field_group_assignments
 WHERE entity_class = @entity_class AND entity_id = @entity_id
-ORDER BY position ASC, created_at ASC
+ORDER BY position ASC, created_at DESC, id ASC
 LIMIT 1;
 
 -- name: CreateAssignment :one

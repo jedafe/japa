@@ -294,7 +294,7 @@ const getAssignmentByEntity = `-- name: GetAssignmentByEntity :one
 SELECT id, group_id, entity_class, entity_id, position, created_at
 FROM custom_field_group_assignments
 WHERE entity_class = $1 AND entity_id = $2
-ORDER BY position ASC, created_at ASC
+ORDER BY position ASC, created_at DESC, id ASC
 LIMIT 1
 `
 

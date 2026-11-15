@@ -54,6 +54,17 @@
 		return true;
 	}
 
+	// §06 submissions validate multiselect as "string (single) or array" —
+	// emit arrays for multi-picks (same fix as the generic renderer).
+	function submissionValues(): Record<string, unknown> {
+		const multi = new Set(sortedFields.filter((f) => f.type === 'multiselect').map(fieldKey));
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(values)) {
+			out[k] = multi.has(k) ? v.split(',').filter(Boolean) : v;
+		}
+		return out;
+	}
+
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		errorKey = '';
@@ -63,7 +74,7 @@
 		try {
 			const res = await api.post<{ id: string; status: string }>(
 				`/forms/${form.id}/submissions`,
-				{ field_values: values }
+				{ field_values: submissionValues() }
 			);
 			if (res.data) {
 				submitted = true;

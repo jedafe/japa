@@ -151,6 +151,18 @@
 		stepIndex += 1;
 	}
 
+	// §06 submissions validate multiselect as "string (single) or array" —
+	// the comma-joined internal form of a multi-pick is rejected. Emit arrays
+	// for those keys (canonicalMulti accepts []any for visibility rules).
+	function submissionValues(): Record<string, unknown> {
+		const multi = new Set(allFields.filter((f) => f.type === 'multiselect').map(fieldKey));
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(values)) {
+			out[k] = multi.has(k) ? v.split(',').filter(Boolean) : v;
+		}
+		return out;
+	}
+
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		errorMsg = '';
@@ -160,7 +172,7 @@
 		try {
 			const res = await api.post<{ id: string; status: string }>(
 				`/forms/${form.id}/submissions`,
-				{ field_values: values }
+				{ field_values: submissionValues() }
 			);
 			if (res.data) {
 				submitted = true;
@@ -245,9 +257,10 @@
 						</div>
 					{:else if field.type === 'suggest'}
 						<!-- §06 suggest: sourced fields resolve against their option
-							 feed (geo_countries → GET /geo/countries, no free text);
-							 static-list suggests keep free-text fallback via datalist. -->
-						{#if field.options_source === 'geo_countries'}
+							 feed (geo_countries → GET /geo/countries); static-list
+							 suggests keep free-text fallback via datalist, and a failed
+							 feed falls through to free text (server accepts any string). -->
+						{#if field.options_source === 'geo_countries' && (data.countries?.length ?? 0) > 0}
 							<AutocompleteSelect
 								id="field-{field.id}"
 								value={values[fieldKey(field)] ?? ''}
