@@ -156,9 +156,12 @@ export const disconnectOrgBMC = (orgId: string) =>
 	api.delete<void>(`/organizations/${orgId}/tip-settings/buymeacoffee`);
 
 /* ---- Fiat minor-unit helpers (ISO-4217 exponents — mirror backend
-   currencyExponent(): JPY/KRW/VND/XOF/XAF=0, BHD/JOD/KWD/OMR=3, else 2). ---- */
+   currencyExponent(): every active ISO currency with a non-×100 minor unit
+   is listed; default 2). ---- */
+const FIAT_EXPONENT_0 = ['BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF'];
+const FIAT_EXPONENT_3 = ['BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND'];
 export const fiatExponent = (currency: string) =>
-	['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(currency) ? 0 : ['BHD', 'JOD', 'KWD', 'OMR'].includes(currency) ? 3 : 2;
+	FIAT_EXPONENT_0.includes(currency) ? 0 : FIAT_EXPONENT_3.includes(currency) ? 3 : 2;
 export const fiatMajor = (minor: number, currency: string) => minor / Math.pow(10, fiatExponent(currency));
 export const fiatDisplay = (minor: number, currency: string) => {
 	const exp = fiatExponent(currency);

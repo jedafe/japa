@@ -22,7 +22,9 @@ func TestImportContributionDedupeAndRecipient(t *testing.T) {
 	svc := &Service{store: fs}
 	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
 
-	inserted, err := svc.ImportContribution(context.Background(), owner, OCContribution{ID: "oc-42"})
+	inserted, err := svc.ImportContribution(context.Background(), owner, ExternalContribution{
+		ID: "oc-42", AmountMinor: 100, Currency: "USD",
+	})
 	if err != nil {
 		t.Fatalf("ImportContribution: %v", err)
 	}
@@ -33,8 +35,8 @@ func TestImportContributionDedupeAndRecipient(t *testing.T) {
 	cur := "USD"
 	amt := int64(5000)
 	fs.inserted = nil
-	inserted, err = svc.ImportContribution(context.Background(), owner, OCContribution{
-		ID: "oc-43", AmountCents: 5000, Currency: "USD", FromName: "Donor",
+	inserted, err = svc.ImportContribution(context.Background(), owner, ExternalContribution{
+		ID: "oc-43", AmountMinor: 5000, Currency: "USD", FromName: "Donor",
 	})
 	if err != nil {
 		t.Fatalf("ImportContribution: %v", err)
@@ -60,6 +62,29 @@ func TestImportContributionDedupeAndRecipient(t *testing.T) {
 	}
 }
 
+// The import boundary rejects non-positive amounts — a caller bug or
+// malformed provider row must not record a zero-value completed tip.
+func TestImportContributionRejectsNonPositive(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs}
+	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
+
+	for _, amt := range []int64{0, -500} {
+		inserted, err := svc.ImportContribution(context.Background(), owner, ExternalContribution{
+			ID: "oc-zero", AmountMinor: amt, Currency: "USD",
+		})
+		if err != nil {
+			t.Fatalf("ImportContribution(%d): %v", amt, err)
+		}
+		if inserted {
+			t.Fatalf("amount %d should not import a tip", amt)
+		}
+	}
+	if len(fs.inserted) != 0 {
+		t.Fatalf("no rows should be inserted, got %d", len(fs.inserted))
+	}
+}
+
 // Org OC imports snapshot the org owner's wallet into
 // recipient_wallet_user_id — the received ledger and clawbacks resolve it
 // even after an ownership transfer (BUG-037/038).
@@ -70,8 +95,8 @@ func TestImportContributionOrgWalletSnapshot(t *testing.T) {
 	fs.orgOwner = ownerID
 	svc := &Service{store: fs}
 
-	inserted, err := svc.ImportContribution(context.Background(), OrgOwner(orgID), OCContribution{
-		ID: "oc-org-1", AmountCents: 1200, Currency: "USD",
+	inserted, err := svc.ImportContribution(context.Background(), OrgOwner(orgID), ExternalContribution{
+		ID: "oc-org-1", AmountMinor: 1200, Currency: "USD",
 	})
 	if err != nil || !inserted {
 		t.Fatalf("ImportContribution: inserted=%v err=%v", inserted, err)
@@ -92,8 +117,8 @@ func TestImportContributionEmailMatch(t *testing.T) {
 	svc := &Service{store: fs}
 	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
 
-	_, err := svc.ImportContribution(context.Background(), owner, OCContribution{
-		ID: "oc-99", AmountCents: 100, Currency: "EUR", FromEmail: "donor@example.com",
+	_, err := svc.ImportContribution(context.Background(), owner, ExternalContribution{
+		ID: "oc-99", AmountMinor: 100, Currency: "EUR", FromEmail: "donor@example.com",
 	})
 	if err != nil {
 		t.Fatalf("ImportContribution: %v", err)

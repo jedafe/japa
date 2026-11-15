@@ -324,9 +324,24 @@ type OCClient interface {
 }
 
 // OCContribution mirrors opencollective.Contribution without the import.
+// AmountCents is OC's valueInCents — a fixed ×100 of the major unit for
+// every currency, NOT ISO-4217 minor units. Callers must convert via
+// majorToMinor(AmountCents/100) before building an ExternalContribution.
 type OCContribution struct {
 	ID          string
 	AmountCents int64
+	Currency    string
+	FromName    string
+	FromSlug    string
+	FromEmail   string
+}
+
+// ExternalContribution is the import boundary for every external donation
+// source (OC, Ko-fi, BMC). AmountMinor is ISO-4217 minor units — providers
+// that report in other conventions must convert before constructing this.
+type ExternalContribution struct {
+	ID          string
+	AmountMinor int64
 	Currency    string
 	FromName    string
 	FromSlug    string

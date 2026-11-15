@@ -136,7 +136,7 @@ func (s *Service) DisconnectBMC(ctx context.Context, owner Owner, actorID pgtype
 
 // ImportKofiWebhook resolves the owner by verification token and imports the
 // donation. token must equal the stored secret (URL + payload both carry it).
-func (s *Service) ImportKofiWebhook(ctx context.Context, secret, token string, c OCContribution) error {
+func (s *Service) ImportKofiWebhook(ctx context.Context, secret, token string, c ExternalContribution) error {
 	if !s.kofiEnabled(ctx) {
 		return ErrNotFound
 	}
@@ -199,9 +199,9 @@ func (s *Service) syncBMCOne(ctx context.Context, row gen.TipSetting) error {
 				slog.Warn("tips: bmc supporter import skipped", "owner", owner.ID.String(), "supporter", sp.ID, "error", aerr)
 				continue
 			}
-			imported, err := s.importContribution(ctx, owner, MethodBuyMeACoffee, OCContribution{
+			imported, err := s.importContribution(ctx, owner, MethodBuyMeACoffee, ExternalContribution{
 				ID:          "bmc:" + sp.ID,
-				AmountCents: minor,
+				AmountMinor: minor,
 				Currency:    sp.Currency,
 				FromName:    sp.Name,
 				FromEmail:   sp.Email,

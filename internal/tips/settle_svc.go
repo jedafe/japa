@@ -231,12 +231,15 @@ func (s *Service) walletOwnerFor(ctx context.Context, tip gen.Tip) (pgtype.UUID,
 	}
 }
 
-// currencyExponent maps ISO-4217 minor-unit exponents (JPY=0; default 2).
+// currencyExponent maps ISO-4217 minor-unit exponents (default 2). The
+// exponent-0 and exponent-3 lists cover every active ISO currency whose
+// minor unit differs from ×100 — a missing entry would convert 10–100× off.
 func currencyExponent(code string) int {
 	switch code {
-	case "JPY", "KRW", "VND", "XOF", "XAF":
+	case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+		"PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF":
 		return 0
-	case "BHD", "JOD", "KWD", "OMR":
+	case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND":
 		return 3
 	default:
 		return 2

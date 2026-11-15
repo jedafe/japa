@@ -193,7 +193,7 @@ func TestImportKofiWebhook(t *testing.T) {
 		store:    fs,
 		features: fakeFeatures{on: map[string]bool{"tips.kofi": true}},
 	}
-	c := OCContribution{ID: "kofi:msg1", AmountCents: 500, Currency: "USD", FromName: "Donor"}
+	c := ExternalContribution{ID: "kofi:msg1", AmountMinor: 500, Currency: "USD", FromName: "Donor"}
 
 	// Wrong verification token → rejected, nothing inserted.
 	if err := svc.ImportKofiWebhook(context.Background(), "sekret", "wrong", c); err == nil {

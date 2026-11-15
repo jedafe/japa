@@ -59,6 +59,10 @@ func TestMajorToMinor(t *testing.T) {
 		{500, "JPY", 500},    // 1 coffee × ¥500
 		{1.234, "KWD", 1234}, // 3-decimal currency
 		{12.50, "NGN", 1250},
+		{1500, "CLP", 1500},  // exponent-0: minor units = major units
+		{500, "XPF", 500},    // exponent-0
+		{2.5, "TND", 2500},   // exponent-3
+		{1.999, "IQD", 1999}, // exponent-3
 	}
 	for _, tc := range cases {
 		got, err := majorToMinor(tc.major, tc.currency)
@@ -86,8 +90,8 @@ func TestImportOCWebhookSlugOnlyImports(t *testing.T) {
 	fs.ocSecretRow = gen.TipSetting{OwnerType: RecipientUser, OwnerID: ownerID, OcCollectiveSlug: &slug}
 	svc := &Service{store: fs}
 
-	if err := svc.ImportOCWebhook(context.Background(), "sec", OCContribution{
-		ID: "ord-9", AmountCents: 700, Currency: "USD", FromName: "Donor",
+	if err := svc.ImportOCWebhook(context.Background(), "sec", ExternalContribution{
+		ID: "ord-9", AmountMinor: 700, Currency: "USD", FromName: "Donor",
 	}); err != nil {
 		t.Fatalf("ImportOCWebhook: %v", err)
 	}

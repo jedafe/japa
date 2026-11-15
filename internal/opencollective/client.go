@@ -24,7 +24,10 @@ var ErrUnauthorized = errors.New("opencollective: unauthorized")
 
 // Contribution is a normalized incoming OC contribution.
 type Contribution struct {
-	ID          string
+	ID string
+	// AmountCents is OC's valueInCents — a fixed ×100 of the major unit for
+	// EVERY currency (¥500 reports 50000). Consumers must convert through
+	// major units into ISO-4217 minor units before storing.
 	AmountCents int64
 	Currency    string
 	FromName    string

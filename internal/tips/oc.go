@@ -125,13 +125,20 @@ func (s *Service) DisconnectOC(ctx context.Context, owner Owner, actorID pgtype.
 // ImportContribution records one OC contribution as a completed tip.
 // Idempotent on oc_contribution_id; sender_user_id stays NULL when no
 // platform account matches the OC contributor email.
-func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContribution) (bool, error) {
+func (s *Service) ImportContribution(ctx context.Context, owner Owner, c ExternalContribution) (bool, error) {
 	return s.importContribution(ctx, owner, MethodOpenCollective, c)
 }
 
 // importContribution is the shared external-donation insert path (OC sync +
-// webhook, Ko-fi webhook, BMC poll). c.ID is the namespaced external id.
-func (s *Service) importContribution(ctx context.Context, owner Owner, method string, c OCContribution) (bool, error) {
+// webhook, Ko-fi webhook, BMC poll). c.ID is the namespaced external id and
+// c.AmountMinor is ISO-4217 minor units — every caller converts upstream.
+func (s *Service) importContribution(ctx context.Context, owner Owner, method string, c ExternalContribution) (bool, error) {
+	if c.AmountMinor <= 0 {
+		// Boundary guard: an external row with no positive amount is bad
+		// provider data — skip rather than record a zero-value tip.
+		slog.Warn("tips: external contribution skipped — non-positive amount", "owner", owner.ID.String(), "external_id", c.ID, "amount_minor", c.AmountMinor)
+		return false, nil
+	}
 	if _, err := s.store.getTipByOCContributionID(ctx, c.ID); err == nil {
 		return false, nil // already imported
 	} else if !errors.Is(err, ErrNotFound) {
@@ -152,7 +159,7 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 		SenderUserID:       senderID,
 		RecipientType:      owner.Type,
 		Method:             method,
-		FiatAmount:         &c.AmountCents,
+		FiatAmount:         &c.AmountMinor,
 		FiatCurrency:       &c.Currency,
 		OcContributionID:   &c.ID,
 		ExternalSenderName: strPtrOrNil(c.FromName),
@@ -180,6 +187,12 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 
 	tip, err := s.store.insertTip(ctx, params)
 	if err != nil {
+		// A concurrent delivery racing the same external id loses the
+		// check-then-insert race — the row exists, which IS the deduped
+		// result, not a failure the caller should retry or log as bad.
+		if errors.Is(err, ErrDuplicateKey) {
+			return false, nil
+		}
 		return false, fmt.Errorf("importing external contribution: %w", err)
 	}
 	// ADR-136: a member-matched OC donation earns the sender tip.sent
@@ -201,7 +214,7 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 // while the webhook carries order.id — importing both namespaces would
 // double-count the same donation. Slug-only owners have no poller, so the
 // webhook payload is imported directly (order.id is the only source).
-func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c OCContribution) error {
+func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c ExternalContribution) error {
 	row, err := s.store.getSettingsByOCWebhookSecret(ctx, secret)
 	if err != nil {
 		return err // ErrNotFound → 401 at the handler
@@ -290,9 +303,17 @@ func (s *Service) syncCollective(ctx context.Context, owner Owner, slug, token s
 		}
 		newCount := 0
 		for _, c := range contribs {
-			imported, err := s.ImportContribution(ctx, owner, OCContribution{
+			// OC's valueInCents is a fixed ×100 of the major unit for EVERY
+			// currency (JPY included) — convert through major units so a
+			// ¥500 contribution doesn't record 50000 minor units (¥50,000).
+			minor, aerr := majorToMinor(float64(c.AmountCents)/100, c.Currency)
+			if aerr != nil {
+				slog.Warn("tips: oc contribution import skipped", "owner", owner.ID.String(), "contribution", c.ID, "error", aerr)
+				continue
+			}
+			imported, err := s.ImportContribution(ctx, owner, ExternalContribution{
 				ID:          c.ID,
-				AmountCents: c.AmountCents,
+				AmountMinor: minor,
 				Currency:    c.Currency,
 				FromName:    c.FromName,
 				FromSlug:    c.FromSlug,

@@ -617,9 +617,17 @@ func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent) // non-contribution event — nothing to import
 		return
 	}
-	if err := h.service.ImportOCWebhook(r.Context(), secret, OCContribution{
+	// OC reports totalAmount as valueInCents — a fixed ×100 of the major
+	// unit for every currency, JPY included. Convert through major units;
+	// a zero/invalid amount (free order.created) is not a donation.
+	minor, aerr := majorToMinor(float64(payload.Data.Order.TotalAmount.ValueInCents)/100, payload.Data.Order.TotalAmount.Currency)
+	if aerr != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err := h.service.ImportOCWebhook(r.Context(), secret, ExternalContribution{
 		ID:          payload.Data.Order.ID,
-		AmountCents: payload.Data.Order.TotalAmount.ValueInCents,
+		AmountMinor: minor,
 		Currency:    payload.Data.Order.TotalAmount.Currency,
 		FromName:    payload.Data.Order.FromAccount.Name,
 		FromSlug:    payload.Data.Order.FromAccount.Slug,
@@ -1287,9 +1295,9 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid Ko-fi amount")
 		return
 	}
-	if err := h.service.ImportKofiWebhook(r.Context(), secret, d.VerificationToken, OCContribution{
+	if err := h.service.ImportKofiWebhook(r.Context(), secret, d.VerificationToken, ExternalContribution{
 		ID:          "kofi:" + d.MessageID,
-		AmountCents: cents,
+		AmountMinor: cents,
 		Currency:    d.Currency,
 		FromName:    d.FromName,
 		FromEmail:   d.Email,
