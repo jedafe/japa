@@ -557,7 +557,9 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 // §126 auto opt-in path fired by federation:auto_optin at registration.
 // Unlike EnableFederation it never reactivates: an existing row of any
 // status (disabled opt-out, tombstone) is left alone so a member's
-// explicit opt-out can't be silently resurrected.
+// explicit opt-out can't be silently resurrected. Ineligibility is not a
+// failure: a suspended/deleted member (ErrNotFound) has nothing to
+// provision, so the task ends clean instead of burning retries.
 func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
 	if _, err := s.store.actorByUserID(ctx, userID); err == nil {
 		return nil
@@ -565,6 +567,9 @@ func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("federation: auto-provision lookup: %w", err)
 	}
 	_, err := s.EnableFederation(ctx, userID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
 	return err
 }
 

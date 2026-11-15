@@ -641,6 +641,26 @@ func TestDBAutoProvision(t *testing.T) {
 	if st3.Enabled {
 		t.Fatalf("opt-out resurrected: %+v", st3)
 	}
+
+	// Underscore username (the OAuth-generated shape, e.g. john_google_abc)
+	// can't form an atproto handle → ineligible, not an error — the task
+	// must end clean rather than burn retries to the DLQ.
+	oauthID, _ := newAtprotoNamedUser(t, ctx, d, "oauth_test_user", "active")
+	if err := svc.AutoProvision(ctx, oauthID); err != nil {
+		t.Fatalf("AutoProvision underscore user: %v", err)
+	}
+	if st, _ := svc.GetMyAccount(ctx, oauthID); st.Enabled {
+		t.Fatalf("handle-ineligible user provisioned: %+v", st)
+	}
+
+	// Suspended member → ineligible, not an error.
+	suspID, _ := newAtprotoUser(t, ctx, d, "suspended")
+	if err := svc.AutoProvision(ctx, suspID); err != nil {
+		t.Fatalf("AutoProvision suspended user: %v", err)
+	}
+	if st, _ := svc.GetMyAccount(ctx, suspID); st.Enabled {
+		t.Fatalf("suspended user provisioned: %+v", st)
+	}
 }
 
 // jc:atp:did:{id} is keyed on the USER uuid — the did:web u/{id} path

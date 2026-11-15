@@ -478,7 +478,12 @@ func (s *Service) ensureRepoInitialized(ctx context.Context, account *gen.Atprot
 // the §126 auto opt-in path fired by federation:auto_optin at registration.
 // Unlike EnableAccount it never reactivates: an existing row of any status
 // (disabled opt-out, tombstone) is left alone so a member's explicit
-// opt-out can't be silently resurrected.
+// opt-out can't be silently resurrected. Ineligibility is not a failure:
+// a member whose username can't form a valid handle (ErrInvalidHandle —
+// e.g. OAuth-derived names carry '_') or who is suspended/deleted
+// (ErrNotFound) has nothing to provision, so the task ends clean instead
+// of burning retries. ErrMisconfigured stays an error — permanent, so it
+// surfaces once in the DLQ as an operator signal rather than retrying.
 func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
 	if _, err := s.store.accountByUserID(ctx, userID); err == nil {
 		return nil
@@ -486,6 +491,12 @@ func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("atproto: auto-provision lookup: %w", err)
 	}
 	_, err := s.EnableAccount(ctx, userID)
+	switch {
+	case errors.Is(err, ErrInvalidHandle), errors.Is(err, ErrNotFound):
+		return nil
+	case errors.Is(err, ErrMisconfigured):
+		return permanent(err)
+	}
 	return err
 }
 

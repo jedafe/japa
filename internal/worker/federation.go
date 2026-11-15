@@ -83,7 +83,10 @@ func HandleFederationAutoOptin(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	if featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.atproto") && atprotoSvc != nil {
+	if featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.atproto") {
+		if atprotoSvc == nil {
+			return fmt.Errorf("federation auto-optin: atproto service not registered")
+		}
 		if err := atprotoSvc.AutoProvision(ctx, userID); err != nil {
 			return skipIfPermanent(fmt.Errorf("federation auto-optin: provision atproto: %w", err))
 		}

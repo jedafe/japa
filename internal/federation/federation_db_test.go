@@ -299,6 +299,16 @@ func TestDBAutoProvision(t *testing.T) {
 	if st3.Enabled || st3.Status != ActorStatusDisabled {
 		t.Fatalf("opt-out resurrected: %+v", st3)
 	}
+
+	// Suspended/deleted member → ineligible, not an error — a suspended
+	// signup between enqueue and run must not burn task retries.
+	suspendedID, _ := newFederationUser(t, ctx, d, "suspended")
+	if err := svc.AutoProvision(ctx, suspendedID); err != nil {
+		t.Fatalf("AutoProvision suspended user: %v", err)
+	}
+	if st, _ := svc.GetMyFederation(ctx, suspendedID); st.Enabled {
+		t.Fatalf("suspended user provisioned: %+v", st)
+	}
 }
 
 func TestDBInstanceBlockCRUD(t *testing.T) {
