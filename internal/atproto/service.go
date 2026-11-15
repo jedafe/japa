@@ -463,7 +463,8 @@ func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccoun
 	// An admin force-disable holds past member opt-in — only an admin
 	// reactivate lifts it (§127 A6-1). 'member'/NULL/'lifecycle' rows
 	// still re-enable here.
-	if existing.DisabledReason != nil && *existing.DisabledReason == DisableReasonAdmin {
+	if existing.Status == AccountStatusDisabled && existing.DisabledReason != nil &&
+		*existing.DisabledReason == DisableReasonAdmin {
 		return AccountStatus{}, ErrAdminDisabled
 	}
 	wasActive := existing.Status == AccountStatusActive

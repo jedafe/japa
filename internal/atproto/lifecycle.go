@@ -225,18 +225,35 @@ func (s *Service) EraseAccount(ctx context.Context, userID pgtype.UUID) error {
 }
 
 // TombstoneAccount is the shared A6-1 erasure core (§127) — GDPR
-// EraseAccount and admin force-tombstone both run it. Order: one signed
-// commit retracts every indexed record (the #commit frame carries the
-// delete ops while signing-key custody still exists), blob bytes purge
-// BEFORE the status flip so a failure stays retryable (a tombstoned
-// account early-returns forever — orphaned media would be
-// unrecoverable), then status flips to 'tombstone' and the network sees
-// the end-state as #account{deleted} → #tombstone: relays drop the
-// repo's records wholesale on the tombstone frame rather than replaying
-// per-record deletes. Terminal — no path downgrades or resurrects it.
+// EraseAccount and admin force-tombstone both run it. Order: a silent
+// transitional disable write-gates the repo (no frame — the network
+// learns only the 'deleted' end-state), one signed commit retracts
+// every indexed record (the #commit frame carries the delete ops while
+// signing-key custody still exists), blob bytes purge BEFORE the
+// tombstone flip so a failure stays retryable (a tombstoned account
+// early-returns forever — orphaned media would be unrecoverable), then
+// the end-state announces as #account{deleted} → #tombstone: relays drop
+// the repo's records wholesale on the tombstone frame rather than
+// replaying per-record deletes. Terminal — no path downgrades or
+// resurrects it.
 func (s *Service) TombstoneAccount(ctx context.Context, account gen.AtprotoAccount) error {
 	if account.Status == AccountStatusTombstone {
 		return nil
+	}
+
+	// Write-gate before the retraction commit: a queued publish still
+	// holding the repo lock commits first and lands in the retraction
+	// set (SELECT FOR UPDATE serializes the tx against this UPDATE), a
+	// publish starting after sees status != active and refuses, and a
+	// member re-enable hitting 'admin' is refused — erasure is not
+	// interruptible. Silent: no #account beat for a state that exists
+	// only to fence writes.
+	if account.Status != AccountStatusDisabled || account.DisabledReason == nil ||
+		*account.DisabledReason != DisableReasonAdmin {
+		reason := DisableReasonAdmin
+		if err := s.store.setAccountStatus(ctx, account.ID, AccountStatusDisabled, &reason); err != nil {
+			return fmt.Errorf("atproto: tombstone write-gate: %w", err)
+		}
 	}
 
 	err := s.withRepoWrite(ctx, account.ID, repoWriteErasure, func(rep *atrepo.Repo, q *gen.Queries) ([]indexWrite, error) {

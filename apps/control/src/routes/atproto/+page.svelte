@@ -141,10 +141,13 @@
 
 	const accountActions: DataTableRowAction[] = [
 		{
+			// On an active row this is the force-disable; on a member or
+			// lifecycle-disabled row it escalates the hold to 'admin' so
+			// the member endpoint can't lift it.
 			label: t('atproto.action_disable', 'Force disable'),
 			icon: Ban as never,
 			onClick: (row) => openConfirm('disable', row as unknown as AtprotoAccount),
-			hidden: (row) => (row as unknown as AtprotoAccount).status !== 'active'
+			hidden: (row) => (row as unknown as AtprotoAccount).status === 'tombstone'
 		},
 		{
 			label: t('atproto.action_reactivate', 'Reactivate'),

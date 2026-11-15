@@ -2489,16 +2489,19 @@ func TestDBEraseAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("events: %v", err)
 	}
-	// Frames read in seq order: retraction commit(s) precede the
-	// #account{deleted} frame.
+	// Frames read in seq order: retraction commit(s) precede
+	// #account{deleted}, and A6-1's #tombstone frame is the last word.
 	lastKind := ""
+	secondLastKind := ""
 	for _, r := range rows {
 		if r.Did == acct.Did {
+			secondLastKind = lastKind
 			lastKind = r.Kind
 		}
 	}
-	if lastKind != EventKindAccount {
-		t.Fatalf("last frame for erased did = %q, want account", lastKind)
+	if lastKind != EventKindTombstone || secondLastKind != EventKindAccount {
+		t.Fatalf("erased did tail frames = %q → %q, want account → tombstone",
+			secondLastKind, lastKind)
 	}
 
 	// Idempotent — a retried erasure is a no-op, no second commit.
@@ -2518,12 +2521,15 @@ func TestDBEraseAccount(t *testing.T) {
 		t.Fatalf("frozen erasure = %+v", acct2)
 	}
 
-	// Tombstoned repos vanish from both identity and sync surfaces.
+	// Tombstoned repos vanish from both identity and sync surfaces —
+	// getRepoStatus alone keeps the explicit deleted end-state (A6-1)
+	// because relays recheck inactive repos through it.
 	if _, err := svc.DIDDocument(ctx, uuidString(userID)); err != ErrNotFound {
 		t.Fatalf("tombstone DID doc = %v", err)
 	}
-	if _, err := svc.RepoStatus(ctx, acct.Did); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("tombstone repo status = %v", err)
+	stOut, stErr := svc.RepoStatus(ctx, acct.Did)
+	if stErr != nil || stOut.Active || stOut.Status != "deleted" {
+		t.Fatalf("tombstone repo status = %+v, %v — want deleted", stOut, stErr)
 	}
 }
 
