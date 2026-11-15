@@ -36,14 +36,15 @@ LIMIT 1;
 
 -- name: GetServiceListingForVerification :one
 -- Submit-time resolution for entity_type='service_listing': the listing must
--- exist (service_listing_meta row + live content) so ownership and the
--- already-verified check can run against it. author_id covers member-authored
--- listings; org_id covers org-owned ones (membership re-checked in service).
-SELECT c.id, c.title, c.slug, c.author_id, c.created_by_user_id,
+-- exist and be live (service_listing_meta row + published content) so
+-- ownership and the already-verified check can run against it. author_id is
+-- the ownership column EditOwn uses; org_id covers org-owned listings
+-- (membership re-checked in service).
+SELECT c.id, c.title, c.slug, c.author_id,
        m.org_id, m.is_verified
 FROM service_listing_meta m
 JOIN contents c ON c.id = m.content_id
-WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status NOT IN ('draft','archived')
+WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status = 'published'
 LIMIT 1;
 
 -- name: ListVerificationRequestsByRequester :many

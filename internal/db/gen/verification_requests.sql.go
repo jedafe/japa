@@ -125,28 +125,28 @@ func (q *Queries) GetPendingVerificationRequestForUser(ctx context.Context, requ
 }
 
 const getServiceListingForVerification = `-- name: GetServiceListingForVerification :one
-SELECT c.id, c.title, c.slug, c.author_id, c.created_by_user_id,
+SELECT c.id, c.title, c.slug, c.author_id,
        m.org_id, m.is_verified
 FROM service_listing_meta m
 JOIN contents c ON c.id = m.content_id
-WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status NOT IN ('draft','archived')
+WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status = 'published'
 LIMIT 1
 `
 
 type GetServiceListingForVerificationRow struct {
-	ID              pgtype.UUID `json:"id"`
-	Title           string      `json:"title"`
-	Slug            string      `json:"slug"`
-	AuthorID        pgtype.UUID `json:"author_id"`
-	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
-	OrgID           pgtype.UUID `json:"org_id"`
-	IsVerified      bool        `json:"is_verified"`
+	ID         pgtype.UUID `json:"id"`
+	Title      string      `json:"title"`
+	Slug       string      `json:"slug"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	OrgID      pgtype.UUID `json:"org_id"`
+	IsVerified bool        `json:"is_verified"`
 }
 
 // Submit-time resolution for entity_type='service_listing': the listing must
-// exist (service_listing_meta row + live content) so ownership and the
-// already-verified check can run against it. author_id covers member-authored
-// listings; org_id covers org-owned ones (membership re-checked in service).
+// exist and be live (service_listing_meta row + published content) so
+// ownership and the already-verified check can run against it. author_id is
+// the ownership column EditOwn uses; org_id covers org-owned listings
+// (membership re-checked in service).
 func (q *Queries) GetServiceListingForVerification(ctx context.Context, id pgtype.UUID) (GetServiceListingForVerificationRow, error) {
 	row := q.db.QueryRow(ctx, getServiceListingForVerification, id)
 	var i GetServiceListingForVerificationRow
@@ -155,7 +155,6 @@ func (q *Queries) GetServiceListingForVerification(ctx context.Context, id pgtyp
 		&i.Title,
 		&i.Slug,
 		&i.AuthorID,
-		&i.CreatedByUserID,
 		&i.OrgID,
 		&i.IsVerified,
 	)

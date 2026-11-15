@@ -139,13 +139,12 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Steps 1–2 are where japa_status/primary_goal/destination_country write
-	// through to journey class + geo profile fields (Service.UpdateStep) —
-	// drop the cached VisitorContext so personalization reflects the answers
-	// on the next request instead of after the 30-minute TTL.
-	if req.Step == 1 || req.Step == 2 {
-		h.invalidateVisitorCache(r.Context(), user)
-	}
+	// japa_status/primary_goal/destination_country write through to journey
+	// class + geo profile fields (Service.UpdateStep) — drop the cached
+	// VisitorContext so personalization reflects the answers on the next
+	// request instead of after the 30-minute TTL. Unconditional: admin
+	// templates can move the journey questions to other steps.
+	h.invalidateVisitorCache(r.Context(), user)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }

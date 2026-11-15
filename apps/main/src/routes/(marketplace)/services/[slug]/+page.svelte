@@ -1798,7 +1798,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							{t('services.edit', 'Edit listing')}
 						</a>
 					{/if}
-					{#if !service.is_verified}
+					{#if !service.is_verified && service.status === 'published'}
 						<a
 							href="/verification-request?listing={service.slug}"
 							class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"

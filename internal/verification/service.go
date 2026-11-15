@@ -99,10 +99,10 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 //     request exists for that org.
 //   - entity_type 'user': always the caller's own profile; caller not already
 //     verified; no pending request exists for the caller.
-//   - entity_type 'service_listing': the listing exists and is live, the
-//     requester is the listing author or an owner/admin member of the owning
-//     org, the listing is not already verified, and no pending request exists
-//     for that listing (001157).
+//   - entity_type 'service_listing': the listing exists and is live
+//     (status='published'), the requester is the listing author or an
+//     owner/admin member of the owning org, the listing is not already
+//     verified, and no pending request exists for that listing (001157).
 //
 // The linked form submission must exist, belong to the requester, and still be
 // status='new' (BUG-009 equivalent — a submission is consumed by exactly one
@@ -216,10 +216,11 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		}
 
 		// Requester must be the listing author or an owner/admin member of
-		// the owning org (mirrors the §98 edit_own surface — the badge asks
-		// reviewers to trust whoever controls the listing).
-		allowed := listing.AuthorID == requesterID ||
-			(listing.CreatedByUserID.Valid && listing.CreatedByUserID == requesterID)
+		// the owning org — author_id is the ownership column
+		// (loadListingForEdit); created_by_user_id is not consulted because
+		// an org claim can leave the original creator without control of
+		// the listing.
+		allowed := listing.AuthorID == requesterID
 		if !allowed && listing.OrgID.Valid {
 			role, err := s.store.GetOrganizationMemberRole(ctx, listing.OrgID, requesterID)
 			if err != nil {
