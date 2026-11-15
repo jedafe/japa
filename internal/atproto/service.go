@@ -433,6 +433,10 @@ func (s *Service) EnableAccount(ctx context.Context, userID pgtype.UUID) (Accoun
 		return AccountStatus{}, err
 	}
 	worker.EnqueueAtprotoRequestCrawl(ctx, account.ID)
+	// §127: every path to active reconciles — a member who opts in after
+	// publishing (or a backfill-provisioned member) has an eligible
+	// backlog no emit ever saw; a fresh signup's run is a cheap no-op.
+	worker.EnqueueAtprotoReconcileRepo(ctx, account.ID)
 	return s.statusFor(account), nil
 }
 

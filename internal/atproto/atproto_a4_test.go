@@ -239,6 +239,17 @@ func TestDBReconcileRepo(t *testing.T) {
 		`UPDATE contents SET federate_opt_out = true WHERE id = $1`, stale); err != nil {
 		t.Fatal(err)
 	}
+	// Orphaned attribution — an admin hard delete SET NULLs content_id
+	// but the index row + repo record survive; reconcile must tombstone.
+	orphan := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, orphan); err != nil {
+		t.Fatalf("publish orphan: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE atproto_records SET content_id = NULL WHERE account_id=$1 AND content_id=$2`,
+		acct.ID, orphan); err != nil {
+		t.Fatal(err)
+	}
 	// Content published inside the disabled window — never emitted, no
 	// index row; the reconcile must project it rather than walk past.
 	missing := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
@@ -247,7 +258,7 @@ func TestDBReconcileRepo(t *testing.T) {
 		t.Fatalf("ReconcileRepo: %v", err)
 	}
 
-	var liveRows, staleRows, missingRows int
+	var liveRows, staleRows, missingRows, orphanRows, orphanNullRows int
 	if err := d.Writer.QueryRow(ctx,
 		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
 		acct.ID, live).Scan(&liveRows); err != nil {
@@ -263,8 +274,22 @@ func TestDBReconcileRepo(t *testing.T) {
 		acct.ID, missing).Scan(&missingRows); err != nil {
 		t.Fatal(err)
 	}
-	if liveRows != 1 || staleRows != 0 || missingRows != 1 {
-		t.Fatalf("records: live=%d stale=%d missing=%d, want 1/0/1", liveRows, staleRows, missingRows)
+	// The orphan's NULL-attributed row tombstones AND — because its
+	// contents row still exists + is eligible — the missing-posts scan
+	// re-projects it. (A real hard delete removes the contents row too,
+	// so nothing re-projects and the tombstone stands.)
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
+		acct.ID, orphan).Scan(&orphanRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND collection='app.bsky.feed.post' AND content_id IS NULL`,
+		acct.ID).Scan(&orphanNullRows); err != nil {
+		t.Fatal(err)
+	}
+	if liveRows != 1 || staleRows != 0 || missingRows != 1 || orphanRows != 1 || orphanNullRows != 0 {
+		t.Fatalf("records: live=%d stale=%d missing=%d orphan=%d orphanNull=%d, want 1/0/1/1/0", liveRows, staleRows, missingRows, orphanRows, orphanNullRows)
 	}
 }
 

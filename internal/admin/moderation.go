@@ -2348,6 +2348,10 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if r.URL.Query().Get("force") == "true" {
+		// §127: emit BEFORE the delete — atproto_records.content_id is
+		// ON DELETE SET NULL, so once the row is gone the emit resolves
+		// nothing and the projected feed.post orphans in the repo.
+		h.emitAtprotoDelete(r.Context(), cid)
 		affected, err := h.Queries.HardDeleteContent(r.Context(), cid)
 		if err != nil {
 			if errpkg.IsFKViolation(err) {
@@ -2434,6 +2438,10 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 	h.auditContentAction(r, "admin.content.remove", cid, body.Reason)
 
+	// §127: the raw UPDATE bypassed content.Service's emit hook — the
+	// projected feed.post tombstones with the row.
+	h.emitAtprotoDelete(r.Context(), cid)
+
 	// Unified-discussion spec: the raw UPDATE bypassed content.Service's
 	// soft-delete hook — the public /thread page must die with the row or
 	// the removed title + conversation leak via /thread/{slug}.
@@ -2498,6 +2506,23 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	worker.EnqueueSearchIndexSync(r.Context(), "content", cid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
+}
+
+// emitAtprotoDelete fans out atproto:delete_record for every projected
+// index row a content left behind — mirrors content.Service's emit for
+// the admin raw-query paths that bypass its hooks (§127 A4). Read off
+// Writer so a just-projected row is visible; zero rows = nothing ever
+// projected = no-op. The active-account join keeps disabled repos
+// frozen — their stale rows converge via atproto:reconcile_repo.
+func (h *Handlers) emitAtprotoDelete(ctx context.Context, contentID pgtype.UUID) {
+	recs, err := gen.New(h.DB.Writer).GetAtprotoRecordsByContent(ctx, contentID)
+	if err != nil {
+		slog.Warn("admin: atproto record lookup failed", "content_id", contentID.String(), "error", err)
+		return
+	}
+	for _, rec := range recs {
+		worker.EnqueueAtprotoDeleteRecord(ctx, rec.AccountID, rec.Uri)
+	}
 }
 
 // auditContentAction writes a best-effort audit_logs entry for an admin

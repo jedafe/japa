@@ -159,6 +159,10 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 			perRow(s.publishProfile(ctx, &account))
 		case CollectionPost:
 			if !rec.ContentID.Valid {
+				// content_id ON DELETE SET NULL — an admin hard delete
+				// orphaned the attribution; a post can only exist via
+				// content projection, so this copy is provably stale.
+				perRow(s.DeleteRecordURI(ctx, accountID, rec.Uri))
 				continue
 			}
 			if _, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
