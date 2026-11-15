@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/go-chi/chi/v5"
@@ -40,10 +41,18 @@ func xrpcAuthErr(w http.ResponseWriter, err error) {
 	}
 }
 
-// requireSession resolves the Bearer access JWT → SessionAccount or
-// writes the lexicon error. Shared by every authed endpoint.
+// requireSession resolves the credential → SessionAccount or writes the
+// lexicon error. Bearer mints app-password sessions (A6-4); the DPoP
+// scheme resolves A6-5 OAuth grants — its failures also set the
+// WWW-Authenticate/DPoP-Nonce headers the profile mandates.
 func (h *Handlers) requireSession(w http.ResponseWriter, r *http.Request) *SessionAccount {
-	acct, err := h.service.AuthenticateAccess(r.Context(), r.Header.Get("Authorization"))
+	var acct *SessionAccount
+	var err error
+	if strings.HasPrefix(r.Header.Get("Authorization"), "DPoP ") {
+		acct, err = h.service.AuthenticateDPoP(r.Context(), r, w)
+	} else {
+		acct, err = h.service.AuthenticateAccess(r.Context(), r.Header.Get("Authorization"))
+	}
 	if err != nil {
 		xrpcAuthErr(w, err)
 		return nil
@@ -52,9 +61,12 @@ func (h *Handlers) requireSession(w http.ResponseWriter, r *http.Request) *Sessi
 }
 
 // sessionFields fills the lexicon {did, handle, email?, active?,
-// status?} every session-shaped response carries.
+// status?} every session-shaped response carries. OAuth sessions only
+// echo email when the grant carries transition:email — app-password
+// sessions (nil OAuthScopes) keep legacy parity.
 func sessionFields(acct *SessionAccount) (active *bool, status *string, email *string) {
-	if acct.Email != "" {
+	if acct.Email != "" && (acct.OAuthScopes == nil ||
+		hasScopeWord(strings.Join(acct.OAuthScopes, " "), "transition:email")) {
 		email = &acct.Email
 	}
 	a, st := acct.activeStatus()

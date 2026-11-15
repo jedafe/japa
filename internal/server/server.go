@@ -3345,6 +3345,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mcpOAuthHandlers := mcp.NewOAuthHandlers(mcpOAuthService, cfg.MCPPublicURL, cfg.SiteURL, cfg.SiteName, kr, vkClient.Redis(), mcpOAuthSecret)
 	mcpOAuthHandlers.SetPermissionResolver(rbacResolver) // §120 v1.4: agent.use grants require the user's RBAC node
 	mcpOAuthService.SetTierResolver(publicAPIService)    // §120 v1.4: OAuth bearers get the owner's rate-tier cap
+	// §127 A6-5: the atproto consent flow resolves the same jc_token
+	// member session §120 uses — same KeyRotation + jti revocation check.
+	atprotoHandlers.SetConsentAuth(kr, vkClient.Redis(), cfg.SiteURL, cfg.SiteName)
 	mcpServer.SetSiteBaseURL(cfg.SiteURL)
 	publicAPIService.SetAdminChecker(rbacResolver) // Phase 3: admin-only scope gating
 	// Agent Data API: narrow readers over the moat domain services. The
@@ -3986,28 +3989,77 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// tooling can call them; OPTIONS preflights are answered before the rate
 	// limiter and never reach auth. /oauth/authorize stays unwrapped — it is
 	// a cookie-authenticated top-level navigation, not a fetch target.
+	// §127 A6-5 unified-AS dispatchers — the atproto OAuth profile shares
+	// this authorization server (its bare-origin issuer cannot be a second
+	// doc on one host), so endpoints discriminate by request shape:
+	// request_uri on authorize, a URL client_id on token, an atp_* token
+	// prefix on revoke, the PDS host on the protected-resource doc, and the
+	// feature flag on the merged AS doc. No ambiguity is possible.
+	oauthDispatchToken := func(w http.ResponseWriter, r *http.Request) {
+		if atproto.IsAtprotoClientID(r.PostFormValue("client_id")) {
+			atprotoHandlers.HandleToken(w, r)
+			return
+		}
+		mcpOAuthHandlers.HandleToken(w, r)
+	}
+	oauthDispatchRevoke := func(w http.ResponseWriter, r *http.Request) {
+		if atproto.IsAtprotoToken(r.PostFormValue("token")) {
+			atprotoHandlers.HandleRevoke(w, r)
+			return
+		}
+		mcpOAuthHandlers.HandleRevoke(w, r)
+	}
+	oauthDispatchAuthorize := func(w http.ResponseWriter, r *http.Request) {
+		reqURI := r.URL.Query().Get("request_uri")
+		if reqURI == "" {
+			reqURI = r.PostFormValue("request_uri")
+		}
+		if reqURI != "" && atprotoService.FeatureOn(r.Context()) {
+			atprotoHandlers.HandleAuthorize(w, r)
+			return
+		}
+		mcpOAuthHandlers.HandleAuthorize(w, r)
+	}
+	oauthDispatchPRDoc := func(w http.ResponseWriter, r *http.Request) {
+		if atprotoService.FeatureOn(r.Context()) && atprotoService.IsPDSHost(r.Host) {
+			atprotoHandlers.HandleProtectedResourceMetadata(w, r)
+			return
+		}
+		mcpOAuthHandlers.HandleProtectedResourceMetadata(w, r)
+	}
+	oauthDispatchASDoc := func(w http.ResponseWriter, r *http.Request) {
+		if atprotoService.FeatureOn(r.Context()) {
+			atprotoHandlers.HandleAuthorizationServerMetadata(w, r)
+			return
+		}
+		mcpOAuthHandlers.HandleAuthorizationServerMetadata(w, r)
+	}
+
 	r.Group(func(r chi.Router) {
 		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "tight"))
 		r.Post("/oauth/register", mcpOAuthHandlers.HandleRegister)
-		r.Post("/oauth/revoke", mcpOAuthHandlers.HandleRevoke)
+		r.Post("/oauth/revoke", oauthDispatchRevoke)
 		r.Options("/oauth/register", mcp.NoContent)
 		r.Options("/oauth/revoke", mcp.NoContent)
 	})
 	// Token endpoint gets its own tier: hosted connectors call it from a
 	// small set of provider egress IPs on behalf of all their users.
-	r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "oauth_token")).Post("/oauth/token", mcpOAuthHandlers.HandleToken)
+	r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "oauth_token")).Post("/oauth/token", oauthDispatchToken)
 	r.With(mcp.PublicCORS).Options("/oauth/token", mcp.NoContent)
+	// §127 A6-5: PAR is atproto-only — MCP clients don't use it.
+	r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "oauth_token")).Post("/oauth/par", atprotoHandlers.HandlePAR)
+	r.With(mcp.PublicCORS).Options("/oauth/par", mcp.NoContent)
 	r.Group(func(r chi.Router) {
 		r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
-		r.With(mcp.PublicCORS).Get("/.well-known/oauth-protected-resource", mcpOAuthHandlers.HandleProtectedResourceMetadata)
+		r.With(mcp.PublicCORS).Get("/.well-known/oauth-protected-resource", oauthDispatchPRDoc)
 		r.With(mcp.PublicCORS).Get("/.well-known/oauth-protected-resource/api/v1/mcp", mcpOAuthHandlers.HandleProtectedResourceMetadata)
-		r.With(mcp.PublicCORS).Get("/.well-known/oauth-authorization-server", mcpOAuthHandlers.HandleAuthorizationServerMetadata)
+		r.With(mcp.PublicCORS).Get("/.well-known/oauth-authorization-server", oauthDispatchASDoc)
 		r.With(mcp.PublicCORS).Options("/.well-known/oauth-protected-resource", mcp.NoContent)
 		r.With(mcp.PublicCORS).Options("/.well-known/oauth-protected-resource/api/v1/mcp", mcp.NoContent)
 		r.With(mcp.PublicCORS).Options("/.well-known/oauth-authorization-server", mcp.NoContent)
 		// Consent GET renders the page; POST consumes the signed consent.
-		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
-		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Post("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
+		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/oauth/authorize", oauthDispatchAuthorize)
+		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Post("/oauth/authorize", oauthDispatchAuthorize)
 
 		// §120 v1.4 userinfo — a fetch target (unlike /oauth/authorize), so
 		// it carries PublicCORS like the other machine-facing OAuth routes.
@@ -4940,6 +4992,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto/app-passwords", atprotoHandlers.ListMyAppPasswords)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/atproto/app-passwords", atprotoHandlers.CreateMyAppPassword)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto/app-passwords/{id}", atprotoHandlers.DeleteMyAppPassword)
+				// §127 A6-5: OAuth grant management — the member's view +
+				// delete surface for external OAuth client sessions.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use")).Get("/me/atproto/oauth-sessions", atprotoHandlers.HandleListOAuthSessions)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "atproto.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/atproto/oauth-sessions", atprotoHandlers.HandleRevokeOAuthSession)
 			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)

@@ -28,8 +28,10 @@ func PublicCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-API-Key, MCP-Protocol-Version, MCP-Session-Id")
-		w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, MCP-Session-Id")
+		// DPoP + DPoP-Nonce ride the shared /oauth surface for the §127
+		// A6-5 atproto profile — browser OAuth clients must send/read them.
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-API-Key, MCP-Protocol-Version, MCP-Session-Id, DPoP")
+		w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, MCP-Session-Id, DPoP-Nonce")
 		// The global corsMiddleware may have set ACAC:true for an allowlisted
 		// origin — drop it, since ACAO:* + ACAC:true is invalid for credentialed
 		// fetches and these endpoints are credential-free.
@@ -64,7 +66,11 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 			if user == nil || !user.UserID.Valid {
 				challenge := "Bearer"
 				if issuer != "" {
-					challenge = `Bearer resource_metadata="` + issuer + `/.well-known/oauth-protected-resource"`
+					// §127 A6-5: the bare root is host-aware (the PDS host
+					// answers the atproto doc). Point MCP discovery at the
+					// suffixed resource-path form — its RFC 9728-canonical
+					// URL for this resource.
+					challenge = `Bearer resource_metadata="` + issuer + `/.well-known/oauth-protected-resource/api/v1/mcp"`
 				}
 				// RFC 6750 §3.1: distinguish "no credentials" from
 				// "credentials presented but rejected".

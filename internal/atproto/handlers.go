@@ -13,11 +13,16 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers holds dependencies for the atproto HTTP handlers.
 type Handlers struct {
-	service *Service
+	service  *Service
+	kr       *auth.KeyRotation // A6-5 consent: member jc_token validation
+	vk       valkeycompat.Cmdable
+	siteURL  string
+	siteName string
 }
 
 // NewHandlers creates Handlers with the given Service.

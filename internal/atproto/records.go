@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -384,6 +386,25 @@ func decodeRecord(collection string, raw json.RawMessage) (atrepo.CborMarshaler,
 // features.GatedContentTypes convention.
 func (s *Service) featureOn(ctx context.Context) bool {
 	return s.flags == nil || s.flags.IsEnabled(ctx, "feature.atproto")
+}
+
+// FeatureOn is the exported form — server.go's unified-OAuth dispatchers
+// need the gate to pick the right profile's handler/doc.
+func (s *Service) FeatureOn(ctx context.Context) bool { return s.featureOn(ctx) }
+
+// IsPDSHost reports whether hostport is the PDS host — the host-aware
+// dispatch on /.well-known/oauth-protected-resource (§127 A6-5). Port
+// tolerated for dev; comparison is case-insensitive on the hostname.
+func (s *Service) IsPDSHost(hostport string) bool {
+	u, err := url.Parse(s.cfg.PDSURL)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return strings.EqualFold(host, u.Hostname())
 }
 
 // PublishRecordJSON is the Asynq atproto:publish_record entry point:

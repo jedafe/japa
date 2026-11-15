@@ -21,6 +21,16 @@ ORDER BY (a.did = @identifier) DESC,
          (lower(u.email) = lower(@identifier)) DESC
 LIMIT 1;
 
+-- name: GetAtprotoSessionAccountByID :one
+-- OAuth grant → session view: same row shape as the identifier
+-- resolution, keyed by atproto_accounts.id (grant rows carry it).
+SELECT a.id, a.user_id, a.did, a.handle, a.status, a.disabled_reason,
+       u.username AS live_username, u.email AS user_email, u.status AS user_status
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.id = @account_id
+LIMIT 1;
+
 -- name: ListAtprotoLiveAppPasswords :many
 -- createSession verifies the submitted secret against every live hash
 -- on the account (the wire carries no name — any live password admits).

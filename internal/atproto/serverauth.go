@@ -179,12 +179,17 @@ func (s *Service) ExportRepo(ctx context.Context, userID pgtype.UUID) ([]byte, s
 	return car, acct.Did, nil
 }
 
-// revokeExternalCredentials kills every live session + app password —
-// called by the tombstone core so erasure can't leave an external
-// client holding a working credential against a deleted identity.
+// revokeExternalCredentials kills every live session + app password +
+// OAuth grant — called by the tombstone core so erasure can't leave an
+// external client holding a working credential against a deleted identity.
 func (s *Service) revokeExternalCredentials(ctx context.Context, accountID pgtype.UUID) {
 	if err := s.store.q.RevokeAtprotoSessionsForAccount(ctx, accountID); err != nil {
 		slog.Warn("atproto: session revoke on tombstone failed", "account_id", accountID.String(), "error", err)
+	}
+	// A6-5: OAuth grants die the same death — a tombstoned identity can
+	// never authorize another token call.
+	if _, err := s.store.q.RevokeOAuthGrantsForAccount(ctx, accountID); err != nil {
+		slog.Warn("atproto: oauth grant revoke on tombstone failed", "account_id", accountID.String(), "error", err)
 	}
 	rows, err := s.store.q.ListAtprotoAppPasswords(ctx, accountID)
 	if err != nil {

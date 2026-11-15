@@ -32,6 +32,9 @@ type Service struct {
 	media    MediaReader
 	notifier Notifier
 	jwtKey   []byte // A6-4 session HS256 secret (ephemeral when unconfigured)
+	// oauthFetch overrides client-metadata/jwks egress in tests — the
+	// production path is fetchURL's guarded http.Client.
+	oauthFetch func(ctx context.Context, rawURL string, maxBytes int64) ([]byte, int, error)
 }
 
 // NewService creates a Service backed by the given database pool.

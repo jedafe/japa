@@ -125,6 +125,18 @@ func (s *Service) StartJetstreamConsumer(ctx context.Context) {
 				} else if n > 0 {
 					slog.Info("atproto: pruned dead sessions", "rows", n)
 				}
+				// A6-5: dead OAuth requests/grants prune on the same knob —
+				// PARs are 10-minute rows and grants hold only hashes.
+				if n, serr := gen.New(s.db.Writer).DeleteStaleOAuthRequests(ctx, int32(s.cfg.SessionRetentionDays)); serr != nil {
+					slog.Warn("atproto: oauth request sweep failed", "error", serr)
+				} else if n > 0 {
+					slog.Info("atproto: pruned dead oauth requests", "rows", n)
+				}
+				if n, serr := gen.New(s.db.Writer).DeleteStaleOAuthTokens(ctx, int32(s.cfg.SessionRetentionDays)); serr != nil {
+					slog.Warn("atproto: oauth grant sweep failed", "error", serr)
+				} else if n > 0 {
+					slog.Info("atproto: pruned dead oauth grants", "rows", n)
+				}
 			}
 			lastSweep = time.Now()
 		}

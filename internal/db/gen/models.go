@@ -762,6 +762,41 @@ type AtprotoInbound struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type AtprotoOauthRequest struct {
+	RequestUri    string             `json:"request_uri"`
+	ClientID      string             `json:"client_id"`
+	ClientJkt     *string            `json:"client_jkt"`
+	RedirectUri   string             `json:"redirect_uri"`
+	Scope         string             `json:"scope"`
+	State         string             `json:"state"`
+	CodeChallenge string             `json:"code_challenge"`
+	DpopJkt       string             `json:"dpop_jkt"`
+	LoginHint     *string            `json:"login_hint"`
+	AccountID     pgtype.UUID        `json:"account_id"`
+	CodeHash      *string            `json:"code_hash"`
+	CodeIssuedAt  pgtype.Timestamptz `json:"code_issued_at"`
+	CodeUsedAt    pgtype.Timestamptz `json:"code_used_at"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt    pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type AtprotoOauthToken struct {
+	ID               pgtype.UUID        `json:"id"`
+	AccountID        pgtype.UUID        `json:"account_id"`
+	ClientID         string             `json:"client_id"`
+	ClientJkt        *string            `json:"client_jkt"`
+	Scope            string             `json:"scope"`
+	DpopJkt          string             `json:"dpop_jkt"`
+	AccessHash       string             `json:"access_hash"`
+	RefreshHash      string             `json:"refresh_hash"`
+	PrevRefreshHash  *string            `json:"prev_refresh_hash"`
+	AccessExpiresAt  pgtype.Timestamptz `json:"access_expires_at"`
+	RefreshExpiresAt pgtype.Timestamptz `json:"refresh_expires_at"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type AtprotoRecord struct {
 	Uri        string             `json:"uri"`
 	AccountID  pgtype.UUID        `json:"account_id"`

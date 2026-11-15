@@ -149,6 +149,10 @@ type SessionAccount struct {
 	Status         string
 	DisabledReason *string
 	Email          string
+	// OAuthSessions carry the granted scope + client — nil scopes mean a
+	// legacy app-password session (full parity, email always echoed).
+	OAuthScopes   []string
+	OAuthClientID string
 }
 
 // activeStatus maps account state to the lexicon {active,status?} pair

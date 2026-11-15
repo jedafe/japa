@@ -200,6 +200,46 @@ func (q *Queries) GetAtprotoSessionAccount(ctx context.Context, identifier strin
 	return i, err
 }
 
+const getAtprotoSessionAccountByID = `-- name: GetAtprotoSessionAccountByID :one
+SELECT a.id, a.user_id, a.did, a.handle, a.status, a.disabled_reason,
+       u.username AS live_username, u.email AS user_email, u.status AS user_status
+FROM atproto_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.id = $1
+LIMIT 1
+`
+
+type GetAtprotoSessionAccountByIDRow struct {
+	ID             pgtype.UUID `json:"id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Did            string      `json:"did"`
+	Handle         string      `json:"handle"`
+	Status         string      `json:"status"`
+	DisabledReason *string     `json:"disabled_reason"`
+	LiveUsername   string      `json:"live_username"`
+	UserEmail      string      `json:"user_email"`
+	UserStatus     string      `json:"user_status"`
+}
+
+// OAuth grant → session view: same row shape as the identifier
+// resolution, keyed by atproto_accounts.id (grant rows carry it).
+func (q *Queries) GetAtprotoSessionAccountByID(ctx context.Context, accountID pgtype.UUID) (GetAtprotoSessionAccountByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAtprotoSessionAccountByID, accountID)
+	var i GetAtprotoSessionAccountByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Did,
+		&i.Handle,
+		&i.Status,
+		&i.DisabledReason,
+		&i.LiveUsername,
+		&i.UserEmail,
+		&i.UserStatus,
+	)
+	return i, err
+}
+
 const getAtprotoSessionByID = `-- name: GetAtprotoSessionByID :one
 SELECT s.id, s.account_id, s.app_password_id, s.refresh_hash, s.user_agent, s.last_ip, s.created_at, s.refresh_expires_at, s.revoked_at, a.did, a.handle, a.user_id, a.status AS account_status,
        a.disabled_reason, a.previous_did, u.email AS user_email,
