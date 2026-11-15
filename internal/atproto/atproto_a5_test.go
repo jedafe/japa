@@ -17,14 +17,14 @@ import (
 
 type captureNotifier struct {
 	calls []struct {
-		Recipient  pgtype.UUID
-		Type       string
-		ActorType  string
-		ActorID    pgtype.UUID
-		SubjectID  pgtype.UUID
-		Title      string
-		Body       string
-		ActionURL  string
+		Recipient pgtype.UUID
+		Type      string
+		ActorType string
+		ActorID   pgtype.UUID
+		SubjectID pgtype.UUID
+		Title     string
+		Body      string
+		ActionURL string
 	}
 }
 
@@ -236,11 +236,13 @@ func TestDBInboundDedupReplay(t *testing.T) {
 }
 
 // TestDBInboundIgnoresNonMember — events about non-member URIs/DIDs are
-// ledgered as ignored, not processed.
+// dropped: irrelevant upstream traffic is never ledgered or dedup-keyed
+// (network-wide stream volume makes both unaffordable).
 func TestDBInboundIgnoresNonMember(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, _ := a5Fixture(t, ctx)
-	svc.SetNotifier(&captureNotifier{})
+	notifier := &captureNotifier{}
+	svc.SetNotifier(notifier)
 
 	remoteDID := fmt.Sprintf("did:plc:os%d", time.Now().UnixNano())
 	// Reply to a foreign post — must be ignored.
@@ -258,24 +260,15 @@ func TestDBInboundIgnoresNonMember(t *testing.T) {
 	}))
 
 	d := testDB(t)
-	var statuses []string
-	rows, err := d.Writer.Query(ctx, `SELECT status FROM atproto_inbound WHERE did = $1 ORDER BY event_seq`, remoteDID)
-	if err != nil {
+	var n int
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_inbound WHERE did = $1`, remoteDID).Scan(&n); err != nil {
 		t.Fatalf("query inbound: %v", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var s string
-		_ = rows.Scan(&s)
-		statuses = append(statuses, s)
+	if n != 0 {
+		t.Fatalf("ignored events ledgered: %d rows", n)
 	}
-	if len(statuses) != 3 {
-		t.Fatalf("statuses=%v", statuses)
-	}
-	for _, s := range statuses {
-		if s != "ignored" {
-			t.Fatalf("expected ignored, got %v", statuses)
-		}
+	if len(notifier.calls) != 0 {
+		t.Fatalf("ignored events notified: %+v", notifier.calls)
 	}
 }
 
@@ -381,11 +374,13 @@ func TestDBInboundReplayNewSeqNoDupNotify(t *testing.T) {
 	if len(notifier.calls) != 1 {
 		t.Fatalf("replayed like notified %d times", len(notifier.calls))
 	}
+	// The replay evaluates to 'ignored' → its tx rolls back → only the
+	// original event's row stays in the ledger.
 	d := testDB(t)
-	var status string
-	_ = d.Writer.QueryRow(ctx, `SELECT status FROM atproto_inbound WHERE event_seq = 801 AND did = $1`, remoteDID).Scan(&status)
-	if status != "ignored" {
-		t.Fatalf("replay ledger status=%s", status)
+	var n int
+	_ = d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_inbound WHERE did = $1`, remoteDID).Scan(&n)
+	if n != 1 {
+		t.Fatalf("replay wrote a ledger row: %d", n)
 	}
 }
 

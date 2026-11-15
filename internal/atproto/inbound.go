@@ -2,8 +2,11 @@
 // Jetstream consumer. Subscribes to app.bsky.feed.post/like/follow commits,
 // resolves their subjects against the local projection index, and normalizes
 // matched events into comments / remote likes / remote follows plus §35
-// notifications. Every event is ledgered in atproto_inbound; dedup rides the
-// (event_uri, operation) unique key plus a 72h Valkey fast-path.
+// notifications. Actionable events are ledgered in atproto_inbound in the
+// same transaction as their domain writes; irrelevant traffic is dropped
+// without a ledger row or dedup key (network-wide volume makes both
+// unaffordable). Dedup authority is the (event_uri, operation, event_seq)
+// unique key — the 72h Valkey marker is a post-commit advisory fast-path.
 //
 // Spec note: §127 says "filtered to member DIDs" — Jetstream's wantedDids
 // filters on the event's repo DID, which would only echo our own commits.
@@ -139,7 +142,12 @@ func (s *Service) consume(ctx context.Context) error {
 		if err := json.Unmarshal(raw, &ev); err != nil || ev.Commit == nil {
 			continue // malformed frame — never crash the loop
 		}
-		s.handleCommit(ctx, &ev)
+		if err := s.handleCommit(ctx, &ev); err != nil {
+			// Persistence failure — drop the connection. The cursor hasn't
+			// advanced past this event, so reconnecting forces redelivery
+			// instead of silently skipping it.
+			return fmt.Errorf("atproto: commit handling: %w", err)
+		}
 		lastCursor.Store(ev.TimeUS)
 		if time.Since(lastFlush) >= cursorCheckpointEvery {
 			s.flushCursor(ctx, lastCursor.Load())
@@ -155,30 +163,57 @@ func (s *Service) flushCursor(ctx context.Context, timeUS int64) {
 	_ = s.vk.Set(ctx, "jc:atp:jetstream:cursor", timeUS, 0).Err()
 }
 
-// handleCommit applies one commit event: dedup → ledger → dispatch → status.
-// Any upstream weirdness is contained here so the stream never stops on a
-// single bad record.
-func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) {
+// notifyIntent defers a §35 notification until after the dispatch transaction
+// commits — firing inside the tx would notify on work that can still roll
+// back, and push/email fan-out never belongs inside a db transaction.
+type notifyIntent struct {
+	recipientID pgtype.UUID
+	nType       string
+	actorID     pgtype.UUID
+	subjectType string
+	subjectID   pgtype.UUID
+	title       string
+	body        string
+	action      string
+}
+
+// handleCommit applies one commit event atomically: the ledger row and every
+// domain write share a single transaction, so a crash can never leave
+// partially-applied state or a stuck 'received' row. 'ignored' verdicts roll
+// back — irrelevant upstream traffic is neither audited nor dedup-keyed
+// (network-wide stream volume makes both unaffordable); replays re-evaluate
+// cheaply. The Valkey marker is written post-commit as an advisory fast-path
+// only — the ledger unique constraint is the authoritative dedupe.
+//
+// Returns a non-nil error only when persistence itself fails — the caller
+// drops the connection so upstream redelivers from the cursor rather than
+// silently skipping the event. Domain failures are ledgered 'error' and
+// return nil; a panic is contained (skipped, loudly logged) so one poison
+// event can't wedge the stream in a reconnect loop.
+func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("atproto: jetstream event panic", "did", ev.DID, "panic", r)
+			err = nil
 		}
 	}()
 
 	c := ev.Commit
 	uri := fmt.Sprintf("at://%s/%s/%s", ev.DID, c.Collection, c.Rkey)
-
-	// Valkey fast-path dedupe — replayed events short-circuit before the DB.
-	// The seq is part of the material so a legit create→delete→create
-	// sequence isn't swallowed; replays carry identical time_us.
 	dk := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", uri, c.Operation, ev.TimeUS)))
 	dedupKey := "jc:atp:in:dedup:" + hex.EncodeToString(dk[:])
-	if ok, err := s.vk.SetNX(ctx, dedupKey, "1", jetstreamDedupTTL).Result(); err == nil && !ok {
-		return
+	if got, gerr := s.vk.Get(ctx, dedupKey).Result(); gerr == nil && got != "" {
+		return nil
 	}
 
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("inbound tx begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := gen.New(tx)
+
 	raw, _ := json.Marshal(c.Record)
-	q := gen.New(s.db.Writer)
 	inID, err := q.InsertAtprotoInbound(ctx, gen.InsertAtprotoInboundParams{
 		EventUri:   uri,
 		EventSeq:   ev.TimeUS,
@@ -189,16 +224,15 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return // ledger says duplicate — processed already
+			return nil // already ledgered — drop
 		}
-		// Transient failure — roll the fast-path dedup key back so redelivery
-		// can retry; without this the event is dropped for the 72h TTL.
-		_ = s.vk.Del(ctx, dedupKey).Err()
-		slog.Warn("atproto: inbound ledger insert failed", "uri", uri, "error", err)
-		return
+		return fmt.Errorf("inbound ledger insert: %w", err)
 	}
 
-	status, msg := s.dispatch(ctx, ev, uri)
+	status, msg, intents := s.dispatch(ctx, q, ev, uri)
+	if status == "ignored" {
+		return nil // rollback — irrelevant traffic is neither audited nor keyed
+	}
 	var errStr *string
 	if msg != "" {
 		errStr = &msg
@@ -206,23 +240,40 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) {
 	if uerr := q.UpdateAtprotoInboundStatus(ctx, gen.UpdateAtprotoInboundStatusParams{
 		ID: inID, Status: status, Error: errStr,
 	}); uerr != nil {
-		slog.Warn("atproto: inbound status update failed", "id", inID.String(), "error", uerr)
+		return fmt.Errorf("inbound status update: %w", uerr)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("inbound tx commit: %w", err)
+	}
+
+	_ = s.vk.Set(ctx, dedupKey, "1", jetstreamDedupTTL).Err()
+	for _, in := range intents {
+		if s.notifier == nil {
+			break
+		}
+		if nerr := s.notifier.CreateNotification(ctx, in.recipientID, in.nType,
+			"atproto_actor", in.actorID, in.subjectType, in.subjectID,
+			in.title, in.body, in.action); nerr != nil {
+			slog.Warn("atproto: inbound notification failed", "type", in.nType, "error", nerr)
+		}
+	}
+	return nil
 }
 
-// dispatch routes a commit to its normalizer. Returns the ledger status and
-// an optional detail string recorded alongside it.
-func (s *Service) dispatch(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+// dispatch routes a commit to its normalizer. Returns the ledger status, an
+// optional detail string, and any notification intents for post-commit
+// delivery. q is the caller's transaction — all domain writes share it.
+func (s *Service) dispatch(ctx context.Context, q *gen.Queries, ev *jetstreamEvent, uri string) (string, string, []notifyIntent) {
 	c := ev.Commit
 	switch c.Collection {
 	case colFeedPost:
-		return s.dispatchPost(ctx, ev, uri)
+		return s.dispatchPost(ctx, q, ev, uri)
 	case colFeedLike:
-		return s.dispatchLike(ctx, ev, uri)
+		return s.dispatchLike(ctx, q, ev, uri)
 	case colFollow:
-		return s.dispatchFollow(ctx, ev, uri)
+		return s.dispatchFollow(ctx, q, ev, uri)
 	}
-	return "ignored", "unsupported collection"
+	return "ignored", "unsupported collection", nil
 }
 
 // recStr pulls a dotted string field out of the generic record map.
@@ -249,24 +300,23 @@ const maxCommentDepth = 3
 
 // dispatchPost normalizes app.bsky.feed.post commits: creates/updates that
 // reply to a member post become remote comments; deletes tombstone them.
-func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+func (s *Service) dispatchPost(ctx context.Context, q *gen.Queries, ev *jetstreamEvent, uri string) (string, string, []notifyIntent) {
 	c := ev.Commit
-	q := gen.New(s.db.Writer)
 	switch c.Operation {
 	case "create", "update":
 		if c.Operation == "update" {
 			if status, msg, handled := s.updateRemoteComment(ctx, q, uri, c.Record); handled {
-				return status, msg
+				return status, msg, nil
 			}
 			// Update for a comment we never saw — the record is complete, so
 			// fall through to the create path (missed-create catch-up).
 		}
-		return s.createRemoteComment(ctx, ev, uri)
+		return s.createRemoteComment(ctx, q, ev, uri)
 	case "delete":
 		// Tombstone + unwind the counters the create path bumped.
 		prev, perr := q.GetAtprotoCommentByRemoteURI(ctx, &uri)
 		if _, err := q.SoftDeleteAtprotoCommentByRemoteURI(ctx, &uri); err != nil {
-			return "error", "comment delete: " + err.Error()
+			return "error", "comment delete: " + err.Error(), nil
 		}
 		if perr == nil && !prev.DeletedAt.Valid {
 			s.bumpCounter(q.DecrementContentCommentCount(ctx, prev.ContentID))
@@ -275,19 +325,18 @@ func (s *Service) dispatchPost(ctx context.Context, ev *jetstreamEvent, uri stri
 				s.bumpCounter(q.DecrementCommentReplyCount(ctx, prev.ParentID))
 			}
 		}
-		return "processed", ""
+		return "processed", "", nil
 	}
-	return "ignored", "unsupported operation"
+	return "ignored", "unsupported operation", nil
 }
 
 // createRemoteComment normalizes a reply-create (or a create-fallback update)
-// into a remote comment + notification.
-func (s *Service) createRemoteComment(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+// into a remote comment + notification intent.
+func (s *Service) createRemoteComment(ctx context.Context, q *gen.Queries, ev *jetstreamEvent, uri string) (string, string, []notifyIntent) {
 	c := ev.Commit
-	q := gen.New(s.db.Writer)
 	parentURI := recStr(c.Record, "reply", "parent", "uri")
 	if parentURI == "" {
-		return "ignored", "not a reply"
+		return "ignored", "not a reply", nil
 	}
 	// Reply targets: the parent is a member post → attach to its content;
 	// otherwise the root might be ours (reply deeper in the thread).
@@ -298,18 +347,18 @@ func (s *Service) createRemoteComment(ctx context.Context, ev *jetstreamEvent, u
 		}
 	}
 	if err != nil || !rec.ContentID.Valid {
-		return "ignored", "reply target is not a member record"
+		return "ignored", "reply target is not a member record", nil
 	}
 	actor, err := s.resolveRemoteActor(ctx, ev.DID)
 	if err != nil {
-		return "error", "remote actor: " + err.Error()
+		return "error", "remote actor: " + err.Error(), nil
 	}
 	body := recStr(c.Record, "text")
 	if body == "" {
-		return "rejected", "empty reply text"
+		return "rejected", "empty reply text", nil
 	}
 	if len(body) > maxRemoteCommentText {
-		return "rejected", "reply text too large"
+		return "rejected", "reply text too large", nil
 	}
 	// Nest under a prior remote comment when the parent URI is one — but only
 	// on the same content row, and only while the local depth cap allows;
@@ -331,9 +380,9 @@ func (s *Service) createRemoteComment(ctx context.Context, ev *jetstreamEvent, u
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "ignored", "comment already ingested"
+			return "ignored", "comment already ingested", nil
 		}
-		return "error", "comment insert: " + err.Error()
+		return "error", "comment insert: " + err.Error(), nil
 	}
 	// Mirror the local create path's denormalized counters (§49 BUG-008,
 	// unified-discussion bubbling) — a trigger-free path must bump them.
@@ -342,8 +391,11 @@ func (s *Service) createRemoteComment(ctx context.Context, ev *jetstreamEvent, u
 	if parentID.Valid {
 		s.bumpCounter(q.IncrementCommentReplyCount(ctx, parentID))
 	}
-	s.notifyInbound(ctx, rec, actor, "post_reply", "Bluesky reply", "replied to your post on Bluesky")
-	return "processed", ""
+	in := s.inboundIntent(ctx, q, rec, actor, "post_reply", "Bluesky reply", "replied to your post on Bluesky")
+	if in == nil {
+		return "processed", "", nil
+	}
+	return "processed", "", []notifyIntent{*in}
 }
 
 // updateRemoteComment refreshes an existing remote comment's body. The
@@ -392,28 +444,27 @@ func (s *Service) bumpCounter(err error) {
 
 // dispatchLike normalizes app.bsky.feed.like commits whose subject resolves
 // to a projected member record.
-func (s *Service) dispatchLike(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+func (s *Service) dispatchLike(ctx context.Context, q *gen.Queries, ev *jetstreamEvent, uri string) (string, string, []notifyIntent) {
 	c := ev.Commit
-	q := gen.New(s.db.Writer)
 	switch c.Operation {
 	case "create":
 		subject := recStr(c.Record, "subject", "uri")
 		if subject == "" {
-			return "rejected", "missing subject"
+			return "rejected", "missing subject", nil
 		}
 		rec, err := q.GetAtprotoRecordByURI(ctx, subject)
 		if err != nil || !rec.ContentID.Valid {
-			return "ignored", "like target is not a member record"
+			return "ignored", "like target is not a member record", nil
 		}
 		// Replay guard: a create replayed upstream with a fresh time_us still
 		// carries the same record URI — an already-active like is a no-op, not
 		// a second notification.
 		if ex, xerr := q.GetAtprotoRemoteLikeByURI(ctx, uri); xerr == nil && !ex.UndoneAt.Valid {
-			return "ignored", "like already active"
+			return "ignored", "like already active", nil
 		}
 		actor, err := s.resolveRemoteActor(ctx, ev.DID)
 		if err != nil {
-			return "error", "remote actor: " + err.Error()
+			return "error", "remote actor: " + err.Error(), nil
 		}
 		if _, err := q.UpsertAtprotoRemoteLike(ctx, gen.UpsertAtprotoRemoteLikeParams{
 			AccountID:     rec.AccountID,
@@ -421,86 +472,83 @@ func (s *Service) dispatchLike(ctx context.Context, ev *jetstreamEvent, uri stri
 			LikeUri:       uri,
 			ContentID:     rec.ContentID,
 		}); err != nil {
-			return "error", "like upsert: " + err.Error()
+			return "error", "like upsert: " + err.Error(), nil
 		}
-		s.notifyInbound(ctx, rec, actor, "reaction", "Bluesky like", "liked your post on Bluesky")
-		return "processed", ""
+		in := s.inboundIntent(ctx, q, rec, actor, "reaction", "Bluesky like", "liked your post on Bluesky")
+		if in == nil {
+			return "processed", "", nil
+		}
+		return "processed", "", []notifyIntent{*in}
 	case "delete":
 		if _, err := q.UndoAtprotoRemoteLike(ctx, uri); err != nil {
-			return "error", "like undo: " + err.Error()
+			return "error", "like undo: " + err.Error(), nil
 		}
-		return "processed", ""
+		return "processed", "", nil
 	}
-	return "ignored", "unsupported operation"
+	return "ignored", "unsupported operation", nil
 }
 
 // dispatchFollow normalizes app.bsky.graph.follow commits whose subject is a
 // member DID.
-func (s *Service) dispatchFollow(ctx context.Context, ev *jetstreamEvent, uri string) (string, string) {
+func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, ev *jetstreamEvent, uri string) (string, string, []notifyIntent) {
 	c := ev.Commit
-	q := gen.New(s.db.Writer)
 	switch c.Operation {
 	case "create":
 		subject := recStr(c.Record, "subject")
 		if !strings.HasPrefix(subject, "did:") {
-			return "rejected", "missing subject did"
+			return "rejected", "missing subject did", nil
 		}
 		acct, err := q.GetAtprotoAccountByDID(ctx, subject)
 		if err != nil {
-			return "ignored", "follow target is not a member"
+			return "ignored", "follow target is not a member", nil
 		}
 		if ex, xerr := q.GetAtprotoRemoteFollowByURI(ctx, uri); xerr == nil && !ex.UndoneAt.Valid {
-			return "ignored", "follow already active"
+			return "ignored", "follow already active", nil
 		}
 		actor, err := s.resolveRemoteActor(ctx, ev.DID)
 		if err != nil {
-			return "error", "remote actor: " + err.Error()
+			return "error", "remote actor: " + err.Error(), nil
 		}
 		if _, err := q.UpsertAtprotoRemoteFollow(ctx, gen.UpsertAtprotoRemoteFollowParams{
 			AccountID:     acct.ID,
 			RemoteActorID: actor.ID,
 			FollowUri:     uri,
 		}); err != nil {
-			return "error", "follow upsert: " + err.Error()
+			return "error", "follow upsert: " + err.Error(), nil
 		}
-		s.notifyAccount(ctx, acct.UserID, actor, "new_follower", "user", acct.UserID, "Bluesky follower", actorHandleBody(actor)+" followed you on Bluesky", "/atproto")
-		return "processed", ""
+		return "processed", "", []notifyIntent{{
+			recipientID: acct.UserID, nType: "new_follower", actorID: actor.ID,
+			subjectType: "user", subjectID: acct.UserID,
+			title:  "Bluesky follower",
+			body:   actorHandleBody(actor) + " followed you on Bluesky",
+			action: "/atproto",
+		}}
 	case "delete":
 		if _, err := q.UndoAtprotoRemoteFollow(ctx, uri); err != nil {
-			return "error", "follow undo: " + err.Error()
+			return "error", "follow undo: " + err.Error(), nil
 		}
-		return "processed", ""
+		return "processed", "", nil
 	}
-	return "ignored", "unsupported operation"
+	return "ignored", "unsupported operation", nil
 }
 
-// notifyInbound delivers a §35 notification to the member whose content was
-// acted on. actor carries 'atproto_actor' provenance — the remote actor row's
-// UUID, not a users row.
-func (s *Service) notifyInbound(ctx context.Context, rec gen.GetAtprotoRecordByURIRow, actor gen.AtprotoRemoteActor, nType, title, verb string) {
-	if s.notifier == nil || !rec.ContentID.Valid {
-		return
+// inboundIntent resolves the content owner and shapes the §35 notification
+// for delivery after the dispatch transaction commits. Returns nil when the
+// content or its author can't be resolved (the event still processes).
+func (s *Service) inboundIntent(ctx context.Context, q *gen.Queries, rec gen.GetAtprotoRecordByURIRow, actor gen.AtprotoRemoteActor, nType, title, verb string) *notifyIntent {
+	if !rec.ContentID.Valid {
+		return nil
 	}
-	owner, err := gen.New(s.db.Reader).GetContentByID(ctx, rec.ContentID)
+	owner, err := q.GetContentByID(ctx, rec.ContentID)
 	if err != nil || !owner.AuthorID.Valid {
-		return
+		return nil
 	}
-	handle := didShort(actor)
-	if actor.Handle != nil && *actor.Handle != "" {
-		handle = "@" + *actor.Handle
-	}
-	body := handle + " " + verb
-	action := "/content/" + owner.Slug
-	s.notifyAccount(ctx, owner.AuthorID, actor, nType, "content", rec.ContentID, title, body, action)
-}
-
-func (s *Service) notifyAccount(ctx context.Context, recipientID pgtype.UUID, actor gen.AtprotoRemoteActor, nType, subjectType string, subjectID pgtype.UUID, title, body, action string) {
-	if s.notifier == nil || !recipientID.Valid {
-		return
-	}
-	if err := s.notifier.CreateNotification(ctx, recipientID, nType,
-		"atproto_actor", actor.ID, subjectType, subjectID, title, body, action); err != nil {
-		slog.Warn("atproto: inbound notification failed", "type", nType, "error", err)
+	return &notifyIntent{
+		recipientID: owner.AuthorID, nType: nType, actorID: actor.ID,
+		subjectType: "content", subjectID: rec.ContentID,
+		title:  title,
+		body:   actorHandleBody(actor) + " " + verb,
+		action: "/content/" + owner.Slug,
 	}
 }
 
