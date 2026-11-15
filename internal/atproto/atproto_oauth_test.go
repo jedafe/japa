@@ -156,11 +156,28 @@ func TestClientBindingMatches(t *testing.T) {
 		{"kid1|ES256|abc123", "different", false}, // different key
 		{"abc123", "different", false},            // bare mismatch
 		{"kid1|ES256|abc123", "", false},          // no assertion
+		{"malformed|", "", false},                 // empty segment, empty jkt
+		{"malformed|", "x", false},                // empty segment, real jkt
 	}
 	for _, c := range cases {
 		if got := clientBindingMatches(c.stored, c.jkt); got != c.want {
 			t.Fatalf("clientBindingMatches(%q, %q) = %v, want %v", c.stored, c.jkt, got, c.want)
 		}
+	}
+}
+
+func TestLocalhostClientIDProdGate(t *testing.T) {
+	// Dev keeps the spec's http://localhost client shape — the fetch
+	// itself may fail offline, but the gate must not reject it as an
+	// https-scheme violation.
+	dev := &Service{cfg: Config{}}
+	_, devErr := dev.fetchClientDoc(context.Background(), "http://localhost/x")
+	if devErr != nil && strings.Contains(devErr.Error(), "https URL") {
+		t.Fatalf("dev localhost client_id rejected at the scheme gate: %v", devErr)
+	}
+	prod := &Service{cfg: Config{Production: true}}
+	if _, err := prod.fetchClientDoc(context.Background(), "http://localhost/x"); err == nil {
+		t.Fatal("production accepted an http://localhost client_id")
 	}
 }
 

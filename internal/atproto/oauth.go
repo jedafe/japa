@@ -265,6 +265,9 @@ func (s *Service) reuseGrace() time.Duration {
 // carry "kid|ES256|jkt" — the last segment is the key material either
 // way, so a client-side kid rename can't break the binding.
 func clientBindingMatches(stored, jkt string) bool {
+	if jkt == "" {
+		return false // a confidential grant always requires a presented key
+	}
 	if i := strings.LastIndexByte(stored, '|'); i >= 0 {
 		return stored[i+1:] == jkt
 	}
