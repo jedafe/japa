@@ -2552,6 +2552,9 @@ export interface FormField {
 	/** Raw {value,label} pairs — emit `value` (labels are display-only) so
 	 *  ADR-137 rules evaluate against the same canonical values the server uses. */
 	option_defs?: { value: string; label: string }[] | null;
+	/** §06 suggest fields with {"source":"<name>"} options — e.g.
+	 *  "geo_countries" resolves against GET /geo/countries. */
+	options_source?: string | null;
 	placeholder?: string | null;
 	default_value?: string | null;
 	/** ADR-137 public logic slice: visible_if + jump (scoring keys never ship). */

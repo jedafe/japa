@@ -2533,43 +2533,64 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		// canonical option values — ADR-137 rules compare against values,
 		// and distinct value/label pairs would otherwise evaluate
 		// differently client-side (label) vs server-side (canonical value).
-		OptionDefs   []optionDef     `json:"option_defs,omitempty"`
-		Placeholder  *string         `json:"placeholder"`
-		DefaultValue *string         `json:"default_value"`
-		Config       json.RawMessage `json:"config,omitempty"`
+		OptionDefs []optionDef `json:"option_defs,omitempty"`
+		// OptionsSource names the dynamic option feed for suggest fields
+		// whose options are {"source":"<name>"} (§06) — e.g. "geo_countries"
+		// resolves against GET /geo/countries instead of a static list.
+		OptionsSource *string         `json:"options_source,omitempty"`
+		Placeholder   *string         `json:"placeholder"`
+		DefaultValue  *string         `json:"default_value"`
+		Config        json.RawMessage `json:"config,omitempty"`
 	}
 
 	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
 		var (
-			options    []string
-			optionDefs []optionDef
+			options       []string
+			optionDefs    []optionDef
+			optionsSource *string
 		)
 
 		if f.Options != nil {
 			var raw []optionDef
 
-			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
+			if err := json.Unmarshal(f.Options, &raw); err == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
 				optionDefs = raw
 
 				for i, o := range raw {
 					options[i] = o.Label
 				}
+			} else {
+				// suggest fields use two non-optionDef shapes (§06): a bare
+				// string list ["a","b"] or a source object {"source":"..."}.
+				var strings []string
+				var src struct {
+					Source string `json:"source"`
+				}
+
+				switch {
+				case json.Unmarshal(f.Options, &strings) == nil && len(strings) > 0:
+					options = strings
+				case json.Unmarshal(f.Options, &src) == nil && src.Source != "":
+					source := src.Source
+					optionsSource = &source
+				}
 			}
 		}
 
 		return fieldJSON{
-			ID:           f.ID.String(),
-			Key:          f.Key,
-			Label:        f.Label,
-			Type:         f.FieldType,
-			Required:     f.IsRequired,
-			SortOrder:    f.Position,
-			Options:      options,
-			OptionDefs:   optionDefs,
-			Placeholder:  f.Placeholder,
-			DefaultValue: f.DefaultValue,
-			Config:       logicConfigJSON(f.Config),
+			ID:            f.ID.String(),
+			Key:           f.Key,
+			Label:         f.Label,
+			Type:          f.FieldType,
+			Required:      f.IsRequired,
+			SortOrder:     f.Position,
+			Options:       options,
+			OptionDefs:    optionDefs,
+			OptionsSource: optionsSource,
+			Placeholder:   f.Placeholder,
+			DefaultValue:  f.DefaultValue,
+			Config:        logicConfigJSON(f.Config),
 		}
 	}
 

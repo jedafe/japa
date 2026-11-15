@@ -4,8 +4,8 @@
 // schema from GET /forms/{slug}/embed (public, no auth).
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { apiContext, apiGet } from '#lib/server/api.js';
-import type { FormEmbed } from '#lib/types/index.js';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { FormEmbed, GeoCountry } from '#lib/types/index.js';
 
 // System forms consumed by bespoke pages (same special-casing the backend
 // applies for link intents): the generic renderer would be a degraded clone
@@ -30,5 +30,22 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		form = null;
 	}
-	return { form };
+
+	// §06 suggest fields with {"source":"geo_countries"} resolve their options
+	// from GET /geo/countries — fetch once when any field (flat or per-step)
+	// needs them.
+	const allFields = [
+		...(form?.fields ?? []),
+		...(form?.steps ?? []).flatMap((s) => s.fields)
+	];
+	let countries: GeoCountry[] = [];
+	if (allFields.some((f) => f.options_source === 'geo_countries')) {
+		try {
+			countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+		} catch {
+			countries = [];
+		}
+	}
+
+	return { form, countries };
 };
