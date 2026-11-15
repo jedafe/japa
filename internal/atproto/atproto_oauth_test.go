@@ -130,12 +130,36 @@ func TestNormalizeHTU(t *testing.T) {
 		{"https://api.dev:8443/par", "api.dev:8443/par"},
 		{"http://localhost:8080/xrpc/x", "localhost:8080/xrpc/x"},
 		{"https://[::1]:8443/par", "::1:8443/par"},
-		{"https://api.dev/par?x=1", "api.dev/par"}, // query never binds
+		{"https://api.dev/par?x=1", "api.dev/par"},  // query never binds
+		{"https://api.dev/par/", "api.dev/par"},     // trailing slash folds
+		{"https://api.dev//par", "api.dev/par"},     // double slash folds
+		{"https://api.dev/x/../par", "api.dev/par"}, // dot-segments fold
+		{"https://API.DEV/par", "api.dev/par"},      // host case-folds
+		{"https://api.dev", "api.dev/"},
 		{"not a url", ""},
 	}
 	for _, c := range cases {
 		if got := normalizeHTU(c.in); got != c.want {
 			t.Fatalf("normalizeHTU(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestClientBindingMatches(t *testing.T) {
+	cases := []struct {
+		stored, jkt string
+		want        bool
+	}{
+		{"abc123", "abc123", true},                // bare jkt
+		{"kid1|ES256|abc123", "abc123", true},     // legacy format, jkt segment
+		{"renamed|ES256|abc123", "abc123", true},  // kid renamed, same key
+		{"kid1|ES256|abc123", "different", false}, // different key
+		{"abc123", "different", false},            // bare mismatch
+		{"kid1|ES256|abc123", "", false},          // no assertion
+	}
+	for _, c := range cases {
+		if got := clientBindingMatches(c.stored, c.jkt); got != c.want {
+			t.Fatalf("clientBindingMatches(%q, %q) = %v, want %v", c.stored, c.jkt, got, c.want)
 		}
 	}
 }

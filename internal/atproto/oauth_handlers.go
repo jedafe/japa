@@ -669,7 +669,7 @@ func (h *Handlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 			h.writeOAuthServiceErr(w, verr)
 			return
 		}
-		if jkt != *grant.ClientJkt {
+		if !clientBindingMatches(*grant.ClientJkt, jkt) {
 			writeOAuthErr(w, http.StatusUnauthorized, "invalid_client", "client key binding does not match the grant")
 			return
 		}

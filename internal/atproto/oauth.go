@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -44,14 +45,10 @@ const (
 	// Profile ceilings: access tokens are opaque but revocable, so the
 	// ≤30-minute bound applies; 15 minutes leaves headroom for client
 	// clock skew and matches the profile's conservative end.
-	oauthAccessTTL        = 15 * time.Minute
-	oauthRefreshPublicTTL = 14 * 24 * time.Hour
-	oauthRefreshConfidTTL = 180 * 24 * time.Hour
-	oauthPARTTL           = 10 * time.Minute
-	// oauthReuseGrace is the stale-replay window matching §120's 30s
-	// reuse-grace: a prev-hash refresh or consumed-code replay inside
-	// it is a benign concurrent retry, outside it is theft.
-	oauthReuseGrace        = 30 * time.Second
+	oauthAccessTTL         = 15 * time.Minute
+	oauthRefreshPublicTTL  = 14 * 24 * time.Hour
+	oauthRefreshConfidTTL  = 180 * 24 * time.Hour
+	oauthPARTTL            = 10 * time.Minute
 	oauthCodeExchangeTTL   = 5 * time.Minute // enforced by ConsumeOAuthCode
 	oauthDPoPMaxSkew       = 5 * time.Minute
 	oauthNonceMaxAge       = 10 * time.Minute
@@ -250,10 +247,30 @@ func requestHTU(r *http.Request) string {
 }
 
 // normalizeHTU folds a request/proof URL to host+path — scheme dropped,
-// default ports (:443 https, :80 http) folded, other ports kept. It is
-// applied to BOTH the proof's htu claim and the request URL, so
-// "https://a.dev:443/par" and "http://a.dev:80/par" and "https://a.dev/par"
+// default ports (:443 https, :80 http) folded, other ports kept, host
+// case-folded, dot-segments and trailing slashes cleaned. It is applied
+// to BOTH the proof's htu claim and the request URL, so
+// "https://a.dev:443/par" and "http://a.dev:80/par" and "https://a.dev/par/"
 // are equivalent (and IPv6/bracket forms normalize the same way).
+// reuseGrace is the configured benign-retry window matching §120's
+// reuse-grace posture: a prev-hash refresh or consumed-code replay
+// inside it is a concurrent retry, outside it is theft. ≤0 disables —
+// every stale-hash replay revokes.
+func (s *Service) reuseGrace() time.Duration {
+	return time.Duration(s.cfg.OAuthReuseGraceSeconds) * time.Second
+}
+
+// clientBindingMatches compares the grant's stored confidential binding
+// to the assertion key's jkt. Rows store the bare jkt; legacy rows may
+// carry "kid|ES256|jkt" — the last segment is the key material either
+// way, so a client-side kid rename can't break the binding.
+func clientBindingMatches(stored, jkt string) bool {
+	if i := strings.LastIndexByte(stored, '|'); i >= 0 {
+		return stored[i+1:] == jkt
+	}
+	return stored == jkt
+}
+
 func normalizeHTU(u string) string {
 	p, err := url.Parse(u)
 	if err != nil || p.Hostname() == "" {
@@ -264,7 +281,14 @@ func normalizeHTU(u string) string {
 		!((p.Scheme == "https" && port == "443") || (p.Scheme == "http" && port == "80")) {
 		host += ":" + port
 	}
-	return host + p.Path
+	pth := "/"
+	if p.Path != "" {
+		pth = path.Clean(p.Path) // "/a/../b", "//a/b", and "/a/b/" all name /a/b
+		if !strings.HasPrefix(pth, "/") {
+			pth = "/" + pth
+		}
+	}
+	return host + pth
 }
 
 // verifyDPoP validates the DPoP header on r. htm must match the method,
@@ -434,7 +458,8 @@ func (s *Service) fetchClientDoc(ctx context.Context, clientID string) (*oauthCl
 	if err != nil || u.Host == "" || u.Fragment != "" || u.User != nil {
 		return nil, oauthErr("invalid_client_id", "client_id must be a URL")
 	}
-	localhost := u.Scheme == "http" && u.Hostname() == "localhost" && u.Port() == ""
+	localhost := u.Scheme == "http" && u.Hostname() == "localhost" && u.Port() == "" &&
+		!s.cfg.Production // the dev loop is not a production client shape
 	if u.Scheme != "https" && !localhost {
 		return nil, oauthErr("invalid_client_id", "client_id must be an https URL")
 	}
@@ -752,7 +777,10 @@ func (s *Service) verifyClientAssertion(ctx context.Context, doc *oauthClientDoc
 	if err != nil {
 		return "", oauthErr("invalid_client", "client jwk is not thumbnailable")
 	}
-	return kid + "|ES256|" + jkt, nil
+	// The binding is the key material alone: a client-side kid rename
+	// on the same key must not break the grant (jkt is the identity;
+	// kid is presentation metadata).
+	return jkt, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -839,7 +867,7 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		// an older replay revokes the family (§120 grace posture).
 		if grant.PrevRefreshHash != nil && *grant.PrevRefreshHash == hash {
 			inGrace := grant.RefreshRotatedAt.Valid &&
-				time.Since(grant.RefreshRotatedAt.Time) < oauthReuseGrace
+				time.Since(grant.RefreshRotatedAt.Time) < s.reuseGrace()
 			if !inGrace {
 				_, _ = s.store.q.RevokeOAuthGrant(ctx, grant.ID)
 			}
@@ -850,7 +878,7 @@ func (s *Service) rotateGrant(ctx context.Context, refreshTok, clientID, clientJ
 		return nil, oauthErr("invalid_grant", "DPoP key does not match the grant")
 	}
 	if (grant.ClientJkt == nil && clientJKT != "") ||
-		(grant.ClientJkt != nil && *grant.ClientJkt != clientJKT) {
+		(grant.ClientJkt != nil && !clientBindingMatches(*grant.ClientJkt, clientJKT)) {
 		return nil, oauthErr("invalid_client", "client key binding does not match the grant")
 	}
 	// Liveness before the CAS — a dead account must not churn grant
@@ -1067,7 +1095,7 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 			// grants on the same client×account survive either way.
 			if prev, perr := s.store.q.GetOAuthRequestByCodeHash(ctx, &hash); perr == nil {
 				inGrace := prev.CodeUsedAt.Valid &&
-					time.Since(prev.CodeUsedAt.Time) < oauthReuseGrace
+					time.Since(prev.CodeUsedAt.Time) < s.reuseGrace()
 				if !inGrace {
 					_, _ = s.store.q.RevokeOAuthGrantsForRequest(ctx, gen.RevokeOAuthGrantsForRequestParams{
 						RequestUri: &prev.RequestUri, AccountID: prev.AccountID, ClientID: prev.ClientID,
@@ -1085,7 +1113,7 @@ func (s *Service) ExchangeCode(ctx context.Context, code, clientID, clientJKT, r
 		return nil, oauthErr("invalid_grant", "redirect_uri does not match the authorization request")
 	}
 	if (row.ClientJkt == nil) != (clientJKT == "") ||
-		(row.ClientJkt != nil && *row.ClientJkt != clientJKT) {
+		(row.ClientJkt != nil && !clientBindingMatches(*row.ClientJkt, clientJKT)) {
 		return nil, oauthErr("invalid_client", "client key binding does not match the authorization request")
 	}
 	sum := sha256.Sum256([]byte(verifier))

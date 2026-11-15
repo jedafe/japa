@@ -714,17 +714,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	federationHandlers := federation.NewHandlers(federationService)
 
 	atprotoService := atproto.NewService(database, atproto.Config{
-		PDSURL:               cfg.ATProtoPDSURL,
-		APIBase:              cfg.APIPublicURL,
-		SiteBase:             cfg.SiteURL,
-		HandleDomain:         cfg.ATProtoHandleDomain,
-		RelayURL:             cfg.ATProtoRelayURL,
-		PLCURL:               cfg.ATProtoPLCURL,
-		JetstreamURL:         cfg.ATProtoJetstreamURL,
-		AppViewURL:           cfg.ATProtoAppViewURL,
-		JWTSecret:            cfg.JWTSecret,
-		InboundRetentionDays: cfg.ATProtoInboundRetentionDays,
-		SessionRetentionDays: cfg.ATProtoSessionRetentionDays,
+		PDSURL:                 cfg.ATProtoPDSURL,
+		APIBase:                cfg.APIPublicURL,
+		SiteBase:               cfg.SiteURL,
+		HandleDomain:           cfg.ATProtoHandleDomain,
+		RelayURL:               cfg.ATProtoRelayURL,
+		PLCURL:                 cfg.ATProtoPLCURL,
+		JetstreamURL:           cfg.ATProtoJetstreamURL,
+		AppViewURL:             cfg.ATProtoAppViewURL,
+		JWTSecret:              cfg.JWTSecret,
+		InboundRetentionDays:   cfg.ATProtoInboundRetentionDays,
+		SessionRetentionDays:   cfg.ATProtoSessionRetentionDays,
+		OAuthReuseGraceSeconds: cfg.ATProtoOAuthReuseGraceSecs,
+		Production:             cfg.IsProduction(),
 	})
 	atprotoService.SetValkey(vkClient.Redis())
 	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP

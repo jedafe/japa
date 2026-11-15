@@ -85,6 +85,16 @@ type Config struct {
 	// check indexes through — the same target cmd/atproto-conformance
 	// uses.
 	AppViewURL string
+	// OAuthReuseGraceSeconds — JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS
+	// (default 30): the window in which a replayed authorization code
+	// or rotated-away refresh token is treated as a benign concurrent
+	// retry rather than a theft signal. ≤0 disables — every stale-hash
+	// replay revokes.
+	OAuthReuseGraceSeconds int
+	// Production — JC_ENV=production: disables dev conveniences that
+	// would be attack surface on a live host (e.g. http://localhost
+	// client_ids in the OAuth flow).
+	Production bool
 	// JWTSecret — JC_JWT_SECRET: HS256 key for the A6-4 access/refresh
 	// session tokens (scope claims keep the domain disjoint from the
 	// platform's own JWTs). Empty mints an ephemeral dev secret at

@@ -88,6 +88,7 @@ type Config struct {
 	ATProtoAppViewURL           string // JC_ATPROTO_APPVIEW_URL — readback appview for the conformance check; default https://public.api.bsky.app (§127)
 	ATProtoInboundRetentionDays int    // JC_ATPROTO_INBOUND_RETENTION_DAYS — inbound ledger sweep window; default 30, ≤0 disables (§127 A5)
 	ATProtoSessionRetentionDays int    // JC_ATPROTO_SESSION_RETENTION_DAYS — dead atproto_sessions sweep window; default 30, ≤0 disables (§127 A6-4)
+	ATProtoOAuthReuseGraceSecs  int    // JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS — benign-retry grace for code/refresh replay; default 30, ≤0 disables (§127 A6-5)
 	EncryptionKey               string // JC_ENCRYPTION_KEY — AES-256 key for encrypting secrets at rest (TOTP, API keys, api_config). JEOS canonical name.
 	TOTPEncryptionKey           string // JC_TOTP_ENCRYPTION_KEY — legacy alias for JC_ENCRYPTION_KEY (kept for backward compatibility)
 	StripeSecretKey             string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
@@ -198,6 +199,7 @@ func Load() (Config, error) {
 		ATProtoAppViewURL:           getEnvDefault("JC_ATPROTO_APPVIEW_URL", "https://public.api.bsky.app"),
 		ATProtoInboundRetentionDays: getEnvInt("JC_ATPROTO_INBOUND_RETENTION_DAYS", 30),
 		ATProtoSessionRetentionDays: getEnvInt("JC_ATPROTO_SESSION_RETENTION_DAYS", 30),
+		ATProtoOAuthReuseGraceSecs:  getEnvInt("JC_ATPROTO_OAUTH_REUSE_GRACE_SECONDS", 30),
 		EncryptionKey:               os.Getenv("JC_ENCRYPTION_KEY"),
 		TOTPEncryptionKey:           os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeSecretKey:             os.Getenv("JC_STRIPE_SECRET_KEY"),

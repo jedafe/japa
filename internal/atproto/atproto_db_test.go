@@ -110,6 +110,10 @@ func newAtprotoService(t *testing.T, d *db.DB) *Service {
 		// dead address so tests take the did:web fallback path
 		// deterministically (instant refusal, never a real directory).
 		PLCURL: "http://127.0.0.1:1",
+		// The e2e asserts both sides of the replay window — pin the
+		// 30s default rather than inheriting "disabled" from the
+		// zero value.
+		OAuthReuseGraceSeconds: 30,
 	})
 }
 
