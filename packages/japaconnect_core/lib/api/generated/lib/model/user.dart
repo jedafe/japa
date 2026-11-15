@@ -19,6 +19,8 @@ class User {
     this.displayName,
     this.id,
     this.username,
+    this.verified,
+    this.verificationType,
   });
 
   ///
@@ -69,6 +71,13 @@ class User {
   ///
   String? username;
 
+  /// §07 verification flag — the generic badge gate.
+  bool? verified;
+
+  /// §07 managed badge type value (001013 taxonomy) — resolves artwork
+  /// via /verification-requests/types.
+  String? verificationType;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -78,7 +87,9 @@ class User {
           other.createdAt == createdAt &&
           other.displayName == displayName &&
           other.id == id &&
-          other.username == username;
+          other.username == username &&
+          other.verified == verified &&
+          other.verificationType == verificationType;
 
   @override
   int get hashCode =>
@@ -88,11 +99,13 @@ class User {
       (createdAt == null ? 0 : createdAt!.hashCode) +
       (displayName == null ? 0 : displayName!.hashCode) +
       (id == null ? 0 : id!.hashCode) +
-      (username == null ? 0 : username!.hashCode);
+      (username == null ? 0 : username!.hashCode) +
+      (verified == null ? 0 : verified!.hashCode) +
+      (verificationType == null ? 0 : verificationType!.hashCode);
 
   @override
   String toString() =>
-      'User[avatarUrl=$avatarUrl, bio=$bio, createdAt=$createdAt, displayName=$displayName, id=$id, username=$username]';
+      'User[avatarUrl=$avatarUrl, bio=$bio, createdAt=$createdAt, displayName=$displayName, id=$id, username=$username, verified=$verified, verificationType=$verificationType]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
@@ -126,6 +139,16 @@ class User {
     } else {
       json[r'username'] = null;
     }
+    if (this.verified != null) {
+      json[r'verified'] = this.verified;
+    } else {
+      json[r'verified'] = null;
+    }
+    if (this.verificationType != null) {
+      json[r'verification_type'] = this.verificationType;
+    } else {
+      json[r'verification_type'] = null;
+    }
     return json;
   }
 
@@ -156,6 +179,8 @@ class User {
         displayName: mapValueOfType<String>(json, r'display_name'),
         id: mapValueOfType<String>(json, r'id'),
         username: mapValueOfType<String>(json, r'username'),
+        verified: mapValueOfType<bool>(json, r'verified'),
+        verificationType: mapValueOfType<String>(json, r'verification_type'),
       );
     }
     return null;

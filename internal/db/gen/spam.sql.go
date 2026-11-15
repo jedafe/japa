@@ -664,7 +664,8 @@ const listBlockedUsers = `-- name: ListBlockedUsers :many
 SELECT ub.blocked_id, ub.created_at,
  u.username,
  COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ u.verified, u.verification_type
 FROM user_blocks ub
 JOIN users u ON u.id = ub.blocked_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -680,11 +681,13 @@ type ListBlockedUsersParams struct {
 }
 
 type ListBlockedUsersRow struct {
-	BlockedID   pgtype.UUID        `json:"blocked_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
+	BlockedID        pgtype.UUID        `json:"blocked_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Username         string             `json:"username"`
+	DisplayName      string             `json:"display_name"`
+	AvatarUrl        string             `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Platform-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
@@ -704,6 +707,8 @@ func (q *Queries) ListBlockedUsers(ctx context.Context, arg ListBlockedUsersPara
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}

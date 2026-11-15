@@ -16,6 +16,9 @@ extension UserCardMap on User {
         'title': displayName ?? username ?? '',
         'subtitle': bio ?? '',
         'avatar_url': avatarUrl,
+        'verified': verified ?? false,
+        'verification_type': verificationType,
+        'badge_scope': 'user',
       };
 }
 

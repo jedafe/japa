@@ -41,6 +41,7 @@ class _BlockedUsersScreenState extends ConsumerState<BlockedUsersScreen> {
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(tProvider);
+    final badges = ref.watch(verificationBadgesProvider);
     return Scaffold(
       appBar: AppBar(title: Text(t('profile.blocked_users'))),
       body: FutureBuilder<List<Map<String, dynamic>>>(
@@ -70,7 +71,25 @@ class _BlockedUsersScreenState extends ConsumerState<BlockedUsersScreen> {
                 leading: u['avatar_url'] != null && (u['avatar_url'] as String).isNotEmpty
                     ? CircleAvatar(backgroundImage: NetworkImage(u['avatar_url'] as String))
                     : const CircleAvatar(child: Icon(Icons.person)),
-                title: Text(name),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(name, overflow: TextOverflow.ellipsis),
+                    ),
+                    if (u['verified'] == true) ...[
+                      const SizedBox(width: 4),
+                      VerifiedBadge(
+                        verified: true,
+                        badgeUrl: verificationBadgeUrl(badges, 'user',
+                            u['verification_type'] as String?),
+                        label: verificationBadgeLabel(badges, 'user',
+                            u['verification_type'] as String?),
+                        size: 15,
+                      ),
+                    ],
+                  ],
+                ),
                 subtitle: Text('@${u['username'] ?? ''}'),
                 trailing: TextButton(
                   onPressed: _removing.contains(id) ? null : () => _unblock(u),

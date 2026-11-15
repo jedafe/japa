@@ -106,7 +106,8 @@ ORDER BY created_at DESC;
 SELECT ub.blocked_id, ub.created_at,
  u.username,
  COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ u.verified, u.verification_type
 FROM user_blocks ub
 JOIN users u ON u.id = ub.blocked_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
