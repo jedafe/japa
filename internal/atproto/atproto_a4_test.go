@@ -213,6 +213,53 @@ func TestDBFeedPostEmbedSkips(t *testing.T) {
 	}
 }
 
+// ── Reactivation reconcile (§127 A4/Lifecycle) ──
+
+func TestDBReconcileRepo(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	// Two projected posts: one stays eligible, one goes stale
+	// (opted-out inside a frozen window — the emit-time delete skipped
+	// while the repo was disabled).
+	live := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	stale := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	for _, c := range []pgtype.UUID{live, stale} {
+		if _, err := svc.PublishContent(ctx, c); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET federate_opt_out = true WHERE id = $1`, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo: %v", err)
+	}
+
+	var liveRows, staleRows int
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
+		acct.ID, live).Scan(&liveRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT COUNT(*) FROM atproto_records WHERE account_id=$1 AND content_id=$2`,
+		acct.ID, stale).Scan(&staleRows); err != nil {
+		t.Fatal(err)
+	}
+	if liveRows != 1 || staleRows != 0 {
+		t.Fatalf("records: live=%d stale=%d, want 1/0", liveRows, staleRows)
+	}
+}
+
 // ── federate_opt_out (§127 A4 / §126) ──
 
 func TestDBFederateOptOutGatesProjection(t *testing.T) {

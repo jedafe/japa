@@ -26,6 +26,7 @@ type atprotoRepoWriter interface {
 	RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
 	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) (bool, error)
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
+	ReconcileRepo(ctx context.Context, accountID pgtype.UUID) error
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -129,6 +130,26 @@ func EnqueueAtprotoLifecycleSync(ctx context.Context, userID pgtype.UUID) {
 	}
 }
 
+// EnqueueAtprotoReconcileRepo fires atproto:reconcile_repo on every
+// path back to 'active' (lifecycle reactivation, member re-enable —
+// §127 A4/Lifecycle). Emits skipped while the repo was frozen leave
+// stale records that would otherwise resurface; the task converges
+// index rows to canonical eligibility. Fire-and-forget (Rule 8); a nil
+// enqueuer is a no-op.
+func EnqueueAtprotoReconcileRepo(ctx context.Context, accountID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"account_id": accountID.String()})
+	if err != nil {
+		slog.Warn("worker: atproto reconcile enqueue marshal failed", "account_id", accountID.String(), "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeAtprotoReconcileRepo, payload); err != nil {
+		slog.Warn("worker: atproto reconcile enqueue failed", "account_id", accountID.String(), "error", err)
+	}
+}
+
 // HandleAtprotoLifecycleSync processes atproto:lifecycle_sync (§127
 // lifecycle): reconcile the member's atproto account with their live
 // users.status. Idempotent — retries and out-of-order delivery converge.
@@ -195,6 +216,40 @@ func HandleAtprotoRequestCrawl(ctx context.Context, t *asynq.Task) error {
 		return skipIfPermanent(err)
 	}
 	slog.Info("task:atproto:request_crawl: sent", "account_id", payload.AccountID)
+	return nil
+}
+
+// HandleAtprotoReconcileRepo processes atproto:reconcile_repo (§127
+// A4/Lifecycle): the account's indexed records converge to canonical
+// eligibility — owned+eligible feed.post rows re-project, ineligible
+// or author-moved rows tombstone, the self profile republishes. Run on
+// every path back to 'active' since emits skip while a repo is frozen.
+// Transient per-row failures retry the whole task; a gone or frozen
+// account is terminal.
+func HandleAtprotoReconcileRepo(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:atproto:reconcile_repo")
+
+	if atprotoSvc == nil {
+		slog.Warn("task:atproto:reconcile_repo: service not registered, dropping task")
+		return nil
+	}
+
+	var payload struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:atproto:reconcile_repo: invalid payload", "error", err)
+		return err
+	}
+	accountID, err := scanUUID(payload.AccountID)
+	if err != nil {
+		return fmt.Errorf("task:atproto:reconcile_repo: %w: %w", err, asynq.SkipRetry)
+	}
+	if err := atprotoSvc.ReconcileRepo(ctx, accountID); err != nil {
+		slog.Error("task:atproto:reconcile_repo: reconcile failed", "account_id", payload.AccountID, "error", err)
+		return skipIfPermanent(err)
+	}
+	slog.Info("task:atproto:reconcile_repo: done", "account_id", payload.AccountID)
 	return nil
 }
 

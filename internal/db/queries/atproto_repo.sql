@@ -67,6 +67,9 @@ ORDER BY collection, rkey;
 SELECT COUNT(*)::bigint FROM atproto_records
 WHERE account_id = @account_id;
 
+-- name: GetAtprotoAccountByID :one
+SELECT * FROM atproto_accounts WHERE id = @id;
+
 -- name: GetAtprotoAccountStatusByID :one
 -- Lightweight status read for write-paths that must refuse inactive
 -- accounts without taking the FOR UPDATE repo lock (blob puts — the

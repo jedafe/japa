@@ -70,6 +70,30 @@ func (q *Queries) DeleteAtprotoRecord(ctx context.Context, arg DeleteAtprotoReco
 	return err
 }
 
+const getAtprotoAccountByID = `-- name: GetAtprotoAccountByID :one
+SELECT id, user_id, handle, did, signing_key_enc, public_key_multibase, status, repo_seq, created_at, updated_at, disabled_at, disabled_reason FROM atproto_accounts WHERE id = $1
+`
+
+func (q *Queries) GetAtprotoAccountByID(ctx context.Context, id pgtype.UUID) (AtprotoAccount, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAccountByID, id)
+	var i AtprotoAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Handle,
+		&i.Did,
+		&i.SigningKeyEnc,
+		&i.PublicKeyMultibase,
+		&i.Status,
+		&i.RepoSeq,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisabledAt,
+		&i.DisabledReason,
+	)
+	return i, err
+}
+
 const getAtprotoAccountIDByContent = `-- name: GetAtprotoAccountIDByContent :one
 SELECT a.id
 FROM atproto_accounts a

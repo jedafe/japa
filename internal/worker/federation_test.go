@@ -40,6 +40,9 @@ func (f *fakeProvisioner) DeleteRecordURI(_ context.Context, _ pgtype.UUID, _ st
 	return nil
 }
 func (f *fakeProvisioner) RequestCrawl(_ context.Context, _ pgtype.UUID) error { return nil }
+func (f *fakeProvisioner) ReconcileRepo(_ context.Context, _ pgtype.UUID) error {
+	return nil
+}
 
 var fakeUserActive = true // lifecycle seam: run-time status the fake reports
 

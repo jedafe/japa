@@ -63,6 +63,14 @@ func permanent(err error) error {
 	return permanentError{err}
 }
 
+// isPermanentErr reports whether err carries the terminal marker —
+// the same structural check worker's permanenter performs, for
+// in-package callers (reconcile per-row skip vs retry-join).
+func isPermanentErr(err error) bool {
+	var p interface{ Permanent() bool }
+	return errors.As(err, &p) && p.Permanent()
+}
+
 // postTextRunes caps feed.post text. The lexicon limit is 300 grapheme
 // clusters; a rune cap is a strict upper bound since every grapheme is
 // at least one rune — 280 keeps title+excerpt+link comfortably inside.

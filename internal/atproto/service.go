@@ -459,6 +459,9 @@ func (s *Service) enableExisting(ctx context.Context, existing gen.AtprotoAccoun
 	}
 	if !wasActive {
 		worker.EnqueueAtprotoRequestCrawl(ctx, existing.ID)
+		// Records frozen mid-mutation while the account was disabled
+		// converge to canonical eligibility (§127 Lifecycle reconcile).
+		worker.EnqueueAtprotoReconcileRepo(ctx, existing.ID)
 	}
 	return s.statusFor(existing), nil
 }

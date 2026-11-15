@@ -111,8 +111,81 @@ func (s *Service) reactivateFromLifecycle(ctx context.Context, account gen.Atpro
 	s.emitAccountEvent(ctx, account.Did, true, "")
 	s.invalidateAccount(ctx, account.Handle, uuidString(account.UserID))
 	worker.EnqueueAtprotoRequestCrawl(ctx, account.ID)
+	worker.EnqueueAtprotoReconcileRepo(ctx, account.ID)
 	slog.Info("atproto account lifecycle-reactivated", "did", account.Did)
 	return nil
+}
+
+// ReconcileRepo converges the account's indexed records to canonical
+// eligibility — the atproto:reconcile_repo task path (§127 A4/
+// Lifecycle). Emits skip while a repo is frozen (suspension or member
+// disable), so records that went stale inside a disabled window would
+// otherwise resurface on reactivation; every path back to 'active'
+// enqueues this instead. Per row: a feed.post still eligible AND still
+// owned re-projects (refresh — pre-A4 records gain facets/embeds); an
+// ineligible row, or one whose author moved to another repo, tombstones
+// via the normal delete path; a `self` profile republishes (avatar/
+// display-name drift has the same window). A non-active account at
+// task time no-ops — the next reactivation re-enqueues. Per-row
+// permanent failures skip (e.g. a delete landing after a concurrent
+// tombstone); transient failures join so the task retries.
+func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) error {
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return permanent(ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("atproto: reconcile account: %w", err)
+	}
+	if account.Status != AccountStatusActive {
+		return nil // frozen repos reconcile on their next activation
+	}
+	recs, err := s.store.q.ListAtprotoRecords(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("atproto: reconcile list: %w", err)
+	}
+	var errs error
+	perRow := func(err error) {
+		// Permanent per-row failures are skipped — the row already
+		// converged (concurrent tombstone/rewrite). Transient ones join
+		// so the task retries the remainder.
+		if err != nil && !isPermanentErr(err) {
+			errs = errors.Join(errs, err)
+		}
+	}
+	for _, rec := range recs {
+		switch rec.Collection {
+		case CollectionProfile:
+			perRow(s.publishProfile(ctx, &account))
+		case CollectionPost:
+			if !rec.ContentID.Valid {
+				continue
+			}
+			if _, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
+				ID:           rec.ContentID,
+				ContentTypes: s.federatableTypesFor(ctx),
+			}); errors.Is(err, pgx.ErrNoRows) {
+				// Unpublished, private, deleted, opted-out, or a type that
+				// left the allowlist — the projected copy is stale.
+				perRow(s.DeleteRecordURI(ctx, accountID, rec.Uri))
+			} else if err != nil {
+				perRow(err)
+			} else if owner, oerr := s.store.q.GetAtprotoAccountIDByContent(ctx, rec.ContentID); oerr != nil && !errors.Is(oerr, pgx.ErrNoRows) {
+				perRow(oerr)
+			} else if errors.Is(oerr, pgx.ErrNoRows) || owner != accountID {
+				// The author moved to another repo (or left federation
+				// entirely) — this repo's copy is stale regardless of
+				// content eligibility.
+				perRow(s.DeleteRecordURI(ctx, accountID, rec.Uri))
+			} else {
+				// Still eligible and still owned — re-upsert; the refresh
+				// also repairs drift (pre-A4 records gain facets/embeds).
+				_, perr := s.PublishContent(ctx, rec.ContentID)
+				perRow(perr)
+			}
+		}
+	}
+	return errs
 }
 
 // EraseAccount is the GDPR erasure path — called by the gdpr service
