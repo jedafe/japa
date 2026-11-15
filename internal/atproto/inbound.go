@@ -314,7 +314,16 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) (err err
 		return fmt.Errorf("inbound ledger insert: %w", err)
 	}
 
-	status, msg, intents := s.dispatch(ctx, q, ev, uri)
+	var status, msg string
+	var intents []notifyIntent
+	if !strings.HasPrefix(ev.DID, "did:") || len(ev.DID) > 256 {
+		// Deterministic reject — mirrors resolveRemoteActor's shape
+		// check. Without this the dispatchers file it 'error', the
+		// retryable class, and every replay re-dispatches forever.
+		status, msg = "rejected", "malformed remote did"
+	} else {
+		status, msg, intents = s.dispatch(ctx, q, ev, uri)
+	}
 	if status == "ignored" {
 		return nil // rollback — irrelevant traffic is neither audited nor keyed
 	}
@@ -331,7 +340,13 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) (err err
 		return fmt.Errorf("inbound tx commit: %w", err)
 	}
 
-	_ = s.vk.Set(ctx, dedupKey, "1", jetstreamDedupTTL).Err()
+	if status != "error" {
+		// 'error' rows stay unmarked on purpose: the ledger's
+		// ON CONFLICT … WHERE status='error' reset arm is the designed
+		// replay-retry path, and a marker would swallow the replay
+		// before it could reach the ledger at all.
+		_ = s.vk.Set(ctx, dedupKey, "1", jetstreamDedupTTL).Err()
+	}
 	for _, in := range intents {
 		if s.notifier == nil {
 			break
