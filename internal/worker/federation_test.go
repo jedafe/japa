@@ -115,6 +115,70 @@ func TestFederationAutoOptinFlagMatrix(t *testing.T) {
 	}
 }
 
+func TestFederationBackfillOptinPaging(t *testing.T) {
+	mkID := func(s string) pgtype.UUID {
+		var id pgtype.UUID
+		_ = id.Scan(s)
+		return id
+	}
+	page1 := []pgtype.UUID{
+		mkID("00000000-0000-0000-0000-000000000001"),
+		mkID("00000000-0000-0000-0000-000000000002"),
+	}
+	page2 := []pgtype.UUID{mkID("00000000-0000-0000-0000-000000000003")}
+
+	fed, atp := &fakeProvisioner{}, &fakeProvisioner{}
+	setAutoOptinSeams(t,
+		fakeSettingsReader{bools: map[string]bool{}},
+		fakeFlagChecker{on: map[string]bool{"feature.federation": true, "feature.atproto": true}},
+		fed, atp)
+
+	// Fake the user pager: two pages — a full one then a partial.
+	var pages [][]pgtype.UUID
+	oldLister, oldCont := listActiveUserIDs, enqueueBackfillContinuation
+	listActiveUserIDs = func(_ context.Context, after pgtype.UUID, limit int) ([]pgtype.UUID, error) {
+		if len(pages) == 0 {
+			return nil, nil
+		}
+		p := pages[0]
+		pages = pages[1:]
+		return p, nil
+	}
+	var continued string
+	enqueueBackfillContinuation = func(cursor string, _ int) error {
+		continued = cursor
+		// Simulate the follow-on task consuming the next page inline.
+		return HandleFederationBackfillOptin(context.Background(),
+			asynq.NewTask(TypeFederationBackfillOptin,
+				[]byte(`{"cursor":"`+cursor+`","batch":2}`)))
+	}
+	t.Cleanup(func() { listActiveUserIDs, enqueueBackfillContinuation = oldLister, oldCont })
+	pages = [][]pgtype.UUID{page1, page2}
+
+	task := asynq.NewTask(TypeFederationBackfillOptin, []byte(`{"cursor":"","batch":2}`))
+	if err := HandleFederationBackfillOptin(context.Background(), task); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if continued != page1[len(page1)-1].String() {
+		t.Fatalf("continuation cursor = %q, want %q", continued, page1[len(page1)-1].String())
+	}
+	if len(fed.calls) != 3 || len(atp.calls) != 3 {
+		t.Fatalf("provisioned fed=%d atp=%d, want 3/3", len(fed.calls), len(atp.calls))
+	}
+}
+
+func TestFederationBackfillOptinBadCursor(t *testing.T) {
+	setAutoOptinSeams(t,
+		fakeSettingsReader{bools: map[string]bool{}},
+		fakeFlagChecker{on: map[string]bool{"feature.federation": true}},
+		&fakeProvisioner{}, &fakeProvisioner{})
+	err := HandleFederationBackfillOptin(context.Background(),
+		asynq.NewTask(TypeFederationBackfillOptin, []byte(`{"cursor":"bogus"}`)))
+	if err == nil || !errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("bad cursor: err=%v, want SkipRetry", err)
+	}
+}
+
 func TestFederationAutoOptinBadPayload(t *testing.T) {
 	setAutoOptinSeams(t,
 		fakeSettingsReader{bools: map[string]bool{"federation.auto_optin": true}},

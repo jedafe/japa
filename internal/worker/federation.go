@@ -94,3 +94,120 @@ func HandleFederationAutoOptin(ctx context.Context, t *asynq.Task) error {
 
 	return nil
 }
+
+// Backfill defaults — bound each task's work; the handler self-continues
+// with a keyset cursor until the users table is exhausted.
+const (
+	federationBackfillDefaultBatch = 100
+	federationBackfillMaxBatch     = 500
+)
+
+// listActiveUserIDs pages active, non-deleted users by keyset cursor —
+// a var so tests can substitute a fake; dbPool is the worker-wide seam.
+var listActiveUserIDs = func(ctx context.Context, after pgtype.UUID, limit int) ([]pgtype.UUID, error) {
+	if dbPool == nil {
+		return nil, fmt.Errorf("db pool not registered")
+	}
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT id FROM users WHERE status = 'active' AND id > $1 ORDER BY id LIMIT $2`,
+		after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// enqueueBackfillContinuation self-enqueues the next page of
+// federation:backfill_optin — a var so tests can assert the cursor.
+var enqueueBackfillContinuation = func(cursor string, batch int) error {
+	if taskEnqueuer == nil {
+		return fmt.Errorf("enqueuer not registered")
+	}
+	payload, err := json.Marshal(map[string]any{"cursor": cursor, "batch": batch})
+	if err != nil {
+		return err
+	}
+	return taskEnqueuer.Enqueue(TypeFederationBackfillOptin, payload)
+}
+
+// HandleFederationBackfillOptin processes federation:backfill_optin (§126
+// backfill): keyset-page active users and run the same AutoProvision calls
+// as the signup task. An explicit operator decision — deliberately NOT
+// gated on federation.auto_optin (that setting controls implicit signup
+// provisioning; the backfill converges members who predate it or raced
+// it). Feature flags still gate each surface and AutoProvision keeps every
+// guarantee: absent-row only, ineligible members skip clean, opt-outs are
+// never resurrected.
+func HandleFederationBackfillOptin(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:backfill_optin")
+
+	var payload struct {
+		Cursor string `json:"cursor"`
+		Batch  int    `json:"batch"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+	after := pgtype.UUID{Valid: true} // zero uuid — first page
+	if payload.Cursor != "" {
+		if err := after.Scan(payload.Cursor); err != nil || !after.Valid {
+			return fmt.Errorf("federation backfill: bad cursor %q: %w", payload.Cursor, asynq.SkipRetry)
+		}
+	}
+	batch := payload.Batch
+	if batch <= 0 || batch > federationBackfillMaxBatch {
+		batch = federationBackfillDefaultBatch
+	}
+
+	fedOn := featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.federation")
+	atpOn := featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.atproto")
+	if !fedOn && !atpOn {
+		return nil // both surfaces dark — nothing to converge
+	}
+	if fedOn && federationSvc == nil {
+		return fmt.Errorf("federation backfill: service not registered")
+	}
+	if atpOn && atprotoSvc == nil {
+		return fmt.Errorf("federation backfill: atproto service not registered")
+	}
+
+	ids, err := listActiveUserIDs(ctx, after, batch)
+	if err != nil {
+		return fmt.Errorf("federation backfill: page users: %w", err)
+	}
+
+	var last pgtype.UUID
+	for _, id := range ids {
+		last = id
+		if fedOn {
+			if err := federationSvc.AutoProvision(ctx, id); err != nil {
+				return skipIfPermanent(fmt.Errorf("federation backfill: actor %s: %w", id.String(), err))
+			}
+		}
+		if atpOn {
+			if err := atprotoSvc.AutoProvision(ctx, id); err != nil {
+				return skipIfPermanent(fmt.Errorf("federation backfill: atproto %s: %w", id.String(), err))
+			}
+		}
+	}
+
+	// A full page means more users may follow — continue from the last id.
+	// A retry of THIS task re-pages the same cursor, so continuation is
+	// safe to enqueue only on success.
+	if len(ids) == batch {
+		if err := enqueueBackfillContinuation(last.String(), batch); err != nil {
+			return fmt.Errorf("federation backfill: enqueue next page: %w", err)
+		}
+	}
+	return nil
+}

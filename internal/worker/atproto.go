@@ -127,6 +127,12 @@ func EnqueueAtprotoLifecycleSync(ctx context.Context, userID pgtype.UUID) {
 	if err := taskEnqueuer.Enqueue(TypeAtprotoLifecycleSync, payload); err != nil {
 		slog.Warn("worker: atproto lifecycle enqueue failed", "user_id", userID.String(), "error", err)
 	}
+
+	// §126 auto opt-in: every status transition also re-evaluates
+	// auto-provisioning — a member suspended between signup and the
+	// task run receives their identity on reactivation. Self-gating:
+	// setting off, still-inactive, or an existing row all no-op.
+	EnqueueFederationAutoOptin(ctx, userID)
 }
 
 // HandleAtprotoLifecycleSync processes atproto:lifecycle_sync (§127

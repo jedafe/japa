@@ -4,6 +4,8 @@
 //	facts        — wiki:populate_facts for every country/state/city/education space
 //	attractions  — wiki:seed_attractions for every country space
 //	universities — space:auto_populate for education spaces missing media or wiki content
+//	federation   — federation:backfill_optin once; the task keyset-pages
+//	               active users and self-continues (§126 backfill)
 //
 // Env contract matches cmd/requeue-universities (JC_DATABASE_URL,
 // JC_VALKEY_ADDR / JC_REDIS_ADDR).
@@ -16,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,6 +41,12 @@ func main() {
 	}
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
+	}
+	// Asynq lives on JC_REDIS_DB — the same env the worker reads — or tasks
+	// enqueue onto a database no worker ever drains.
+	redisDB := 0
+	if v, err := strconv.Atoi(os.Getenv("JC_REDIS_DB")); err == nil {
+		redisDB = v
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
@@ -80,8 +89,25 @@ func main() {
 		payloadFor = func(id string) map[string]any {
 			return map[string]any{"version": "1", "space_id": id}
 		}
+	case "federation":
+		// §126 backfill — a single federation:backfill_optin task that
+		// keyset-pages active users and self-continues; the queue does the
+		// walking, so there's nothing to SELECT here.
+		taskType = worker.TypeFederationBackfillOptin
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr, DB: redisDB})
+		defer client.Close()
+		if *dryRun {
+			fmt.Printf("mode=%s task=%s dry-run (would enqueue cursor=\"\")\n", *mode, taskType)
+			return
+		}
+		payload, _ := json.Marshal(map[string]any{"cursor": ""})
+		if _, err := client.Enqueue(asynq.NewTask(taskType, payload), worker.TaskOpts(taskType)...); err != nil {
+			log.Fatalf("enqueue %s: %v", taskType, err)
+		}
+		fmt.Printf("mode=%s task=%s processed=1 errors=0\n", *mode, taskType)
+		return
 	default:
-		log.Fatal("-mode must be one of: facts, attractions, universities")
+		log.Fatal("-mode must be one of: facts, attractions, universities, federation")
 	}
 
 	rows, err := pool.Query(context.Background(), query)
@@ -90,7 +116,7 @@ func main() {
 	}
 	defer rows.Close()
 
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr, DB: 0})
+	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr, DB: redisDB})
 	defer client.Close()
 
 	count, errs := 0, 0

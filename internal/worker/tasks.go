@@ -214,11 +214,12 @@ const (
 
 	// ---- Native AT Protocol mini-PDS (§127, ADR-139) ----.
 
-	TypeAtprotoPublishRecord = "atproto:publish_record" // default (§127 A2)
-	TypeAtprotoDeleteRecord  = "atproto:delete_record"  // default (§11: tombstone/unpublish)
-	TypeAtprotoRequestCrawl  = "atproto:request_crawl"  // default (§127 A3: relay requestCrawl on activation)
-	TypeAtprotoLifecycleSync = "atproto:lifecycle_sync" // default (§127 lifecycle: users.status → account freeze/reactivate)
-	TypeFederationAutoOptin  = "federation:auto_optin"  // default (§126 auto opt-in: provision federated identity at registration)
+	TypeAtprotoPublishRecord    = "atproto:publish_record"    // default (§127 A2)
+	TypeAtprotoDeleteRecord     = "atproto:delete_record"     // default (§11: tombstone/unpublish)
+	TypeAtprotoRequestCrawl     = "atproto:request_crawl"     // default (§127 A3: relay requestCrawl on activation)
+	TypeAtprotoLifecycleSync    = "atproto:lifecycle_sync"    // default (§127 lifecycle: users.status → account freeze/reactivate)
+	TypeFederationAutoOptin     = "federation:auto_optin"     // default (§126 auto opt-in: provision federated identity at registration)
+	TypeFederationBackfillOptin = "federation:backfill_optin" // default (§126 backfill: converge existing members, paged)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -455,6 +456,7 @@ var handlerRegistry = []struct {
 	{TypeAtprotoRequestCrawl, HandleAtprotoRequestCrawl},
 	{TypeAtprotoLifecycleSync, HandleAtprotoLifecycleSync},
 	{TypeFederationAutoOptin, HandleFederationAutoOptin},
+	{TypeFederationBackfillOptin, HandleFederationBackfillOptin},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

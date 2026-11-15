@@ -187,6 +187,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// persistent Honcho/DB failure won't self-heal faster than that.
 	case TypeAIMigrateConversations:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
+	// §126 backfill page — keygen per user in the page; bounded timeout,
+	// a retried page re-checks row existence so progress isn't lost.
+	case TypeFederationBackfillOptin:
+		opts = append(opts, asynq.Timeout(5*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -239,7 +243,7 @@ var taskTier = func() map[string]string {
 		TypeAffiliateCreditAuthorCommission,
 		TypeDocsGeneratePage,
 		TypeAtprotoPublishRecord, TypeAtprotoDeleteRecord, TypeAtprotoRequestCrawl,
-		TypeAtprotoLifecycleSync, TypeFederationAutoOptin,
+		TypeAtprotoLifecycleSync, TypeFederationAutoOptin, TypeFederationBackfillOptin,
 		TypeFormFireSubmissionTriggers,
 		TypeWalletProcessCreditPurchase,
 		TypeWalletAwardPoints, TypeWalletDeductCredits,
@@ -437,6 +441,7 @@ var taskTypeCatalog = []struct {
 	{TypeAtprotoRequestCrawl, "default", "Announce the PDS host to the configured relay (§127 A3)"},
 	{TypeAtprotoLifecycleSync, "default", "Reconcile atproto account status with users.status (§127 lifecycle)"},
 	{TypeFederationAutoOptin, "default", "Provision a new member's federated identity when auto opt-in is on (§126)"},
+	{TypeFederationBackfillOptin, "default", "Paged backfill of federated identities for existing members (§126)"},
 	{TypeSearchReindexAll, "low", "Full bulk resync of every managed Meilisearch index (optional purge-first)"},
 	{TypeSearchReindexSpaceEntities, "default", "Resync all threads + content in one space after a visibility/status change"},
 	{TypeSearchReindexEngagementScores, "default", "Batched re-index of content whose engagement_score changed (§13)"},
