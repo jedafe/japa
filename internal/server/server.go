@@ -714,14 +714,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	federationHandlers := federation.NewHandlers(federationService)
 
 	atprotoService := atproto.NewService(database, atproto.Config{
-		PDSURL:       cfg.ATProtoPDSURL,
-		APIBase:      cfg.APIPublicURL,
-		SiteBase:     cfg.SiteURL,
-		HandleDomain: cfg.ATProtoHandleDomain,
-		RelayURL:     cfg.ATProtoRelayURL,
-		PLCURL:       cfg.ATProtoPLCURL,
-		JetstreamURL: cfg.ATProtoJetstreamURL,
-		AppViewURL:   cfg.ATProtoAppViewURL,
+		PDSURL:               cfg.ATProtoPDSURL,
+		APIBase:              cfg.APIPublicURL,
+		SiteBase:             cfg.SiteURL,
+		HandleDomain:         cfg.ATProtoHandleDomain,
+		RelayURL:             cfg.ATProtoRelayURL,
+		PLCURL:               cfg.ATProtoPLCURL,
+		JetstreamURL:         cfg.ATProtoJetstreamURL,
+		AppViewURL:           cfg.ATProtoAppViewURL,
+		InboundRetentionDays: cfg.ATProtoInboundRetentionDays,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
 	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP

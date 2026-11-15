@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteStaleAtprotoInbound = `-- name: DeleteStaleAtprotoInbound :execrows
+DELETE FROM atproto_inbound WHERE created_at < now() - make_interval(days => $1)
+`
+
+// Retention sweep for the audit ledger — the table is pure audit (nothing
+// reads it back for correctness), so rows past the configured window go.
+func (q *Queries) DeleteStaleAtprotoInbound(ctx context.Context, days int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleAtprotoInbound, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAtprotoAccountByDID = `-- name: GetAtprotoAccountByDID :one
 SELECT id, user_id, did, handle, status FROM atproto_accounts WHERE did = $1 AND status = 'active'
 `
@@ -67,7 +81,7 @@ func (q *Queries) GetAtprotoCommentByRemoteURI(ctx context.Context, remoteUri *s
 }
 
 const getAtprotoRemoteActorByDID = `-- name: GetAtprotoRemoteActorByDID :one
-SELECT id, did, handle, display_name, avatar_url, fetched_at, created_at, updated_at FROM atproto_remote_actors WHERE did = $1
+SELECT id, did, handle, display_name, avatar_url, fetched_at, created_at, updated_at, deactivated_at FROM atproto_remote_actors WHERE did = $1
 `
 
 func (q *Queries) GetAtprotoRemoteActorByDID(ctx context.Context, did string) (AtprotoRemoteActor, error) {
@@ -82,6 +96,7 @@ func (q *Queries) GetAtprotoRemoteActorByDID(ctx context.Context, did string) (A
 		&i.FetchedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
@@ -222,6 +237,49 @@ func (q *Queries) InsertAtprotoRemoteComment(ctx context.Context, arg InsertAtpr
 	return i, err
 }
 
+const setAtprotoRemoteActorDeactivated = `-- name: SetAtprotoRemoteActorDeactivated :execrows
+UPDATE atproto_remote_actors
+SET deactivated_at = CASE WHEN $1::bool THEN NULL ELSE now() END,
+    updated_at = now()
+WHERE did = $2
+`
+
+type SetAtprotoRemoteActorDeactivatedParams struct {
+	Active bool   `json:"active"`
+	Did    string `json:"did"`
+}
+
+// Jetstream `account` events flip active:false on deactivation/takedown and
+// back to true on reactivation — mirror that on the tracked actor row.
+func (q *Queries) SetAtprotoRemoteActorDeactivated(ctx context.Context, arg SetAtprotoRemoteActorDeactivatedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAtprotoRemoteActorDeactivated, arg.Active, arg.Did)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setAtprotoRemoteActorHandle = `-- name: SetAtprotoRemoteActorHandle :execrows
+UPDATE atproto_remote_actors SET handle = $1, updated_at = now()
+WHERE did = $2
+`
+
+type SetAtprotoRemoteActorHandleParams struct {
+	Handle *string `json:"handle"`
+	Did    string  `json:"did"`
+}
+
+// Jetstream `identity` events carry handle changes before any commit traffic
+// arrives — refresh the provenance row's display handle when we track the
+// DID (untracked DIDs are a no-op: identity events never mint actor rows).
+func (q *Queries) SetAtprotoRemoteActorHandle(ctx context.Context, arg SetAtprotoRemoteActorHandleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAtprotoRemoteActorHandle, arg.Handle, arg.Did)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const softDeleteAtprotoCommentByRemoteURI = `-- name: SoftDeleteAtprotoCommentByRemoteURI :execrows
 UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
 WHERE remote_uri = $1 AND deleted_at IS NULL
@@ -308,7 +366,7 @@ ON CONFLICT (did) DO UPDATE SET
     -- fetch leaves the row stale so the next event retries the AppView.
     fetched_at   = COALESCE(EXCLUDED.fetched_at, atproto_remote_actors.fetched_at),
     updated_at   = now()
-RETURNING id, did, handle, display_name, avatar_url, fetched_at, created_at, updated_at
+RETURNING id, did, handle, display_name, avatar_url, fetched_at, created_at, updated_at, deactivated_at
 `
 
 type UpsertAtprotoRemoteActorParams struct {
@@ -340,6 +398,7 @@ func (q *Queries) UpsertAtprotoRemoteActor(ctx context.Context, arg UpsertAtprot
 		&i.FetchedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }

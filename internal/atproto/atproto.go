@@ -79,6 +79,10 @@ type Config struct {
 	// check indexes through — the same target cmd/atproto-conformance
 	// uses.
 	AppViewURL string
+	// InboundRetentionDays — JC_ATPROTO_INBOUND_RETENTION_DAYS (default
+	// 30): the consumer's daily sweep deletes atproto_inbound audit rows
+	// older than this. Zero/negative disables the sweep.
+	InboundRetentionDays int
 }
 
 // pdsURL resolves the PDS public base: configured PDS URL wins, else the

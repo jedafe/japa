@@ -27,6 +27,7 @@ require (
 	github.com/ipld/go-ipld-prime v0.24.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/klauspost/compress v1.18.7
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/meilisearch/meilisearch-go v0.36.3
 	github.com/multiformats/go-multibase v0.3.0

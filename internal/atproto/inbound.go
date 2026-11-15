@@ -31,6 +31,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -47,7 +48,9 @@ const (
 	colFollow   = "app.bsky.graph.follow"
 )
 
-// jetstreamEvent is the v1 subscribe wire shape (uncompressed JSON).
+// jetstreamEvent is the v1 subscribe wire shape. With compress=true frames
+// arrive as zstd-compressed binary messages; the read loop decompresses
+// before unmarshalling.
 type jetstreamEvent struct {
 	DID    string `json:"did"`
 	TimeUS int64  `json:"time_us"`
@@ -60,6 +63,24 @@ type jetstreamEvent struct {
 		Record     map[string]any `json:"record"`
 		CID        string         `json:"cid"`
 	} `json:"commit"`
+	// Identity events carry upstream handle changes — refresh the tracked
+	// actor's display handle immediately rather than waiting for the 24h
+	// AppView refresh window.
+	Identity *struct {
+		DID    string `json:"did"`
+		Handle string `json:"handle"`
+		Seq    int64  `json:"seq"`
+		Time   string `json:"time"`
+	} `json:"identity"`
+	// Account events flip active:false on upstream deactivation/takedown and
+	// back on reactivation — mirrored onto the tracked actor row.
+	Account *struct {
+		Active bool   `json:"active"`
+		DID    string `json:"did"`
+		Status string `json:"status"`
+		Seq    int64  `json:"seq"`
+		Time   string `json:"time"`
+	} `json:"account"`
 }
 
 // StartJetstreamConsumer supervises the consume loop until ctx cancels.
@@ -71,6 +92,7 @@ func (s *Service) StartJetstreamConsumer(ctx context.Context) {
 		return
 	}
 	backoff := time.Second
+	var lastSweep time.Time // zero → retention sweeps on the first pass
 	for {
 		if ctx.Err() != nil {
 			return
@@ -84,6 +106,16 @@ func (s *Service) StartJetstreamConsumer(ctx context.Context) {
 			case <-time.After(30 * time.Second):
 				continue
 			}
+		}
+		// Ledger retention — daily sweep; the table is pure audit so nothing
+		// reads stale rows back for correctness. Zero/negative disables.
+		if s.cfg.InboundRetentionDays > 0 && time.Since(lastSweep) >= 24*time.Hour {
+			if n, serr := gen.New(s.db.Writer).DeleteStaleAtprotoInbound(ctx, int32(s.cfg.InboundRetentionDays)); serr != nil {
+				slog.Warn("atproto: inbound retention sweep failed", "error", serr)
+			} else if n > 0 {
+				slog.Info("atproto: pruned inbound ledger", "rows", n)
+			}
+			lastSweep = time.Now()
 		}
 		err := s.consume(ctx)
 		if ctx.Err() != nil {
@@ -114,7 +146,16 @@ func (s *Service) consume(ctx context.Context) error {
 	if cur, err := s.vk.Get(ctx, "jc:atp:jetstream:cursor").Result(); err == nil && cur != "" {
 		q.Set("cursor", cur)
 	}
+	// compress=true cuts frame bandwidth roughly in half; peers that don't
+	// support it just keep sending text frames — both are handled below.
+	q.Set("compress", "true")
 	subURL.RawQuery = q.Encode()
+
+	zdec, err := zstd.NewReader(nil)
+	if err != nil {
+		return fmt.Errorf("atproto: zstd decoder: %w", err)
+	}
+	defer zdec.Close()
 
 	dialer := websocket.Dialer{HandshakeTimeout: 15 * time.Second}
 	conn, _, err := dialer.DialContext(ctx, subURL.String(), nil)
@@ -126,7 +167,9 @@ func (s *Service) consume(ctx context.Context) error {
 
 	var lastCursor atomic.Int64
 	// Flush on exit — a disconnect shouldn't lose up to 500ms of cursor.
-	defer s.flushCursor(context.Background(), lastCursor.Load())
+	// The closure reads the atomic at run time; deferring the call with the
+	// value inline would eagerly evaluate 0 and never write anything.
+	defer func() { s.flushCursor(context.Background(), lastCursor.Load()) }()
 
 	lastFlush := time.Now()
 	for {
@@ -134,19 +177,33 @@ func (s *Service) consume(ctx context.Context) error {
 			return ctx.Err()
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
-		_, raw, err := conn.ReadMessage()
+		mt, raw, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("atproto: jetstream read: %w", err)
 		}
+		if mt == websocket.BinaryMessage {
+			if raw, err = zdec.DecodeAll(raw, nil); err != nil {
+				continue // malformed compressed frame — never crash the loop
+			}
+		}
 		var ev jetstreamEvent
-		if err := json.Unmarshal(raw, &ev); err != nil || ev.Commit == nil {
+		if err := json.Unmarshal(raw, &ev); err != nil {
 			continue // malformed frame — never crash the loop
 		}
-		if err := s.handleCommit(ctx, &ev); err != nil {
-			// Persistence failure — drop the connection. The cursor hasn't
-			// advanced past this event, so reconnecting forces redelivery
-			// instead of silently skipping it.
-			return fmt.Errorf("atproto: commit handling: %w", err)
+		switch {
+		case ev.Commit != nil:
+			if err := s.handleCommit(ctx, &ev); err != nil {
+				// Persistence failure — drop the connection. The cursor hasn't
+				// advanced past this event, so reconnecting forces redelivery
+				// instead of silently skipping it.
+				return fmt.Errorf("atproto: commit handling: %w", err)
+			}
+		case ev.Identity != nil:
+			s.handleIdentityEvent(ctx, &ev)
+		case ev.Account != nil:
+			s.handleAccountEvent(ctx, &ev)
+		default:
+			continue // unknown kind — skip without advancing the cursor
 		}
 		lastCursor.Store(ev.TimeUS)
 		if time.Since(lastFlush) >= cursorCheckpointEvery {
@@ -161,6 +218,34 @@ func (s *Service) flushCursor(ctx context.Context, timeUS int64) {
 		return
 	}
 	_ = s.vk.Set(ctx, "jc:atp:jetstream:cursor", timeUS, 0).Err()
+}
+
+// handleIdentityEvent refreshes a tracked remote actor's handle on upstream
+// `identity` events — cheap cache maintenance outside the commit ledger
+// (untracked DIDs no-op; identity events never mint actor rows). A failed
+// update is non-fatal: the next commit re-resolves the actor anyway.
+func (s *Service) handleIdentityEvent(ctx context.Context, ev *jetstreamEvent) {
+	did, handle := ev.Identity.DID, ev.Identity.Handle
+	if did == "" || handle == "" {
+		return
+	}
+	if _, err := gen.New(s.db.Writer).SetAtprotoRemoteActorHandle(ctx,
+		gen.SetAtprotoRemoteActorHandleParams{Did: did, Handle: &handle}); err != nil {
+		slog.Warn("atproto: identity handle update failed", "did", did, "error", err)
+	}
+}
+
+// handleAccountEvent mirrors upstream `account` deactivation/reactivation
+// onto the tracked actor row. Full tombstone propagation (unwinding the
+// actor's comments/likes) is A6 scope — this is provenance bookkeeping.
+func (s *Service) handleAccountEvent(ctx context.Context, ev *jetstreamEvent) {
+	if ev.Account.DID == "" {
+		return
+	}
+	if _, err := gen.New(s.db.Writer).SetAtprotoRemoteActorDeactivated(ctx,
+		gen.SetAtprotoRemoteActorDeactivatedParams{Active: ev.Account.Active, Did: ev.Account.DID}); err != nil {
+		slog.Warn("atproto: account deactivation update failed", "did", ev.Account.DID, "error", err)
+	}
 }
 
 // notifyIntent defers a §35 notification until after the dispatch transaction

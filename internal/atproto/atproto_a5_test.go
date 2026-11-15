@@ -6,13 +6,18 @@ package atproto
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/klauspost/compress/zstd"
 )
 
 type captureNotifier struct {
@@ -442,5 +447,114 @@ func TestDBInboundUpdateOps(t *testing.T) {
 	_ = d.Writer.QueryRow(ctx, `SELECT deleted_at FROM comments WHERE remote_uri = $1`, replyURI).Scan(&deleted)
 	if deleted == nil {
 		t.Fatalf("update resurrected a deleted comment")
+	}
+}
+
+// TestJetstreamConsumeLiveSmoke — the real wire path end-to-end: a fake
+// Jetstream server serves a garbage frame, a zstd-compressed reply commit,
+// an identity event, and an account event. Asserts the consumer survives
+// malformed input, decodes compressed frames, normalizes the commit,
+// applies identity/account bookkeeping, and checkpoints the cursor.
+func TestJetstreamConsumeLiveSmoke(t *testing.T) {
+	ctx := context.Background()
+	svc, _, contentID, uri := a5Fixture(t, ctx)
+	svc.SetNotifier(&captureNotifier{})
+
+	remoteDID := fmt.Sprintf("did:plc:live%d", time.Now().UnixNano())
+	replyRecord, _ := json.Marshal(map[string]any{
+		"did": remoteDID, "time_us": 1000, "kind": "commit",
+		"commit": map[string]any{
+			"operation": "create", "collection": "app.bsky.feed.post",
+			"rkey": "liverep",
+			"record": map[string]any{
+				"text":  "live wire reply",
+				"reply": map[string]any{"parent": map[string]any{"uri": uri}, "root": map[string]any{"uri": uri}},
+			},
+		},
+	})
+	identityRecord, _ := json.Marshal(map[string]any{
+		"did": remoteDID, "time_us": 1001, "kind": "identity",
+		"identity": map[string]any{"did": remoteDID, "handle": "liverep.bsky.social", "seq": 5, "time": "2026-01-01T00:00:00Z"},
+	})
+	accountRecord, _ := json.Marshal(map[string]any{
+		"did": remoteDID, "time_us": 1002, "kind": "account",
+		"account": map[string]any{"active": false, "did": remoteDID, "status": "deactivated", "seq": 6, "time": "2026-01-01T00:00:00Z"},
+	})
+
+	enc, _ := zstd.NewWriter(nil)
+	compressedReply := enc.EncodeAll(replyRecord, nil)
+
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		up := websocket.Upgrader{}
+		conn, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// 1. garbage text frame — must not kill the loop
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("{not valid json"))
+		// 2. malformed binary frame — same
+		_ = conn.WriteMessage(websocket.BinaryMessage, []byte{0x00, 0x01, 0x02})
+		// 3. the reply commit, zstd-compressed as compress=true promises
+		_ = conn.WriteMessage(websocket.BinaryMessage, compressedReply)
+		// 4. identity + account bookkeeping events (plain text)
+		_ = conn.WriteMessage(websocket.TextMessage, identityRecord)
+		_ = conn.WriteMessage(websocket.TextMessage, accountRecord)
+		<-done // hold the connection until the test asserts
+	}))
+	defer srv.Close()
+
+	svc.cfg.JetstreamURL = "ws" + strings.TrimPrefix(srv.URL, "http") + "/subscribe"
+
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	consumeErr := make(chan error, 1)
+	go func() { consumeErr <- svc.consume(cctx) }()
+
+	// Wait for the remote comment to land.
+	d := testDB(t)
+	replyURI := "at://" + remoteDID + "/app.bsky.feed.post/liverep"
+	var found bool
+	for i := 0; i < 60; i++ {
+		_ = d.Writer.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM comments WHERE remote_uri = $1)`, replyURI).Scan(&found)
+		if found {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !found {
+		t.Fatalf("live wire reply never landed as a comment")
+	}
+	var contentRef pgtype.UUID
+	_ = d.Writer.QueryRow(ctx, `SELECT content_id FROM comments WHERE remote_uri = $1`, replyURI).Scan(&contentRef)
+	if contentRef != contentID {
+		t.Fatalf("live reply on wrong content")
+	}
+
+	// Identity + account events updated the tracked actor row.
+	var handle *string
+	var deactivated *time.Time
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT handle, deactivated_at FROM atproto_remote_actors WHERE did = $1`, remoteDID,
+	).Scan(&handle, &deactivated); err != nil {
+		t.Fatalf("remote actor row missing: %v", err)
+	}
+	if handle == nil || *handle != "liverep.bsky.social" {
+		t.Fatalf("identity event did not refresh handle: %v", handle)
+	}
+	if deactivated == nil {
+		t.Fatalf("account event did not mark deactivation")
+	}
+
+	// Drop the fake connection — consume must exit via its deferred cursor
+	// flush, checkpointing the last processed event deterministically.
+	close(done)
+	if err := <-consumeErr; err == nil {
+		t.Fatalf("consume should return after connection loss")
+	}
+	cursor, _ := svc.vk.Get(ctx, "jc:atp:jetstream:cursor").Result()
+	if cursor != "1002" {
+		t.Fatalf("cursor=%q want 1002", cursor)
 	}
 }

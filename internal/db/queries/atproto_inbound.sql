@@ -18,6 +18,26 @@ RETURNING *;
 -- name: GetAtprotoRemoteActorByDID :one
 SELECT * FROM atproto_remote_actors WHERE did = @did;
 
+-- name: SetAtprotoRemoteActorHandle :execrows
+-- Jetstream `identity` events carry handle changes before any commit traffic
+-- arrives — refresh the provenance row's display handle when we track the
+-- DID (untracked DIDs are a no-op: identity events never mint actor rows).
+UPDATE atproto_remote_actors SET handle = @handle, updated_at = now()
+WHERE did = @did;
+
+-- name: SetAtprotoRemoteActorDeactivated :execrows
+-- Jetstream `account` events flip active:false on deactivation/takedown and
+-- back to true on reactivation — mirror that on the tracked actor row.
+UPDATE atproto_remote_actors
+SET deactivated_at = CASE WHEN @active::bool THEN NULL ELSE now() END,
+    updated_at = now()
+WHERE did = @did;
+
+-- name: DeleteStaleAtprotoInbound :execrows
+-- Retention sweep for the audit ledger — the table is pure audit (nothing
+-- reads it back for correctness), so rows past the configured window go.
+DELETE FROM atproto_inbound WHERE created_at < now() - make_interval(days => @days);
+
 -- name: InsertAtprotoInbound :one
 -- Audit ledger insert doubles as the DB-level dedupe: the (event_uri,
 -- operation, event_seq) unique key rejects replays (replays carry the same
