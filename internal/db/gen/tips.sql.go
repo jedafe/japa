@@ -261,7 +261,7 @@ func (q *Queries) CountTipsBySpace(ctx context.Context, spaceID pgtype.UUID) (in
 }
 
 const countTipsReceived = `-- name: CountTipsReceived :one
-SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_id = $1 AND status = 'completed'
+SELECT count(*)::int FROM tips WHERE recipient_user_id = $1 AND status = 'completed'
 `
 
 func (q *Queries) CountTipsReceived(ctx context.Context, recipientUserID pgtype.UUID) (int32, error) {
@@ -1120,7 +1120,7 @@ func (q *Queries) ListTipsBySpace(ctx context.Context, arg ListTipsBySpaceParams
 }
 
 const listTipsReceived = `-- name: ListTipsReceived :many
-SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE recipient_type = 'user' AND recipient_user_id = $1
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE recipient_user_id = $1
    AND status = 'completed'
 ORDER BY created_at DESC LIMIT $3 OFFSET $2
 `
@@ -1131,6 +1131,10 @@ type ListTipsReceivedParams struct {
 	PageLimit       int32       `json:"page_limit"`
 }
 
+// recipient_user_id is the wallet snapshot for every recipient kind — org and
+// space tips settle into the owner's wallet too, so the received ledger must
+// not filter to recipient_type='user' (org tips would be invisible to the
+// wallet holder; there is no org-level tips route).
 func (q *Queries) ListTipsReceived(ctx context.Context, arg ListTipsReceivedParams) ([]Tip, error) {
 	rows, err := q.db.Query(ctx, listTipsReceived, arg.RecipientUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {

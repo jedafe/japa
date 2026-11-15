@@ -112,12 +112,16 @@ SELECT * FROM tips WHERE sender_user_id = @sender_user_id
 ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListTipsReceived :many
-SELECT * FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id
+-- recipient_user_id is the wallet snapshot for every recipient kind — org and
+-- space tips settle into the owner's wallet too, so the received ledger must
+-- not filter to recipient_type='user' (org tips would be invisible to the
+-- wallet holder; there is no org-level tips route).
+SELECT * FROM tips WHERE recipient_user_id = @recipient_user_id
    AND status = 'completed'
 ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountTipsReceived :one
-SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id AND status = 'completed';
+SELECT count(*)::int FROM tips WHERE recipient_user_id = @recipient_user_id AND status = 'completed';
 
 -- name: ContentTipSummary :one
 SELECT count(*)::int AS tip_count,

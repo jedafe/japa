@@ -67,7 +67,14 @@
 				<li class="flex items-center justify-between px-4 py-3">
 					<div class="min-w-0">
 						<p class="truncate text-sm font-medium">
-							{tab === 'received' ? tip.sender_name || 'Someone' : tip.recipient_name || tip.recipient_type}
+							{#if tab === 'received'}
+								{tip.sender_name || 'Someone'}
+								{#if tip.recipient_type !== 'user' && tip.recipient_name}
+									<span class="text-xs font-normal text-muted-foreground">→ {tip.recipient_name}</span>
+								{/if}
+							{:else}
+								{tip.recipient_name || tip.recipient_type}
+							{/if}
 						</p>
 						{#if tip.message}<p class="truncate text-xs text-muted-foreground">{tip.message}</p>{/if}
 					</div>
