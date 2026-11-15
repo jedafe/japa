@@ -180,7 +180,6 @@
 	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 		{#snippet children()}
 		<form
-			id="visa-timelines-filter-panel"
 			onsubmit={(e) => { applyFilters(e); filtersModalOpen = false; }}
 		>
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

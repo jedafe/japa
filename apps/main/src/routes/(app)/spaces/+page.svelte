@@ -377,11 +377,10 @@
 
 	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
 		{#snippet children()}
-		<div>
 		<!-- Filter panel — one uniform field grid (SelectField/Autocomplete),
 		     same pattern as /sources and /blog. Type+level are merged into a
 		     single picker; ?subregion= stays URL-only (no dedicated control). -->
-		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
+		<div>
 			<!-- Universities-style geo cascade (filter parity with /universities):
 			     country → ?geo=, state/city → ?parent= (deepest wins) + sort. -->
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -452,7 +451,6 @@
 					</button>
 				</div>
 			{/if}
-		</div>
 		</div>
 		{/snippet}
 	</Modal>
