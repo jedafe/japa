@@ -553,6 +553,21 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 	return s.statusFor(actor, username), nil
 }
 
+// AutoProvision creates the caller's actor only when none exists — the
+// §126 auto opt-in path fired by federation:auto_optin at registration.
+// Unlike EnableFederation it never reactivates: an existing row of any
+// status (disabled opt-out, tombstone) is left alone so a member's
+// explicit opt-out can't be silently resurrected.
+func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
+	if _, err := s.store.actorByUserID(ctx, userID); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("federation: auto-provision lookup: %w", err)
+	}
+	_, err := s.EnableFederation(ctx, userID)
+	return err
+}
+
 // approvesFollowers maps the member's user_privacy_settings onto the AP
 // follow-approval flag: 'followers' visibility means only approved
 // followers see the profile, so remote follows need approval too.

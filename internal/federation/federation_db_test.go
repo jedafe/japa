@@ -259,6 +259,48 @@ func TestDBAdminListHidesPrivateKey(t *testing.T) {
 	}
 }
 
+// TestDBAutoProvision covers the §126 auto opt-in path — the worker task
+// provisions only when no actor row exists, so a member's explicit opt-out
+// (disabled row) is never silently resurrected by a retried task.
+func TestDBAutoProvision(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+
+	// Absent row → mints the actor, same as EnableFederation.
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision: %v", err)
+	}
+	st, err := svc.GetMyFederation(ctx, userID)
+	if err != nil || !st.Enabled || st.ActorURL != "https://api.test.dev/federation/actors/"+uname {
+		t.Fatalf("expected active actor, got %+v %v", st, err)
+	}
+
+	// Idempotent — a retried task against an active row is a no-op and
+	// keeps the same actor URL (no key rotation).
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision idempotent: %v", err)
+	}
+	st2, _ := svc.GetMyFederation(ctx, userID)
+	if st2.ActorURL != st.ActorURL {
+		t.Fatalf("actor URL changed on retry: %q → %q", st.ActorURL, st2.ActorURL)
+	}
+
+	// Explicit opt-out → the row goes disabled; a late/retried task must
+	// leave it disabled.
+	if _, err := svc.DisableFederation(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision after opt-out: %v", err)
+	}
+	st3, _ := svc.GetMyFederation(ctx, userID)
+	if st3.Enabled || st3.Status != ActorStatusDisabled {
+		t.Fatalf("opt-out resurrected: %+v", st3)
+	}
+}
+
 func TestDBInstanceBlockCRUD(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

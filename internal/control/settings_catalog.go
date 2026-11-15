@@ -217,6 +217,8 @@ var settingsCatalog = map[string]settingMeta{
 	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
 	// Control panel ops
 	"control.seed_ops": {Type: "json", DefaultValue: seedOpsDefaultJSON, Description: `JSON array of seed/enrichment ops shown on Control → Seeds; replaces the built-in catalog when non-empty. Entries: {kind,title,description,enqueueable,task_type?,command?,static?,params[]}; task_type must be in the seed-task allowlist (non-allowlisted ops are served enqueueable:false). Param types: text|number|checkbox|select (select uses options[]).`, Panel: "control"},
+	// Federation
+	"federation.auto_optin": {Type: "bool", DefaultValue: "true", Description: "Auto-provision a federated identity for every new member at registration (AP actor under feature.federation; atproto account under feature.atproto). False = explicit member opt-in only. New signups only — never backfills or resurrects an opt-out.", Panel: "control"},
 	// Ads
 	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},

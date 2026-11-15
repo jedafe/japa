@@ -218,6 +218,7 @@ const (
 	TypeAtprotoDeleteRecord  = "atproto:delete_record"  // default (§11: tombstone/unpublish)
 	TypeAtprotoRequestCrawl  = "atproto:request_crawl"  // default (§127 A3: relay requestCrawl on activation)
 	TypeAtprotoLifecycleSync = "atproto:lifecycle_sync" // default (§127 lifecycle: users.status → account freeze/reactivate)
+	TypeFederationAutoOptin  = "federation:auto_optin"  // default (§126 auto opt-in: provision federated identity at registration)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -453,6 +454,7 @@ var handlerRegistry = []struct {
 	{TypeAtprotoDeleteRecord, HandleAtprotoDeleteRecord},
 	{TypeAtprotoRequestCrawl, HandleAtprotoRequestCrawl},
 	{TypeAtprotoLifecycleSync, HandleAtprotoLifecycleSync},
+	{TypeFederationAutoOptin, HandleFederationAutoOptin},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

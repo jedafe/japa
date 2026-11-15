@@ -625,6 +625,10 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 		// ADR-136: signup earns points (one_time rule) — fire-and-forget.
 		emitOAuthActivity(ctx, h.Activity, "user.registered", "user:"+userID.String(), userID)
 
+		// §126 auto opt-in: provision the member's federated identity —
+		// no-op when federation.auto_optin or both feature flags are off.
+		worker.EnqueueFederationAutoOptin(ctx, userID)
+
 		// Transactional emails (fire-and-forget, Golden Rule 8): welcome for
 		// every signup — parity with password Register — and a verification
 		// link only when the provider could not attest the address.

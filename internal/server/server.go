@@ -710,6 +710,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	federationService.SetSettings(settingsService)
 	federationService.SetValkey(vkClient.Redis())
 	federationService.SetFlags(featureChecker) // §42: prune flag-gated content types from AP projections
+	worker.RegisterFederationService(federationService)
 	federationHandlers := federation.NewHandlers(federationService)
 
 	atprotoService := atproto.NewService(database, atproto.Config{

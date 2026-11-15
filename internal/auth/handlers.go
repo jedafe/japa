@@ -452,6 +452,10 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// ADR-136: signup earns points (one_time rule) — fire-and-forget.
 	h.emitActivity(r.Context(), userID, "user.registered", "user:"+userID.String())
 
+	// §126 auto opt-in: provision the member's federated identity — no-op
+	// when federation.auto_optin or both feature flags are off.
+	worker.EnqueueFederationAutoOptin(r.Context(), userID)
+
 	// Send welcome email (fire-and-forget, Golden Rule 8).
 	if h.AsynqClient != nil {
 		welcomePayload, _ := json.Marshal(map[string]interface{}{

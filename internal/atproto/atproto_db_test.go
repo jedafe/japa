@@ -602,6 +602,47 @@ func TestDBTombstoneTerminal(t *testing.T) {
 	}
 }
 
+// TestDBAutoProvision covers the §126 auto opt-in path — the worker task
+// provisions only when no account row exists, so a member's explicit
+// opt-out (disabled row) is never silently resurrected by a retried task.
+func TestDBAutoProvision(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+
+	// Absent row → mints the account, same as EnableAccount.
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision: %v", err)
+	}
+	st, err := svc.GetMyAccount(ctx, userID)
+	if err != nil || !st.Enabled || st.Handle != uname+".test.dev" {
+		t.Fatalf("expected active account, got %+v %v", st, err)
+	}
+
+	// Idempotent — a retried task against an active row keeps the same DID.
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision idempotent: %v", err)
+	}
+	st2, _ := svc.GetMyAccount(ctx, userID)
+	if st2.DID != st.DID {
+		t.Fatalf("DID changed on retry: %q → %q", st.DID, st2.DID)
+	}
+
+	// Explicit opt-out → the row goes disabled; a late/retried task must
+	// leave it disabled (same guarantee for tombstone rows).
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if err := svc.AutoProvision(ctx, userID); err != nil {
+		t.Fatalf("AutoProvision after opt-out: %v", err)
+	}
+	st3, _ := svc.GetMyAccount(ctx, userID)
+	if st3.Enabled {
+		t.Fatalf("opt-out resurrected: %+v", st3)
+	}
+}
+
 // jc:atp:did:{id} is keyed on the USER uuid — the did:web u/{id} path
 // component — not the atproto_accounts row PK. Disable evicts both
 // identity caches, but deactivated-repo semantics keep the doc and

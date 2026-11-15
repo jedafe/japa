@@ -474,6 +474,21 @@ func (s *Service) ensureRepoInitialized(ctx context.Context, account *gen.Atprot
 	return s.publishProfile(ctx, account)
 }
 
+// AutoProvision mints the member's atproto account only when none exists —
+// the §126 auto opt-in path fired by federation:auto_optin at registration.
+// Unlike EnableAccount it never reactivates: an existing row of any status
+// (disabled opt-out, tombstone) is left alone so a member's explicit
+// opt-out can't be silently resurrected.
+func (s *Service) AutoProvision(ctx context.Context, userID pgtype.UUID) error {
+	if _, err := s.store.accountByUserID(ctx, userID); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("atproto: auto-provision lookup: %w", err)
+	}
+	_, err := s.EnableAccount(ctx, userID)
+	return err
+}
+
 // DisableAccount deactivates the caller's account. The row is kept so a
 // later re-enable preserves the DID + keypair (identity is permanent);
 // A6 additionally emits #tombstone for full erasure — and tombstone is

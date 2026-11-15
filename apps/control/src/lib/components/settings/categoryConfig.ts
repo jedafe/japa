@@ -38,6 +38,7 @@ import {
     MapPin,
     BookOpen,
     Cloud,
+    Network,
 } from 'lucide-svelte';
 
 // Only categories that have Panel: "control" settings appear in the control
@@ -59,6 +60,7 @@ export const categoryIcons: Record<string, typeof Settings> = {
     content: Sliders,
     onboarding: FolderOpen,
     control: Wrench,
+    federation: Network,
     // V2 categories
     rag: Brain,
     studio: Wand,
@@ -130,6 +132,7 @@ export const categoryNames: Record<string, string> = {
     content: 'Content',
     onboarding: 'Onboarding',
     control: 'Seed Control',
+    federation: 'Federation',
     // V2 categories
     rag: 'RAG / JapaBot Knowledge',
     studio: 'AI Content Studio',

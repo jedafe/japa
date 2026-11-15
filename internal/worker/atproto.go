@@ -25,6 +25,7 @@ type atprotoRepoWriter interface {
 	DeleteRecordURI(ctx context.Context, accountID pgtype.UUID, uri string) error
 	RequestCrawl(ctx context.Context, accountID pgtype.UUID) error
 	SyncUserLifecycle(ctx context.Context, userID pgtype.UUID) error
+	AutoProvision(ctx context.Context, userID pgtype.UUID) error
 }
 
 var atprotoSvc atprotoRepoWriter
