@@ -162,7 +162,7 @@
 		if (!editLinkId) return;
 		const link = links.find((l) => l.id === editLinkId);
 		if (!link) return;
-		const body = { ...link, label: editLabel, url: editUrl };
+		const body = { kind: link.kind, label: editLabel, url: editUrl, position: link.position };
 		const res = orgId
 			? await updateOrgTipLink(orgId, editLinkId, body)
 			: await updateTipLink(editLinkId, body);

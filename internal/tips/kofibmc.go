@@ -92,7 +92,7 @@ func (s *Service) ConnectBMC(ctx context.Context, owner Owner, actorID pgtype.UU
 		return nil, ErrOCNotConnected
 	}
 	if _, _, err := s.bmc.ListSupporters(ctx, token, 1); err != nil {
-		return nil, ErrOCAccess
+		return nil, ErrBMCAccess
 	}
 	enc, err := crypto.Encrypt(token)
 	if err != nil {

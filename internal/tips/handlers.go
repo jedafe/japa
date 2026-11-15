@@ -103,6 +103,8 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "message_too_long", "Tip message is too long")
 	case errors.Is(err, ErrOCAccess):
 		errpkg.WriteError(w, http.StatusBadRequest, "oc_access_denied", "Token has no access to this collective")
+	case errors.Is(err, ErrBMCAccess):
+		errpkg.WriteError(w, http.StatusBadRequest, "bmc_access_denied", "Buy Me a Coffee token is invalid or lacks access")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "The server encountered an error — please try again")
 	}

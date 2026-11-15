@@ -309,6 +309,8 @@ var taskTier = func() map[string]string {
 		TypeServiceBookingStatusChanged,
 		// §113 Public Product Roadmap (ADR-127) — ship notification fan-out, default tier.
 		TypeRoadmapShipNotify,
+		// §125 — pending-tip TTL janitor, default tier per §11 task catalog.
+		TypeTipsStaleSweep,
 	} {
 		m[t] = QueueDefault
 	}
@@ -331,7 +333,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeMediaCleanupDeleted, TypeMediaReconcileMissing,
-		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents, TypeTipsOCSync, TypeTipsStaleSweep,
+		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents, TypeTipsOCSync,
 		TypeCouponExpireCheck,
 		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
 		TypeAffiliateExpireCheck,

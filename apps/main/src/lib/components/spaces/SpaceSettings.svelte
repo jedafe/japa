@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '#lib/api/client.js';
-	import { fiatDisplay, listSpaceTips, type Tip, type TipConfig, type TipSettings } from '#lib/api/tips.js';
+	import { fiatDisplay, listSpaceTips, updateSpaceTipSettings, type Tip, type TipConfig } from '#lib/api/tips.js';
 	import { t } from '#lib/i18n/index.js';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -126,9 +126,9 @@
 	let spaceTips = $state<Tip[]>([]);
 	let spaceTipsLoaded = $state(false);
 
-	// Fiat providers §17 can register — a space advertises fiat when any
-	// provider method appears in the public config's methods list.
-	const fiatMethods = ['stripe', 'paystack', 'nowpayments', 'manual_transfer'];
+	// A space advertises fiat when the public config's methods carry anything
+	// beyond credits/opencollective — provider-agnostic (any §17 provider).
+	const isFiatMethod = (m: string) => m !== 'credits' && m !== 'opencollective';
 
 	$effect(() => {
 		if (isOwner && space.level === 'custom' && !tipsLoaded) {
@@ -137,7 +137,7 @@
 				if (!res.error && res.data) {
 					tipsEnabled = res.data.enabled ?? false;
 					acceptCredits = res.data.methods?.includes('credits') ?? true;
-					acceptFiat = res.data.methods?.some((m) => fiatMethods.includes(m)) ?? false;
+					acceptFiat = res.data.methods?.some(isFiatMethod) ?? false;
 					minTip = res.data.min_tip_amount ?? 0;
 					thankYou = res.data.thank_you_message ?? '';
 				}
@@ -147,7 +147,7 @@
 	});
 
 	$effect(() => {
-		if (isOwner && space.level === 'custom' && tipsEnabled && !spaceTipsLoaded) {
+		if (isOwner && space.level === 'custom' && !spaceTipsLoaded) {
 			void (async () => {
 				const res = await listSpaceTips(space.slug, 1, 10);
 				if (!res.error && res.data) spaceTips = res.data;
@@ -160,10 +160,14 @@
 		tipsSaving = true;
 		tipsError = '';
 		tipsSaved = false;
-		const res = await api.patch<TipSettings>(`/spaces/${space.slug}/tip-settings`, {
+		// Full UpdateSettingsInput — PUT semantics: omitted booleans decode as
+		// false server-side, so accept_external must be sent explicitly.
+		// Spaces have no external-link CRUD routes — always false here.
+		const res = await updateSpaceTipSettings(space.slug, {
 			tips_enabled: tipsEnabled,
 			accept_credits: acceptCredits,
 			accept_fiat: acceptFiat,
+			accept_external: false,
 			min_tip_amount: minTip,
 			thank_you_message: thankYou || null,
 		});
@@ -1083,7 +1087,7 @@
 				{tipsSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
 			</button>
 
-			{#if tipsEnabled && spaceTipsLoaded}
+			{#if spaceTipsLoaded}
 				<div class="mt-5">
 					<h4 class="mb-2 text-xs font-semibold text-[var(--color-muted)]">
 						{t('space.tips_received', 'Tips received')}

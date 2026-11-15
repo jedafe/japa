@@ -83,6 +83,7 @@ var (
 	ErrBlocked             = errors.New("cannot tip this user")
 	ErrMessageTooLong      = errors.New("tip message is too long")
 	ErrOCAccess            = errors.New("token has no access to this collective")
+	ErrBMCAccess           = errors.New("token is invalid or lacks access")
 )
 
 // fiatMethods are the §17 payment providers usable for fiat tips.
