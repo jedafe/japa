@@ -688,7 +688,7 @@ const listAssignmentsByEntityClass = `-- name: ListAssignmentsByEntityClass :man
 SELECT id, group_id, entity_class, entity_id, position, created_at
 FROM custom_field_group_assignments
 WHERE entity_class = $1
-ORDER BY position ASC
+ORDER BY position ASC, created_at ASC, id ASC
 `
 
 // =====================

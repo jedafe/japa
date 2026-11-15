@@ -372,7 +372,11 @@ export interface ComingSoonProps {
 
 export interface FormEmbedProps {
   preset: 'newsletter' | 'waitlist' | 'contact' | 'custom';
-  fields: Array<{ name: string; label: string; type: 'text' | 'email' | 'textarea' | 'select'; required: boolean; placeholder?: string; options?: string[] }>;
+  /** §06 form slug — when set, the block pulls the live field schema from
+   *  GET {apiBase}/forms/{slug}/embed so admin edits never drift from the
+   *  page copy. `fields` remains the fallback when unset/unreachable. */
+  form_slug?: string;
+  fields: Array<{ name: string; label: string; type: 'text' | 'email' | 'textarea' | 'select' | 'url' | 'number' | 'checkbox' | 'multiselect' | 'suggest'; required: boolean; placeholder?: string; options?: string[] }>;
   submit_endpoint: string;
   submit_label: string;
   success_message: string;

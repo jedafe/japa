@@ -7,10 +7,99 @@
   }
   let { props, id }: Props = $props();
 
-  let formData = $state<Record<string, string>>({});
+  // Field schema as emitted by GET /forms/{slug}/embed (§06).
+  interface EmbedField {
+    id: string;
+    key?: string;
+    label: string;
+    type: string;
+    required?: boolean;
+    placeholder?: string | null;
+    options?: string[] | null;
+    option_defs?: { value: string; label: string }[] | null;
+    options_source?: string | null;
+  }
+
+  interface RenderField {
+    name: string;
+    label: string;
+    type: string;
+    required: boolean;
+    placeholder?: string;
+    options?: string[];
+    options_source?: string | null;
+  }
+
+  let formData = $state<Record<string, string | string[]>>({});
   let submitting = $state(false);
   let success = $state(false);
   let error = $state(false);
+  let liveFields = $state<EmbedField[] | null>(null);
+  let countries = $state<string[]>([]);
+
+  // §06: when form_slug names a platform form, pull the live field schema
+  // from the public embed endpoint so the block never drifts from admin
+  // edits (the embed is already guest-scoped). props.fields is the fallback.
+  const apiBase = $derived(
+    props.submit_endpoint.replace(/\/forms\/[0-9a-f-]{36}\/submissions\/?$/i, '')
+  );
+
+  $effect(() => {
+    if (!props.form_slug || !apiBase) return;
+    let cancelled = false;
+    fetch(`${apiBase}/forms/${props.form_slug}/embed`)
+      .then((r) => r.json())
+      .then((p) => {
+        const fields = p?.data?.fields;
+        if (!cancelled && Array.isArray(fields) && fields.length) liveFields = fields;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // geo_countries suggest fields resolve their options client-side the same
+  // way the SSR renderers do — fetched once when a live field sources them.
+  $effect(() => {
+    if (!apiBase || !liveFields?.some((f) => f.options_source === 'geo_countries')) return;
+    let cancelled = false;
+    fetch(`${apiBase}/geo/countries`)
+      .then((r) => r.json())
+      .then((p) => {
+        if (!cancelled && Array.isArray(p?.data)) {
+          countries = p.data
+            .map((c: { name?: string }) => c?.name)
+            .filter((n: unknown): n is string => typeof n === 'string' && n.length > 0);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // Live schema wins; props.fields is the fallback when form_slug is unset
+  // or the embed fetch fails. Select options emit labels — the submissions
+  // endpoint normalizes labels to canonical values (CF3).
+  const renderFields = $derived<RenderField[]>(
+    liveFields
+      ? liveFields.map((f) => ({
+          name: f.key || f.label,
+          label: f.label,
+          type: f.type,
+          required: f.required ?? false,
+          placeholder: f.placeholder ?? undefined,
+          options_source: f.options_source,
+          options:
+            f.type === 'select'
+              ? (f.option_defs?.length ? f.option_defs.map((o) => o.label) : (f.options ?? []))
+              : f.options_source === 'geo_countries'
+                ? countries
+                : (f.options ?? [])
+        }))
+      : (props.fields ?? [])
+  );
 
   // §06 POST /forms/{id}/submissions expects the values under field_values;
   // other preset endpoints (newsletter/waitlist) take the bare map.
@@ -39,6 +128,9 @@
       submitting = false;
     }
   }
+
+  const inputCls =
+    'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none';
 </script>
 
 <section id={id} class="px-6 py-16">
@@ -55,19 +147,19 @@
         <p class="text-sm text-[var(--color-text-subtle)] mb-6">{props.subtitle}</p>
       {/if}
       <form onsubmit={handleSubmit} class="space-y-4">
-        {#each props.fields as field}
+        {#each renderFields as field}
           <div>
             <label for={field.name} class="block text-xs font-medium text-[var(--color-muted)] mb-1">
               {field.label}{#if field.required}<span class="text-[var(--color-error)]">*</span>{/if}
             </label>
-            {#if field.type === 'textarea'}
+            {#if field.type === 'textarea' || field.type === 'long_text'}
               <textarea
                 id={field.name}
                 name={field.name}
                 placeholder={field.placeholder ?? ''}
                 required={field.required}
                 bind:value={formData[field.name]}
-                class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+                class={inputCls}
                 rows="4"
               ></textarea>
             {:else if field.type === 'select'}
@@ -76,22 +168,96 @@
                 name={field.name}
                 required={field.required}
                 bind:value={formData[field.name]}
-                class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+                class={inputCls}
               >
                 <option value="">Select...</option>
                 {#each field.options ?? [] as opt}
                   <option value={opt}>{opt}</option>
                 {/each}
               </select>
+            {:else if field.type === 'multiselect'}
+              <div class="flex flex-col gap-1.5" role="group" aria-label={field.label}>
+                {#each field.options ?? [] as opt}
+                  <label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-[var(--color-border)]"
+                      checked={Array.isArray(formData[field.name]) && (formData[field.name] as string[]).includes(opt)}
+                      onchange={(e) => {
+                        const cur = Array.isArray(formData[field.name])
+                          ? (formData[field.name] as string[])
+                          : [];
+                        const next = e.currentTarget.checked
+                          ? [...cur, opt]
+                          : cur.filter((v) => v !== opt);
+                        formData = { ...formData, [field.name]: next };
+                      }}
+                    />
+                    {opt}
+                  </label>
+                {/each}
+              </div>
+            {:else if field.type === 'suggest'}
+              {#if field.options_source === 'geo_countries' && field.options?.length}
+                <select
+                  id={field.name}
+                  name={field.name}
+                  required={field.required}
+                  bind:value={formData[field.name]}
+                  class={inputCls}
+                >
+                  <option value="">Select...</option>
+                  {#each field.options as opt}
+                    <option value={opt}>{opt}</option>
+                  {/each}
+                </select>
+              {:else if field.options?.length}
+                <input
+                  id={field.name}
+                  name={field.name}
+                  list="dl-{field.name}"
+                  placeholder={field.placeholder ?? ''}
+                  required={field.required}
+                  bind:value={formData[field.name]}
+                  class={inputCls}
+                />
+                <datalist id="dl-{field.name}">
+                  {#each field.options as opt}
+                    <option value={opt}></option>
+                  {/each}
+                </datalist>
+              {:else}
+                <input
+                  type="text"
+                  id={field.name}
+                  name={field.name}
+                  placeholder={field.placeholder ?? ''}
+                  required={field.required}
+                  bind:value={formData[field.name]}
+                  class={inputCls}
+                />
+              {/if}
+            {:else if field.type === 'boolean' || field.type === 'checkbox'}
+              <label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                <input
+                  type="checkbox"
+                  id={field.name}
+                  required={field.required}
+                  checked={formData[field.name] === 'true'}
+                  onchange={(e) => (formData = { ...formData, [field.name]: e.currentTarget.checked ? 'true' : '' })}
+                  class="h-4 w-4 rounded border-[var(--color-border)]"
+                />
+                {field.placeholder ?? field.label}
+              </label>
             {:else}
               <input
-                type={field.type}
+                type={field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : 'text'}
                 id={field.name}
                 name={field.name}
                 placeholder={field.placeholder ?? ''}
                 required={field.required}
                 bind:value={formData[field.name]}
-                class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+                class={inputCls}
               />
             {/if}
           </div>

@@ -164,6 +164,37 @@
 								</label>
 							{/each}
 						</div>
+					{:else if field.type === 'suggest'}
+						<!-- §06 suggest: sourced fields resolve against their option
+							 feed (geo_countries → GET /geo/countries); static-list
+							 suggests keep free-text fallback via datalist, and a failed
+							 feed falls through to free text (server accepts any string). -->
+						{#if field.options_source === 'geo_countries' && (data.countries?.length ?? 0) > 0}
+							<AutocompleteSelect
+								id="field-{field.id}"
+								value={values[fieldKey(field)] ?? ''}
+								options={[
+									{ value: '', label: t('feedback.select_placeholder') },
+									...(data.countries ?? []).map((c) => ({ value: c.name, label: c.name }))
+								]}
+								onValueChange={(v) => (values = { ...values, [fieldKey(field)]: v })}
+							/>
+						{:else if optionChoices(field).length > 0}
+							<input id="field-{field.id}" list="dl-{field.id}" placeholder={field.placeholder ?? ''}
+								value={values[fieldKey(field)] ?? ''}
+								oninput={(e) => (values = { ...values, [fieldKey(field)]: e.currentTarget.value })}
+								class={inputClass(field)} />
+							<datalist id="dl-{field.id}">
+								{#each optionChoices(field) as opt}
+									<option value={opt.label}></option>
+								{/each}
+							</datalist>
+						{:else}
+							<input id="field-{field.id}" type="text" placeholder={field.placeholder ?? ''}
+								value={values[fieldKey(field)] ?? ''}
+								oninput={(e) => (values = { ...values, [fieldKey(field)]: e.currentTarget.value })}
+								class={inputClass(field)} />
+						{/if}
 					{:else if field.type === 'boolean' || field.type === 'checkbox'}
 						<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 							<input
