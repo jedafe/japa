@@ -340,6 +340,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- M7: the admin queue stamps the same §114 derived badge as the
@@ -390,64 +391,66 @@ type AdminListServiceListingsParams struct {
 }
 
 type AdminListServiceListingsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MetaID             pgtype.UUID        `json:"meta_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	ServiceCategory    string             `json:"service_category"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName      *string            `json:"dest_space_name"`
-	DestSpaceCode      *string            `json:"dest_space_code"`
-	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName      *string            `json:"city_space_name"`
-	CitySpaceCode      *string            `json:"city_space_code"`
-	OriginCommunities  []string           `json:"origin_communities"`
-	IsRemote           bool               `json:"is_remote"`
-	WebsiteUrl         *string            `json:"website_url"`
-	BookingUrl         *string            `json:"booking_url"`
-	PriceRange         *string            `json:"price_range"`
-	IsVerified         bool               `json:"is_verified"`
-	VerificationType   *string            `json:"verification_type"`
-	ClaimStatus        string             `json:"claim_status"`
-	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName     *string            `json:"claimed_org_name"`
-	VerifiedBy         pgtype.UUID        `json:"verified_by"`
-	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
-	ListingKind        string             `json:"listing_kind"`
-	PriceAmount        *int64             `json:"price_amount"`
-	PriceCurrency      *string            `json:"price_currency"`
-	PricePer           *string            `json:"price_per"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	Capacity           *int32             `json:"capacity"`
-	AvailableFrom      pgtype.Date        `json:"available_from"`
-	AvailableUntil     pgtype.Date        `json:"available_until"`
-	Faqs               []byte             `json:"faqs"`
-	Steps              []byte             `json:"steps"`
-	AuthorName         *string            `json:"author_name"`
-	AuthorAvatar       *string            `json:"author_avatar"`
-	AuthorCover        *string            `json:"author_cover"`
-	AuthorDisplayName  *string            `json:"author_display_name"`
-	IsMentor           *bool              `json:"is_mentor"`
-	MentorCapacity     *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount  *int16             `json:"active_mentee_count"`
-	MentorAreas        []string           `json:"mentor_areas"`
-	MentorSince        pgtype.Timestamptz `json:"mentor_since"`
-	HasCoupon          bool               `json:"has_coupon"`
-	RatingCount        *int32             `json:"rating_count"`
-	RatingAvg          pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	AuthorName             *string            `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	HasCoupon              bool               `json:"has_coupon"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Admin moderation list — same join, any status when not filtered,
@@ -522,6 +525,8 @@ func (q *Queries) AdminListServiceListings(ctx context.Context, arg AdminListSer
 			&i.AuthorAvatar,
 			&i.AuthorCover,
 			&i.AuthorDisplayName,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,
@@ -2243,6 +2248,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -2284,85 +2290,87 @@ LIMIT 1
 `
 
 type GetMentorshipListingByAuthorRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	MetaID                pgtype.UUID        `json:"meta_id"`
-	OrgID                 pgtype.UUID        `json:"org_id"`
-	OrgName               *string            `json:"org_name"`
-	OrgSlug               *string            `json:"org_slug"`
-	ServiceCategory       string             `json:"service_category"`
-	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName         *string            `json:"dest_space_name"`
-	DestSpaceCode         *string            `json:"dest_space_code"`
-	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName         *string            `json:"city_space_name"`
-	CitySpaceCode         *string            `json:"city_space_code"`
-	OriginCommunities     []string           `json:"origin_communities"`
-	IsRemote              bool               `json:"is_remote"`
-	WebsiteUrl            *string            `json:"website_url"`
-	BookingUrl            *string            `json:"booking_url"`
-	PriceRange            *string            `json:"price_range"`
-	IsVerified            bool               `json:"is_verified"`
-	VerificationType      *string            `json:"verification_type"`
-	ClaimStatus           string             `json:"claim_status"`
-	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName        *string            `json:"claimed_org_name"`
-	VerifiedBy            pgtype.UUID        `json:"verified_by"`
-	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
-	ListingKind           string             `json:"listing_kind"`
-	PriceAmount           *int64             `json:"price_amount"`
-	PriceCurrency         *string            `json:"price_currency"`
-	PricePer              *string            `json:"price_per"`
-	PurchaseMode          string             `json:"purchase_mode"`
-	Capacity              *int32             `json:"capacity"`
-	AvailableFrom         pgtype.Date        `json:"available_from"`
-	AvailableUntil        pgtype.Date        `json:"available_until"`
-	Faqs                  []byte             `json:"faqs"`
-	Steps                 []byte             `json:"steps"`
-	SellingPoints         []byte             `json:"selling_points"`
-	Facts                 []byte             `json:"facts"`
-	Highlights            []byte             `json:"highlights"`
-	Included              []byte             `json:"included"`
-	Audience              []byte             `json:"audience"`
-	AuthorName            string             `json:"author_name"`
-	AuthorAvatar          *string            `json:"author_avatar"`
-	AuthorCover           *string            `json:"author_cover"`
-	AuthorDisplayName     *string            `json:"author_display_name"`
-	IsMentor              *bool              `json:"is_mentor"`
-	MentorCapacity        *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
-	MentorAreas           []string           `json:"mentor_areas"`
-	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
-	Location              *string            `json:"location"`
-	MentorTitle           *string            `json:"mentor_title"`
-	MentorResponseTime    *string            `json:"mentor_response_time"`
-	MentorAvailability    *string            `json:"mentor_availability"`
-	MentorSessionType     *string            `json:"mentor_session_type"`
-	Profession            *string            `json:"profession"`
-	WebsiteUrl_2          *string            `json:"website_url_2"`
-	MentorLanguages       []string           `json:"mentor_languages"`
-	MentorSessionFormats  []string           `json:"mentor_session_formats"`
-	MentorCountries       []string           `json:"mentor_countries"`
-	MentorCredentials     []string           `json:"mentor_credentials"`
-	MentorYearsExperience *int16             `json:"mentor_years_experience"`
-	MentorSuccessLabel    *string            `json:"mentor_success_label"`
-	MenteesHelped         int32              `json:"mentees_helped"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	RatingCount           *int32             `json:"rating_count"`
-	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	SellingPoints          []byte             `json:"selling_points"`
+	Facts                  []byte             `json:"facts"`
+	Highlights             []byte             `json:"highlights"`
+	Included               []byte             `json:"included"`
+	Audience               []byte             `json:"audience"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	Location               *string            `json:"location"`
+	MentorTitle            *string            `json:"mentor_title"`
+	MentorResponseTime     *string            `json:"mentor_response_time"`
+	MentorAvailability     *string            `json:"mentor_availability"`
+	MentorSessionType      *string            `json:"mentor_session_type"`
+	Profession             *string            `json:"profession"`
+	WebsiteUrl_2           *string            `json:"website_url_2"`
+	MentorLanguages        []string           `json:"mentor_languages"`
+	MentorSessionFormats   []string           `json:"mentor_session_formats"`
+	MentorCountries        []string           `json:"mentor_countries"`
+	MentorCredentials      []string           `json:"mentor_credentials"`
+	MentorYearsExperience  *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel     *string            `json:"mentor_success_label"`
+	MenteesHelped          int32              `json:"mentees_helped"`
+	FeaturedStorageBucket  *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath    *string            `json:"featured_storage_path"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Mentor's shadow listing (000824): the listing_kind='mentorship' meta row
@@ -2438,6 +2446,8 @@ func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgt
 		&i.AuthorAvatar,
 		&i.AuthorCover,
 		&i.AuthorDisplayName,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -2813,6 +2823,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -2849,85 +2860,87 @@ LIMIT 1
 `
 
 type GetServiceListingByContentIDRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	MetaID                pgtype.UUID        `json:"meta_id"`
-	OrgID                 pgtype.UUID        `json:"org_id"`
-	OrgName               *string            `json:"org_name"`
-	OrgSlug               *string            `json:"org_slug"`
-	ServiceCategory       string             `json:"service_category"`
-	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName         *string            `json:"dest_space_name"`
-	DestSpaceCode         *string            `json:"dest_space_code"`
-	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName         *string            `json:"city_space_name"`
-	CitySpaceCode         *string            `json:"city_space_code"`
-	OriginCommunities     []string           `json:"origin_communities"`
-	IsRemote              bool               `json:"is_remote"`
-	WebsiteUrl            *string            `json:"website_url"`
-	BookingUrl            *string            `json:"booking_url"`
-	PriceRange            *string            `json:"price_range"`
-	IsVerified            bool               `json:"is_verified"`
-	VerificationType      *string            `json:"verification_type"`
-	ClaimStatus           string             `json:"claim_status"`
-	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName        *string            `json:"claimed_org_name"`
-	VerifiedBy            pgtype.UUID        `json:"verified_by"`
-	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
-	ListingKind           string             `json:"listing_kind"`
-	PriceAmount           *int64             `json:"price_amount"`
-	PriceCurrency         *string            `json:"price_currency"`
-	PricePer              *string            `json:"price_per"`
-	PurchaseMode          string             `json:"purchase_mode"`
-	Capacity              *int32             `json:"capacity"`
-	AvailableFrom         pgtype.Date        `json:"available_from"`
-	AvailableUntil        pgtype.Date        `json:"available_until"`
-	Faqs                  []byte             `json:"faqs"`
-	Steps                 []byte             `json:"steps"`
-	SellingPoints         []byte             `json:"selling_points"`
-	Facts                 []byte             `json:"facts"`
-	Highlights            []byte             `json:"highlights"`
-	Included              []byte             `json:"included"`
-	Audience              []byte             `json:"audience"`
-	AuthorName            string             `json:"author_name"`
-	AuthorAvatar          *string            `json:"author_avatar"`
-	AuthorCover           *string            `json:"author_cover"`
-	AuthorDisplayName     *string            `json:"author_display_name"`
-	IsMentor              *bool              `json:"is_mentor"`
-	MentorCapacity        *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
-	MentorAreas           []string           `json:"mentor_areas"`
-	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
-	Location              *string            `json:"location"`
-	MentorTitle           *string            `json:"mentor_title"`
-	MentorResponseTime    *string            `json:"mentor_response_time"`
-	MentorAvailability    *string            `json:"mentor_availability"`
-	MentorSessionType     *string            `json:"mentor_session_type"`
-	Profession            *string            `json:"profession"`
-	WebsiteUrl_2          *string            `json:"website_url_2"`
-	MentorLanguages       []string           `json:"mentor_languages"`
-	MentorSessionFormats  []string           `json:"mentor_session_formats"`
-	MentorCountries       []string           `json:"mentor_countries"`
-	MentorCredentials     []string           `json:"mentor_credentials"`
-	MentorYearsExperience *int16             `json:"mentor_years_experience"`
-	MentorSuccessLabel    *string            `json:"mentor_success_label"`
-	MenteesHelped         int32              `json:"mentees_helped"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	RatingCount           *int32             `json:"rating_count"`
-	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	SellingPoints          []byte             `json:"selling_points"`
+	Facts                  []byte             `json:"facts"`
+	Highlights             []byte             `json:"highlights"`
+	Included               []byte             `json:"included"`
+	Audience               []byte             `json:"audience"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	Location               *string            `json:"location"`
+	MentorTitle            *string            `json:"mentor_title"`
+	MentorResponseTime     *string            `json:"mentor_response_time"`
+	MentorAvailability     *string            `json:"mentor_availability"`
+	MentorSessionType      *string            `json:"mentor_session_type"`
+	Profession             *string            `json:"profession"`
+	WebsiteUrl_2           *string            `json:"website_url_2"`
+	MentorLanguages        []string           `json:"mentor_languages"`
+	MentorSessionFormats   []string           `json:"mentor_session_formats"`
+	MentorCountries        []string           `json:"mentor_countries"`
+	MentorCredentials      []string           `json:"mentor_credentials"`
+	MentorYearsExperience  *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel     *string            `json:"mentor_success_label"`
+	MenteesHelped          int32              `json:"mentees_helped"`
+	FeaturedStorageBucket  *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath    *string            `json:"featured_storage_path"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pgtype.UUID) (GetServiceListingByContentIDRow, error) {
@@ -2990,6 +3003,8 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.AuthorAvatar,
 		&i.AuthorCover,
 		&i.AuthorDisplayName,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -3040,6 +3055,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -3076,85 +3092,87 @@ LIMIT 1
 `
 
 type GetServiceListingBySlugRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	MetaID                pgtype.UUID        `json:"meta_id"`
-	OrgID                 pgtype.UUID        `json:"org_id"`
-	OrgName               *string            `json:"org_name"`
-	OrgSlug               *string            `json:"org_slug"`
-	ServiceCategory       string             `json:"service_category"`
-	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName         *string            `json:"dest_space_name"`
-	DestSpaceCode         *string            `json:"dest_space_code"`
-	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName         *string            `json:"city_space_name"`
-	CitySpaceCode         *string            `json:"city_space_code"`
-	OriginCommunities     []string           `json:"origin_communities"`
-	IsRemote              bool               `json:"is_remote"`
-	WebsiteUrl            *string            `json:"website_url"`
-	BookingUrl            *string            `json:"booking_url"`
-	PriceRange            *string            `json:"price_range"`
-	IsVerified            bool               `json:"is_verified"`
-	VerificationType      *string            `json:"verification_type"`
-	ClaimStatus           string             `json:"claim_status"`
-	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName        *string            `json:"claimed_org_name"`
-	VerifiedBy            pgtype.UUID        `json:"verified_by"`
-	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
-	ListingKind           string             `json:"listing_kind"`
-	PriceAmount           *int64             `json:"price_amount"`
-	PriceCurrency         *string            `json:"price_currency"`
-	PricePer              *string            `json:"price_per"`
-	PurchaseMode          string             `json:"purchase_mode"`
-	Capacity              *int32             `json:"capacity"`
-	AvailableFrom         pgtype.Date        `json:"available_from"`
-	AvailableUntil        pgtype.Date        `json:"available_until"`
-	Faqs                  []byte             `json:"faqs"`
-	Steps                 []byte             `json:"steps"`
-	SellingPoints         []byte             `json:"selling_points"`
-	Facts                 []byte             `json:"facts"`
-	Highlights            []byte             `json:"highlights"`
-	Included              []byte             `json:"included"`
-	Audience              []byte             `json:"audience"`
-	AuthorName            string             `json:"author_name"`
-	AuthorAvatar          *string            `json:"author_avatar"`
-	AuthorCover           *string            `json:"author_cover"`
-	AuthorDisplayName     *string            `json:"author_display_name"`
-	IsMentor              *bool              `json:"is_mentor"`
-	MentorCapacity        *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
-	MentorAreas           []string           `json:"mentor_areas"`
-	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
-	Location              *string            `json:"location"`
-	MentorTitle           *string            `json:"mentor_title"`
-	MentorResponseTime    *string            `json:"mentor_response_time"`
-	MentorAvailability    *string            `json:"mentor_availability"`
-	MentorSessionType     *string            `json:"mentor_session_type"`
-	Profession            *string            `json:"profession"`
-	WebsiteUrl_2          *string            `json:"website_url_2"`
-	MentorLanguages       []string           `json:"mentor_languages"`
-	MentorSessionFormats  []string           `json:"mentor_session_formats"`
-	MentorCountries       []string           `json:"mentor_countries"`
-	MentorCredentials     []string           `json:"mentor_credentials"`
-	MentorYearsExperience *int16             `json:"mentor_years_experience"`
-	MentorSuccessLabel    *string            `json:"mentor_success_label"`
-	MenteesHelped         int32              `json:"mentees_helped"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	RatingCount           *int32             `json:"rating_count"`
-	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	SellingPoints          []byte             `json:"selling_points"`
+	Facts                  []byte             `json:"facts"`
+	Highlights             []byte             `json:"highlights"`
+	Included               []byte             `json:"included"`
+	Audience               []byte             `json:"audience"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	Location               *string            `json:"location"`
+	MentorTitle            *string            `json:"mentor_title"`
+	MentorResponseTime     *string            `json:"mentor_response_time"`
+	MentorAvailability     *string            `json:"mentor_availability"`
+	MentorSessionType      *string            `json:"mentor_session_type"`
+	Profession             *string            `json:"profession"`
+	WebsiteUrl_2           *string            `json:"website_url_2"`
+	MentorLanguages        []string           `json:"mentor_languages"`
+	MentorSessionFormats   []string           `json:"mentor_session_formats"`
+	MentorCountries        []string           `json:"mentor_countries"`
+	MentorCredentials      []string           `json:"mentor_credentials"`
+	MentorYearsExperience  *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel     *string            `json:"mentor_success_label"`
+	MenteesHelped          int32              `json:"mentees_helped"`
+	FeaturedStorageBucket  *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath    *string            `json:"featured_storage_path"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 // ---------------------------------------------------------------------
@@ -3220,6 +3238,8 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.AuthorAvatar,
 		&i.AuthorCover,
 		&i.AuthorDisplayName,
+		&i.AuthorVerified,
+		&i.AuthorVerificationType,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -4594,6 +4614,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        COALESCE(
@@ -4732,68 +4753,70 @@ type ListServiceListingsParams struct {
 }
 
 type ListServiceListingsRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	MetaID                pgtype.UUID        `json:"meta_id"`
-	OrgID                 pgtype.UUID        `json:"org_id"`
-	OrgName               *string            `json:"org_name"`
-	OrgSlug               *string            `json:"org_slug"`
-	ServiceCategory       string             `json:"service_category"`
-	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName         *string            `json:"dest_space_name"`
-	DestSpaceCode         *string            `json:"dest_space_code"`
-	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName         *string            `json:"city_space_name"`
-	CitySpaceCode         *string            `json:"city_space_code"`
-	OriginCommunities     []string           `json:"origin_communities"`
-	IsRemote              bool               `json:"is_remote"`
-	WebsiteUrl            *string            `json:"website_url"`
-	BookingUrl            *string            `json:"booking_url"`
-	PriceRange            *string            `json:"price_range"`
-	IsVerified            bool               `json:"is_verified"`
-	VerificationType      *string            `json:"verification_type"`
-	ClaimStatus           string             `json:"claim_status"`
-	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName        *string            `json:"claimed_org_name"`
-	VerifiedBy            pgtype.UUID        `json:"verified_by"`
-	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
-	ListingKind           string             `json:"listing_kind"`
-	PriceAmount           *int64             `json:"price_amount"`
-	PriceCurrency         *string            `json:"price_currency"`
-	PricePer              *string            `json:"price_per"`
-	PurchaseMode          string             `json:"purchase_mode"`
-	Capacity              *int32             `json:"capacity"`
-	AvailableFrom         pgtype.Date        `json:"available_from"`
-	AvailableUntil        pgtype.Date        `json:"available_until"`
-	Faqs                  []byte             `json:"faqs"`
-	Steps                 []byte             `json:"steps"`
-	AuthorName            string             `json:"author_name"`
-	AuthorAvatar          *string            `json:"author_avatar"`
-	AuthorCover           *string            `json:"author_cover"`
-	AuthorDisplayName     *string            `json:"author_display_name"`
-	IsMentor              *bool              `json:"is_mentor"`
-	MentorCapacity        *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
-	MentorAreas           []string           `json:"mentor_areas"`
-	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
-	MinPrice              *int64             `json:"min_price"`
-	HasCoupon             bool               `json:"has_coupon"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	RatingCount           *int32             `json:"rating_count"`
-	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	MinPrice               *int64             `json:"min_price"`
+	HasCoupon              bool               `json:"has_coupon"`
+	FeaturedStorageBucket  *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath    *string            `json:"featured_storage_path"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Public filtered list. Optional filters are sqlc.narg — NULL means
@@ -4881,6 +4904,8 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.AuthorAvatar,
 			&i.AuthorCover,
 			&i.AuthorDisplayName,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,
@@ -4923,6 +4948,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        COALESCE(
@@ -4970,68 +4996,70 @@ type ListServiceListingsByOrgParams struct {
 }
 
 type ListServiceListingsByOrgRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int32              `json:"comment_count"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	MetaID                pgtype.UUID        `json:"meta_id"`
-	OrgID                 pgtype.UUID        `json:"org_id"`
-	OrgName               *string            `json:"org_name"`
-	OrgSlug               *string            `json:"org_slug"`
-	ServiceCategory       string             `json:"service_category"`
-	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName         *string            `json:"dest_space_name"`
-	DestSpaceCode         *string            `json:"dest_space_code"`
-	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName         *string            `json:"city_space_name"`
-	CitySpaceCode         *string            `json:"city_space_code"`
-	OriginCommunities     []string           `json:"origin_communities"`
-	IsRemote              bool               `json:"is_remote"`
-	WebsiteUrl            *string            `json:"website_url"`
-	BookingUrl            *string            `json:"booking_url"`
-	PriceRange            *string            `json:"price_range"`
-	IsVerified            bool               `json:"is_verified"`
-	VerificationType      *string            `json:"verification_type"`
-	ClaimStatus           string             `json:"claim_status"`
-	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName        *string            `json:"claimed_org_name"`
-	VerifiedBy            pgtype.UUID        `json:"verified_by"`
-	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
-	ListingKind           string             `json:"listing_kind"`
-	PriceAmount           *int64             `json:"price_amount"`
-	PriceCurrency         *string            `json:"price_currency"`
-	PricePer              *string            `json:"price_per"`
-	PurchaseMode          string             `json:"purchase_mode"`
-	Capacity              *int32             `json:"capacity"`
-	AvailableFrom         pgtype.Date        `json:"available_from"`
-	AvailableUntil        pgtype.Date        `json:"available_until"`
-	Faqs                  []byte             `json:"faqs"`
-	Steps                 []byte             `json:"steps"`
-	AuthorName            string             `json:"author_name"`
-	AuthorAvatar          *string            `json:"author_avatar"`
-	AuthorCover           *string            `json:"author_cover"`
-	AuthorDisplayName     *string            `json:"author_display_name"`
-	IsMentor              *bool              `json:"is_mentor"`
-	MentorCapacity        *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
-	MentorAreas           []string           `json:"mentor_areas"`
-	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
-	MinPrice              *int64             `json:"min_price"`
-	HasCoupon             bool               `json:"has_coupon"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	RatingCount           *int32             `json:"rating_count"`
-	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
+	ID                     pgtype.UUID        `json:"id"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Body                   string             `json:"body"`
+	BodyHtml               string             `json:"body_html"`
+	Status                 string             `json:"status"`
+	Visibility             string             `json:"visibility"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	PublishedAt            pgtype.Timestamptz `json:"published_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
+	MetaID                 pgtype.UUID        `json:"meta_id"`
+	OrgID                  pgtype.UUID        `json:"org_id"`
+	OrgName                *string            `json:"org_name"`
+	OrgSlug                *string            `json:"org_slug"`
+	ServiceCategory        string             `json:"service_category"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName          *string            `json:"dest_space_name"`
+	DestSpaceCode          *string            `json:"dest_space_code"`
+	CitySpaceID            pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName          *string            `json:"city_space_name"`
+	CitySpaceCode          *string            `json:"city_space_code"`
+	OriginCommunities      []string           `json:"origin_communities"`
+	IsRemote               bool               `json:"is_remote"`
+	WebsiteUrl             *string            `json:"website_url"`
+	BookingUrl             *string            `json:"booking_url"`
+	PriceRange             *string            `json:"price_range"`
+	IsVerified             bool               `json:"is_verified"`
+	VerificationType       *string            `json:"verification_type"`
+	ClaimStatus            string             `json:"claim_status"`
+	ClaimedByOrgID         pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName         *string            `json:"claimed_org_name"`
+	VerifiedBy             pgtype.UUID        `json:"verified_by"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	ListingKind            string             `json:"listing_kind"`
+	PriceAmount            *int64             `json:"price_amount"`
+	PriceCurrency          *string            `json:"price_currency"`
+	PricePer               *string            `json:"price_per"`
+	PurchaseMode           string             `json:"purchase_mode"`
+	Capacity               *int32             `json:"capacity"`
+	AvailableFrom          pgtype.Date        `json:"available_from"`
+	AvailableUntil         pgtype.Date        `json:"available_until"`
+	Faqs                   []byte             `json:"faqs"`
+	Steps                  []byte             `json:"steps"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatar           *string            `json:"author_avatar"`
+	AuthorCover            *string            `json:"author_cover"`
+	AuthorDisplayName      *string            `json:"author_display_name"`
+	AuthorVerified         *bool              `json:"author_verified"`
+	AuthorVerificationType *string            `json:"author_verification_type"`
+	IsMentor               *bool              `json:"is_mentor"`
+	MentorCapacity         *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount      *int16             `json:"active_mentee_count"`
+	MentorAreas            []string           `json:"mentor_areas"`
+	MentorSince            pgtype.Timestamptz `json:"mentor_since"`
+	MinPrice               *int64             `json:"min_price"`
+	HasCoupon              bool               `json:"has_coupon"`
+	FeaturedStorageBucket  *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath    *string            `json:"featured_storage_path"`
+	RatingCount            *int32             `json:"rating_count"`
+	RatingAvg              pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Org's listings. ?status= filters; the public /org/:org_id/packages
@@ -5103,6 +5131,8 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.AuthorAvatar,
 			&i.AuthorCover,
 			&i.AuthorDisplayName,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,

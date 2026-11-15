@@ -258,6 +258,8 @@ type ServiceRow struct {
 	// ListingKind == 'mentorship'; rowToDTO turns them into the mentor
 	// block on the listing payload.
 	AuthorDisplayName       *string
+	AuthorVerified          *bool
+	AuthorVerificationType  *string
 	MentorIsMentor          *bool
 	MentorCapacity          *int16
 	MentorActiveMenteeCount *int16
@@ -347,6 +349,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		AuthorVerified: r.AuthorVerified, AuthorVerificationType: r.AuthorVerificationType,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
@@ -383,6 +386,7 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		AuthorVerified: r.AuthorVerified, AuthorVerificationType: r.AuthorVerificationType,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
@@ -428,6 +432,7 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		AuthorVerified: r.AuthorVerified, AuthorVerificationType: r.AuthorVerificationType,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
@@ -469,6 +474,7 @@ func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		AuthorVerified: r.AuthorVerified, AuthorVerificationType: r.AuthorVerificationType,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
@@ -506,6 +512,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: strPtr(r.AuthorName), AuthorAvatar: r.AuthorAvatar, AuthorCover: r.AuthorCover,
 		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		AuthorVerified: r.AuthorVerified, AuthorVerificationType: r.AuthorVerificationType,
 		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
 		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,

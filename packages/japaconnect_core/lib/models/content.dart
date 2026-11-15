@@ -5,6 +5,8 @@ class Content {
   final String contentType;
   final String authorId;
   final String? authorName;
+  final bool authorVerified;
+  final String? authorVerificationType;
   final String? spaceId;
   final String? spaceName;
   final String? spaceSlug;
@@ -26,6 +28,8 @@ class Content {
     required this.contentType,
     required this.authorId,
     this.authorName,
+    this.authorVerified = false,
+    this.authorVerificationType,
     this.spaceId,
     this.spaceName,
     this.spaceSlug,
@@ -49,6 +53,8 @@ class Content {
       contentType: json['content_type'] as String,
       authorId: json['author_id'] as String,
       authorName: json['author_name'] as String?,
+      authorVerified: json['author_verified'] as bool? ?? false,
+      authorVerificationType: json['author_verification_type'] as String?,
       spaceId: json['space_id'] as String?,
       spaceName: json['space_name'] as String?,
       spaceSlug: json['space_slug'] as String?,
@@ -98,6 +104,9 @@ class Content {
         'content_type': contentType,
         'author_id': authorId,
         if (authorName != null) 'author_name': authorName,
+        'author_verified': authorVerified,
+        if (authorVerificationType != null)
+          'author_verification_type': authorVerificationType,
         if (spaceId != null) 'space_id': spaceId,
         if (spaceName != null) 'space_name': spaceName,
         if (spaceSlug != null) 'space_slug': spaceSlug,

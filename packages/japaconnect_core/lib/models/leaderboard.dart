@@ -31,12 +31,16 @@ class LeaderboardEntry {
   final String userId;
   final String username;
   final String? displayName;
+  final bool verified;
+  final String? verificationType;
   final int points;
 
   LeaderboardEntry({
     required this.userId,
     required this.username,
     this.displayName,
+    this.verified = false,
+    this.verificationType,
     required this.points,
   });
 
@@ -45,6 +49,8 @@ class LeaderboardEntry {
       userId: json['user_id'] as String? ?? json['id'] as String,
       username: json['username'] as String,
       displayName: json['display_name'] as String?,
+      verified: json['verified'] as bool? ?? false,
+      verificationType: json['verification_type'] as String?,
       points: json['points'] as int? ?? 0,
     );
   }
@@ -53,6 +59,8 @@ class LeaderboardEntry {
         'user_id': userId,
         'username': username,
         if (displayName != null) 'display_name': displayName,
+        'verified': verified,
+        if (verificationType != null) 'verification_type': verificationType,
         'points': points,
       };
 }

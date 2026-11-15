@@ -31,3 +31,14 @@ String? verificationBadgeUrl(
   if (type == null || type.isEmpty) return null;
   return badges.value?['$scope:$type']?.badgeUrl;
 }
+
+/// Resolves a badge's managed label for 'scope:type' — the accessibility
+/// label for badge artwork. Null when the type is unknown.
+String? verificationBadgeLabel(
+  AsyncValue<Map<String, VerificationType>> badges,
+  String scope,
+  String? type,
+) {
+  if (type == null || type.isEmpty) return null;
+  return badges.value?['$scope:$type']?.label;
+}

@@ -15,6 +15,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import { Modal } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { CheckCircle2, GraduationCap, Loader2, Send } from 'lucide-svelte';
@@ -232,6 +233,7 @@
 					class="block truncate text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
 				>
 					{mentorName}
+					<VerifiedBadge verified={mentor?.verified} type={mentor?.verification_type} scope="user" size={14} />
 				</a>
 				<p class="text-xs text-[var(--color-muted)]">
 					{t('mentors.request_body', 'Share your goals so your mentor can help you plan.')}

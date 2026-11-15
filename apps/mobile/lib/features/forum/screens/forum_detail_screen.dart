@@ -47,12 +47,44 @@ class _ThreadHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(tProvider);
+    final badges = ref.watch(verificationBadgesProvider);
     final service = ref.watch(forumServiceProvider);
+    final isAnon = thread.isAnonymous ?? false;
+    final authorName = isAnon
+        ? t('forum.anonymous')
+        : thread.authorDisplayName ?? thread.authorUsername;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (authorName != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      authorName,
+                      style: Theme.of(context).textTheme.labelSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (!isAnon && thread.authorVerified) ...[
+                    const SizedBox(width: 4),
+                    VerifiedBadge(
+                      verified: thread.authorVerified,
+                      badgeUrl: verificationBadgeUrl(
+                          badges, 'user', thread.authorVerificationType),
+                      label: verificationBadgeLabel(
+                          badges, 'user', thread.authorVerificationType),
+                      size: 14,
+                    ),
+                  ],
+                ],
+              ),
+            ),
           Text(thread.title, style: Theme.of(context).textTheme.titleMedium),
           if (thread.bodyText?.isNotEmpty ?? false)
             Padding(
@@ -136,6 +168,7 @@ class _ReplyTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(tProvider);
+    final badges = ref.watch(verificationBadgesProvider);
     final service = ref.watch(forumServiceProvider);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -144,11 +177,30 @@ class _ReplyTile extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              reply.isAnonymous
-                  ? t('forum.anonymous')
-                  : reply.authorDisplayName ?? reply.authorUsername ?? t('forum.member'),
-              style: Theme.of(context).textTheme.labelSmall,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    reply.isAnonymous
+                        ? t('forum.anonymous')
+                        : reply.authorDisplayName ?? reply.authorUsername ?? t('forum.member'),
+                    style: Theme.of(context).textTheme.labelSmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (!reply.isAnonymous && reply.authorVerified) ...[
+                  const SizedBox(width: 4),
+                  VerifiedBadge(
+                    verified: reply.authorVerified,
+                    badgeUrl: verificationBadgeUrl(
+                        badges, 'user', reply.authorVerificationType),
+                    label: verificationBadgeLabel(
+                        badges, 'user', reply.authorVerificationType),
+                    size: 14,
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 4),
             Text(reply.bodyText ?? ''),

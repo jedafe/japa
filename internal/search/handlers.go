@@ -68,6 +68,8 @@ var searchAttributesToRetrieve = []string{
 	"content_type", "slug", "avatar_url",
 	"username", "display_name", "name", "level",
 	"member_count", "content_count",
+	// §07: verified flag + managed badge type surface on user/org results.
+	"verified", "verification_type",
 	// §41: author_user_id feeds the post-cache mutual-block filter — it is
 	// fetched but never serialized (SearchResultItem.AuthorID is json:"-").
 	"author_user_id",
@@ -225,6 +227,9 @@ type SearchResultItem struct {
 	Level        string `json:"level,omitempty"`
 	MemberCount  *int32 `json:"member_count,omitempty"`
 	ContentCount *int32 `json:"content_count,omitempty"`
+	// §07 verification — populated on user/organization hits only.
+	Verified         bool   `json:"verified,omitempty"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // SearchResult represents a single search result. Per §54 the response shape
@@ -607,6 +612,8 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		item.Title = ""
 		item.Excerpt = ""
 		item.AuthorID = item.ID
+		item.Verified = boolField(hit, "verified")
+		item.VerificationType = stringField(hit, "verification_type")
 	case "space":
 		// Space documents store name in "title" for backward compatibility.
 		// §54 wants explicit name/level/member_count fields.
@@ -637,6 +644,8 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 			item.MemberCount = mc
 		}
 
+		item.Verified = boolField(hit, "verified")
+		item.VerificationType = stringField(hit, "verification_type")
 		item.Title = ""
 	case "course":
 		// indexTypeByUID maps the academy_tracks index to the "course"
@@ -668,6 +677,22 @@ func int32Field(hit Hit, key string) *int32 {
 	}
 
 	return &n
+}
+
+// boolField extracts a boolean value from a search hit by key. Returns
+// false when the field is absent or not a bool (unverified default).
+func boolField(hit Hit, key string) bool {
+	raw, ok := hit[key]
+	if !ok || len(raw) == 0 {
+		return false
+	}
+
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return false
+	}
+
+	return b
 }
 
 // groupResults groups flat search results by type, keeping at most
@@ -800,6 +825,9 @@ type AutocompleteSuggestion struct {
 	Name         string `json:"name,omitempty"`
 	MemberCount  *int32 `json:"member_count,omitempty"`
 	ContentCount *int32 `json:"content_count,omitempty"`
+	// §07 verification — populated on user/organization suggestions only.
+	Verified         bool   `json:"verified,omitempty"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // AutocompleteResponse is the API response for autocomplete.
@@ -1195,6 +1223,8 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 				s.Username = stringField(hit, "title")
 				s.DisplayName = stringField(hit, "excerpt")
 				s.AvatarURL = stringField(hit, "avatar_url")
+				s.Verified = boolField(hit, "verified")
+				s.VerificationType = stringField(hit, "verification_type")
 				// Canonical profile route is /u/{username} — rewrite stale
 				// /users/{username} index URLs so suggestions never 404.
 				if s.Username != "" {
@@ -1217,6 +1247,8 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 			case "organization":
 				s.Name = stringField(hit, "title")
 				s.Slug = stringField(hit, "slug")
+				s.Verified = boolField(hit, "verified")
+				s.VerificationType = stringField(hit, "verification_type")
 			case "course":
 				s.Title = stringField(hit, "title")
 				s.Slug = stringField(hit, "slug")

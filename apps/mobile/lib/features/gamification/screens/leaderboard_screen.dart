@@ -10,6 +10,7 @@ class LeaderboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(leaderboardProvider);
+    final badges = ref.watch(verificationBadgesProvider);
     final t = ref.watch(tProvider);
     return Scaffold(
       appBar: AppBar(title: Text(t('gamification.leaderboard'))),
@@ -19,7 +20,25 @@ class LeaderboardScreen extends ConsumerWidget {
           itemBuilder: (_, i) {
             final entry = leaderboard.entries[i];
             return ListTile(
-              title: Text(entry.username),
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(entry.username, overflow: TextOverflow.ellipsis),
+                  ),
+                  if (entry.verified) ...[
+                    const SizedBox(width: 4),
+                    VerifiedBadge(
+                      verified: entry.verified,
+                      badgeUrl: verificationBadgeUrl(
+                          badges, 'user', entry.verificationType),
+                      label: verificationBadgeLabel(
+                          badges, 'user', entry.verificationType),
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
               trailing: Text(entry.points.toString()),
             );
           },

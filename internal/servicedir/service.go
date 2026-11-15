@@ -176,6 +176,8 @@ type MentorDTO struct {
 	AvailableSlots    int32    `json:"available_slots"`
 	MentorSince       string   `json:"mentor_since,omitempty"`
 	IsMentor          bool     `json:"is_mentor"`
+	Verified          bool     `json:"verified,omitempty"`
+	VerificationType  string   `json:"verification_type,omitempty"`
 
 	// 000829 mentor card fields — the mentorship detail page's headline
 	// card, stats row, and "Mentorship details" sidebar. Populated by the
@@ -3472,6 +3474,14 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 	}
 	if r.MentorIsMentor != nil {
 		m.IsMentor = *r.MentorIsMentor
+	}
+
+	if r.AuthorVerified != nil {
+		m.Verified = *r.AuthorVerified
+	}
+
+	if r.AuthorVerificationType != nil {
+		m.VerificationType = *r.AuthorVerificationType
 	}
 
 	if r.MentorCapacity != nil {

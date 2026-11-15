@@ -10,6 +10,7 @@
 	import { api } from '#lib/api/client.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { PageData } from './$types';
 	import type { SearchResult } from '#lib/types/search.js';
 
@@ -200,6 +201,8 @@
 				slug={item.username}
 				name={item.display_name ?? item.username ?? item.name ?? title}
 				avatar={item.avatar_url}
+				verified={item.verified}
+				verificationType={item.verification_type}
 				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#snippet trigger()}
@@ -208,7 +211,7 @@
 							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
 						</div>
 					{/if}
-					<h3 class="font-medium text-[var(--color-text)]">{title}</h3>
+					<h3 class="flex items-center gap-1 font-medium text-[var(--color-text)]">{title}<VerifiedBadge verified={item.verified} type={item.verification_type} scope="user" size={15} /></h3>
 					{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
 				{/snippet}
 			</UserHoverCard>
@@ -218,6 +221,8 @@
 				id={item.id}
 				slug={item.slug ?? item.url?.split('/').filter(Boolean).pop()}
 				name={item.name ?? title}
+				verified={item.verified}
+				verificationType={item.verification_type}
 				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#snippet trigger()}
@@ -226,7 +231,7 @@
 							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
 						</div>
 					{/if}
-					<h3 class="font-medium text-[var(--color-text)]">{title}</h3>
+					<h3 class="flex items-center gap-1 font-medium text-[var(--color-text)]">{title}<VerifiedBadge verified={item.verified} type={item.verification_type} scope={hoverType === 'organization' ? 'organization' : 'user'} size={15} /></h3>
 					{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
 				{/snippet}
 			</EntityHoverChip>

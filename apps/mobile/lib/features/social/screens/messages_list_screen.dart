@@ -12,18 +12,43 @@ class MessagesListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(socialRealtimeSyncProvider); // keep realtime listener alive
     final state = ref.watch(conversationsProvider);
+    final badges = ref.watch(verificationBadgesProvider);
     final t = ref.watch(tProvider);
     return Scaffold(
       appBar: AppBar(title: Text(t('social.messages'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) => ListTile(
-            title: Text(items[i].title ??
-                items[i].withUser?.username ??
-                t('social.conversation')),
-            onTap: () => context.push('/messages/${items[i].id}'),
-          ),
+          itemBuilder: (_, i) {
+            final c = items[i];
+            final isOrg = c.conversationType == 'org';
+            final scope = isOrg ? 'organization' : 'user';
+            final name = c.title ??
+                c.otherDisplayName ??
+                c.otherUsername ??
+                c.withUser?.username ??
+                t('social.conversation');
+            return ListTile(
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text(name, overflow: TextOverflow.ellipsis)),
+                  if (c.otherVerified) ...[
+                    const SizedBox(width: 4),
+                    VerifiedBadge(
+                      verified: c.otherVerified,
+                      badgeUrl: verificationBadgeUrl(
+                          badges, scope, c.otherVerificationType),
+                      label: verificationBadgeLabel(
+                          badges, scope, c.otherVerificationType),
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
+              onTap: () => context.push('/messages/${c.id}'),
+            );
+          },
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

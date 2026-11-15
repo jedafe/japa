@@ -16,6 +16,8 @@ class ForumThread {
   final String? authorUsername;
   final String? authorDisplayName;
   final String? authorAvatarUrl;
+  final bool authorVerified;
+  final String? authorVerificationType;
   final String? spaceId;
   final String? spaceName;
   final bool? isAnonymous;
@@ -42,6 +44,8 @@ class ForumThread {
     this.authorUsername,
     this.authorDisplayName,
     this.authorAvatarUrl,
+    this.authorVerified = false,
+    this.authorVerificationType,
     this.spaceId,
     this.spaceName,
     this.isAnonymous,
@@ -71,6 +75,8 @@ class ForumThread {
       authorUsername: json['author_username'] as String?,
       authorDisplayName: json['author_display_name'] as String?,
       authorAvatarUrl: json['author_avatar_url'] as String?,
+      authorVerified: json['author_verified'] as bool? ?? false,
+      authorVerificationType: json['author_verification_type'] as String?,
       spaceId: json['space_id'] as String?,
       spaceName: json['space_name'] as String?,
       isAnonymous: json['is_anonymous'] as bool?,
@@ -110,6 +116,8 @@ class ForumThread {
         authorUsername: authorUsername,
         authorDisplayName: authorDisplayName,
         authorAvatarUrl: authorAvatarUrl,
+        authorVerified: authorVerified,
+        authorVerificationType: authorVerificationType,
         spaceId: spaceId,
         spaceName: spaceName,
         isAnonymous: isAnonymous,
@@ -142,6 +150,9 @@ class ForumThread {
         if (authorUsername != null) 'author_username': authorUsername,
         if (authorDisplayName != null) 'author_display_name': authorDisplayName,
         if (authorAvatarUrl != null) 'author_avatar_url': authorAvatarUrl,
+        'author_verified': authorVerified,
+        if (authorVerificationType != null)
+          'author_verification_type': authorVerificationType,
         if (spaceId != null) 'space_id': spaceId,
         if (spaceName != null) 'space_name': spaceName,
         if (replies != null) 'replies': replies!.map((e) => e.toJson()).toList(),
@@ -164,6 +175,8 @@ class ForumReply {
   final String? authorUsername;
   final String? authorDisplayName;
   final String? authorAvatarUrl;
+  final bool authorVerified;
+  final String? authorVerificationType;
   final bool? amaPending;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -182,6 +195,8 @@ class ForumReply {
     this.authorUsername,
     this.authorDisplayName,
     this.authorAvatarUrl,
+    this.authorVerified = false,
+    this.authorVerificationType,
     this.amaPending,
     this.createdAt,
     this.updatedAt,
@@ -203,6 +218,8 @@ class ForumReply {
       authorUsername: json['author_username'] as String?,
       authorDisplayName: json['author_display_name'] as String?,
       authorAvatarUrl: json['author_avatar_url'] as String?,
+      authorVerified: json['author_verified'] as bool? ?? false,
+      authorVerificationType: json['author_verification_type'] as String?,
       amaPending: json['ama_pending'] as bool?,
       createdAt: _parseDateTime(json['created_at']),
       updatedAt: _parseDateTime(json['updated_at']),
@@ -230,6 +247,9 @@ class ForumReply {
         if (authorUsername != null) 'author_username': authorUsername,
         if (authorDisplayName != null) 'author_display_name': authorDisplayName,
         if (authorAvatarUrl != null) 'author_avatar_url': authorAvatarUrl,
+        'author_verified': authorVerified,
+        if (authorVerificationType != null)
+          'author_verification_type': authorVerificationType,
         if (amaPending != null) 'ama_pending': amaPending,
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
         if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),

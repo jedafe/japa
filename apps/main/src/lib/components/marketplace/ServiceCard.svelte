@@ -144,6 +144,7 @@
 						>
 							{mentorName}
 						</span>
+						<VerifiedBadge verified={mentor?.verified} type={mentor?.verification_type} scope="user" size={14} />
 					{/if}
 				</div>
 			</div>

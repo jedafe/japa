@@ -19,6 +19,9 @@ export interface SearchResultItem {
 	level?: string;
 	member_count?: number;
 	content_count?: number;
+	/** §07 verification — populated on user/organization hits only. */
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 export interface SearchResult {
@@ -55,4 +58,7 @@ export interface AutocompleteSuggestion {
 	name?: string;
 	member_count?: number;
 	content_count?: number;
+	/** §07 verification — populated on user/organization suggestions only. */
+	verified?: boolean;
+	verification_type?: string | null;
 }

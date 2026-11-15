@@ -68,6 +68,7 @@ type PublicProfileDTO struct {
 	Profession    string   `json:"profession,omitempty"`
 	Interests     []string `json:"interests,omitempty"`
 	Verified      bool     `json:"verified"`
+	VerificationType string `json:"verification_type,omitempty"`
 	CoverURL      string   `json:"cover_url,omitempty"`
 	LastActiveAt  string   `json:"last_active_at,omitempty"`
 	UpdatedAt     string   `json:"updated_at,omitempty"`
@@ -723,6 +724,9 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 		UpdatedAt: formatTs(r.JapaStageUpdated),
 		Verified:  r.Verified,
 	}
+	if r.VerificationType != nil {
+		dto.VerificationType = *r.VerificationType
+	}
 	if r.Username != nil {
 		dto.Username = *r.Username
 	}
@@ -773,6 +777,9 @@ func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 		LastActiveAt: formatTs(r.LastActiveAt),
 		Verified:     r.Verified,
 		Interests:    r.Interests,
+	}
+	if r.VerificationType != nil {
+		dto.VerificationType = *r.VerificationType
 	}
 	if r.Username != nil {
 		dto.Username = *r.Username

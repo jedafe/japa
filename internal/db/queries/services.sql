@@ -105,6 +105,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -161,6 +162,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -225,6 +227,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- 000829 mentor card fields — headline card, stats row, and the
@@ -375,6 +378,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        COALESCE(
@@ -531,6 +535,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        -- M7: the admin queue stamps the same §114 derived badge as the
@@ -603,6 +608,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
        COALESCE(

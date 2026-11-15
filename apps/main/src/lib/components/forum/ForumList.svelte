@@ -119,6 +119,8 @@
 				: thread.author_display_name || thread.author_username || t('forum.member', 'Member'),
 			author_username: thread.author_username,
 			author_avatar_url: thread.author_avatar_url,
+			author_verified: thread.author_verified,
+			author_verification_type: thread.author_verification_type,
 			space_id: thread.space_id,
 			space_name: thread.space_name,
 			space_slug: thread.space_slug,

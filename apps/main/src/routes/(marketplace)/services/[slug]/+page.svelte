@@ -1037,6 +1037,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 										avatar={mentor.avatar_url ?? null}
 										variant="row"
 										secondary={mentor.title ?? undefined}
+										verified={mentor.verified}
+										verificationType={mentor.verification_type}
 										class="flex items-center gap-3"
 									>
 										{#snippet trigger()}
@@ -1058,7 +1060,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 													class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
 												>
 													{mentorName}
-													<VerifiedBadge verified={service.is_verified} type={service.verification_type} scope="service_listing" size={15} />
+													<VerifiedBadge verified={mentor.verified} type={mentor.verification_type} scope="user" size={15} />
 												</span>
 												{#if mentor.title}
 													<span class="block truncate text-xs text-[var(--color-muted)]"
@@ -1096,7 +1098,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 											class="flex items-center gap-1 truncate text-sm font-bold text-[var(--color-text)]"
 										>
 											{mentorName}
-											<VerifiedBadge verified={service.is_verified} type={service.verification_type} scope="service_listing" size={15} />
+											<VerifiedBadge verified={mentor.verified} type={mentor.verification_type} scope="user" size={15} />
 										</p>
 										{#if mentor.title}
 											<p class="truncate text-xs text-[var(--color-muted)]">{mentor.title}</p>

@@ -50,6 +50,7 @@ type ProfileRow struct {
 	JapaStageHistory  []byte // raw jsonb
 	JapaStageUpdated  pgtype.Timestamptz
 	Verified          bool
+	VerificationType  *string
 }
 
 // DirectoryRow is the trimmed shape returned by ListByStage (public directory).
@@ -71,6 +72,7 @@ type DirectoryRow struct {
 	Profession        *string
 	Interests         []string
 	Verified          bool
+	VerificationType  *string
 	CoverURL          *string
 	LastActiveAt      pgtype.Timestamptz
 	AvatarMediaBucket *string
@@ -85,7 +87,7 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at,
-       u.verified
+       u.verified, u.verification_type
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
@@ -100,7 +102,7 @@ LIMIT 1
 		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
-		&r.Verified,
+		&r.Verified, &r.VerificationType,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -121,7 +123,7 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at,
-       u.verified
+       u.verified, u.verification_type
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
@@ -136,7 +138,7 @@ LIMIT 1
 		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
-		&r.Verified,
+		&r.Verified, &r.VerificationType,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -460,7 +462,7 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_updated_at,
-       up.bio, up.profession, up.interests, u.verified, up.cover_url,
+       up.bio, up.profession, up.interests, u.verified, u.verification_type, up.cover_url,
        CASE WHEN COALESCE(ups.show_online_status, true) THEN u.last_login_at END AS last_active_at,
        am.storage_bucket AS avatar_media_bucket, am.storage_path AS avatar_media_path
 FROM user_profiles up
@@ -600,7 +602,7 @@ func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 			&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 			&r.JapaStageDestName, &r.JapaStageDestCode,
 			&r.JapaStageUpdated,
-			&r.Bio, &r.Profession, &r.Interests, &r.Verified, &r.CoverURL,
+			&r.Bio, &r.Profession, &r.Interests, &r.Verified, &r.VerificationType, &r.CoverURL,
 			&r.LastActiveAt, &r.AvatarMediaBucket, &r.AvatarMediaPath,
 		); err != nil {
 			return nil, fmt.Errorf("japastage: scan directory row: %w", err)
