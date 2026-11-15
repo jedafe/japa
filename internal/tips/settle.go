@@ -187,7 +187,10 @@ func (s *Store) settleFiatTip(ctx context.Context, tipID pgtype.UUID, netCredits
 
 	qtx := ledger.New(s.write.WithTx(tx))
 
-	tip, err := qtx.GetTip(ctx, tipID)
+	// FOR UPDATE — the row stays locked until commit so a concurrent refund's
+	// UPDATE can't slip between this read and SettleTip and leave a ledger
+	// credit committed on a refunded tip.
+	tip, err := qtx.GetTipForUpdate(ctx, tipID)
 	if err != nil {
 		return err
 	}
@@ -243,7 +246,9 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 
 	qtx := ledger.New(s.write.WithTx(tx))
 
-	tip, err := qtx.GetTip(ctx, tipID)
+	// FOR UPDATE — same race as settleFiatTip: the status check and the
+	// refund flip must observe one serialized version of the row.
+	tip, err := qtx.GetTipForUpdate(ctx, tipID)
 	if err != nil {
 		return err
 	}

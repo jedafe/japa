@@ -621,6 +621,44 @@ func (q *Queries) GetTipExternalLinkByID(ctx context.Context, id pgtype.UUID) (T
 	return i, err
 }
 
+const getTipForUpdate = `-- name: GetTipForUpdate :one
+SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id FROM tips WHERE id = $1 FOR UPDATE
+`
+
+// Row lock for settlement/clawback txs: a concurrent refund's UPDATE blocks
+// until this tx commits, so a stale 'pending' read can never let a ledger
+// insert commit alongside a 'refunded' status flip.
+func (q *Queries) GetTipForUpdate(ctx context.Context, id pgtype.UUID) (Tip, error) {
+	row := q.db.QueryRow(ctx, getTipForUpdate, id)
+	var i Tip
+	err := row.Scan(
+		&i.ID,
+		&i.SenderUserID,
+		&i.ExternalSenderName,
+		&i.RecipientType,
+		&i.RecipientUserID,
+		&i.RecipientOrganizationID,
+		&i.ContentID,
+		&i.Method,
+		&i.CreditsAmount,
+		&i.FiatAmount,
+		&i.FiatCurrency,
+		&i.FeeAmount,
+		&i.NetCredits,
+		&i.PaymentID,
+		&i.OcContributionID,
+		&i.Message,
+		&i.IsAnonymous,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CheckoutUrl,
+		&i.RecipientSpaceID,
+	)
+	return i, err
+}
+
 const getTipSettings = `-- name: GetTipSettings :one
 SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE owner_type = $1 AND owner_id = $2
 `
@@ -1232,6 +1270,22 @@ func (q *Queries) ListTipsSent(ctx context.Context, arg ListTipsSentParams) ([]T
 		return nil, err
 	}
 	return items, nil
+}
+
+const refundPendingTip = `-- name: RefundPendingTip :execrows
+UPDATE tips SET status = 'refunded', updated_at = now()
+WHERE id = $1 AND status = 'pending'
+`
+
+// Conditional pending→refunded flip: a refund that raced a settlement and
+// saw stale 'pending' must not overwrite 'completed' — 0 rows means the tip
+// moved and the caller re-dispatches on the real status.
+func (q *Queries) RefundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, refundPendingTip, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setBMCCredentials = `-- name: SetBMCCredentials :exec

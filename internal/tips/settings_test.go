@@ -147,6 +147,9 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 	return gen.Tip{Method: p.Method, Status: p.Status}, nil
 }
 func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error { return nil }
+func (f *fakeStore) refundPendingTip(context.Context, pgtype.UUID) (int64, error) {
+	return 1, nil
+}
 func (f *fakeStore) settleTip(context.Context, pgtype.UUID, int64) error        { return nil }
 func (f *fakeStore) attachTipPayment(context.Context, pgtype.UUID, pgtype.UUID, string) error {
 	return nil

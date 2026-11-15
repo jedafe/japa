@@ -40,6 +40,7 @@ type tipStore interface {
 	getTipByOCContributionID(ctx context.Context, ocID string) (gen.Tip, error)
 	insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error)
 	updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error
+	refundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error)
 	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error
 	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error
 	// failTip marks a pending tip failed and releases its idempotency key.
@@ -249,6 +250,13 @@ func (s *Store) insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, 
 
 func (s *Store) updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error {
 	return s.write.UpdateTipStatus(ctx, gen.UpdateTipStatusParams{ID: id, Status: status})
+}
+
+// refundPendingTip flips pending→refunded atomically and reports rows
+// affected — 0 means the tip moved on (settled/refunded) and the caller
+// re-dispatches on the real status instead of overwriting it.
+func (s *Store) refundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error) {
+	return s.write.RefundPendingTip(ctx, id)
 }
 
 func (s *Store) attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error {

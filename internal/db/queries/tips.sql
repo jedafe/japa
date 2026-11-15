@@ -83,6 +83,19 @@ RETURNING *;
 -- name: GetTip :one
 SELECT * FROM tips WHERE id = @id;
 
+-- name: GetTipForUpdate :one
+-- Row lock for settlement/clawback txs: a concurrent refund's UPDATE blocks
+-- until this tx commits, so a stale 'pending' read can never let a ledger
+-- insert commit alongside a 'refunded' status flip.
+SELECT * FROM tips WHERE id = @id FOR UPDATE;
+
+-- name: RefundPendingTip :execrows
+-- Conditional pending→refunded flip: a refund that raced a settlement and
+-- saw stale 'pending' must not overwrite 'completed' — 0 rows means the tip
+-- moved and the caller re-dispatches on the real status.
+UPDATE tips SET status = 'refunded', updated_at = now()
+WHERE id = @id AND status = 'pending';
+
 -- name: GetTipByPaymentID :one
 SELECT * FROM tips WHERE payment_id = @payment_id;
 
