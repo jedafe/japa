@@ -603,6 +603,16 @@ func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+	// Only contribution-received events may import: order-shaped activity
+	// payloads on non-contribution events (comments, member joins, etc.) must
+	// not create tip rows. The poller remains authoritative — an unknown
+	// future event type is picked up by the next sync cycle instead.
+	switch payload.Type {
+	case "order.processed", "order.thankyou", "order.created":
+	default:
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if payload.Data.Order.ID == "" {
 		w.WriteHeader(http.StatusNoContent) // non-contribution event — nothing to import
 		return
@@ -1272,9 +1282,10 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent) // non-donation event — nothing to import
 		return
 	}
-	var cents int64
-	if f, ferr := strconv.ParseFloat(d.Amount, 64); ferr == nil {
-		cents = int64(math.Round(f * 100))
+	cents, err := kofiAmountToMinor(d.Amount, d.Currency)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid Ko-fi amount")
+		return
 	}
 	if err := h.service.ImportKofiWebhook(r.Context(), secret, d.VerificationToken, OCContribution{
 		ID:          "kofi:" + d.MessageID,
@@ -1291,6 +1302,17 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// kofiAmountToMinor converts Ko-fi's major-unit amount string to the
+// currency's minor units using the ISO-4217 exponent (currencyExponent) —
+// a fixed ×100 would inflate JPY-type donations 100×.
+func kofiAmountToMinor(amount, currency string) (int64, error) {
+	f, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(math.Round(f * math.Pow(10, float64(currencyExponent(currency))))), nil
 }
 
 // ProductDomains handles GET /api/v1/tips/product-domains — public list of

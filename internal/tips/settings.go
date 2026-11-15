@@ -183,6 +183,15 @@ func (s *Service) UpdateSettingsFor(ctx context.Context, owner Owner, actorID pg
 			return Settings{}, err
 		}
 	}
+	// A non-empty collective slug via the generic PUT is a slug-only OC
+	// connect — the same paying-tier gate as ConnectOC applies, otherwise
+	// the external-eligibility check there is bypassable. Clearing ('' or
+	// nil) stays free. The platform row is tips.moderate-administered.
+	if owner.Type != RecipientPlatform && in.OCCollectiveSlug != nil && *in.OCCollectiveSlug != "" {
+		if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
+			return Settings{}, err
+		}
+	}
 	return s.UpsertSettings(ctx, owner, in)
 }
 

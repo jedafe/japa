@@ -195,12 +195,25 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 // and imports the contribution. Returns ErrNotFound for an unknown secret so
 // the handler can 401; duplicate imports are idempotent (the UNIQUE index on
 // oc_contribution_id also catches replays).
+//
+// Token-connected owners trigger a targeted syncCollective rather than
+// importing the payload directly: the poller dedupes on OC transaction.id
+// while the webhook carries order.id — importing both namespaces would
+// double-count the same donation. Slug-only owners have no poller, so the
+// webhook payload is imported directly (order.id is the only source).
 func (s *Service) ImportOCWebhook(ctx context.Context, secret string, c OCContribution) error {
 	row, err := s.store.getSettingsByOCWebhookSecret(ctx, secret)
 	if err != nil {
 		return err // ErrNotFound → 401 at the handler
 	}
 	owner := Owner{Type: row.OwnerType, ID: row.OwnerID}
+	if s.oc != nil && row.OcCollectiveSlug != nil && row.OcApiTokenEncrypted != nil && *row.OcApiTokenEncrypted != "" {
+		token, err := crypto.Decrypt(*row.OcApiTokenEncrypted)
+		if err != nil {
+			return fmt.Errorf("decrypting OC token: %w", err)
+		}
+		return s.syncCollective(ctx, owner, *row.OcCollectiveSlug, token)
+	}
 	_, err = s.ImportContribution(ctx, owner, c)
 	return err
 }

@@ -286,13 +286,15 @@ func (s *Service) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID, noti
 	return notify.CreateNotification(ctx, recipient, "tip.received", "user", actorID, "tip", tip.ID, title, body, actionURL)
 }
 
-// tipDisplayAmount renders a human amount for notifications.
+// tipDisplayAmount renders a human amount for notifications — minor units
+// are converted with the ISO-4217 exponent (JPY has no cents).
 func tipDisplayAmount(tip gen.Tip) string {
 	switch {
 	case tip.Method == MethodCredits:
 		return fmt.Sprintf("%d credits", tip.CreditsAmount)
 	case tip.FiatAmount != nil && tip.FiatCurrency != nil:
-		return fmt.Sprintf("%.2f %s", float64(*tip.FiatAmount)/100.0, *tip.FiatCurrency)
+		exp := currencyExponent(*tip.FiatCurrency)
+		return fmt.Sprintf("%.*f %s", exp, float64(*tip.FiatAmount)/math.Pow(10, float64(exp)), *tip.FiatCurrency)
 	default:
 		return "a tip"
 	}

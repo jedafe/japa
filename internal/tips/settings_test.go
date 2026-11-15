@@ -31,6 +31,8 @@ type fakeStore struct {
 	spaceRecipient pgtype.UUID
 	kofiSecret     string
 	kofiOwner      Owner
+	ocSecretRow    gen.TipSetting
+	ocSecretOK     bool
 	getCalls       int
 	upsertParams   gen.UpsertTipSettingsParams
 }
@@ -97,6 +99,9 @@ func (f *fakeStore) upsertSettings(_ context.Context, p gen.UpsertTipSettingsPar
 }
 
 func (f *fakeStore) getSettingsByOCWebhookSecret(context.Context, string) (gen.TipSetting, error) {
+	if f.ocSecretOK {
+		return f.ocSecretRow, nil
+	}
 	return gen.TipSetting{}, ErrNotFound
 }
 func (f *fakeStore) setOCCredentials(context.Context, gen.SetOCCredentialsParams) error { return nil }
