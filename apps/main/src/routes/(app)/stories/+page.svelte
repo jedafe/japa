@@ -102,6 +102,10 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	);
 
 	let filtersModalOpen = $state(false);
+	// A modal left open across a switch to a tab without filters must not linger.
+	$effect(() => {
+		if (data.tab === 'featured' || data.tab === 'series') filtersModalOpen = false;
+	});
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'top', label: t('stories.sort_top', 'Top') },

@@ -148,6 +148,10 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	const hasActiveFilters = $derived(!!data.category);
 
 	let filtersModalOpen = $state(false);
+	// A modal left open across a switch to a tab without filters must not linger.
+	$effect(() => {
+		if (!categoryFilterApplies) filtersModalOpen = false;
+	});
 
 	// Roadmap tab: group guides by journey_stage in the canonical §87 japa
 	// stage order; guides without a stage land in a trailing "General" group.

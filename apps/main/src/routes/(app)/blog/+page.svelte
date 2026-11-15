@@ -42,6 +42,10 @@
 	let filterAuthorId = $state('');
 	let filterSeriesId = $state('');
 	let filtersModalOpen = $state(false);
+	// A modal left open across a switch to a tab without filters must not linger.
+	$effect(() => {
+		if (data.tab !== 'latest' && data.tab !== 'top') filtersModalOpen = false;
+	});
 
 	// Sync local filter state with the URL-driven server data on navigation.
 	$effect(() => {

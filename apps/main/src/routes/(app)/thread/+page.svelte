@@ -151,6 +151,10 @@
 	);
 
 	let filtersModalOpen = $state(false);
+	// A modal left open across a switch to featured sort (no filters there) must not linger.
+	$effect(() => {
+		if (data.sort === 'featured') filtersModalOpen = false;
+	});
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title} {canonical} {robots} />
