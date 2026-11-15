@@ -5,10 +5,10 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
-	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '#lib/components/ui/index.js';
+	import { EmptyState, UrlTabs, type UrlTab, PaginationControls, Modal } from '#lib/components/ui/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
-	import { UsersRound, Plus, Search, Volume2 } from 'lucide-svelte';
+	import { UsersRound, Plus, Search, Volume2, Filter } from 'lucide-svelte';
 	import type { MeSpace } from '#lib/types/index.js';
 
 	let { data } = $props();
@@ -22,6 +22,13 @@
 	const spaceTypeFilter = $derived(data.spaceType ?? '');
 	// level + space_type filters only apply to the joined/muted endpoints.
 	const showSpaceFilters = $derived(tab === 'joined' || tab === 'muted');
+	const hasActiveFilters = $derived(!!levelFilter || !!spaceTypeFilter);
+
+	let filtersModalOpen = $state(false);
+	// A modal left open across a switch to a tab without filters must not linger.
+	$effect(() => {
+		if (!showSpaceFilters) filtersModalOpen = false;
+	});
 
 	const spaceLevelOptions = $derived([
 		{ value: '', label: t('spaces.all_levels', 'All levels') },
@@ -135,26 +142,17 @@
 		<UrlTabs {tabs} value={tab} onValueChange={(v) => changeTab(v)} />
 		<div class="flex flex-wrap items-center gap-2">
 			{#if showSpaceFilters}
-				<AutocompleteSelect
-					class="w-44"
-					value={spaceTypeFilter}
-					options={[
-						{
-							value: '',
-							label: t('spaces.all_types', 'All types')
-						},
-						...spaceTypes.map((st) => ({ value: st.id, label: st.name }))
-					]}
-					ariaLabel={t('spaces.filter_type', 'Space type')}
-					onValueChange={(v) => goto(buildURL({ space_type: v || null, page: null }))}
-				/>
-				<AutocompleteSelect
-					class="w-36"
-					value={levelFilter}
-					options={spaceLevelOptions}
-					ariaLabel={t('spaces.filter_level', 'Space level')}
-					onValueChange={(v) => goto(buildURL({ level: v || null, page: null }))}
-				/>
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
 			{/if}
 			<AutocompleteSelect
 				class="w-20"
@@ -180,6 +178,35 @@
 			</div>
 		</div>
 	</header>
+
+	{#if showSpaceFilters}
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+			{#snippet children()}
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<AutocompleteSelect
+						class="w-full"
+						value={spaceTypeFilter}
+						options={[
+							{
+								value: '',
+								label: t('spaces.all_types', 'All types')
+							},
+							...spaceTypes.map((st) => ({ value: st.id, label: st.name }))
+						]}
+						ariaLabel={t('spaces.filter_type', 'Space type')}
+						onValueChange={(v) => goto(buildURL({ space_type: v || null, page: null }))}
+					/>
+					<AutocompleteSelect
+						class="w-full"
+						value={levelFilter}
+						options={spaceLevelOptions}
+						ariaLabel={t('spaces.filter_level', 'Space level')}
+						onValueChange={(v) => goto(buildURL({ level: v || null, page: null }))}
+					/>
+				</div>
+			{/snippet}
+		</Modal>
+	{/if}
 
 	{#if spaces.length === 0}
 		<EmptyState

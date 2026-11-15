@@ -8,9 +8,10 @@
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
 	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
-	import { Ticket, Plus, Scale } from 'lucide-svelte';
+	import { Ticket, Plus, Scale, Filter } from 'lucide-svelte';
 	import { ticketHref, ticketRef } from '#lib/tickets.js';
 	import type { TicketPriority, TicketStatus } from '#lib/types/index.js';
 
@@ -21,6 +22,8 @@
 	const pageSize = $derived(data.pageSize);
 	const hasMore = $derived(data.hasMore);
 	const showPagination = $derived(pageNum > 1 || hasMore);
+	const hasActiveFilters = $derived(!!statusFilter);
+	let filtersModalOpen = $state(false);
 
 	const STATUS_KEY: Record<TicketStatus, string> = {
 		open: 'tickets.status.open',
@@ -95,13 +98,17 @@
 	<header class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('tickets.list_title')}</h1>
 		<div class="flex flex-wrap items-center gap-2">
-			<AutocompleteSelect
-				class="w-44"
-				value={statusFilter}
-				options={statusOptions}
-				ariaLabel={t('tickets.filter_status', 'Filter by status')}
-				onValueChange={changeStatus}
-			/>
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
 			<AutocompleteSelect
 				class="w-20"
 				value={String(pageSize)}
@@ -125,6 +132,18 @@
 			</a>
 		</div>
 	</header>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<AutocompleteSelect
+				class="w-full"
+				value={statusFilter}
+				options={statusOptions}
+				ariaLabel={t('tickets.filter_status', 'Filter by status')}
+				onValueChange={changeStatus}
+			/>
+		{/snippet}
+	</Modal>
 
 	{#if tickets.length === 0}
 		<EmptyState

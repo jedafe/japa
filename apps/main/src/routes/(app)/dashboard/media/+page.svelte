@@ -27,7 +27,8 @@
 		List,
 		Eye,
 		Maximize2,
-		AlertTriangle
+		AlertTriangle,
+		Filter
 	} from 'lucide-svelte';
 	import { openLightbox } from '#lib/lightbox.svelte.js';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
@@ -59,6 +60,8 @@
 	let statusFilter = $state<StatusFilter>('');
 	let flaggedOnly = $state(false);
 	let missingOnly = $state(false);
+	let filtersModalOpen = $state(false);
+	const hasActiveFilters = $derived(!!typeFilter || !!statusFilter || flaggedOnly || missingOnly);
 	let search = $state('');
 	let viewMode = $state<ViewMode>('grid');
 	let loading = $state(false);
@@ -416,51 +419,69 @@
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
 			/>
 		</div>
-		<div class="w-40">
-			<AutocompleteSelect
-				value={typeFilter}
-				options={typeOptions}
-				ariaLabel={t('media.library.filter_type')}
-				onValueChange={onTypeChange}
-			/>
-		</div>
-		<div class="w-44">
-			<AutocompleteSelect
-				value={statusFilter}
-				options={statusOptions}
-				ariaLabel={t('media.library.status', 'Status')}
-				onValueChange={onStatusChange}
-			/>
-		</div>
 		<button
 			type="button"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors"
-			class:border-[var(--color-border)]={!flaggedOnly}
-			class:bg-[var(--color-surface)]={!flaggedOnly}
-			class:text-[var(--color-muted)]={!flaggedOnly}
-			class:border-[var(--destructive,#dc2626)]={flaggedOnly}
-			class:text-[var(--destructive,#dc2626)]={flaggedOnly}
-			class:bg-red-50={flaggedOnly}
-			onclick={onFlaggedToggle}
+			onclick={() => (filtersModalOpen = true)}
+			class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
-			<AlertTriangle size={14} />
-			{t('media.library.flagged_only', 'Flagged only')}
-		</button>
-		<button
-			type="button"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors"
-			class:border-[var(--color-border)]={!missingOnly}
-			class:bg-[var(--color-surface)]={!missingOnly}
-			class:text-[var(--color-muted)]={!missingOnly}
-			class:border-[var(--destructive,#dc2626)]={missingOnly}
-			class:text-[var(--destructive,#dc2626)]={missingOnly}
-			class:bg-red-50={missingOnly}
-			onclick={onMissingToggle}
-		>
-			<ImageIcon size={14} />
-			{t('media.library.missing_only', 'Missing objects')}
+			{t('common.filters', 'Filters')}
+			{#if hasActiveFilters}
+				<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+			{/if}
+			<Filter size={16} />
 		</button>
 	</div>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<AutocompleteSelect
+					class="w-full"
+					value={typeFilter}
+					options={typeOptions}
+					ariaLabel={t('media.library.filter_type')}
+					onValueChange={onTypeChange}
+				/>
+				<AutocompleteSelect
+					class="w-full"
+					value={statusFilter}
+					options={statusOptions}
+					ariaLabel={t('media.library.status', 'Status')}
+					onValueChange={onStatusChange}
+				/>
+			</div>
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors"
+					class:border-[var(--color-border)]={!flaggedOnly}
+					class:bg-[var(--color-surface)]={!flaggedOnly}
+					class:text-[var(--color-muted)]={!flaggedOnly}
+					class:border-[var(--destructive,#dc2626)]={flaggedOnly}
+					class:text-[var(--destructive,#dc2626)]={flaggedOnly}
+					class:bg-red-50={flaggedOnly}
+					onclick={onFlaggedToggle}
+				>
+					<AlertTriangle size={14} />
+					{t('media.library.flagged_only', 'Flagged only')}
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors"
+					class:border-[var(--color-border)]={!missingOnly}
+					class:bg-[var(--color-surface)]={!missingOnly}
+					class:text-[var(--color-muted)]={!missingOnly}
+					class:border-[var(--destructive,#dc2626)]={missingOnly}
+					class:text-[var(--destructive,#dc2626)]={missingOnly}
+					class:bg-red-50={missingOnly}
+					onclick={onMissingToggle}
+				>
+					<ImageIcon size={14} />
+					{t('media.library.missing_only', 'Missing objects')}
+				</button>
+			</div>
+		{/snippet}
+	</Modal>
 
 	{#if error}
 		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm text-[var(--destructive, #dc2626)]">

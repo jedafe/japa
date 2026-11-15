@@ -14,7 +14,7 @@
 	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
-	import { Shield, Search, Loader2, X, Flag, Check, ListFilter } from 'lucide-svelte';
+	import { Shield, Search, Loader2, X, Flag, Check, ListFilter, Filter } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { ModerationQueueItem } from './+page.server';
 
@@ -144,6 +144,9 @@
 
 	// Mobile: the status subtabs collapse into a fixed FAB → modal list.
 	let statusModalOpen = $state(false);
+
+	const hasActiveFilters = $derived(!!typeParam || !!contentTypeParam || !!spaceParam || !!tagParam);
+	let filtersModalOpen = $state(false);
 
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 	function onSearchInput(value: string) {
@@ -402,7 +405,38 @@
 			/>
 		</div>
 		<div class="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
-			<div class="w-[calc(50%-0.25rem)] sm:w-40">
+			<button
+				type="button"
+				onclick={() => (filtersModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Filter size={16} />
+			</button>
+			<div class="w-[calc(50%-0.25rem)] sm:w-32">
+				<Autocomplete
+					ariaLabel={t('studio.moderation.page_size', 'Page size')}
+					placeholder={t('studio.moderation.page_size', 'Page size')}
+					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+					fetcher={localFetcher(pageSizeItems)}
+					initialFetcher={async () => pageSizeItems}
+					selectedId={pageSizeParam}
+					selectedLabel={selectedPageSizeLabel}
+					onSelect={(i) => applyFilter({ page_size: i.id === '20' ? undefined : i.id })}
+					onClear={() => applyFilter({ page_size: undefined })}
+					class="w-full"
+				/>
+			</div>
+		</div>
+	</div>
+
+	<!-- Filters modal — entity type, content type, space, tag. -->
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 				<Autocomplete
 					placeholder={t('studio.moderation.all_types', 'All types')}
 					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -422,9 +456,7 @@
 					onClear={() => applyFilter({ entity_type: undefined, content_type: undefined })}
 					class="w-full"
 				/>
-			</div>
-			{#if typeParam === 'content'}
-				<div class="w-[calc(50%-0.25rem)] sm:w-44">
+				{#if typeParam === 'content'}
 					<Autocomplete
 						placeholder={t('studio.moderation.all_content_types', 'All content types')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -436,10 +468,8 @@
 						onClear={() => applyFilter({ content_type: undefined })}
 						class="w-full"
 					/>
-				</div>
-			{/if}
-			{#if spaceItems.length > 0}
-				<div class="w-[calc(50%-0.25rem)] sm:w-44">
+				{/if}
+				{#if spaceItems.length > 0}
 					<Autocomplete
 						placeholder={t('studio.moderation.all_spaces', 'All my spaces')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -451,10 +481,8 @@
 						onClear={() => applyFilter({ space_id: undefined })}
 						class="w-full"
 					/>
-				</div>
-			{/if}
-			{#if tagItems.length > 0}
-				<div class="w-[calc(50%-0.25rem)] sm:w-44">
+				{/if}
+				{#if tagItems.length > 0}
 					<Autocomplete
 						placeholder={t('studio.moderation.all_tags', 'All my tags')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -466,24 +494,10 @@
 						onClear={() => applyFilter({ tag_id: undefined })}
 						class="w-full"
 					/>
-				</div>
-			{/if}
-			<div class="w-[calc(50%-0.25rem)] sm:w-32">
-				<Autocomplete
-					ariaLabel={t('studio.moderation.page_size', 'Page size')}
-					placeholder={t('studio.moderation.page_size', 'Page size')}
-					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
-					fetcher={localFetcher(pageSizeItems)}
-					initialFetcher={async () => pageSizeItems}
-					selectedId={pageSizeParam}
-					selectedLabel={selectedPageSizeLabel}
-					onSelect={(i) => applyFilter({ page_size: i.id === '20' ? undefined : i.id })}
-					onClear={() => applyFilter({ page_size: undefined })}
-					class="w-full"
-				/>
+				{/if}
 			</div>
-		</div>
-	</div>
+		{/snippet}
+	</Modal>
 
 	{#if items.length === 0}
 		<EmptyState

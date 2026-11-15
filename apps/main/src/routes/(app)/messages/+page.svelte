@@ -16,7 +16,8 @@
 		Search,
 		Loader2,
 		Flag,
-		Package
+		Package,
+		Filter
 	} from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import {
@@ -43,6 +44,12 @@
 	let loadingMoreConvs = $state(false);
 	let loadingEarlier = $state(false);
 	let draft = $state('');
+	let filtersModalOpen = $state(false);
+	// The Filters button lives in the conversation list, which is hidden
+	// while a thread is open — a modal left open must not linger over it.
+	$effect(() => {
+		if (activeId) filtersModalOpen = false;
+	});
 	let sending = $state(false);
 
 	// Edit/delete message state (15-min window enforced server-side).
@@ -478,16 +485,31 @@
 							ariaLabel={t('messages.sort_label', 'Sort conversations')}
 						/>
 					</div>
-					<div class="min-w-0 flex-1">
-						<AutocompleteSelect
-							options={filterOptions}
-							value={data.query.filter ?? ''}
-							onValueChange={(v) => goto(listHref({ filter: v || null }), { reset: false })}
-							ariaLabel={t('messages.filter_label', 'Filter conversations')}
-						/>
-					</div>
+					<button
+						type="button"
+						onclick={() => (filtersModalOpen = true)}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('common.filters', 'Filters')}
+						{#if data.query.filter}
+							<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+						{/if}
+						<Filter size={16} />
+					</button>
 				</div>
 			</div>
+
+			<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+				{#snippet children()}
+					<AutocompleteSelect
+						class="w-full"
+						options={filterOptions}
+						value={data.query.filter ?? ''}
+						onValueChange={(v) => goto(listHref({ filter: v || null }), { reset: false })}
+						ariaLabel={t('messages.filter_label', 'Filter conversations')}
+					/>
+				{/snippet}
+			</Modal>
 
 			{#if data.loadError}
 				<div class="mx-auto w-full max-w-3xl p-4">
