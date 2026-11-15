@@ -6,6 +6,8 @@ package atproto
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -557,4 +560,127 @@ func TestJetstreamConsumeLiveSmoke(t *testing.T) {
 	if cursor != "1002" {
 		t.Fatalf("cursor=%q want 1002", cursor)
 	}
+}
+
+// TestDBInboundMalformedDIDRejected — a commit whose repo DID fails the
+// shape gate ledgers 'rejected' before dispatch: no comment minted, no
+// remote-actor row, and the terminal verdict still takes the dedup marker.
+func TestDBInboundMalformedDIDRejected(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, uri := a5Fixture(t, ctx)
+
+	rkey := fmt.Sprintf("badrep%d", time.Now().UnixNano())
+	seq := time.Now().UnixNano()
+	ev := commitEvent("not-a-did", rkey, seq, map[string]any{
+		"text": "poison",
+		"reply": map[string]any{
+			"parent": map[string]any{"uri": uri, "cid": "bafy-x"},
+			"root":   map[string]any{"uri": uri, "cid": "bafy-x"},
+		},
+	})
+	ev.Commit.Collection = colFeedPost
+	svc.handleCommit(ctx, ev)
+
+	d := testDB(t)
+	badURI := "at://not-a-did/app.bsky.feed.post/" + rkey
+	var status, errmsg string
+	err := d.Writer.QueryRow(ctx,
+		`SELECT status, COALESCE(error,'') FROM atproto_inbound WHERE event_uri = $1`, badURI,
+	).Scan(&status, &errmsg)
+	if err != nil {
+		t.Fatalf("inbound row missing: %v", err)
+	}
+	if status != "rejected" {
+		t.Fatalf("inbound status=%q want rejected", status)
+	}
+	var n int
+	_ = d.Writer.QueryRow(ctx, `SELECT count(*) FROM comments WHERE remote_uri = $1`, badURI).Scan(&n)
+	if n != 0 {
+		t.Fatalf("comment minted for malformed did")
+	}
+	_ = d.Writer.QueryRow(ctx, `SELECT count(*) FROM atproto_remote_actors WHERE did = 'not-a-did'`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("remote actor minted for malformed did")
+	}
+	dk := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", badURI, "create", seq)))
+	if got, _ := svc.vk.Get(ctx, "jc:atp:in:dedup:"+hex.EncodeToString(dk[:])).Result(); got == "" {
+		t.Fatalf("rejected verdict did not take the dedup marker")
+	}
+}
+
+// TestDBInboundErrorRowRetries — the ledger's error-reset arm is the
+// designed retry path: a replayed event over an 'error' row resets and
+// re-dispatches instead of being dropped like a terminal verdict.
+func TestDBInboundErrorRowRetries(t *testing.T) {
+	ctx := context.Background()
+	svc, _, contentID, uri := a5Fixture(t, ctx)
+	notifier := &captureNotifier{}
+	svc.SetNotifier(notifier)
+
+	remoteDID := fmt.Sprintf("did:plc:re%d", time.Now().UnixNano())
+	likeURI := "at://" + remoteDID + "/app.bsky.feed.like/lk1"
+	d := testDB(t)
+	if _, err := d.Writer.Exec(ctx, `INSERT INTO atproto_inbound
+		(event_uri, event_seq, did, collection, operation, payload, status, error)
+		VALUES ($1, $2, $3, 'app.bsky.feed.like', 'create', '{}', 'error', 'boom')`,
+		likeURI, int64(4242), remoteDID); err != nil {
+		t.Fatalf("seed error row: %v", err)
+	}
+
+	ev := commitEvent(remoteDID, "lk1", 4242, map[string]any{
+		"subject": map[string]any{"uri": uri, "cid": "bafy-x"},
+	})
+	ev.Commit.Collection = colFeedLike
+	svc.handleCommit(ctx, ev)
+
+	var status string
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT status FROM atproto_inbound WHERE event_uri = $1`, likeURI).Scan(&status); err != nil {
+		t.Fatalf("inbound row missing: %v", err)
+	}
+	if status != "processed" {
+		t.Fatalf("inbound status=%q want processed after retry", status)
+	}
+	var likeContent pgtype.UUID
+	if err := d.Writer.QueryRow(ctx,
+		`SELECT content_id FROM atproto_remote_likes WHERE like_uri = $1`, likeURI).Scan(&likeContent); err != nil {
+		t.Fatalf("like row missing after retry: %v", err)
+	}
+	if likeContent != contentID {
+		t.Fatalf("like landed on wrong content")
+	}
+	if len(notifier.calls) != 1 || notifier.calls[0].Type != "reaction" {
+		t.Fatalf("notification calls=%+v", notifier.calls)
+	}
+}
+
+// TestDBPublishProfileRespectsKillSwitch — feature.atproto off freezes
+// profile republishes with the same permanent verdict PublishContent
+// returns; reconcile treats it as converged and completes clean.
+func TestDBPublishProfileRespectsKillSwitch(t *testing.T) {
+	ctx := context.Background()
+	d := testDB(t)
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	svc.SetValkey(startTestCompat(t))
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	svc.SetFlags(flagOff{})
+	if err := svc.publishProfile(ctx, &acct); !isPermanentErr(err) {
+		t.Fatalf("publishProfile flag-off err=%v, want permanent", err)
+	}
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo flag-off should converge clean: %v", err)
+	}
+}
+
+// flagOff stubs features.FlagEvaluator with every flag disabled.
+type flagOff struct{}
+
+func (flagOff) IsEnabled(context.Context, string) bool { return false }
+func (flagOff) EvalFlag(context.Context, string, features.CallerScope) features.EvalResult {
+	return features.EvalResult{}
 }

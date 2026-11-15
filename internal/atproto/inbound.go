@@ -316,9 +316,9 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) (err err
 
 	var status, msg string
 	var intents []notifyIntent
-	if !strings.HasPrefix(ev.DID, "did:") || len(ev.DID) > 256 {
-		// Deterministic reject — mirrors resolveRemoteActor's shape
-		// check. Without this the dispatchers file it 'error', the
+	if !validRemoteDIDShape(ev.DID) {
+		// Deterministic reject — the same shape gate resolveRemoteActor
+		// applies. Without this the dispatchers file it 'error', the
 		// retryable class, and every replay re-dispatches forever.
 		status, msg = "rejected", "malformed remote did"
 	} else {
@@ -345,7 +345,9 @@ func (s *Service) handleCommit(ctx context.Context, ev *jetstreamEvent) (err err
 		// ON CONFLICT … WHERE status='error' reset arm is the designed
 		// replay-retry path, and a marker would swallow the replay
 		// before it could reach the ledger at all.
-		_ = s.vk.Set(ctx, dedupKey, "1", jetstreamDedupTTL).Err()
+		if serr := s.vk.Set(ctx, dedupKey, "1", jetstreamDedupTTL).Err(); serr != nil {
+			slog.Warn("atproto: dedup marker set failed", "key", dedupKey, "error", serr)
+		}
 	}
 	for _, in := range intents {
 		if s.notifier == nil {

@@ -32,11 +32,18 @@ type Notifier interface {
 // SetNotifier injects the notifications seam for inbound events.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
+// validRemoteDIDShape is the cheap shape gate shared by the commit
+// pre-dispatch reject (inbound.go) and resolveRemoteActor — anything
+// failing it can never produce an actor row.
+func validRemoteDIDShape(did string) bool {
+	return strings.HasPrefix(did, "did:") && len(did) <= 256
+}
+
 // resolveRemoteActor returns the provenance row for a remote DID, refreshing
 // the cached profile from the AppView when missing or stale. A failed fetch
 // still returns the bare DID-keyed row so attribution never blocks processing.
 func (s *Service) resolveRemoteActor(ctx context.Context, did string) (gen.AtprotoRemoteActor, error) {
-	if !strings.HasPrefix(did, "did:") || len(did) > 256 {
+	if !validRemoteDIDShape(did) {
 		return gen.AtprotoRemoteActor{}, fmt.Errorf("atproto: malformed remote did %q", did)
 	}
 	q := gen.New(s.db.Writer)
