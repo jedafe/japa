@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func cmpSeoTestDB(t *testing.T) *db.DB {
@@ -208,6 +209,129 @@ func TestDBComparisonSeoIndexableOnUpdate(t *testing.T) {
 		}
 		if row.SeoIndexable {
 			t.Error("seo_indexable = true after unpublish, want false")
+		}
+	})
+}
+
+// TestDBComparisonSeoIndexableRawTransitions covers the raw-SQL status
+// paths that bypass the service derivation (schedule/archive/remove/
+// restore). Their queries carry an inline CASE: JCE rows (metadata
+// present) derive the flag, rows without metadata (non-JCE wizard
+// comparisons) keep the editorial flag.
+func TestDBComparisonSeoIndexableRawTransitions(t *testing.T) {
+	d := cmpSeoTestDB(t)
+	ctx := context.Background()
+	svc := NewService(d)
+	author := cmpSeoTestUser(t, ctx, d)
+
+	flag := func(id pgtype.UUID) bool {
+		t.Helper()
+		var v bool
+		if err := d.Reader.QueryRow(ctx,
+			`SELECT seo_indexable FROM contents WHERE id = $1`, id).Scan(&v); err != nil {
+			t.Fatalf("reading seo_indexable: %v", err)
+		}
+		return v
+	}
+
+	// Non-published outcomes always clear the JCE flag.
+	t.Run("schedule clears JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "detailed", StatusPublished, "public", 600)
+		if _, err := svc.ScheduleContent(ctx, id, time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("ScheduleContent: %v", err)
+		}
+		if flag(id) {
+			t.Error("seo_indexable = true after schedule, want false")
+		}
+	})
+
+	t.Run("schedule preserves non-JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "", StatusPublished, "public", 600)
+		if _, err := svc.ScheduleContent(ctx, id, time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("ScheduleContent: %v", err)
+		}
+		if !flag(id) {
+			t.Error("seo_indexable = false for non-JCE comparison, want preserved true")
+		}
+	})
+
+	t.Run("archive clears JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "detailed", StatusPublished, "public", 600)
+		if _, err := gen.New(d.Writer).ArchiveContent(ctx, id); err != nil {
+			t.Fatalf("ArchiveContent: %v", err)
+		}
+		if flag(id) {
+			t.Error("seo_indexable = true after archive, want false")
+		}
+	})
+
+	t.Run("admin remove/restore clears JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "detailed", StatusPublished, "public", 600)
+		if _, err := gen.New(d.Writer).RemoveContentByAdmin(ctx, id); err != nil {
+			t.Fatalf("RemoveContentByAdmin: %v", err)
+		}
+		if flag(id) {
+			t.Error("seo_indexable = true after admin remove, want false")
+		}
+		if _, err := gen.New(d.Writer).RestoreContentByAdmin(ctx, id); err != nil {
+			t.Fatalf("RestoreContentByAdmin: %v", err)
+		}
+		if flag(id) {
+			t.Error("seo_indexable = true after restore-to-draft, want false")
+		}
+	})
+
+	t.Run("admin remove preserves non-JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "", StatusPublished, "public", 600)
+		if _, err := gen.New(d.Writer).RemoveContentByAdmin(ctx, id); err != nil {
+			t.Fatalf("RemoveContentByAdmin: %v", err)
+		}
+		if !flag(id) {
+			t.Error("seo_indexable = false for non-JCE comparison, want preserved true")
+		}
+	})
+
+	// The appeal restore can leave the row published (auto-hide-only), so
+	// the inline gate must re-evaluate — a qualifying published row keeps
+	// flag=true; an archived row restored to draft gets false.
+	t.Run("appeal restore keeps published JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "detailed", StatusPublished, "public", 600)
+		if _, err := d.Writer.Exec(ctx, `UPDATE contents SET auto_hidden = true WHERE id = $1`, id); err != nil {
+			t.Fatalf("auto-hiding row: %v", err)
+		}
+		if _, err := gen.New(d.Writer).RestoreContentOnAppeal(ctx, id); err != nil {
+			t.Fatalf("RestoreContentOnAppeal: %v", err)
+		}
+		var status string
+		if err := d.Reader.QueryRow(ctx, `SELECT status FROM contents WHERE id = $1`, id).Scan(&status); err != nil {
+			t.Fatalf("reading status: %v", err)
+		}
+		if status != "published" {
+			t.Fatalf("status = %q after appeal restore, want published", status)
+		}
+		if !flag(id) {
+			t.Error("seo_indexable = false after published appeal restore, want preserved true")
+		}
+	})
+
+	t.Run("appeal restore clears archived JCE flag", func(t *testing.T) {
+		id := seedComparison(t, ctx, d, author, "detailed", StatusPublished, "public", 600)
+		if _, err := d.Writer.Exec(ctx,
+			`UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now() WHERE id = $1`, id); err != nil {
+			t.Fatalf("simulating admin removal: %v", err)
+		}
+		if _, err := gen.New(d.Writer).RestoreContentOnAppeal(ctx, id); err != nil {
+			t.Fatalf("RestoreContentOnAppeal: %v", err)
+		}
+		var status string
+		if err := d.Reader.QueryRow(ctx, `SELECT status FROM contents WHERE id = $1`, id).Scan(&status); err != nil {
+			t.Fatalf("reading status: %v", err)
+		}
+		if status != "draft" {
+			t.Fatalf("status = %q after appeal restore, want draft", status)
+		}
+		if flag(id) {
+			t.Error("seo_indexable = true after archived appeal restore, want false")
 		}
 	})
 }

@@ -130,8 +130,28 @@ SET status = CASE WHEN status = 'archived' THEN 'draft' ELSE status END,
     auto_hidden = false,
     auto_hidden_at = NULL,
     deleted_at = NULL,
-    updated_at = now()
-WHERE id = @id
+    updated_at = now(),
+    -- §30/§43: JCE comparisons derive the flag — the restore can leave the
+    -- row published (auto-hide-only), so the full gate applies, not a
+    -- blanket false. Rows without metadata (non-JCE) keep the editorial
+    -- flag. The word floor reads the live setting with the same <=0/250
+    -- fallback as the runtime reader.
+    seo_indexable = CASE
+        WHEN content_type = 'comparison' AND EXISTS (
+            SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+        THEN (
+            SELECT m.depth = 'detailed'
+                AND (CASE WHEN contents.status = 'archived' THEN 'draft' ELSE contents.status END) = 'published'
+                AND contents.visibility = 'public'
+                AND COALESCE(array_length(string_to_array(trim(contents.body), ' '), 1), 0)
+                    >= COALESCE(NULLIF(GREATEST((
+                        SELECT (ss.value #>> '{}')::int
+                        FROM system_settings ss
+                        WHERE ss.key = 'seo.sitemap.comparison_min_words'), 0), 0), 250)
+            FROM comparison_content_metadata m
+            WHERE m.content_id = contents.id)
+        ELSE seo_indexable END
+WHERE contents.id = @id
   AND auto_hidden = true;
 
 -- name: GetOwnershipClaimForAppeal :one

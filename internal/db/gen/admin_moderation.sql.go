@@ -1674,7 +1674,14 @@ func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContent
 
 const removeContentByAdmin = `-- name: RemoveContentByAdmin :execrows
 
-UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
+UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — a non-published status is
+  -- always non-indexable. Rows without metadata (non-JCE) keep the
+  -- editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -1692,7 +1699,13 @@ func (q *Queries) RemoveContentByAdmin(ctx context.Context, id pgtype.UUID) (int
 }
 
 const restoreContentByAdmin = `-- name: RestoreContentByAdmin :execrows
-UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
+UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — restored-to-draft is always
+  -- non-indexable. Rows without metadata (non-JCE) keep the editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = $1 AND deleted_at IS NOT NULL
 `
 

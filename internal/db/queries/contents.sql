@@ -754,7 +754,14 @@ RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
 -- task (enqueued by the caller with ProcessAt=publish_at) flips status to
 -- 'published' when the time arrives.
 UPDATE contents
-SET status = 'scheduled', publish_at = @publish_at, updated_at = now()
+SET status = 'scheduled', publish_at = @publish_at, updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — a non-published status is
+  -- always non-indexable. Rows without metadata (non-JCE) keep the
+  -- editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -1489,7 +1496,14 @@ WHERE id = @id
  AND deleted_at IS NULL;
 
 -- name: ArchiveContent :execrows
-UPDATE contents SET status = 'archived', updated_at = now()
+UPDATE contents SET status = 'archived', updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — a non-published status is
+  -- always non-indexable. Rows without metadata (non-JCE) keep the
+  -- editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = @id AND status != 'archived';
 
 -- name: GetPublicAuthorAnalytics :one

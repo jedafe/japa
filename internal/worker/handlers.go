@@ -2544,8 +2544,10 @@ func rederiveComparisonSeoIndexable(ctx context.Context, contentID pgtype.UUID, 
 // parent spaces, then regenerates the RSS feeds (RSS-013).
 func scheduleScheduledPublishFanOut(ctx context.Context, contentID pgtype.UUID, contentIDStr string) {
 	// Fetch the content to get author_id, space_id and content_type for the
-	// fan-out.
-	published, err := gen.New(dbPool.Reader).GetContentByID(ctx,
+	// fan-out. Read off Writer — the publish commit above this call can
+	// outpace the replica, and a lagged miss would silently drop fan-out
+	// for a just-published row.
+	published, err := gen.New(dbPool.Writer).GetContentByID(ctx,
 		contentID,
 	)
 	if err != nil {
@@ -2560,7 +2562,7 @@ func scheduleScheduledPublishFanOut(ctx context.Context, contentID pgtype.UUID, 
 	// Falls back to the primary contents.space_id if no content_spaces rows.
 	spaceIDs := []pgtype.UUID{}
 
-	if rows, err := gen.New(dbPool.Reader).GetContentSpaces(ctx, contentID); err == nil {
+	if rows, err := gen.New(dbPool.Writer).GetContentSpaces(ctx, contentID); err == nil {
 		for _, r := range rows {
 			spaceIDs = append(spaceIDs, r.SpaceID)
 		}

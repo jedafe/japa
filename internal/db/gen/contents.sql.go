@@ -51,7 +51,14 @@ func (q *Queries) AddContentTag(ctx context.Context, arg AddContentTagParams) er
 }
 
 const archiveContent = `-- name: ArchiveContent :execrows
-UPDATE contents SET status = 'archived', updated_at = now()
+UPDATE contents SET status = 'archived', updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — a non-published status is
+  -- always non-indexable. Rows without metadata (non-JCE) keep the
+  -- editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = $1 AND status != 'archived'
 `
 
@@ -5084,7 +5091,14 @@ func (q *Queries) RemoveContentTag(ctx context.Context, arg RemoveContentTagPara
 
 const scheduleContent = `-- name: ScheduleContent :one
 UPDATE contents
-SET status = 'scheduled', publish_at = $1, updated_at = now()
+SET status = 'scheduled', publish_at = $1, updated_at = now(),
+ seo_indexable = CASE
+  -- §30/§43: JCE comparisons derive the flag — a non-published status is
+  -- always non-indexable. Rows without metadata (non-JCE) keep the
+  -- editorial flag.
+  WHEN content_type = 'comparison' AND EXISTS (
+   SELECT 1 FROM comparison_content_metadata m WHERE m.content_id = contents.id)
+  THEN false ELSE seo_indexable END
 WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
