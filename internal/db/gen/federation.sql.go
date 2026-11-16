@@ -61,6 +61,7 @@ func (q *Queries) AdjustUserFollowerCount(ctx context.Context, arg AdjustUserFol
 const countAllFederatableContent = `-- name: CountAllFederatableContent :one
 SELECT COUNT(*)::bigint
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
@@ -101,6 +102,7 @@ func (q *Queries) CountFederatableContentByAuthor(ctx context.Context, arg Count
 const countFederatableContentBySpace = `-- name: CountFederatableContentBySpace :one
 SELECT COUNT(*)::bigint
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.space_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -1735,6 +1737,7 @@ const listAllFederatableContent = `-- name: ListAllFederatableContent :many
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.published_at, c.created_at
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
@@ -1970,6 +1973,7 @@ const listFederatableContentBySpace = `-- name: ListFederatableContentBySpace :m
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.published_at, c.created_at
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.space_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -2001,6 +2005,9 @@ type ListFederatableContentBySpaceRow struct {
 
 // Group outbox items: the space's live, public, federatable content —
 // same gate set as the member outbox, keyed on contents.space_id.
+// A listed item must resolve on fetch — the object doc 404s unless the
+// author's Person actor exists and is active, so non-federated authors
+// (and disabled actors) never appear in the collection.
 func (q *Queries) ListFederatableContentBySpace(ctx context.Context, arg ListFederatableContentBySpaceParams) ([]ListFederatableContentBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listFederatableContentBySpace,
 		arg.SpaceID,

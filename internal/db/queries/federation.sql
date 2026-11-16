@@ -702,6 +702,10 @@ WHERE fa.kind = 'group'
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.published_at, c.created_at
 FROM contents c
+-- A listed item must resolve on fetch — the object doc 404s unless the
+-- author's Person actor exists and is active, so non-federated authors
+-- (and disabled actors) never appear in the collection.
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.space_id = @space_id
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -714,6 +718,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountFederatableContentBySpace :one
 SELECT COUNT(*)::bigint
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.space_id = @space_id
   AND c.status = 'published'
   AND c.visibility = 'public'
@@ -727,6 +732,7 @@ WHERE c.space_id = @space_id
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.published_at, c.created_at
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
@@ -738,6 +744,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountAllFederatableContent :one
 SELECT COUNT(*)::bigint
 FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
 WHERE c.status = 'published'
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL

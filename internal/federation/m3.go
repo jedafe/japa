@@ -637,16 +637,24 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	if relay.Status != "pending" {
 		return relay, nil
 	}
+	// The activity id must be the LEDGERED follow_ap_id — a re-subscribe
+	// while pending keeps the original id in the row, so minting a fresh
+	// one here would let the remote answer a Follow we can't match.
+	// (Rejected/failed rows get a NEW id from the upsert's CASE arm.)
+	apID := followID
+	if relay.FollowApID != nil && *relay.FollowApID != "" {
+		apID = *relay.FollowApID
+	}
 	follow := map[string]any{
 		"@context": asContext,
-		"id":       followID,
+		"id":       apID,
 		"type":     "Follow",
 		"actor":    inst.ActorUrl,
 		"object":   asPublic,
 		"to":       []string{actorURL},
 	}
 	row := gen.ListRemoteFollowerInboxesByActorRow{InboxUrl: &inbox, RemoteActorID: remote.ID}
-	if _, err := s.insertDeliveries(ctx, inst.ID, follow, followID, []gen.ListRemoteFollowerInboxesByActorRow{row}, true); err != nil {
+	if _, err := s.insertDeliveries(ctx, inst.ID, follow, apID, []gen.ListRemoteFollowerInboxesByActorRow{row}, true); err != nil {
 		return relay, err // relay row is ledgered; the sweeper can retry
 	}
 	return relay, nil
