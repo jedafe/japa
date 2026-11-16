@@ -922,6 +922,70 @@ func TestDBGroupEnvelopeLapseStopsCachedResolution(t *testing.T) {
 	}
 }
 
+// TestDBGroupAnnounceEnvelopeLapse — a space that leaves the
+// member-created/public/active envelope stops resolving, so its group
+// actor must stop boosting: fanout must not ledger an Announce whose
+// actor URL would 404 on the remote's fetch. The gate runs live via
+// groupDocRow — nothing transitions federated_actors.status on a space
+// mutation.
+func TestDBGroupAnnounceEnvelopeLapse(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+	defer func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE activity_type = 'Announce'`)
+	}()
+
+	spaceID, _ := newSpace(t, ctx, d, "public")
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+	group, err := svc.ProvisionGroupActor(ctx, spaceID, adminID)
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	remote, _ := newRemoteActor(t, ctx, svc, "grp-lapse.example")
+	if _, err := svc.store.write.UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
+		LocalActorID: group.ID, RemoteActorID: remote.ID, Status: "accepted",
+	}); err != nil {
+		t.Fatalf("group edge: %v", err)
+	}
+
+	author, _ := newFederationUser(t, ctx, d, "active")
+	if _, err := svc.EnableFederation(ctx, author); err != nil {
+		t.Fatalf("enable author: %v", err)
+	}
+	var contentID pgtype.UUID
+	if err := d.Writer.QueryRow(ctx, `
+		INSERT INTO contents (author_id, space_id, content_type, title, slug, body, body_html,
+		                      content_hash, status, visibility, published_at)
+		VALUES ($1, $2, 'story', 'Lapse post', $3, 'hi', '<p>hi</p>', $4, 'published', 'public', now())
+		RETURNING id`, author, spaceID,
+		fmt.Sprintf("lapse-%d", time.Now().UnixNano()),
+		fmt.Sprintf("hash-lapse-%d", time.Now().UnixNano())).Scan(&contentID); err != nil {
+		t.Fatalf("insert content: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM contents WHERE id = $1`, contentID)
+	})
+
+	// Space leaves the envelope — no actor-status mutation fires.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE spaces SET visibility = 'private' WHERE id = $1`, spaceID); err != nil {
+		t.Fatalf("flip private: %v", err)
+	}
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("Fanout: %v", err)
+	}
+	var n int
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE local_actor_id = $1 AND activity_type = 'Announce'`,
+		group.ID).Scan(&n); err != nil {
+		t.Fatalf("announce count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("group Announce ledgered for an envelope-lapsed space (%d rows)", n)
+	}
+}
+
 // TestDBListRelaysQFilter — the admin DataTable ?q= contract added in
 // pass 26: ILIKE on actor_url/domain.
 func TestDBListRelaysQFilter(t *testing.T) {

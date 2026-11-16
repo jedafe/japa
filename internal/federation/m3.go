@@ -471,11 +471,15 @@ func groupDocument(row gen.GetGroupActorDocBySlugRow, siteBase string) map[strin
 }
 
 // groupActorForCollection resolves slug → live actor for the collection
-// routes (outbox/followers share the space + status gates).
+// routes (outbox/followers share the space + status gates). Tombstone
+// answers 410 like the doc route — "gone", not "never existed".
 func (s *Service) groupActorForCollection(ctx context.Context, slug string) (gen.GetGroupActorDocBySlugRow, error) {
 	row, err := s.groupDocRow(ctx, slug)
 	if err != nil {
 		return row, err
+	}
+	if row.Status == ActorStatusTombstone {
+		return row, ErrGone
 	}
 	if row.Status != ActorStatusActive {
 		return row, ErrNotFound
@@ -563,30 +567,40 @@ func (s *Service) GroupFollowers(ctx context.Context, slug string, page int) (ma
 // fanoutGroupAnnounce ledgers a group Announce of a member activity to
 // the group's remote followers — the space-reach half of group
 // federation. Called only for public content activities (Create/Update).
+// The announce must not fire when the space has left the
+// member-created/public/active envelope — the actor URL embedded in it
+// would 404 on the remote's actor fetch (the gate runs live; nothing
+// transitions federated_actors.status on a space mutation).
 func (s *Service) fanoutGroupAnnounce(ctx context.Context, spaceID pgtype.UUID, memberActivity map[string]any, contentID pgtype.UUID) {
 	if !spaceID.Valid {
 		return
 	}
 	group, err := s.store.actorBySpaceID(ctx, spaceID)
-	if err != nil || group.Status != ActorStatusActive {
+	if err != nil {
 		return
 	}
-	inboxes, err := s.store.remoteFollowerInboxes(ctx, group.ID)
+	// groupDocRow is the shared slug-keyed gate — spaceGroupEligible +
+	// the actor row in one join.
+	row, err := s.groupDocRow(ctx, group.PreferredUsername)
+	if err != nil || row.Status != ActorStatusActive {
+		return
+	}
+	inboxes, err := s.store.remoteFollowerInboxes(ctx, row.ID)
 	if err != nil || len(inboxes) == 0 {
 		return
 	}
 	stamp := time.Now().Unix()
-	apID := fmt.Sprintf("%s#announce/%s/%d", group.ActorUrl, contentID.String(), stamp)
+	apID := fmt.Sprintf("%s#announce/%s/%d", row.ActorUrl, contentID.String(), stamp)
 	activity := map[string]any{
 		"id":     apID,
 		"type":   "Announce",
-		"actor":  group.ActorUrl,
+		"actor":  row.ActorUrl,
 		"object": memberActivity,
 		"to":     []string{asPublic},
-		"cc":     []string{group.FollowersUrl},
+		"cc":     []string{row.FollowersUrl},
 	}
-	if _, err := s.insertDeliveries(ctx, group.ID, activity, apID, inboxes, true); err != nil {
-		slog.Warn("federation: group announce fanout failed", "group_actor_id", group.ID, "error", err)
+	if _, err := s.insertDeliveries(ctx, row.ID, activity, apID, inboxes, true); err != nil {
+		slog.Warn("federation: group announce fanout failed", "group_actor_id", row.ID, "error", err)
 	}
 }
 
