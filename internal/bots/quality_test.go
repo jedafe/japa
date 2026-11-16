@@ -324,8 +324,8 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected MinQuestions 1, got %d", cfg.MinQuestions)
 	}
 
-	if cfg.MinWords != 50 {
-		t.Errorf("expected MinWords 50, got %d", cfg.MinWords)
+	if cfg.MinWords != 100 {
+		t.Errorf("expected MinWords 100, got %d", cfg.MinWords)
 	}
 
 	if cfg.BlogMinWords != 300 {
@@ -338,12 +338,12 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected ListMinWords 250, got %d", cfg.ListMinWords)
 	}
 
-	if cfg.ForumMinWords != 15 {
-		t.Errorf("expected ForumMinWords 15, got %d", cfg.ForumMinWords)
+	if cfg.ForumMinWords != 30 {
+		t.Errorf("expected ForumMinWords 30, got %d", cfg.ForumMinWords)
 	}
 
-	if cfg.DiscussionMinWords != 25 {
-		t.Errorf("expected DiscussionMinWords 25, got %d", cfg.DiscussionMinWords)
+	if cfg.DiscussionMinWords != 50 {
+		t.Errorf("expected DiscussionMinWords 50, got %d", cfg.DiscussionMinWords)
 	}
 
 	if cfg.GuideMinWords != 500 {

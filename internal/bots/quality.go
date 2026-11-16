@@ -40,10 +40,10 @@ type SitemapQualityConfig struct {
 //   - seo.sitemap.space_min_posts     → 1
 //   - seo.sitemap.space_min_forums    → 1
 //   - seo.sitemap.space_min_questions → 1
-//   - seo.sitemap.content_min_words   → 50  (fallback)
+//   - seo.sitemap.content_min_words   → 100  (fallback)
 //   - seo.sitemap.blog_min_words      → 300
-//   - seo.sitemap.forum_min_words     → 15
-//   - seo.sitemap.discussion_min_words → 25
+//   - seo.sitemap.forum_min_words     → 30
+//   - seo.sitemap.discussion_min_words → 50
 //   - seo.sitemap.guide_min_words     → 500
 //   - seo.sitemap.comparison_min_words → 250
 //   - seo.sitemap.blog_min_engagement  → 0
@@ -58,12 +58,12 @@ func DefaultSitemapQualityConfig() SitemapQualityConfig {
 		MinPosts:              1,
 		MinForums:             1,
 		MinQuestions:          1,
-		MinWords:              50,
+		MinWords:              100,
 		BlogMinWords:          300,
 		StoryMinWords:         300,
 		ListMinWords:          250,
-		ForumMinWords:         15,
-		DiscussionMinWords:    25,
+		ForumMinWords:         30,
+		DiscussionMinWords:    50,
 		GuideMinWords:         500,
 		ComparisonMinWords:    250,
 		BlogMinEngagement:     0,
