@@ -851,7 +851,8 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 	// see the new identity immediately rather than at the 5-min TTL, and
 	// push Update{Person} to remote followers so they don't wait on a
 	// re-fetch at all (§126 M4).
-	docFieldsChanged := req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil
+	docFieldsChanged := req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil ||
+		req.CoverURL != nil || req.HeaderMediaID != nil || req.WebsiteURL != nil
 	if s.fedCache != nil && docFieldsChanged {
 		s.fedCache.InvalidateActorIdentityForUser(ctx, userID)
 	}

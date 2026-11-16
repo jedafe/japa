@@ -431,16 +431,34 @@ func (q *Queries) DecrementContentShareCount(ctx context.Context, id pgtype.UUID
 	return err
 }
 
-const deleteDuplicateRemoteFollowsByActor = `-- name: DeleteDuplicateRemoteFollowsByActor :exec
+const deleteDuplicateRemoteFollowsByActor = `-- name: DeleteDuplicateRemoteFollowsByActor :many
 DELETE FROM follows WHERE follower_remote_actor_id = $1
+RETURNING entity_id
 `
 
 // Mirror repoint cleanup: rows left after RepointRemoteFollowsByActor
-// are duplicate edges the new actor already holds — removing them keeps
-// follower counts honest without touching users.follower_count.
-func (q *Queries) DeleteDuplicateRemoteFollowsByActor(ctx context.Context, oldRemoteActorID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteDuplicateRemoteFollowsByActor, oldRemoteActorID)
-	return err
+// are duplicate edges the new actor already holds — the accounts merged
+// into one follower, so each deleted row unwinds follower_count by one
+// (RETURNING entity_id feeds the AdjustUserFollowerCount loop, same as
+// DeleteRemoteFollowsByActor).
+func (q *Queries) DeleteDuplicateRemoteFollowsByActor(ctx context.Context, oldRemoteActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteDuplicateRemoteFollowsByActor, oldRemoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entity_id pgtype.UUID
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteFederationRelay = `-- name: DeleteFederationRelay :exec

@@ -203,12 +203,24 @@ func TestDBFanoutActorUpdateForUser(t *testing.T) {
 		t.Fatalf("pushed doc missing collections: %v", obj)
 	}
 
-	// Unfederated user → no-op, no rows.
+	// A SECOND identity edit must produce a SECOND delivery — the ap_id
+	// keys on wall-clock nanos, not the actor row's updated_at, so
+	// back-to-back edits don't dedup-collapse.
+	svc.FanoutActorUpdateForUser(ctx, userID)
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND activity_type = 'Update'`, remote.ID); n != 2 {
+		t.Fatalf("second update fanout collapsed: %d rows", n)
+	}
+
+	// Unfederated user → no-op, zero-delta on the ledger (other suites
+	// write Update rows too, so assert no NEW rows rather than a count).
 	otherID, _ := newFederationUser(t, ctx, d, "active")
+	before := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE activity_type = 'Update'`)
 	svc.FanoutActorUpdateForUser(ctx, otherID)
 	if n := countRows(t, ctx, svc,
-		`SELECT COUNT(*) FROM federation_deliveries WHERE activity_type = 'Update'`); n != 1 {
-		t.Fatalf("unfederated fanout created rows: %d", n)
+		`SELECT COUNT(*) FROM federation_deliveries WHERE activity_type = 'Update'`); n != before {
+		t.Fatalf("unfederated fanout created rows: %d → %d", before, n)
 	}
 }
 
@@ -451,6 +463,16 @@ func TestDBInboundMoveCollision(t *testing.T) {
 	if n := countRows(t, ctx, svc,
 		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1`, old.ID); n != 0 {
 		t.Fatalf("duplicate mirror left: %d", n)
+	}
+	// The two accounts merged into one follower — follower_count must
+	// drop from 2 to 1 with the deleted duplicate mirror.
+	var fcount int
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT follower_count FROM users WHERE id = $1`, userID).Scan(&fcount); err != nil {
+		t.Fatalf("follower_count: %v", err)
+	}
+	if fcount != 1 {
+		t.Fatalf("follower_count after merge: %d (want 1)", fcount)
 	}
 }
 

@@ -329,10 +329,12 @@ func (s *Service) fanoutActorUpdate(ctx context.Context, actorID pgtype.UUID, en
 	if err != nil {
 		return fmt.Errorf("federation actor update: %w", err)
 	}
-	// Nanosecond stamp — two rotations in the same second mint distinct
-	// activity ids; a repeated ap_id would dedup-collapse the second
-	// rotation's Update into the first's ledger rows.
-	apID := fmt.Sprintf("%s#update/%d", author.ActorUrl, author.UpdatedAt.Time.UnixNano())
+	// Wall-clock nanosecond stamp — every Update event mints a distinct
+	// activity id. Deriving from author.UpdatedAt is wrong: profile-edit
+	// fanouts (§126 M4) never touch the actor row, so two edits mint the
+	// same id and (activity_ap_id, inbox) dedup swallows every Update
+	// after the first.
+	apID := fmt.Sprintf("%s#update/%d", author.ActorUrl, time.Now().UnixNano())
 	activity := map[string]any{
 		"id":     apID,
 		"type":   "Update",

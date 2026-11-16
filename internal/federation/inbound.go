@@ -1118,12 +1118,26 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follows mirror repoint: " + err.Error()}
 	}
-	if err := q.DeleteDuplicateRemoteFollowsByActor(ctx, signer.ID); err != nil {
+	// Deleted mirrors are follower edges that MERGED into the new
+	// actor's — each was counted at its own Follow, so each delete
+	// unwinds users.follower_count by one.
+	if entities, err := q.DeleteDuplicateRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: move duplicate mirror cleanup failed", "error", err)
+	} else {
+		for _, entityID := range entities {
+			s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+				UserID: entityID, Delta: -1,
+			}))
+		}
 	}
-	// A relay subscription under the old actor URL migrates to the new
-	// actor's inbox only if the admin re-subscribes — FEP-ae0c relays are
-	// Follow-based, and re-Following is the remote's job, not ours.
+	// The old URL's relay subscription is as dead as the actor — fail it
+	// the way Delete{actor} does instead of letting deliveries retry to
+	// exhaustion (re-subscribing under the new URL is the remote's job).
+	if err := q.SetFederationRelayStatusByActorURL(ctx, gen.SetFederationRelayStatusByActorURLParams{
+		ActorUrl: signer.ActorUrl, Status: "failed",
+	}); err != nil {
+		slog.Warn("federation: moved-actor relay unwind failed", "error", err)
+	}
 	return dispatchResult{status: "processed", invalidateRemote: signer.ActorUrl}
 }
 

@@ -287,11 +287,14 @@ WHERE f.follower_remote_actor_id = @old_remote_actor_id
                     AND dup.entity_type = f.entity_type
                     AND dup.entity_id = f.entity_id);
 
--- name: DeleteDuplicateRemoteFollowsByActor :exec
+-- name: DeleteDuplicateRemoteFollowsByActor :many
 -- Mirror repoint cleanup: rows left after RepointRemoteFollowsByActor
--- are duplicate edges the new actor already holds — removing them keeps
--- follower counts honest without touching users.follower_count.
-DELETE FROM follows WHERE follower_remote_actor_id = @old_remote_actor_id;
+-- are duplicate edges the new actor already holds — the accounts merged
+-- into one follower, so each deleted row unwinds follower_count by one
+-- (RETURNING entity_id feeds the AdjustUserFollowerCount loop, same as
+-- DeleteRemoteFollowsByActor).
+DELETE FROM follows WHERE follower_remote_actor_id = @old_remote_actor_id
+RETURNING entity_id;
 
 -- name: ListRemoteFollowerInboxesByActor :many
 -- Fanout expansion (§126): one delivery row per DISTINCT inbox —
