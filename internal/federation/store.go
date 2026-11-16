@@ -59,6 +59,13 @@ func (s *Store) setActorStatus(ctx context.Context, id pgtype.UUID, status strin
 	return s.write.UpdateFederatedActorStatus(ctx, gen.UpdateFederatedActorStatusParams{ID: id, Status: status})
 }
 
+// rotateActorKey writes the rotated signing material — the query's
+// status='active' predicate keeps disabled/tombstone rows unreachable;
+// pgx.ErrNoRows maps to ErrNotFound in the service.
+func (s *Store) rotateActorKey(ctx context.Context, arg gen.RotateFederatedActorKeyParams) (gen.FederatedActor, error) {
+	return s.write.RotateFederatedActorKey(ctx, arg)
+}
+
 // setActorStatusFrom performs a conditional transition — it only writes
 // while the row still holds expected, and reports rows affected. 0 means
 // a concurrent transition won; callers re-read and dispatch on that state.
@@ -328,8 +335,8 @@ func (s *Store) actorByID(ctx context.Context, id pgtype.UUID) (gen.FederatedAct
 }
 
 // latestDeliveredObjectType returns the newest DELIVERED activity type
-// carrying this object ('' when none arrived) — the fanout decision's
-// input: 'Create'/'Update' → Update; ''/'Delete' → Create.
+// carrying this object (” when none arrived) — the fanout decision's
+// input: 'Create'/'Update' → Update; ”/'Delete' → Create.
 func (s *Store) latestDeliveredObjectType(ctx context.Context, localActorID pgtype.UUID, objectID string) string {
 	t, err := s.read.GetLatestDeliveredObjectType(ctx, gen.GetLatestDeliveredObjectTypeParams{LocalActorID: localActorID, ObjectID: objectID})
 	if err != nil {

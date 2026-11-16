@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -724,5 +726,252 @@ func TestDBRefreshRemoteKeyRotatesPem(t *testing.T) {
 	}
 	if again.ID != refreshed.ID {
 		t.Fatalf("fresh row should short-circuit to itself")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// §126 M3a — key rotation
+// ---------------------------------------------------------------------------
+
+// Member rotation swaps the keypair in place: new pem + ciphertext,
+// timestamped keyId, key_rotated_at stamp — and the cooldown then
+// rejects an immediate second rotation.
+func TestDBRotateActorKey(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	before, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	if before.PublicKeyID != before.ActorUrl+"#main-key" {
+		t.Fatalf("initial keyId: %q", before.PublicKeyID)
+	}
+
+	res, err := svc.RotateActorKey(ctx, userID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if !strings.HasPrefix(res.KeyID, before.ActorUrl+"#main-key-") {
+		t.Fatalf("keyId not stamped: %q", res.KeyID)
+	}
+	after, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("re-read: %v", err)
+	}
+	if after.PublicKeyID != res.KeyID {
+		t.Fatalf("stored keyId %q != response %q", after.PublicKeyID, res.KeyID)
+	}
+	if after.PublicKeyPem == before.PublicKeyPem {
+		t.Fatal("public pem unchanged after rotation")
+	}
+	if after.PrivateKeyEnc == before.PrivateKeyEnc {
+		t.Fatal("private key ciphertext unchanged after rotation")
+	}
+	if strings.Contains(after.PrivateKeyEnc, "PRIVATE KEY") {
+		t.Fatal("rotated private key stored as raw PEM")
+	}
+	if !after.KeyRotatedAt.Valid {
+		t.Fatal("key_rotated_at not stamped")
+	}
+	if after.ActorUrl != before.ActorUrl {
+		t.Fatalf("actor URL changed: %q -> %q", before.ActorUrl, after.ActorUrl)
+	}
+
+	// Cooldown: a second member rotation inside the window is refused.
+	if _, err := svc.RotateActorKey(ctx, userID); !errors.Is(err, ErrRotationCooldown) {
+		t.Fatalf("cooldown rotate: %v (want ErrRotationCooldown)", err)
+	}
+}
+
+// The admin path bypasses the cooldown entirely — incident response on a
+// compromised key can't wait for the member's clock. Two rotations in
+// the same second must still mint distinct keyIds.
+func TestDBAdminRotateActorKeyBypassesCooldown(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	first, err := svc.RotateActorKey(ctx, userID)
+	if err != nil {
+		t.Fatalf("member rotate: %v", err)
+	}
+	second, err := svc.AdminRotateActorKey(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("admin rotate inside cooldown: %v", err)
+	}
+	if second.KeyID == first.KeyID {
+		t.Fatalf("same-second rotations minted identical keyId %q", first.KeyID)
+	}
+}
+
+// Disabled and tombstoned actors refuse rotation — both paths.
+func TestDBRotateActorKeyStatusGate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	if _, err := svc.DisableFederation(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if _, err := svc.RotateActorKey(ctx, userID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("disabled member rotate: %v", err)
+	}
+	if _, err := svc.AdminRotateActorKey(ctx, actor.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("disabled admin rotate: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federated_actors SET status = 'tombstone' WHERE id = $1`, actor.ID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+	if _, err := svc.RotateActorKey(ctx, userID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("tombstone member rotate: %v", err)
+	}
+	if _, err := svc.AdminRotateActorKey(ctx, actor.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("tombstone admin rotate: %v", err)
+	}
+	// And the conditional write itself must never resurrect the row.
+	var status string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status FROM federated_actors WHERE id = $1`, actor.ID).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != "tombstone" {
+		t.Fatalf("rotation touched terminal row: %q", status)
+	}
+}
+
+// Rotation fans out Update{Person} to every remote-follower inbox — the
+// object is the live actor document advertising the new publicKey.
+func TestDBRotateActorKeyFanout(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, _ := newRemoteActor(t, ctx, svc, "rotatefan.example")
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	if _, err := gen.New(d.Writer).UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
+		LocalActorID: actor.ID, RemoteActorID: remote.ID, Status: "accepted",
+	}); err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+
+	res, err := svc.RotateActorKey(ctx, userID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	var payload []byte
+	var apID string
+	err = d.Reader.QueryRow(ctx,
+		`SELECT activity_json, activity_ap_id FROM federation_deliveries
+		 WHERE remote_actor_id = $1 AND activity_type = 'Update' AND local_actor_id = $2`,
+		remote.ID, actor.ID).Scan(&payload, &apID)
+	if err != nil {
+		t.Fatalf("update delivery row: %v", err)
+	}
+	if !strings.HasPrefix(apID, actor.ActorUrl+"#update/") {
+		t.Fatalf("activity ap_id: %q", apID)
+	}
+	var act map[string]any
+	if err := json.Unmarshal(payload, &act); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if act["type"] != "Update" || act["actor"] != actor.ActorUrl {
+		t.Fatalf("activity shape: %v", act)
+	}
+	obj, _ := act["object"].(map[string]any)
+	if obj["id"] != actor.ActorUrl || obj["type"] != "Person" {
+		t.Fatalf("object not the actor doc: %v", obj)
+	}
+	key, _ := obj["publicKey"].(map[string]any)
+	if key["id"] != res.KeyID {
+		t.Fatalf("object advertises keyId %v, want %v", key["id"], res.KeyID)
+	}
+	if key["owner"] != actor.ActorUrl {
+		t.Fatalf("publicKey.owner: %v", key["owner"])
+	}
+	rotated, _ := svc.store.actorByUserID(ctx, userID)
+	if key["publicKeyPem"] != rotated.PublicKeyPem {
+		t.Fatal("object pem != stored rotated pem")
+	}
+}
+
+// A warmed jc:fed:actor:{username} snapshot must die with rotation —
+// otherwise remotes re-fetching after the Update keep reading the
+// retired pem for the cache TTL.
+func TestDBRotateActorKeyDropsDocCache(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
+	if err != nil {
+		t.Fatalf("valkey: %v", err)
+	}
+	t.Cleanup(vk.Close)
+
+	svc := newFederationService(t, d)
+	svc.SetValkey(valkeycompat.NewAdapter(vk))
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if _, err := svc.ActorDocument(ctx, uname); err != nil {
+		t.Fatalf("actor warm: %v", err)
+	}
+	if !mr.Exists("jc:fed:actor:" + uname) {
+		t.Fatal("actor doc not cached after warm")
+	}
+
+	res, err := svc.RotateActorKey(ctx, userID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if mr.Exists("jc:fed:actor:" + uname) {
+		t.Fatal("actor doc cache survived rotation")
+	}
+
+	// The next fetch rebuilds from the rotated row — the served document
+	// must already advertise the new keyId.
+	doc, err := svc.ActorDocument(ctx, uname)
+	if err != nil {
+		t.Fatalf("actor doc post-rotate: %v", err)
+	}
+	key, _ := doc["publicKey"].(map[string]any)
+	if key["id"] != res.KeyID {
+		t.Fatalf("served doc still advertises old keyId: %v", key["id"])
 	}
 }

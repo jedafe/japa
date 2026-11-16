@@ -35,6 +35,11 @@ var ErrHandleDomain = errors.New("federation: foreign handle domain")
 // block domain.
 var ErrInvalidDomain = errors.New("federation: invalid domain")
 
+// ErrRotationCooldown marks a member-triggered key rotation inside the
+// §126 cooldown window (federation.key_rotation.cooldown_hours) — the
+// handler maps it to 429. The admin path skips this gate.
+var ErrRotationCooldown = errors.New("federation: rotation cooldown active")
+
 // Federatable content types (§126 Object Mapping) — real contents
 // content_type values only. blog_post and guide serialize as Article;
 // everything else as Note. Flag-gated types are pruned per request by

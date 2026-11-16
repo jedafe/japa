@@ -2285,6 +2285,7 @@ type FederatedActor struct {
 	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
 	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 }
 
 type FederationDelivery struct {

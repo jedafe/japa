@@ -49,6 +49,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
+	case errors.Is(err, ErrRotationCooldown):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "rotation_too_soon", "Key was rotated recently; try again later")
 	case errors.Is(err, ErrHandleDomain):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_resource", "Unsupported resource")
 	case errors.Is(err, ErrInvalidDomain):
@@ -264,6 +266,22 @@ func (h *Handlers) resolveFollowRequest(w http.ResponseWriter, r *http.Request, 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": status})
 }
 
+// RotateMyFederationKey serves POST /api/v1/me/federation/rotate-key
+// (§126 M3a) — swaps the member's signing keypair and announces it via
+// Update{Person} fanout. Member-triggered rotation is cooldown-gated.
+func (h *Handlers) RotateMyFederationKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.service.RotateActorKey(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, res)
+}
+
 // ---------------------------------------------------------------------------
 // Admin (/api/v1/admin/federation/*)
 // ---------------------------------------------------------------------------
@@ -301,6 +319,24 @@ func (h *Handlers) ListActors(w http.ResponseWriter, r *http.Request) {
 		"data": rows,
 		"meta": map[string]any{"total": total, "page": page, "total_pages": totalPages(total, limit)},
 	})
+}
+
+// RotateActorKey serves POST /api/v1/admin/federation/actors/{id}/rotate-key
+// (§126 M3a) — the incident-response rotation: same swap as the member
+// path but ungated by the cooldown, so a compromised key can be retired
+// immediately.
+func (h *Handlers) RotateActorKey(w http.ResponseWriter, r *http.Request) {
+	var actorID pgtype.UUID
+	if err := actorID.Scan(chi.URLParam(r, "id")); err != nil || !actorID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid actor id")
+		return
+	}
+	res, err := h.service.AdminRotateActorKey(r.Context(), actorID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, res)
 }
 
 // GetStats serves GET /api/v1/admin/federation/stats.

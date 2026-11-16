@@ -281,6 +281,51 @@ func (s *Service) fanoutActorDelete(ctx context.Context, actorID pgtype.UUID, en
 	return s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, enqueue)
 }
 
+// M3a key rotation announces the new key with Update{Person}: the object
+// is the actor's freshly built document so remote servers learn the new
+// publicKey proactively instead of discovering it on their next keyId
+// miss. The actor is re-loaded post-rotation so the document and the
+// activity stamp both carry the rotated row's state. This helper is
+// also the seam future profile-update fanout uses.
+func (s *Service) fanoutActorUpdate(ctx context.Context, actorID pgtype.UUID, enqueue bool) error {
+	author, err := s.store.actorByID(ctx, actorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("federation actor update: load actor: %w", err)
+	}
+	inboxes, err := s.store.remoteFollowerInboxes(ctx, author.ID)
+	if err != nil {
+		return fmt.Errorf("federation actor update: expand inboxes: %w", err)
+	}
+	if len(inboxes) == 0 {
+		return nil
+	}
+	user, err := s.store.userByID(ctx, author.UserID)
+	if err != nil {
+		return fmt.Errorf("federation actor update: load user: %w", err)
+	}
+	profile, err := s.store.actorProfile(ctx, user.Username)
+	if err != nil {
+		return fmt.Errorf("federation actor update: profile: %w", err)
+	}
+	// Nanosecond stamp — two rotations in the same second mint distinct
+	// activity ids; a repeated ap_id would dedup-collapse the second
+	// rotation's Update into the first's ledger rows.
+	apID := fmt.Sprintf("%s#update/%d", author.ActorUrl, author.UpdatedAt.Time.UnixNano())
+	activity := map[string]any{
+		"id":     apID,
+		"type":   "Update",
+		"actor":  author.ActorUrl,
+		"to":     []string{asPublic},
+		"cc":     []string{author.FollowersUrl},
+		"object": actorDocument(profile, s.siteBase()),
+	}
+	_, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, enqueue)
+	return err
+}
+
 // insertDeliveries ledgers one row per distinct inbox and kicks each into
 // the queue post-insert (unless enqueue=false — the erasure path drives
 // rows synchronously). Insert errors fail the whole expansion — the

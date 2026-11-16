@@ -170,7 +170,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     manually_approves_followers = EXCLUDED.manually_approves_followers,
     updated_at = now()
 WHERE federated_actors.status = 'disabled'
-RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at
 `
 
 type CreateFederatedActorParams struct {
@@ -221,6 +221,7 @@ func (q *Queries) CreateFederatedActor(ctx context.Context, arg CreateFederatedA
 		&i.ManuallyApprovesFollowers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KeyRotatedAt,
 	)
 	return i, err
 }
@@ -605,7 +606,7 @@ func (q *Queries) GetFederatableContentByID(ctx context.Context, arg GetFederata
 }
 
 const getFederatedActorByID = `-- name: GetFederatedActorByID :one
-SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at FROM federated_actors WHERE id = $1
+SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at FROM federated_actors WHERE id = $1
 `
 
 func (q *Queries) GetFederatedActorByID(ctx context.Context, id pgtype.UUID) (FederatedActor, error) {
@@ -627,12 +628,13 @@ func (q *Queries) GetFederatedActorByID(ctx context.Context, id pgtype.UUID) (Fe
 		&i.ManuallyApprovesFollowers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KeyRotatedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUserID = `-- name: GetFederatedActorByUserID :one
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE fa.user_id = $1
@@ -660,13 +662,14 @@ func (q *Queries) GetFederatedActorByUserID(ctx context.Context, userID pgtype.U
 		&i.ManuallyApprovesFollowers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KeyRotatedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUsername = `-- name: GetFederatedActorByUsername :one
 
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
@@ -705,12 +708,13 @@ func (q *Queries) GetFederatedActorByUsername(ctx context.Context, username stri
 		&i.ManuallyApprovesFollowers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KeyRotatedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUsernameAnyStatus = `-- name: GetFederatedActorByUsernameAnyStatus :one
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
@@ -742,6 +746,7 @@ func (q *Queries) GetFederatedActorByUsernameAnyStatus(ctx context.Context, user
 		&i.ManuallyApprovesFollowers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KeyRotatedAt,
 	)
 	return i, err
 }
@@ -1432,7 +1437,7 @@ func (q *Queries) ListFederatableContentByAuthor(ctx context.Context, arg ListFe
 }
 
 const listFederatedActors = `-- name: ListFederatedActors :many
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, u.username, up.display_name, up.avatar_url
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, u.username, up.display_name, up.avatar_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -1473,6 +1478,7 @@ type ListFederatedActorsRow struct {
 	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
 	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 	Username                  string             `json:"username"`
 	DisplayName               *string            `json:"display_name"`
 	AvatarUrl                 *string            `json:"avatar_url"`
@@ -1513,6 +1519,7 @@ func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActo
 			&i.ManuallyApprovesFollowers,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.KeyRotatedAt,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -1903,6 +1910,57 @@ func (q *Queries) ResolveFederationFollow(ctx context.Context, arg ResolveFedera
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const rotateFederatedActorKey = `-- name: RotateFederatedActorKey :one
+UPDATE federated_actors SET
+    public_key_pem = $1,
+    private_key_enc = $2,
+    public_key_id = $3,
+    key_rotated_at = now(),
+    updated_at = now()
+WHERE id = $4 AND status = 'active'
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at
+`
+
+type RotateFederatedActorKeyParams struct {
+	PublicKeyPem  string      `json:"public_key_pem"`
+	PrivateKeyEnc string      `json:"private_key_enc"`
+	PublicKeyID   string      `json:"public_key_id"`
+	ID            pgtype.UUID `json:"id"`
+}
+
+// M3a: swap the actor's signing material in place. The status predicate
+// confines rotation to live actors — a disabled row's key churn would
+// serve nothing, and a tombstone must stay terminal even when a rotate
+// races an erasure write.
+func (q *Queries) RotateFederatedActorKey(ctx context.Context, arg RotateFederatedActorKeyParams) (FederatedActor, error) {
+	row := q.db.QueryRow(ctx, rotateFederatedActorKey,
+		arg.PublicKeyPem,
+		arg.PrivateKeyEnc,
+		arg.PublicKeyID,
+		arg.ID,
+	)
+	var i FederatedActor
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ActorUrl,
+		&i.PreferredUsername,
+		&i.PublicKeyPem,
+		&i.PrivateKeyEnc,
+		&i.PublicKeyID,
+		&i.Status,
+		&i.InboxUrl,
+		&i.OutboxUrl,
+		&i.FollowersUrl,
+		&i.FollowingUrl,
+		&i.ManuallyApprovesFollowers,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.KeyRotatedAt,
+	)
+	return i, err
 }
 
 const setRemoteActorStatus = `-- name: SetRemoteActorStatus :exec

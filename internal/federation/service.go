@@ -741,6 +741,109 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 	return s.statusFor(ctx, actor, user.Username), nil
 }
 
+// KeyRotationResult is the rotate-key response — the new keyId the
+// actor document now advertises plus the rotation stamp.
+type KeyRotationResult struct {
+	KeyID     string `json:"key_id"`
+	RotatedAt string `json:"rotated_at"`
+}
+
+// keyRotationCooldown reads the §126 member-rotation interval
+// (federation.key_rotation.cooldown_hours, default 24). Admin-triggered
+// rotation bypasses it entirely — compromise response can't wait.
+func (s *Service) keyRotationCooldown(ctx context.Context) time.Duration {
+	if s.settings != nil {
+		if n, err := s.settings.GetSettingInt(ctx, "federation.key_rotation.cooldown_hours"); err == nil && n > 0 {
+			return time.Duration(n) * time.Hour
+		}
+	}
+	return 24 * time.Hour
+}
+
+// RotateActorKey swaps the caller's signing keypair (§126 M3a) — member
+// path, cooldown-gated. Disabled and tombstoned actors read as
+// ErrNotFound: the former has nothing serving, the latter is terminal.
+func (s *Service) RotateActorKey(ctx context.Context, userID pgtype.UUID) (KeyRotationResult, error) {
+	actor, err := s.store.actorByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return KeyRotationResult{}, ErrNotFound
+		}
+		return KeyRotationResult{}, fmt.Errorf("federation: lookup actor: %w", err)
+	}
+	if actor.Status != ActorStatusActive {
+		return KeyRotationResult{}, ErrNotFound
+	}
+	if actor.KeyRotatedAt.Valid && time.Since(actor.KeyRotatedAt.Time) < s.keyRotationCooldown(ctx) {
+		return KeyRotationResult{}, ErrRotationCooldown
+	}
+	return s.rotateActorKey(ctx, actor)
+}
+
+// AdminRotateActorKey is the incident-response path — same swap, no
+// cooldown: a compromised key can't wait on the member's clock.
+func (s *Service) AdminRotateActorKey(ctx context.Context, actorID pgtype.UUID) (KeyRotationResult, error) {
+	actor, err := s.store.actorByID(ctx, actorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return KeyRotationResult{}, ErrNotFound
+		}
+		return KeyRotationResult{}, fmt.Errorf("federation: lookup actor: %w", err)
+	}
+	if actor.Status != ActorStatusActive {
+		return KeyRotationResult{}, ErrNotFound
+	}
+	return s.rotateActorKey(ctx, actor)
+}
+
+// rotateActorKey performs the swap shared by the member and admin
+// paths: fresh RSA-2048 pair → conditional active-only write → doc
+// cache drop → Update{Person} fanout. Ordering matters — the cache
+// must be gone before the first Update delivery lands, or a remote
+// re-fetching the actor doc keeps a stale snapshot (carrying the
+// retired key) for up to the cache TTL.
+func (s *Service) rotateActorKey(ctx context.Context, actor gen.FederatedActor) (KeyRotationResult, error) {
+	pubPEM, privPEM, err := generateActorKeyPair()
+	if err != nil {
+		return KeyRotationResult{}, err
+	}
+	privEnc, err := jcrypto.Encrypt(privPEM)
+	if err != nil {
+		return KeyRotationResult{}, fmt.Errorf("federation: encrypt key: %w", err)
+	}
+	// Nanosecond stamp: two rotations inside the same wall-clock second
+	// (member rotate + immediate admin incident rotate) must still mint
+	// distinct keyIds — a repeated id would let a remote's stale
+	// keyId→pem binding reject signatures the new key actually signed.
+	keyID := fmt.Sprintf("%s#main-key-%d", actor.ActorUrl, time.Now().UnixNano())
+	rotated, err := s.store.rotateActorKey(ctx, gen.RotateFederatedActorKeyParams{
+		ID:            actor.ID,
+		PublicKeyPem:  pubPEM,
+		PrivateKeyEnc: privEnc,
+		PublicKeyID:   keyID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Lost a race with disable/erasure between read and write —
+			// the conditional update's status guard declined.
+			return KeyRotationResult{}, ErrNotFound
+		}
+		return KeyRotationResult{}, fmt.Errorf("federation: rotate key: %w", err)
+	}
+	s.InvalidateActorIdentityForUser(ctx, actor.UserID)
+	if err := s.fanoutActorUpdate(ctx, actor.ID, true); err != nil {
+		// Fanout failure must not undo the rotation — the keyId-miss
+		// refetch path already propagates the new key; the Update only
+		// accelerates it.
+		slog.Warn("federation: key-rotation update fanout failed", "actor_id", actor.ID.String(), "error", err)
+	}
+	slog.Info("federation actor key rotated", "actor_id", actor.ID.String(), "key_id", keyID)
+	return KeyRotationResult{
+		KeyID:     keyID,
+		RotatedAt: rotated.KeyRotatedAt.Time.UTC().Format(time.RFC3339),
+	}, nil
+}
+
 // EraseFederation is the GDPR erasure seam (§126 M2, §19). Confirmed
 // erasure runs this BEFORE the user-row DELETE cascades federated_actors
 // away: Delete{actor} fans out to known remote inboxes while the key pair

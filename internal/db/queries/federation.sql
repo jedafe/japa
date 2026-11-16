@@ -109,6 +109,20 @@ UPDATE federated_actors SET status = @status, updated_at = now() WHERE id = @id;
 UPDATE federated_actors SET status = @status, updated_at = now()
 WHERE id = @id AND status = @expected;
 
+-- name: RotateFederatedActorKey :one
+-- M3a: swap the actor's signing material in place. The status predicate
+-- confines rotation to live actors — a disabled row's key churn would
+-- serve nothing, and a tombstone must stay terminal even when a rotate
+-- races an erasure write.
+UPDATE federated_actors SET
+    public_key_pem = @public_key_pem,
+    private_key_enc = @private_key_enc,
+    public_key_id = @public_key_id,
+    key_rotated_at = now(),
+    updated_at = now()
+WHERE id = @id AND status = 'active'
+RETURNING *;
+
 -- name: ListFederatedActors :many
 -- Admin DataTable: ?q= matches username/actor_url; page/limit/sort/dir contract
 -- (sort whitelisted handler-side to created_at|username|status|actor_url).

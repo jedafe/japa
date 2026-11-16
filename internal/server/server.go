@@ -4993,8 +4993,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/follow-requests", federationHandlers.ListFollowRequests)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/follow-requests/{remote_actor_id}/accept", federationHandlers.AcceptFollowRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/follow-requests/{remote_actor_id}/reject", federationHandlers.RejectFollowRequest)
+				// §126 M3a: member key rotation (cooldown-gated service-side)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/rotate-key", federationHandlers.RotateMyFederationKey)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/actors", federationHandlers.ListActors)
+				// §126 M3a: admin rotation for incident response — bypasses the cooldown
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.manage"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/admin/federation/actors/{id}/rotate-key", federationHandlers.RotateActorKey)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/stats", federationHandlers.GetStats)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Get("/admin/federation/instances", federationHandlers.ListBlocks)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Post("/admin/federation/instances", federationHandlers.CreateBlock)

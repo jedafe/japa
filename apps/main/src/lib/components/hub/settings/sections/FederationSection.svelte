@@ -47,6 +47,7 @@
 	let busyRequest = $state<string | null>(null);
 	let message = $state<{ kind: 'success' | 'error'; text: string } | null>(null);
 	let disableOpen = $state(false);
+	let rotateOpen = $state(false);
 
 	async function handleEnable() {
 		if (busy) return;
@@ -95,6 +96,24 @@
 		}
 		disableOpen = false;
 		message = { kind: 'success', text: t('settings.federation.disabled_msg', 'Federation is now disabled. Remote servers will no longer see your actor.') };
+		await invalidateAll();
+	}
+
+	// §126 M3a — signing-key rotation: replaces the actor's keypair and
+	// announces the new key to remote followers (Update{Person}).
+	async function handleRotate() {
+		if (busy) return;
+		busy = true;
+		message = null;
+		const res = await api.post<{ key_id: string; rotated_at: string }>('/me/federation/rotate-key');
+		busy = false;
+		if (res.error) {
+			rotateOpen = false;
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		rotateOpen = false;
+		message = { kind: 'success', text: t('settings.federation.rotated_msg', 'Signing key rotated. Remote servers have been notified.') };
 		await invalidateAll();
 	}
 </script>
@@ -190,8 +209,15 @@
 			</div>
 		{/if}
 
-		<div class="mt-3 flex items-center justify-end gap-2">
+		<div class="mt-3 flex items-center justify-end gap-3">
 			{#if fed.enabled}
+				<button
+					type="button"
+					onclick={() => (rotateOpen = true)}
+					class="text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] hover:underline"
+				>
+					{t('settings.federation.rotate_key', 'Rotate signing key')}
+				</button>
 				<button
 					type="button"
 					onclick={() => (disableOpen = true)}
@@ -229,6 +255,29 @@
 						class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
 					>
 						{busy ? t('common.submitting', 'Submitting…') : t('settings.federation.disable', 'Disable federation')}
+					</button>
+				</div>
+			{/snippet}
+		</Modal>
+
+		<Modal bind:open={rotateOpen} title={t('settings.federation.rotate_confirm_title', 'Rotate signing key?')} description={t('settings.federation.rotate_confirm_desc', 'Your actor gets a fresh RSA keypair and remote servers are notified (Update activity). Deliveries in flight begin signing with the new key. Rotation is rate-limited — only do this if you suspect your key is compromised.')} size="sm">
+			{#snippet children(close)}
+				<div class="flex items-center justify-end gap-2">
+					<button
+						type="button"
+						disabled={busy}
+						onclick={close}
+						class="rounded-[var(--radius)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('settings.action.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						disabled={busy}
+						onclick={handleRotate}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+					>
+						{busy ? t('common.submitting', 'Submitting…') : t('settings.federation.rotate_key', 'Rotate signing key')}
 					</button>
 				</div>
 			{/snippet}
