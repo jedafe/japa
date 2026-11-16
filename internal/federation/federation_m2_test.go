@@ -1812,3 +1812,63 @@ func TestDBInboundAcceptRejectIgnored(t *testing.T) {
 		t.Fatalf("edge after accept/reject: %q (want accepted)", st)
 	}
 }
+
+// Once Delete{actor} is ledgered, no other in-flight activity may land
+// behind it — a retried Update arriving post-tombstone would resurrect
+// remote-side state. The tombstone fanout must deaden all non-Delete
+// pending/failed rows while leaving Delete rows live.
+func TestDBActorDeleteDeadensInFlightDeliveries(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	if row := runInbound(t, ctx, svc, map[string]any{
+		"type": "Follow", "actor": actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	}); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("fanout: %v", err)
+	}
+	// Simulate a mid-flight retry — 'failed' rows are the hazard class.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status = 'failed', next_retry_at = now() + interval '1 hour'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DisableFederation(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	// Assertions are scoped to THIS actor — the shared test DB may carry
+	// other tests' leaked rows (deliveries survive via ON DELETE SET NULL).
+	var actorID pgtype.UUID
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT id FROM federated_actors WHERE user_id = $1`, userID).Scan(&actorID); err != nil {
+		t.Fatalf("actor id: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries
+		 WHERE local_actor_id = $1 AND activity_type <> 'Delete' AND status IN ('pending','failed')`,
+		actorID); n != 0 {
+		t.Fatalf("non-delete deliveries still in-flight after actor delete: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries
+		 WHERE local_actor_id = $1 AND activity_type = 'Delete' AND status = 'pending'`,
+		actorID); n != 1 {
+		t.Fatalf("actor delete delivery not ledgered live: %d (want 1)", n)
+	}
+	// The deadened Create is terminal for the sweeper too.
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries
+		 WHERE activity_type = 'Create' AND status = 'dead' AND activity_json->'object'->>'id' = $1`,
+		objIRI); n != 1 {
+		t.Fatalf("create delivery not deadened: %d (want 1)", n)
+	}
+}

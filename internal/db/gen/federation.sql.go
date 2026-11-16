@@ -251,6 +251,23 @@ func (q *Queries) CreateInstanceBlock(ctx context.Context, arg CreateInstanceBlo
 	return i, err
 }
 
+const deadenUndeliveredNonDeleteDeliveriesByActor = `-- name: DeadenUndeliveredNonDeleteDeliveriesByActor :exec
+UPDATE federation_deliveries SET status = 'dead'
+WHERE local_actor_id = $1
+  AND status IN ('pending','failed')
+  AND activity_type <> 'Delete'
+`
+
+// Actor tombstone fanout: once Delete{actor} is the story, every other
+// in-flight row for the actor is a hazard — a retried Update/Create
+// landing post-Delete resurrects state the remote just tore down, and a
+// member who disabled shouldn't emit further content traffic at all.
+// Delete rows stay live — a repeat tombstone converges harmlessly.
+func (q *Queries) DeadenUndeliveredNonDeleteDeliveriesByActor(ctx context.Context, localActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deadenUndeliveredNonDeleteDeliveriesByActor, localActorID)
+	return err
+}
+
 const decrementContentShareCount = `-- name: DecrementContentShareCount :exec
 UPDATE contents SET share_count = GREATEST(0, share_count - 1) WHERE id = $1
 `

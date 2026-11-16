@@ -514,7 +514,22 @@ func (h *Handlers) postInbox(w http.ResponseWriter, r *http.Request, username st
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signer key unparseable")
 		return
 	}
-	if err := VerifySignature(r, pub, body); err != nil {
+	verified := VerifySignature(r, pub, body) == nil
+	if !verified {
+		// A failed verify on a cached signer may be key rotation in
+		// place — same keyId, fresh pem. One bounded re-fetch and retry
+		// before rejecting; without it the remote is cut off until the
+		// row's own refresh path happens to run.
+		if refreshed, rerr := h.service.refreshRemoteKey(ctx, signer); rerr == nil &&
+			refreshed.PublicKeyPem != nil && *refreshed.PublicKeyPem != "" {
+			if pub2, perr := parsePublicKeyPEM(*refreshed.PublicKeyPem); perr == nil &&
+				VerifySignature(r, pub2, body) == nil {
+				signer = refreshed
+				verified = true
+			}
+		}
+	}
+	if !verified {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signature verification failed")
 		return
 	}

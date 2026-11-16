@@ -252,6 +252,14 @@ func (s *Service) fanoutActorDelete(ctx context.Context, actorID pgtype.UUID, en
 		}
 		return nil, fmt.Errorf("federation actor delete: load actor: %w", err)
 	}
+	// Once the tombstone is the story, every other in-flight row for this
+	// actor becomes a hazard: a retried Update/Create landing post-Delete
+	// resurrects remote-side state, and a member who disabled shouldn't
+	// emit further content traffic at all. Kill them before ledgering —
+	// prior Delete rows survive (re-tombstoning converges).
+	if err := s.store.deadenUndeliveredNonDeleteDeliveries(ctx, author.ID); err != nil {
+		return nil, fmt.Errorf("federation actor delete: clear in-flight rows: %w", err)
+	}
 	inboxes, err := s.store.remoteFollowerInboxes(ctx, author.ID)
 	if err != nil {
 		return nil, fmt.Errorf("federation actor delete: expand inboxes: %w", err)

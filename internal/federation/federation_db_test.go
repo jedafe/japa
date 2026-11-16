@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -670,5 +671,58 @@ func TestDBDeleteRemoteActorDropsCache(t *testing.T) {
 	}
 	if _, err := svc.resolveRemoteActor(ctx, actorURL); !errors.Is(err, ErrRemoteBlocked) {
 		t.Fatalf("resolve after tombstone: %v (want ErrRemoteBlocked)", err)
+	}
+}
+
+// A remote rotating its key in place (unchanged keyId, fresh pem) must
+// not be cut off by our stale row — refreshRemoteKey re-pulls the actor
+// document, rewrites the pem, and returns the fresh row for the retry.
+func TestDBRefreshRemoteKeyRotatesPem(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+	remote, actorURL := newRemoteActor(t, ctx, svc, "rot.example")
+
+	// The signer row we resolved is stale enough that a refresh is real.
+	remote.FetchedAt = pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true}
+
+	newPem := "-----BEGIN PUBLIC KEY-----\nrotated\n-----END PUBLIC KEY-----"
+	srv := httptest.NewTLSServer(actorDocHandler(map[string]any{
+		"type":              "Person",
+		"id":                actorURL,
+		"preferredUsername": "alice",
+		"inbox":             "https://rot.example/inbox",
+		"publicKey": map[string]any{
+			"id":           actorURL + "#main-key",
+			"owner":        actorURL,
+			"publicKeyPem": newPem,
+		},
+	}))
+	t.Cleanup(srv.Close)
+	swapFetchTransport(t, map[string]string{"rot.example": srv.Listener.Addr().String()})
+
+	refreshed, err := svc.refreshRemoteKey(ctx, &remote)
+	if err != nil {
+		t.Fatalf("refreshRemoteKey: %v", err)
+	}
+	if refreshed.PublicKeyPem == nil || *refreshed.PublicKeyPem != newPem {
+		t.Fatalf("pem not rotated: %v", refreshed.PublicKeyPem)
+	}
+	var stored string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT public_key_pem FROM remote_actors WHERE id = $1`, remote.ID).Scan(&stored); err != nil {
+		t.Fatalf("read pem: %v", err)
+	}
+	if stored != newPem {
+		t.Fatalf("stored pem not rotated: %q", stored)
+	}
+
+	// Self-limiting: a fresh row short-circuits without a fetch.
+	again, err := svc.refreshRemoteKey(ctx, refreshed)
+	if err != nil {
+		t.Fatalf("second refresh: %v", err)
+	}
+	if again.ID != refreshed.ID {
+		t.Fatalf("fresh row should short-circuit to itself")
 	}
 }

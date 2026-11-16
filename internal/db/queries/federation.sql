@@ -594,6 +594,17 @@ WHERE local_actor_id = @local_actor_id
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
+-- name: DeadenUndeliveredNonDeleteDeliveriesByActor :exec
+-- Actor tombstone fanout: once Delete{actor} is the story, every other
+-- in-flight row for the actor is a hazard — a retried Update/Create
+-- landing post-Delete resurrects state the remote just tore down, and a
+-- member who disabled shouldn't emit further content traffic at all.
+-- Delete rows stay live — a repeat tombstone converges harmlessly.
+UPDATE federation_deliveries SET status = 'dead'
+WHERE local_actor_id = @local_actor_id
+  AND status IN ('pending','failed')
+  AND activity_type <> 'Delete';
+
 -- name: GetDeliveredObjectActor :one
 -- Tombstone fanout on eligibility loss: which local actor delivered this
 -- object before — the Delete must come from that actor's key.

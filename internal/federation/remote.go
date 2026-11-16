@@ -225,6 +225,38 @@ func (s *Service) upsertRemoteActor(ctx context.Context, actorURL string, doc *r
 	return &row, nil
 }
 
+// refreshRemoteKey re-pulls a known signer's actor document after a
+// signature-verification failure. Remotes that rotate in place — same
+// keyId, fresh pem (Misskey/Akkoma rotate this way; a Mastodon re-key
+// keeps #main-key) — would otherwise be permanently rejected by our
+// cached remote_actors row: every later delivery keeps hitting the
+// stale keyId row and keeps failing to verify. One bounded fetch per
+// failure, self-limiting: the upsert's fetched_at stamp makes repeat
+// bad signatures within the window skip the network entirely.
+func (s *Service) refreshRemoteKey(ctx context.Context, signer *gen.RemoteActor) (*gen.RemoteActor, error) {
+	if s.store == nil || signer == nil {
+		return nil, fmt.Errorf("%w: no signer to refresh", ErrRemoteFetch)
+	}
+	// A row fetched moments ago already IS the remote's word — another
+	// fetch per bad signature would only amplify attacker traffic.
+	if signer.FetchedAt.Valid && time.Since(signer.FetchedAt.Time) < time.Minute {
+		return signer, nil
+	}
+	doc, err := s.fetchRemoteActorDoc(ctx, signer.ActorUrl)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.upsertRemoteActor(ctx, signer.ActorUrl, doc)
+	if err != nil {
+		return nil, fmt.Errorf("%w: key refresh upsert: %v", ErrRemoteFetch, err)
+	}
+	if row.Status != "active" {
+		return nil, fmt.Errorf("%w: signer actor status %s", ErrRemoteBlocked, row.Status)
+	}
+	s.cacheSetRemote(ctx, row)
+	return row, nil
+}
+
 // resolveKeyActor resolves the signing actor for an inbound request.
 // Resolution order: the remote_actors row carrying public_key_id ==
 // keyId; else fetch the keyId URL minus its fragment — an actor document

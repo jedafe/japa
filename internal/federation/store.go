@@ -338,6 +338,13 @@ func (s *Store) latestDeliveredObjectType(ctx context.Context, localActorID pgty
 	return t
 }
 
+// deadenUndeliveredNonDeleteDeliveries terminally fails every in-flight
+// non-Delete row for an actor — runs inside the actor-tombstone fanout
+// so nothing retries into a post-Delete world.
+func (s *Store) deadenUndeliveredNonDeleteDeliveries(ctx context.Context, localActorID pgtype.UUID) error {
+	return s.write.DeadenUndeliveredNonDeleteDeliveriesByActor(ctx, localActorID)
+}
+
 func (s *Store) deliveredObjectActor(ctx context.Context, objectID string) (pgtype.UUID, bool) {
 	id, err := s.read.GetDeliveredObjectActor(ctx, objectID)
 	if err != nil {
