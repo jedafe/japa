@@ -2455,11 +2455,23 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// published_at stamp PublishScheduledContent just set.
 	rederiveComparisonSeoIndexable(ctx, contentID, "task:content:publish_scheduled")
 
+	runScheduledPublishSideEffects(ctx, contentID, "task:content:publish_scheduled")
+
+	return nil
+}
+
+// runScheduledPublishSideEffects runs the post-publish effect set shared by
+// the per-item scheduled-publish task and the periodic sweep: both publish
+// via raw PublishScheduledContent, bypassing every content.Service hook, so
+// the effects must be replayed here or a sweep-published row would go live
+// without a score row, /thread anchor, fan-out, search index, or PDS record.
+// Effects are fire-and-forget — individual failures are logged, not fatal.
+func runScheduledPublishSideEffects(ctx context.Context, contentID pgtype.UUID, logPrefix string) {
 	// Ensure a content_scores row exists so the published content is not
 	// excluded from INNER JOIN feed queries (explore/top/rising/space/profile).
 	// Ref: Section 32, Guide §21.
 	if err := gen.New(dbPool.Writer).EnsureContentScore(ctx, contentID); err != nil {
-		slog.Warn("task:content:publish_scheduled: failed to ensure content_scores row", "content_id", payload.ContentID, "error", err)
+		slog.Warn(logPrefix+": failed to ensure content_scores row", "content_id", contentID.String(), "error", err)
 	}
 
 	// Unified-discussion spec: scheduled publishes mint the canonical
@@ -2467,12 +2479,12 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// status via raw gen, so content.Service's mint hook never sees it.
 	if threadAnchorMinter != nil {
 		if err := threadAnchorMinter(ctx, contentID); err != nil {
-			slog.Warn("task:content:publish_scheduled: thread anchor mint failed", "content_id", payload.ContentID, "error", err)
+			slog.Warn(logPrefix+": thread anchor mint failed", "content_id", contentID.String(), "error", err)
 		}
 	}
 
-	scheduleScheduledPublishFanOut(ctx, contentID, payload.ContentID)
-	scheduleScholarshipSyncFromGuide(ctx, contentID, payload.ContentID)
+	scheduleScheduledPublishFanOut(ctx, contentID, contentID.String())
+	scheduleScholarshipSyncFromGuide(ctx, contentID, contentID.String())
 
 	// Scheduled content is excluded from the search index while
 	// status='scheduled' — re-index now that it has been published so the
@@ -2486,8 +2498,6 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// tombstoned any prior record). The task re-checks eligibility at
 	// write time, so ineligible rows cost only a skipped task.
 	EnqueueAtprotoPublishContent(ctx, contentID)
-
-	return nil
 }
 
 // rederiveComparisonSeoIndexable recomputes the stored seo_indexable flag
@@ -5467,15 +5477,12 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		published++
 
 		// §30/§43: same raw-publish bypass as HandleScheduledPublish —
-		// re-derive the flag for comparison rows the sweep just published.
+		// re-derive the flag for comparison rows the sweep just published,
+		// then run the full post-publish effect set so a sweep-published row
+		// is indistinguishable from a task-published one (score row, /thread
+		// anchor, fan-out, scholarship sync, search index, PDS record).
 		rederiveComparisonSeoIndexable(ctx, pc, "task:content:publish_sweep")
-
-		// §73: keep the scholarship finder in sync for scheduled scholarship guides.
-		scheduleScholarshipSyncFromGuide(ctx, pc, pc.String())
-
-		// §127 A2: same bypass as HandleScheduledPublish — the sweep's raw
-		// PublishScheduledContent skips UpdateContentStatus's atproto emit.
-		EnqueueAtprotoPublishContent(ctx, pc)
+		runScheduledPublishSideEffects(ctx, pc, "task:content:publish_sweep")
 
 		slog.Info("task:content:publish_sweep: content published", "content_id", pc.String())
 	}

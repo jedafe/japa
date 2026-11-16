@@ -223,4 +223,46 @@ func TestDBScheduledPublishSweepComparisonSeoIndexable(t *testing.T) {
 			t.Error("seo_indexable = false for non-JCE comparison, want preserved true")
 		}
 	})
+
+	// A soft-deleted scheduled row is a canceled schedule — the sweep must
+	// not resurrect it (PublishScheduledContent guards deleted_at).
+	t.Run("soft-deleted row not published", func(t *testing.T) {
+		id := seedScheduledContent(t, ctx, d, author, "comparison", "detailed", "public", 600, false)
+		if _, err := d.Writer.Exec(ctx, `UPDATE contents SET deleted_at = now() WHERE id = $1`, id); err != nil {
+			t.Fatalf("soft-deleting scheduled row: %v", err)
+		}
+
+		if err := HandleScheduledPublishSweep(ctx, asynq.NewTask("content:publish_sweep", nil)); err != nil {
+			t.Fatalf("HandleScheduledPublishSweep: %v", err)
+		}
+
+		var status string
+		var deletedAt *time.Time
+		if err := d.Reader.QueryRow(ctx,
+			`SELECT status, deleted_at FROM contents WHERE id = $1`, id).Scan(&status, &deletedAt); err != nil {
+			t.Fatalf("reading deleted row: %v", err)
+		}
+		if status != "scheduled" {
+			t.Errorf("status = %q, want scheduled (deleted row must not publish)", status)
+		}
+	})
+
+	// The sweep replays the full post-publish effect set — the observable
+	// one in-DB is the content_scores row feeds INNER JOIN on.
+	t.Run("sweep ensures content_scores row", func(t *testing.T) {
+		id := seedScheduledContent(t, ctx, d, author, "blog_post", "", "public", 600, false)
+
+		if err := HandleScheduledPublishSweep(ctx, asynq.NewTask("content:publish_sweep", nil)); err != nil {
+			t.Fatalf("HandleScheduledPublishSweep: %v", err)
+		}
+
+		var exists bool
+		if err := d.Reader.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM content_scores WHERE content_id = $1)`, id).Scan(&exists); err != nil {
+			t.Fatalf("checking content_scores: %v", err)
+		}
+		if !exists {
+			t.Error("content_scores row missing after sweep publish")
+		}
+	})
 }

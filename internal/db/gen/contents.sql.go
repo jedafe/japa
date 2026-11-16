@@ -4848,6 +4848,7 @@ FROM contents
 WHERE status = 'scheduled'
  AND publish_at IS NOT NULL
  AND publish_at <= now()
+ AND deleted_at IS NULL
 ORDER BY publish_at ASC
 LIMIT 100
 `
@@ -4916,8 +4917,11 @@ SET status = 'published',
 WHERE id = $1
  AND status = 'scheduled'
  AND publish_at <= now()
+ AND deleted_at IS NULL
 `
 
+// deleted_at guard: a soft-deleted scheduled row must not resurrect on
+// publish (the schedule delete is the user's cancel).
 func (q *Queries) PublishScheduledContent(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, publishScheduledContent, id)
 	if err != nil {

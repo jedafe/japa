@@ -1341,13 +1341,16 @@ ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: PublishScheduledContent :execrows
+-- deleted_at guard: a soft-deleted scheduled row must not resurrect on
+-- publish (the schedule delete is the user's cancel).
 UPDATE contents
 SET status = 'published',
  published_at = COALESCE(published_at, now()),
  updated_at = now()
 WHERE id = @id
  AND status = 'scheduled'
- AND publish_at <= now();
+ AND publish_at <= now()
+ AND deleted_at IS NULL;
 
 -- name: ListScheduledContentReady :many
 SELECT id
@@ -1355,6 +1358,7 @@ FROM contents
 WHERE status = 'scheduled'
  AND publish_at IS NOT NULL
  AND publish_at <= now()
+ AND deleted_at IS NULL
 ORDER BY publish_at ASC
 LIMIT 100;
 
