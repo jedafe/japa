@@ -94,3 +94,28 @@ func (s *Service) RejectSweep(ctx context.Context, proposalID pgtype.UUID, appro
 	}
 	return s.store.DecideTreasurySweep(ctx, proposalID, "rejected", approverID, "")
 }
+
+// ListSweeps pages sweep proposals for GET /admin/treasury/sweeps —
+// ?state filters to one state; empty returns all states per state-grouped
+// union (implemented as state="all" passthrough below).
+func (s *Service) ListSweeps(ctx context.Context, state string, limit, offset int32) ([]TreasurySweep, error) {
+	if state == "" {
+		// Registry states — union of all, newest first per state group.
+		var out []TreasurySweep
+		for _, st := range []string{"proposed", "approved", "executed", "rejected", "expired"} {
+			rows, err := s.store.ListSweepsByState(ctx, st, limit, offset)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, rows...)
+		}
+		return out, nil
+	}
+	return s.store.ListSweepsByState(ctx, state, limit, offset)
+}
+
+// ListWallets pages the member wallet registry for
+// GET /admin/stablecoin/wallets — ?status + ?q filters per catalog.
+func (s *Service) ListWallets(ctx context.Context, status, q string, limit, offset int32) ([]Wallet, error) {
+	return s.store.ListWallets(ctx, status, q, limit, offset)
+}

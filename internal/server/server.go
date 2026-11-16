@@ -1182,6 +1182,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// seams are wired as they become available; the settings/config surface
 	// works without them.
 	tipsService := tips.NewService(database)
+	stablecoinService.SetTipReader(stablecoinTipReader{svc: tipsService})
 	// §05: wire the tips-lookup so space PATCH can enforce tips-vs-paid
 	// mutual exclusivity (a space is either tips-funded or paid — never both).
 	spaceHandlers.SetTipSettingsChecker(tipsService)
@@ -5948,9 +5949,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/wallet/credits", walletHandlers.GetCreditsBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
-				// Activity events with settle outcome — explains zero-earn actions.
+				// Activity events — §128.9: with feature.stablecoin_wallet
+				// on this is the unified feed (onchain mirror + bonus
+				// ledger, credits-denominated); off → legacy points feed.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
-					Get("/me/wallet/activity", walletHandlers.GetActivityEvents)
+					Get("/me/wallet/activity", func(w http.ResponseWriter, req *http.Request) {
+						if featureChecker.IsEnabled(req.Context(), "feature.stablecoin_wallet") {
+							stablecoinHandlers.ListActivity(w, req)
+							return
+						}
+						walletHandlers.GetActivityEvents(w, req)
+					})
 					// Member-facing, read-only wallet limits (catalog: /me/wallet/settings).
 				// Reuses wallet.points.balance — anyone who can view their balance can view them.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
@@ -6153,15 +6162,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Stablecoin wallet routes (Section 128 — api-routes-catalog).
-			// Member surface is feature-gated + auth; the admin-side nodes
-			// (stablecoin.wallet.view, treasury.*, escrow.arbitrate) are
-			// registered in the catalog and mount when their handlers land.
-			// NOTE: the unified GET /me/wallet/activity feed merges into the
-			// existing walletHandlers.GetActivityEvents (§128.9) rather than
-			// mounting a second handler on the catalog path.
+			// Member surface is feature-gated + auth; the unified
+			// /me/wallet/activity feed is dispatched in the wallet mount
+			// above (flag on → onchain+bonus merge; off → legacy feed).
 			r.With(features.Gate(featureChecker, "feature.stablecoin_wallet")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet", stablecoinHandlers.GetWallet)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet/activity", stablecoinHandlers.ListActivity)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/funding/onramp-session", stablecoinHandlers.CreateOnrampSession)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
@@ -6180,15 +6185,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/dispute", stablecoinHandlers.DisputeEscrow)
 			})
 
-			// Admin stablecoin surface — seeded RBAC nodes (001178).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.view")).
-				Get("/admin/stablecoin/treasury", stablecoinHandlers.AdminListTreasury)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.sweep_approve")).
-				Post("/admin/stablecoin/sweeps/{id}/decision", stablecoinHandlers.AdminDecideSweep)
+			// Admin stablecoin surface — catalog paths, seeded RBAC nodes
+			// (001178). The killswitch is gated on treasury.sweep_approve —
+			// seeded super_admin-only, matching the catalog's
+			// [super_admin] guard.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.view")).
-				Get("/admin/stablecoin/wallets/{userId}", stablecoinHandlers.AdminGetMemberWallet)
+				Get("/admin/stablecoin/wallets", stablecoinHandlers.AdminListWallets)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.sweep_approve")).
+				Post("/admin/stablecoin/signer-killswitch", stablecoinHandlers.AdminKillswitch)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.view")).
+				Get("/admin/treasury/wallets", stablecoinHandlers.AdminListTreasury)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.view")).
+				Get("/admin/treasury/sweeps", stablecoinHandlers.AdminListSweeps)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.sweep_approve")).
+				Post("/admin/treasury/sweeps/{id}/approve", stablecoinHandlers.AdminDecideSweep)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.arbitrate")).
-				Post("/admin/stablecoin/escrows/{id}/arbitrate", stablecoinHandlers.AdminArbitrateEscrow)
+				Post("/admin/escrows/{id}/arbitrate", stablecoinHandlers.AdminArbitrateEscrow)
 
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
@@ -10845,6 +10857,31 @@ func (s stablecoinVK) Get(ctx context.Context, key string) (string, error) {
 
 func (s stablecoinVK) Set(ctx context.Context, key, val string, ttlSeconds int) error {
 	return s.vk.Set(ctx, key, val, time.Duration(ttlSeconds)*time.Second).Err()
+}
+
+func (s stablecoinVK) Del(ctx context.Context, key string) error {
+	return s.vk.Del(ctx, key).Err()
+}
+
+// stablecoinTipReader adapts *tips.Service to the stablecoin package's
+// tip-reader seam — tips:settle_stablecoin resolves parties + legs this way.
+type stablecoinTipReader struct {
+	svc *tips.Service
+}
+
+func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stablecoin.Tip, error) {
+	t, err := a.svc.GetTip(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &stablecoin.Tip{
+		ID:              t.ID,
+		SenderUserID:    t.SenderUserID,
+		RecipientUserID: t.RecipientWalletUserID,
+		NetCredits:      t.NetCredits,
+		FeeAmount:       t.FeeAmount,
+		Status:          t.Status,
+	}, nil
 }
 
 // stablecoinBonusLedger adapts *wallet.Service to the stablecoin package's

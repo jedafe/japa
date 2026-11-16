@@ -163,6 +163,28 @@ func (q *Queries) GetStablecoinWalletByAddress(ctx context.Context, address stri
 	return i, err
 }
 
+const getStablecoinWalletByID = `-- name: GetStablecoinWalletByID :one
+SELECT id, user_id, chain, address, locator, status, recovery_methods, delegated_signer, created_at, updated_at FROM stablecoin_wallets WHERE id = $1
+`
+
+func (q *Queries) GetStablecoinWalletByID(ctx context.Context, id pgtype.UUID) (StablecoinWallet, error) {
+	row := q.db.QueryRow(ctx, getStablecoinWalletByID, id)
+	var i StablecoinWallet
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Chain,
+		&i.Address,
+		&i.Locator,
+		&i.Status,
+		&i.RecoveryMethods,
+		&i.DelegatedSigner,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getStablecoinWalletByUser = `-- name: GetStablecoinWalletByUser :one
 SELECT id, user_id, chain, address, locator, status, recovery_methods, delegated_signer, created_at, updated_at FROM stablecoin_wallets
 WHERE user_id = $1
@@ -689,6 +711,59 @@ func (q *Queries) ListStablecoinActivityByWallet(ctx context.Context, arg ListSt
 			&i.Status,
 			&i.OccurredAt,
 			&i.Raw,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStablecoinWallets = `-- name: ListStablecoinWallets :many
+SELECT id, user_id, chain, address, locator, status, recovery_methods, delegated_signer, created_at, updated_at FROM stablecoin_wallets
+WHERE ($1::text = '' OR status = $1::text)
+  AND ($2 IS NULL OR address ILIKE '%' || $2::text || '%')
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListStablecoinWalletsParams struct {
+	Status      string      `json:"status"`
+	Q           interface{} `json:"q"`
+	OffsetCount int32       `json:"offset_count"`
+	LimitCount  int32       `json:"limit_count"`
+}
+
+// Admin wallet registry — optional status filter (” = all), address/user
+// search substring via sqlc.narg.
+func (q *Queries) ListStablecoinWallets(ctx context.Context, arg ListStablecoinWalletsParams) ([]StablecoinWallet, error) {
+	rows, err := q.db.Query(ctx, listStablecoinWallets,
+		arg.Status,
+		arg.Q,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StablecoinWallet
+	for rows.Next() {
+		var i StablecoinWallet
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Chain,
+			&i.Address,
+			&i.Locator,
+			&i.Status,
+			&i.RecoveryMethods,
+			&i.DelegatedSigner,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -16,6 +16,9 @@ RETURNING *;
 SELECT * FROM stablecoin_wallets
 WHERE user_id = @user_id;
 
+-- name: GetStablecoinWalletByID :one
+SELECT * FROM stablecoin_wallets WHERE id = @id;
+
 -- name: GetStablecoinWalletByAddress :one
 SELECT * FROM stablecoin_wallets
 WHERE address = @address;
@@ -41,6 +44,15 @@ SELECT * FROM stablecoin_wallets
 WHERE status = @status
 ORDER BY created_at ASC
 LIMIT @limit_count;
+
+-- name: ListStablecoinWallets :many
+-- Admin wallet registry — optional status filter ('' = all), address/user
+-- search substring via sqlc.narg.
+SELECT * FROM stablecoin_wallets
+WHERE (@status::text = '' OR status = @status::text)
+  AND (sqlc.narg(q) IS NULL OR address ILIKE '%' || sqlc.narg(q)::text || '%')
+ORDER BY created_at DESC
+LIMIT @limit_count OFFSET @offset_count;
 
 -- =====================
 -- Activity mirror

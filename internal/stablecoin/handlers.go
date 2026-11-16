@@ -318,7 +318,7 @@ func (h *Handlers) DisputeEscrow(w http.ResponseWriter, r *http.Request) {
 
 // ── Admin (§128 routes — seeded nodes) ─────────────────────────────────
 
-// AdminListTreasury handles GET /admin/stablecoin/treasury — treasury.view.
+// AdminListTreasury handles GET /admin/treasury/wallets — treasury.view.
 func (h *Handlers) AdminListTreasury(w http.ResponseWriter, r *http.Request) {
 	view, err := h.svc.ListTreasury(r.Context())
 	if err != nil {
@@ -328,23 +328,48 @@ func (h *Handlers) AdminListTreasury(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": view})
 }
 
-// AdminGetMemberWallet handles GET /admin/stablecoin/wallets/{userId} —
-// stablecoin.wallet.view (member wallet metadata; keys never serialized).
-func (h *Handlers) AdminGetMemberWallet(w http.ResponseWriter, r *http.Request) {
-	var uid pgtype.UUID
-	if err := uid.Scan(chi.URLParam(r, "userId")); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user", "Invalid user id")
-		return
-	}
-	sum, err := h.svc.GetWalletSummary(r.Context(), uid)
+// AdminListWallets handles GET /admin/stablecoin/wallets —
+// stablecoin.wallet.view; ?status= + ?q= filters per catalog.
+func (h *Handlers) AdminListWallets(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimit(r)
+	rows, err := h.svc.ListWallets(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleError(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sum})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
-// AdminDecideSweep handles POST /admin/stablecoin/sweeps/{id}/decision —
+// AdminListSweeps handles GET /admin/treasury/sweeps — treasury.view;
+// ?state= filter.
+func (h *Handlers) AdminListSweeps(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimit(r)
+	rows, err := h.svc.ListSweeps(r.Context(), r.URL.Query().Get("state"), limit, offset)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// AdminKillswitch handles POST /admin/stablecoin/signer-killswitch —
+// super_admin-gated per catalog; body {engaged: bool}.
+func (h *Handlers) AdminKillswitch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Engaged bool `json:"engaged"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if err := h.svc.SetKillswitch(r.Context(), req.Engaged); err != nil {
+		handleError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"engaged": req.Engaged}})
+}
+
+// AdminDecideSweep handles POST /admin/treasury/sweeps/{id}/approve —
 // treasury.sweep_approve gated; body carries approve|reject + optional
 // squads_proposal_id.
 func (h *Handlers) AdminDecideSweep(w http.ResponseWriter, r *http.Request) {
@@ -381,7 +406,7 @@ func (h *Handlers) AdminDecideSweep(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"state": req.Decision + "d"}})
 }
 
-// AdminArbitrateEscrow handles POST /admin/stablecoin/escrows/{id}/arbitrate —
+// AdminArbitrateEscrow handles POST /admin/escrows/{id}/arbitrate —
 // escrow.arbitrate gated. Decision authority only; execution needs an
 // onchain co-signer.
 func (h *Handlers) AdminArbitrateEscrow(w http.ResponseWriter, r *http.Request) {

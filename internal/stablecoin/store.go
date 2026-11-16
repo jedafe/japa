@@ -270,6 +270,62 @@ func (st *Store) UpdateDelegatedSigner(ctx context.Context, id pgtype.UUID, ds *
 	return st.q.SetStablecoinWalletDelegatedSigner(ctx, gen.SetStablecoinWalletDelegatedSignerParams{ID: id, DelegatedSigner: b})
 }
 
+// GetWalletByID resolves a wallet row by primary key — activity rows
+// carry wallet_id, so the offramp sweep resolves wallets this way.
+func (st *Store) GetWalletByID(ctx context.Context, id pgtype.UUID) (*Wallet, error) {
+	row, err := st.q.GetStablecoinWalletByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrWalletNotFound
+		}
+		return nil, err
+	}
+	return domainWallet(row), nil
+}
+
+// ListPendingActivity feeds the offramp/webhook-gap sweep — pending rows
+// oldest-first so a lagging confirmation catches up deterministically.
+func (st *Store) ListPendingActivity(ctx context.Context, limit int32) ([]Activity, error) {
+	rows, err := st.q.ListPendingStablecoinActivity(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Activity, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainActivity(r))
+	}
+	return out, nil
+}
+
+// SetActivityStatus flips a mirror row's status (pending → confirmed|failed).
+func (st *Store) SetActivityStatus(ctx context.Context, id pgtype.UUID, status string) error {
+	_, err := st.q.SetStablecoinActivityStatus(ctx, gen.SetStablecoinActivityStatusParams{Status: status, ID: id})
+	return err
+}
+
+// ListWallets pages the admin registry — status "" = all, q = address
+// substring search.
+func (st *Store) ListWallets(ctx context.Context, status, q string, limit, offset int32) ([]Wallet, error) {
+	var qp interface{}
+	if q != "" {
+		qp = q
+	}
+	rows, err := st.q.ListStablecoinWallets(ctx, gen.ListStablecoinWalletsParams{
+		Status:      status,
+		Q:           qp,
+		OffsetCount: offset,
+		LimitCount:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Wallet, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainWallet(r))
+	}
+	return out, nil
+}
+
 // ListWalletsByStatus feeds the reconcile sweep — active wallets only.
 func (st *Store) ListWalletsByStatus(ctx context.Context, status string, limit int32) ([]Wallet, error) {
 	rows, err := st.q.ListStablecoinWalletsByStatus(ctx, gen.ListStablecoinWalletsByStatusParams{
@@ -460,6 +516,23 @@ func (st *Store) GetTreasurySweep(ctx context.Context, id pgtype.UUID) (*Treasur
 		return nil, fmt.Errorf("stablecoin: get sweep: %w", err)
 	}
 	return domainSweep(row), nil
+}
+
+// ListSweepsByState pages proposals by state for the admin surface.
+func (st *Store) ListSweepsByState(ctx context.Context, state string, limit, offset int32) ([]TreasurySweep, error) {
+	rows, err := st.q.ListTreasurySweepsByState(ctx, gen.ListTreasurySweepsByStateParams{
+		State:       state,
+		OffsetCount: offset,
+		LimitCount:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TreasurySweep, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainSweep(r))
+	}
+	return out, nil
 }
 
 // DecideTreasurySweep records the approve/reject decision on a proposal.

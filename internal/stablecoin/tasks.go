@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -105,10 +106,50 @@ func (s *Service) ProcessTreasurySweep(ctx context.Context, _ []byte) error {
 	return s.ProposeSweep(ctx)
 }
 
-// ProcessOfframp handles stablecoin:process_offramp — tracks fiat-offramp
-// payout status and settles the mirror row.
+// ProcessOfframp handles stablecoin:process_offramp — settlement pass for
+// pending mirror rows (offramp sends and any op whose webhook was missed):
+// polls provider wallet activity, confirms rows whose tx_signature landed,
+// and leaves unmatched rows pending for the reconcile sweep.
 func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
-	// TODO(§128.6): poll provider payout status → settle activity rows.
+	pending, err := s.store.ListPendingActivity(ctx, 200)
+	if err != nil {
+		return err
+	}
+	// Group by wallet — one provider poll per wallet.
+	byWallet := map[string][]Activity{}
+	for _, a := range pending {
+		byWallet[a.WalletID] = append(byWallet[a.WalletID], a)
+	}
+	for walletIDStr, rows := range byWallet {
+		var walletID pgtype.UUID
+		if err := walletID.Scan(walletIDStr); err != nil {
+			continue
+		}
+		w, err := s.store.GetWalletByID(ctx, walletID)
+		if err != nil {
+			continue
+		}
+		events, err := s.provider.Activity(ctx, w.Locator, "")
+		if err != nil {
+			slog.Warn("stablecoin: offramp poll failed", "wallet", w.Locator, "error", err)
+			continue
+		}
+		landed := map[string]bool{}
+		for _, ev := range events {
+			landed[ev.TxSignature] = true
+		}
+		for _, a := range rows {
+			var id pgtype.UUID
+			if err := id.Scan(a.ID); err != nil {
+				continue
+			}
+			if landed[a.TxSignature] {
+				if err := s.store.SetActivityStatus(ctx, id, "confirmed"); err != nil {
+					slog.Warn("stablecoin: confirm activity failed", "id", a.ID, "error", err)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -119,6 +160,39 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("%s: unmarshal: %w", TaskTipSettleStablecoin, err)
 	}
-	// TODO(§125/§128.5): load tip → Settle with fee leg (stablecoin.tip_fee_bps).
-	return nil
+	if s.tipReader == nil {
+		return fmt.Errorf("%s: tip reader not wired", TaskTipSettleStablecoin)
+	}
+	var tipID pgtype.UUID
+	if err := tipID.Scan(p.TipID); err != nil {
+		return fmt.Errorf("%s: tip_id: %w", TaskTipSettleStablecoin, err)
+	}
+	tip, err := s.tipReader.GetTip(ctx, tipID)
+	if err != nil {
+		return err
+	}
+	if tip.Status != "pending" && tip.Status != "settling" {
+		return nil // already settled/cancelled — idempotent replay
+	}
+	// Resolve the recipient's wallet — tips settle member→member onchain.
+	rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
+	if err != nil {
+		return err
+	}
+	// Settle from the sender's wallet: net credits → recipient, fee leg →
+	// treasury hot. Settle enforces killswitch + per-wallet daily cap.
+	asset := "usdc"
+	if assets := s.assetList(ctx); len(assets) > 0 {
+		asset = assets[0]
+	}
+	_, err = s.Settle(ctx, SettleInput{
+		FromUserID:  tip.SenderUserID,
+		ToAddress:   rw.Address,
+		Asset:       asset,
+		AmountMinor: tip.NetCredits,
+		FeeMinor:    tip.FeeAmount,
+		Idempotency: "tip:" + tip.ID.String(),
+		Reference:   "tip",
+	})
+	return err
 }
