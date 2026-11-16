@@ -156,17 +156,17 @@ func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.
 		}
 		author = a
 	} else {
-		authorID, wasPublished, err := s.store.contentLiteByID(ctx, contentID)
+		lite, err := s.store.contentLiteByID(ctx, contentID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil // row gone entirely — nothing ever fanned out
 			}
 			return err
 		}
-		if !wasPublished {
+		if !wasPublished(lite) {
 			return nil // never published → no Create ever reached remotes
 		}
-		a, err := s.store.actorByUserID(ctx, authorID)
+		a, err := s.store.actorByUserID(ctx, lite.AuthorID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil
@@ -436,6 +436,17 @@ func (s *Service) PruneDeliveries(ctx context.Context, retentionDays int) error 
 		for _, d := range due {
 			if err := s.enqueueDelivery(ctx, d.ID); err != nil {
 				slog.Warn("federation: sweep re-enqueue failed — next run retries", "delivery_id", d.ID, "error", err)
+			}
+		}
+		// Same stranded-work class on the inbound side: a lost
+		// EnqueueInbound leaves 'received' rows with no driver.
+		stale, err := s.store.staleInbound(ctx, 200)
+		if err != nil {
+			return fmt.Errorf("federation inbound sweep: %w", err)
+		}
+		for _, id := range stale {
+			if err := s.enqueue.EnqueueInbound(ctx, id); err != nil {
+				slog.Warn("federation: inbound sweep re-enqueue failed", "inbound_id", id, "error", err)
 			}
 		}
 	}

@@ -366,7 +366,7 @@ func (q *Queries) DeleteRemoteSharesByActor(ctx context.Context, remoteActorID p
 const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
-       COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
        COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
@@ -392,7 +392,7 @@ type GetActorProfileByUsernameRow struct {
 	OutboxUrl                 string             `json:"outbox_url"`
 	FollowersUrl              string             `json:"followers_url"`
 	FollowingUrl              string             `json:"following_url"`
-	ManuallyApprovesFollowers interface{}        `json:"manually_approves_followers"`
+	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
 	Discoverable              bool               `json:"discoverable"`
 	Status                    string             `json:"status"`
 	ActorCreatedAt            pgtype.Timestamptz `json:"actor_created_at"`
@@ -438,21 +438,29 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 }
 
 const getContentLiteByID = `-- name: GetContentLiteByID :one
-SELECT author_id, published_at FROM contents WHERE id = $1
+SELECT author_id, published_at, is_locked, deleted_at FROM contents WHERE id = $1
 `
 
 type GetContentLiteByIDRow struct {
 	AuthorID    pgtype.UUID        `json:"author_id"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	IsLocked    bool               `json:"is_locked"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
-// Ungated contents read for delete propagation: soft-deleted and
-// unpublished rows still resolve — the question the fanout answers is
-// whether a remote copy could exist, not whether the object is live.
+// Ungated contents read for delete propagation and inbound lock checks:
+// soft-deleted and unpublished rows still resolve — the questions the
+// callers answer are "could a remote copy exist" and "are comments
+// locked", not whether the object is currently live.
 func (q *Queries) GetContentLiteByID(ctx context.Context, id pgtype.UUID) (GetContentLiteByIDRow, error) {
 	row := q.db.QueryRow(ctx, getContentLiteByID, id)
 	var i GetContentLiteByIDRow
-	err := row.Scan(&i.AuthorID, &i.PublishedAt)
+	err := row.Scan(
+		&i.AuthorID,
+		&i.PublishedAt,
+		&i.IsLocked,
+		&i.DeletedAt,
+	)
 	return i, err
 }
 
@@ -1545,7 +1553,7 @@ SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
 FROM federation_follows ff
 JOIN federated_actors fa ON fa.id = ff.local_actor_id
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
-WHERE fa.user_id = $1 AND ff.status = 'pending'
+WHERE fa.user_id = $1 AND fa.status = 'active' AND ff.status = 'pending'
 ORDER BY ff.created_at DESC
 `
 
@@ -1665,6 +1673,34 @@ func (q *Queries) ListRemoteFollowerURLsByActor(ctx context.Context, arg ListRem
 			return nil, err
 		}
 		items = append(items, actor_url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStaleFederationInbound = `-- name: ListStaleFederationInbound :many
+SELECT id FROM federation_inbound
+WHERE status = 'received' AND created_at < now() - make_interval(mins => 5)
+LIMIT $1
+`
+
+// Same stranded-work class as deliveries: the handler's EnqueueInbound
+// is best-effort — a lost kick leaves 'received' rows with no driver.
+func (q *Queries) ListStaleFederationInbound(ctx context.Context, pageLimit int32) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listStaleFederationInbound, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -746,7 +746,213 @@ func TestDBFanoutDeleteAfterLedgerPrune(t *testing.T) {
 	}
 }
 
-type recordingEnqueuer struct{ deliveries []pgtype.UUID }
+// Undo targets must not be gated on the object still being federatable —
+// a Like lands while published, the post then goes private, and the
+// remote's unlike still has to settle the count.
+func TestDBUndoLikeAfterUnpublish(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	contentID, objURL := newFederatedContent(t, ctx, svc, userID)
+	remote, actorURL := newRemoteActor(t, ctx, svc, "undo.example")
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#like-1", "type": "Like", "actor": actorURL, "object": objURL,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("like status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM reactions WHERE remote_actor_id = $1 AND entity_id = $2`, remote.ID, contentID); n != 1 {
+		t.Fatalf("reaction rows: %d", n)
+	}
+
+	// Post leaves the federatable set — the unlike must still apply.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET visibility = 'private' WHERE id = $1`, contentID); err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	row = runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#undo-like-1", "type": "Undo", "actor": actorURL,
+		"object": map[string]any{"type": "Like", "actor": actorURL, "object": objURL},
+	})
+	if row.Status != "processed" {
+		t.Fatalf("undo status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM reactions WHERE remote_actor_id = $1 AND entity_id = $2`, remote.ID, contentID); n != 0 {
+		t.Fatalf("reaction rows after undo on private content: %d", n)
+	}
+}
+
+// A privacy flip after EnableFederation must gate the NEXT inbound
+// Follow — the stored flag only refreshes at enable/reactivate.
+func TestDBFollowUsesLiveApprovalFlag(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	r1, u1 := newRemoteActor(t, ctx, svc, "flip1.example")
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": u1 + "#f1", "type": "Follow", "actor": u1,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("first follow status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'accepted'`, r1.ID); n != 1 {
+		t.Fatalf("auto-accept before flip: %d", n)
+	}
+
+	// Member switches to followers-only — the next Follow must park.
+	approveFollowers(t, ctx, d, userID)
+	r2, u2 := newRemoteActor(t, ctx, svc, "flip2.example")
+	row = runInbound(t, ctx, svc, map[string]any{
+		"id": u2 + "#f2", "type": "Follow", "actor": u2,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("second follow status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'pending'`, r2.ID); n != 1 {
+		t.Fatalf("pending edge after live privacy flip: %d", n)
+	}
+
+	// Re-sent Follows against the same pending edge must not re-ping.
+	row = runInbound(t, ctx, svc, map[string]any{
+		"id": u2 + "#f2-retry", "type": "Follow", "actor": u2,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("resent follow status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1`, r2.ID); n != 1 {
+		t.Fatalf("edge count after resend: %d", n)
+	}
+}
+
+// §49 lock semantics apply to remote replies too.
+func TestDBRemoteReplyToLockedContent(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	contentID, objURL := newFederatedContent(t, ctx, svc, userID)
+	remote, actorURL := newRemoteActor(t, ctx, svc, "lock.example")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET is_locked = true WHERE id = $1`, contentID); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#note-1", "type": "Create", "actor": actorURL,
+		"object": map[string]any{
+			"id": actorURL + "/notes/1", "type": "Note",
+			"inReplyTo": objURL, "content": "<p>hi</p>",
+		},
+	})
+	if row.Status != "ignored" {
+		t.Fatalf("locked reply status %q (want ignored)", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM comments WHERE remote_ap_actor_id = $1`, remote.ID); n != 0 {
+		t.Fatalf("comments on locked content: %d", n)
+	}
+}
+
+// Stale 'received' inbound rows get re-armed by the daily task.
+func TestDBStaleInboundSweep(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	q := gen.New(d.Writer)
+	stale, err := q.InsertFederationInbound(ctx, gen.InsertFederationInboundParams{
+		ActivityApID: strPtr("https://remote.example/act/stale"), ActivityType: "Like",
+		ActorUrl: strPtr("https://remote.example/actors/1"), SignatureValid: true,
+		Payload: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("insert inbound: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_inbound SET created_at = now() - interval '10 minutes' WHERE id = $1`, stale.ID); err != nil {
+		t.Fatalf("backdate inbound: %v", err)
+	}
+	fresh, err := q.InsertFederationInbound(ctx, gen.InsertFederationInboundParams{
+		ActivityApID: strPtr("https://remote.example/act/fresh"), ActivityType: "Like",
+		ActorUrl: strPtr("https://remote.example/actors/1"), SignatureValid: true,
+		Payload: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("insert fresh inbound: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(),
+			`DELETE FROM federation_inbound WHERE id IN ($1,$2)`, stale.ID, fresh.ID)
+	})
+
+	enq := &recordingEnqueuer{}
+	svc.SetEnqueuer(enq)
+	if err := svc.PruneDeliveries(ctx, 30); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	got := map[pgtype.UUID]bool{}
+	for _, id := range enq.inbounds {
+		got[id] = true
+	}
+	if !got[stale.ID] {
+		t.Error("stale inbound row not re-enqueued")
+	}
+	if got[fresh.ID] {
+		t.Error("fresh inbound row double-armed")
+	}
+}
+
+// An instance blocked after an actor row was cached must stop verifying —
+// the keyId hit path re-checks the domain gate.
+func TestDBKeyActorBlockedAfterCache(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	remote, _ := newRemoteActor(t, ctx, svc, "lateblock.example")
+	if _, err := gen.New(d.Writer).CreateInstanceBlock(ctx, gen.CreateInstanceBlockParams{
+		Domain: "lateblock.example", BlockedBy: userID,
+	}); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(),
+			`DELETE FROM federation_instance_blocks WHERE domain = 'lateblock.example'`)
+	})
+	if _, err := svc.resolveKeyActor(ctx, *remote.PublicKeyID); !errors.Is(err, ErrRemoteBlocked) {
+		t.Fatalf("cached-but-blocked key resolved: %v", err)
+	}
+}
+
+type recordingEnqueuer struct {
+	deliveries []pgtype.UUID
+	inbounds   []pgtype.UUID
+}
 
 func (e *recordingEnqueuer) EnqueueDelivery(_ context.Context, id pgtype.UUID) error {
 	e.deliveries = append(e.deliveries, id)
@@ -755,7 +961,10 @@ func (e *recordingEnqueuer) EnqueueDelivery(_ context.Context, id pgtype.UUID) e
 func (e *recordingEnqueuer) EnqueueDeliveryAfter(context.Context, pgtype.UUID, time.Duration) error {
 	return nil
 }
-func (e *recordingEnqueuer) EnqueueInbound(context.Context, pgtype.UUID) error { return nil }
+func (e *recordingEnqueuer) EnqueueInbound(_ context.Context, id pgtype.UUID) error {
+	e.inbounds = append(e.inbounds, id)
+	return nil
+}
 
 func TestDBRemoteProvenanceConstraints(t *testing.T) {
 	d := testDB(t)

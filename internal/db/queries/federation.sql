@@ -35,7 +35,7 @@ WHERE fa.user_id = @user_id
 -- apply without touching the actor row.
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
-       COALESCE(ups.profile_visibility = 'followers', false) AS manually_approves_followers,
+       COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
        COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
@@ -211,7 +211,7 @@ SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
 FROM federation_follows ff
 JOIN federated_actors fa ON fa.id = ff.local_actor_id
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
-WHERE fa.user_id = @user_id AND ff.status = 'pending'
+WHERE fa.user_id = @user_id AND fa.status = 'active' AND ff.status = 'pending'
 ORDER BY ff.created_at DESC;
 
 -- name: ResolveFederationFollow :execrows
@@ -349,10 +349,11 @@ WHERE c.id = @id
   AND c.content_type = ANY(@content_types::text[]);
 
 -- name: GetContentLiteByID :one
--- Ungated contents read for delete propagation: soft-deleted and
--- unpublished rows still resolve — the question the fanout answers is
--- whether a remote copy could exist, not whether the object is live.
-SELECT author_id, published_at FROM contents WHERE id = @id;
+-- Ungated contents read for delete propagation and inbound lock checks:
+-- soft-deleted and unpublished rows still resolve — the questions the
+-- callers answer are "could a remote copy exist" and "are comments
+-- locked", not whether the object is currently live.
+SELECT author_id, published_at, is_locked, deleted_at FROM contents WHERE id = @id;
 
 -- name: InsertFederationDelivery :one
 INSERT INTO federation_deliveries (
@@ -411,6 +412,13 @@ SELECT * FROM federation_inbound WHERE id = @id;
 
 -- name: UpdateFederationInboundStatus :exec
 UPDATE federation_inbound SET status = @status, error = @error WHERE id = @id;
+
+-- name: ListStaleFederationInbound :many
+-- Same stranded-work class as deliveries: the handler's EnqueueInbound
+-- is best-effort — a lost kick leaves 'received' rows with no driver.
+SELECT id FROM federation_inbound
+WHERE status = 'received' AND created_at < now() - make_interval(mins => 5)
+LIMIT @page_limit;
 
 -- name: PruneFederationDeliveries :exec
 DELETE FROM federation_deliveries

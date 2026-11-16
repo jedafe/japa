@@ -214,9 +214,14 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 	if row, err := s.store.remoteActorByKeyID(ctx, keyID); err == nil {
 		// A tombstoned/deleted/blocked actor's key must not verify — its
 		// signed traffic stops being meaningful the moment the row leaves
-		// 'active', the same posture resolveRemoteActor takes.
+		// 'active', the same posture resolveRemoteActor takes. The domain
+		// gate is re-checked too: an instance blocked after the row was
+		// cached must not keep verifying.
 		if row.Status != "active" {
 			return nil, fmt.Errorf("%w: signer actor status %s", ErrRemoteBlocked, row.Status)
+		}
+		if !s.instanceAllowed(ctx, row.Domain) {
+			return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, row.Domain)
 		}
 		return &row, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {

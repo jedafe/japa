@@ -210,9 +210,21 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 		return dispatchResult{status: "ignored", reason: "target actor not active"}
 	}
 
+	// Manual approval reads the live profile-join flag — the stored
+	// federated_actors column only refreshes at enable/reactivate, so a
+	// privacy change while the actor is active must still gate new edges.
 	status := "accepted"
-	if actor.ManuallyApprovesFollowers {
+	if profile.ManuallyApprovesFollowers {
 		status = "pending"
+	}
+	// Prior edge state gates the notification: remote implementations
+	// re-send Follow (new activity id) until they get an answer — each
+	// re-send must not re-ping the member.
+	priorStatus := ""
+	if prior, perr := q.GetFederationFollowByPair(ctx, gen.GetFederationFollowByPairParams{
+		LocalActorID: actor.ID, RemoteActorID: signer.ID,
+	}); perr == nil {
+		priorStatus = prior.Status
 	}
 	follow, err := q.UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
 		LocalActorID:  actor.ID,
@@ -228,11 +240,14 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	if follow.Status == "undone" {
 		return dispatchResult{status: "ignored", reason: "follow was undone"}
 	}
-	if status == "pending" {
-		return dispatchResult{
-			status:  "processed",
-			intents: []notifyIntent{s.followIntent(actor, profile, *signer)},
+	// Check the STORED status, not the desired one — sticky 'accepted'
+	// survives a pending-desired upsert and must not notify as a request.
+	if follow.Status == "pending" {
+		res := dispatchResult{status: "processed"}
+		if priorStatus != "pending" { // fresh edge, or re-request after rejection
+			res.intents = []notifyIntent{s.followIntent(actor, profile, *signer)}
 		}
+		return res
 	}
 
 	// accepted — mirror the §49 follower edge and emit Accept. Mastodon
@@ -558,40 +573,58 @@ func followUserID(ctx context.Context, q *gen.Queries, localActorID pgtype.UUID)
 	return actor.UserID
 }
 
+// contentIDForObject parses a local object URL back to the contents id —
+// deliberately ungated: undo paths must run against whatever the ledger
+// holds, even after the object left the federatable set (unpublish,
+// private flip). A gated lookup would make un-likes/un-boosts on
+// un-federated objects unanswerable — the row in reactions/shares is the
+// authority on whether a decrement is owed.
+func (s *Service) contentIDForObject(objectID string) (pgtype.UUID, bool) {
+	raw, ok := strings.CutPrefix(objectID, s.apiBase()+"/federation/objects/contents/")
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	var id pgtype.UUID
+	if err := id.Scan(strings.Trim(raw, "/")); err != nil || !id.Valid {
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
 // undoLike removes a remote Like reaction and refreshes the score.
 func (s *Service) undoLike(ctx context.Context, q *gen.Queries, targetID string, signer *gen.RemoteActor) dispatchResult {
-	content, ok := s.localContentForObject(ctx, q, targetID)
+	contentID, ok := s.contentIDForObject(targetID)
 	if !ok {
 		return dispatchResult{status: "ignored", reason: "unlike target unknown"}
 	}
 	n, err := q.RemoveRemoteReaction(ctx, gen.RemoveRemoteReactionParams{
-		EntityType: "content", EntityID: content.ID,
+		EntityType: "content", EntityID: contentID,
 		RemoteActorID: signer.ID, ReactionKey: "like",
 	})
 	if err != nil {
 		return dispatchResult{status: "error", reason: "reaction delete: " + err.Error()}
 	}
 	if n > 0 {
-		s.refreshReactionCount(ctx, q, content.ID)
+		s.refreshReactionCount(ctx, q, contentID)
 	}
 	return dispatchResult{status: "processed"}
 }
 
 // undoAnnounce drops the share ledger row; only a real delete decrements.
 func (s *Service) undoAnnounce(ctx context.Context, q *gen.Queries, targetID string, signer *gen.RemoteActor) dispatchResult {
-	content, ok := s.localContentForObject(ctx, q, targetID)
+	contentID, ok := s.contentIDForObject(targetID)
 	if !ok {
 		return dispatchResult{status: "ignored", reason: "unannounce target unknown"}
 	}
 	n, err := q.DeleteRemoteShare(ctx, gen.DeleteRemoteShareParams{
 		RemoteActorID: signer.ID,
-		ContentID:     content.ID,
+		ContentID:     contentID,
 	})
 	if err != nil {
 		return dispatchResult{status: "error", reason: "share delete: " + err.Error()}
 	}
 	if n > 0 {
-		s.bumpCounter(q.DecrementContentShareCount(ctx, content.ID))
+		s.bumpCounter(q.DecrementContentShareCount(ctx, contentID))
 	}
 	return dispatchResult{status: "processed"}
 }
@@ -717,6 +750,13 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 		}
 	} else {
 		return dispatchResult{status: "ignored", reason: "reply target unknown"}
+	}
+
+	// §49: a locked or deleted thread takes no new comments — the remote
+	// path must honor the same invariant member replies do.
+	if lite, lerr := q.GetContentLiteByID(ctx, contentID); lerr == nil &&
+		(lite.IsLocked || lite.DeletedAt.Valid) {
+		return dispatchResult{status: "ignored", reason: "comments closed"}
 	}
 
 	if _, err := q.InsertAPRemoteComment(ctx, gen.InsertAPRemoteCommentParams{

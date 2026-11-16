@@ -345,13 +345,19 @@ func (s *Store) inboundByActivityID(ctx context.Context, apID string) (gen.Feder
 	return s.read.GetFederationInboundByActivityID(ctx, &apID)
 }
 
-// contentLiteByID is the ungated contents read the delete fanout needs —
-// soft-deleted/unpublished rows still resolve (the question is whether a
-// remote copy could exist, not whether the object is currently live).
-func (s *Store) contentLiteByID(ctx context.Context, id pgtype.UUID) (authorID pgtype.UUID, wasPublished bool, err error) {
-	row, err := s.read.GetContentLiteByID(ctx, id)
-	if err != nil {
-		return pgtype.UUID{}, false, err
-	}
-	return row.AuthorID, row.PublishedAt.Valid && row.PublishedAt.Time.Before(time.Now()), nil
+// contentLiteByID is the ungated contents read the delete fanout and
+// inbound lock checks need — soft-deleted/unpublished rows still resolve
+// (the question is what the row proves, not whether the object is live).
+func (s *Store) contentLiteByID(ctx context.Context, id pgtype.UUID) (gen.GetContentLiteByIDRow, error) {
+	return s.read.GetContentLiteByID(ctx, id)
+}
+
+// wasPublished is the durable "remote copy plausible" signal —
+// published_at survives unpublish, private flips, and soft-delete.
+func wasPublished(row gen.GetContentLiteByIDRow) bool {
+	return row.PublishedAt.Valid && row.PublishedAt.Time.Before(time.Now())
+}
+
+func (s *Store) staleInbound(ctx context.Context, limit int32) ([]pgtype.UUID, error) {
+	return s.read.ListStaleFederationInbound(ctx, limit)
 }
