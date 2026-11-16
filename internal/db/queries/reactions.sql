@@ -45,7 +45,10 @@ WITH prev AS (
 upsert AS (
   INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key)
   VALUES ($1, $2, $3, $4)
-  ON CONFLICT (entity_type, entity_id, user_id) DO UPDATE
+  -- Conflict inference names the partial-unique predicate (001167 made
+  -- user_id nullable for remote-actor provenance); user writes always
+  -- satisfy it.
+  ON CONFLICT (entity_type, entity_id, user_id) WHERE user_id IS NOT NULL DO UPDATE
     SET reaction_key = EXCLUDED.reaction_key,
         created_at = CASE WHEN reactions.reaction_key <> EXCLUDED.reaction_key
                           THEN now() ELSE reactions.created_at END

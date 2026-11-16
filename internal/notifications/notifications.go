@@ -50,6 +50,7 @@ const (
 	TypeMentionContent     = "mention.content"
 	TypeMentionComment     = "mention.comment"
 	TypeContentReaction    = "content.reaction"
+	TypeContentReshare     = "content.reshare"
 	TypeDMMessage          = "dm.message"
 	TypeDMRequest          = "dm.request"
 	TypeSystemAnnouncement = "broadcast"

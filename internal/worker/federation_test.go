@@ -34,6 +34,18 @@ func (f *fakeProvisioner) InvalidateActorIdentityForUser(_ context.Context, user
 	f.invalidated = append(f.invalidated, userID.String())
 }
 
+// §126 M2 seams — unused by the auto-opt-in handler tests.
+func (f *fakeProvisioner) ProcessInbound(_ context.Context, _ pgtype.UUID) error { return nil }
+func (f *fakeProvisioner) Fanout(_ context.Context, _ pgtype.UUID) error         { return nil }
+func (f *fakeProvisioner) FanoutActorDelete(_ context.Context, _ pgtype.UUID) error {
+	return nil
+}
+func (f *fakeProvisioner) Deliver(_ context.Context, _ pgtype.UUID) error { return nil }
+func (f *fakeProvisioner) ResolveRemoteActorTask(_ context.Context, _ string) error {
+	return nil
+}
+func (f *fakeProvisioner) PruneDeliveries(_ context.Context, _ int) error { return nil }
+
 // Remaining atprotoRepoWriter methods — unused by the auto-opt-in handler.
 func (f *fakeProvisioner) PublishRecordJSON(_ context.Context, _ pgtype.UUID, _, _ string, _ json.RawMessage, _ pgtype.UUID) (string, error) {
 	return "", nil

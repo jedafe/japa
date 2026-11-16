@@ -188,7 +188,7 @@ func (q *Queries) CountTopLevelCommentsByContent(ctx context.Context, contentID 
 const createComment = `-- name: CreateComment :one
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
 `
 
 type CreateCommentParams struct {
@@ -237,6 +237,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.CreatedByUserID,
 		&i.RemoteAtprotoActorID,
 		&i.RemoteUri,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }
@@ -352,14 +353,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.created_by_user_id, c.parent_id, 
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.id = $2
 `
@@ -843,14 +845,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -971,14 +974,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -1097,14 +1101,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.content_id = $3
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -1353,14 +1358,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.content_id = $3
@@ -1474,14 +1480,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  0::smallint AS user_vote,
  false AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 JOIN contents parent ON parent.id = c.content_id
 WHERE c.parent_id = $1 AND c.content_id = $2
@@ -1595,14 +1602,15 @@ SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  ), 0)::smallint AS user_vote,
  COALESCE((c.author_user_id = $2 OR c.created_by_user_id = $2), false)::bool AS viewer_can_manage,
  c.is_anonymous,
- COALESCE(u.public_username, u.username, ra.handle, '') AS username,
- COALESCE(up.display_name, ra.display_name, ra.handle, '') AS display_name,
- COALESCE(up.avatar_url, ra.avatar_url, '') AS avatar_url,
+ COALESCE(u.public_username, u.username, ra.handle, ap.acct, '') AS username,
+ COALESCE(up.display_name, ra.display_name, ra.handle, ap.display_name, ap.acct, '') AS display_name,
+ COALESCE(up.avatar_url, ra.avatar_url, ap.avatar_url, '') AS avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type
 FROM comments c
 LEFT JOIN users u ON u.id = c.author_user_id
 LEFT JOIN atproto_remote_actors ra ON ra.id = c.remote_atproto_actor_id
+LEFT JOIN remote_actors ap ON ap.id = c.remote_ap_actor_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE c.parent_id = $3 AND c.content_id = $4
  AND (c.deleted_at IS NULL OR c.reply_count > 0)
@@ -1905,7 +1913,7 @@ UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND (author_user_id = $3 OR created_by_user_id = $3) AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
 `
 
 type UpdateCommentParams struct {
@@ -1946,6 +1954,7 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.CreatedByUserID,
 		&i.RemoteAtprotoActorID,
 		&i.RemoteUri,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }
@@ -1955,7 +1964,7 @@ UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
 `
 
 type UpdateCommentByIDParams struct {
@@ -1993,6 +2002,7 @@ func (q *Queries) UpdateCommentByID(ctx context.Context, arg UpdateCommentByIDPa
 		&i.CreatedByUserID,
 		&i.RemoteAtprotoActorID,
 		&i.RemoteUri,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }
@@ -2002,7 +2012,7 @@ UPDATE comments
 SET body = $1, updated_at = now()
 WHERE id = $2 AND (author_user_id = $3 OR created_by_user_id = $3) AND deleted_at IS NULL
  AND status = 'published'
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
 `
 
 type UpdateCommentUnmarkedParams struct {
@@ -2042,6 +2052,7 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 		&i.CreatedByUserID,
 		&i.RemoteAtprotoActorID,
 		&i.RemoteUri,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }

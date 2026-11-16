@@ -512,6 +512,12 @@ func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (
 		if content.Visibility == VisibilityPublic {
 			s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
 		}
+
+		// §126 M2: fan the new post out to remote followers. The task
+		// re-checks every eligibility gate at run time — a row that leaves
+		// the federatable set before execution delivers Delete, not a
+		// stale Create.
+		worker.EnqueueFederationFanout(ctx, content.ID)
 	}
 
 	return content, nil
@@ -1812,6 +1818,11 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		s.emitAtprotoDelete(ctx, content.ID)
 	}
 
+	// §126 M2: one emit covers every update shape — visibility flips,
+	// opt-out toggles, plain edits. The task fans out Create/Update or
+	// Delete{tombstone} off current state, so the emit stays unconditional.
+	worker.EnqueueFederationFanout(ctx, content.ID)
+
 	return content, nil
 }
 
@@ -2116,6 +2127,11 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		s.emitAtprotoDelete(ctx, content.ID)
 	}
 
+	// §126 M2: status transitions federate through the same convergent
+	// task — publish/restore → Create-or-Update, unpublish → Delete when
+	// the object was previously delivered.
+	worker.EnqueueFederationFanout(ctx, content.ID)
+
 	return content, nil
 }
 
@@ -2225,6 +2241,10 @@ func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt
 	if row.Status == StatusPublished && row.Visibility == VisibilityPublic {
 		s.emitAtprotoDelete(ctx, id)
 	}
+
+	// §126 M2: scheduling likewise pulls the object out of the federatable
+	// set — Delete fans out if it was previously delivered.
+	worker.EnqueueFederationFanout(ctx, id)
 
 	return content, nil
 }
@@ -2505,6 +2525,10 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	// index row is the proof a record exists — firing unconditionally also
 	// covers the pre-read-failure path where `existing` is zero-valued.
 	s.emitAtprotoDelete(ctx, id)
+
+	// §126 M2: remote followers get Delete{tombstone} if the object was
+	// ever delivered — the task no-ops when it never left the building.
+	worker.EnqueueFederationFanout(ctx, id)
 
 	// Unified-discussion spec: the canonical discussion thread dies with
 	// its content row — /thread/{slug} 404s and drops out of listings.
@@ -2957,7 +2981,7 @@ func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string,
 }
 
 // GetUserReactions returns all reactions a specific user has on an entity.
-func (s *Service) GetUserReactions(ctx context.Context, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
+func (s *Service) GetUserReactions(ctx context.Context, entityType string, entityID, userID pgtype.UUID) ([]gen.GetUserReactionsRow, error) {
 	reactions, err := s.read.GetUserReactions(ctx, gen.GetUserReactionsParams{
 		EntityType: entityType,
 		EntityID:   entityID,

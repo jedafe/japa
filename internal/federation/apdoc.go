@@ -281,3 +281,13 @@ func wellKnownNodeInfo(href string) map[string]any {
 		}},
 	}
 }
+
+// tombstoneDocument is the 410-Gone body §126 serves for disabled or
+// tombstoned actors — remotes read type Tombstone as terminal.
+func tombstoneDocument(actorURL string) map[string]any {
+	return map[string]any{
+		"@context": "https://www.w3.org/ns/activitystreams",
+		"id":       actorURL,
+		"type":     "Tombstone",
+	}
+}

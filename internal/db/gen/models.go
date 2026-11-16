@@ -1171,6 +1171,7 @@ type Comment struct {
 	CreatedByUserID      pgtype.UUID        `json:"created_by_user_id"`
 	RemoteAtprotoActorID pgtype.UUID        `json:"remote_atproto_actor_id"`
 	RemoteUri            *string            `json:"remote_uri"`
+	RemoteApActorID      pgtype.UUID        `json:"remote_ap_actor_id"`
 }
 
 type CommentView struct {
@@ -2333,6 +2334,14 @@ type FederationInstanceBlock struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type FederationRemoteShare struct {
+	ID            pgtype.UUID        `json:"id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	ApActivityID  *string            `json:"ap_activity_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Feed struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -2344,11 +2353,12 @@ type Feed struct {
 }
 
 type Follow struct {
-	ID         pgtype.UUID        `json:"id"`
-	FollowerID pgtype.UUID        `json:"follower_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	FollowerID            pgtype.UUID        `json:"follower_id"`
+	EntityType            string             `json:"entity_type"`
+	EntityID              pgtype.UUID        `json:"entity_id"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	FollowerRemoteActorID pgtype.UUID        `json:"follower_remote_actor_id"`
 }
 
 type Form struct {
@@ -3747,11 +3757,13 @@ type RagSpecSource struct {
 }
 
 type Reaction struct {
-	EntityType  string             `json:"entity_type"`
-	EntityID    pgtype.UUID        `json:"entity_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	ReactionKey string             `json:"reaction_key"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	EntityType    string             `json:"entity_type"`
+	EntityID      pgtype.UUID        `json:"entity_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ReactionKey   string             `json:"reaction_key"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID            pgtype.UUID        `json:"id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
 }
 
 type ReactionType struct {

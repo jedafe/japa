@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,6 +25,13 @@ import (
 type federationProvisioner interface {
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
 	InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID, extraHandles ...string)
+	// §126 M2 — inbound dispatch + outbound delivery seams.
+	ProcessInbound(ctx context.Context, inboundID pgtype.UUID) error
+	Fanout(ctx context.Context, contentID pgtype.UUID) error
+	FanoutActorDelete(ctx context.Context, actorID pgtype.UUID) error
+	Deliver(ctx context.Context, deliveryID pgtype.UUID) error
+	ResolveRemoteActorTask(ctx context.Context, actorURL string) error
+	PruneDeliveries(ctx context.Context, retentionDays int) error
 }
 
 var federationSvc federationProvisioner
@@ -217,4 +225,197 @@ func HandleFederationBackfillOptin(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// §126 M2 — inbound dispatch + outbound delivery
+// ---------------------------------------------------------------------------
+
+// EnqueueFederationFanout fires federation:fanout for one content id —
+// called by content's post-commit emit sites (publish/update/unpublish/
+// delete). The task re-checks eligibility at run time, so enqueueing on
+// every transition is correct: ineligible-at-run-time fanouts a Delete or
+// no-ops. Fire-and-forget (Rule 8); a nil enqueuer is a no-op.
+func EnqueueFederationFanout(ctx context.Context, contentID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"content_id": contentID.String()})
+	if err != nil {
+		slog.Warn("worker: federation fanout enqueue marshal failed", "content_id", contentID.String(), "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeFederationFanout, payload); err != nil {
+		slog.Warn("worker: federation fanout enqueue failed", "content_id", contentID.String(), "error", err)
+	}
+}
+
+// EnqueueFederationActorDelete fires federation:fanout for an actor tombstone
+// — disable/erasure paths propagate Delete{actor} to remote followers.
+func EnqueueFederationActorDelete(ctx context.Context, actorID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"actor_id": actorID.String()})
+	if err != nil {
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeFederationFanout, payload); err != nil {
+		slog.Warn("worker: federation actor-delete enqueue failed", "actor_id", actorID.String(), "error", err)
+	}
+}
+
+// enqueueFederationDelivery kicks one delivery row — the production
+// TaskEnqueuer seam for *federation.Service.
+func enqueueFederationDelivery(ctx context.Context, deliveryID pgtype.UUID) error {
+	if taskEnqueuer == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
+	if err != nil {
+		return err
+	}
+	return taskEnqueuer.Enqueue(TypeFederationDeliverActivity, payload)
+}
+
+// enqueueFederationDeliveryAfter schedules a retry attempt — asynq
+// ProcessIn matches the ledger's next_retry_at.
+func enqueueFederationDeliveryAfter(ctx context.Context, deliveryID pgtype.UUID, delay time.Duration) error {
+	if taskEnqueuer == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
+	if err != nil {
+		return err
+	}
+	return taskEnqueuer.Enqueue(TypeFederationDeliverActivity, payload, asynq.ProcessIn(delay))
+}
+
+// enqueueFederationInbound kicks a ledgered inbound row — the production
+// TaskEnqueuer seam for the inbox handlers.
+func enqueueFederationInbound(ctx context.Context, inboundID pgtype.UUID) error {
+	if taskEnqueuer == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{"inbound_id": inboundID.String()})
+	if err != nil {
+		return err
+	}
+	return taskEnqueuer.Enqueue(TypeFederationProcessInbound, payload)
+}
+
+// federationTaskEnqueuer adapts the package enqueue helpers to
+// federation.Service's TaskEnqueuer seam — wired at server setup because
+// the federation package can't import worker.
+type federationTaskEnqueuer struct{}
+
+// FederationEnqueuer is the value server setup hands to SetEnqueuer.
+func FederationEnqueuer() federationTaskEnqueuer { return federationTaskEnqueuer{} }
+
+func (federationTaskEnqueuer) EnqueueDelivery(ctx context.Context, id pgtype.UUID) error {
+	return enqueueFederationDelivery(ctx, id)
+}
+func (federationTaskEnqueuer) EnqueueDeliveryAfter(ctx context.Context, id pgtype.UUID, d time.Duration) error {
+	return enqueueFederationDeliveryAfter(ctx, id, d)
+}
+func (federationTaskEnqueuer) EnqueueInbound(ctx context.Context, id pgtype.UUID) error {
+	return enqueueFederationInbound(ctx, id)
+}
+
+// HandleFederationFanout processes federation:fanout — expands one
+// content lifecycle event (or actor delete) into per-inbox delivery rows.
+func HandleFederationFanout(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:fanout")
+	var payload struct {
+		ContentID string `json:"content_id"`
+		ActorID   string `json:"actor_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+	if federationSvc == nil {
+		return fmt.Errorf("federation fanout: service not registered")
+	}
+	if payload.ActorID != "" {
+		var actorID pgtype.UUID
+		if err := actorID.Scan(payload.ActorID); err != nil || !actorID.Valid {
+			return fmt.Errorf("federation fanout: bad actor_id %q: %w", payload.ActorID, asynq.SkipRetry)
+		}
+		return federationSvc.FanoutActorDelete(ctx, actorID)
+	}
+	var contentID pgtype.UUID
+	if err := contentID.Scan(payload.ContentID); err != nil || !contentID.Valid {
+		return fmt.Errorf("federation fanout: bad content_id %q: %w", payload.ContentID, asynq.SkipRetry)
+	}
+	return federationSvc.Fanout(ctx, contentID)
+}
+
+// HandleFederationDeliverActivity processes federation:deliver_activity —
+// one signed POST attempt. The ledger owns attempts/backoff; the handler
+// is a thin dispatch.
+func HandleFederationDeliverActivity(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:deliver_activity")
+	var payload struct {
+		DeliveryID string `json:"delivery_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+	var id pgtype.UUID
+	if err := id.Scan(payload.DeliveryID); err != nil || !id.Valid {
+		return fmt.Errorf("federation deliver: bad delivery_id %q: %w", payload.DeliveryID, asynq.SkipRetry)
+	}
+	if federationSvc == nil {
+		return fmt.Errorf("federation deliver: service not registered")
+	}
+	return federationSvc.Deliver(ctx, id)
+}
+
+// HandleFederationProcessInbound processes federation:process_inbound —
+// dispatch a signature-verified, ledgered activity.
+func HandleFederationProcessInbound(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:process_inbound")
+	var payload struct {
+		InboundID string `json:"inbound_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+	var id pgtype.UUID
+	if err := id.Scan(payload.InboundID); err != nil || !id.Valid {
+		return fmt.Errorf("federation inbound: bad inbound_id %q: %w", payload.InboundID, asynq.SkipRetry)
+	}
+	if federationSvc == nil {
+		return fmt.Errorf("federation inbound: service not registered")
+	}
+	return federationSvc.ProcessInbound(ctx, id)
+}
+
+// HandleFederationResolveActor processes federation:resolve_actor —
+// fetch + upsert one remote_actors row (low tier).
+func HandleFederationResolveActor(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:resolve_actor")
+	var payload struct {
+		ActorURL string `json:"actor_url"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+	if payload.ActorURL == "" {
+		return fmt.Errorf("federation resolve: empty actor_url: %w", asynq.SkipRetry)
+	}
+	if federationSvc == nil {
+		return fmt.Errorf("federation resolve: service not registered")
+	}
+	return federationSvc.ResolveRemoteActorTask(ctx, payload.ActorURL)
+}
+
+// HandleFederationPruneDeliveries processes federation:prune_deliveries —
+// daily sweep of terminal ledger rows past §126's 30-day retention.
+func HandleFederationPruneDeliveries(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:federation:prune_deliveries")
+	if federationSvc == nil {
+		return fmt.Errorf("federation prune: service not registered")
+	}
+	return federationSvc.PruneDeliveries(ctx, 30)
 }

@@ -171,21 +171,62 @@ SELECT * FROM remote_actors WHERE actor_url = @actor_url;
 -- name: GetRemoteActorByID :one
 SELECT * FROM remote_actors WHERE id = @id;
 
+-- name: GetRemoteActorByKeyID :one
+-- Inbound signature verification resolves the signer by the Signature
+-- header's keyId (typically {actor_url}#main-key but not guaranteed).
+SELECT * FROM remote_actors WHERE public_key_id = @key_id AND status = 'active';
+
+-- name: SetRemoteActorStatus :exec
+-- Delete{actor} tombstones the cached identity — follows/comments/likes
+-- unwind in the same dispatch.
+UPDATE remote_actors SET status = @status, updated_at = now() WHERE id = @id;
+
 -- name: UpsertFederationFollow :one
 INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status)
 VALUES (@local_actor_id, @remote_actor_id, @ap_activity_id, @status)
 ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
     ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
-    status = EXCLUDED.status,
+    -- Sticky terminal/accepted states: a replayed Follow must never
+    -- downgrade accepted→pending or resurrect an undone edge.
+    status = CASE WHEN federation_follows.status IN ('accepted','undone')
+                  THEN federation_follows.status
+                  ELSE EXCLUDED.status END,
     updated_at = now()
 RETURNING *;
 
 -- name: GetFederationFollowByActivityID :one
 SELECT * FROM federation_follows WHERE ap_activity_id = @ap_activity_id;
 
+-- name: GetFederationFollowByPair :one
+-- Undo{Follow} may embed the Follow object without its @id — the
+-- (local, remote) pair is the fallback match.
+SELECT * FROM federation_follows
+WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
+
 -- name: UpdateFederationFollowStatus :exec
 UPDATE federation_follows SET status = @status, updated_at = now()
 WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
+
+-- name: UndoFederationFollowsByRemoteActor :exec
+-- Remote-actor tombstone propagation: every live/pending follow undoes
+-- at once; 'undone' rows stay terminal so replays are idempotent.
+UPDATE federation_follows SET status = 'undone', updated_at = now()
+WHERE remote_actor_id = @remote_actor_id AND status <> 'undone';
+
+-- name: ListRemoteFollowerInboxesByActor :many
+-- Fanout expansion (§126): one delivery row per DISTINCT inbox —
+-- sharedInbox coalescing collapses same-instance followers into a
+-- single POST. remote_actor_id is a representative for ledger
+-- attribution (ON DELETE SET NULL, so the row survives actor churn).
+SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
+       MIN(ra.id)::uuid AS remote_actor_id
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = @local_actor_id
+  AND ff.status = 'accepted'
+  AND ra.status = 'active'
+  AND COALESCE(ra.shared_inbox_url, ra.inbox_url) IS NOT NULL
+GROUP BY 1;
 
 -- name: ListRemoteFollowerURLsByActor :many
 -- Followers collection items: accepted remote follows for this local actor.
@@ -296,7 +337,13 @@ INSERT INTO federation_deliveries (
     @activity_ap_id, @activity_type, @activity_json, @local_actor_id,
     @inbox_url, @remote_actor_id, now()
 )
+-- (activity_ap_id, inbox_url) unique — fanout replays dedup at the
+-- constraint; ErrNoRows means the row (and its queue task) already exists.
+ON CONFLICT (activity_ap_id, inbox_url) DO NOTHING
 RETURNING *;
+
+-- name: GetFederationDeliveryByID :one
+SELECT * FROM federation_deliveries WHERE id = @id;
 
 -- name: ListDueFederationDeliveries :many
 SELECT * FROM federation_deliveries
@@ -315,15 +362,23 @@ SET status = @status,
 WHERE id = @id;
 
 -- name: InsertFederationInbound :one
+-- The partial unique on activity_ap_id is the DB-level dedup backstop
+-- behind the Valkey marker — a replay returning ErrNoRows is already
+-- ledgered and must not re-dispatch.
 INSERT INTO federation_inbound (
-    activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload
+    activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload, status
 ) VALUES (
-    @activity_ap_id, @activity_type, @actor_url, @key_id, @signature_valid, @payload
+    @activity_ap_id, @activity_type, @actor_url, @key_id, @signature_valid, @payload,
+    COALESCE(sqlc.narg(status), 'received')
 )
+ON CONFLICT (activity_ap_id) WHERE activity_ap_id IS NOT NULL DO NOTHING
 RETURNING *;
 
 -- name: GetFederationInboundByActivityID :one
 SELECT * FROM federation_inbound WHERE activity_ap_id = @activity_ap_id;
+
+-- name: GetFederationInboundByID :one
+SELECT * FROM federation_inbound WHERE id = @id;
 
 -- name: UpdateFederationInboundStatus :exec
 UPDATE federation_inbound SET status = @status, error = @error WHERE id = @id;
@@ -355,3 +410,113 @@ WHERE (@q::text = '' OR domain ILIKE '%' || @q || '%');
 -- lower() on the param: callers hand us URL-derived hosts, and Go's
 -- url.Hostname() preserves case while CreateBlock stores lowercase.
 SELECT * FROM federation_instance_blocks WHERE domain = lower(@domain);
+
+-- =====================================================================
+-- M2 — remote provenance on native social tables (migration 001167)
+-- =====================================================================
+
+-- name: InsertRemoteFollow :execrows
+-- §126 inbound Follow→Accept: the remote follower lands as a native
+-- follows row — follower_remote_actor_id carries the provenance
+-- (follower_id stays NULL). Rows affected drives the follower-count +
+-- notification side effects — a replay is a no-op.
+INSERT INTO follows (follower_remote_actor_id, entity_type, entity_id)
+VALUES (@remote_actor_id, 'user', @user_id)
+ON CONFLICT (follower_remote_actor_id, entity_type, entity_id)
+    WHERE follower_remote_actor_id IS NOT NULL DO NOTHING;
+
+-- name: DeleteRemoteFollow :execrows
+-- Undo{Follow} removes the native row — rows affected says whether one
+-- existed to remove.
+DELETE FROM follows
+WHERE follower_remote_actor_id = @remote_actor_id
+  AND entity_type = 'user' AND entity_id = @user_id;
+
+-- name: DeleteRemoteFollowsByActor :exec
+-- Delete{actor} propagation: every native follow edge by the actor goes.
+DELETE FROM follows WHERE follower_remote_actor_id = @remote_actor_id;
+
+-- name: AddRemoteReaction :execrows
+-- §126 inbound Like: a real reactions row with remote provenance — it
+-- counts in reaction_count and content_scores like a member's. One
+-- reaction per remote actor per entity (partial unique); replays no-op.
+INSERT INTO reactions (entity_type, entity_id, remote_actor_id, reaction_key)
+VALUES (@entity_type, @entity_id, @remote_actor_id, @reaction_key)
+ON CONFLICT (entity_type, entity_id, remote_actor_id)
+    WHERE remote_actor_id IS NOT NULL DO NOTHING;
+
+-- name: RemoveRemoteReaction :execrows
+-- Undo{Like}: delete only if the row exists — rows affected keeps the
+-- recount honest on replays.
+DELETE FROM reactions
+WHERE entity_type = @entity_type AND entity_id = @entity_id
+  AND remote_actor_id = @remote_actor_id AND reaction_key = @reaction_key;
+
+-- name: DeleteRemoteReactionsByActor :many
+-- Delete{actor} propagation: all remote reactions go; RETURNING feeds
+-- the per-content score refresh.
+DELETE FROM reactions WHERE remote_actor_id = @remote_actor_id
+RETURNING entity_type, entity_id;
+
+-- name: InsertAPRemoteComment :one
+-- Remote AP reply (§126 Create{inReplyTo}): author_user_id stays NULL —
+-- provenance lives on remote_ap_actor_id + remote_uri (shared dedupe
+-- column with the atproto bridge). Depth mirrors the local model.
+INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous,
+                      remote_ap_actor_id, remote_uri, status)
+VALUES (@content_id, NULL, sqlc.narg(parent_id), @body, @depth, false,
+        @remote_ap_actor_id, @remote_uri, 'published')
+ON CONFLICT (remote_uri) WHERE remote_uri IS NOT NULL DO NOTHING
+RETURNING *;
+
+-- name: SoftDeleteAPCommentsByActor :many
+-- Delete{actor} propagation: tombstone every live remote comment by the
+-- actor; RETURNING feeds the counter unwind (same shape as §127 A6-1).
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
+WHERE remote_ap_actor_id = @remote_ap_actor_id AND deleted_at IS NULL
+RETURNING id, content_id, parent_id;
+
+-- name: IncrementContentShareCount :exec
+-- §126 inbound Announce.
+UPDATE contents SET share_count = share_count + 1 WHERE id = @id;
+
+-- name: DecrementContentShareCount :exec
+-- Undo{Announce} — clamped so a stray/replayed undo can't drive the
+-- count negative.
+UPDATE contents SET share_count = GREATEST(0, share_count - 1) WHERE id = @id;
+
+-- name: InsertRemoteShare :execrows
+-- Announce: row lands only once per (remote_actor, content) — rows
+-- affected is the ++ gate so replays can't double-count.
+INSERT INTO federation_remote_shares (remote_actor_id, content_id, ap_activity_id)
+VALUES (@remote_actor_id, @content_id, @ap_activity_id)
+ON CONFLICT (remote_actor_id, content_id) DO NOTHING;
+
+-- name: DeleteRemoteShare :execrows
+-- Undo{Announce}: decrement only when a live row actually went away.
+DELETE FROM federation_remote_shares
+WHERE remote_actor_id = @remote_actor_id AND content_id = @content_id;
+
+-- name: DeleteRemoteSharesByActor :many
+-- Delete{actor} propagation: every tracked share goes; RETURNING feeds
+-- the per-content decrement.
+DELETE FROM federation_remote_shares WHERE remote_actor_id = @remote_actor_id
+RETURNING content_id;
+
+-- name: HasDeliveredObject :one
+-- Fanout's Create-vs-Update decision: any prior delivery row carrying
+-- this object means remote inboxes saw the object before → Update.
+SELECT EXISTS(
+    SELECT 1 FROM federation_deliveries
+    WHERE local_actor_id = @local_actor_id
+      AND activity_type IN ('Create','Update')
+      AND activity_json->'object'->>'id' = @object_id::text
+);
+
+-- name: GetDeliveredObjectActor :one
+-- Tombstone fanout on eligibility loss: which local actor delivered this
+-- object before — the Delete must come from that actor's key.
+SELECT local_actor_id FROM federation_deliveries
+WHERE activity_type IN ('Create','Update')
+  AND activity_json->'object'->>'id' = @object_id::text
+LIMIT 1;

@@ -111,15 +111,16 @@ func (q *Queries) GetAtprotoAccountByDID(ctx context.Context, did string) (GetAt
 }
 
 const getAtprotoCommentByRemoteURI = `-- name: GetAtprotoCommentByRemoteURI :one
-SELECT id, content_id, parent_id, depth, deleted_at FROM comments WHERE remote_uri = $1
+SELECT id, content_id, parent_id, depth, deleted_at, remote_ap_actor_id FROM comments WHERE remote_uri = $1
 `
 
 type GetAtprotoCommentByRemoteURIRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	ContentID pgtype.UUID        `json:"content_id"`
-	ParentID  pgtype.UUID        `json:"parent_id"`
-	Depth     int32              `json:"depth"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	Depth           int32              `json:"depth"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	RemoteApActorID pgtype.UUID        `json:"remote_ap_actor_id"`
 }
 
 // Parent resolution carries content_id + parent_id + depth so nested remote
@@ -135,6 +136,7 @@ func (q *Queries) GetAtprotoCommentByRemoteURI(ctx context.Context, remoteUri *s
 		&i.ParentID,
 		&i.Depth,
 		&i.DeletedAt,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }
@@ -242,7 +244,7 @@ INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_ano
 VALUES ($1, NULL, $2, $3, $4, false,
         $5, $6, 'published')
 ON CONFLICT (remote_uri) WHERE remote_uri IS NOT NULL DO NOTHING
-RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
 `
 
 type InsertAtprotoRemoteCommentParams struct {
@@ -292,6 +294,7 @@ func (q *Queries) InsertAtprotoRemoteComment(ctx context.Context, arg InsertAtpr
 		&i.CreatedByUserID,
 		&i.RemoteAtprotoActorID,
 		&i.RemoteUri,
+		&i.RemoteApActorID,
 	)
 	return i, err
 }

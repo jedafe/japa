@@ -138,14 +138,14 @@ func (s *Store) deleteFollowIfPresentTx(ctx context.Context, q *gen.Queries, fol
 }
 
 // getFollow returns the follow row for a specific follower-entity pair.
-func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
+func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.GetFollowRow, error) {
 	follow, err := s.read.GetFollow(ctx, gen.GetFollowParams{
 		FollowerID: followerID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
 	if err != nil {
-		return gen.Follow{}, fmt.Errorf("getting follow: %w", err)
+		return gen.GetFollowRow{}, fmt.Errorf("getting follow: %w", err)
 	}
 
 	return follow, nil

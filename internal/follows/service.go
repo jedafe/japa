@@ -25,7 +25,7 @@ type FollowerInfo struct {
 	// §07 verification — populated on user rows only.
 	Verified         bool    `json:"verified"`
 	VerificationType *string `json:"verification_type"`
-	IsFollowing bool   `json:"is_following"`
+	IsFollowing      bool    `json:"is_following"`
 	// IsSynthetic marks persona/bot followers so UIs and consumers can flag
 	// or exclude synthetic activity per P10.
 	IsSynthetic bool `json:"is_synthetic"`
@@ -46,7 +46,7 @@ type FollowingInfo struct {
 	// §07 verification — populated on user-type follows only.
 	EntityVerified         bool   `json:"entity_verified"`
 	EntityVerificationType string `json:"entity_verification_type"`
-	IsFollowing bool   `json:"is_following"`
+	IsFollowing            bool   `json:"is_following"`
 }
 
 // joiningPermOpen is the joining_perm value that allows anyone to auto-join
@@ -392,7 +392,7 @@ func (s *Service) InvalidateEntityFollowers(ctx context.Context, entityType stri
 }
 
 // GetFollow returns the follow row for a specific follower-entity pair.
-func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
+func (s *Service) GetFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.GetFollowRow, error) {
 	return s.store.getFollow(ctx, followerID, entityType, entityID)
 }
 
@@ -521,13 +521,13 @@ func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entity
 				EntityID:   r.EntityID,
 				CreatedAt:  r.CreatedAt,
 			},
-			Username:    r.Username,
-			DisplayName: r.DisplayName,
-			AvatarURL:   r.AvatarUrl,
-			ProfileType: r.ProfileType,
-			Verified:    r.Verified,
+			Username:         r.Username,
+			DisplayName:      r.DisplayName,
+			AvatarURL:        r.AvatarUrl,
+			ProfileType:      r.ProfileType,
+			Verified:         r.Verified,
 			VerificationType: r.VerificationType,
-			IsSynthetic: r.IsSynthetic,
+			IsSynthetic:      r.IsSynthetic,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.FollowerID]
@@ -635,10 +635,10 @@ func (s *Service) GetFollowing(ctx context.Context, callerID, followerID pgtype.
 				EntityID:   r.EntityID,
 				CreatedAt:  r.CreatedAt,
 			},
-			EntityName:  r.EntityName,
-			EntitySlug:  r.EntitySlug,
-			DisplayName: r.EntityDisplayName,
-			AvatarUrl:   r.EntityAvatarUrl,
+			EntityName:             r.EntityName,
+			EntitySlug:             r.EntitySlug,
+			DisplayName:            r.EntityDisplayName,
+			AvatarUrl:              r.EntityAvatarUrl,
 			EntityVerified:         r.EntityVerified,
 			EntityVerificationType: r.EntityVerificationType,
 		}
@@ -685,10 +685,10 @@ func (s *Service) GetFollowingByType(ctx context.Context, callerID, followerID p
 				EntityID:   r.EntityID,
 				CreatedAt:  r.CreatedAt,
 			},
-			EntityName:  r.EntityName,
-			EntitySlug:  r.EntitySlug,
-			DisplayName: r.EntityDisplayName,
-			AvatarUrl:   r.EntityAvatarUrl,
+			EntityName:             r.EntityName,
+			EntitySlug:             r.EntitySlug,
+			DisplayName:            r.EntityDisplayName,
+			AvatarUrl:              r.EntityAvatarUrl,
 			EntityVerified:         r.EntityVerified,
 			EntityVerificationType: r.EntityVerificationType,
 		}

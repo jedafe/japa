@@ -158,9 +158,17 @@ type GetFollowParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, error) {
+type GetFollowRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	FollowerID pgtype.UUID        `json:"follower_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (GetFollowRow, error) {
 	row := q.db.QueryRow(ctx, getFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
-	var i Follow
+	var i GetFollowRow
 	err := row.Scan(
 		&i.ID,
 		&i.FollowerID,

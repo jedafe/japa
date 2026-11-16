@@ -161,3 +161,169 @@ func stringPtrOrNil(s string) *string {
 	}
 	return &s
 }
+
+// ---------------------------------------------------------------------------
+// M2 — remote actors, follows, deliveries, inbound, provenance
+// ---------------------------------------------------------------------------
+
+func (s *Store) remoteActorByURL(ctx context.Context, actorURL string) (gen.RemoteActor, error) {
+	return s.read.GetRemoteActorByURL(ctx, actorURL)
+}
+
+func (s *Store) remoteActorByID(ctx context.Context, id pgtype.UUID) (gen.RemoteActor, error) {
+	return s.read.GetRemoteActorByID(ctx, id)
+}
+
+func (s *Store) remoteActorByKeyID(ctx context.Context, keyID string) (gen.RemoteActor, error) {
+	return s.read.GetRemoteActorByKeyID(ctx, &keyID)
+}
+
+func (s *Store) upsertRemoteActor(ctx context.Context, arg gen.UpsertRemoteActorParams) (gen.RemoteActor, error) {
+	return s.write.UpsertRemoteActor(ctx, arg)
+}
+
+func (s *Store) setRemoteActorStatus(ctx context.Context, id pgtype.UUID, status string) error {
+	return s.write.SetRemoteActorStatus(ctx, gen.SetRemoteActorStatusParams{ID: id, Status: status})
+}
+
+func (s *Store) upsertFollow(ctx context.Context, arg gen.UpsertFederationFollowParams) (gen.FederationFollow, error) {
+	return s.write.UpsertFederationFollow(ctx, arg)
+}
+
+func (s *Store) followByActivityID(ctx context.Context, apID string) (gen.FederationFollow, error) {
+	return s.read.GetFederationFollowByActivityID(ctx, &apID)
+}
+
+func (s *Store) followByPair(ctx context.Context, localActorID, remoteActorID pgtype.UUID) (gen.FederationFollow, error) {
+	return s.read.GetFederationFollowByPair(ctx, gen.GetFederationFollowByPairParams{
+		LocalActorID:  localActorID,
+		RemoteActorID: remoteActorID,
+	})
+}
+
+func (s *Store) setFollowStatus(ctx context.Context, localActorID, remoteActorID pgtype.UUID, status string) error {
+	return s.write.UpdateFederationFollowStatus(ctx, gen.UpdateFederationFollowStatusParams{
+		LocalActorID:  localActorID,
+		RemoteActorID: remoteActorID,
+		Status:        status,
+	})
+}
+
+func (s *Store) undoFollowsByRemoteActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	return s.write.UndoFederationFollowsByRemoteActor(ctx, remoteActorID)
+}
+
+func (s *Store) remoteFollowerInboxes(ctx context.Context, localActorID pgtype.UUID) ([]gen.ListRemoteFollowerInboxesByActorRow, error) {
+	return s.read.ListRemoteFollowerInboxesByActor(ctx, localActorID)
+}
+
+func (s *Store) insertDelivery(ctx context.Context, arg gen.InsertFederationDeliveryParams) (gen.FederationDelivery, error) {
+	return s.write.InsertFederationDelivery(ctx, arg)
+}
+
+func (s *Store) deliveryByID(ctx context.Context, id pgtype.UUID) (gen.FederationDelivery, error) {
+	return s.read.GetFederationDeliveryByID(ctx, id)
+}
+
+func (s *Store) dueDeliveries(ctx context.Context, limit int32) ([]gen.FederationDelivery, error) {
+	return s.read.ListDueFederationDeliveries(ctx, limit)
+}
+
+func (s *Store) updateDeliveryStatus(ctx context.Context, arg gen.UpdateFederationDeliveryStatusParams) error {
+	return s.write.UpdateFederationDeliveryStatus(ctx, arg)
+}
+
+func (s *Store) pruneDeliveries(ctx context.Context, retentionDays int32) error {
+	return s.write.PruneFederationDeliveries(ctx, retentionDays)
+}
+
+func (s *Store) insertInbound(ctx context.Context, arg gen.InsertFederationInboundParams) (gen.FederationInbound, error) {
+	return s.write.InsertFederationInbound(ctx, arg)
+}
+
+func (s *Store) inboundByID(ctx context.Context, id pgtype.UUID) (gen.FederationInbound, error) {
+	return s.read.GetFederationInboundByID(ctx, id)
+}
+
+func (s *Store) updateInboundStatus(ctx context.Context, id pgtype.UUID, status string, errMsg *string) error {
+	return s.write.UpdateFederationInboundStatus(ctx, gen.UpdateFederationInboundStatusParams{
+		ID: id, Status: status, Error: errMsg,
+	})
+}
+
+func (s *Store) instanceBlock(ctx context.Context, domain string) (gen.FederationInstanceBlock, error) {
+	return s.read.GetInstanceBlockByDomain(ctx, domain)
+}
+
+func (s *Store) insertRemoteFollow(ctx context.Context, remoteActorID, userID pgtype.UUID) (int64, error) {
+	return s.write.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
+		RemoteActorID: remoteActorID,
+		UserID:        userID,
+	})
+}
+
+func (s *Store) deleteRemoteFollow(ctx context.Context, remoteActorID, userID pgtype.UUID) (int64, error) {
+	return s.write.DeleteRemoteFollow(ctx, gen.DeleteRemoteFollowParams{
+		RemoteActorID: remoteActorID,
+		UserID:        userID,
+	})
+}
+
+func (s *Store) deleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	return s.write.DeleteRemoteFollowsByActor(ctx, remoteActorID)
+}
+
+func (s *Store) addRemoteReaction(ctx context.Context, entityType string, entityID, remoteActorID pgtype.UUID, reactionKey string) (int64, error) {
+	return s.write.AddRemoteReaction(ctx, gen.AddRemoteReactionParams{
+		EntityType:    entityType,
+		EntityID:      entityID,
+		RemoteActorID: remoteActorID,
+		ReactionKey:   reactionKey,
+	})
+}
+
+func (s *Store) removeRemoteReaction(ctx context.Context, entityType string, entityID, remoteActorID pgtype.UUID, reactionKey string) (int64, error) {
+	return s.write.RemoveRemoteReaction(ctx, gen.RemoveRemoteReactionParams{
+		EntityType:    entityType,
+		EntityID:      entityID,
+		RemoteActorID: remoteActorID,
+		ReactionKey:   reactionKey,
+	})
+}
+
+func (s *Store) deleteRemoteReactionsByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]gen.DeleteRemoteReactionsByActorRow, error) {
+	return s.write.DeleteRemoteReactionsByActor(ctx, remoteActorID)
+}
+
+func (s *Store) insertAPRemoteComment(ctx context.Context, arg gen.InsertAPRemoteCommentParams) (gen.Comment, error) {
+	return s.write.InsertAPRemoteComment(ctx, arg)
+}
+
+func (s *Store) softDeleteAPCommentsByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]gen.SoftDeleteAPCommentsByActorRow, error) {
+	return s.write.SoftDeleteAPCommentsByActor(ctx, remoteActorID)
+}
+
+func (s *Store) incrementShareCount(ctx context.Context, contentID pgtype.UUID) error {
+	return s.write.IncrementContentShareCount(ctx, contentID)
+}
+
+func (s *Store) decrementShareCount(ctx context.Context, contentID pgtype.UUID) error {
+	return s.write.DecrementContentShareCount(ctx, contentID)
+}
+
+func (s *Store) actorByID(ctx context.Context, id pgtype.UUID) (gen.FederatedActor, error) {
+	return s.read.GetFederatedActorByID(ctx, id)
+}
+
+func (s *Store) hasDeliveredObject(ctx context.Context, localActorID pgtype.UUID, objectID string) bool {
+	v, err := s.read.HasDeliveredObject(ctx, gen.HasDeliveredObjectParams{LocalActorID: localActorID, ObjectID: objectID})
+	return err == nil && v
+}
+
+func (s *Store) deliveredObjectActor(ctx context.Context, objectID string) (pgtype.UUID, bool) {
+	id, err := s.read.GetDeliveredObjectActor(ctx, objectID)
+	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}

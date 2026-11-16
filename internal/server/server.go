@@ -878,6 +878,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	atprotoService.SetNotifier(notificationService)
 	go atprotoService.StartJetstreamConsumer(context.Background())
 
+	// §126 M2 — inbound Follows/Likes/Announces/replies notify via §35;
+	// delivery + inbound task kicks go through the worker enqueue seam
+	// (federation can't import worker).
+	federationService.SetNotifier(notificationService)
+	federationService.SetEnqueuer(worker.FederationEnqueuer())
+
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
 	authHandlers.SetTierManager(tierService)
@@ -1323,6 +1329,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// §127: the mini-PDS retraction path — hard delete must sign its
 	// tombstone commits while key custody still exists.
 	gdprService.SetAtprotoEraser(atprotoService)
+	gdprService.SetFederationEraser(federationService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
 	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).
@@ -4085,6 +4092,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/federation/actors/{username}/followers", federationHandlers.GetFollowers)
 		r.Get("/federation/actors/{username}/following", federationHandlers.GetFollowing)
 		r.Get("/federation/objects/contents/{id}", federationHandlers.GetObject)
+		// §126 M2 — ActivityPub delivery targets.
+		r.Post("/federation/inbox", federationHandlers.PostInbox)
+		r.Post("/federation/actors/{username}/inbox", federationHandlers.PostActorInbox)
 	})
 
 	// Section 127 — AT Protocol mini-PDS (ADR-139). Public identity

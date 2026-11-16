@@ -55,18 +55,28 @@ type AtprotoEraser interface {
 	EraseAccount(ctx context.Context, userID pgtype.UUID) error
 }
 
+// FederationEraser fans out Delete{actor} and tombstones the member's
+// federated actor before the user row's physical delete — *federation.Service's
+// EraseFederation satisfies it (§126 M2). Same custody argument as
+// AtprotoEraser: once the cascade drops federated_actors, no signed
+// Delete can ever be emitted. A nil eraser means federation is off.
+type FederationEraser interface {
+	EraseFederation(ctx context.Context, userID pgtype.UUID) error
+}
+
 // Service provides GDPR operations with reader/writer pool separation.
 type Service struct {
-	store          *Store
-	db             *db.DB
-	enqueuer       Enqueuer
-	honchoEraser   HonchoEraser
-	honchoFetcher  HonchoFetcher
-	sessionDeleter SessionDeleter
-	atprotoEraser  AtprotoEraser
-	siteName       string
-	settings       SettingsProvider
-	storage        Storage
+	store            *Store
+	db               *db.DB
+	enqueuer         Enqueuer
+	honchoEraser     HonchoEraser
+	honchoFetcher    HonchoFetcher
+	sessionDeleter   SessionDeleter
+	atprotoEraser    AtprotoEraser
+	federationEraser FederationEraser
+	siteName         string
+	settings         SettingsProvider
+	storage          Storage
 	// ownerEmail is the JC_OWNER_EMAIL platform-owner designation (§03 owner
 	// amendment). The owner account cannot be erased.
 	ownerEmail string
@@ -134,6 +144,13 @@ func (s *Service) SetSessionDeleter(d SessionDeleter) {
 // off, so nothing exists to retract.
 func (s *Service) SetAtprotoEraser(e AtprotoEraser) {
 	s.atprotoEraser = e
+}
+
+// SetFederationEraser injects the ActivityPub erasure path (§126 M2).
+// When nil, hardDeleteUser skips the Delete{actor} fanout — federation
+// is off, so nothing exists to retract.
+func (s *Service) SetFederationEraser(e FederationEraser) {
+	s.federationEraser = e
 }
 
 // SetSettings injects the system settings provider for hard-delete configuration.
@@ -1140,6 +1157,17 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 	if s.atprotoEraser != nil {
 		if err := s.atprotoEraser.EraseAccount(ctx, userID); err != nil {
 			return fmt.Errorf("hard delete blocked: atproto erasure failed for user %s: %w", userID, err)
+		}
+	}
+
+	// §126 M2 lifecycle: same custody argument — fan out Delete{actor} to
+	// remote inboxes and tombstone the federated actor BEFORE the cascade
+	// drops federated_actors (private-key custody included). A failure
+	// blocks the delete for the same reason as atproto: proceeding would
+	// burn the signing key while remote servers keep serving the actor.
+	if s.federationEraser != nil {
+		if err := s.federationEraser.EraseFederation(ctx, userID); err != nil {
+			return fmt.Errorf("hard delete blocked: federation erasure failed for user %s: %w", userID, err)
 		}
 	}
 

@@ -191,6 +191,18 @@ func taskDefaults(taskType string) []asynq.Option {
 	// a retried page re-checks row existence so progress isn't lost.
 	case TypeFederationBackfillOptin:
 		opts = append(opts, asynq.Timeout(5*time.Minute), asynq.MaxRetry(3))
+	// §126 M2 deliver_activity — remote POST with the ledger owning
+	// attempts/backoff; asynq retry is only the safety net for failures
+	// before the stamp lands (row load, transient DB).
+	case TypeFederationDeliverActivity:
+		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(5))
+	// §126 M2 process_inbound — remote-actor resolution may fetch; a few
+	// retries cover transient fetch/DB failures before terminal states.
+	case TypeFederationProcessInbound:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(5))
+	// §126 M2 fanout — DB expansion + per-inbox inserts; bounded retries.
+	case TypeFederationFanout:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -244,6 +256,8 @@ var taskTier = func() map[string]string {
 		TypeDocsGeneratePage,
 		TypeAtprotoPublishRecord, TypeAtprotoDeleteRecord, TypeAtprotoRequestCrawl,
 		TypeAtprotoLifecycleSync, TypeFederationAutoOptin, TypeFederationBackfillOptin,
+		// §126 M2 — two-way federation, default tier.
+		TypeFederationFanout, TypeFederationDeliverActivity, TypeFederationProcessInbound,
 		TypeAtprotoReconcileRepo,
 		TypeFormFireSubmissionTriggers,
 		TypeWalletProcessCreditPurchase,
@@ -399,6 +413,9 @@ var taskTier = func() map[string]string {
 		TypeIntelHarvestOutbound,
 		// §111 — hourly pending-booking SLA sweep, low tier (ADR-123).
 		TypeServiceBookingExpirePending,
+		// §126 M2 — remote actor resolution + delivery ledger hygiene, low tier.
+		TypeFederationResolveActor,
+		TypeFederationPruneDeliveries,
 	} {
 		m[t] = QueueLow
 	}

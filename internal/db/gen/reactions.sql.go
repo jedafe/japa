@@ -20,7 +20,10 @@ WITH prev AS (
 upsert AS (
   INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key)
   VALUES ($1, $2, $3, $4)
-  ON CONFLICT (entity_type, entity_id, user_id) DO UPDATE
+  -- Conflict inference names the partial-unique predicate (001167 made
+  -- user_id nullable for remote-actor provenance); user writes always
+  -- satisfy it.
+  ON CONFLICT (entity_type, entity_id, user_id) WHERE user_id IS NOT NULL DO UPDATE
     SET reaction_key = EXCLUDED.reaction_key,
         created_at = CASE WHEN reactions.reaction_key <> EXCLUDED.reaction_key
                           THEN now() ELSE reactions.created_at END
@@ -205,15 +208,23 @@ type GetUserReactionsParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsParams) ([]Reaction, error) {
+type GetUserReactionsRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ReactionKey string             `json:"reaction_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsParams) ([]GetUserReactionsRow, error) {
 	rows, err := q.db.Query(ctx, getUserReactions, arg.EntityType, arg.EntityID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Reaction
+	var items []GetUserReactionsRow
 	for rows.Next() {
-		var i Reaction
+		var i GetUserReactionsRow
 		if err := rows.Scan(
 			&i.EntityType,
 			&i.EntityID,

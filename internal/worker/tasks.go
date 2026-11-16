@@ -223,6 +223,12 @@ const (
 	TypeAtprotoPlcMigrate       = "atproto:plc_migrate"       // default (§127 A6-2: provision did:plc for one account — rotation key, genesis op, did swap)
 	TypeFederationAutoOptin     = "federation:auto_optin"     // default (§126 auto opt-in: provision federated identity at registration)
 	TypeFederationBackfillOptin = "federation:backfill_optin" // default (§126 backfill: converge existing members, paged)
+	// §126 M2 — two-way federation.
+	TypeFederationFanout          = "federation:fanout"           // default (§126 M2: content publish/update/delete → per-inbox delivery rows)
+	TypeFederationDeliverActivity = "federation:deliver_activity" // default (§126 M2: one signed POST attempt, ledger-owned backoff)
+	TypeFederationProcessInbound  = "federation:process_inbound"  // default (§126 M2: verified inbox activity → dispatch)
+	TypeFederationResolveActor    = "federation:resolve_actor"    // low (§126 M2: fetch + upsert a remote_actors row)
+	TypeFederationPruneDeliveries = "federation:prune_deliveries" // low (§126 M2: daily delivered/dead sweep, 30d)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -462,6 +468,11 @@ var handlerRegistry = []struct {
 	{TypeAtprotoPlcMigrate, HandleAtprotoPlcMigrate},
 	{TypeFederationAutoOptin, HandleFederationAutoOptin},
 	{TypeFederationBackfillOptin, HandleFederationBackfillOptin},
+	{TypeFederationFanout, HandleFederationFanout},
+	{TypeFederationDeliverActivity, HandleFederationDeliverActivity},
+	{TypeFederationProcessInbound, HandleFederationProcessInbound},
+	{TypeFederationResolveActor, HandleFederationResolveActor},
+	{TypeFederationPruneDeliveries, HandleFederationPruneDeliveries},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

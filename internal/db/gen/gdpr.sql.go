@@ -2115,7 +2115,7 @@ func (q *Queries) GdprExportUserEnrollments(ctx context.Context, userID pgtype.U
 
 const gdprExportUserFollows = `-- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, follower_id, entity_type, entity_id, created_at FROM follows WHERE follower_id = $1) t
+FROM (SELECT id, follower_id, entity_type, entity_id, created_at, follower_remote_actor_id FROM follows WHERE follower_id = $1) t
 `
 
 func (q *Queries) GdprExportUserFollows(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -2464,7 +2464,7 @@ func (q *Queries) GdprExportUserQuizAttempts(ctx context.Context, userID pgtype.
 
 const gdprExportUserReactions = `-- name: GdprExportUserReactions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT entity_type, entity_id, user_id, reaction_key, created_at FROM reactions WHERE user_id = $1) t
+FROM (SELECT entity_type, entity_id, user_id, reaction_key, created_at, id, remote_actor_id FROM reactions WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserReactions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

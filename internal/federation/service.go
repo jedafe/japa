@@ -51,16 +51,20 @@ type SettingsReader interface {
 // Service implements the §126 federation surface.
 type Service struct {
 	store    *Store
+	db       *db.DB
 	cfg      Config
 	settings SettingsReader
 	vk       valkeycompat.Cmdable
 	flags    features.FlagEvaluator
+	notifier Notifier
+	enqueue  TaskEnqueuer
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB, cfg Config) *Service {
 	return &Service{
 		store: NewStore(gen.New(database.Reader), gen.New(database.Writer)),
+		db:    database,
 		cfg:   cfg,
 	}
 }
@@ -712,7 +716,42 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 	s.invalidateActorCache(ctx, actor.PreferredUsername, user.Username)
 	actor.Status = ActorStatusDisabled
 
+	// §126 M2: tell remote followers the actor is gone. Ledgers deliveries
+	// synchronously (bounded by follower count); HTTP posts ride the queue.
+	// The "#delete" ap_id dedup makes a repeat disable harmless.
+	if delErr := s.FanoutActorDelete(ctx, actor.ID); delErr != nil {
+		slog.Warn("federation: actor delete fanout failed", "actor_id", actor.ID.String(), "error", delErr)
+	}
+
 	return s.statusFor(ctx, actor, user.Username), nil
+}
+
+// EraseFederation is the GDPR erasure seam (§126 M2, §19). Confirmed
+// erasure runs this BEFORE the user-row DELETE cascades federated_actors
+// away: Delete{actor} fans out to known remote inboxes while the key pair
+// still exists to sign, then the row tombstones. The hard delete removes
+// it physically. Satisfies gdpr.FederationEraser.
+func (s *Service) EraseFederation(ctx context.Context, userID pgtype.UUID) error {
+	actor, err := s.store.actorByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // never federated — nothing to retract
+		}
+		return fmt.Errorf("federation erase: lookup actor: %w", err)
+	}
+	if actor.Status != ActorStatusTombstone {
+		if err := s.FanoutActorDelete(ctx, actor.ID); err != nil {
+			return fmt.Errorf("federation erase: delete fanout: %w", err)
+		}
+		// Unconditional write — tombstone is terminal and wins every race;
+		// a concurrent enable landing in between must not resurrect an
+		// account whose user row is about to be hard-deleted.
+		if err := s.store.setActorStatus(ctx, actor.ID, ActorStatusTombstone); err != nil {
+			return fmt.Errorf("federation erase: tombstone: %w", err)
+		}
+	}
+	s.InvalidateActorIdentityForUser(ctx, userID)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -875,4 +914,58 @@ func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgt
 func RemoteCacheKey(actorURL string) string {
 	sum := sha256.Sum256([]byte(actorURL))
 	return "jc:fed:remote:" + hex.EncodeToString(sum[:])
+}
+
+// InboxDedupKey is the catalogued jc:fed:inbox:dedup:{sha256(activity_ap_id)}
+// marker — SET NX EX 48h, the fast-path dedup ahead of the DB unique index.
+func InboxDedupKey(activityApID string) string {
+	sum := sha256.Sum256([]byte(activityApID))
+	return "jc:fed:inbox:dedup:" + hex.EncodeToString(sum[:])
+}
+
+// ---------------------------------------------------------------------------
+// M2 — inbox pipeline support
+// ---------------------------------------------------------------------------
+
+// ActorExists returns the actor row for a per-actor inbox target —
+// ErrNotFound when no federated actor holds the handle (the handler maps
+// non-active statuses to 410 itself, so this returns the row unfiltered).
+func (s *Service) ActorExists(ctx context.Context, username string) (gen.FederatedActor, error) {
+	actor, err := s.store.actorByUsername(ctx, username)
+	if err != nil {
+		return gen.FederatedActor{}, ErrNotFound
+	}
+	return actor, nil
+}
+
+// rejectInbound ledgers a blocked-domain activity as 'rejected' for audit —
+// the §126 contract keeps blocked traffic visible without processing it.
+// Best-effort: a DB hiccup here must not change the handler's 403.
+func (s *Service) rejectInbound(ctx context.Context, act map[string]any, actorURL, reason string, body []byte) {
+	rejected := "rejected"
+	row, err := s.store.insertInbound(ctx, gen.InsertFederationInboundParams{
+		ActivityApID:   stringPtrOrNil(apStr(act["id"])),
+		ActivityType:   apStr(act["type"]),
+		ActorUrl:       stringPtrOrNil(actorURL),
+		SignatureValid: false,
+		Payload:        body,
+		Status:         &rejected,
+	})
+	if err != nil {
+		return // duplicate or transient — audit loss is acceptable
+	}
+	if err := s.store.updateInboundStatus(ctx, row.ID, "rejected", &reason); err != nil {
+		slog.Warn("federation: rejected-row stamp failed", "error", err)
+	}
+}
+
+// ActorTombstone returns the Tombstone document for a handle whose actor
+// row exists but is non-active (disabled/tombstone) — nil when no actor
+// holds the handle at all. Served at 410 Gone per §126 M2.
+func (s *Service) ActorTombstone(ctx context.Context, username string) map[string]any {
+	actor, err := s.store.actorByUsername(ctx, username)
+	if err != nil || actor.Status == "active" {
+		return nil
+	}
+	return tombstoneDocument(actor.ActorUrl)
 }

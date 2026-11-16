@@ -220,6 +220,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Daily 04:00 UTC: flat-rate ad spend accrual + auto-end (§25 amendment).
 	schedule("0 4 * * *", TypeAdsAccrueSpend, 24*time.Hour)
 
+	// §126 M2: daily purge of delivered/dead federation delivery rows past
+	// the 30-day retention — the ledger is audit, not a replay source.
+	schedule("20 4 * * *", TypeFederationPruneDeliveries, 24*time.Hour)
+
 	// Coupon expiry check + event flush — hourly.
 	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
 	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)

@@ -103,7 +103,7 @@ RETURNING *;
 -- replies land under the right comment on the right content with
 -- depth = parent.depth + 1, and the delete path can unwind the counters the
 -- local create path maintains.
-SELECT id, content_id, parent_id, depth, deleted_at FROM comments WHERE remote_uri = @remote_uri;
+SELECT id, content_id, parent_id, depth, deleted_at, remote_ap_actor_id FROM comments WHERE remote_uri = @remote_uri;
 
 -- name: UpdateAtprotoRemoteCommentBody :execrows
 -- Remote edit ops carry the full updated record — refresh the local copy

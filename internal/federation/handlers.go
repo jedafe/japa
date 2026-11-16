@@ -3,12 +3,18 @@ package federation
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	gen "github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -86,10 +92,19 @@ func (h *Handlers) GetNodeInfo(w http.ResponseWriter, r *http.Request) {
 	writeTypedJSON(w, http.StatusOK, ContentTypeNodeInfo, doc)
 }
 
-// GetActor serves GET /federation/actors/{username}.
+// GetActor serves GET /federation/actors/{username}. M2: a non-active
+// actor row answers 410 + Tombstone — the terminal signal remotes stop
+// retrying on (404 stays for handles that never federated).
 func (h *Handlers) GetActor(w http.ResponseWriter, r *http.Request) {
-	doc, err := h.service.ActorDocument(r.Context(), chi.URLParam(r, "username"))
+	username := chi.URLParam(r, "username")
+	doc, err := h.service.ActorDocument(r.Context(), username)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			if tomb := h.service.ActorTombstone(r.Context(), username); tomb != nil {
+				writeTypedJSON(w, http.StatusGone, ContentTypeActivity, tomb)
+				return
+			}
+		}
 		handleServiceErr(w, err)
 		return
 	}
@@ -347,4 +362,139 @@ func totalPages(total int64, limit int32) int32 {
 		return 1
 	}
 	return int32((total + int64(limit) - 1) / int64(limit))
+}
+
+// ---------------------------------------------------------------------------
+// Inboxes (§126 M2 — POST /federation/inbox + /federation/actors/{u}/inbox)
+// ---------------------------------------------------------------------------
+
+const inboxMaxBody = 64 << 10 // §126: 64 KB payload cap
+
+// PostInbox serves POST /federation/inbox — the shared inbox every remote
+// instance's sharedInbox delivery targets.
+func (h *Handlers) PostInbox(w http.ResponseWriter, r *http.Request) {
+	h.postInbox(w, r, "")
+}
+
+// PostActorInbox serves POST /federation/actors/{username}/inbox. Unknown
+// or non-federated actors 404 before any signature work — the shared
+// inbox remains the catch-all for addressed activities.
+func (h *Handlers) PostActorInbox(w http.ResponseWriter, r *http.Request) {
+	h.postInbox(w, r, chi.URLParam(r, "username"))
+}
+
+// postInbox runs the §126 pipeline: 64 KB cap → parse → declared-actor
+// block pre-check → keyId resolution → signature+digest verify →
+// jc:fed:inbox:dedup SET NX → federation_inbound insert → process_inbound
+// enqueue → 202. Signature failures → 401; blocked domain → 403 + a
+// rejected ledger row; transient key-fetch failure → 503 (remotes
+// redeliver on 5xx; 401/403 are read as permanent and would drop the
+// activity on the floor).
+func (h *Handlers) postInbox(w http.ResponseWriter, r *http.Request, username string) {
+	ctx := r.Context()
+
+	if username != "" {
+		actor, err := h.service.ActorExists(ctx, username)
+		if err != nil {
+			handleServiceErr(w, err)
+			return
+		}
+		if actor.Status != "active" {
+			// §126 M2: disabled/tombstoned actors answer 410 Gone — a
+			// terminal signal remotes can stop retrying on.
+			writeTypedJSON(w, http.StatusGone, ContentTypeActivity, tombstoneDocument(actor.ActorUrl))
+			return
+		}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, inboxMaxBody+1))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Unreadable request body")
+		return
+	}
+	if len(body) > inboxMaxBody {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Activity exceeds 64 KiB")
+		return
+	}
+	var act map[string]any
+	if err := json.Unmarshal(body, &act); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_activity", "Body is not an ActivityStreams object")
+		return
+	}
+
+	// Declared-actor block pre-check — cheap rejection before any key
+	// resolution network work; the signer's domain is re-checked after
+	// resolveKeyActor.
+	if actorURL := apActorID(act); actorURL != "" {
+		if u, uerr := url.Parse(actorURL); uerr == nil && !h.service.instanceAllowed(ctx, u.Hostname()) {
+			h.service.rejectInbound(ctx, act, actorURL, "instance blocked", body)
+			errpkg.WriteError(w, http.StatusForbidden, "instance_blocked", "Instance is not permitted")
+			return
+		}
+	}
+
+	params := ParseSignatureHeader(r.Header.Get("Signature"))
+	keyID := params["keyId"]
+	if keyID == "" {
+		errpkg.WriteError(w, http.StatusUnauthorized, "missing_signature", "Signature keyId required")
+		return
+	}
+	signer, err := h.service.resolveKeyActor(ctx, keyID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrRemoteBlocked):
+			h.service.rejectInbound(ctx, act, apActorID(act), "signer instance blocked", body)
+			errpkg.WriteError(w, http.StatusForbidden, "instance_blocked", "Instance is not permitted")
+		case errors.Is(err, ErrRemoteFetch):
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "key_fetch_failed", "Signer key unavailable — retry")
+		default:
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signature key unresolved")
+		}
+		return
+	}
+	if signer.PublicKeyPem == nil || *signer.PublicKeyPem == "" {
+		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signer has no advertised key")
+		return
+	}
+	pub, err := parsePublicKeyPEM(*signer.PublicKeyPem)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signer key unparseable")
+		return
+	}
+	if err := VerifySignature(r, pub, body); err != nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Signature verification failed")
+		return
+	}
+
+	// Dedup — Valkey marker is the fast path; the partial unique on
+	// federation_inbound is the backstop. Either short-circuits to 202.
+	apID := apStr(act["id"])
+	if apID != "" && h.service.vk != nil {
+		if ok, serr := h.service.vk.SetNX(ctx, InboxDedupKey(apID), "1", 48*time.Hour).Result(); serr == nil && !ok {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+	}
+	row, err := h.service.store.insertInbound(ctx, gen.InsertFederationInboundParams{
+		ActivityApID:   stringPtrOrNil(apID),
+		ActivityType:   apStr(act["type"]),
+		ActorUrl:       stringPtrOrNil(signer.ActorUrl),
+		KeyID:          stringPtrOrNil(keyID),
+		SignatureValid: true,
+		Payload:        body,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			w.WriteHeader(http.StatusAccepted) // already ledgered
+			return
+		}
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
+		return
+	}
+	if h.service.enqueue != nil {
+		if err := h.service.enqueue.EnqueueInbound(ctx, row.ID); err != nil {
+			slog.Warn("federation: inbound enqueue failed", "inbound_id", row.ID, "error", err)
+		}
+	}
+	w.WriteHeader(http.StatusAccepted)
 }

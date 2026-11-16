@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addRemoteReaction = `-- name: AddRemoteReaction :execrows
+INSERT INTO reactions (entity_type, entity_id, remote_actor_id, reaction_key)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (entity_type, entity_id, remote_actor_id)
+    WHERE remote_actor_id IS NOT NULL DO NOTHING
+`
+
+type AddRemoteReactionParams struct {
+	EntityType    string      `json:"entity_type"`
+	EntityID      pgtype.UUID `json:"entity_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	ReactionKey   string      `json:"reaction_key"`
+}
+
+// §126 inbound Like: a real reactions row with remote provenance — it
+// counts in reaction_count and content_scores like a member's. One
+// reaction per remote actor per entity (partial unique); replays no-op.
+func (q *Queries) AddRemoteReaction(ctx context.Context, arg AddRemoteReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addRemoteReaction,
+		arg.EntityType,
+		arg.EntityID,
+		arg.RemoteActorID,
+		arg.ReactionKey,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countFederatableContentByAuthor = `-- name: CountFederatableContentByAuthor :one
 SELECT COUNT(*)::bigint
 FROM contents c
@@ -204,6 +234,17 @@ func (q *Queries) CreateInstanceBlock(ctx context.Context, arg CreateInstanceBlo
 	return i, err
 }
 
+const decrementContentShareCount = `-- name: DecrementContentShareCount :exec
+UPDATE contents SET share_count = GREATEST(0, share_count - 1) WHERE id = $1
+`
+
+// Undo{Announce} — clamped so a stray/replayed undo can't drive the
+// count negative.
+func (q *Queries) DecrementContentShareCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, decrementContentShareCount, id)
+	return err
+}
+
 const deleteInstanceBlock = `-- name: DeleteInstanceBlock :exec
 DELETE FROM federation_instance_blocks WHERE id = $1
 `
@@ -211,6 +252,115 @@ DELETE FROM federation_instance_blocks WHERE id = $1
 func (q *Queries) DeleteInstanceBlock(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteInstanceBlock, id)
 	return err
+}
+
+const deleteRemoteFollow = `-- name: DeleteRemoteFollow :execrows
+DELETE FROM follows
+WHERE follower_remote_actor_id = $1
+  AND entity_type = 'user' AND entity_id = $2
+`
+
+type DeleteRemoteFollowParams struct {
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+// Undo{Follow} removes the native row — rows affected says whether one
+// existed to remove.
+func (q *Queries) DeleteRemoteFollow(ctx context.Context, arg DeleteRemoteFollowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRemoteFollow, arg.RemoteActorID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRemoteFollowsByActor = `-- name: DeleteRemoteFollowsByActor :exec
+DELETE FROM follows WHERE follower_remote_actor_id = $1
+`
+
+// Delete{actor} propagation: every native follow edge by the actor goes.
+func (q *Queries) DeleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRemoteFollowsByActor, remoteActorID)
+	return err
+}
+
+const deleteRemoteReactionsByActor = `-- name: DeleteRemoteReactionsByActor :many
+DELETE FROM reactions WHERE remote_actor_id = $1
+RETURNING entity_type, entity_id
+`
+
+type DeleteRemoteReactionsByActorRow struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// Delete{actor} propagation: all remote reactions go; RETURNING feeds
+// the per-content score refresh.
+func (q *Queries) DeleteRemoteReactionsByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]DeleteRemoteReactionsByActorRow, error) {
+	rows, err := q.db.Query(ctx, deleteRemoteReactionsByActor, remoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeleteRemoteReactionsByActorRow
+	for rows.Next() {
+		var i DeleteRemoteReactionsByActorRow
+		if err := rows.Scan(&i.EntityType, &i.EntityID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteRemoteShare = `-- name: DeleteRemoteShare :execrows
+DELETE FROM federation_remote_shares
+WHERE remote_actor_id = $1 AND content_id = $2
+`
+
+type DeleteRemoteShareParams struct {
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	ContentID     pgtype.UUID `json:"content_id"`
+}
+
+// Undo{Announce}: decrement only when a live row actually went away.
+func (q *Queries) DeleteRemoteShare(ctx context.Context, arg DeleteRemoteShareParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRemoteShare, arg.RemoteActorID, arg.ContentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRemoteSharesByActor = `-- name: DeleteRemoteSharesByActor :many
+DELETE FROM federation_remote_shares WHERE remote_actor_id = $1
+RETURNING content_id
+`
+
+// Delete{actor} propagation: every tracked share goes; RETURNING feeds
+// the per-content decrement.
+func (q *Queries) DeleteRemoteSharesByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteRemoteSharesByActor, remoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var content_id pgtype.UUID
+		if err := rows.Scan(&content_id); err != nil {
+			return nil, err
+		}
+		items = append(items, content_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
@@ -285,6 +435,22 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 		&i.WebsiteUrl,
 	)
 	return i, err
+}
+
+const getDeliveredObjectActor = `-- name: GetDeliveredObjectActor :one
+SELECT local_actor_id FROM federation_deliveries
+WHERE activity_type IN ('Create','Update')
+  AND activity_json->'object'->>'id' = $1::text
+LIMIT 1
+`
+
+// Tombstone fanout on eligibility loss: which local actor delivered this
+// object before — the Delete must come from that actor's key.
+func (q *Queries) GetDeliveredObjectActor(ctx context.Context, objectID string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getDeliveredObjectActor, objectID)
+	var local_actor_id pgtype.UUID
+	err := row.Scan(&local_actor_id)
+	return local_actor_id, err
 }
 
 const getFederatableContentByID = `-- name: GetFederatableContentByID :one
@@ -484,6 +650,31 @@ func (q *Queries) GetFederatedActorHandlesByUserID(ctx context.Context, userID p
 	return i, err
 }
 
+const getFederationDeliveryByID = `-- name: GetFederationDeliveryByID :one
+SELECT id, activity_ap_id, activity_type, activity_json, local_actor_id, inbox_url, remote_actor_id, status, attempts, next_retry_at, last_error, created_at, delivered_at FROM federation_deliveries WHERE id = $1
+`
+
+func (q *Queries) GetFederationDeliveryByID(ctx context.Context, id pgtype.UUID) (FederationDelivery, error) {
+	row := q.db.QueryRow(ctx, getFederationDeliveryByID, id)
+	var i FederationDelivery
+	err := row.Scan(
+		&i.ID,
+		&i.ActivityApID,
+		&i.ActivityType,
+		&i.ActivityJson,
+		&i.LocalActorID,
+		&i.InboxUrl,
+		&i.RemoteActorID,
+		&i.Status,
+		&i.Attempts,
+		&i.NextRetryAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.DeliveredAt,
+	)
+	return i, err
+}
+
 const getFederationFollowByActivityID = `-- name: GetFederationFollowByActivityID :one
 SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at FROM federation_follows WHERE ap_activity_id = $1
 `
@@ -503,12 +694,61 @@ func (q *Queries) GetFederationFollowByActivityID(ctx context.Context, apActivit
 	return i, err
 }
 
+const getFederationFollowByPair = `-- name: GetFederationFollowByPair :one
+SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at FROM federation_follows
+WHERE local_actor_id = $1 AND remote_actor_id = $2
+`
+
+type GetFederationFollowByPairParams struct {
+	LocalActorID  pgtype.UUID `json:"local_actor_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Undo{Follow} may embed the Follow object without its @id — the
+// (local, remote) pair is the fallback match.
+func (q *Queries) GetFederationFollowByPair(ctx context.Context, arg GetFederationFollowByPairParams) (FederationFollow, error) {
+	row := q.db.QueryRow(ctx, getFederationFollowByPair, arg.LocalActorID, arg.RemoteActorID)
+	var i FederationFollow
+	err := row.Scan(
+		&i.ID,
+		&i.LocalActorID,
+		&i.RemoteActorID,
+		&i.ApActivityID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getFederationInboundByActivityID = `-- name: GetFederationInboundByActivityID :one
 SELECT id, activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload, status, error, created_at FROM federation_inbound WHERE activity_ap_id = $1
 `
 
 func (q *Queries) GetFederationInboundByActivityID(ctx context.Context, activityApID *string) (FederationInbound, error) {
 	row := q.db.QueryRow(ctx, getFederationInboundByActivityID, activityApID)
+	var i FederationInbound
+	err := row.Scan(
+		&i.ID,
+		&i.ActivityApID,
+		&i.ActivityType,
+		&i.ActorUrl,
+		&i.KeyID,
+		&i.SignatureValid,
+		&i.Payload,
+		&i.Status,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getFederationInboundByID = `-- name: GetFederationInboundByID :one
+SELECT id, activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload, status, error, created_at FROM federation_inbound WHERE id = $1
+`
+
+func (q *Queries) GetFederationInboundByID(ctx context.Context, id pgtype.UUID) (FederationInbound, error) {
+	row := q.db.QueryRow(ctx, getFederationInboundByID, id)
 	var i FederationInbound
 	err := row.Scan(
 		&i.ID,
@@ -629,6 +869,36 @@ func (q *Queries) GetRemoteActorByID(ctx context.Context, id pgtype.UUID) (Remot
 	return i, err
 }
 
+const getRemoteActorByKeyID = `-- name: GetRemoteActorByKeyID :one
+SELECT id, actor_url, acct, domain, inbox_url, shared_inbox_url, outbox_url, public_key_pem, public_key_id, preferred_username, display_name, avatar_url, status, fetched_at, created_at, updated_at FROM remote_actors WHERE public_key_id = $1 AND status = 'active'
+`
+
+// Inbound signature verification resolves the signer by the Signature
+// header's keyId (typically {actor_url}#main-key but not guaranteed).
+func (q *Queries) GetRemoteActorByKeyID(ctx context.Context, keyID *string) (RemoteActor, error) {
+	row := q.db.QueryRow(ctx, getRemoteActorByKeyID, keyID)
+	var i RemoteActor
+	err := row.Scan(
+		&i.ID,
+		&i.ActorUrl,
+		&i.Acct,
+		&i.Domain,
+		&i.InboxUrl,
+		&i.SharedInboxUrl,
+		&i.OutboxUrl,
+		&i.PublicKeyPem,
+		&i.PublicKeyID,
+		&i.PreferredUsername,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Status,
+		&i.FetchedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRemoteActorByURL = `-- name: GetRemoteActorByURL :one
 SELECT id, actor_url, acct, domain, inbox_url, shared_inbox_url, outbox_url, public_key_pem, public_key_id, preferred_username, display_name, avatar_url, status, fetched_at, created_at, updated_at FROM remote_actors WHERE actor_url = $1
 `
@@ -657,6 +927,100 @@ func (q *Queries) GetRemoteActorByURL(ctx context.Context, actorUrl string) (Rem
 	return i, err
 }
 
+const hasDeliveredObject = `-- name: HasDeliveredObject :one
+SELECT EXISTS(
+    SELECT 1 FROM federation_deliveries
+    WHERE local_actor_id = $1
+      AND activity_type IN ('Create','Update')
+      AND activity_json->'object'->>'id' = $2::text
+)
+`
+
+type HasDeliveredObjectParams struct {
+	LocalActorID pgtype.UUID `json:"local_actor_id"`
+	ObjectID     string      `json:"object_id"`
+}
+
+// Fanout's Create-vs-Update decision: any prior delivery row carrying
+// this object means remote inboxes saw the object before → Update.
+func (q *Queries) HasDeliveredObject(ctx context.Context, arg HasDeliveredObjectParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDeliveredObject, arg.LocalActorID, arg.ObjectID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const incrementContentShareCount = `-- name: IncrementContentShareCount :exec
+UPDATE contents SET share_count = share_count + 1 WHERE id = $1
+`
+
+// §126 inbound Announce.
+func (q *Queries) IncrementContentShareCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementContentShareCount, id)
+	return err
+}
+
+const insertAPRemoteComment = `-- name: InsertAPRemoteComment :one
+INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous,
+                      remote_ap_actor_id, remote_uri, status)
+VALUES ($1, NULL, $2, $3, $4, false,
+        $5, $6, 'published')
+ON CONFLICT (remote_uri) WHERE remote_uri IS NOT NULL DO NOTHING
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count, created_by_user_id, remote_atproto_actor_id, remote_uri, remote_ap_actor_id
+`
+
+type InsertAPRemoteCommentParams struct {
+	ContentID       pgtype.UUID `json:"content_id"`
+	ParentID        pgtype.UUID `json:"parent_id"`
+	Body            []byte      `json:"body"`
+	Depth           int32       `json:"depth"`
+	RemoteApActorID pgtype.UUID `json:"remote_ap_actor_id"`
+	RemoteUri       *string     `json:"remote_uri"`
+}
+
+// Remote AP reply (§126 Create{inReplyTo}): author_user_id stays NULL —
+// provenance lives on remote_ap_actor_id + remote_uri (shared dedupe
+// column with the atproto bridge). Depth mirrors the local model.
+func (q *Queries) InsertAPRemoteComment(ctx context.Context, arg InsertAPRemoteCommentParams) (Comment, error) {
+	row := q.db.QueryRow(ctx, insertAPRemoteComment,
+		arg.ContentID,
+		arg.ParentID,
+		arg.Body,
+		arg.Depth,
+		arg.RemoteApActorID,
+		arg.RemoteUri,
+	)
+	var i Comment
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.AuthorUserID,
+		&i.ParentID,
+		&i.Body,
+		&i.Depth,
+		&i.VoteScore,
+		&i.IsPinned,
+		&i.IsEdited,
+		&i.EditedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.IsAnonymous,
+		&i.ReplyCount,
+		&i.Status,
+		&i.RemovedBy,
+		&i.RemovedReason,
+		&i.ViewCount,
+		&i.UpvoteCount,
+		&i.DownvoteCount,
+		&i.CreatedByUserID,
+		&i.RemoteAtprotoActorID,
+		&i.RemoteUri,
+		&i.RemoteApActorID,
+	)
+	return i, err
+}
+
 const insertFederationDelivery = `-- name: InsertFederationDelivery :one
 INSERT INTO federation_deliveries (
     activity_ap_id, activity_type, activity_json, local_actor_id,
@@ -665,6 +1029,7 @@ INSERT INTO federation_deliveries (
     $1, $2, $3, $4,
     $5, $6, now()
 )
+ON CONFLICT (activity_ap_id, inbox_url) DO NOTHING
 RETURNING id, activity_ap_id, activity_type, activity_json, local_actor_id, inbox_url, remote_actor_id, status, attempts, next_retry_at, last_error, created_at, delivered_at
 `
 
@@ -677,6 +1042,8 @@ type InsertFederationDeliveryParams struct {
 	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
 }
 
+// (activity_ap_id, inbox_url) unique — fanout replays dedup at the
+// constraint; ErrNoRows means the row (and its queue task) already exists.
 func (q *Queries) InsertFederationDelivery(ctx context.Context, arg InsertFederationDeliveryParams) (FederationDelivery, error) {
 	row := q.db.QueryRow(ctx, insertFederationDelivery,
 		arg.ActivityApID,
@@ -707,22 +1074,28 @@ func (q *Queries) InsertFederationDelivery(ctx context.Context, arg InsertFedera
 
 const insertFederationInbound = `-- name: InsertFederationInbound :one
 INSERT INTO federation_inbound (
-    activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload
+    activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload, status
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6,
+    COALESCE($7, 'received')
 )
+ON CONFLICT (activity_ap_id) WHERE activity_ap_id IS NOT NULL DO NOTHING
 RETURNING id, activity_ap_id, activity_type, actor_url, key_id, signature_valid, payload, status, error, created_at
 `
 
 type InsertFederationInboundParams struct {
-	ActivityApID   *string `json:"activity_ap_id"`
-	ActivityType   string  `json:"activity_type"`
-	ActorUrl       *string `json:"actor_url"`
-	KeyID          *string `json:"key_id"`
-	SignatureValid bool    `json:"signature_valid"`
-	Payload        []byte  `json:"payload"`
+	ActivityApID   *string     `json:"activity_ap_id"`
+	ActivityType   string      `json:"activity_type"`
+	ActorUrl       *string     `json:"actor_url"`
+	KeyID          *string     `json:"key_id"`
+	SignatureValid bool        `json:"signature_valid"`
+	Payload        []byte      `json:"payload"`
+	Status         interface{} `json:"status"`
 }
 
+// The partial unique on activity_ap_id is the DB-level dedup backstop
+// behind the Valkey marker — a replay returning ErrNoRows is already
+// ledgered and must not re-dispatch.
 func (q *Queries) InsertFederationInbound(ctx context.Context, arg InsertFederationInboundParams) (FederationInbound, error) {
 	row := q.db.QueryRow(ctx, insertFederationInbound,
 		arg.ActivityApID,
@@ -731,6 +1104,7 @@ func (q *Queries) InsertFederationInbound(ctx context.Context, arg InsertFederat
 		arg.KeyID,
 		arg.SignatureValid,
 		arg.Payload,
+		arg.Status,
 	)
 	var i FederationInbound
 	err := row.Scan(
@@ -746,6 +1120,56 @@ func (q *Queries) InsertFederationInbound(ctx context.Context, arg InsertFederat
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertRemoteFollow = `-- name: InsertRemoteFollow :execrows
+
+INSERT INTO follows (follower_remote_actor_id, entity_type, entity_id)
+VALUES ($1, 'user', $2)
+ON CONFLICT (follower_remote_actor_id, entity_type, entity_id)
+    WHERE follower_remote_actor_id IS NOT NULL DO NOTHING
+`
+
+type InsertRemoteFollowParams struct {
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+// =====================================================================
+// M2 — remote provenance on native social tables (migration 001167)
+// =====================================================================
+// §126 inbound Follow→Accept: the remote follower lands as a native
+// follows row — follower_remote_actor_id carries the provenance
+// (follower_id stays NULL). Rows affected drives the follower-count +
+// notification side effects — a replay is a no-op.
+func (q *Queries) InsertRemoteFollow(ctx context.Context, arg InsertRemoteFollowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRemoteFollow, arg.RemoteActorID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertRemoteShare = `-- name: InsertRemoteShare :execrows
+INSERT INTO federation_remote_shares (remote_actor_id, content_id, ap_activity_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (remote_actor_id, content_id) DO NOTHING
+`
+
+type InsertRemoteShareParams struct {
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	ContentID     pgtype.UUID `json:"content_id"`
+	ApActivityID  *string     `json:"ap_activity_id"`
+}
+
+// Announce: row lands only once per (remote_actor, content) — rows
+// affected is the ++ gate so replays can't double-count.
+func (q *Queries) InsertRemoteShare(ctx context.Context, arg InsertRemoteShareParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRemoteShare, arg.RemoteActorID, arg.ContentID, arg.ApActivityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listDueFederationDeliveries = `-- name: ListDueFederationDeliveries :many
@@ -1092,6 +1516,47 @@ func (q *Queries) ListLocalFederatedFollowingURLs(ctx context.Context, arg ListL
 	return items, nil
 }
 
+const listRemoteFollowerInboxesByActor = `-- name: ListRemoteFollowerInboxesByActor :many
+SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
+       MIN(ra.id)::uuid AS remote_actor_id
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = $1
+  AND ff.status = 'accepted'
+  AND ra.status = 'active'
+  AND COALESCE(ra.shared_inbox_url, ra.inbox_url) IS NOT NULL
+GROUP BY 1
+`
+
+type ListRemoteFollowerInboxesByActorRow struct {
+	InboxUrl      *string     `json:"inbox_url"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Fanout expansion (§126): one delivery row per DISTINCT inbox —
+// sharedInbox coalescing collapses same-instance followers into a
+// single POST. remote_actor_id is a representative for ledger
+// attribution (ON DELETE SET NULL, so the row survives actor churn).
+func (q *Queries) ListRemoteFollowerInboxesByActor(ctx context.Context, localActorID pgtype.UUID) ([]ListRemoteFollowerInboxesByActorRow, error) {
+	rows, err := q.db.Query(ctx, listRemoteFollowerInboxesByActor, localActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRemoteFollowerInboxesByActorRow
+	for rows.Next() {
+		var i ListRemoteFollowerInboxesByActorRow
+		if err := rows.Scan(&i.InboxUrl, &i.RemoteActorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemoteFollowerURLsByActor = `-- name: ListRemoteFollowerURLsByActor :many
 SELECT ra.actor_url
 FROM federation_follows ff
@@ -1137,6 +1602,96 @@ WHERE status IN ('delivered','dead') AND created_at < now() - make_interval(days
 
 func (q *Queries) PruneFederationDeliveries(ctx context.Context, retentionDays int32) error {
 	_, err := q.db.Exec(ctx, pruneFederationDeliveries, retentionDays)
+	return err
+}
+
+const removeRemoteReaction = `-- name: RemoveRemoteReaction :execrows
+DELETE FROM reactions
+WHERE entity_type = $1 AND entity_id = $2
+  AND remote_actor_id = $3 AND reaction_key = $4
+`
+
+type RemoveRemoteReactionParams struct {
+	EntityType    string      `json:"entity_type"`
+	EntityID      pgtype.UUID `json:"entity_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	ReactionKey   string      `json:"reaction_key"`
+}
+
+// Undo{Like}: delete only if the row exists — rows affected keeps the
+// recount honest on replays.
+func (q *Queries) RemoveRemoteReaction(ctx context.Context, arg RemoveRemoteReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeRemoteReaction,
+		arg.EntityType,
+		arg.EntityID,
+		arg.RemoteActorID,
+		arg.ReactionKey,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setRemoteActorStatus = `-- name: SetRemoteActorStatus :exec
+UPDATE remote_actors SET status = $1, updated_at = now() WHERE id = $2
+`
+
+type SetRemoteActorStatusParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// Delete{actor} tombstones the cached identity — follows/comments/likes
+// unwind in the same dispatch.
+func (q *Queries) SetRemoteActorStatus(ctx context.Context, arg SetRemoteActorStatusParams) error {
+	_, err := q.db.Exec(ctx, setRemoteActorStatus, arg.Status, arg.ID)
+	return err
+}
+
+const softDeleteAPCommentsByActor = `-- name: SoftDeleteAPCommentsByActor :many
+UPDATE comments SET deleted_at = now(), is_pinned = false, updated_at = now()
+WHERE remote_ap_actor_id = $1 AND deleted_at IS NULL
+RETURNING id, content_id, parent_id
+`
+
+type SoftDeleteAPCommentsByActorRow struct {
+	ID        pgtype.UUID `json:"id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	ParentID  pgtype.UUID `json:"parent_id"`
+}
+
+// Delete{actor} propagation: tombstone every live remote comment by the
+// actor; RETURNING feeds the counter unwind (same shape as §127 A6-1).
+func (q *Queries) SoftDeleteAPCommentsByActor(ctx context.Context, remoteApActorID pgtype.UUID) ([]SoftDeleteAPCommentsByActorRow, error) {
+	rows, err := q.db.Query(ctx, softDeleteAPCommentsByActor, remoteApActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SoftDeleteAPCommentsByActorRow
+	for rows.Next() {
+		var i SoftDeleteAPCommentsByActorRow
+		if err := rows.Scan(&i.ID, &i.ContentID, &i.ParentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const undoFederationFollowsByRemoteActor = `-- name: UndoFederationFollowsByRemoteActor :exec
+UPDATE federation_follows SET status = 'undone', updated_at = now()
+WHERE remote_actor_id = $1 AND status <> 'undone'
+`
+
+// Remote-actor tombstone propagation: every live/pending follow undoes
+// at once; 'undone' rows stay terminal so replays are idempotent.
+func (q *Queries) UndoFederationFollowsByRemoteActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, undoFederationFollowsByRemoteActor, remoteActorID)
 	return err
 }
 
@@ -1244,7 +1799,11 @@ INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id,
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
     ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
-    status = EXCLUDED.status,
+    -- Sticky terminal/accepted states: a replayed Follow must never
+    -- downgrade accepted→pending or resurrect an undone edge.
+    status = CASE WHEN federation_follows.status IN ('accepted','undone')
+                  THEN federation_follows.status
+                  ELSE EXCLUDED.status END,
     updated_at = now()
 RETURNING id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at
 `
