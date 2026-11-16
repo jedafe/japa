@@ -723,6 +723,7 @@ var settingsCatalog = map[string]settingMeta{
 	"newsletter.digest_day":      {Type: "int", DefaultValue: "1", Description: "Day of week (1 = Monday).", Panel: "control"},
 	"newsletter.digest_hour_utc": {Type: "int", DefaultValue: "8", Description: "Hour UTC to send digest.", Panel: "control"},
 	"newsletter.batch_size":      {Type: "int", DefaultValue: "500", Description: "Subscribers per send batch.", Panel: "control"},
+	"newsletter.double_opt_in":   {Type: "bool", DefaultValue: "false", Description: "Require email confirmation before new public signups are subscribed (double opt-in). Admin create/import stays single opt-in.", Panel: "control"},
 
 	// Jobs Board (§63, ADR-081)
 	"jobs.enabled":          {Type: "bool", DefaultValue: "true", Description: "Global jobs board toggle.", Panel: "control"},

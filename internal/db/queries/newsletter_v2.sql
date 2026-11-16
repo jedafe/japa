@@ -33,6 +33,28 @@ ON CONFLICT (email) DO UPDATE SET
  subscribed_at = now()
 RETURNING *;
 
+-- Double opt-in variant (newsletter.double_opt_in, migration 001170): new
+-- and previously-unsubscribed rows land in 'pending' until the emailed
+-- confirm link is hit. Already-'subscribed' rows keep their status — a
+-- re-signup must not demote an active subscriber back to pending.
+-- 'bounced'/'complained' stay suppressed as in Subscribe.
+-- name: SubscribePending :one
+INSERT INTO newsletter_subscribers (user_id, email, status, source) VALUES (sqlc.narg(user_id), @email, 'pending', @source)
+
+ON CONFLICT (email) DO UPDATE SET
+ status = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+               THEN newsletter_subscribers.status ELSE 'pending' END,
+ unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+                        THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
+ subscribed_at = now()
+RETURNING *;
+
+-- name: ConfirmSubscriber :one
+UPDATE newsletter_subscribers
+SET status = 'subscribed', subscribed_at = now(), unsubscribed_at = NULL
+WHERE id = @id AND status = 'pending'
+RETURNING *;
+
 -- name: Unsubscribe :exec
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
@@ -67,13 +89,25 @@ WHERE email = @email;
 -- =====================================================================
 
 -- name: CreateUnsubscribeToken :one
-INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id) VALUES (@token, @subscriber_id)
+INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id, purpose) VALUES (@token, @subscriber_id, 'unsubscribe')
 
 RETURNING *;
 
 -- name: GetUnsubscribeToken :one
 SELECT * FROM newsletter_unsubscribe_tokens
-WHERE token = @token;
+WHERE token = @token AND purpose = 'unsubscribe';
+
+-- Double opt-in confirm tokens share the table but carry purpose='confirm'
+-- (migration 001170) — a token minted for one flow can never be replayed
+-- in the other.
+-- name: CreateConfirmToken :one
+INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id, purpose) VALUES (@token, @subscriber_id, 'confirm')
+
+RETURNING *;
+
+-- name: GetConfirmToken :one
+SELECT * FROM newsletter_unsubscribe_tokens
+WHERE token = @token AND purpose = 'confirm';
 
 -- name: DeleteUnsubscribeToken :exec
 DELETE FROM newsletter_unsubscribe_tokens WHERE token = @token;

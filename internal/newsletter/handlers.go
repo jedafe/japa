@@ -196,6 +196,20 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Double opt-in (migration 001170): a 'pending' row must not receive any
+	// mail until the owner confirms — mint a purpose='confirm' token and
+	// enqueue the confirmation email. Failures degrade to logging: the row
+	// exists and re-subscribing re-triggers the flow.
+	if subscriber.Status == StatusPending {
+		if tok, terr := h.Service.CreateConfirmToken(r.Context(), subscriber.ID); terr == nil {
+			if eerr := h.Service.EnqueueConfirmEmail(r.Context(), email, tok); eerr != nil {
+				slog.Warn("newsletter: enqueue confirm email failed", "error", eerr)
+			}
+		} else {
+			slog.Warn("newsletter: create confirm token failed", "error", terr)
+		}
+	}
+
 	// The Subscribe query is an upsert (ON CONFLICT DO UPDATE), so the
 	// operation is idempotent: a re-subscribe re-activates the existing row
 	// with status='subscribed' and unsubscribed_at=NULL. Because the upsert
@@ -206,6 +220,29 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	h.resolveLiterals(r, &subscriber)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+}
+
+// HandleConfirm handles GET /newsletter/confirm — double opt-in
+// confirmation (migration 001170). Single-use purpose='confirm' token;
+// 404 when the token is unknown, wrong-purpose, or the subscriber is no
+// longer pending (already confirmed / re-subscribed through another path).
+func (h *Handlers) HandleConfirm(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "token is required")
+		return
+	}
+
+	subscriber, err := h.Service.ConfirmByToken(r.Context(), token)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "invalid_token", "Invalid or expired confirmation link")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"status":    subscriber.Status,
+		"confirmed": true,
+	}})
 }
 
 // isValidEmail performs a basic RFC-5321 email format check. The canonical
@@ -297,7 +334,9 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), input.Email, nil, input.Source)
+	// Direct insert — double opt-in applies to public signups only; admin
+	// rows send no confirmation email and would be stuck 'pending'.
+	subscriber, err := h.Service.CreateSubscriberDirect(r.Context(), input.Email, nil, input.Source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
@@ -337,7 +376,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if _, err := h.Service.CreateSubscriber(r.Context(), email, nil, SourceImport); err != nil {
+		if _, err := h.Service.CreateSubscriberDirect(r.Context(), email, nil, SourceImport); err != nil {
 			slog.Warn("newsletter import: skip email", "email", email, "error", err)
 
 			skipped++
@@ -368,11 +407,11 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 	// Validate the status filter against the allowed enum if provided.
 	if status != "" {
 		switch status {
-		case StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
+		case StatusPending, StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
 			// allowed
 		default:
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
-				"status must be one of: subscribed, unsubscribed, bounced, complained")
+				"status must be one of: pending, subscribed, unsubscribed, bounced, complained")
 			return
 		}
 	}
@@ -660,11 +699,11 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch body.Status {
-	case StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
+	case StatusPending, StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
 		// allowed
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
-			"status must be one of: subscribed, unsubscribed, bounced, complained")
+			"status must be one of: pending, subscribed, unsubscribed, bounced, complained")
 		return
 	}
 

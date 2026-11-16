@@ -182,6 +182,31 @@ func (q *Queries) AdminSubscriberStats(ctx context.Context) ([]AdminSubscriberSt
 	return items, nil
 }
 
+const confirmSubscriber = `-- name: ConfirmSubscriber :one
+UPDATE newsletter_subscribers
+SET status = 'subscribed', subscribed_at = now(), unsubscribed_at = NULL
+WHERE id = $1 AND status = 'pending'
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+`
+
+func (q *Queries) ConfirmSubscriber(ctx context.Context, id pgtype.UUID) (NewsletterSubscriber, error) {
+	row := q.db.QueryRow(ctx, confirmSubscriber, id)
+	var i NewsletterSubscriber
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.UserID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DigestEnabled,
+		&i.CampaignEnabled,
+		&i.SubscribedAt,
+		&i.UnsubscribedAt,
+		&i.Source,
+	)
+	return i, err
+}
+
 const countDigestSubscribers = `-- name: CountDigestSubscribers :one
 SELECT COUNT(*) AS count
 FROM newsletter_subscribers
@@ -255,11 +280,37 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 	return i, err
 }
 
+const createConfirmToken = `-- name: CreateConfirmToken :one
+INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id, purpose) VALUES ($1, $2, 'confirm')
+
+RETURNING token, subscriber_id, created_at, purpose
+`
+
+type CreateConfirmTokenParams struct {
+	Token        string      `json:"token"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+}
+
+// Double opt-in confirm tokens share the table but carry purpose='confirm'
+// (migration 001170) — a token minted for one flow can never be replayed
+// in the other.
+func (q *Queries) CreateConfirmToken(ctx context.Context, arg CreateConfirmTokenParams) (NewsletterUnsubscribeToken, error) {
+	row := q.db.QueryRow(ctx, createConfirmToken, arg.Token, arg.SubscriberID)
+	var i NewsletterUnsubscribeToken
+	err := row.Scan(
+		&i.Token,
+		&i.SubscriberID,
+		&i.CreatedAt,
+		&i.Purpose,
+	)
+	return i, err
+}
+
 const createUnsubscribeToken = `-- name: CreateUnsubscribeToken :one
 
-INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id) VALUES ($1, $2)
+INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id, purpose) VALUES ($1, $2, 'unsubscribe')
 
-RETURNING token, subscriber_id, created_at
+RETURNING token, subscriber_id, created_at, purpose
 `
 
 type CreateUnsubscribeTokenParams struct {
@@ -273,7 +324,12 @@ type CreateUnsubscribeTokenParams struct {
 func (q *Queries) CreateUnsubscribeToken(ctx context.Context, arg CreateUnsubscribeTokenParams) (NewsletterUnsubscribeToken, error) {
 	row := q.db.QueryRow(ctx, createUnsubscribeToken, arg.Token, arg.SubscriberID)
 	var i NewsletterUnsubscribeToken
-	err := row.Scan(&i.Token, &i.SubscriberID, &i.CreatedAt)
+	err := row.Scan(
+		&i.Token,
+		&i.SubscriberID,
+		&i.CreatedAt,
+		&i.Purpose,
+	)
 	return i, err
 }
 
@@ -297,6 +353,23 @@ DELETE FROM newsletter_unsubscribe_tokens WHERE token = $1
 func (q *Queries) DeleteUnsubscribeToken(ctx context.Context, token string) error {
 	_, err := q.db.Exec(ctx, deleteUnsubscribeToken, token)
 	return err
+}
+
+const getConfirmToken = `-- name: GetConfirmToken :one
+SELECT token, subscriber_id, created_at, purpose FROM newsletter_unsubscribe_tokens
+WHERE token = $1 AND purpose = 'confirm'
+`
+
+func (q *Queries) GetConfirmToken(ctx context.Context, token string) (NewsletterUnsubscribeToken, error) {
+	row := q.db.QueryRow(ctx, getConfirmToken, token)
+	var i NewsletterUnsubscribeToken
+	err := row.Scan(
+		&i.Token,
+		&i.SubscriberID,
+		&i.CreatedAt,
+		&i.Purpose,
+	)
+	return i, err
 }
 
 const getDigestSubscribers = `-- name: GetDigestSubscribers :many
@@ -463,14 +536,19 @@ func (q *Queries) GetSubscriberByUserID(ctx context.Context, userID pgtype.UUID)
 }
 
 const getUnsubscribeToken = `-- name: GetUnsubscribeToken :one
-SELECT token, subscriber_id, created_at FROM newsletter_unsubscribe_tokens
-WHERE token = $1
+SELECT token, subscriber_id, created_at, purpose FROM newsletter_unsubscribe_tokens
+WHERE token = $1 AND purpose = 'unsubscribe'
 `
 
 func (q *Queries) GetUnsubscribeToken(ctx context.Context, token string) (NewsletterUnsubscribeToken, error) {
 	row := q.db.QueryRow(ctx, getUnsubscribeToken, token)
 	var i NewsletterUnsubscribeToken
-	err := row.Scan(&i.Token, &i.SubscriberID, &i.CreatedAt)
+	err := row.Scan(
+		&i.Token,
+		&i.SubscriberID,
+		&i.CreatedAt,
+		&i.Purpose,
+	)
 	return i, err
 }
 
@@ -729,6 +807,47 @@ type SubscribeParams struct {
 // sends to known-bad addresses re-incurs bounce/complaint penalties.
 func (q *Queries) Subscribe(ctx context.Context, arg SubscribeParams) (NewsletterSubscriber, error) {
 	row := q.db.QueryRow(ctx, subscribe, arg.UserID, arg.Email, arg.Source)
+	var i NewsletterSubscriber
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.UserID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DigestEnabled,
+		&i.CampaignEnabled,
+		&i.SubscribedAt,
+		&i.UnsubscribedAt,
+		&i.Source,
+	)
+	return i, err
+}
+
+const subscribePending = `-- name: SubscribePending :one
+INSERT INTO newsletter_subscribers (user_id, email, status, source) VALUES ($1, $2, 'pending', $3)
+
+ON CONFLICT (email) DO UPDATE SET
+ status = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+               THEN newsletter_subscribers.status ELSE 'pending' END,
+ unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+                        THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
+ subscribed_at = now()
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+`
+
+type SubscribePendingParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Email  string      `json:"email"`
+	Source string      `json:"source"`
+}
+
+// Double opt-in variant (newsletter.double_opt_in, migration 001170): new
+// and previously-unsubscribed rows land in 'pending' until the emailed
+// confirm link is hit. Already-'subscribed' rows keep their status — a
+// re-signup must not demote an active subscriber back to pending.
+// 'bounced'/'complained' stay suppressed as in Subscribe.
+func (q *Queries) SubscribePending(ctx context.Context, arg SubscribePendingParams) (NewsletterSubscriber, error) {
+	row := q.db.QueryRow(ctx, subscribePending, arg.UserID, arg.Email, arg.Source)
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,

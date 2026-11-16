@@ -9890,6 +9890,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// RFC 8058 one-click: email clients POST List-Unsubscribe=One-Click
 			// (audit NL-04). Same handler — token path is method-agnostic.
 			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			// Double opt-in confirmation (migration 001170, audit NL-I1) —
+			// single-use purpose='confirm' token, public + rate-limited.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/newsletter/confirm", newsletterHandlers.HandleConfirm)
 			// Provider bounce/complaint webhook (§62 Compliance, ADR-080 §4).
 			// Authenticated via X-Webhook-Secret shared secret, not user auth.
 			r.Post("/newsletter/webhook", newsletterHandlers.HandleWebhook)

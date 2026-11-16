@@ -104,13 +104,16 @@
 		e.preventDefault();
 		if (!email) return;
 		newsletterStatus = 'loading';
-		const res = await api.post<{ message?: string }>('/newsletter/subscribe', { email });
+		const res = await api.post<{ message?: string; status?: string }>('/newsletter/subscribe', { email });
 		if (res.error) {
 			newsletterStatus = 'error';
 			newsletterMessage = res.error.message ?? t('landing.home.newsletter_error', 'Something went wrong. Please try again.');
 		} else {
 			newsletterStatus = 'success';
-			newsletterMessage = res.data?.message ?? t('landing.home.newsletter_success', "You're subscribed! Check your inbox.");
+			newsletterMessage =
+				res.data?.status === 'pending'
+					? t('landing.home.newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.')
+					: (res.data?.message ?? t('landing.home.newsletter_success', "You're subscribed! Check your inbox."));
 			email = '';
 		}
 	}

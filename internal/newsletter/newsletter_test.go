@@ -4,6 +4,7 @@
 package newsletter
 
 import (
+	"context"
 	"testing"
 )
 
@@ -35,5 +36,16 @@ func TestGenerateUnsubscribeToken(t *testing.T) {
 		}
 
 		seen[tk] = true
+	}
+}
+
+// Double opt-in must fail closed: with no settings provider wired the
+// feature is off, preserving the §62 single opt-in contract (migration
+// 001170, audit NL-I1).
+func TestDoubleOptInDefaultsOff(t *testing.T) {
+	s := &Service{}
+
+	if s.DoubleOptIn(context.Background()) {
+		t.Error("DoubleOptIn() = true with no settings provider, want false (fail closed)")
 	}
 }

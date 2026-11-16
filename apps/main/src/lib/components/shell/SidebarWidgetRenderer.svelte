@@ -564,9 +564,14 @@
 			return;
 		}
 		// The backend returns the subscriber object with status='subscribed'
-		// for both new and re-subscribes (idempotent upsert, §62). There is
-		// no 'already_subscribed' status code — treat any success as subscribed.
-		newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };
+		// for both new and re-subscribes (idempotent upsert, §62), or 'pending'
+		// when newsletter.double_opt_in is on (migration 001170) — the signup
+		// then completes via the emailed confirm link.
+		if (res.data?.status === 'pending') {
+			newsletterMessage = { kind: 'info', text: t('sidebar.newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.') };
+		} else {
+			newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };
+		}
 		newsletterEmail = '';
 	}
 

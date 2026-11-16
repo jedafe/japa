@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -28,6 +29,7 @@ import (
 
 // Subscriber status constants.
 const (
+	StatusPending      = "pending" // double opt-in, awaiting confirm (migration 001170)
 	StatusSubscribed   = "subscribed"
 	StatusUnsubscribed = "unsubscribed"
 	StatusBounced      = "bounced"
@@ -316,6 +318,24 @@ func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pg
 		userIDArg = *userID
 	}
 
+	if s.DoubleOptIn(ctx) {
+		// Double opt-in (migration 001170): the row lands in 'pending' until
+		// the emailed confirm link is used. Pending rows are invisible to
+		// every recipient query (all filter status='subscribed'). A row that
+		// comes back 'subscribed' here was already active — the upsert kept
+		// its status, so no confirm email is needed.
+		subscriber, err := s.writeQueries.SubscribePending(ctx, gen.SubscribePendingParams{
+			Email:  email,
+			UserID: userIDArg,
+			Source: source,
+		})
+		if err != nil {
+			return gen.NewsletterSubscriber{}, fmt.Errorf("creating pending newsletter subscriber: %w", err)
+		}
+
+		return subscriber, nil
+	}
+
 	subscriber, err := s.writeQueries.Subscribe(ctx, gen.SubscribeParams{
 		Email:  email,
 		UserID: userIDArg,
@@ -326,6 +346,91 @@ func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pg
 	}
 
 	return subscriber, nil
+}
+
+// CreateSubscriberDirect inserts/updates a subscriber as 'subscribed'
+// unconditionally — the admin create/import path. Double opt-in applies to
+// public signups only: admin-added rows send no confirmation email, so a
+// pending insert there would be stuck with no way to confirm.
+func (s *Service) CreateSubscriberDirect(ctx context.Context, email string, userID *pgtype.UUID, source string) (gen.NewsletterSubscriber, error) {
+	if email == "" {
+		return gen.NewsletterSubscriber{}, errors.New("newsletter: email is required")
+	}
+
+	if source == "" {
+		source = SourceSignup
+	}
+
+	var userIDArg pgtype.UUID
+	if userID != nil {
+		userIDArg = *userID
+	}
+
+	subscriber, err := s.writeQueries.Subscribe(ctx, gen.SubscribeParams{
+		Email:  email,
+		UserID: userIDArg,
+		Source: source,
+	})
+	if err != nil {
+		return gen.NewsletterSubscriber{}, fmt.Errorf("creating newsletter subscriber (admin): %w", err)
+	}
+
+	return subscriber, nil
+}
+
+// DoubleOptIn reports whether the newsletter.double_opt_in system setting is
+// on (§62 Compliance hardening, audit NL-I1). Off by default — the §62
+// contract is single opt-in; when enabled, signups land in 'pending' until
+// the emailed confirmation link is used.
+func (s *Service) DoubleOptIn(ctx context.Context) bool {
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "newsletter.double_opt_in", false)
+}
+
+// EnqueueConfirmEmail dispatches the double opt-in confirmation email to a
+// pending subscriber via the email:send task (fire-and-forget, Rule 8). The
+// link mirrors the unsubscribe flow: a frontend page at /newsletter/confirm
+// that calls GET /newsletter/confirm?token=.
+func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token string) error {
+	if s.client == nil {
+		return errors.New("asynq client not configured")
+	}
+
+	base := s.siteBaseURL(ctx)
+	confirmURL := strings.TrimRight(base, "/") + "/newsletter/confirm?token=" + token
+
+	payload, err := json.Marshal(map[string]any{
+		"to":      emailAddr,
+		"subject": "Confirm your newsletter subscription",
+		"body":    fmt.Sprintf(`<p>Please confirm your subscription by clicking the link below:</p><p><a href="%s">Confirm subscription</a></p><p>If you did not sign up, you can ignore this email — you will not receive any further messages.</p>`, confirmURL),
+		"html":    true,
+	})
+	if err != nil {
+		return fmt.Errorf("marshalling confirm email payload: %w", err)
+	}
+
+	task := asynq.NewTask(worker.TypeEmailSend, payload)
+
+	if _, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+		return fmt.Errorf("enqueuing confirm email: %w", err)
+	}
+
+	return nil
+}
+
+// siteBaseURL resolves the platform site base URL (site.base_url setting,
+// then JC_SITE_URL env) — mirrors digest/worker helpers.
+func (s *Service) siteBaseURL(ctx context.Context) string {
+	if s.settings != nil {
+		if v := s.settings.GetStringOr(ctx, "site.base_url", ""); v != "" {
+			return v
+		}
+	}
+
+	return os.Getenv("JC_SITE_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +676,47 @@ func (s *Service) CreateUnsubscribeToken(ctx context.Context, subscriberID pgtyp
 	}
 
 	return token, nil
+}
+
+// CreateConfirmToken mints a purpose='confirm' token for a pending
+// subscriber (double opt-in, migration 001170). Confirm tokens cannot be
+// replayed as unsubscribe tokens — GetUnsubscribeToken filters by purpose.
+func (s *Service) CreateConfirmToken(ctx context.Context, subscriberID pgtype.UUID) (string, error) {
+	token, err := GenerateUnsubscribeToken()
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := s.writeQueries.CreateConfirmToken(ctx, gen.CreateConfirmTokenParams{
+		Token:        token,
+		SubscriberID: subscriberID,
+	}); err != nil {
+		return "", fmt.Errorf("newsletter: create confirm token: %w", err)
+	}
+
+	return token, nil
+}
+
+// ConfirmByToken flips a pending subscriber to 'subscribed' via a
+// purpose='confirm' token. Single-use: the token is deleted after a
+// successful confirm. pgx.ErrNoRows propagates for the handler's 404
+// mapping (unknown token, wrong purpose, or subscriber no longer pending).
+func (s *Service) ConfirmByToken(ctx context.Context, token string) (gen.NewsletterSubscriber, error) {
+	tokenRow, err := s.queries.GetConfirmToken(ctx, token)
+	if err != nil {
+		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: get confirm token: %w", err)
+	}
+
+	subscriber, err := s.writeQueries.ConfirmSubscriber(ctx, tokenRow.SubscriberID)
+	if err != nil {
+		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: confirm subscriber (not pending or not found): %w", err)
+	}
+
+	if err := s.writeQueries.DeleteUnsubscribeToken(ctx, token); err != nil {
+		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: delete confirm token (single-use): %w", err)
+	}
+
+	return subscriber, nil
 }
 
 // CreateCampaignInput is the request body for creating a campaign.

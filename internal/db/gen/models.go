@@ -3147,6 +3147,7 @@ type NewsletterUnsubscribeToken struct {
 	Token        string             `json:"token"`
 	SubscriberID pgtype.UUID        `json:"subscriber_id"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Purpose      string             `json:"purpose"`
 }
 
 type NextActionRule struct {

@@ -78,6 +78,7 @@
 	];
 
 	const subscriberStatusOptions = [
+		{ value: 'pending', label: t('app.newsletter.status_pending', 'Pending') },
 		{ value: 'subscribed', label: t('app.newsletter.status_subscribed', 'Subscribed') },
 		{ value: 'unsubscribed', label: t('app.newsletter.status_unsubscribed', 'Unsubscribed') },
 		{ value: 'bounced', label: t('app.newsletter.status_bounced', 'Bounced') },
@@ -201,7 +202,7 @@
 				key: 'status',
 				label: t('app.newsletter.col_status', 'Status'),
 				render: (v: string) => {
-					const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
+					const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' || v === 'pending' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
 					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'subscribed'}</span>`;
 				}
 			},
@@ -607,9 +608,12 @@
 									click_rate: c.clickRate ?? 0
 								}))}
 							x="name"
-							y="open_rate"
+							series={[
+								{ key: 'open_rate', label: t('newsletter.avg_open_rate', 'Avg open rate'), color: 'var(--chart-1)' },
+								{ key: 'click_rate', label: t('newsletter.avg_click_rate', 'Avg click rate'), color: 'var(--chart-2)' }
+							]}
+							seriesLayout="group"
 							xPadding={[0.1, 0.1]}
-							cRange={['var(--chart-1)']}
 							axis={newsletterChartAxis}
 						/>
 					</div>

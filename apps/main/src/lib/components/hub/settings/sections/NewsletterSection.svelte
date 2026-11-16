@@ -88,6 +88,13 @@
 			subscribeMessage = { kind: 'error', text: res.error.message ?? t('settings.newsletter.error', 'Something went wrong. Please try again.') };
 			return;
 		}
+		if (res.data?.status === 'pending') {
+			// Double opt-in (newsletter.double_opt_in, migration 001170): the
+			// row is 'pending' until the emailed confirm link is used — don't
+			// flip to the toggles until the row is actually subscribed.
+			subscribeMessage = { kind: 'success', text: t('settings.newsletter.confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.') };
+			return;
+		}
 		subscribeMessage = { kind: 'success', text: t('settings.newsletter.subscribed', 'You are now subscribed.') };
 		// Re-run the server loader so the section flips to the toggles — no
 		// full-page reload (SPA navigation stays intact).
