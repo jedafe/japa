@@ -1069,3 +1069,161 @@ func TestDBInboundReplySpamCheck(t *testing.T) {
 		t.Fatalf("spam checks: %d want 2", fake.checked)
 	}
 }
+
+func TestDBRefollowAfterUndoResurrects(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+
+	follow := func(id string) map[string]any {
+		return map[string]any{
+			"type":   "Follow",
+			"actor":  actorURL,
+			"object": svc.apiBase() + "/federation/actors/" + uname,
+			"id":     id,
+		}
+	}
+	if row := runInbound(t, ctx, svc, follow(actorURL+"#f1")); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	undo := map[string]any{
+		"id": actorURL + "#u1", "type": "Undo", "actor": actorURL,
+		"object": follow(actorURL + "#f1"),
+	}
+	if row := runInbound(t, ctx, svc, undo); row.Status != "processed" {
+		t.Fatalf("undo: %q", row.Status)
+	}
+	// A NEW Follow activity id after Undo is a genuine re-request: the
+	// edge resurrects and a second Accept is ledgered — the per-event
+	// discriminator keeps it distinct under the (activity_ap_id, inbox)
+	// dedup.
+	if row := runInbound(t, ctx, svc, follow(actorURL+"#f2")); row.Status != "processed" {
+		t.Fatalf("refollow status %q (reason %v)", row.Status, row.Error)
+	}
+	var accepts int64
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND activity_type = 'Accept'`,
+		remote.ID).Scan(&accepts); err != nil {
+		t.Fatal(err)
+	}
+	if accepts != 2 {
+		t.Fatalf("accept deliveries: %d want 2 — re-Follow must re-answer", accepts)
+	}
+	// An id-less re-Follow can't be distinguished from a replay of the
+	// undone Follow — the edge stays undone (conservative).
+	idless := map[string]any{
+		"type":   "Follow",
+		"actor":  actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	}
+	undo2 := map[string]any{
+		"id": actorURL + "#u2", "type": "Undo", "actor": actorURL,
+		"object": follow(actorURL + "#f2"),
+	}
+	if row := runInbound(t, ctx, svc, undo2); row.Status != "processed" {
+		t.Fatalf("second undo: %q", row.Status)
+	}
+	if row := runInbound(t, ctx, svc, idless); row.Status != "ignored" {
+		t.Fatalf("id-less refollow status %q want ignored", row.Status)
+	}
+	// Update path: spam-checked edits reject.
+	fake := &fakeSpamChecker{blocked: true}
+	svc.SetSpamChecker(fake)
+	upd := map[string]any{
+		"id": actorURL + "#u9", "type": "Update", "actor": actorURL,
+		"object": map[string]any{
+			"id": actorURL + "/notes/9", "type": "Note", "content": "<p>spam</p>",
+		},
+	}
+	if row := runInbound(t, ctx, svc, upd); row.Status != "rejected" {
+		t.Fatalf("spammy update status %q", row.Status)
+	}
+	svc.SetSpamChecker(nil)
+}
+
+func TestDBRefollowAcceptDistinctDelivery(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	objURL := svc.apiBase() + "/federation/actors/" + uname
+
+	// Two distinct Follow events (fresh activity ids) on the same edge —
+	// the remote re-sent because it never saw the first Accept. Each must
+	// produce its own delivery row.
+	for _, id := range []string{actorURL + "#fa", actorURL + "#fb"} {
+		row := runInbound(t, ctx, svc, map[string]any{
+			"id": id, "type": "Follow", "actor": actorURL, "object": objURL,
+		})
+		if row.Status != "processed" {
+			t.Fatalf("follow %s: %q (%v)", id, row.Status, row.Error)
+		}
+	}
+	var n int64
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND activity_type = 'Accept'`,
+		remote.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("accept deliveries: %d want 2 (re-sent Follows must re-answer)", n)
+	}
+}
+
+func TestDBRemoteObjectIDDomainGate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+
+	// Object id minted on OUR domain — squatting on a local object URL.
+	create := map[string]any{
+		"id": actorURL + "#c1", "type": "Create", "actor": actorURL,
+		"object": map[string]any{
+			"id":        svc.apiBase() + "/federation/objects/contents/" + contentID.String(),
+			"type":      "Note",
+			"inReplyTo": objIRI,
+			"content":   "<p>squat</p>",
+		},
+	}
+	if row := runInbound(t, ctx, svc, create); row.Status != "rejected" {
+		t.Fatalf("foreign-domain id status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM comments WHERE content_id = $1`, contentID); n != 0 {
+		t.Fatalf("squatted comment landed: %d", n)
+	}
+}
+
+func TestDBInboundPrune(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	old, err := d.Writer.Exec(ctx,
+		`UPDATE federation_inbound SET created_at = now() - interval '40 days'`)
+	if err != nil {
+		t.Fatalf("age inbound: %v", err)
+	}
+	if err := svc.PruneDeliveries(ctx, 30); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	var remaining int64
+	if err := d.Reader.QueryRow(ctx, `SELECT COUNT(*) FROM federation_inbound`).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if old.RowsAffected() > 0 && remaining != 0 {
+		t.Fatalf("inbound rows past retention survived prune: %d", remaining)
+	}
+}

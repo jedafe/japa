@@ -450,5 +450,8 @@ func (s *Service) PruneDeliveries(ctx context.Context, retentionDays int) error 
 			}
 		}
 	}
+	if err := s.store.pruneInbound(ctx, int32(retentionDays)); err != nil {
+		return fmt.Errorf("federation inbound prune: %w", err)
+	}
 	return s.store.pruneDeliveries(ctx, int32(retentionDays))
 }

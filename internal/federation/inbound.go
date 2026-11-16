@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
@@ -121,7 +122,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		return fmt.Errorf("inbound tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	res := s.dispatch(ctx, gen.New(tx), act, signer)
+	res := s.dispatch(ctx, gen.New(tx), row, act, signer)
 	// An internal write failure must not commit: the tx has partial
 	// mutations by definition, and stamping 'error' would strand the
 	// half-applied state with no retry (the status CHECK excludes
@@ -136,23 +137,39 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	return s.finishInbound(ctx, row.ID, res.status, res.reason, res.intents, res.deliverID)
 }
 
-// spamCheckReply runs the §41 pipeline on an inbound reply body. Only
-// Create objects carrying inReplyTo are checked — anything else is either
-// not content or ignored by the dispatch anyway. A zero-identity request
-// (no local user, no client IP) lets the user/IP-scoped layers skip while
-// the content layers — censored words, content hash, link analysis,
-// length, AI classification — apply exactly as they do for members. Like
-// the member path, a pipeline failure is fail-open; a blocked verdict is
-// not — the activity is rejected outright.
+// spamCheckReply runs the §41 pipeline on inbound content bodies — the
+// same check member comments and member edits get. Create objects must
+// carry inReplyTo (only replies become comments); Update objects get
+// checked when they carry a rewritten content body — otherwise a clean
+// Create followed by a spammy Update would sidestep the pipeline
+// entirely. Actor self-updates (object = the activity's actor) carry no
+// comment body and are skipped. A zero-identity request (no local user,
+// no client IP) lets the user/IP-scoped layers skip while the content
+// layers — censored words, content hash, link analysis, length, AI
+// classification — apply exactly as they do for members. Like the member
+// path, a pipeline failure is fail-open; a blocked verdict is not — the
+// activity is rejected outright.
 func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string {
-	if s.spam == nil || apStr(act["type"]) != "Create" {
+	if s.spam == nil {
 		return ""
 	}
-	obj := apObj(act["object"])
-	if obj == nil || apID(obj["inReplyTo"]) == "" {
+	var body string
+	switch apStr(act["type"]) {
+	case "Create":
+		obj := apObj(act["object"])
+		if obj == nil || apID(obj["inReplyTo"]) == "" {
+			return ""
+		}
+		body = htmlToText(apStr(obj["content"]))
+	case "Update":
+		obj := apObj(act["object"])
+		if obj == nil || strings.EqualFold(apID(obj["id"]), apActorID(act)) {
+			return ""
+		}
+		body = htmlToText(apStr(obj["content"]))
+	default:
 		return ""
 	}
-	body := htmlToText(apStr(obj["content"]))
 	if body == "" {
 		return ""
 	}
@@ -200,7 +217,10 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 }
 
 // dispatch routes the activity. All writes run inside the caller's tx.
-func (s *Service) dispatch(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+// The inbound row id keys per-event response identity (Accept/Reject
+// dedup) — it is stable across retries of this row and unique across
+// Follow events.
+func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor) dispatchResult {
 	typ := apStr(act["type"])
 	actorID := apActorID(act)
 	if signer != nil && actorID != "" && !strings.EqualFold(actorID, signer.ActorUrl) {
@@ -208,7 +228,7 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, act map[string]a
 	}
 	switch typ {
 	case "Follow":
-		return s.dispatchFollow(ctx, q, act, signer)
+		return s.dispatchFollow(ctx, q, act, signer, row.ID)
 	case "Accept", "Reject":
 		return s.dispatchAcceptReject(ctx, q, act, signer)
 	case "Undo":
@@ -251,7 +271,7 @@ func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objec
 // dispatchFollow handles a remote Follow of a local actor (§126): upsert
 // the federation_follows row, auto-Accept unless the member approves
 // followers manually, mirror the follows provenance row, notify.
-func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor, rowID pgtype.UUID) dispatchResult {
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned follow"}
 	}
@@ -313,7 +333,7 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	if err != nil {
 		return dispatchResult{status: "error", reason: "follows insert: " + err.Error()}
 	}
-	deliverID, err := s.insertAcceptDelivery(ctx, q, actor, signer, act)
+	deliverID, err := s.insertAcceptDelivery(ctx, q, actor, signer, act, rowID.String())
 	if err != nil {
 		return dispatchResult{status: "error", reason: "accept delivery: " + err.Error()}
 	}
@@ -327,18 +347,23 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 // insertAcceptDelivery builds the Accept{Follow} and ledgers it for the
 // delivery worker. The embedded object is the verbatim incoming Follow —
 // remote servers correlate on the original activity id.
-func (s *Service) insertAcceptDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
-	return s.insertFollowResponseDelivery(ctx, q, "Accept", actor, remote, followAct)
+func (s *Service) insertAcceptDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any, discriminator string) (pgtype.UUID, error) {
+	return s.insertFollowResponseDelivery(ctx, q, "Accept", actor, remote, followAct, discriminator)
 }
 
 // insertRejectDelivery is the member-driven counterpart — Reject{Follow}
 // when a pending request is declined.
-func (s *Service) insertRejectDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
-	return s.insertFollowResponseDelivery(ctx, q, "Reject", actor, remote, followAct)
+func (s *Service) insertRejectDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any, discriminator string) (pgtype.UUID, error) {
+	return s.insertFollowResponseDelivery(ctx, q, "Reject", actor, remote, followAct, discriminator)
 }
 
 // insertFollowResponseDelivery ledgers one Accept|Reject{Follow} row.
-func (s *Service) insertFollowResponseDelivery(ctx context.Context, q *gen.Queries, typ string, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
+// The response id carries a per-event discriminator — the inbound row id
+// in dispatch, a fresh uuid in member resolution — because the delivery
+// dedup key is (activity_ap_id, inbox_url): a repeated Follow event must
+// produce a NEW response row, or a remote that missed the first answer
+// hangs on a deduped key while we report the edge resolved.
+func (s *Service) insertFollowResponseDelivery(ctx context.Context, q *gen.Queries, typ string, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any, discriminator string) (pgtype.UUID, error) {
 	inbox := remote.InboxUrl
 	if remote.SharedInboxUrl != nil && *remote.SharedInboxUrl != "" {
 		inbox = remote.SharedInboxUrl
@@ -346,7 +371,7 @@ func (s *Service) insertFollowResponseDelivery(ctx context.Context, q *gen.Queri
 	if inbox == nil || *inbox == "" {
 		return pgtype.UUID{}, fmt.Errorf("remote actor has no inbox")
 	}
-	responseID := actor.ActorUrl + "#" + lowerType(typ) + "s/" + followActivityRef(followAct)
+	responseID := actor.ActorUrl + "#" + lowerType(typ) + "s/" + followActivityRef(followAct) + "/" + discriminator
 	payload, _ := json.Marshal(map[string]any{
 		"@context": "https://www.w3.org/ns/activitystreams",
 		"id":       responseID,
@@ -502,9 +527,9 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 			}); err != nil {
 				return err
 			}
-			deliverID, err = s.insertAcceptDelivery(ctx, q, actor, &remote, followAct)
+			deliverID, err = s.insertAcceptDelivery(ctx, q, actor, &remote, followAct, uuid.NewString())
 		} else {
-			deliverID, err = s.insertRejectDelivery(ctx, q, actor, &remote, followAct)
+			deliverID, err = s.insertRejectDelivery(ctx, q, actor, &remote, followAct, uuid.NewString())
 		}
 		if err != nil {
 			return err
@@ -779,6 +804,15 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 	remoteURI := apStr(obj["id"])
 	if remoteURI == "" {
 		return dispatchResult{status: "rejected", reason: "remote object missing id"}
+	}
+	// Object ids must live on the signer's domain — an actor cannot mint
+	// remote_uri values on our host (squatting on local object URLs) or
+	// another instance's (shadowing someone else's statuses).
+	ru, rerr := url.Parse(remoteURI)
+	su, serr := url.Parse(signer.ActorUrl)
+	if rerr != nil || serr != nil || ru.Host == "" ||
+		!strings.EqualFold(ru.Hostname(), su.Hostname()) {
+		return dispatchResult{status: "rejected", reason: "object id outside actor domain"}
 	}
 	body := htmlToText(apStr(obj["content"]))
 	if body == "" {

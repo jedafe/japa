@@ -186,10 +186,16 @@ INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id,
 VALUES (@local_actor_id, @remote_actor_id, @ap_activity_id, @status)
 ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
     ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
-    -- Sticky terminal/accepted states: a replayed Follow must never
-    -- downgrade accepted→pending or resurrect an undone edge.
-    status = CASE WHEN federation_follows.status IN ('accepted','undone')
-                  THEN federation_follows.status
+    -- Sticky states: 'accepted' survives any resend (the edge exists —
+    -- resends are re-affirmations). 'undone' only survives a REPLAY of
+    -- the same Follow (same or absent ap_activity_id): an Undo followed
+    -- by a NEW Follow activity id is a genuine re-request and must
+    -- resurrect — otherwise an unfollow permanently bans the actor.
+    status = CASE WHEN federation_follows.status = 'accepted' THEN 'accepted'
+                  WHEN federation_follows.status = 'undone'
+                       AND (EXCLUDED.ap_activity_id IS NULL
+                            OR EXCLUDED.ap_activity_id = federation_follows.ap_activity_id)
+                       THEN 'undone'
                   ELSE EXCLUDED.status END,
     updated_at = now()
 RETURNING *;
@@ -423,6 +429,13 @@ LIMIT @page_limit;
 -- name: PruneFederationDeliveries :exec
 DELETE FROM federation_deliveries
 WHERE status IN ('delivered','dead') AND created_at < now() - make_interval(days => @retention_days);
+
+-- name: PruneFederationInbound :exec
+-- Bounded retention for the audit ledger — terminal rows keep raw
+-- payloads. 'received' rows past retention are poison payloads the
+-- sweep would otherwise re-arm forever; deleting them is the bound.
+DELETE FROM federation_inbound
+WHERE created_at < now() - make_interval(days => @retention_days);
 
 -- name: CreateInstanceBlock :one
 INSERT INTO federation_instance_blocks (domain, reason, blocked_by)

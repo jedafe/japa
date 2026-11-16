@@ -238,6 +238,10 @@ func (s *Store) pruneDeliveries(ctx context.Context, retentionDays int32) error 
 	return s.write.PruneFederationDeliveries(ctx, retentionDays)
 }
 
+func (s *Store) pruneInbound(ctx context.Context, retentionDays int32) error {
+	return s.write.PruneFederationInbound(ctx, retentionDays)
+}
+
 func (s *Store) insertInbound(ctx context.Context, arg gen.InsertFederationInboundParams) (gen.FederationInbound, error) {
 	return s.write.InsertFederationInbound(ctx, arg)
 }
