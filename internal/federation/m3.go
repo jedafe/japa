@@ -263,6 +263,13 @@ func (s *Service) ProvisionGroupActor(ctx context.Context, spaceID, adminID pgty
 			return gen.FederatedActor{}, ErrNotFound
 		}
 	}
+	// Handle collision: another space's group actor already owns the
+	// !{slug} handle — e.g. the slug was renamed away from an earlier
+	// federated space and reused (the handle stays bound to its original
+	// actor). Minting would only fail on the actor_url unique index.
+	if other, err := s.store.read.GetGroupActorDocBySlug(ctx, space.Slug); err == nil && other.SpaceID != space.ID {
+		return gen.FederatedActor{}, ErrConflict
+	}
 	pubPEM, privPEM, err := generateActorKeyPair()
 	if err != nil {
 		return gen.FederatedActor{}, fmt.Errorf("federation: group keypair: %w", err)
@@ -435,10 +442,14 @@ func (s *Service) invalidateGroupDoc(ctx context.Context, slug string) {
 // groupDocument builds the Group actor document from the join row.
 func groupDocument(row gen.GetGroupActorDocBySlugRow, siteBase string) map[string]any {
 	doc := map[string]any{
-		"@context":                  asContext,
-		"id":                        row.ActorUrl,
-		"type":                      "Group",
-		"preferredUsername":         row.SpaceSlug,
+		"@context": asContext,
+		"id":       row.ActorUrl,
+		"type":     "Group",
+		// The handle is the actor's provision-time preferred_username —
+		// immutable like actor_url — so a space slug rename never
+		// advertises an unresolvable acct:!{slug}. `url` deliberately
+		// tracks the LIVE space slug (the space's current page).
+		"preferredUsername":         row.PreferredUsername,
 		"name":                      row.SpaceName,
 		"url":                       siteBase + "/spaces/" + row.SpaceSlug,
 		"inbox":                     row.InboxUrl,

@@ -986,6 +986,71 @@ func TestDBGroupAnnounceEnvelopeLapse(t *testing.T) {
 	}
 }
 
+// TestDBGroupSlugRenameKeepsActorHandle — the group's actor URL and
+// acct:!{slug} handle are minted once at provision and must survive a
+// space slug rename (URIs are forever — remotes hold edges keyed on
+// them). After rename: the old handle still resolves doc + WebFinger,
+// the doc's preferredUsername advertises the stable handle while `url`
+// tracks the live slug, the new slug is not a handle, and a different
+// space reusing the old slug cannot mint a colliding actor.
+func TestDBGroupSlugRenameKeepsActorHandle(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	spaceID, slug := newSpace(t, ctx, d, "public")
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+	group, err := svc.ProvisionGroupActor(ctx, spaceID, adminID)
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if _, err := svc.GroupDocument(ctx, slug); err != nil {
+		t.Fatalf("doc pre-rename: %v", err)
+	}
+
+	newSlug := slug + "-renamed"
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE spaces SET slug = $1 WHERE id = $2`, newSlug, spaceID); err != nil {
+		t.Fatalf("rename slug: %v", err)
+	}
+
+	// The canonical actor URL + handle keep resolving post-rename.
+	doc, err := svc.GroupDocument(ctx, slug)
+	if err != nil {
+		t.Fatalf("doc post-rename: %v", err)
+	}
+	if doc["id"] != group.ActorUrl {
+		t.Errorf("doc id after rename: %v", doc["id"])
+	}
+	if doc["preferredUsername"] != slug {
+		t.Errorf("preferredUsername after rename: %v (want stable handle %q)", doc["preferredUsername"], slug)
+	}
+	if doc["url"] != "https://test.dev/spaces/"+newSlug {
+		t.Errorf("url after rename: %v (want live slug)", doc["url"])
+	}
+	if _, err := svc.groupWebfinger(ctx, slug, "test.dev"); err != nil {
+		t.Fatalf("webfinger old handle post-rename: %v", err)
+	}
+	// The renamed space's current slug is NOT an actor handle.
+	if _, err := svc.groupWebfinger(ctx, newSlug, "test.dev"); err != ErrNotFound {
+		t.Fatalf("webfinger new slug: %v", err)
+	}
+	if _, err := svc.GroupDocument(ctx, newSlug); err != ErrNotFound {
+		t.Fatalf("doc new slug: %v", err)
+	}
+
+	// A different space reusing the freed slug cannot mint a colliding
+	// actor — the handle stays bound to its original actor.
+	otherSpaceID, _ := newSpace(t, ctx, d, "public")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE spaces SET slug = $1 WHERE id = $2`, slug, otherSpaceID); err != nil {
+		t.Fatalf("reuse slug: %v", err)
+	}
+	if _, err := svc.ProvisionGroupActor(ctx, otherSpaceID, adminID); err != ErrConflict {
+		t.Fatalf("provision on reused handle: %v", err)
+	}
+}
+
 // TestDBListRelaysQFilter — the admin DataTable ?q= contract added in
 // pass 26: ILIKE on actor_url/domain.
 func TestDBListRelaysQFilter(t *testing.T) {

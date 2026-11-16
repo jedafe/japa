@@ -243,8 +243,12 @@ func (s *Service) groupWebfinger(ctx context.Context, slug, domain string) (map[
 	if canonical == "" {
 		canonical = domain
 	}
+	// Subject echoes the actor's provision-time handle (immutable, like
+	// actor_url) — a space slug rename must not make acct:!{oldslug}
+	// answer with an unresolvable new handle. The profile link tracks
+	// the live slug.
 	doc := webfingerJRD(
-		"!"+row.SpaceSlug, canonical, row.ActorUrl,
+		"!"+row.PreferredUsername, canonical, row.ActorUrl,
 		s.siteBase()+"/spaces/"+row.SpaceSlug,
 	)
 	if cacheable {

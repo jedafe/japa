@@ -661,6 +661,11 @@ RETURNING *;
 -- Group-document source row: the actor joined to its space (with logo
 -- media). Space gates apply in the service — this row resolves even when
 -- the space flipped private so callers distinguish 404 from 410.
+-- Keyed on fa.preferred_username (the immutable !{slug} handle baked
+-- into actor_url at provision), NOT s.slug — a space slug rename must
+-- never orphan the canonical actor URL, its WebFinger handle, or the
+-- federation_follows edges keyed on it. idx_federated_actors_-
+-- preferred_username (lower()) serves the lookup.
 SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
@@ -668,7 +673,7 @@ SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
 LEFT JOIN media ml ON ml.id = s.logo_media_id AND ml.deleted_at IS NULL AND ml.confirmed = true
-WHERE fa.kind = 'group' AND s.slug = @slug;
+WHERE fa.kind = 'group' AND lower(fa.preferred_username) = lower(@slug);
 
 -- name: GetSpaceForGroupActor :one
 -- Provisioning gate: only a live, public, MEMBER-CREATED space (§05
