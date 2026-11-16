@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimNewsletterScheduledSend = `-- name: ClaimNewsletterScheduledSend :execrows
+UPDATE newsletter_campaigns
+SET status = 'sending', updated_at = now()
+WHERE id = $1 AND status = 'scheduled'
+ AND date_trunc('second', scheduled_at) = $2
+`
+
+type ClaimNewsletterScheduledSendParams struct {
+	ID          pgtype.UUID        `json:"id"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
+}
+
+func (q *Queries) ClaimNewsletterScheduledSend(ctx context.Context, arg ClaimNewsletterScheduledSendParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimNewsletterScheduledSend, arg.ID, arg.ScheduledAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimNewsletterSendNow = `-- name: ClaimNewsletterSendNow :execrows
+UPDATE newsletter_campaigns
+SET status = 'sending', updated_at = now()
+WHERE id = $1 AND status IN ('draft', 'scheduled')
+`
+
+// Atomic send claims (§62): the first writer to flip a campaign into
+// 'sending' owns the send; every other claim loses. ClaimNewsletterSendNow
+// backs the admin send endpoint (claim-before-enqueue) and worker-side
+// claiming for directly-enqueued tasks; ClaimNewsletterScheduledSend backs
+// ProcessAt tasks — it succeeds only while the campaign is still
+// 'scheduled' for exactly the task's slot, so cancelling, unscheduling,
+// rescheduling, or a prior send-now claim all invalidate the queued task.
+func (q *Queries) ClaimNewsletterSendNow(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimNewsletterSendNow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countNewsletterRecipientStates = `-- name: CountNewsletterRecipientStates :one
 SELECT
   COUNT(*) FILTER (WHERE status = 'sent')   AS sent,
@@ -48,6 +89,18 @@ func (q *Queries) GetNewsletterCampaign(ctx context.Context, id pgtype.UUID) (Ge
 	var i GetNewsletterCampaignRow
 	err := row.Scan(&i.Subject, &i.Html)
 	return i, err
+}
+
+const getNewsletterCampaignStatus = `-- name: GetNewsletterCampaignStatus :one
+SELECT status FROM newsletter_campaigns
+WHERE id = $1
+`
+
+func (q *Queries) GetNewsletterCampaignStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getNewsletterCampaignStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
 }
 
 const listDigestSubscribedUsers = `-- name: ListDigestSubscribedUsers :many
@@ -177,6 +230,25 @@ func (q *Queries) MarkNewsletterRecipientSent(ctx context.Context, arg MarkNewsl
 	return err
 }
 
+const revertNewsletterSendClaim = `-- name: RevertNewsletterSendClaim :exec
+UPDATE newsletter_campaigns
+SET status = $1, updated_at = now()
+WHERE id = $2 AND status = 'sending'
+`
+
+type RevertNewsletterSendClaimParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// RevertNewsletterSendClaim undoes a claim when the send task could not be
+// enqueued — restores the pre-claim status, guarded by status='sending' so
+// it can never clobber a state that arrived after our claim.
+func (q *Queries) RevertNewsletterSendClaim(ctx context.Context, arg RevertNewsletterSendClaimParams) error {
+	_, err := q.db.Exec(ctx, revertNewsletterSendClaim, arg.Status, arg.ID)
+	return err
+}
+
 const upsertNewsletterSendState = `-- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
 SELECT $1, ns.email, 'pending'
@@ -185,7 +257,66 @@ WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
 ON CONFLICT (campaign_id, recipient) DO NOTHING
 `
 
+// Send-state population is segment-aware: each upsert mirrors exactly one
+// segment's membership rules so pending-row consumption (resume) works
+// uniformly for every campaign type and the send_state table is an accurate
+// record of the campaign's real recipient set (§62, ADR-080 §3).
 func (q *Queries) UpsertNewsletterSendState(ctx context.Context, campaignID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, upsertNewsletterSendState, campaignID)
+	return err
+}
+
+const upsertNewsletterSendStateBySpace = `-- name: UpsertNewsletterSendStateBySpace :exec
+INSERT INTO newsletter_send_state (campaign_id, recipient, status)
+SELECT $1, ns.email, 'pending'
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id
+WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
+ AND f.entity_type = 'space' AND f.entity_id = $2
+ON CONFLICT (campaign_id, recipient) DO NOTHING
+`
+
+type UpsertNewsletterSendStateBySpaceParams struct {
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	SegmentID  pgtype.UUID `json:"segment_id"`
+}
+
+func (q *Queries) UpsertNewsletterSendStateBySpace(ctx context.Context, arg UpsertNewsletterSendStateBySpaceParams) error {
+	_, err := q.db.Exec(ctx, upsertNewsletterSendStateBySpace, arg.CampaignID, arg.SegmentID)
+	return err
+}
+
+const upsertNewsletterSendStateByTag = `-- name: UpsertNewsletterSendStateByTag :exec
+INSERT INTO newsletter_send_state (campaign_id, recipient, status)
+SELECT $1, ns.email, 'pending'
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id
+WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
+ AND f.entity_type = 'tag' AND f.entity_id = $2
+ON CONFLICT (campaign_id, recipient) DO NOTHING
+`
+
+type UpsertNewsletterSendStateByTagParams struct {
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	SegmentID  pgtype.UUID `json:"segment_id"`
+}
+
+func (q *Queries) UpsertNewsletterSendStateByTag(ctx context.Context, arg UpsertNewsletterSendStateByTagParams) error {
+	_, err := q.db.Exec(ctx, upsertNewsletterSendStateByTag, arg.CampaignID, arg.SegmentID)
+	return err
+}
+
+const upsertNewsletterSendStatePro = `-- name: UpsertNewsletterSendStatePro :exec
+INSERT INTO newsletter_send_state (campaign_id, recipient, status)
+SELECT $1, ns.email, 'pending'
+FROM newsletter_subscribers ns
+JOIN subscriptions sub ON sub.user_id = ns.user_id
+WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
+ AND sub.status = 'active' AND sub.plan LIKE 'pro_%'
+ON CONFLICT (campaign_id, recipient) DO NOTHING
+`
+
+func (q *Queries) UpsertNewsletterSendStatePro(ctx context.Context, campaignID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, upsertNewsletterSendStatePro, campaignID)
 	return err
 }

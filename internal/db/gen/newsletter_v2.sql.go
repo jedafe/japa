@@ -334,13 +334,26 @@ func (q *Queries) CreateUnsubscribeToken(ctx context.Context, arg CreateUnsubscr
 }
 
 const deleteOldUnsubscribeTokens = `-- name: DeleteOldUnsubscribeTokens :exec
+
 DELETE FROM newsletter_unsubscribe_tokens
-WHERE created_at < now() - interval '90 days'
+WHERE (purpose = 'unsubscribe' AND created_at < now() - interval '90 days')
+   OR (purpose = 'confirm' AND created_at < now() - interval '7 days')
 `
 
-// Weekly GC (§62 Compliance): one-click unsubscribe tokens are minted per
-// recipient per send and need no long retention — an unsubscribe link older
-// than 90 days can simply be treated as invalid. Keeps the table bounded.
+// =====================================================================
+// Segment-aware send-state population lives in newsletter.sql
+// (UpsertNewsletterSendState{,Pro,BySpace,ByTag}) — those INSERT…SELECTs
+// are the single source of truth for segment membership at send time.
+// The old paged recipient SELECTs were removed: the worker consumes
+// send_state 'pending' rows for every segment, which makes crash-resume
+// uniform and stops scoped sends from ever resolving outside their
+// segment (NL-01 class).
+// =====================================================================
+// Weekly GC (§62 Compliance), purpose-scoped: one-click unsubscribe tokens
+// are minted per recipient per send and need no long retention — a link
+// older than 90 days can simply be treated as invalid. Double opt-in
+// confirm tokens get a dedicated 7-day expiry (audit fix): a confirmation
+// link that old is stale by definition — re-subscribing re-mints one.
 func (q *Queries) DeleteOldUnsubscribeTokens(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteOldUnsubscribeTokens)
 	return err
@@ -358,8 +371,14 @@ func (q *Queries) DeleteUnsubscribeToken(ctx context.Context, token string) erro
 const getConfirmToken = `-- name: GetConfirmToken :one
 SELECT token, subscriber_id, created_at, purpose FROM newsletter_unsubscribe_tokens
 WHERE token = $1 AND purpose = 'confirm'
+ AND created_at >= now() - interval '7 days'
 `
 
+// Confirm tokens carry a dedicated 7-day expiry (§62, audit fix): shorter
+// than the unsubscribe-token window because a confirmation link older than
+// a week is stale by definition. Enforced at read time as well as by the
+// purpose-scoped weekly GC so an expired link is rejected even between GC
+// runs; the subscriber re-subscribes to re-mint one.
 func (q *Queries) GetConfirmToken(ctx context.Context, token string) (NewsletterUnsubscribeToken, error) {
 	row := q.db.QueryRow(ctx, getConfirmToken, token)
 	var i NewsletterUnsubscribeToken
@@ -587,21 +606,11 @@ func (q *Queries) MarkBounced(ctx context.Context, email string) error {
 	return err
 }
 
-const markCampaignSending = `-- name: MarkCampaignSending :exec
-UPDATE newsletter_campaigns
-SET status = 'sending'
-WHERE id = $1
-`
-
-func (q *Queries) MarkCampaignSending(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markCampaignSending, id)
-	return err
-}
-
 const markCampaignSent = `-- name: MarkCampaignSent :exec
+
 UPDATE newsletter_campaigns
 SET status = 'sent', sent_at = now(), recipient_count = $1
-WHERE id = $2
+WHERE id = $2 AND status = 'sending'
 `
 
 type MarkCampaignSentParams struct {
@@ -609,6 +618,11 @@ type MarkCampaignSentParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
+// The status='sending' transition is owned by the atomic claims in
+// newsletter.sql (ClaimNewsletterSendNow / ClaimNewsletterScheduledSend) —
+// an unconditional mark would let a stale writer clobber terminal states.
+// Guarded by status='sending': only the send claim owner may stamp 'sent',
+// and a concurrent cancel can't be overwritten back to 'sent'.
 func (q *Queries) MarkCampaignSent(ctx context.Context, arg MarkCampaignSentParams) error {
 	_, err := q.db.Exec(ctx, markCampaignSent, arg.RecipientCount, arg.ID)
 	return err
@@ -623,167 +637,6 @@ WHERE email = $1
 func (q *Queries) MarkComplained(ctx context.Context, email string) error {
 	_, err := q.db.Exec(ctx, markComplained, email)
 	return err
-}
-
-const newsletterRecipientsAll = `-- name: NewsletterRecipientsAll :many
-
-SELECT ns.email
-FROM newsletter_subscribers ns
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
-ORDER BY ns.subscribed_at ASC
-LIMIT $2 OFFSET $1
-`
-
-type NewsletterRecipientsAllParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-// =====================================================================
-// Segment-aware recipient resolution for newsletter:send (§62, ADR-080 §3).
-// Returns emails of subscribers matching the campaign's segment.
-//
-//	segment = 'all'              → all subscribed + campaign_enabled
-//	segment = 'pro_subscribers'  → subscribed + campaign_enabled + pro tier users
-//	segment = 'space'            → subscribed + campaign_enabled + users following segment_id space
-//	segment = 'tag'              → subscribed + campaign_enabled + users following segment_id tag
-//
-// The space/tag follower filters are best-effort: if the follower tables
-// are not present or the join yields no rows, the segment falls back to
-// 'all' so a misconfigured segment never silently drops every recipient.
-// =====================================================================
-func (q *Queries) NewsletterRecipientsAll(ctx context.Context, arg NewsletterRecipientsAllParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, newsletterRecipientsAll, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			return nil, err
-		}
-		items = append(items, email)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const newsletterRecipientsBySpace = `-- name: NewsletterRecipientsBySpace :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN follows f ON f.follower_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND f.entity_type = 'space'
- AND f.entity_id = $1
-ORDER BY ns.subscribed_at ASC
-LIMIT $3 OFFSET $2
-`
-
-type NewsletterRecipientsBySpaceParams struct {
-	SegmentID  pgtype.UUID `json:"segment_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-func (q *Queries) NewsletterRecipientsBySpace(ctx context.Context, arg NewsletterRecipientsBySpaceParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, newsletterRecipientsBySpace, arg.SegmentID, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			return nil, err
-		}
-		items = append(items, email)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const newsletterRecipientsByTag = `-- name: NewsletterRecipientsByTag :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN follows f ON f.follower_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND f.entity_type = 'tag'
- AND f.entity_id = $1
-ORDER BY ns.subscribed_at ASC
-LIMIT $3 OFFSET $2
-`
-
-type NewsletterRecipientsByTagParams struct {
-	SegmentID  pgtype.UUID `json:"segment_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-func (q *Queries) NewsletterRecipientsByTag(ctx context.Context, arg NewsletterRecipientsByTagParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, newsletterRecipientsByTag, arg.SegmentID, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			return nil, err
-		}
-		items = append(items, email)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const newsletterRecipientsPro = `-- name: NewsletterRecipientsPro :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN subscriptions sub ON sub.user_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND sub.status = 'active'
- AND sub.plan LIKE 'pro_%'
-ORDER BY ns.subscribed_at ASC
-LIMIT $2 OFFSET $1
-`
-
-type NewsletterRecipientsProParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-func (q *Queries) NewsletterRecipientsPro(ctx context.Context, arg NewsletterRecipientsProParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, newsletterRecipientsPro, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			return nil, err
-		}
-		items = append(items, email)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const subscribe = `-- name: Subscribe :one

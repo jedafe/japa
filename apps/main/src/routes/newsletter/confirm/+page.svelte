@@ -43,7 +43,7 @@
 			{#if result?.error}
 				<div class="mt-3 flex items-center justify-center gap-2 text-sm text-red-500">
 					<AlertCircle size={16} />
-					{t('newsletter.confirm_failed', 'This confirmation link is invalid or has already been used.')}
+					{t('newsletter.confirm_failed', 'This confirmation link is invalid, expired, or has already been used — subscribe again for a new one.')}
 				</div>
 			{/if}
 			<form

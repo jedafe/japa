@@ -105,9 +105,15 @@ INSERT INTO newsletter_unsubscribe_tokens (token, subscriber_id, purpose) VALUES
 
 RETURNING *;
 
+-- Confirm tokens carry a dedicated 7-day expiry (§62, audit fix): shorter
+-- than the unsubscribe-token window because a confirmation link older than
+-- a week is stale by definition. Enforced at read time as well as by the
+-- purpose-scoped weekly GC so an expired link is rejected even between GC
+-- runs; the subscriber re-subscribes to re-mint one.
 -- name: GetConfirmToken :one
 SELECT * FROM newsletter_unsubscribe_tokens
-WHERE token = @token AND purpose = 'confirm';
+WHERE token = @token AND purpose = 'confirm'
+ AND created_at >= now() - interval '7 days';
 
 -- name: DeleteUnsubscribeToken :exec
 DELETE FROM newsletter_unsubscribe_tokens WHERE token = @token;
@@ -160,15 +166,16 @@ SET
 WHERE id = @id
 RETURNING *;
 
--- name: MarkCampaignSending :exec
-UPDATE newsletter_campaigns
-SET status = 'sending'
-WHERE id = @id;
+-- The status='sending' transition is owned by the atomic claims in
+-- newsletter.sql (ClaimNewsletterSendNow / ClaimNewsletterScheduledSend) —
+-- an unconditional mark would let a stale writer clobber terminal states.
 
+-- Guarded by status='sending': only the send claim owner may stamp 'sent',
+-- and a concurrent cancel can't be overwritten back to 'sent'.
 -- name: MarkCampaignSent :exec
 UPDATE newsletter_campaigns
 SET status = 'sent', sent_at = now(), recipient_count = @recipient_count
-WHERE id = @id;
+WHERE id = @id AND status = 'sending';
 
 -- name: IncrementCampaignOpens :exec
 UPDATE newsletter_campaigns
@@ -229,61 +236,21 @@ FROM newsletter_campaigns
 WHERE id = @id;
 
 -- =====================================================================
--- Segment-aware recipient resolution for newsletter:send (§62, ADR-080 §3).
--- Returns emails of subscribers matching the campaign's segment.
---   segment = 'all'              → all subscribed + campaign_enabled
---   segment = 'pro_subscribers'  → subscribed + campaign_enabled + pro tier users
---   segment = 'space'            → subscribed + campaign_enabled + users following segment_id space
---   segment = 'tag'              → subscribed + campaign_enabled + users following segment_id tag
--- The space/tag follower filters are best-effort: if the follower tables
--- are not present or the join yields no rows, the segment falls back to
--- 'all' so a misconfigured segment never silently drops every recipient.
+-- Segment-aware send-state population lives in newsletter.sql
+-- (UpsertNewsletterSendState{,Pro,BySpace,ByTag}) — those INSERT…SELECTs
+-- are the single source of truth for segment membership at send time.
+-- The old paged recipient SELECTs were removed: the worker consumes
+-- send_state 'pending' rows for every segment, which makes crash-resume
+-- uniform and stops scoped sends from ever resolving outside their
+-- segment (NL-01 class).
 -- =====================================================================
 
--- name: NewsletterRecipientsAll :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
-ORDER BY ns.subscribed_at ASC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: NewsletterRecipientsPro :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN subscriptions sub ON sub.user_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND sub.status = 'active'
- AND sub.plan LIKE 'pro_%'
-ORDER BY ns.subscribed_at ASC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: NewsletterRecipientsBySpace :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN follows f ON f.follower_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND f.entity_type = 'space'
- AND f.entity_id = @segment_id
-ORDER BY ns.subscribed_at ASC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: NewsletterRecipientsByTag :many
-SELECT ns.email
-FROM newsletter_subscribers ns
-JOIN follows f ON f.follower_id = ns.user_id
-WHERE ns.status = 'subscribed'
- AND ns.campaign_enabled = true
- AND f.entity_type = 'tag'
- AND f.entity_id = @segment_id
-ORDER BY ns.subscribed_at ASC
-LIMIT @page_limit OFFSET @page_offset;
-
 -- name: DeleteOldUnsubscribeTokens :exec
--- Weekly GC (§62 Compliance): one-click unsubscribe tokens are minted per
--- recipient per send and need no long retention — an unsubscribe link older
--- than 90 days can simply be treated as invalid. Keeps the table bounded.
+-- Weekly GC (§62 Compliance), purpose-scoped: one-click unsubscribe tokens
+-- are minted per recipient per send and need no long retention — a link
+-- older than 90 days can simply be treated as invalid. Double opt-in
+-- confirm tokens get a dedicated 7-day expiry (audit fix): a confirmation
+-- link that old is stale by definition — re-subscribing re-mints one.
 DELETE FROM newsletter_unsubscribe_tokens
-WHERE created_at < now() - interval '90 days';
+WHERE (purpose = 'unsubscribe' AND created_at < now() - interval '90 days')
+   OR (purpose = 'confirm' AND created_at < now() - interval '7 days');

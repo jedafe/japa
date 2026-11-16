@@ -178,6 +178,32 @@ func (s *Service) WebhookSecret(_ context.Context) string {
 	return os.Getenv("JC_NEWSLETTER_WEBHOOK_SECRET")
 }
 
+// ClaimSend atomically transitions a draft|scheduled campaign to 'sending'
+// (§62). The send endpoint calls this BEFORE enqueueing the task: a winning
+// claim owns the send and guarantees the queued task finds 'sending'; a
+// losing claim means another send is in flight or the campaign is in a
+// terminal state, so the caller returns 409 instead of queueing a duplicate
+// task that could double-send. Returns (true, nil) when the claim won.
+func (s *Service) ClaimSend(ctx context.Context, campaignID pgtype.UUID) (bool, error) {
+	n, err := s.writeQueries.ClaimNewsletterSendNow(ctx, campaignID)
+	if err != nil {
+		return false, fmt.Errorf("claiming newsletter send: %w", err)
+	}
+
+	return n > 0, nil
+}
+
+// RevertSendClaim undoes a send claim after a failed enqueue — restores the
+// pre-claim status (draft or scheduled), guarded by status='sending' so it
+// can never clobber a state that arrived after the claim.
+func (s *Service) RevertSendClaim(ctx context.Context, campaignID pgtype.UUID, status string) {
+	if err := s.writeQueries.RevertNewsletterSendClaim(ctx, gen.RevertNewsletterSendClaimParams{
+		ID: campaignID, Status: status,
+	}); err != nil {
+		slog.Warn("newsletter: revert send claim failed", "campaign_id", campaignID.String(), "error", err)
+	}
+}
+
 // EnqueueNewsletterSend enqueues a newsletter_send Asynq task. The worker
 // re-fetches the campaign and resolves segment-aware recipients from the
 // DB, so only the IDs are carried in the payload (§62, ADR-080 §3).
@@ -218,9 +244,11 @@ func (s *Service) EnqueueNewsletterSendAt(_ context.Context, campaignID pgtype.U
 	payload, err := json.Marshal(map[string]any{
 		"newsletter_id": campaignID.String(),
 		// Carried in the payload so (a) Unique() doesn't collapse a
-		// reschedule onto the old task's fingerprint and (b) the worker can
-		// reject stale tasks whose campaign was rescheduled/cancelled.
-		"scheduled_at": at.UTC().Format(time.RFC3339),
+		// reschedule onto the old task's fingerprint and (b) the worker's
+		// claim can reject stale tasks whose campaign was rescheduled/
+		// cancelled. Truncated to seconds — RFC3339 has no sub-second
+		// precision and the claim compares date_trunc('second', ...).
+		"scheduled_at": at.UTC().Truncate(time.Second).Format(time.RFC3339),
 	})
 	if err != nil {
 		return fmt.Errorf("marshalling newsletter payload: %w", err)
@@ -407,10 +435,16 @@ func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token stri
 	confirmURL := strings.TrimRight(base, "/") + "/newsletter/confirm?token=" + token
 
 	payload, err := json.Marshal(map[string]any{
-		"to":      emailAddr,
-		"subject": "Confirm your newsletter subscription",
-		"body":    fmt.Sprintf(`<p>Please confirm your subscription by clicking the link below:</p><p><a href="%s">Confirm subscription</a></p><p>If you did not sign up, you can ignore this email — you will not receive any further messages.</p>`, confirmURL),
-		"html":    true,
+		"to":            emailAddr,
+		"subject":       "Confirm your newsletter subscription",
+		"body":          fmt.Sprintf(`<p>Please confirm your subscription by clicking the link below:</p><p><a href="%s">Confirm subscription</a></p><p>This link expires in 7 days. If you did not sign up, you can ignore this email — you will not receive any further messages.</p>`, confirmURL),
+		"html":          true,
+		"template_slug": "newsletter_confirm",
+		"template_data": map[string]any{
+			"action_url": confirmURL,
+			"site_url":   base,
+			"expiry":     "7 days",
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("marshalling confirm email payload: %w", err)
