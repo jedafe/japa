@@ -2127,8 +2127,10 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 // A missing metadata row means the comparison was never JCE-registered —
 // treated as non-detailed (non-indexable), matching comparisonIndexable.
 func (s *Service) comparisonSeoIndexable(ctx context.Context, id pgtype.UUID, status, visibility, body string) *bool {
+	// Read off Writer — a replica can lag a just-promoted metadata row and
+	// report no depth, writing a wrong durable flag.
 	depth := ""
-	if meta, err := s.read.GetComparisonContentMetadata(ctx, id); err == nil {
+	if meta, err := s.write.GetComparisonContentMetadata(ctx, id); err == nil {
 		depth = meta.Depth
 	}
 

@@ -29,6 +29,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -2447,6 +2448,35 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:content:publish_scheduled: content published", "content_id", payload.ContentID)
+
+	// §30/§43: this path bypasses content.Service's seo_indexable
+	// derivation (raw PublishScheduledContent), so a scheduled detailed
+	// comparison would keep whatever flag the schedule write left behind —
+	// re-derive it now. Status stays 'published'; the CASE in the query
+	// preserves the published_at stamp PublishScheduledContent just set.
+	// Reads go off Writer — the replica can lag the just-committed flip and
+	// hand back a stale status, writing a wrong durable flag.
+	if row, rerr := gen.New(dbPool.Writer).GetContentByID(ctx, contentID); rerr == nil &&
+		row.ContentType == "comparison" {
+		depth := ""
+		if meta, merr := gen.New(dbPool.Writer).GetComparisonContentMetadata(ctx, contentID); merr == nil {
+			depth = meta.Depth
+		}
+		minWords := bots.DefaultSitemapQualityConfig().ComparisonMinWords
+		if appSettings != nil {
+			minWords = appSettings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", minWords)
+		}
+		indexable := bots.ComparisonSeoIndexable(
+			depth, row.Status, row.Visibility, len(strings.Fields(row.Body)), minWords)
+		if _, werr := gen.New(dbPool.Writer).UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
+			Status:       row.Status,
+			SeoIndexable: &indexable,
+			ID:           contentID,
+		}); werr != nil {
+			slog.Warn("task:content:publish_scheduled: seo_indexable derive failed",
+				"content_id", payload.ContentID, "error", werr)
+		}
+	}
 
 	// Ensure a content_scores row exists so the published content is not
 	// excluded from INNER JOIN feed queries (explore/top/rising/space/profile).
