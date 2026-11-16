@@ -43,11 +43,17 @@ func RequestTarget(r *http.Request) string {
 }
 
 // signingHeaderValue resolves one covered header name to its canonical
-// value for the signing string.
-func signingHeaderValue(r *http.Request, name string, body []byte) (string, error) {
+// value for the signing string. params carries the Signature header's
+// key="value" parameters — draft-cavage-11 pseudo-headers (created) and
+// (expires) resolve to the params of the same name, not HTTP headers.
+func signingHeaderValue(r *http.Request, name string, body []byte, params map[string]string) (string, error) {
 	switch strings.ToLower(name) {
 	case "(request-target)":
 		return RequestTarget(r), nil
+	case "(created)":
+		return params["created"], nil
+	case "(expires)":
+		return params["expires"], nil
 	case "host":
 		return r.Host, nil
 	case "date":
@@ -73,11 +79,13 @@ func signingHeaderValue(r *http.Request, name string, body []byte) (string, erro
 }
 
 // BuildSigningString assembles the covered-header signing text:
-// one `name: value` line per header in order, joined by newline.
-func BuildSigningString(r *http.Request, headers []string, body []byte) (string, error) {
+// one `name: value` line per header in order, joined by newline. params
+// supplies Signature parameters for the (created)/(expires) pseudo-
+// headers; pass nil when signing (outbound never covers them).
+func BuildSigningString(r *http.Request, headers []string, body []byte, params map[string]string) (string, error) {
 	lines := make([]string, 0, len(headers))
 	for _, name := range headers {
-		v, err := signingHeaderValue(r, name, body)
+		v, err := signingHeaderValue(r, name, body, params)
 		if err != nil {
 			return "", err
 		}
@@ -103,7 +111,7 @@ func SignRequest(r *http.Request, keyID string, priv *rsa.PrivateKey, body []byt
 		covered = []string{"(request-target)", "host", "date"}
 	}
 
-	signingString, err := BuildSigningString(r, covered, body)
+	signingString, err := BuildSigningString(r, covered, body, nil)
 	if err != nil {
 		return err
 	}
@@ -184,24 +192,45 @@ func VerifySignature(r *http.Request, pub *rsa.PublicKey, body []byte) error {
 		covered = strings.Fields(h)
 	}
 
-	// Freshness: date must be covered, parseable, and within the skew
-	// window — otherwise an old signed request replays forever.
-	dateCovered := false
+	// Freshness: every covered time bound is enforced as signed —
+	// draft-cavage-02 signers cover `date`; draft-cavage-11 signers
+	// (Pleroma/Akkoma, Iceshrimp/Sharkey) cover the (created)/(expires)
+	// pseudo-headers, whose values are Signature params, not headers. At
+	// least one of date/(created) must be covered, else an old signed
+	// request replays forever.
+	timeBound := false
 	for _, name := range covered {
-		if strings.EqualFold(name, "date") {
-			dateCovered = true
-			break
+		switch strings.ToLower(name) {
+		case "date":
+			timeBound = true
+			ts, err := http.ParseTime(r.Header.Get("Date"))
+			if err != nil {
+				return fmt.Errorf("federation: bad date header: %w", err)
+			}
+			if skew := time.Since(ts); skew > signatureClockSkew || skew < -signatureClockSkew {
+				return fmt.Errorf("federation: signature date outside %s skew", signatureClockSkew)
+			}
+		case "(created)":
+			timeBound = true
+			created, err := strconv.ParseInt(params["created"], 10, 64)
+			if err != nil {
+				return errors.New("federation: bad created signature param")
+			}
+			if skew := time.Since(time.Unix(created, 0)); skew > signatureClockSkew || skew < -signatureClockSkew {
+				return fmt.Errorf("federation: signature created outside %s skew", signatureClockSkew)
+			}
+		case "(expires)":
+			expires, err := strconv.ParseInt(params["expires"], 10, 64)
+			if err != nil {
+				return errors.New("federation: bad expires signature param")
+			}
+			if time.Now().Unix() > expires {
+				return errors.New("federation: signature expired")
+			}
 		}
 	}
-	if !dateCovered {
-		return errors.New("federation: date header not covered by signature")
-	}
-	ts, err := http.ParseTime(r.Header.Get("Date"))
-	if err != nil {
-		return fmt.Errorf("federation: bad date header: %w", err)
-	}
-	if skew := time.Since(ts); skew > signatureClockSkew || skew < -signatureClockSkew {
-		return fmt.Errorf("federation: signature date outside %s skew", signatureClockSkew)
+	if !timeBound {
+		return errors.New("federation: no date or (created) covered by signature")
 	}
 
 	// Body integrity: when digest is covered, it must match the payload.
@@ -214,7 +243,7 @@ func VerifySignature(r *http.Request, pub *rsa.PublicKey, body []byte) error {
 		}
 	}
 
-	signingString, err := BuildSigningString(r, covered, body)
+	signingString, err := BuildSigningString(r, covered, body, params)
 	if err != nil {
 		return err
 	}

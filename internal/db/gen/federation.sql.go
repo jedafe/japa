@@ -562,9 +562,11 @@ func (q *Queries) GetFederationStats(ctx context.Context) (GetFederationStatsRow
 }
 
 const getInstanceBlockByDomain = `-- name: GetInstanceBlockByDomain :one
-SELECT id, domain, reason, blocked_by, created_at FROM federation_instance_blocks WHERE domain = $1
+SELECT id, domain, reason, blocked_by, created_at FROM federation_instance_blocks WHERE domain = lower($1)
 `
 
+// lower() on the param: callers hand us URL-derived hosts, and Go's
+// url.Hostname() preserves case while CreateBlock stores lowercase.
 func (q *Queries) GetInstanceBlockByDomain(ctx context.Context, domain string) (FederationInstanceBlock, error) {
 	row := q.db.QueryRow(ctx, getInstanceBlockByDomain, domain)
 	var i FederationInstanceBlock

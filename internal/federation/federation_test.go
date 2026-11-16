@@ -160,7 +160,7 @@ func TestVerifySignatureCoversContentLength(t *testing.T) {
 	req.Header.Set("Digest", DigestHeader(body))
 
 	covered := []string{"(request-target)", "host", "date", "digest", "content-length"}
-	signingString, err := BuildSigningString(req, covered, body)
+	signingString, err := BuildSigningString(req, covered, body, nil)
 	if err != nil {
 		t.Fatalf("BuildSigningString: %v", err)
 	}
@@ -180,6 +180,79 @@ func TestVerifySignatureCoversContentLength(t *testing.T) {
 
 	if err := VerifySignature(req, &priv.PublicKey, body); err != nil {
 		t.Fatalf("VerifySignature with content-length covered: %v", err)
+	}
+}
+
+func TestVerifySignatureCoversCreatedExpires(t *testing.T) {
+	// draft-cavage-11 signers (Pleroma/Akkoma, Iceshrimp/Sharkey) bind
+	// (created)/(expires) Signature params instead of a Date header —
+	// verification must resolve the pseudo-headers from the params and
+	// enforce them as signed.
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	body := []byte(`{"type":"Follow"}`)
+	now := time.Now()
+
+	sign := func(created, expires int64) *http.Request {
+		req := httptest.NewRequest("POST", "https://remote.example/inbox", strings.NewReader(string(body)))
+		req.Host = "remote.example"
+		req.Header.Set("Digest", DigestHeader(body))
+		covered := []string{"(request-target)", "host", "digest", "(created)", "(expires)"}
+		params := map[string]string{
+			"created": strconv.FormatInt(created, 10),
+			"expires": strconv.FormatInt(expires, 10),
+		}
+		signingString, err := BuildSigningString(req, covered, body, params)
+		if err != nil {
+			t.Fatalf("BuildSigningString: %v", err)
+		}
+		sum := sha256.Sum256([]byte(signingString))
+		sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, sum[:])
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		req.Header.Set("Signature", fmt.Sprintf(
+			`keyId=%q,algorithm=%q,headers=%q,created=%q,expires=%q,signature=%q`,
+			"k", signatureAlgorithm, strings.Join(covered, " "),
+			params["created"], params["expires"],
+			base64.StdEncoding.EncodeToString(sig)))
+		return req
+	}
+
+	// Valid: created=now, expires=now+5min, no Date header at all.
+	if err := VerifySignature(sign(now.Unix(), now.Unix()+300), &priv.PublicKey, body); err != nil {
+		t.Fatalf("(created)/(expires) signature rejected: %v", err)
+	}
+	// Expired signature param.
+	if err := VerifySignature(sign(now.Unix()-600, now.Unix()-60), &priv.PublicKey, body); err == nil {
+		t.Error("expected expired-signature rejection")
+	}
+	// Stale created (13h ago, inside the 12h skew boundary check).
+	if err := VerifySignature(sign(now.Unix()-13*3600, now.Unix()+300), &priv.PublicKey, body); err == nil {
+		t.Error("expected stale-created rejection")
+	}
+}
+
+func TestVerifySignatureRejectsNoTimeBound(t *testing.T) {
+	// A signature covering neither date nor (created) replays forever —
+	// reject even though the covered set is otherwise satisfiable.
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	body := []byte(`{"type":"Follow"}`)
+	req := httptest.NewRequest("POST", "https://remote.example/inbox", strings.NewReader(string(body)))
+	req.Host = "remote.example"
+	req.Header.Set("Digest", DigestHeader(body))
+	covered := []string{"(request-target)", "host", "digest"}
+	signingString, err := BuildSigningString(req, covered, body, nil)
+	if err != nil {
+		t.Fatalf("BuildSigningString: %v", err)
+	}
+	sum := sha256.Sum256([]byte(signingString))
+	sig, _ := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, sum[:])
+	req.Header.Set("Signature", fmt.Sprintf(
+		`keyId=%q,algorithm=%q,headers=%q,signature=%q`,
+		"k", signatureAlgorithm, strings.Join(covered, " "),
+		base64.StdEncoding.EncodeToString(sig)))
+	if err := VerifySignature(req, &priv.PublicKey, body); err == nil {
+		t.Error("expected no-time-bound rejection")
 	}
 }
 

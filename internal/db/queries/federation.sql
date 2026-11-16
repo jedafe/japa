@@ -352,4 +352,6 @@ SELECT COUNT(*)::bigint FROM federation_instance_blocks
 WHERE (@q::text = '' OR domain ILIKE '%' || @q || '%');
 
 -- name: GetInstanceBlockByDomain :one
-SELECT * FROM federation_instance_blocks WHERE domain = @domain;
+-- lower() on the param: callers hand us URL-derived hosts, and Go's
+-- url.Hostname() preserves case while CreateBlock stores lowercase.
+SELECT * FROM federation_instance_blocks WHERE domain = lower(@domain);
