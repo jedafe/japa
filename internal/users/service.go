@@ -77,12 +77,14 @@ type Service struct {
 	fedCache federationDocInvalidator
 }
 
-// federationDocInvalidator drops cached WebFinger/actor docs for one or
-// more handles (jc:fed:webfinger:*, jc:fed:actor:*). Implemented by
-// *federation.Service; injected at server wiring so users never imports
-// the federation package.
+// federationDocInvalidator drops cached WebFinger/actor docs for a
+// member (jc:fed:webfinger:*, jc:fed:actor:*): the service resolves the
+// actor's stored handles itself (preferred_username + live username —
+// covering an earlier rename's stranded preferred too) and merges any
+// extra handles the caller passes. Implemented by *federation.Service;
+// injected at server wiring so users never imports the federation package.
 type federationDocInvalidator interface {
-	InvalidateActorIdentity(ctx context.Context, usernames ...string)
+	InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID, extraHandles ...string)
 }
 
 // SetFederationCache wires the federation doc invalidator used on username
@@ -1317,18 +1319,18 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sort
 	for i, u := range users {
 		groups := parseGroups(u.Groups)
 		items[i] = UserListItem{
-			ID:            u.ID.String(),
-			Email:         u.Email,
-			Username:      u.Username,
-			ProfileType:   u.ProfileType,
-			Status:        parseString(u.Status),
-			Verified:      u.Verified,
+			ID:               u.ID.String(),
+			Email:            u.Email,
+			Username:         u.Username,
+			ProfileType:      u.ProfileType,
+			Status:           parseString(u.Status),
+			Verified:         u.Verified,
 			VerificationType: u.VerificationType,
-			FollowerCount: u.FollowerCount,
-			Groups:        groups,
-			IsOwner:       auth.IsOwnerEmail(u.Email, s.ownerEmail),
-			CreatedAt:     u.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt:     u.UpdatedAt.Time.Format(time.RFC3339),
+			FollowerCount:    u.FollowerCount,
+			Groups:           groups,
+			IsOwner:          auth.IsOwnerEmail(u.Email, s.ownerEmail),
+			CreatedAt:        u.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:        u.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -1422,21 +1424,21 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sort
 	items := make([]PublicProfileResponse, len(rows))
 	for i, u := range rows {
 		items[i] = PublicProfileResponse{
-			ID:              u.UserID.String(),
-			Username:        u.Username,
-			DisplayName:     u.DisplayName,
-			AvatarURL:       u.AvatarUrl,
-			CoverURL:        u.CoverUrl,
-			Bio:             u.Bio,
-			ProfileType:     u.ProfileType,
-			Verified:        u.Verified,
+			ID:               u.UserID.String(),
+			Username:         u.Username,
+			DisplayName:      u.DisplayName,
+			AvatarURL:        u.AvatarUrl,
+			CoverURL:         u.CoverUrl,
+			Bio:              u.Bio,
+			ProfileType:      u.ProfileType,
+			Verified:         u.Verified,
 			VerificationType: u.VerificationType,
-			FollowerCount:   u.FollowerCount,
-			FollowingCount:  u.FollowingCount,
-			CreatedAt:       u.CreatedAt.Time.Format(time.RFC3339),
-			IsSynthetic:     u.IsSynthetic,
-			SyntheticSource: u.SyntheticSource,
-			Location:        u.Location,
+			FollowerCount:    u.FollowerCount,
+			FollowingCount:   u.FollowingCount,
+			CreatedAt:        u.CreatedAt.Time.Format(time.RFC3339),
+			IsSynthetic:      u.IsSynthetic,
+			SyntheticSource:  u.SyntheticSource,
+			Location:         u.Location,
 		}
 	}
 
@@ -2652,8 +2654,10 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// §126: a rename orphans the old handle's cached WebFinger/actor docs
 	// and may collide with docs cached under the newly claimed handle —
 	// drop both so lookups resolve immediately, not after the 5-min TTL.
+	// The service additionally drops the stored preferred_username key,
+	// which an earlier rename may have stranded.
 	if result.UsernameChanged && s.fedCache != nil {
-		s.fedCache.InvalidateActorIdentity(ctx, result.OldUsername, result.NewUsername)
+		s.fedCache.InvalidateActorIdentityForUser(ctx, userID, result.OldUsername, result.NewUsername)
 	}
 
 	// §127 A2/A4: re-project app.bsky.actor.profile — this endpoint mutates

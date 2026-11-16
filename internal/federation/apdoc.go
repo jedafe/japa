@@ -75,19 +75,48 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 		doc["published"] = p.UserCreatedAt.Time.UTC().Format(time.RFC3339)
 	}
 	if p.AvatarUrl != nil && *p.AvatarUrl != "" {
-		doc["icon"] = map[string]any{"type": "Image", "url": *p.AvatarUrl}
+		doc["icon"] = map[string]any{"type": "Image", "url": absoluteSiteURL(siteBase, *p.AvatarUrl)}
 	}
 	if p.CoverUrl != nil && *p.CoverUrl != "" {
-		doc["image"] = map[string]any{"type": "Image", "url": *p.CoverUrl}
+		doc["image"] = map[string]any{"type": "Image", "url": absoluteSiteURL(siteBase, *p.CoverUrl)}
 	}
-	if p.WebsiteUrl != nil && *p.WebsiteUrl != "" {
+	if u := httpURL(siteBase, p.WebsiteUrl); u != "" {
+		// The member's website is emitted as a PropertyValue link — only
+		// http(s) URLs may ride into remote renderers; a javascript:/data:
+		// scheme in the href would execute in their sanitized context.
 		doc["attachment"] = []any{map[string]any{
 			"type":  "PropertyValue",
 			"name":  "Website",
-			"value": fmt.Sprintf(`<a href="%s" rel="me nofollow noopener noreferrer" target="_blank">%s</a>`, html.EscapeString(*p.WebsiteUrl), html.EscapeString(*p.WebsiteUrl)),
+			"value": fmt.Sprintf(`<a href="%s" rel="me nofollow noopener noreferrer" target="_blank">%s</a>`, html.EscapeString(u), html.EscapeString(u)),
 		}}
 	}
 	return doc
+}
+
+// absoluteSiteURL makes a stored URL absolute for AP consumers: absolute
+// http(s) passes through, site-relative paths ("/brand/x.jpg") anchor to
+// the site origin. Remote servers can't resolve relative references.
+func absoluteSiteURL(siteBase, u string) string {
+	if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return u
+	}
+	return siteBase + "/" + strings.TrimPrefix(u, "/")
+}
+
+// httpURL returns the absolute http(s) form of an optional URL, or "" for
+// absent/unsafe values — javascript:/data:/other schemes are dropped
+// rather than propagated into remote timelines.
+func httpURL(siteBase string, u *string) string {
+	if u == nil || *u == "" {
+		return ""
+	}
+	if strings.HasPrefix(*u, "http://") || strings.HasPrefix(*u, "https://") {
+		return *u
+	}
+	if strings.HasPrefix(*u, "/") {
+		return absoluteSiteURL(siteBase, *u)
+	}
+	return ""
 }
 
 // sharedInboxURL derives the instance sharedInbox endpoint from an actor

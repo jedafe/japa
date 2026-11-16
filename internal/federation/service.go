@@ -485,6 +485,11 @@ func (s *Service) GetMyFederation(ctx context.Context, userID pgtype.UUID) (Fede
 		}
 		return FederationStatus{}, fmt.Errorf("federation: my actor: %w", err)
 	}
+	// A tombstone (M2 erasure) reads as "no federation" to the member —
+	// the erased identity is gone, not merely disabled.
+	if actor.Status == ActorStatusTombstone {
+		return FederationStatus{Enabled: false, Status: "none"}, nil
+	}
 	user, err := s.store.userByID(ctx, userID)
 	if err != nil {
 		return FederationStatus{}, fmt.Errorf("federation: my user: %w", err)
@@ -540,8 +545,29 @@ func (s *Service) EnableFederation(ctx context.Context, userID pgtype.UUID) (Fed
 		case ActorStatusActive:
 			// Idempotent no-op.
 		case ActorStatusDisabled:
-			if uerr := s.store.setActorStatus(ctx, existing.ID, ActorStatusActive); uerr != nil {
+			// Conditional transition — if a concurrent write flipped the
+			// status (e.g. an M2 erasure tombstoned between our read and
+			// this write), we must not clobber it back.
+			n, uerr := s.store.setActorStatusFrom(ctx, existing.ID, ActorStatusActive, ActorStatusDisabled)
+			if uerr != nil {
 				return FederationStatus{}, fmt.Errorf("federation: reactivate: %w", uerr)
+			}
+			if n == 0 {
+				cur, lerr := s.store.actorByUserID(ctx, userID)
+				switch {
+				case errors.Is(lerr, pgx.ErrNoRows):
+					// Member hard-deleted mid-flight — the row is gone.
+					return FederationStatus{}, ErrNotFound
+				case lerr != nil:
+					return FederationStatus{}, fmt.Errorf("federation: re-check actor: %w", lerr)
+				case cur.Status == ActorStatusTombstone:
+					return FederationStatus{}, ErrNotFound
+				default:
+					// active (concurrent enable won) or disabled (a
+					// disable re-applied after an enable) — return the
+					// honest current state.
+					return s.statusFor(ctx, cur, username), nil
+				}
 			}
 			existing.Status = ActorStatusActive
 			s.invalidateActorCache(ctx, existing.PreferredUsername, username)
@@ -652,8 +678,33 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 		return FederationStatus{}, ErrNotFound
 	}
 	if actor.Status == ActorStatusActive {
-		if err := s.store.setActorStatus(ctx, actor.ID, ActorStatusDisabled); err != nil {
+		// Conditional transition — a concurrent write (enable, erasure)
+		// that landed between our read and this write must not be
+		// clobbered. Re-read on 0 rows and dispatch on the winner.
+		n, err := s.store.setActorStatusFrom(ctx, actor.ID, ActorStatusDisabled, ActorStatusActive)
+		if err != nil {
 			return FederationStatus{}, fmt.Errorf("federation: disable: %w", err)
+		}
+		if n == 0 {
+			cur, lerr := s.store.actorByUserID(ctx, userID)
+			switch {
+			case errors.Is(lerr, pgx.ErrNoRows):
+				return FederationStatus{}, ErrNotFound
+			case lerr != nil:
+				return FederationStatus{}, fmt.Errorf("federation: re-check actor: %w", lerr)
+			case cur.Status == ActorStatusTombstone:
+				return FederationStatus{}, ErrNotFound
+			case cur.Status == ActorStatusActive:
+				// A concurrent enable won — the member's disable lost;
+				// return the honest current state.
+				return s.statusFor(ctx, cur, user.Username), nil
+			default:
+				// disabled — a concurrent disable already landed,
+				// idempotent success.
+				actor.Status = ActorStatusDisabled
+			}
+		} else {
+			actor.Status = ActorStatusDisabled
 		}
 	}
 	// Drop docs cached under both the creation-time handle and the live
@@ -797,12 +848,16 @@ func (s *Service) InvalidateActorIdentity(ctx context.Context, usernames ...stri
 	s.invalidateActorCache(ctx, usernames...)
 }
 
-// InvalidateActorIdentityForUser resolves the member's actor handles and
-// drops their cached WebFinger/actor docs. Fired by lifecycle sync on
-// transitions OUT of active (suspend/ban/delete) — the status-gated
-// lookups go blind at exactly that moment, so handles resolve without
-// status filters. A member with no actor row is a cheap no-op.
-func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID) {
+// InvalidateActorIdentityForUser resolves the member's actor handles —
+// creation-time preferred_username + live username — plus any extra
+// handles supplied by the caller, and drops their cached WebFinger/actor
+// docs. Fired by lifecycle sync on transitions OUT of active (the
+// status-gated lookups go blind at exactly that moment, so handles
+// resolve without status filters) and by users.Service on rename
+// (passing the vacated + claimed usernames as extras so an earlier
+// preferred_username can't leave a stale doc behind either). A member
+// with no actor row is a cheap no-op.
+func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID, extraHandles ...string) {
 	if s.store == nil {
 		return
 	}
@@ -810,7 +865,10 @@ func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgt
 	if err != nil {
 		return
 	}
-	s.invalidateActorCache(ctx, row.PreferredUsername, row.Username)
+	handles := make([]string, 0, len(extraHandles)+2)
+	handles = append(handles, row.PreferredUsername, row.Username)
+	handles = append(handles, extraHandles...)
+	s.invalidateActorCache(ctx, handles...)
 }
 
 // RemoteCacheKey is the catalogued jc:fed:remote:{sha256(actor_url)} key.

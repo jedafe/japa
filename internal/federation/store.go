@@ -51,6 +51,13 @@ func (s *Store) setActorStatus(ctx context.Context, id pgtype.UUID, status strin
 	return s.write.UpdateFederatedActorStatus(ctx, gen.UpdateFederatedActorStatusParams{ID: id, Status: status})
 }
 
+// setActorStatusFrom performs a conditional transition — it only writes
+// while the row still holds expected, and reports rows affected. 0 means
+// a concurrent transition won; callers re-read and dispatch on that state.
+func (s *Store) setActorStatusFrom(ctx context.Context, id pgtype.UUID, status, expected string) (int64, error) {
+	return s.write.UpdateFederatedActorStatusFrom(ctx, gen.UpdateFederatedActorStatusFromParams{ID: id, Status: status, Expected: expected})
+}
+
 func (s *Store) listActors(ctx context.Context, q, sortKey, sortDir string, limit, offset int32) ([]gen.ListFederatedActorsRow, error) {
 	return s.read.ListFederatedActors(ctx, gen.ListFederatedActorsParams{
 		Q: q, SortKey: sortKey, SortDir: sortDir, PageLimit: limit, PageOffset: offset,

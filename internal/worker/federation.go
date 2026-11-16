@@ -23,7 +23,7 @@ import (
 // drop cached WebFinger/actor docs, not just freeze provisioning.
 type federationProvisioner interface {
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
-	InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID)
+	InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID, extraHandles ...string)
 }
 
 var federationSvc federationProvisioner

@@ -78,12 +78,23 @@ INSERT INTO federated_actors (
 -- emit no row in that case (pgx.ErrNoRows → ErrNotFound in the service).
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
+    -- Reactivation refreshes the follow-approval snapshot — the member's
+    -- profile_visibility may have changed while the actor was disabled.
+    manually_approves_followers = EXCLUDED.manually_approves_followers,
     updated_at = now()
 WHERE federated_actors.status = 'disabled'
 RETURNING *;
 
 -- name: UpdateFederatedActorStatus :exec
 UPDATE federated_actors SET status = @status, updated_at = now() WHERE id = @id;
+
+-- name: UpdateFederatedActorStatusFrom :execrows
+-- Conditional transition — the status must still equal @expected at write
+-- time. Rows-affected 0 means a concurrent transition won (e.g. an M2
+-- erasure tombstoned between our read and this write): the service
+-- re-reads and dispatches on the winner's status rather than clobbering it.
+UPDATE federated_actors SET status = @status, updated_at = now()
+WHERE id = @id AND status = @expected;
 
 -- name: ListFederatedActors :many
 -- Admin DataTable: ?q= matches username/actor_url; page/limit/sort/dir contract

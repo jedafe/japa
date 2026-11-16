@@ -30,7 +30,7 @@ func (f *fakeProvisioner) AutoProvision(_ context.Context, userID pgtype.UUID) e
 	return f.err
 }
 
-func (f *fakeProvisioner) InvalidateActorIdentityForUser(_ context.Context, userID pgtype.UUID) {
+func (f *fakeProvisioner) InvalidateActorIdentityForUser(_ context.Context, userID pgtype.UUID, _ ...string) {
 	f.invalidated = append(f.invalidated, userID.String())
 }
 

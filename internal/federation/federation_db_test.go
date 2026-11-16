@@ -382,6 +382,11 @@ func TestDBTombstoneNeverResurrected(t *testing.T) {
 	if status != "tombstone" {
 		t.Fatalf("tombstone resurrected to %q", status)
 	}
+	// The member-facing status reads "none" — the erased identity is
+	// gone, not listed as a disabled actor.
+	if st, err := svc.GetMyFederation(ctx, userID); err != nil || st.Status != "none" {
+		t.Fatalf("tombstone member status: got %+v %v, want status=none", st, err)
+	}
 
 	// Disabled → re-enable still works (the only legal reactivation).
 	if _, err := d.Writer.Exec(ctx,
@@ -547,12 +552,18 @@ func TestDBLifecycleCacheInvalidation(t *testing.T) {
 	}
 
 	// Suspend, then invalidate as the lifecycle task would — the cached
-	// docs must go even though actorProfile/actorByUsername now 404.
+	// docs must go even though actorProfile/actorByUsername now 404. The
+	// extras path (a vacated handle the rename caller passes) is covered
+	// by the same call.
+	for _, k := range []string{"jc:fed:webfinger:oldhandle", "jc:fed:actor:oldhandle"} {
+		svc.cacheSet(ctx, k, map[string]any{"u": "oldhandle"}, time.Minute)
+	}
 	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, userID); err != nil {
 		t.Fatalf("suspend: %v", err)
 	}
-	svc.InvalidateActorIdentityForUser(ctx, userID)
-	for _, k := range []string{"jc:fed:webfinger:" + uname, "jc:fed:actor:" + uname} {
+	svc.InvalidateActorIdentityForUser(ctx, userID, "oldhandle")
+	for _, k := range []string{"jc:fed:webfinger:" + uname, "jc:fed:actor:" + uname,
+		"jc:fed:webfinger:oldhandle", "jc:fed:actor:oldhandle"} {
 		if mr.Exists(k) {
 			t.Errorf("%s survived lifecycle invalidation", k)
 		}

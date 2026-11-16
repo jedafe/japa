@@ -118,6 +118,9 @@ INSERT INTO federated_actors (
 )
 ON CONFLICT (user_id) DO UPDATE SET
     status = 'active',
+    -- Reactivation refreshes the follow-approval snapshot — the member's
+    -- profile_visibility may have changed while the actor was disabled.
+    manually_approves_followers = EXCLUDED.manually_approves_followers,
     updated_at = now()
 WHERE federated_actors.status = 'disabled'
 RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at
@@ -1147,6 +1150,29 @@ type UpdateFederatedActorStatusParams struct {
 func (q *Queries) UpdateFederatedActorStatus(ctx context.Context, arg UpdateFederatedActorStatusParams) error {
 	_, err := q.db.Exec(ctx, updateFederatedActorStatus, arg.Status, arg.ID)
 	return err
+}
+
+const updateFederatedActorStatusFrom = `-- name: UpdateFederatedActorStatusFrom :execrows
+UPDATE federated_actors SET status = $1, updated_at = now()
+WHERE id = $2 AND status = $3
+`
+
+type UpdateFederatedActorStatusFromParams struct {
+	Status   string      `json:"status"`
+	ID       pgtype.UUID `json:"id"`
+	Expected string      `json:"expected"`
+}
+
+// Conditional transition — the status must still equal @expected at write
+// time. Rows-affected 0 means a concurrent transition won (e.g. an M2
+// erasure tombstoned between our read and this write): the service
+// re-reads and dispatches on the winner's status rather than clobbering it.
+func (q *Queries) UpdateFederatedActorStatusFrom(ctx context.Context, arg UpdateFederatedActorStatusFromParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateFederatedActorStatusFrom, arg.Status, arg.ID, arg.Expected)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateFederationDeliveryStatus = `-- name: UpdateFederationDeliveryStatus :exec

@@ -2,12 +2,17 @@ package federation
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +148,41 @@ func TestVerifySignatureRejectsMissing(t *testing.T) {
 	}
 }
 
+func TestVerifySignatureCoversContentLength(t *testing.T) {
+	// Go lifts Content-Length out of r.Header into r.ContentLength — a
+	// remote signer covering it must still verify (GoToSocial and some
+	// Misskey builds include it).
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	body := []byte(`{"type":"Follow"}`)
+	req := httptest.NewRequest("POST", "https://remote.example/inbox", strings.NewReader(string(body)))
+	req.Host = "remote.example"
+	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	req.Header.Set("Digest", DigestHeader(body))
+
+	covered := []string{"(request-target)", "host", "date", "digest", "content-length"}
+	signingString, err := BuildSigningString(req, covered, body)
+	if err != nil {
+		t.Fatalf("BuildSigningString: %v", err)
+	}
+	if !strings.HasSuffix(signingString, "content-length: "+strconv.Itoa(len(body))) {
+		t.Fatalf("signing string missing content-length line: %q", signingString)
+	}
+
+	sum := sha256.Sum256([]byte(signingString))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	req.Header.Set("Signature", fmt.Sprintf(
+		`keyId=%q,algorithm=%q,headers=%q,signature=%q`,
+		"k", signatureAlgorithm, strings.Join(covered, " "),
+		base64.StdEncoding.EncodeToString(sig)))
+
+	if err := VerifySignature(req, &priv.PublicKey, body); err != nil {
+		t.Fatalf("VerifySignature with content-length covered: %v", err)
+	}
+}
+
 func TestParseSignatureHeaderQuotedCommas(t *testing.T) {
 	params := ParseSignatureHeader(`keyId="https://a.example/u#k,with,commas",algorithm="rsa-sha256",headers="(request-target) host date",signature="abc123"`)
 	if params["keyId"] != "https://a.example/u#k,with,commas" {
@@ -249,6 +289,47 @@ func TestActorDocumentEscapesSummary(t *testing.T) {
 	raw, _ := json.Marshal(doc)
 	if strings.Contains(string(raw), `<script>`) {
 		t.Error("actor document embeds unescaped bio markup")
+	}
+}
+
+func TestActorDocumentAbsoluteIconURLs(t *testing.T) {
+	// avatar_url/cover_url are stored site-relative ("/brand/x.jpg") —
+	// remote servers can't resolve relative references, so the actor doc
+	// must anchor them to the site origin.
+	row := testActorProfileRow()
+	avatar := "/brand/avatar.jpg"
+	cover := "https://cdn.example.com/cover.png"
+	row.AvatarUrl = &avatar
+	row.CoverUrl = &cover
+	doc := actorDocument(row, "https://japa.to")
+
+	icon := doc["icon"].(map[string]any)
+	if icon["url"] != "https://japa.to/brand/avatar.jpg" {
+		t.Errorf("relative avatar not absolutized: %v", icon["url"])
+	}
+	image := doc["image"].(map[string]any)
+	if image["url"] != "https://cdn.example.com/cover.png" {
+		t.Errorf("absolute cover rewritten: %v", image["url"])
+	}
+}
+
+func TestActorDocumentWebsiteSchemeGuard(t *testing.T) {
+	// website_url is member-controlled — a non-http(s) scheme must not
+	// ride into remote renderers inside the PropertyValue link.
+	row := testActorProfileRow()
+	evil := "javascript:alert(1)"
+	row.WebsiteUrl = &evil
+	doc := actorDocument(row, "https://japa.to")
+	if _, ok := doc["attachment"]; ok {
+		t.Errorf("javascript: website emitted as attachment: %v", doc["attachment"])
+	}
+
+	rel := "/about"
+	row.WebsiteUrl = &rel
+	doc = actorDocument(row, "https://japa.to")
+	att := doc["attachment"].([]any)[0].(map[string]any)
+	if !strings.Contains(att["value"].(string), `href="https://japa.to/about"`) {
+		t.Errorf("relative website not absolutized: %v", att["value"])
 	}
 }
 

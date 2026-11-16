@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,6 +60,13 @@ func signingHeaderValue(r *http.Request, name string, body []byte) (string, erro
 		return d, nil
 	case "content-type":
 		return r.Header.Get("Content-Type"), nil
+	case "content-length":
+		// Go lifts Content-Length off r.Header into r.ContentLength — a
+		// signer covering it would otherwise read "" and fail verify.
+		if r.ContentLength >= 0 {
+			return strconv.FormatInt(r.ContentLength, 10), nil
+		}
+		return "", nil
 	default:
 		return r.Header.Get(name), nil
 	}
