@@ -112,3 +112,23 @@ func TestOperationValidation(t *testing.T) {
 		}
 	}
 }
+
+// §128.3 — the only reasons allowed to mint member-earnable (bonus) credits
+// through wallet:award_points. Everything else degrades to points.
+func TestCreditBonusSourceAllowlist(t *testing.T) {
+	t.Parallel()
+
+	allowed := []string{"referral_reward", "referee_reward", "signup_bonus"}
+	for _, r := range allowed {
+		if !creditBonusSourceAllowed(r) {
+			t.Errorf("expected %q to be allowed for credit awards", r)
+		}
+	}
+
+	denied := []string{"", "checklist", "assessment", "scholarship", "admin_grant", "refund", "purchase", "tip"}
+	for _, r := range denied {
+		if creditBonusSourceAllowed(r) {
+			t.Errorf("expected %q to be denied for credit awards", r)
+		}
+	}
+}

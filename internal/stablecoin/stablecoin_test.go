@@ -1,0 +1,735 @@
+package stablecoin
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// ── Fakes ────────────────────────────────────────────────────────────────
+
+type fakeSettings struct {
+	strs map[string]string
+	ints map[string]int
+	bols map[string]bool
+}
+
+func (f *fakeSettings) GetStringOr(_ context.Context, k, fb string) string {
+	if v, ok := f.strs[k]; ok {
+		return v
+	}
+	return fb
+}
+func (f *fakeSettings) GetIntOr(_ context.Context, k string, fb int) int {
+	if v, ok := f.ints[k]; ok {
+		return v
+	}
+	return fb
+}
+func (f *fakeSettings) GetBoolOr(_ context.Context, k string, fb bool) bool {
+	if v, ok := f.bols[k]; ok {
+		return v
+	}
+	return fb
+}
+
+type fakeVK struct {
+	m map[string]string
+}
+
+func newFakeVK() *fakeVK { return &fakeVK{m: map[string]string{}} }
+
+func (f *fakeVK) Exists(_ context.Context, k string) (bool, error) {
+	_, ok := f.m[k]
+	return ok, nil
+}
+func (f *fakeVK) SetNX(_ context.Context, k, v string, _ int) (bool, error) {
+	if _, ok := f.m[k]; ok {
+		return false, nil
+	}
+	f.m[k] = v
+	return true, nil
+}
+func (f *fakeVK) Get(_ context.Context, k string) (string, error) { return f.m[k], nil }
+func (f *fakeVK) Set(_ context.Context, k, v string, _ int) error {
+	f.m[k] = v
+	return nil
+}
+func (f *fakeVK) Del(_ context.Context, k string) error {
+	delete(f.m, k)
+	return nil
+}
+
+type fakeStore struct {
+	walletByUser map[string]*Wallet
+	walletByAddr map[string]*Wallet
+	walletByID   map[string]*Wallet
+	activities   map[string]*Activity // tx_sig → row
+	inserted     []Activity
+	escrows      map[string]*Escrow
+	bookings     map[string]*ServiceBooking
+	treasury     map[string]*TreasuryWallet // chain:role → wallet
+	sweeps       []TreasurySweep
+	outSum       int64
+	pending      []Activity
+}
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{
+		walletByUser: map[string]*Wallet{},
+		walletByAddr: map[string]*Wallet{},
+		walletByID:   map[string]*Wallet{},
+		activities:   map[string]*Activity{},
+		escrows:      map[string]*Escrow{},
+		bookings:     map[string]*ServiceBooking{},
+		treasury:     map[string]*TreasuryWallet{},
+	}
+}
+
+func (f *fakeStore) GetWalletByUser(_ context.Context, u pgtype.UUID) (*Wallet, error) {
+	if w, ok := f.walletByUser[u.String()]; ok {
+		return w, nil
+	}
+	return nil, ErrWalletNotFound
+}
+func (f *fakeStore) GetWalletByAddress(_ context.Context, a string) (*Wallet, error) {
+	if w, ok := f.walletByAddr[a]; ok {
+		return w, nil
+	}
+	return nil, ErrWalletNotFound
+}
+func (f *fakeStore) GetWalletByID(_ context.Context, id pgtype.UUID) (*Wallet, error) {
+	if w, ok := f.walletByID[id.String()]; ok {
+		return w, nil
+	}
+	return nil, ErrWalletNotFound
+}
+func (f *fakeStore) InsertWallet(_ context.Context, w Wallet) (*Wallet, error) {
+	if _, dup := f.walletByUser[w.UserID]; dup {
+		return nil, fmt.Errorf("duplicate user")
+	}
+	if w.ID == "" {
+		w.ID = newUUID().String()
+	}
+	f.walletByUser[w.UserID] = &w
+	f.walletByAddr[w.Address] = &w
+	f.walletByID[w.ID] = &w
+	return &w, nil
+}
+func (f *fakeStore) UpdateWalletStatus(_ context.Context, id pgtype.UUID, st string) error {
+	if w, ok := f.walletByID[id.String()]; ok {
+		w.Status = st
+	}
+	return nil
+}
+func (f *fakeStore) UpdateDelegatedSigner(_ context.Context, id pgtype.UUID, ds *DelegatedSigner) error {
+	if w, ok := f.walletByID[id.String()]; ok {
+		w.DelegatedSigner = ds
+	}
+	return nil
+}
+func (f *fakeStore) ListWalletsByStatus(_ context.Context, st string, _ int32) ([]Wallet, error) {
+	var out []Wallet
+	for _, w := range f.walletByID {
+		if w.Status == st {
+			out = append(out, *w)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) ListWallets(_ context.Context, _, _ string, _, _ int32) ([]Wallet, error) {
+	return nil, nil
+}
+func (f *fakeStore) InsertActivity(_ context.Context, a Activity) (*Activity, error) {
+	if _, dup := f.activities[a.TxSignature]; dup {
+		return nil, nil // ON CONFLICT DO NOTHING
+	}
+	f.activities[a.TxSignature] = &a
+	f.inserted = append(f.inserted, a)
+	return &a, nil
+}
+func (f *fakeStore) GetActivityBySig(_ context.Context, sig string) (*Activity, error) {
+	if a, ok := f.activities[sig]; ok {
+		return a, nil
+	}
+	return nil, ErrActivityNotFound
+}
+func (f *fakeStore) ListActivityByWallet(_ context.Context, wid pgtype.UUID, _, _ int32) ([]Activity, error) {
+	var out []Activity
+	for _, a := range f.activities {
+		if a.WalletID == wid.String() {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) ListPendingActivity(_ context.Context, _ int32) ([]Activity, error) {
+	return f.pending, nil
+}
+func (f *fakeStore) SetActivityStatus(_ context.Context, id pgtype.UUID, st string) error {
+	for _, a := range f.activities {
+		if a.ID == id.String() {
+			a.Status = st
+		}
+	}
+	return nil
+}
+func (f *fakeStore) SumOutByAssetSince(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) (int64, error) {
+	return f.outSum, nil
+}
+func (f *fakeStore) GetEscrow(_ context.Context, id pgtype.UUID) (*Escrow, error) {
+	if e, ok := f.escrows[id.String()]; ok {
+		return e, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeStore) GetEscrowByBooking(_ context.Context, b pgtype.UUID) (*Escrow, error) {
+	for _, e := range f.escrows {
+		if e.BookingID == b.String() {
+			return e, nil
+		}
+	}
+	return nil, nil
+}
+func (f *fakeStore) InsertEscrow(_ context.Context, e Escrow) (*Escrow, error) {
+	if e.ID == "" {
+		e.ID = newUUID().String()
+	}
+	f.escrows[e.ID] = &e
+	return &e, nil
+}
+func (f *fakeStore) SetEscrowState(_ context.Context, id pgtype.UUID, st, fundedSig, releaseSig string, d *ArbiterDecision, dl *time.Time) error {
+	e, ok := f.escrows[id.String()]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	e.State = st
+	if fundedSig != "" {
+		e.FundedSig = fundedSig
+	}
+	if releaseSig != "" {
+		e.ReleaseSig = releaseSig
+	}
+	if d != nil {
+		e.ArbiterDecision = d
+	}
+	if dl != nil {
+		e.ConfirmationDeadline = *dl
+	}
+	return nil
+}
+func (f *fakeStore) SetEscrowVaultAddress(_ context.Context, id pgtype.UUID, addr string) error {
+	if e, ok := f.escrows[id.String()]; ok {
+		e.VaultAddress = addr
+	}
+	return nil
+}
+func (f *fakeStore) ListExpiredFundedEscrows(_ context.Context, _ int32) ([]Escrow, error) {
+	return nil, nil
+}
+func (f *fakeStore) GetServiceBooking(_ context.Context, id pgtype.UUID) (*ServiceBooking, error) {
+	if b, ok := f.bookings[id.String()]; ok {
+		return b, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeStore) ListTreasuryWallets(_ context.Context) ([]TreasuryWallet, error) {
+	var out []TreasuryWallet
+	for _, t := range f.treasury {
+		out = append(out, *t)
+	}
+	return out, nil
+}
+func (f *fakeStore) GetTreasuryWallet(_ context.Context, chain, role string) (*TreasuryWallet, error) {
+	if t, ok := f.treasury[chain+":"+role]; ok {
+		return t, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeStore) InsertTreasurySweep(_ context.Context, sw TreasurySweep) (*TreasurySweep, error) {
+	if sw.State == "" {
+		sw.State = "proposed"
+	}
+	f.sweeps = append(f.sweeps, sw)
+	return &sw, nil
+}
+func (f *fakeStore) GetTreasurySweep(_ context.Context, id pgtype.UUID) (*TreasurySweep, error) {
+	for i := range f.sweeps {
+		if f.sweeps[i].ID == id.String() {
+			return &f.sweeps[i], nil
+		}
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeStore) DecideTreasurySweep(_ context.Context, id pgtype.UUID, st string, _ pgtype.UUID, _ string) error {
+	for i := range f.sweeps {
+		if f.sweeps[i].ID == id.String() {
+			f.sweeps[i].State = st
+		}
+	}
+	return nil
+}
+func (f *fakeStore) ListSweepsByState(_ context.Context, st string, _, _ int32) ([]TreasurySweep, error) {
+	var out []TreasurySweep
+	for _, sw := range f.sweeps {
+		if sw.State == st {
+			out = append(out, sw)
+		}
+	}
+	return out, nil
+}
+
+type fakeProvider struct {
+	transfers     []TransferInput
+	removedSigner []string
+	verifyErr     error
+	activity      []ProviderEvent
+	balances      map[string]int64
+}
+
+func (f *fakeProvider) CreateWallet(_ context.Context, _ CreateWalletInput) (ProviderWallet, error) {
+	return ProviderWallet{Locator: "loc-1", Address: "addr-1", Chain: "solana"}, nil
+}
+func (f *fakeProvider) GetWallet(_ context.Context, _ string) (ProviderWallet, error) {
+	return ProviderWallet{Balances: f.balances}, nil
+}
+func (f *fakeProvider) RegisterDelegatedSigner(_ context.Context, _ string, _ DelegatedSignerInput) error {
+	return nil
+}
+func (f *fakeProvider) RemoveDelegatedSigner(_ context.Context, _ string, ref string) error {
+	f.removedSigner = append(f.removedSigner, ref)
+	return nil
+}
+func (f *fakeProvider) Transfer(_ context.Context, _ string, in TransferInput) (TransferResult, error) {
+	f.transfers = append(f.transfers, in)
+	return TransferResult{TxSignature: "sig-" + in.Idempotency, Status: "confirmed"}, nil
+}
+func (f *fakeProvider) BuildWithdrawal(_ context.Context, _ string, _ WithdrawalInput) (SignableOp, error) {
+	return SignableOp{Locator: "op-1"}, nil
+}
+func (f *fakeProvider) CreateOnrampSession(_ context.Context, _ OnrampInput) (OnrampSession, error) {
+	return OnrampSession{URL: "https://checkout"}, nil
+}
+func (f *fakeProvider) Activity(_ context.Context, _ string, _ string) ([]ProviderEvent, error) {
+	return f.activity, nil
+}
+func (f *fakeProvider) VerifyWebhook(_ []byte, _ string) error { return f.verifyErr }
+
+type fakeEnq struct{ tasks []string }
+
+func (f *fakeEnq) Enqueue(t string, _ []byte, _ ...interface{}) error {
+	f.tasks = append(f.tasks, t)
+	return nil
+}
+
+type fakeBonus struct{ rows []BonusEntry }
+
+func (f *fakeBonus) ListCreditEntries(_ context.Context, _ pgtype.UUID, _, _ int32) ([]BonusEntry, error) {
+	return f.rows, nil
+}
+
+type fakeRater struct{ n int64 }
+
+func (f *fakeRater) CreditsPerUSD(_ context.Context) (int64, error) { return f.n, nil }
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+var testUUIDSeq atomic.Int64
+
+func newUUID() pgtype.UUID {
+	var u pgtype.UUID
+	_ = u.Scan(fmt.Sprintf("019b0000-0000-7000-8000-%012x", testUUIDSeq.Add(1)))
+	return u
+}
+
+func uuidOf(t *testing.T, s string) pgtype.UUID {
+	t.Helper()
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		t.Fatalf("bad uuid %s: %v", s, err)
+	}
+	return u
+}
+
+func newSvc(st *fakeStore, p *fakeProvider, vk *fakeVK, set *fakeSettings) *Service {
+	return NewService(p, st, set, vk)
+}
+
+// ── assetList ────────────────────────────────────────────────────────────
+
+func TestAssetListParsing(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		raw  string
+		want []string
+	}{
+		{`["usdc","usdt"]`, []string{"usdc", "usdt"}},
+		{`["usdc"]`, []string{"usdc"}},
+		{"usdc,usdt", []string{"usdc", "usdt"}},
+		{"usdc, bogus ,usdt", []string{"usdc", "usdt"}},
+		{"", []string{"usdc", "usdt"}},
+		{`["eurc"]`, []string{"usdc", "usdt"}}, // unsupported only → default
+	}
+	for _, c := range cases {
+		svc := newSvc(newFakeStore(), &fakeProvider{}, newFakeVK(), &fakeSettings{
+			strs: map[string]string{"stablecoin.assets": c.raw},
+		})
+		got := svc.assetList(context.Background())
+		if len(got) != len(c.want) {
+			t.Fatalf("assetList(%q) = %v, want %v", c.raw, got, c.want)
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Fatalf("assetList(%q)[%d] = %s, want %s", c.raw, i, got[i], c.want[i])
+			}
+		}
+	}
+}
+
+// ── Killswitch ───────────────────────────────────────────────────────────
+
+func TestKillswitchSettleBlock(t *testing.T) {
+	t.Parallel()
+	vk := newFakeVK()
+	st := newFakeStore()
+	svc := newSvc(st, &fakeProvider{}, vk, &fakeSettings{})
+	uid := newUUID()
+
+	if err := svc.SetKillswitch(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Settle(context.Background(), SettleInput{FromUserID: uid, Asset: AssetUSDC, AmountMinor: 100})
+	if !errors.Is(err, ErrKillswitch) {
+		t.Fatalf("settle under killswitch = %v, want ErrKillswitch", err)
+	}
+	if err := svc.SetKillswitch(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if halted, _ := svc.killswitch(context.Background()); halted {
+		t.Fatal("killswitch still engaged after Del")
+	}
+}
+
+func TestSettleScopeCapEnforced(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	uid := newUUID()
+	w := &Wallet{
+		ID: newUUID().String(), UserID: uid.String(), Status: WalletStatusActive,
+		Locator: "loc", Chain: "solana",
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref", Scopes: []SignerScope{
+			{Asset: AssetUSDC, DailyCapMinor: 1000},
+		}},
+	}
+	st.walletByUser[uid.String()] = w
+	st.outSum = 950 // today's settled volume per SQL aggregate
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	_, err := svc.Settle(context.Background(), SettleInput{
+		FromUserID: uid, ToAddress: "dest", Asset: AssetUSDC, AmountMinor: 100,
+	})
+	if !errors.Is(err, ErrScopeExceeded) {
+		t.Fatalf("cap breach = %v, want ErrScopeExceeded", err)
+	}
+
+	// Under cap passes through to the provider.
+	st.outSum = 100
+	p := &fakeProvider{}
+	svc = newSvc(st, p, newFakeVK(), &fakeSettings{})
+	if _, err := svc.Settle(context.Background(), SettleInput{
+		FromUserID: uid, ToAddress: "dest", Asset: AssetUSDC, AmountMinor: 100,
+	}); err != nil {
+		t.Fatalf("under-cap settle: %v", err)
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("provider transfers = %d, want 1", len(p.transfers))
+	}
+}
+
+// ── Webhook ingest ───────────────────────────────────────────────────────
+
+func TestIngestWebhookDropsNonTxEvents(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	enq := &fakeEnq{}
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	svc.SetEnqueuer(enq)
+
+	// Verified event with no transaction signature — ack + drop.
+	err := svc.IngestWebhook(context.Background(), []byte(`{"type":"wallet.created","wallet_address":"a1"}`), "sig")
+	if err != nil {
+		t.Fatalf("non-tx webhook = %v, want nil", err)
+	}
+	if len(enq.tasks) != 0 || len(st.inserted) != 0 {
+		t.Fatal("non-tx webhook should not enqueue or mirror")
+	}
+}
+
+func TestIngestWebhookDedupesReplay(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	enq := &fakeEnq{}
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	svc.SetEnqueuer(enq)
+
+	payload := []byte(`{"type":"transfer_in","tx_signature":"sig-1","wallet_address":"a1"}`)
+	if err := svc.IngestWebhook(context.Background(), payload, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.IngestWebhook(context.Background(), payload, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if len(enq.tasks) != 1 {
+		t.Fatalf("replayed webhook enqueued %d times, want 1", len(enq.tasks))
+	}
+}
+
+func TestIngestWebhookRejectsBadSignature(t *testing.T) {
+	t.Parallel()
+	svc := newSvc(newFakeStore(), &fakeProvider{verifyErr: errors.New("bad hmac")}, newFakeVK(), &fakeSettings{})
+	if err := svc.IngestWebhook(context.Background(), []byte(`{}`), "x"); err == nil {
+		t.Fatal("unverified webhook accepted")
+	}
+}
+
+// ── MirrorActivity ───────────────────────────────────────────────────────
+
+func TestMirrorActivityTimestampFallback(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	before := time.Now().UTC()
+	err := svc.MirrorActivity(context.Background(), ProviderEvent{
+		Type: "transfer_in", TxSignature: "sig-9", Asset: "solana:usdc",
+		AmountMinor: 500, OccurredAt: 0,
+	}, newUUID().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := st.inserted[0]
+	if got.OccurredAt.Before(before) {
+		t.Fatalf("occurred_at %v predates call — 1970 fallback bug", got.OccurredAt)
+	}
+	if got.Asset != AssetUSDC {
+		t.Fatalf("asset = %s, solana: prefix not stripped", got.Asset)
+	}
+	if got.Status != "confirmed" || got.Direction != "in" {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
+func TestMirrorWithdrawalCollectsFee(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	p := &fakeProvider{}
+	uid := newUUID()
+	w := &Wallet{
+		ID: newUUID().String(), UserID: uid.String(), Status: WalletStatusActive,
+		Chain: "solana", Locator: "loc",
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref"},
+	}
+	st.walletByID[w.ID] = w
+	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{Role: TreasuryHot, Chain: "solana", Address: "hot-addr"}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{ints: map[string]int{"stablecoin.withdrawal_fee_bps": 100}})
+
+	err := svc.MirrorActivity(context.Background(), ProviderEvent{
+		Type: "transfer_out", TxSignature: "wd-1", Asset: "usdc", AmountMinor: 10_000,
+	}, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("fee transfers = %d, want 1", len(p.transfers))
+	}
+	fee := p.transfers[0]
+	if fee.AmountMinor != 100 || fee.RecipientAddr != "hot-addr" || fee.Idempotency != "wd-1:withdrawal_fee" {
+		t.Fatalf("fee leg = %+v", fee)
+	}
+}
+
+func TestMirrorActivityIdempotentOnSig(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	ev := ProviderEvent{Type: "transfer_in", TxSignature: "dup-1", Asset: "usdc", AmountMinor: 1}
+	wid := newUUID().String()
+	_ = svc.MirrorActivity(context.Background(), ev, wid)
+	if err := svc.MirrorActivity(context.Background(), ev, wid); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.inserted) != 1 {
+		t.Fatalf("duplicate mirror inserted %d rows", len(st.inserted))
+	}
+}
+
+// ── Escrow state machine ─────────────────────────────────────────────────
+
+func fundedEscrow(st *fakeStore, buyerUID, sellerUID string) *Escrow {
+	bw := &Wallet{ID: newUUID().String(), UserID: buyerUID}
+	sw := &Wallet{ID: newUUID().String(), UserID: sellerUID}
+	st.walletByID[bw.ID] = bw
+	st.walletByID[sw.ID] = sw
+	e := &Escrow{
+		ID: newUUID().String(), BookingID: newUUID().String(),
+		BuyerWalletID: bw.ID, SellerWalletID: sw.ID,
+		State: EscrowFunded, FundedSig: "fund-sig",
+	}
+	st.escrows[e.ID] = e
+	return e
+}
+
+func TestConfirmReleaseRequiresFunded(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowDisputed
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	err := svc.ConfirmRelease(context.Background(), uuidOf(t, e.ID), buyer, "sig")
+	if !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("confirm on disputed = %v, want ErrEscrowState", err)
+	}
+}
+
+func TestConfirmReleaseBuyerOnly(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	err := svc.ConfirmRelease(context.Background(), uuidOf(t, e.ID), seller, "sig")
+	if !errors.Is(err, ErrEscrowParty) {
+		t.Fatalf("seller confirm-release = %v, want ErrEscrowParty", err)
+	}
+
+	if err := svc.ConfirmRelease(context.Background(), uuidOf(t, e.ID), buyer, "rel-sig"); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowReleased || e.ReleaseSig != "rel-sig" {
+		t.Fatalf("escrow = %+v", e)
+	}
+}
+
+func TestDisputePreservesFundedSig(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	if err := svc.DisputeEscrow(context.Background(), uuidOf(t, e.ID), seller, "no delivery"); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowDisputed || e.FundedSig != "fund-sig" {
+		t.Fatalf("dispute wiped state: %+v", e)
+	}
+	if e.ArbiterDecision == nil || !strings.Contains(e.ArbiterDecision.Note, "no delivery") {
+		t.Fatalf("dispute reason not recorded: %+v", e.ArbiterDecision)
+	}
+}
+
+func TestArbitrateTwoPhase(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowDisputed
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	eid := uuidOf(t, e.ID)
+
+	// Phase 2 before a ruling — rejected.
+	if err := svc.ArbitrateEscrow(context.Background(), eid, nil, "exec-sig"); err == nil {
+		t.Fatal("release sig accepted without a ruling")
+	}
+
+	// Phase 1 records the ruling; escrow stays disputed.
+	d := &ArbiterDecision{ReleasedTo: "seller", DecidedBy: "admin-1", DecidedAt: time.Now()}
+	if err := svc.ArbitrateEscrow(context.Background(), eid, d, ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowDisputed || e.ArbiterDecision == nil {
+		t.Fatalf("phase 1 = %+v", e)
+	}
+
+	// Phase 2 completes on the executed sig.
+	if err := svc.ArbitrateEscrow(context.Background(), eid, nil, "exec-sig"); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowReleased || e.ReleaseSig != "exec-sig" {
+		t.Fatalf("phase 2 = %+v", e)
+	}
+}
+
+// ── Unified feed ─────────────────────────────────────────────────────────
+
+func TestUnifiedFeedMergesTiers(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	uid := newUUID()
+	w := &Wallet{ID: newUUID().String(), UserID: uid.String()}
+	st.walletByUser[uid.String()] = w
+	now := time.Now().UTC()
+	st.activities["s1"] = &Activity{
+		ID: newUUID().String(), WalletID: w.ID, Kind: ActivityDeposit,
+		Direction: "in", CreditsAmount: 500, OccurredAt: now.Add(-time.Hour),
+	}
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	svc.SetBonusLedger(&fakeBonus{rows: []BonusEntry{
+		{ID: "b1", Operation: "earn", Amount: 50, OccurredAt: now},
+		{ID: "b2", Operation: "spend", Amount: -20, OccurredAt: now.Add(-2 * time.Hour)},
+	}})
+
+	feed, err := svc.ListActivity(context.Background(), uid, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(feed) != 3 {
+		t.Fatalf("feed = %d rows, want 3", len(feed))
+	}
+	if feed[0].Tier != "bonus" || feed[0].Kind != "bonus_earn" {
+		t.Fatalf("newest row = %+v, want bonus_earn", feed[0])
+	}
+	if feed[2].Kind != "bonus_spend" || feed[2].Direction != "out" {
+		t.Fatalf("oldest row = %+v", feed[2])
+	}
+	if feed[1].Tier != "backed" {
+		t.Fatalf("onchain row = %+v", feed[1])
+	}
+}
+
+// ── Treasury sweeps ──────────────────────────────────────────────────────
+
+func TestProposeSweepSkipsOpenProposal(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{ID: "hot-1", Role: TreasuryHot, Chain: "solana", Locator: "hot-loc"}
+	st.treasury["solana:"+TreasuryCold] = &TreasuryWallet{Role: TreasuryCold, Chain: "solana", Address: "cold-addr"}
+	p := &fakeProvider{balances: map[string]int64{"usdc": 5_000_000}}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{
+		strs: map[string]string{"stablecoin.network": "solana", "stablecoin.assets": `["usdc"]`},
+		ints: map[string]int{"stablecoin.hot_float_cap_minor": 2_500_000},
+	})
+
+	if err := svc.ProposeSweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.sweeps) != 1 || st.sweeps[0].AmountMinor != 2_500_000 {
+		t.Fatalf("sweeps = %+v", st.sweeps)
+	}
+	// Second tick while the proposal is open — no duplicate.
+	if err := svc.ProposeSweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.sweeps) != 1 {
+		t.Fatalf("duplicate sweep proposed: %d rows", len(st.sweeps))
+	}
+}
