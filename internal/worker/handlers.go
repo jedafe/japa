@@ -2450,33 +2450,10 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:publish_scheduled: content published", "content_id", payload.ContentID)
 
 	// §30/§43: this path bypasses content.Service's seo_indexable
-	// derivation (raw PublishScheduledContent), so a scheduled detailed
-	// comparison would keep whatever flag the schedule write left behind —
-	// re-derive it now. Status stays 'published'; the CASE in the query
-	// preserves the published_at stamp PublishScheduledContent just set.
-	// Reads go off Writer — the replica can lag the just-committed flip and
-	// hand back a stale status, writing a wrong durable flag.
-	if row, rerr := gen.New(dbPool.Writer).GetContentByID(ctx, contentID); rerr == nil &&
-		row.ContentType == "comparison" {
-		depth := ""
-		if meta, merr := gen.New(dbPool.Writer).GetComparisonContentMetadata(ctx, contentID); merr == nil {
-			depth = meta.Depth
-		}
-		minWords := bots.DefaultSitemapQualityConfig().ComparisonMinWords
-		if appSettings != nil {
-			minWords = appSettings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", minWords)
-		}
-		indexable := bots.ComparisonSeoIndexable(
-			depth, row.Status, row.Visibility, len(strings.Fields(row.Body)), minWords)
-		if _, werr := gen.New(dbPool.Writer).UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
-			Status:       row.Status,
-			SeoIndexable: &indexable,
-			ID:           contentID,
-		}); werr != nil {
-			slog.Warn("task:content:publish_scheduled: seo_indexable derive failed",
-				"content_id", payload.ContentID, "error", werr)
-		}
-	}
+	// derivation (raw PublishScheduledContent) — re-derive for comparison
+	// rows. Status stays 'published'; the CASE in the query preserves the
+	// published_at stamp PublishScheduledContent just set.
+	rederiveComparisonSeoIndexable(ctx, contentID, "task:content:publish_scheduled")
 
 	// Ensure a content_scores row exists so the published content is not
 	// excluded from INNER JOIN feed queries (explore/top/rising/space/profile).
@@ -2511,6 +2488,44 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	EnqueueAtprotoPublishContent(ctx, contentID)
 
 	return nil
+}
+
+// rederiveComparisonSeoIndexable recomputes the stored seo_indexable flag
+// on a just-published comparison row (§30/§43): detailed depth + published +
+// public + body words >= seo.sitemap.comparison_min_words. The scheduled-
+// publish paths (per-item task and periodic sweep) flip status via raw
+// PublishScheduledContent, bypassing content.Service.UpdateContentStatus's
+// derivation — this restores the invariant. No-op for non-comparison rows.
+// Reads go off Writer — a replica can lag the just-committed flip and hand
+// back a stale status, writing a wrong durable flag.
+func rederiveComparisonSeoIndexable(ctx context.Context, contentID pgtype.UUID, logPrefix string) {
+	row, rerr := gen.New(dbPool.Writer).GetContentByID(ctx, contentID)
+	if rerr != nil || row.ContentType != "comparison" {
+		return
+	}
+
+	// No metadata row means the comparison is not JCE-registered (legacy
+	// wizard comparisons carry no depth) — leave its editorial flag alone.
+	meta, merr := gen.New(dbPool.Writer).GetComparisonContentMetadata(ctx, contentID)
+	if merr != nil {
+		return
+	}
+
+	minWords := bots.DefaultSitemapQualityConfig().ComparisonMinWords
+	if appSettings != nil {
+		minWords = appSettings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", minWords)
+	}
+
+	indexable := bots.ComparisonSeoIndexable(
+		meta.Depth, row.Status, row.Visibility, len(strings.Fields(row.Body)), minWords)
+	if _, werr := gen.New(dbPool.Writer).UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
+		Status:       row.Status,
+		SeoIndexable: &indexable,
+		ID:           contentID,
+	}); werr != nil {
+		slog.Warn(logPrefix+": seo_indexable derive failed",
+			"content_id", contentID.String(), "error", werr)
+	}
 }
 
 // scheduleScheduledPublishFanOut enqueues feed fan-out for a newly
@@ -5450,6 +5465,10 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		}
 
 		published++
+
+		// §30/§43: same raw-publish bypass as HandleScheduledPublish —
+		// re-derive the flag for comparison rows the sweep just published.
+		rederiveComparisonSeoIndexable(ctx, pc, "task:content:publish_sweep")
 
 		// §73: keep the scholarship finder in sync for scheduled scholarship guides.
 		scheduleScholarshipSyncFromGuide(ctx, pc, pc.String())

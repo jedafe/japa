@@ -125,7 +125,9 @@ func TestDBComparisonSeoIndexableOnPublish(t *testing.T) {
 		{"detailed private", "detailed", "private", 600, false},
 		{"detailed members", "detailed", "members", 600, false},
 		{"quick never indexable", "quick", "public", 600, false},
-		{"missing metadata treated non-detailed", "", "public", 600, false},
+		// No metadata row = not JCE-registered (legacy wizard comparison) —
+		// the seeded editorial flag (column default true) must be preserved.
+		{"non-JCE comparison keeps editorial flag", "", "public", 600, true},
 	}
 
 	for _, tt := range tests {

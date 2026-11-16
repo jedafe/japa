@@ -1495,12 +1495,17 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		input.BodyHtml = SanitizeHTML(RenderBodyHTML(input.Body))
 	}
 
-	// §30/§43: comparison rows derive seo_indexable — detailed depth +
+	// §30/§43: JCE comparison rows derive seo_indexable — detailed depth +
 	// published + public + enough body words to pass the comparison word
 	// gate. Deriving it here keeps the stored flag correct no matter which
-	// write path (JCE update, studio autosave PATCH) lands the row.
+	// write path (JCE update, studio autosave PATCH) lands the row. A nil
+	// derivation means the row is not JCE-registered (legacy wizard
+	// comparison): leave input.SeoIndexable alone so the editorial toggle
+	// keeps working.
 	if existing.ContentType == TypeComparison {
-		input.SeoIndexable = s.comparisonSeoIndexable(ctx, id, input.Status, input.Visibility, input.Body)
+		if derived := s.comparisonSeoIndexable(ctx, id, input.Status, input.Visibility, input.Body); derived != nil {
+			input.SeoIndexable = derived
+		}
 	}
 
 	// Post-as-org (ADR-062): attributing an org on this post requires the
@@ -2140,15 +2145,17 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 // effective status/visibility, and the body's word count against
 // seo.sitemap.comparison_min_words (§43). The same derivation runs on every
 // write path that can change one of its inputs so the flag cannot go stale.
-// A missing metadata row means the comparison was never JCE-registered —
-// treated as non-detailed (non-indexable), matching comparisonIndexable.
+// A missing metadata row means the comparison is not JCE-registered —
+// legacy wizard comparisons carry no depth and use the editorial flag like
+// any other content type — so nil is returned to preserve the stored flag.
 func (s *Service) comparisonSeoIndexable(ctx context.Context, id pgtype.UUID, status, visibility, body string) *bool {
 	// Read off Writer — a replica can lag a just-promoted metadata row and
 	// report no depth, writing a wrong durable flag.
-	depth := ""
-	if meta, err := s.write.GetComparisonContentMetadata(ctx, id); err == nil {
-		depth = meta.Depth
+	meta, err := s.write.GetComparisonContentMetadata(ctx, id)
+	if err != nil {
+		return nil
 	}
+	depth := meta.Depth
 
 	minWords := bots.DefaultSitemapQualityConfig().ComparisonMinWords
 	if s.settings != nil {

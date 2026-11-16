@@ -1,9 +1,10 @@
 package worker
 
 // DB integration coverage for the §43 seo_indexable derivation on the
-// scheduled-publish path — PublishScheduledContent flips status via raw
+// scheduled-publish paths — PublishScheduledContent flips status via raw
 // SQL (the status='scheduled' guard can't go through the service), so
-// HandleScheduledPublish re-derives the flag for comparison rows.
+// HandleScheduledPublish and HandleScheduledPublishSweep re-derive the
+// flag for comparison rows.
 // Runs when JC_TEST_DATABASE_URL (falls back to JC_DATABASE_URL) points
 // at a migrated database; skips otherwise — same convention as
 // internal/feed/foryou_db_test.go.
@@ -161,6 +162,65 @@ func TestDBScheduledPublishComparisonSeoIndexable(t *testing.T) {
 		// for comparison rows.
 		if seo {
 			t.Error("seo_indexable flipped for non-comparison row")
+		}
+	})
+}
+
+// TestDBScheduledPublishSweepComparisonSeoIndexable covers the periodic
+// catch-up sweep — the second raw-publish path. Anything the per-item task
+// misses (lost enqueue, worker downtime) publishes here, so it must apply
+// the same re-derivation.
+func TestDBScheduledPublishSweepComparisonSeoIndexable(t *testing.T) {
+	d := schedPubTestDB(t)
+	ctx := context.Background()
+	author := schedPubTestUser(t, ctx, d)
+
+	tests := []struct {
+		name       string
+		depth      string
+		visibility string
+		words      int
+		want       bool
+	}{
+		{"detailed public above gate", "detailed", "public", 600, true},
+		{"detailed public below gate", "detailed", "public", 100, false},
+		{"detailed private", "detailed", "private", 600, false},
+		{"quick never indexable", "quick", "public", 600, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := seedScheduledContent(t, ctx, d, author, "comparison", tt.depth, tt.visibility, tt.words, false)
+
+			if err := HandleScheduledPublishSweep(ctx, asynq.NewTask("content:publish_sweep", nil)); err != nil {
+				t.Fatalf("HandleScheduledPublishSweep: %v", err)
+			}
+
+			status, seo := contentStatusAndSeo(t, ctx, d, id)
+			if status != "published" {
+				t.Fatalf("status = %q, want published", status)
+			}
+			if seo != tt.want {
+				t.Errorf("seo_indexable = %v, want %v", seo, tt.want)
+			}
+		})
+	}
+
+	// No metadata row = not JCE-registered (legacy wizard comparison) —
+	// the seeded editorial flag must survive the sweep untouched.
+	t.Run("non-JCE comparison keeps editorial flag", func(t *testing.T) {
+		id := seedScheduledContent(t, ctx, d, author, "comparison", "", "public", 600, true)
+
+		if err := HandleScheduledPublishSweep(ctx, asynq.NewTask("content:publish_sweep", nil)); err != nil {
+			t.Fatalf("HandleScheduledPublishSweep: %v", err)
+		}
+
+		status, seo := contentStatusAndSeo(t, ctx, d, id)
+		if status != "published" {
+			t.Fatalf("status = %q, want published", status)
+		}
+		if !seo {
+			t.Error("seo_indexable = false for non-JCE comparison, want preserved true")
 		}
 	})
 }
