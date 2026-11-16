@@ -11,6 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const decideTreasurySweep = `-- name: DecideTreasurySweep :one
+UPDATE treasury_sweeps
+SET state = $1,
+    approved_by = $2,
+    squads_proposal_id = $3,
+    decided_at = now()
+WHERE id = $4 AND state = 'proposed'
+RETURNING id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at
+`
+
+type DecideTreasurySweepParams struct {
+	State            string      `json:"state"`
+	ApprovedBy       pgtype.UUID `json:"approved_by"`
+	SquadsProposalID *string     `json:"squads_proposal_id"`
+	ID               pgtype.UUID `json:"id"`
+}
+
+// Approve or reject — records the treasury.sweep_approve decision.
+func (q *Queries) DecideTreasurySweep(ctx context.Context, arg DecideTreasurySweepParams) (TreasurySweep, error) {
+	row := q.db.QueryRow(ctx, decideTreasurySweep,
+		arg.State,
+		arg.ApprovedBy,
+		arg.SquadsProposalID,
+		arg.ID,
+	)
+	var i TreasurySweep
+	err := row.Scan(
+		&i.ID,
+		&i.Chain,
+		&i.Asset,
+		&i.AmountMinor,
+		&i.HotWalletID,
+		&i.ColdAddress,
+		&i.State,
+		&i.ProposedBy,
+		&i.ApprovedBy,
+		&i.SquadsProposalID,
+		&i.ExecutedSig,
+		&i.CreatedAt,
+		&i.DecidedAt,
+		&i.ExecutedAt,
+	)
+	return i, err
+}
+
 const getServiceEscrow = `-- name: GetServiceEscrow :one
 SELECT id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at FROM service_escrows
 WHERE id = $1
@@ -137,6 +182,61 @@ func (q *Queries) GetStablecoinWalletByUser(ctx context.Context, userID pgtype.U
 		&i.DelegatedSigner,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStablecoinWalletByUserStatus = `-- name: GetStablecoinWalletByUserStatus :one
+SELECT id, user_id, chain, address, locator, status, recovery_methods, delegated_signer, created_at, updated_at FROM stablecoin_wallets
+WHERE user_id = $1 AND status = $2
+`
+
+type GetStablecoinWalletByUserStatusParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Status string      `json:"status"`
+}
+
+func (q *Queries) GetStablecoinWalletByUserStatus(ctx context.Context, arg GetStablecoinWalletByUserStatusParams) (StablecoinWallet, error) {
+	row := q.db.QueryRow(ctx, getStablecoinWalletByUserStatus, arg.UserID, arg.Status)
+	var i StablecoinWallet
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Chain,
+		&i.Address,
+		&i.Locator,
+		&i.Status,
+		&i.RecoveryMethods,
+		&i.DelegatedSigner,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTreasurySweep = `-- name: GetTreasurySweep :one
+SELECT id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at FROM treasury_sweeps
+WHERE id = $1
+`
+
+func (q *Queries) GetTreasurySweep(ctx context.Context, id pgtype.UUID) (TreasurySweep, error) {
+	row := q.db.QueryRow(ctx, getTreasurySweep, id)
+	var i TreasurySweep
+	err := row.Scan(
+		&i.ID,
+		&i.Chain,
+		&i.Asset,
+		&i.AmountMinor,
+		&i.HotWalletID,
+		&i.ColdAddress,
+		&i.State,
+		&i.ProposedBy,
+		&i.ApprovedBy,
+		&i.SquadsProposalID,
+		&i.ExecutedSig,
+		&i.CreatedAt,
+		&i.DecidedAt,
+		&i.ExecutedAt,
 	)
 	return i, err
 }
@@ -326,6 +426,96 @@ func (q *Queries) InsertStablecoinWallet(ctx context.Context, arg InsertStableco
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertTreasurySweep = `-- name: InsertTreasurySweep :one
+
+INSERT INTO treasury_sweeps (chain, asset, amount_minor, hot_wallet_id, cold_address, proposed_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at
+`
+
+type InsertTreasurySweepParams struct {
+	Chain       string      `json:"chain"`
+	Asset       string      `json:"asset"`
+	AmountMinor int64       `json:"amount_minor"`
+	HotWalletID pgtype.UUID `json:"hot_wallet_id"`
+	ColdAddress string      `json:"cold_address"`
+	ProposedBy  string      `json:"proposed_by"`
+}
+
+// =====================
+// Treasury sweep proposals (§128.7)
+// =====================
+func (q *Queries) InsertTreasurySweep(ctx context.Context, arg InsertTreasurySweepParams) (TreasurySweep, error) {
+	row := q.db.QueryRow(ctx, insertTreasurySweep,
+		arg.Chain,
+		arg.Asset,
+		arg.AmountMinor,
+		arg.HotWalletID,
+		arg.ColdAddress,
+		arg.ProposedBy,
+	)
+	var i TreasurySweep
+	err := row.Scan(
+		&i.ID,
+		&i.Chain,
+		&i.Asset,
+		&i.AmountMinor,
+		&i.HotWalletID,
+		&i.ColdAddress,
+		&i.State,
+		&i.ProposedBy,
+		&i.ApprovedBy,
+		&i.SquadsProposalID,
+		&i.ExecutedSig,
+		&i.CreatedAt,
+		&i.DecidedAt,
+		&i.ExecutedAt,
+	)
+	return i, err
+}
+
+const listActiveTreasurySweeps = `-- name: ListActiveTreasurySweeps :many
+SELECT id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at FROM treasury_sweeps
+WHERE state IN ('proposed', 'approved')
+ORDER BY created_at ASC
+`
+
+// Reconcile watches proposals awaiting Squads execution.
+func (q *Queries) ListActiveTreasurySweeps(ctx context.Context) ([]TreasurySweep, error) {
+	rows, err := q.db.Query(ctx, listActiveTreasurySweeps)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TreasurySweep
+	for rows.Next() {
+		var i TreasurySweep
+		if err := rows.Scan(
+			&i.ID,
+			&i.Chain,
+			&i.Asset,
+			&i.AmountMinor,
+			&i.HotWalletID,
+			&i.ColdAddress,
+			&i.State,
+			&i.ProposedBy,
+			&i.ApprovedBy,
+			&i.SquadsProposalID,
+			&i.ExecutedSig,
+			&i.CreatedAt,
+			&i.DecidedAt,
+			&i.ExecutedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listExpiredFundedEscrows = `-- name: ListExpiredFundedEscrows :many
@@ -553,6 +743,54 @@ func (q *Queries) ListStablecoinWalletsByStatus(ctx context.Context, arg ListSta
 	return items, nil
 }
 
+const listTreasurySweepsByState = `-- name: ListTreasurySweepsByState :many
+SELECT id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at FROM treasury_sweeps
+WHERE state = $1
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListTreasurySweepsByStateParams struct {
+	State       string `json:"state"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
+
+func (q *Queries) ListTreasurySweepsByState(ctx context.Context, arg ListTreasurySweepsByStateParams) ([]TreasurySweep, error) {
+	rows, err := q.db.Query(ctx, listTreasurySweepsByState, arg.State, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TreasurySweep
+	for rows.Next() {
+		var i TreasurySweep
+		if err := rows.Scan(
+			&i.ID,
+			&i.Chain,
+			&i.Asset,
+			&i.AmountMinor,
+			&i.HotWalletID,
+			&i.ColdAddress,
+			&i.State,
+			&i.ProposedBy,
+			&i.ApprovedBy,
+			&i.SquadsProposalID,
+			&i.ExecutedSig,
+			&i.CreatedAt,
+			&i.DecidedAt,
+			&i.ExecutedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTreasuryWallets = `-- name: ListTreasuryWallets :many
 SELECT id, role, chain, address, locator, float_cap_minor, created_at FROM treasury_wallets
 ORDER BY role ASC
@@ -584,6 +822,22 @@ func (q *Queries) ListTreasuryWallets(ctx context.Context) ([]TreasuryWallet, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const markTreasurySweepExecuted = `-- name: MarkTreasurySweepExecuted :exec
+UPDATE treasury_sweeps
+SET state = 'executed', executed_sig = $1, executed_at = now()
+WHERE id = $2
+`
+
+type MarkTreasurySweepExecutedParams struct {
+	ExecutedSig *string     `json:"executed_sig"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) MarkTreasurySweepExecuted(ctx context.Context, arg MarkTreasurySweepExecutedParams) error {
+	_, err := q.db.Exec(ctx, markTreasurySweepExecuted, arg.ExecutedSig, arg.ID)
+	return err
 }
 
 const setServiceEscrowState = `-- name: SetServiceEscrowState :one
@@ -632,6 +886,24 @@ func (q *Queries) SetServiceEscrowState(ctx context.Context, arg SetServiceEscro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const setServiceEscrowVaultAddress = `-- name: SetServiceEscrowVaultAddress :exec
+UPDATE service_escrows
+SET vault_address = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetServiceEscrowVaultAddressParams struct {
+	VaultAddress string      `json:"vault_address"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+// Client derives the Squads PDA off-chain and registers it once the vault
+// exists onchain.
+func (q *Queries) SetServiceEscrowVaultAddress(ctx context.Context, arg SetServiceEscrowVaultAddressParams) error {
+	_, err := q.db.Exec(ctx, setServiceEscrowVaultAddress, arg.VaultAddress, arg.ID)
+	return err
 }
 
 const setStablecoinActivityStatus = `-- name: SetStablecoinActivityStatus :one

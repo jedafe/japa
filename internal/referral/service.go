@@ -570,12 +570,14 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	// ADR-136: a completed referral earns the referrer points (dedupe by ref).
 	s.emitActivity(ctx, referral.ReferrerID, "referral.completed", "referral:"+referral.ID.String())
 
-	// Award points to referrer wallet (fire-and-forget per Rule 8).
+	// §128.3: a completed referral earns the referrer bonus credits
+	// (dedupe by ref) — the only member-earnable credit source besides
+	// the one-time signup bonus. Fire-and-forget per Rule 8.
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
 			"user_id":     referral.ReferrerID.String(),
 			"amount":      rewardPoints,
-			"ledger_type": "points",
+			"ledger_type": "credits",
 			"reason":      "referral_reward",
 		})
 		if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {

@@ -200,6 +200,20 @@ type AwardPointsPayload struct {
 	Nonce          string `json:"nonce,omitempty"`
 }
 
+// creditBonusSources is the §128.3 allowlist — the only reasons permitted
+// to mint member-earnable (bonus) credits through wallet:award_points.
+// Admin grants and refund-as-credit bypass this task entirely and stay
+// operational tools.
+var creditBonusSources = map[string]bool{
+	"referral_reward": true,
+	"referee_reward":  true,
+	"signup_bonus":    true,
+}
+
+func creditBonusSourceAllowed(reason string) bool {
+	return creditBonusSources[reason]
+}
+
 // AwardPointsTask is the Asynq task handler for wallet:award_points. It
 // inserts a ledger entry crediting the user's wallet. Idempotent via a
 // deterministic idempotency key derived from user_id + reason + reference.
@@ -232,6 +246,15 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 
 	if ledgerType != LedgerTypePoints && ledgerType != LedgerTypeCredits {
 		return fmt.Errorf("wallet:award_points: invalid ledger_type %q", ledgerType)
+	}
+
+	// §128.3 bonus-source gate: member-earnable credits are minted only by
+	// referral rewards and the one-time signup bonus — every other reason
+	// that asks for credits degrades to points so the caller still lands
+	// (checklist, assessment, scholarship all stay point-denominated).
+	if ledgerType == LedgerTypeCredits && !creditBonusSourceAllowed(p.Reason) {
+		slog.Info("wallet:award_points: credit award gated to points (§128.3)", "reason", p.Reason, "user_id", userID.String())
+		ledgerType = LedgerTypePoints
 	}
 
 	// Build a human-readable reference.

@@ -150,6 +150,8 @@ import (
 	"github.com/jedafe/japa/internal/sopgenerator"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
+	"github.com/jedafe/japa/internal/stablecoin"
+	"github.com/jedafe/japa/internal/stablecoin/crossmint"
 	"github.com/jedafe/japa/internal/stock"
 	"github.com/jedafe/japa/internal/story"
 	"github.com/jedafe/japa/internal/studio"
@@ -170,8 +172,6 @@ import (
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
-	"github.com/jedafe/japa/internal/stablecoin"
-	"github.com/jedafe/japa/internal/stablecoin/crossmint"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/webhooks"
@@ -1159,6 +1159,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		settingsService,
 		stablecoinVK{vk: vkClient.Redis()},
 	)
+	stablecoinService.SetEnqueuer(taskEnqueuer)
+	stablecoinService.SetBonusLedger(stablecoinBonusLedger{svc: walletService})
 	stablecoinHandlers := stablecoin.NewHandlers(stablecoinService)
 	worker.RegisterStablecoinProcessor(stablecoinService)
 
@@ -3449,6 +3451,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	usersService.SetSettings(settingsService)
 	// §126: drop jc:fed:webfinger|actor docs for both handles on rename.
 	usersService.SetFederationCache(federationService)
+	// §126 M4: push Update{Person} to remote followers on identity edits.
+	usersService.SetFederationFanout(federationService)
 	// Phase 3: API-key-scoped bookmark surface — the adapter composes the
 	// users/content bookmark services and the shared engagement enqueuer.
 	publicAPIHandlers.SetBookmarkService(&publicBookmarkAdapter{
@@ -4108,6 +4112,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/federation/actors/{username}/outbox", federationHandlers.GetOutbox)
 		r.Get("/federation/actors/{username}/followers", federationHandlers.GetFollowers)
 		r.Get("/federation/actors/{username}/following", federationHandlers.GetFollowing)
+		// §126 M4: featured/featuredTags the actor doc advertises.
+		r.Get("/federation/actors/{username}/collections/featured", federationHandlers.GetFeatured)
+		r.Get("/federation/actors/{username}/collections/tags", federationHandlers.GetFeaturedTags)
 		r.Get("/federation/objects/contents/{id}", federationHandlers.GetObject)
 		// §126 M3 — instance Application actor + space Group actors.
 		r.Get("/federation/instance", federationHandlers.GetInstance)
@@ -6154,6 +6161,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// mounting a second handler on the catalog path.
 			r.With(features.Gate(featureChecker, "feature.stablecoin_wallet")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet", stablecoinHandlers.GetWallet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet/activity", stablecoinHandlers.ListActivity)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/funding/onramp-session", stablecoinHandlers.CreateOnrampSession)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
@@ -6161,6 +6169,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(mw.RateLimit(vkClient.Redis(), "webhook")).
 					Post("/webhooks/stablecoin/crossmint", stablecoinHandlers.ProviderWebhook)
 			})
+
+			// Service escrow routes (§128.5 — Squads 2-of-3 vaults).
+			r.With(features.Gate(featureChecker, "feature.escrow_services")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/me/escrows", stablecoinHandlers.PrepareEscrow)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/vault", stablecoinHandlers.RegisterVault)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/funded", stablecoinHandlers.ConfirmFunded)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/confirm-release", stablecoinHandlers.ConfirmRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/dispute", stablecoinHandlers.DisputeEscrow)
+			})
+
+			// Admin stablecoin surface — seeded RBAC nodes (001178).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.view")).
+				Get("/admin/stablecoin/treasury", stablecoinHandlers.AdminListTreasury)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.sweep_approve")).
+				Post("/admin/stablecoin/sweeps/{id}/decision", stablecoinHandlers.AdminDecideSweep)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.view")).
+				Get("/admin/stablecoin/wallets/{userId}", stablecoinHandlers.AdminGetMemberWallet)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.arbitrate")).
+				Post("/admin/stablecoin/escrows/{id}/arbitrate", stablecoinHandlers.AdminArbitrateEscrow)
 
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
@@ -10817,6 +10845,40 @@ func (s stablecoinVK) Get(ctx context.Context, key string) (string, error) {
 
 func (s stablecoinVK) Set(ctx context.Context, key, val string, ttlSeconds int) error {
 	return s.vk.Set(ctx, key, val, time.Duration(ttlSeconds)*time.Second).Err()
+}
+
+// stablecoinBonusLedger adapts *wallet.Service to the stablecoin package's
+// bonus-ledger read seam — credits-ledger rows for the unified feed.
+type stablecoinBonusLedger struct {
+	svc *wallet.Service
+}
+
+func (a stablecoinBonusLedger) ListCreditEntries(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]stablecoin.BonusEntry, error) {
+	lt := wallet.LedgerTypeCredits
+	rows, err := a.svc.ListLedgerEntries(ctx, userID, &lt, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]stablecoin.BonusEntry, 0, len(rows))
+	for _, e := range rows {
+		entry := stablecoin.BonusEntry{
+			ID:        e.ID.String(),
+			Operation: e.Operation,
+			Amount:    e.Amount,
+			Balance:   e.ResultingBalance,
+		}
+		if e.Source != nil {
+			entry.Source = *e.Source
+		}
+		if e.Reference != nil {
+			entry.Reference = *e.Reference
+		}
+		if e.CreatedAt.Valid {
+			entry.OccurredAt = e.CreatedAt.Time
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 // achievementActivityEmitter adapts *wallet.Service to the

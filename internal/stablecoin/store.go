@@ -24,6 +24,18 @@ var ErrWalletNotFound = errors.New("stablecoin: wallet not found")
 // ErrActivityNotFound is returned for unknown tx signatures.
 var ErrActivityNotFound = errors.New("stablecoin: activity not found")
 
+// ErrEscrowNotFound is returned for unknown escrows.
+var ErrEscrowNotFound = errors.New("stablecoin: escrow not found")
+
+// ErrBookingNotFound is returned for unknown service bookings.
+var ErrBookingNotFound = errors.New("stablecoin: booking not found")
+
+// ErrTreasuryNotFound is returned for unconfigured treasury roles.
+var ErrTreasuryNotFound = errors.New("stablecoin: treasury wallet not found")
+
+// ErrSweepNotFound is returned for unknown sweep proposals.
+var ErrSweepNotFound = errors.New("stablecoin: sweep proposal not found")
+
 // Store adapts *gen.Queries to the service's store seam.
 type Store struct {
 	q *gen.Queries
@@ -198,9 +210,297 @@ func domainActivity(a gen.StablecoinActivity) *Activity {
 // GetEscrow returns one service-escrow vault by id.
 func (st *Store) GetEscrow(ctx context.Context, id pgtype.UUID) (*Escrow, error) {
 	row, err := st.q.GetServiceEscrow(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrEscrowNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: get escrow: %w", err)
 	}
+	return domainEscrow(row), nil
+}
+
+// ListTreasuryWallets returns the platform treasury registry (hot/cold/revenue).
+func (st *Store) ListTreasuryWallets(ctx context.Context) ([]TreasuryWallet, error) {
+	rows, err := st.q.ListTreasuryWallets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: list treasury: %w", err)
+	}
+	out := make([]TreasuryWallet, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, domainTreasuryWallet(r))
+	}
+	return out, nil
+}
+
+func domainTreasuryWallet(r gen.TreasuryWallet) TreasuryWallet {
+	t := TreasuryWallet{
+		ID:      uuidStr(r.ID),
+		Role:    r.Role,
+		Chain:   r.Chain,
+		Address: r.Address,
+	}
+	if r.Locator != nil {
+		t.Locator = *r.Locator
+	}
+	if r.FloatCapMinor != nil {
+		t.FloatCapMinor = *r.FloatCapMinor
+	}
+	return t
+}
+
+// GetWalletByAddress resolves a member wallet by its onchain address —
+// webhook counterparty resolution + external senders.
+func (st *Store) GetWalletByAddress(ctx context.Context, address string) (*Wallet, error) {
+	w, err := st.q.GetStablecoinWalletByAddress(ctx, address)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrWalletNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: get wallet by address: %w", err)
+	}
+	return domainWallet(w), nil
+}
+
+// UpdateDelegatedSigner persists the delegated-signer registration state.
+func (st *Store) UpdateDelegatedSigner(ctx context.Context, id pgtype.UUID, ds *DelegatedSigner) error {
+	b, err := json.Marshal(ds)
+	if err != nil {
+		return fmt.Errorf("stablecoin: marshal signer: %w", err)
+	}
+	return st.q.SetStablecoinWalletDelegatedSigner(ctx, gen.SetStablecoinWalletDelegatedSignerParams{ID: id, DelegatedSigner: b})
+}
+
+// ListWalletsByStatus feeds the reconcile sweep — active wallets only.
+func (st *Store) ListWalletsByStatus(ctx context.Context, status string, limit int32) ([]Wallet, error) {
+	rows, err := st.q.ListStablecoinWalletsByStatus(ctx, gen.ListStablecoinWalletsByStatusParams{
+		Status:     status,
+		LimitCount: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: list wallets: %w", err)
+	}
+	out := make([]Wallet, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainWallet(r))
+	}
+	return out, nil
+}
+
+// ListActivityByWallet returns mirrored events newest-first.
+func (st *Store) ListActivityByWallet(ctx context.Context, walletID pgtype.UUID, limit, offset int32) ([]Activity, error) {
+	rows, err := st.q.ListStablecoinActivityByWallet(ctx, gen.ListStablecoinActivityByWalletParams{
+		WalletID:    walletID,
+		LimitCount:  limit,
+		OffsetCount: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: list activity: %w", err)
+	}
+	out := make([]Activity, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainActivity(r))
+	}
+	return out, nil
+}
+
+// GetEscrowByBooking returns the latest escrow for a booking.
+func (st *Store) GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) (*Escrow, error) {
+	row, err := st.q.GetServiceEscrowByBooking(ctx, bookingID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrEscrowNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: escrow by booking: %w", err)
+	}
+	return domainEscrow(row), nil
+}
+
+// InsertEscrow persists a new escrow vault record (state=funding).
+func (st *Store) InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error) {
+	booking, err := pgUUID(e.BookingID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: insert escrow booking: %w", err)
+	}
+	buyer, err := pgUUID(e.BuyerWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: insert escrow buyer: %w", err)
+	}
+	seller, err := pgUUID(e.SellerWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: insert escrow seller: %w", err)
+	}
+	var deadline pgtype.Timestamptz
+	if !e.ConfirmationDeadline.IsZero() {
+		deadline = pgtype.Timestamptz{Time: e.ConfirmationDeadline, Valid: true}
+	}
+	row, err := st.q.InsertServiceEscrow(ctx, gen.InsertServiceEscrowParams{
+		BookingID:            booking,
+		BuyerWalletID:        buyer,
+		SellerWalletID:       seller,
+		VaultAddress:         e.VaultAddress,
+		Asset:                e.Asset,
+		AmountMinor:          e.AmountMinor,
+		FeeMinor:             e.FeeMinor,
+		ConfirmationDeadline: deadline,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: insert escrow: %w", err)
+	}
+	return domainEscrow(row), nil
+}
+
+// SetEscrowState moves the escrow through its state machine.
+func (st *Store) SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision) error {
+	var fs, rs *string
+	if fundedSig != "" {
+		fs = &fundedSig
+	}
+	if releaseSig != "" {
+		rs = &releaseSig
+	}
+	var dec []byte
+	if decision != nil {
+		var err error
+		if dec, err = json.Marshal(decision); err != nil {
+			return fmt.Errorf("stablecoin: marshal arbiter decision: %w", err)
+		}
+	}
+	_, err := st.q.SetServiceEscrowState(ctx, gen.SetServiceEscrowStateParams{
+		ID:              id,
+		State:           state,
+		FundedSig:       fs,
+		ReleaseSig:      rs,
+		ArbiterDecision: dec,
+	})
+	return err
+}
+
+// SetEscrowVaultAddress registers the client-derived Squads PDA.
+func (st *Store) SetEscrowVaultAddress(ctx context.Context, id pgtype.UUID, addr string) error {
+	return st.q.SetServiceEscrowVaultAddress(ctx, gen.SetServiceEscrowVaultAddressParams{ID: id, VaultAddress: addr})
+}
+
+// ListExpiredFundedEscrows feeds the buyer-ghost timeout sweep.
+func (st *Store) ListExpiredFundedEscrows(ctx context.Context, limit int32) ([]Escrow, error) {
+	rows, err := st.q.ListExpiredFundedEscrows(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: expired escrows: %w", err)
+	}
+	out := make([]Escrow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *domainEscrow(r))
+	}
+	return out, nil
+}
+
+// GetServiceBooking returns the escrow-relevant slice of a §111 booking.
+func (st *Store) GetServiceBooking(ctx context.Context, id pgtype.UUID) (*ServiceBooking, error) {
+	b, err := st.q.GetServiceBooking(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrBookingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: booking: %w", err)
+	}
+	out := &ServiceBooking{
+		ID:             uuidStr(b.ID),
+		BookerUserID:   uuidStr(b.BookerUserID),
+		ProviderUserID: uuidStr(b.ProviderUserID),
+		Status:         b.Status,
+	}
+	if b.TotalPrice != nil {
+		out.TotalPrice = *b.TotalPrice
+	}
+	if b.FeeAmount != nil {
+		out.FeeAmount = *b.FeeAmount
+	}
+	return out, nil
+}
+
+// GetTreasuryWallet returns one treasury wallet by chain+role.
+func (st *Store) GetTreasuryWallet(ctx context.Context, chain, role string) (*TreasuryWallet, error) {
+	r, err := st.q.GetTreasuryWallet(ctx, gen.GetTreasuryWalletParams{Chain: chain, Role: role})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrTreasuryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: treasury wallet: %w", err)
+	}
+	t := domainTreasuryWallet(r)
+	return &t, nil
+}
+
+// InsertTreasurySweep persists a hot→cold sweep proposal.
+func (st *Store) InsertTreasurySweep(ctx context.Context, sw TreasurySweep) (*TreasurySweep, error) {
+	hot, err := pgUUID(sw.HotWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: sweep hot wallet: %w", err)
+	}
+	row, err := st.q.InsertTreasurySweep(ctx, gen.InsertTreasurySweepParams{
+		Chain:       sw.Chain,
+		Asset:       sw.Asset,
+		AmountMinor: sw.AmountMinor,
+		HotWalletID: hot,
+		ColdAddress: sw.ColdAddress,
+		ProposedBy:  sw.ProposedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: insert sweep: %w", err)
+	}
+	return domainSweep(row), nil
+}
+
+// GetTreasurySweep returns one proposal.
+func (st *Store) GetTreasurySweep(ctx context.Context, id pgtype.UUID) (*TreasurySweep, error) {
+	row, err := st.q.GetTreasurySweep(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrSweepNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: get sweep: %w", err)
+	}
+	return domainSweep(row), nil
+}
+
+// DecideTreasurySweep records the approve/reject decision on a proposal.
+func (st *Store) DecideTreasurySweep(ctx context.Context, id pgtype.UUID, state string, approvedBy pgtype.UUID, squadsProposalID string) error {
+	var sp *string
+	if squadsProposalID != "" {
+		sp = &squadsProposalID
+	}
+	_, err := st.q.DecideTreasurySweep(ctx, gen.DecideTreasurySweepParams{
+		ID:               id,
+		State:            state,
+		ApprovedBy:       approvedBy,
+		SquadsProposalID: sp,
+	})
+	return err
+}
+
+func domainSweep(r gen.TreasurySweep) *TreasurySweep {
+	out := &TreasurySweep{
+		ID:          uuidStr(r.ID),
+		Chain:       r.Chain,
+		Asset:       r.Asset,
+		AmountMinor: r.AmountMinor,
+		HotWalletID: uuidStr(r.HotWalletID),
+		ColdAddress: r.ColdAddress,
+		State:       r.State,
+		ProposedBy:  r.ProposedBy,
+	}
+	if r.ApprovedBy.Valid {
+		out.ApprovedBy = uuidStr(r.ApprovedBy)
+	}
+	if r.SquadsProposalID != nil {
+		out.SquadsProposalID = *r.SquadsProposalID
+	}
+	if r.ExecutedSig != nil {
+		out.ExecutedSig = *r.ExecutedSig
+	}
+	return out
+}
+
+func domainEscrow(row gen.ServiceEscrow) *Escrow {
 	out := &Escrow{
 		ID:             uuidStr(row.ID),
 		BookingID:      uuidStr(row.BookingID),
@@ -227,30 +527,5 @@ func (st *Store) GetEscrow(ctx context.Context, id pgtype.UUID) (*Escrow, error)
 			out.ArbiterDecision = &d
 		}
 	}
-	return out, nil
-}
-
-// ListTreasuryWallets returns the platform treasury registry (hot/cold/revenue).
-func (st *Store) ListTreasuryWallets(ctx context.Context) ([]TreasuryWallet, error) {
-	rows, err := st.q.ListTreasuryWallets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("stablecoin: list treasury: %w", err)
-	}
-	out := make([]TreasuryWallet, 0, len(rows))
-	for _, r := range rows {
-		t := TreasuryWallet{
-			ID:      uuidStr(r.ID),
-			Role:    r.Role,
-			Chain:   r.Chain,
-			Address: r.Address,
-		}
-		if r.Locator != nil {
-			t.Locator = *r.Locator
-		}
-		if r.FloatCapMinor != nil {
-			t.FloatCapMinor = *r.FloatCapMinor
-		}
-		out = append(out, t)
-	}
-	return out, nil
+	return out
 }

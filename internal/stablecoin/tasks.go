@@ -52,8 +52,7 @@ func (s *Service) ProcessSyncActivity(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("%s: unmarshal: %w", TaskSyncActivity, err)
 	}
-	// TODO(§128.9): decode ProviderEvent → resolve wallet → MirrorActivity.
-	return nil
+	return s.SyncActivity(ctx, p.Event)
 }
 
 // ProcessReconcile handles stablecoin:reconcile_wallets (cron).
@@ -70,8 +69,29 @@ func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("%s: unmarshal: %w", TaskSignerScopeRenew, err)
 	}
-	// TODO(§128.2): list wallets with scope expiry < renew window →
-	// provider renewal → persist new expiresAt.
+	if p.UserID != "" {
+		var uid pgtype.UUID
+		if err := uid.Scan(p.UserID); err != nil {
+			return fmt.Errorf("%s: user_id: %w", TaskSignerScopeRenew, err)
+		}
+		w, err := s.store.GetWalletByUser(ctx, uid)
+		if err != nil {
+			return err
+		}
+		return s.RotateSignerScopes(ctx, w)
+	}
+	// Sweep: rotate every active wallet whose nearest scope expires inside
+	// the renew window — registration needs member OTP, so expiry is a
+	// blast-radius control (§128.2).
+	active, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, 500)
+	if err != nil {
+		return err
+	}
+	for i := range active {
+		if err := s.RotateSignerScopes(ctx, &active[i]); err != nil {
+			return fmt.Errorf("%s: rotate %s: %w", TaskSignerScopeRenew, active[i].ID, err)
+		}
+	}
 	return nil
 }
 

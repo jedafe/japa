@@ -1785,6 +1785,26 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// §128.3: one-time signup bonus — an earnable-credit source alongside
+	// referral rewards only. Fires on email verification; the derived
+	// idempotency key (user + reason + reference) makes replays a no-op.
+	// Fire-and-forget per Rule 8.
+	if h.AsynqClient != nil && h.Settings != nil {
+		if amount, serr := h.Settings.GetSettingInt(r.Context(), "stablecoin.signup_bonus_credits"); serr == nil && amount > 0 {
+			payload, _ := json.Marshal(map[string]interface{}{
+				"user_id":      rec.UserID.String(),
+				"amount":       amount,
+				"ledger_type":  "credits",
+				"reason":       "signup_bonus",
+				"reference_id": "signup:" + rec.UserID.String(),
+			})
+			task := asynq.NewTask(worker.TypeWalletAwardPoints, payload)
+			if _, err := h.AsynqClient.Enqueue(task, worker.TaskOpts(worker.TypeWalletAwardPoints)...); err != nil {
+				slog.Warn("verify-email: signup bonus enqueue failed", "error", err)
+			}
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{
 			"message": "Email has been verified successfully.",

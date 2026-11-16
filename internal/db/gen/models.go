@@ -5078,6 +5078,23 @@ type TravelSearchResult struct {
 	HitCount   int32              `json:"hit_count"`
 }
 
+type TreasurySweep struct {
+	ID               pgtype.UUID        `json:"id"`
+	Chain            string             `json:"chain"`
+	Asset            string             `json:"asset"`
+	AmountMinor      int64              `json:"amount_minor"`
+	HotWalletID      pgtype.UUID        `json:"hot_wallet_id"`
+	ColdAddress      string             `json:"cold_address"`
+	State            string             `json:"state"`
+	ProposedBy       string             `json:"proposed_by"`
+	ApprovedBy       pgtype.UUID        `json:"approved_by"`
+	SquadsProposalID *string            `json:"squads_proposal_id"`
+	ExecutedSig      *string            `json:"executed_sig"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	DecidedAt        pgtype.Timestamptz `json:"decided_at"`
+	ExecutedAt       pgtype.Timestamptz `json:"executed_at"`
+}
+
 type TreasuryWallet struct {
 	ID            pgtype.UUID        `json:"id"`
 	Role          string             `json:"role"`

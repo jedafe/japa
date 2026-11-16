@@ -102,10 +102,11 @@ type OnrampSession struct {
 
 // ProviderWallet is the provider's view of a wallet.
 type ProviderWallet struct {
-	Locator string
-	Address string
-	Chain   string
-	Status  string
+	Locator  string
+	Address  string
+	Chain    string
+	Status   string
+	Balances map[string]int64 // asset → minor units (treasury balance reads)
 }
 
 // ProviderEvent is one onchain activity event from webhook or poll.
