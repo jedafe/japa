@@ -6,6 +6,7 @@ package federation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -720,4 +721,89 @@ func TestDBListGroupActorsQ(t *testing.T) {
 	if _, total, err := svc.ListGroupActors(ctx, "", 25, 0); err != nil || total < 2 {
 		t.Fatalf("unfiltered: total=%d err=%v", total, err)
 	}
+}
+
+// Pass 28: outbox collections must not enumerate content whose author has
+// no active federated actor — ObjectDocument 404s those fetches, so a
+// listed item would dangle for remotes.
+func TestDBOutboxAuthorGate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	spaceID, slug := newSpace(t, ctx, d, "public")
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+	group, err := svc.ProvisionGroupActor(ctx, spaceID, adminID)
+	if err != nil {
+		t.Fatalf("provision group: %v", err)
+	}
+
+	// A member with NO federated actor posting public content in the space.
+	author, _ := newFederationUser(t, ctx, d, "active")
+	var contentID pgtype.UUID
+	if err := d.Writer.QueryRow(ctx, `
+		INSERT INTO contents (author_id, space_id, content_type, title, slug, body, body_html,
+		                      content_hash, status, visibility, published_at)
+		VALUES ($1, $2, 'story', 'Unfed post', $3, 'hi', '<p>hi</p>', $4, 'published', 'public', now())
+		RETURNING id`, author, spaceID,
+		fmt.Sprintf("unfed-%d", time.Now().UnixNano()),
+		fmt.Sprintf("hash-unfed-%d", time.Now().UnixNano())).Scan(&contentID); err != nil {
+		t.Fatalf("insert content: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM contents WHERE id = $1`, contentID)
+	})
+
+	// The object itself must 404 (author not federated) — and therefore
+	// neither collection may list it.
+	if _, err := svc.ObjectDocument(ctx, contentID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("object doc before federation: %v", err)
+	}
+	gOut, err := svc.GroupOutbox(ctx, slug, 0)
+	if err != nil {
+		t.Fatalf("group outbox: %v", err)
+	}
+	if got := gOut["totalItems"].(int64); got != 0 {
+		t.Fatalf("group outbox listed unfederated-author content: %d", got)
+	}
+	instBefore, err := svc.InstanceOutbox(ctx, 0)
+	if err != nil {
+		t.Fatalf("instance outbox: %v", err)
+	}
+	beforeTotal := instBefore["totalItems"].(int64)
+
+	// Enable federation → the content becomes resolvable AND enumerable.
+	if _, err := svc.EnableFederation(ctx, author); err != nil {
+		t.Fatalf("enable federation: %v", err)
+	}
+	if _, err := svc.ObjectDocument(ctx, contentID); err != nil {
+		t.Fatalf("object doc after federation: %v", err)
+	}
+	gOut2, err := svc.GroupOutbox(ctx, slug, 0)
+	if err != nil {
+		t.Fatalf("group outbox after: %v", err)
+	}
+	if got := gOut2["totalItems"].(int64); got != 1 {
+		t.Fatalf("group outbox after federation: want 1, got %d", got)
+	}
+	instAfter, err := svc.InstanceOutbox(ctx, 0)
+	if err != nil {
+		t.Fatalf("instance outbox after: %v", err)
+	}
+	if got := instAfter["totalItems"].(int64); got != beforeTotal+1 {
+		t.Fatalf("instance outbox delta: want +1, before=%d after=%d", beforeTotal, got)
+	}
+
+	// A disabled actor drops the item back out — the gate is status-aware.
+	if _, err := svc.DisableFederation(ctx, author); err != nil {
+		t.Fatalf("disable federation: %v", err)
+	}
+	gOut3, err := svc.GroupOutbox(ctx, slug, 0)
+	if err != nil {
+		t.Fatalf("group outbox disabled: %v", err)
+	}
+	if got := gOut3["totalItems"].(int64); got != 0 {
+		t.Fatalf("group outbox after disable: want 0, got %d", got)
+	}
+	_ = group
 }
