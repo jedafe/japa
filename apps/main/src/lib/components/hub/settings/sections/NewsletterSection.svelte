@@ -89,8 +89,9 @@
 			return;
 		}
 		subscribeMessage = { kind: 'success', text: t('settings.newsletter.subscribed', 'You are now subscribed.') };
-		// Reload the page to re-run the server loader and show the toggles.
-		setTimeout(() => window.location.reload(), 1200);
+		// Re-run the server loader so the section flips to the toggles — no
+		// full-page reload (SPA navigation stays intact).
+		await invalidateAll();
 	}
 
 	async function handleUnsubscribe() {

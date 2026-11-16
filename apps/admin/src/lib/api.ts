@@ -2607,8 +2607,11 @@ export const digestAdminApi = {
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/digest/${id}`, { method: 'PATCH', body }),
 	publish: (id: string) => api<unknown>(`/admin/digest/${id}/publish`, { method: 'POST', body: {} }),
-	generate: () =>
-		api<unknown>(`/admin/digest/generate`, { method: 'POST', body: {} }),
+	cancel: (id: string) => api<unknown>(`/admin/digest/${id}/cancel`, { method: 'POST', body: {} }),
+	delay: (id: string, scheduledFor: string) =>
+		api<unknown>(`/admin/digest/${id}/delay`, { method: 'POST', body: { scheduled_for: scheduledFor } }),
+	generate: (spaceId?: string) =>
+		api<unknown>(`/admin/digest/generate`, { method: 'POST', body: spaceId ? { space_id: spaceId } : {} }),
 };
 
 // Section 67 — Travel Search providers (ADR-085). DELETE removes the row

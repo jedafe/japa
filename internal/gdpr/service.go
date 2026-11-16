@@ -2155,6 +2155,42 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
+		// BUG-DIGEST-001 (§84/§19): published digest editions snapshot member
+		// usernames + display names into content.new_members JSONB at
+		// generation time. Erasure must scrub the member from every edition
+		// or the name persists in a public artefact forever. Rewrite the
+		// section dropping entries whose username/display_name matches.
+		var digestUname, digestDname string
+		_ = s.db.Reader.QueryRow(ctx, `
+			SELECT u.username, COALESCE(up.display_name, '')
+			FROM users u
+			LEFT JOIN user_profiles up ON up.user_id = u.id
+			WHERE u.id = $1
+		`, userID).Scan(&digestUname, &digestDname)
+
+		if digestUname != "" {
+			if _, err := s.db.Writer.Exec(ctx, `
+				UPDATE digest_editions
+				SET content = jsonb_set(
+					content, '{new_members}',
+					COALESCE((
+						SELECT jsonb_agg(elem)
+						FROM jsonb_array_elements(content->'new_members') elem
+						WHERE elem->>'username' <> $1
+						  AND ($2 = '' OR elem->>'display_name' <> $2)
+					), '[]'::jsonb)
+				)
+				WHERE content ? 'new_members'
+				  AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(content->'new_members') elem
+					WHERE elem->>'username' = $1
+					   OR ($2 <> '' AND elem->>'display_name' = $2)
+				  )
+			`, digestUname, digestDname); err != nil {
+				return fmt.Errorf("scrubbing digest_editions new_members for user: %w", err)
+			}
+		}
+
 		// BUG-JOBS-013: job_applications.applicant_id references users(id) ON
 		// DELETE CASCADE, so rows are removed at hard-delete, but employer_notes
 		// may contain applicant PII and the table must be explicitly listed for

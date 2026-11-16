@@ -36,6 +36,10 @@ const digestDraftKeyTTL = 2 * time.Hour
 // of §84 section keys. Handlers map it to 400.
 var ErrInvalidContent = errors.New("digest: content must be a JSON object")
 
+// ErrInvalidSchedule is returned when an admin delay target is not in the
+// future. Handlers map it to 400.
+var ErrInvalidSchedule = errors.New("digest: scheduled_for must be in the future")
+
 // TaskEnqueuer is the interface for enqueuing Asynq background tasks
 // (structural typing — *worker.Enqueuer satisfies this).
 type TaskEnqueuer interface {
@@ -202,13 +206,15 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "digest.enabled", false)
 }
 
-// EmailEnabled reads the digest.email system_setting toggle.
+// EmailEnabled reads the digest.email system_setting toggle. §84: defaults
+// to true when the digest feature is enabled — the previous false default
+// made the email channel silently dead out of the box (audit DG-07).
 func (s *Service) EmailEnabled(ctx context.Context) bool {
 	if s.settings == nil {
-		return false
+		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, "digest.email", false)
+	return s.settings.GetBoolOr(ctx, "digest.email", true)
 }
 
 // GetLatest returns the most recently published edition for a platform
@@ -385,13 +391,67 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 // digest:generate Asynq task (§84, ADR-092). The task assembles the edition
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
-func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
-	payload, _ := json.Marshal(map[string]string{})
+func (s *Service) AdminGenerate(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+	// An empty space_id payload triggers cron semantics — platform-wide
+	// edition plus per-space fan-out; a concrete id scopes to that Space.
+	payloadMap := map[string]string{}
+	if spaceID.Valid && spaceID != (pgtype.UUID{}) {
+		payloadMap["space_id"] = spaceID.String()
+	}
+
+	payload, _ := json.Marshal(payloadMap)
 	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
 		return "", fmt.Errorf("digest: enqueue generate: %w", err)
 	}
 
 	return "accepted", nil
+}
+
+// AdminCancel cancels a draft or review edition before publication (§84
+// lifecycle: cancelled is terminal). Published editions cannot be
+// cancelled — they are already live. The draft lock is released so a fresh
+// generation is not blocked by the abandoned edition.
+func (s *Service) AdminCancel(ctx context.Context, id pgtype.UUID) error {
+	e, err := s.store.GetEdition(ctx, id)
+	if err != nil {
+		return err // pgx.ErrNoRows propagates for the handler's 404 mapping
+	}
+
+	if e.Status != "draft" && e.Status != "review" {
+		return pgx.ErrNoRows
+	}
+
+	cancelled := "cancelled"
+	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{Status: &cancelled}); err != nil {
+		return fmt.Errorf("digest: admin cancel: %w", err)
+	}
+
+	s.clearDraftLock(ctx, id)
+	return nil
+}
+
+// AdminDelay pushes the auto-publish gate (scheduled_for) forward, extending
+// the 1-hour admin review window (§84). Draft/review editions only.
+func (s *Service) AdminDelay(ctx context.Context, id pgtype.UUID, until time.Time) error {
+	if !until.After(time.Now()) {
+		return ErrInvalidSchedule
+	}
+
+	e, err := s.store.GetEdition(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if e.Status != "draft" && e.Status != "review" {
+		return pgx.ErrNoRows
+	}
+
+	ts := pgtype.Timestamptz{Time: until, Valid: true}
+	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{ScheduledFor: &ts}); err != nil {
+		return fmt.Errorf("digest: admin delay: %w", err)
+	}
+
+	return nil
 }
 
 // GenerateEdition is the digest:generate task processor (§84, ADR-092). It
@@ -425,7 +485,18 @@ func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) 
 		gated[ct] = true
 	}
 
-	content, err := s.store.AssembleDigestContent(ctx, spaceID, gated)
+	// Generation windows/limits come from system_settings (Rule 3) so ops
+	// can tune the digest without a deploy (audit DG-10).
+	cfg := DigestGenConfig{ThreadsLimit: 5, MembersLimit: 10, EventsLimit: 5, RecentWindowDays: 7, StoryWindowDays: 30}
+	if s.settings != nil {
+		cfg.ThreadsLimit = s.settings.GetIntOr(ctx, "digest.top_threads_limit", cfg.ThreadsLimit)
+		cfg.MembersLimit = s.settings.GetIntOr(ctx, "digest.new_members_limit", cfg.MembersLimit)
+		cfg.EventsLimit = s.settings.GetIntOr(ctx, "digest.events_limit", cfg.EventsLimit)
+		cfg.RecentWindowDays = s.settings.GetIntOr(ctx, "digest.recent_window_days", cfg.RecentWindowDays)
+		cfg.StoryWindowDays = s.settings.GetIntOr(ctx, "digest.story_window_days", cfg.StoryWindowDays)
+	}
+
+	content, err := s.store.AssembleDigestContent(ctx, spaceID, gated, cfg)
 	if err != nil {
 		return fmt.Errorf("digest: generate: assemble content: %w", err)
 	}
@@ -570,9 +641,14 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 		sent++
 	}
 
-	// Stamp email_sent so the admin panel reflects delivery status.
-	if err := s.store.MarkEmailSent(ctx, editionID); err != nil {
-		slog.Warn("task:digest:send_email: mark email_sent failed", "error", err)
+	// Stamp email_sent only when at least one delivery succeeded — the admin
+	// column must not claim delivery when every send failed (audit DG-04).
+	if sent > 0 {
+		if err := s.store.MarkEmailSent(ctx, editionID); err != nil {
+			slog.Warn("task:digest:send_email: mark email_sent failed", "error", err)
+		}
+	} else {
+		return fmt.Errorf("task:digest:send_email: all %d deliveries failed for edition %s", failed, editionID)
 	}
 
 	slog.Info("task:digest:send_email: complete", "edition_id", editionID, "subscribers", len(subscribers), "sent", sent, "failed", failed)
@@ -646,8 +722,8 @@ func renderDigestEmail(content []byte, baseURL string) string {
 <h2>Weekly Community Digest</h2>
 {{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/thread/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
-{{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
-{{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}
+{{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/content/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
+{{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/story/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}
 </div>`
 
 	t, err := template.New("digest").Parse(tmpl)

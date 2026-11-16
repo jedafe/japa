@@ -21,8 +21,12 @@ package newsletter
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -31,6 +35,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
@@ -42,11 +47,6 @@ const (
 	defaultPageSize int32 = 20
 	maxPageSize     int32 = 100
 )
-
-// extractPlatform extracts the platform ID from the request context.
-func extractPlatform(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
 
 // requireID parses the :id URL parameter as a UUID.
 func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName string) (pgtype.UUID, bool) {
@@ -61,11 +61,6 @@ func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName str
 
 // getByID is a shared helper for GET /{entity}/{id} handlers.
 func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, fetchFn func(ctx context.Context, id pgtype.UUID) (T, error)) {
-	_, ok := extractPlatform(w, r)
-	if !ok {
-		return
-	}
-
 	id, ok := requireID(w, r, "id", entityName)
 	if !ok {
 		return
@@ -82,11 +77,6 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 
 // deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
 func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
-	_, ok := extractPlatform(w, r)
-	if !ok {
-		return
-	}
-
 	id, ok := requireID(w, r, "id", entityName)
 	if !ok {
 		return
@@ -387,7 +377,11 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), status, search, limit, offset)
+	// Standard paginated envelope {items,total,total_pages} — matches the
+	// campaigns endpoint so the admin DataTable can run serverSide
+	// pagination/filtering (§22). page_size/offset params → 1-based page.
+	page := int(offset/limit) + 1
+	subscribers, total, err := h.Service.AdminListSubscribers(r.Context(), status, search, page, int(limit))
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
@@ -395,7 +389,16 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscribers})
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"items":       subscribers,
+		"total":       total,
+		"total_pages": totalPages,
+	}})
 }
 
 // GetSubscriber returns a single newsletter subscriber by ID.
@@ -656,8 +659,12 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Status == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "status is required")
+	switch body.Status {
+	case StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
+		// allowed
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"status must be one of: subscribed, unsubscribed, bounced, complained")
 		return
 	}
 
@@ -747,8 +754,19 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 // DELETE /newsletter/unsubscribe.
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	// RFC 8058 one-click: email clients POST List-Unsubscribe=One-Click with
+	// the token in the query or body — treat it identically to the token path.
+	if token == "" && r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		token = r.PostForm.Get("token")
+	}
+
 	if token != "" {
 		if err := h.Service.UnsubscribeByToken(r.Context(), token); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "invalid_token", "Invalid or already-used unsubscribe token")
+				return
+			}
 			slog.Error("newsletter: unsubscribe_failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 			return
@@ -762,6 +780,22 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 	if email == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "token or email is required")
+		return
+	}
+
+	// Tokenless unsubscribe is only allowed for the signed-in owner of the
+	// subscription — anything else lets a third party unsubscribe arbitrary
+	// emails (§62: public one-click flow is token-based). Ownership is
+	// verified against the subscriber row linked to the caller's user_id.
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "A valid unsubscribe token is required")
+		return
+	}
+
+	sub, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
+	if err != nil || !strings.EqualFold(sub.Email, email) {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only unsubscribe your own address without a token")
 		return
 	}
 
@@ -844,7 +878,22 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
+	// §62 stats contract: surface explicit totals so consumers don't sum
+	// suppressed statuses (unsubscribed/bounced/complained) into the
+	// "subscribers" figure.
+	var total, subscribed int64
+	for _, s := range stats {
+		total += s.Count
+		if s.Status == StatusSubscribed {
+			subscribed = s.Count
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"status_counts": stats,
+		"total":         total,
+		"subscribed":    subscribed,
+	}})
 }
 
 // HandleWebhook processes bounce/complaint webhooks from the marketing
@@ -868,13 +917,33 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Idempotency (§62 Compliance): providers retry webhook deliveries, and a
+	// compromised/duplicated event must not inflate open/click counters or
+	// re-flip subscriber status. Dedupe exact-duplicate payloads for 24h via
+	// jc:newsletter_webhook_evt:{sha256(body)} — a SET NX that fails means
+	// "already processed" → acknowledge 200 so the provider stops retrying.
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if vk := h.Service.WebhookDedupe(); vk != nil {
+		sum := sha256.Sum256(rawBody)
+		set, derr := vk.SetNX(r.Context(), "jc:newsletter_webhook_evt:"+hex.EncodeToString(sum[:]), 1, 24*time.Hour).Result()
+		if derr == nil && !set {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "duplicate"}})
+			return
+		}
+	}
+
 	var payload struct {
 		EventType  string `json:"event_type"` // "bounce" | "complaint" | "delivered" | "open" | "click"
 		Email      string `json:"email"`
 		CampaignID string `json:"campaign_id"` // optional — required for open/click attribution
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
@@ -899,20 +968,31 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
-	case "open":
-		// Increment the campaign's open_count for engagement analytics (§62
-		// schema: open_count/click_count). Requires campaign_id in the
-		// payload; if absent, acknowledge to avoid provider retries but log.
+	case "open", "click":
+		// Increment the campaign's open/click counters for engagement
+		// analytics (§62 schema). campaign_id must reference an existing
+		// campaign — arbitrary IDs would poison counters.
 		if payload.CampaignID == "" {
-			slog.Warn("newsletter webhook: open event missing campaign_id", "email", payload.Email)
-		} else if err := h.Service.IncrementCampaignOpens(r.Context(), payload.CampaignID); err != nil {
-			slog.Error("newsletter webhook: increment opens", "campaign_id", payload.CampaignID, "error", err)
+			slog.Warn("newsletter webhook: "+payload.EventType+" event missing campaign_id", "email", payload.Email)
+			break
 		}
-	case "click":
-		if payload.CampaignID == "" {
-			slog.Warn("newsletter webhook: click event missing campaign_id", "email", payload.Email)
-		} else if err := h.Service.IncrementCampaignClicks(r.Context(), payload.CampaignID); err != nil {
-			slog.Error("newsletter webhook: increment clicks", "campaign_id", payload.CampaignID, "error", err)
+		var cid pgtype.UUID
+		if err := cid.Scan(payload.CampaignID); err != nil {
+			slog.Warn("newsletter webhook: invalid campaign_id", "campaign_id", payload.CampaignID)
+			break
+		}
+		if _, err := h.Service.GetCampaign(r.Context(), cid); err != nil {
+			slog.Warn("newsletter webhook: unknown campaign_id", "campaign_id", payload.CampaignID)
+			break
+		}
+		var err error
+		if payload.EventType == "open" {
+			err = h.Service.IncrementCampaignOpens(r.Context(), payload.CampaignID)
+		} else {
+			err = h.Service.IncrementCampaignClicks(r.Context(), payload.CampaignID)
+		}
+		if err != nil {
+			slog.Error("newsletter webhook: increment "+payload.EventType+"s", "campaign_id", payload.CampaignID, "error", err)
 		}
 	case "delivered":
 		// No status change needed; provider delivery events are out of

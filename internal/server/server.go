@@ -1657,6 +1657,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	newsletterService.SetAsynqClient(asynqClient)
 	newsletterService.SetSettings(settingsService)
 	newsletterService.SetFeatureChecker(featureChecker) // feature.newsletter reads feature_flags
+	newsletterService.SetValkey(vkClient.Redis())       // jc:newsletter_webhook_evt:* webhook idempotency
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
 	newsletterHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in newsletter responses
 
@@ -8896,6 +8897,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "digest.manage")).
 					Post("/admin/digest/{id}/publish", digestHandlers.HandleAdminPublish)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "digest.manage")).
+					Post("/admin/digest/{id}/cancel", digestHandlers.HandleAdminCancel)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "digest.manage")).
+					Post("/admin/digest/{id}/delay", digestHandlers.HandleAdminDelay)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "digest.manage")).
 					Post("/admin/digest/generate", digestHandlers.HandleAdminGenerate)
 			})
 
@@ -9882,6 +9887,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Rate-limited: the bare ?email= path is unauthenticated and
 			// must not be abusable for mass-unsubscription.
 			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Delete("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			// RFC 8058 one-click: email clients POST List-Unsubscribe=One-Click
+			// (audit NL-04). Same handler — token path is method-agnostic.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
 			// Provider bounce/complaint webhook (§62 Compliance, ADR-080 §4).
 			// Authenticated via X-Webhook-Secret shared secret, not user auth.
 			r.Post("/newsletter/webhook", newsletterHandlers.HandleWebhook)

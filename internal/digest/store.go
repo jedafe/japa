@@ -149,13 +149,20 @@ WHERE status = 'published'
 
 	argIdx := 1
 	if spaceID.Valid {
-		q.WriteString(fmt.Sprintf(" AND space_id = $%d", argIdx))
+		// §84: prefer the Space-scoped edition but fall back to the
+		// platform-wide digest so the space widget never shows a permanent
+		// empty state while a platform digest exists (audit DG-01).
+		q.WriteString(fmt.Sprintf(" AND (space_id = $%d OR space_id IS NULL)", argIdx))
 
 		args = append(args, spaceID)
 		argIdx++
+	} else {
+		q.WriteString(" AND space_id IS NULL")
 	}
 
-	q.WriteString(" ORDER BY published_at DESC LIMIT 1")
+	// space_id NULLS LAST prefers the space-scoped row over the platform
+	// fallback when both are published in the same window.
+	q.WriteString(" ORDER BY published_at DESC, space_id NULLS LAST LIMIT 1")
 
 	var e DigestEdition
 
@@ -669,6 +676,16 @@ type DigestPoll struct {
 	URL      string `json:"url,omitempty"`
 }
 
+// DigestGenConfig carries the tunable generation windows/limits sourced
+// from system_settings (digest.* keys — see system-settings-catalog.md).
+type DigestGenConfig struct {
+	ThreadsLimit     int
+	MembersLimit     int
+	EventsLimit      int
+	RecentWindowDays int
+	StoryWindowDays  int
+}
+
 // AssembleDigestContent queries platform analytics and assembles the five
 // digest sections per §84 generation logic: top threads, new members,
 // upcoming events, and a featured story. The poll section is omitted (it
@@ -676,11 +693,12 @@ type DigestPoll struct {
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // platform-wide digest is assembled.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID, gated map[string]bool) (json.RawMessage, error) {
+func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID, gated map[string]bool, cfg DigestGenConfig) (json.RawMessage, error) {
 	content := DigestContent{}
+	recent := fmt.Sprintf("%d days", cfg.RecentWindowDays)
 
-	// 1. Top threads: top 5 forum threads by (vote_score × 3 + reply_count × 5)
-	// in the past 7 days (§84). §42: skipped when the forum feature is off.
+	// 1. Top threads: top forum threads by (vote_score × 3 + reply_count × 5)
+	// in the recent window (§84). §42: skipped when the forum feature is off.
 	if !gated["forum_thread"] {
 		var (
 			threadsQ strings.Builder
@@ -691,10 +709,11 @@ func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID, 
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
 FROM forum_threads ft
 WHERE ft.deleted_at IS NULL
-  AND ft.created_at >= now() - interval '7 days'
+  AND ft.created_at >= now() - $1::interval
 `)
+		tArgs = append(tArgs, recent)
 
-		argIdx := 1
+		argIdx := 2
 		if spaceID.Valid {
 			threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
 
@@ -702,7 +721,7 @@ WHERE ft.deleted_at IS NULL
 			argIdx++
 		}
 
-		threadsQ.WriteString(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT 5")
+		threadsQ.WriteString(fmt.Sprintf(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT %d", cfg.ThreadsLimit))
 
 		trows, err := s.pool.Reader.Query(ctx, threadsQ.String(), tArgs...)
 		if err != nil {
@@ -727,18 +746,22 @@ WHERE ft.deleted_at IS NULL
 	}
 
 	// 2. New members: users created in the past 7 days who completed onboarding
-	// (§84). Opt-out is handled by user privacy settings — this query surfaces
-	// only username and display_name.
-	mrows, err := s.pool.Reader.Query(ctx, `
+	// (§84). Privacy opt-out: only members whose profile_visibility is
+	// 'public' are featured — 'members'/'followers' profiles opted out of
+	// public surfaces and must not appear in the digest (audit DG-02).
+	mrows, err := s.pool.Reader.Query(ctx, fmt.Sprintf(`
 SELECT u.username, COALESCE(up.display_name, '')
 FROM users u
 JOIN onboarding_state os ON os.user_id = u.id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE u.created_at >= now() - interval '7 days'
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.created_at >= now() - $1::interval
   AND os.completed = true
+  AND u.status = 'active'
+  AND COALESCE(ups.profile_visibility, 'public') = 'public'
 ORDER BY u.created_at DESC
-LIMIT 10
-`)
+LIMIT %d
+`, cfg.MembersLimit), recent)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: new members: %w", err)
 	}
@@ -785,7 +808,7 @@ WHERE c.content_type = 'event'
 			argIdx++
 		}
 
-		eventsQ.WriteString(" ORDER BY c.publish_at ASC LIMIT 5")
+		eventsQ.WriteString(fmt.Sprintf(" ORDER BY c.publish_at ASC LIMIT %d", cfg.EventsLimit))
 
 		erows, err := s.pool.Reader.Query(ctx, eventsQ.String(), eArgs...)
 		if err != nil {
@@ -815,10 +838,10 @@ WHERE c.content_type = 'event'
 		}
 	}
 
-	// 4. Featured story: highest engagement story (content_type='story') in the
-	// past 30 days (§84). Engagement proxy: comment_count + share_count +
-	// reshare_count (content_scores not reliably maintained for all content
-	// types). §42: skipped when the stories feature is off.
+	// 4. Featured story: highest engagement story (content_type='story') in
+	// the story window (§84). Engagement proxy: comment_count + share_count
+	// + reshare_count (content_scores not reliably maintained for all
+	// content types). §42: skipped when the stories feature is off.
 	if !gated["story"] {
 		var (
 			storyQ strings.Builder
@@ -830,10 +853,11 @@ SELECT c.title, c.slug
 FROM contents c
 WHERE c.content_type = 'story'
   AND c.status = 'published'
-  AND c.created_at >= now() - interval '30 days'
+  AND c.created_at >= now() - $1::interval
 `)
+		sArgs = append(sArgs, fmt.Sprintf("%d days", cfg.StoryWindowDays))
 
-		argIdx := 1
+		argIdx := 2
 		if spaceID.Valid {
 			storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
 

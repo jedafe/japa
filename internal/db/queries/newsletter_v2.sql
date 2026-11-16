@@ -22,9 +22,14 @@ WHERE user_id = @user_id;
 -- name: Subscribe :one
 INSERT INTO newsletter_subscribers (user_id, email, status, source) VALUES (sqlc.narg(user_id), @email, 'subscribed', @source)
 
+-- Re-subscribe resurrects 'unsubscribed' rows only. Provider-flagged
+-- 'bounced'/'complained' rows must stay suppressed (ADR-080 §4) — resuming
+-- sends to known-bad addresses re-incurs bounce/complaint penalties.
 ON CONFLICT (email) DO UPDATE SET
- status = 'subscribed',
- unsubscribed_at = NULL,
+ status = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained')
+               THEN newsletter_subscribers.status ELSE 'subscribed' END,
+ unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained')
+                        THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
  subscribed_at = now()
 RETURNING *;
 
@@ -241,3 +246,10 @@ WHERE ns.status = 'subscribed'
  AND f.entity_id = @segment_id
 ORDER BY ns.subscribed_at ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: DeleteOldUnsubscribeTokens :exec
+-- Weekly GC (§62 Compliance): one-click unsubscribe tokens are minted per
+-- recipient per send and need no long retention — an unsubscribe link older
+-- than 90 days can simply be treated as invalid. Keeps the table bounded.
+DELETE FROM newsletter_unsubscribe_tokens
+WHERE created_at < now() - interval '90 days';

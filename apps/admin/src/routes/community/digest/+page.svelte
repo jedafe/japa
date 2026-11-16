@@ -10,7 +10,7 @@
 	import { useCountries } from '#lib/utils/countries.svelte.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
-	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Pencil, XCircle, Clock } from 'lucide-svelte';
 	import type { ActionContext, ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	// DigestItem matches the backend DigestEditionDTO (§84 API contract).
@@ -57,6 +57,7 @@
 	let pageError = $state('');
 	let acting = $state(false);
 	let showGenerateModal = $state(false);
+	let generateSpaceId = $state('');
 
 	// ── View detail + edit (consume GET/PATCH /admin/digest/:id, §84) ─────────
 	let viewDetail = $state<(DigestItem & { content?: Record<string, unknown> }) | null>(null);
@@ -160,6 +161,7 @@
 	}
 
 	function openGenerate() {
+		generateSpaceId = '';
 		showGenerateModal = true;
 	}
 
@@ -167,7 +169,7 @@
 		acting = true;
 		pageError = '';
 		try {
-			const result = await digestAdminApi.generate();
+			const result = await digestAdminApi.generate(generateSpaceId.trim() || undefined);
 			if (result.ok) {
 				showGenerateModal = false;
 				entityController?.reload();
@@ -176,6 +178,38 @@
 			}
 		} catch {
 			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function cancelDigest(item: DigestItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await digestAdminApi.cancel(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} finally {
+			acting = false;
+		}
+	}
+
+	// Delay: push the auto-publish gate 24h out — extends the §84 review window.
+	async function delayDigest(item: DigestItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+			const result = await digestAdminApi.delay(item.id, until);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
 		} finally {
 			acting = false;
 		}
@@ -198,6 +232,19 @@
 				icon: CheckCircle,
 				onclick: publishDigest,
 				show: (row: DigestItem) => row.status !== 'published' && row.status !== 'cancelled'
+			});
+			acts.push({
+				label: t('app.digest.delay_24h', 'Delay 24h'),
+				icon: Clock,
+				onclick: delayDigest,
+				show: (row: DigestItem) => row.status === 'draft' || row.status === 'review'
+			});
+			acts.push({
+				label: t('app.digest.cancel_edition', 'Cancel edition'),
+				icon: XCircle,
+				variant: 'destructive',
+				onclick: cancelDigest,
+				show: (row: DigestItem) => row.status === 'draft' || row.status === 'review'
 			});
 		}
 		return acts;
@@ -321,6 +368,18 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('app.digest.generate_desc', 'Generate a new community digest draft from recent activity. The edition enters a 1-hour review window before auto-publish.')}
 		</p>
+		<div>
+			<label for="generate-space-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.digest.generate_space_id', 'Space ID (optional — per-space edition)')}
+			</label>
+			<input
+				id="generate-space-id"
+				type="text"
+				bind:value={generateSpaceId}
+				placeholder="UUID — leave blank for platform-wide"
+				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+			/>
+		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('app.digest.cancel', 'Cancel')}</Button>

@@ -277,6 +277,19 @@ func (q *Queries) CreateUnsubscribeToken(ctx context.Context, arg CreateUnsubscr
 	return i, err
 }
 
+const deleteOldUnsubscribeTokens = `-- name: DeleteOldUnsubscribeTokens :exec
+DELETE FROM newsletter_unsubscribe_tokens
+WHERE created_at < now() - interval '90 days'
+`
+
+// Weekly GC (§62 Compliance): one-click unsubscribe tokens are minted per
+// recipient per send and need no long retention — an unsubscribe link older
+// than 90 days can simply be treated as invalid. Keeps the table bounded.
+func (q *Queries) DeleteOldUnsubscribeTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteOldUnsubscribeTokens)
+	return err
+}
+
 const deleteUnsubscribeToken = `-- name: DeleteUnsubscribeToken :exec
 DELETE FROM newsletter_unsubscribe_tokens WHERE token = $1
 `
@@ -697,8 +710,10 @@ const subscribe = `-- name: Subscribe :one
 INSERT INTO newsletter_subscribers (user_id, email, status, source) VALUES ($1, $2, 'subscribed', $3)
 
 ON CONFLICT (email) DO UPDATE SET
- status = 'subscribed',
- unsubscribed_at = NULL,
+ status = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained')
+               THEN newsletter_subscribers.status ELSE 'subscribed' END,
+ unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained')
+                        THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
  subscribed_at = now()
 RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
@@ -709,6 +724,9 @@ type SubscribeParams struct {
 	Source string      `json:"source"`
 }
 
+// Re-subscribe resurrects 'unsubscribed' rows only. Provider-flagged
+// 'bounced'/'complained' rows must stay suppressed (ADR-080 §4) — resuming
+// sends to known-bad addresses re-incurs bounce/complaint penalties.
 func (q *Queries) Subscribe(ctx context.Context, arg SubscribeParams) (NewsletterSubscriber, error) {
 	row := q.db.QueryRow(ctx, subscribe, arg.UserID, arg.Email, arg.Source)
 	var i NewsletterSubscriber

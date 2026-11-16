@@ -9,6 +9,8 @@
 //	GET   /api/v1/admin/digest/:id           — admin get (auth, digest.manage)
 //	PATCH /api/v1/admin/digest/:id           — edit draft (auth, digest.manage)
 //	POST  /api/v1/admin/digest/:id/publish   — publish (auth, digest.manage)
+//	POST  /api/v1/admin/digest/:id/cancel    — cancel draft/review (auth, digest.manage)
+//	POST  /api/v1/admin/digest/:id/delay     — extend review window (auth, digest.manage)
 //	POST  /api/v1/admin/digest/generate      — trigger generation (auth, digest.manage)
 //
 // Ref: japaconnect-engineering/sections/84-community-digest.md
@@ -22,6 +24,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -294,6 +297,74 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"published": true}})
 }
 
+// HandleAdminCancel handles POST /admin/digest/:id/cancel — cancel a draft
+// or review edition before auto-publish (§84 lifecycle).
+func (h *Handlers) HandleAdminCancel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.AdminCancel(r.Context(), id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not cancellable")
+			return
+		}
+
+		slog.Error("digest: admin cancel failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "cancel_failed", "Failed to cancel digest edition")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cancelled": true}})
+}
+
+// HandleAdminDelay handles POST /admin/digest/:id/delay — push the
+// auto-publish gate (scheduled_for) forward, extending the §84 review
+// window. Body: {"scheduled_for": "<RFC3339>"} — must be in the future.
+func (h *Handlers) HandleAdminDelay(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input struct {
+		ScheduledFor time.Time `json:"scheduled_for"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.ScheduledFor.IsZero() {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "scheduled_for (RFC3339) is required")
+		return
+	}
+
+	if err := h.service.AdminDelay(r.Context(), id, input.ScheduledFor); err != nil {
+		if errors.Is(err, ErrInvalidSchedule) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_schedule", "scheduled_for must be in the future")
+			return
+		}
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
+			return
+		}
+
+		slog.Error("digest: admin delay failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delay_failed", "Failed to delay digest edition")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"delayed": true}})
+}
+
 // HandleAdminGenerate handles POST /admin/digest/generate — trigger digest
 // generation. Enqueues the digest:generate Asynq task that assembles a draft
 // edition from platform analytics (no AI generation — purely metrics-driven,
@@ -303,7 +374,24 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.service.AdminGenerate(r.Context())
+	// Optional {"space_id"} body scopes generation to a single Space (§84
+	// per-Space digests); empty/absent body produces the platform-wide
+	// edition plus per-space fan-out (cron semantics).
+	var spaceID pgtype.UUID
+	var body struct {
+		SpaceID string `json:"space_id"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	if body.SpaceID != "" {
+		if err := spaceID.Scan(body.SpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+			return
+		}
+	}
+
+	status, err := h.service.AdminGenerate(r.Context(), spaceID)
 	if err != nil {
 		slog.Error("digest: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")

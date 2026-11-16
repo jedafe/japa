@@ -54,6 +54,7 @@
 	};
 
 	const canManageNewsletter = $derived(hasPermission('newsletter.manage'));
+	const canImportSubscribers = $derived(hasPermission('newsletter.import'));
 
 	let activeTab = $state('subscribers');
 
@@ -95,10 +96,19 @@
 	let subscriberController = $state<EntityPageController | undefined>(undefined);
 	let campaignController = $state<EntityPageController | undefined>(undefined);
 
-	// ── Campaign creation Modal (page-local — form with HTML textarea) ──────
+	// ── Campaign create/edit Modal (page-local — form with HTML textarea) ──
 	let showCreateModal = $state(false);
-	let newCampaign = $state({ name: '', subject: '', html: '' });
+	let showEditModal = $state(false);
+	let editingCampaign = $state<Campaign | null>(null);
+	let newCampaign = $state({ name: '', subject: '', html: '', preview_text: '', segment: 'all', segment_id: '', scheduled_at: '' });
 	let creating = $state(false);
+
+	const segmentOptions = [
+		{ value: 'all', label: t('app.newsletter.segment_all', 'All subscribers') },
+		{ value: 'space', label: t('app.newsletter.segment_space', 'Space followers') },
+		{ value: 'tag', label: t('app.newsletter.segment_tag', 'Tag followers') },
+		{ value: 'pro_subscribers', label: t('app.newsletter.segment_pro', 'Pro subscribers') }
+	];
 
 	// ── Import subscribers Modal (page-local — form with textarea) ──────────
 	let showImportModal = $state(false);
@@ -147,6 +157,19 @@
 			icon: Send,
 			onclick: (row) => sendCampaign(row.id),
 			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
+		},
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			onclick: (row) => openEditCampaign(row),
+			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
+		},
+		{
+			label: t('common.cancel', 'Cancel'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row) => cancelCampaign(row.id),
+			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
 		}
 	]);
 
@@ -191,32 +214,27 @@
 		filters: subscriberFilters,
 		actions: subscriberActions,
 		fields: subscriberFields,
-		headerActions: canManageNewsletter
+		headerActions: canImportSubscribers
 			? [{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: 'outline', onclick: openImportModal }]
 			: [],
 		load: async ({ page, pageSize, q, filter }) => {
-			const result = await api<Subscriber[]>('/admin/newsletter/subscribers?page_size=1000');
+			// Server-side pagination/search/status — the endpoint returns the
+			// standard {items,total,total_pages} envelope (§22).
+			const params = new URLSearchParams({
+				page_size: String(pageSize || 25),
+				offset: String((page || 0) * (pageSize || 25))
+			});
+			if (q) params.set('search', q);
+			if (filter?.status) params.set('status', filter.status);
+			const result = await api<{ items: Subscriber[]; total: number; total_pages: number }>(
+				`/admin/newsletter/subscribers?${params.toString()}`
+			);
 			if (result.ok) {
-				let data = result.data ?? [];
-				const query = (q ?? '').toLowerCase();
-				if (query) {
-					data = data.filter((row) =>
-						[row.email, row.name].some((v) =>
-							String(v ?? '').toLowerCase().includes(query)
-						)
-					);
-				}
-				if (filter?.status) {
-					data = data.filter((row) => row.status === filter.status);
-				}
-				const size = pageSize || 25;
-				const offset = (page || 0) * size;
-				const total = data.length;
-				const totalPages = Math.max(1, Math.ceil(total / size));
+				const d = result.data;
 				return {
-					data: data.slice(offset, offset + size),
-					total,
-					totalPages
+					data: d?.items ?? [],
+					total: d?.total ?? 0,
+					totalPages: Math.max(1, d?.total_pages ?? 1)
 				};
 			}
 			throw new Error(result.error ?? t('app.newsletter.error_load_subscribers', 'Failed to load subscribers'));
@@ -351,19 +369,31 @@
 	}
 
 	// ── Create campaign (page-local Modal — sanitizes HTML) ─────────────────
+	function campaignPayload() {
+		const sanitizedHtml = sanitizeHtml(newCampaign.html);
+		const body: Record<string, unknown> = {
+			name: newCampaign.name,
+			subject: newCampaign.subject,
+			html: sanitizedHtml,
+			segment: newCampaign.segment || 'all'
+		};
+		if (newCampaign.preview_text) body.preview_text = newCampaign.preview_text;
+		if (newCampaign.segment_id && (newCampaign.segment === 'space' || newCampaign.segment === 'tag')) {
+			body.segment_id = newCampaign.segment_id;
+		}
+		if (newCampaign.scheduled_at) body.scheduled_at = new Date(newCampaign.scheduled_at).toISOString();
+		return body;
+	}
+
 	async function createCampaign() {
 		if (!newCampaign.name || !newCampaign.subject) return;
 		creating = true;
 		pageError = '';
-		// Use the hardened DOMParser-based sanitizeHtml (allowlisted tags and
-		// attrs, dangerous schemes rejected, unsafe styles dropped) instead
-		// of a regex strip — regexes miss entity-encoded and nested vectors.
-		const sanitizedHtml = sanitizeHtml(newCampaign.html);
 		try {
-			const result = await api('/admin/newsletter/campaigns', { method: 'POST', body: { ...newCampaign, html: sanitizedHtml } });
+			const result = await api('/admin/newsletter/campaigns', { method: 'POST', body: campaignPayload() });
 			if (result.ok) {
 				showCreateModal = false;
-				newCampaign = { name: '', subject: '', html: '' };
+				newCampaign = { name: '', subject: '', html: '', preview_text: '', segment: 'all', segment_id: '', scheduled_at: '' };
 				campaignController?.reload();
 			} else {
 				pageError = result.error ?? t('app.newsletter.error_create_campaign', 'Failed to create campaign');
@@ -373,6 +403,52 @@
 		} finally {
 			creating = false;
 		}
+	}
+
+	// ── Edit campaign (draft/scheduled only — PATCH) ────────────────────────
+	function openEditCampaign(row: Campaign) {
+		editingCampaign = row;
+		const r = row as unknown as Record<string, unknown>;
+		newCampaign = {
+			name: (r.name as string) ?? row.subject ?? '',
+			subject: row.subject ?? '',
+			html: (r.html as string) ?? '',
+			preview_text: (r.preview_text as string) ?? '',
+			segment: (r.segment as string) ?? 'all',
+			segment_id: (r.segment_id as string) ?? '',
+			scheduled_at: (r.scheduled_at as string) ?? ''
+		};
+		showEditModal = true;
+	}
+
+	async function saveEditCampaign() {
+		if (!editingCampaign) return;
+		creating = true;
+		pageError = '';
+		try {
+			const result = await api(`/admin/newsletter/campaigns/${editingCampaign.id}`, { method: 'PATCH', body: campaignPayload() });
+			if (result.ok) {
+				showEditModal = false;
+				editingCampaign = null;
+				campaignController?.reload();
+			} else {
+				pageError = result.error ?? t('app.newsletter.error_create_campaign', 'Failed to update campaign');
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : 'Failed to update campaign';
+		} finally {
+			creating = false;
+		}
+	}
+
+	async function cancelCampaign(id: string) {
+		pageError = '';
+		const result = await api(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body: { status: 'cancelled' } });
+		if (!result.ok) {
+			pageError = result.error ?? 'Failed to cancel campaign';
+			return;
+		}
+		campaignController?.reload();
 	}
 
 	// ── Import subscribers (page-local Modal) ───────────────────────────────
@@ -409,9 +485,11 @@
 	// ── Stats + analytics data ──────────────────────────────────────────────
 	async function loadStats() {
 		try {
-			const result = await api<Array<{ status: string; count: number }>>('/admin/newsletter/stats');
+			const result = await api<{ status_counts: Array<{ status: string; count: number }>; total: number; subscribed: number }>('/admin/newsletter/stats');
 			if (result.ok && result.data) {
-				stats.subscribers = result.data.reduce((sum, s) => sum + s.count, 0);
+				// Only 'subscribed' rows count — suppressed statuses must not
+				// inflate the badge (audit NL-12).
+				stats.subscribers = result.data.subscribed ?? 0;
 			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats');
@@ -499,13 +577,13 @@
 			<Card>
 				<CardContent class="p-6">
 					<p class="text-sm font-medium text-muted">{t('newsletter.avg_open_rate')}</p>
-					<p class="text-2xl font-bold text-foreground">{stats.avgOpenRate}%</p>
+					<p class="text-2xl font-bold text-foreground">{stats.avgOpenRate.toFixed(1)}%</p>
 				</CardContent>
 			</Card>
 			<Card>
 				<CardContent class="p-6">
 					<p class="text-sm font-medium text-muted">{t('newsletter.avg_click_rate')}</p>
-					<p class="text-2xl font-bold text-foreground">{stats.avgClickRate}%</p>
+					<p class="text-2xl font-bold text-foreground">{stats.avgClickRate.toFixed(1)}%</p>
 				</CardContent>
 			</Card>
 		</div>
@@ -545,25 +623,66 @@
 	</div>
 {/if}
 
+{#snippet CampaignFields()}
+	<div>
+		<label for="campaign-name" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.campaign_name')}</label>
+		<input id="campaign-name" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('app.newsletter.placeholder_campaign_name', 'e.g. Weekly Digest #42')} bind:value={newCampaign.name} />
+	</div>
+	<div>
+		<label for="campaign-subject" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.subject_line')}</label>
+		<input id="campaign-subject" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('app.newsletter.placeholder_subject', 'What subscribers will see in their inbox')} bind:value={newCampaign.subject} />
+	</div>
+	<div>
+		<label for="campaign-preview" class="mb-1 block text-sm font-medium text-foreground">{t('app.newsletter.preview_text', 'Preview text')}</label>
+		<input id="campaign-preview" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('app.newsletter.placeholder_preview', 'Inbox preview snippet (optional)')} bind:value={newCampaign.preview_text} />
+	</div>
+	<div>
+		<label for="campaign-html" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.content_html')}</label>
+		<textarea id="campaign-html" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="8" placeholder="<h1>Hello</h1><p>Your newsletter content here</p>" bind:value={newCampaign.html}></textarea>
+	</div>
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+		<div>
+			<label for="campaign-segment" class="mb-1 block text-sm font-medium text-foreground">{t('app.newsletter.segment', 'Segment')}</label>
+			<select id="campaign-segment" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" bind:value={newCampaign.segment}>
+				{#each segmentOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+		{#if newCampaign.segment === 'space' || newCampaign.segment === 'tag'}
+			<div>
+				<label for="campaign-segment-id" class="mb-1 block text-sm font-medium text-foreground">{t('app.newsletter.segment_id', '{type} ID').replace('{type}', newCampaign.segment === 'space' ? 'Space' : 'Tag')}</label>
+				<input id="campaign-segment-id" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary" placeholder="UUID" bind:value={newCampaign.segment_id} />
+			</div>
+		{/if}
+	</div>
+	<div>
+		<label for="campaign-scheduled" class="mb-1 block text-sm font-medium text-foreground">{t('app.newsletter.scheduled_at', 'Schedule send (optional)')}</label>
+		<input id="campaign-scheduled" type="datetime-local" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" bind:value={newCampaign.scheduled_at} />
+	</div>
+{/snippet}
+
 <!-- Create Campaign Modal (page-local — form with HTML textarea) -->
 <Modal bind:open={showCreateModal} title={t('app.newsletter.modal_create_campaign', 'Create Campaign')} description={t('app.newsletter.modal_create_campaign_desc', 'Compose a new newsletter campaign')} size="lg">
 	<div class="space-y-4">
-		<div>
-			<label for="campaign-name" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.campaign_name')}</label>
-			<input id="campaign-name" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('app.newsletter.placeholder_campaign_name', 'e.g. Weekly Digest #42')} bind:value={newCampaign.name} />
-		</div>
-		<div>
-			<label for="campaign-subject" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.subject_line')}</label>
-			<input id="campaign-subject" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('app.newsletter.placeholder_subject', 'What subscribers will see in their inbox')} bind:value={newCampaign.subject} />
-		</div>
-		<div>
-			<label for="campaign-html" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.content_html')}</label>
-			<textarea id="campaign-html" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" rows="8" placeholder="<h1>Hello</h1><p>Your newsletter content here</p>" bind:value={newCampaign.html}></textarea>
-		</div>
+		{@render CampaignFields()}
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('newsletter.cancel')}</Button>
 			<Button onclick={createCampaign} disabled={creating || !newCampaign.name || !newCampaign.subject}>
 				{creating ? t('app.newsletter.creating', 'Creating...') : t('app.newsletter.btn_create_campaign', 'Create Campaign')}
+			</Button>
+		</div>
+	</div>
+</Modal>
+
+<!-- Edit Campaign Modal (draft/scheduled rows only — PATCH) -->
+<Modal bind:open={showEditModal} title={t('app.newsletter.modal_edit_campaign', 'Edit Campaign')} size="lg">
+	<div class="space-y-4">
+		{@render CampaignFields()}
+		<div class="flex justify-end gap-3 pt-2">
+			<Button variant="outline" onclick={() => (showEditModal = false)}>{t('newsletter.cancel')}</Button>
+			<Button onclick={saveEditCampaign} disabled={creating || !newCampaign.name || !newCampaign.subject}>
+				{creating ? t('app.digest.saving', 'Saving...') : t('common.save', 'Save')}
 			</Button>
 		</div>
 	</div>

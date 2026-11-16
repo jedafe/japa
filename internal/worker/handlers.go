@@ -3748,9 +3748,18 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	// Resolve the batch size from system_settings (§62, default 500).
 	batchSize := newsletterBatchSize(ctx)
 
-	// Resolve recipients page-by-page according to the campaign segment,
-	// upserting send-state rows and dispatching in batches. Paging keeps
-	// memory bounded for large lists and mirrors the §22 fan-out pattern.
+	// Upsert pending send-state rows ONCE before the send loop so a crash
+	// mid-send is resumable. The query resolves the 'all' recipient set —
+	// for scoped segments the rows are approximate bookkeeping, and the
+	// per-recipient MarkNewsletterRecipient{Sent,Failed} calls remain the
+	// source of truth. Doing this per page was O(pages × list) wasted writes.
+	if err := writer.UpsertNewsletterSendState(ctx, campaignID); err != nil {
+		slog.Warn("task:newsletter:send: upsert send state failed", "error", err)
+	}
+
+	// Resolve recipients page-by-page according to the campaign segment and
+	// dispatch in batches. Paging keeps memory bounded for large lists and
+	// mirrors the §22 fan-out pattern.
 	sent := 0
 	failed := 0
 	total := 0
@@ -3766,17 +3775,6 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 			break
 		}
 
-		// Upsert pending send-state rows for this batch so a crash mid-send
-		// is resumable. UpsertNewsletterSendState resolves all subscribed
-		// recipients internally (segment='all'); for segment-specific sends
-		// the send-state rows are best-effort bookkeeping and may include
-		// recipients outside the segment — that is acceptable because the
-		// per-recipient MarkNewsletterRecipientSent/Failed calls below are
-		// the source of truth for delivery status.
-		if err := writer.UpsertNewsletterSendState(ctx, campaignID); err != nil {
-			slog.Warn("task:newsletter:send: upsert send state failed", "error", err)
-		}
-
 		s, f := sendNewsletterPage(ctx, writer, campaignID, subject, htmlBody, recipients)
 		sent += s
 		failed += f
@@ -3790,11 +3788,24 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		page++
 	}
 
-	// Mark the campaign as sent with the recipient count (Section 62).
-	_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
-		ID:             campaignID,
-		RecipientCount: int32(sent), // #nosec
-	})
+	// Only stamp 'sent' when at least one recipient actually received the
+	// campaign (Section 62). An empty segment reverts the campaign to draft
+	// so admins see it never delivered; a total delivery failure returns an
+	// error so asynq retries instead of falsely reporting success.
+	switch {
+	case sent > 0:
+		_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
+			ID:             campaignID,
+			RecipientCount: int32(sent), // #nosec
+		})
+	case total == 0:
+		slog.Warn("task:newsletter:send: segment resolved zero recipients, reverting to draft", "newsletter_id", payload.NewsletterID, "segment", campaign.Segment)
+		if _, err := dbPool.Writer.Exec(ctx, `UPDATE newsletter_campaigns SET status = 'draft' WHERE id = $1`, campaignID); err != nil {
+			slog.Warn("task:newsletter:send: revert to draft failed", "error", err)
+		}
+	default:
+		return fmt.Errorf("task:newsletter:send: all %d deliveries failed for campaign %s", failed, payload.NewsletterID)
+	}
 
 	slog.Info("task:newsletter:send: batch complete", "newsletter_id", payload.NewsletterID, "segment", campaign.Segment, "sent", sent, "failed", failed, "total", total)
 
@@ -3865,9 +3876,10 @@ func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID pgt
 }
 
 // newsletterRecipientsForSegment resolves the recipient email list for one
-// page of the campaign's segment. Falls back to 'all' for unknown segments
-// or when a space/tag segment yields no followers (so a misconfigured
-// segment never silently drops every recipient).
+// page of the campaign's segment. Scoped segments return exactly their own
+// rows — an empty/exhausted segment yields an empty page and stops the loop.
+// It must never fall back to 'all': that would silently broadcast a targeted
+// campaign to the entire subscriber base (NL-01 audit fix, §62 §3).
 func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, segment string, segmentID pgtype.UUID, page, limit int32) ([]string, error) {
 	offset := page * limit
 
@@ -3878,35 +3890,29 @@ func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, segment
 		})
 	case "space":
 		if !segmentID.Valid {
-			break
+			return nil, fmt.Errorf("task:newsletter:send: segment=space requires segment_id")
 		}
 
-		rows, err := q.NewsletterRecipientsBySpace(ctx, gen.NewsletterRecipientsBySpaceParams{
+		return q.NewsletterRecipientsBySpace(ctx, gen.NewsletterRecipientsBySpaceParams{
 			SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
 		})
-		if err == nil && len(rows) > 0 {
-			return rows, nil
-		}
-		// Fall back to 'all' if the space has no matching subscribers.
-		slog.Warn("task:newsletter:send: space segment yielded no recipients, falling back to all", "segment_id", segmentID.String(), "error", err)
 	case "tag":
 		if !segmentID.Valid {
-			break
+			return nil, fmt.Errorf("task:newsletter:send: segment=tag requires segment_id")
 		}
 
-		rows, err := q.NewsletterRecipientsByTag(ctx, gen.NewsletterRecipientsByTagParams{
+		return q.NewsletterRecipientsByTag(ctx, gen.NewsletterRecipientsByTagParams{
 			SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
 		})
-		if err == nil && len(rows) > 0 {
-			return rows, nil
+	default:
+		if segment != "all" {
+			slog.Warn("task:newsletter:send: unknown segment, treating as 'all'", "segment", segment)
 		}
 
-		slog.Warn("task:newsletter:send: tag segment yielded no recipients, falling back to all", "segment_id", segmentID.String(), "error", err)
+		return q.NewsletterRecipientsAll(ctx, gen.NewsletterRecipientsAllParams{
+			PageOffset: offset, PageLimit: limit,
+		})
 	}
-
-	return q.NewsletterRecipientsAll(ctx, gen.NewsletterRecipientsAllParams{
-		PageOffset: offset, PageLimit: limit,
-	})
 }
 
 // newsletterBatchSize reads the newsletter.batch_size system_setting
@@ -3977,6 +3983,16 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	// When a specific user is targeted, send only to that user.
 	if payload.UserID != "" && payload.Email != "" {
 		return sendDigestToUser(ctx, payload.UserID, payload.Email, payload.Period)
+	}
+
+	// Bulk cron path: when feature.newsletter is live, §62 owns digest
+	// delivery (newsletter:digest, weekly — matching the "Weekly digest"
+	// settings toggle). This legacy daily task then skips so the same
+	// subscriber pool isn't double-mailed (audit NL-15). It only still
+	// serves platforms where the newsletter feature is disabled.
+	if featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.newsletter") {
+		slog.Info("task:email:send_digest: feature.newsletter enabled, skipping bulk pass")
+		return nil
 	}
 
 	// Cron mode: iterate subscribed users only. §11 catalogs this task as
@@ -5057,6 +5073,13 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	subject := "Weekly Digest — " + name
 	body := buildDigestBody(ctx, subject, digestItems)
 
+	// Weekly GC of spent unsubscribe tokens (§62 Compliance): tokens are
+	// minted per recipient per send; without a sweep the table grows
+	// unboundedly. 90-day retention is generous for an unsubscribe link.
+	if err := gen.New(dbPool.Writer).DeleteOldUnsubscribeTokens(ctx); err != nil {
+		slog.Warn("task:newsletter:digest: token GC failed", "error", err)
+	}
+
 	sent := 0
 	failed := 0
 
@@ -5119,21 +5142,63 @@ func listDigestSubscribers(ctx context.Context) ([]string, error) {
 	return gen.New(dbPool.Reader).ListDigestSubscriberEmails(ctx)
 }
 
+// digestContentRoutePrefix maps content_type to its canonical detail path,
+// mirroring apps/main's contentHref() (§62 weekly digest — links must land).
+var digestContentRoutePrefix = map[string]string{
+	"blog_post":       "/blog",
+	"guide":           "/guide",
+	"discussion":      "/thread",
+	"forum_thread":    "/thread",
+	"comparison":      "/comparisons",
+	"story":           "/story",
+	"achievement":     "/achievements",
+	"page":            "/pages",
+	"job_listing":     "/jobs",
+	"service_listing": "/services",
+	"video":           "/video",
+	"list":            "/list",
+}
+
 // buildDigestBody renders the HTML weekly-digest body listing each recent
-// content item as a link.
+// content item as a link. Rendered via html/template — titles are
+// user-generated and must be escaped (audit NL-06).
 func buildDigestBody(ctx context.Context, subject string, digestItems []gen.ListPublishedContentForDigestRow) string {
-	var body strings.Builder
+	base := resolveBaseURL(ctx)
 
-	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
-	body.WriteString(fmt.Sprintf("<h2>%s</h2>\n", subject))
-	body.WriteString("<p>Here's a roundup of recent content you might have missed:</p>\n<ul>\n")
-
-	for _, item := range digestItems {
-		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
-			resolveBaseURL(ctx), item.Slug, item.Title))
+	type item struct {
+		Title string
+		URL   string
 	}
 
-	body.WriteString("</ul>\n</div>\n")
+	var items []item
+	for _, it := range digestItems {
+		prefix := digestContentRoutePrefix[it.ContentType]
+		if prefix == "" {
+			prefix = "/content"
+		}
+		items = append(items, item{Title: it.Title, URL: base + prefix + "/" + it.Slug})
+	}
+
+	tmpl, err := template.New("weekly_digest").Parse(`<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+<h2>{{.Subject}}</h2>
+<p>Here's a roundup of recent content you might have missed:</p>
+<ul>
+{{range .Items}}  <li><a href="{{.URL}}">{{.Title}}</a></li>
+{{end}}</ul>
+</div>`)
+	if err != nil {
+		slog.Error("task:newsletter:digest: template parse failed", "error", err)
+		return ""
+	}
+
+	var body strings.Builder
+	if err := tmpl.Execute(&body, struct {
+		Subject string
+		Items   []item
+	}{Subject: subject, Items: items}); err != nil {
+		slog.Error("task:newsletter:digest: template render failed", "error", err)
+		return ""
+	}
 
 	return body.String()
 }

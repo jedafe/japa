@@ -1471,7 +1471,7 @@ ORDER BY (COALESCE(r.reaction_count, 0) + c.comment_count + c.share_count + c.re
 LIMIT 25;
 
 -- name: ListPublishedContentForDigest :many
-SELECT title, slug, created_at
+SELECT title, slug, content_type, created_at
 FROM contents
 WHERE status = 'published'
  AND created_at >= now() - interval '7 days'

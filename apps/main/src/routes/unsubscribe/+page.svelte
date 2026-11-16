@@ -66,8 +66,22 @@
 				</button>
 			</form>
 		</div>
+	{:else if !data.authed}
+		<!-- Tokenless unsubscribe requires sign-in (audit NL-03) -->
+		<div class="w-full text-center">
+			<MailX size={48} class="mx-auto text-[var(--color-muted)]" />
+			<h1 class="mt-4 text-lg font-semibold text-[var(--color-text)]">
+				{t('newsletter.unsubscribe', 'Unsubscribe')}
+			</h1>
+			<p class="mt-2 text-sm text-[var(--color-muted)]">
+				{t('newsletter.unsubscribe_signin', 'Sign in to unsubscribe, or use the unsubscribe link in any of our emails.')}
+			</p>
+			<a href="/login" class="mt-4 inline-block text-sm text-[var(--color-primary-text)] hover:underline">
+				{t('common.sign_in', 'Sign in')}
+			</a>
+		</div>
 	{:else}
-		<!-- Manual unsubscribe by email -->
+		<!-- Manual unsubscribe by email (authenticated — own address only) -->
 		<div class="w-full text-center">
 			<MailX size={48} class="mx-auto text-[var(--color-muted)]" />
 			<h1 class="mt-4 text-lg font-semibold text-[var(--color-text)]">

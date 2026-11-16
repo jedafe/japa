@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Subscriber status constants.
@@ -117,6 +118,7 @@ type Service struct {
 	client       *asynq.Client
 	settings     *config.Settings
 	checker      FeatureChecker
+	vk           valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -157,6 +159,13 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "newsletter.enabled", true)
 }
 
+// SetValkey injects the Valkey client used for webhook idempotency keys
+// (jc:newsletter_webhook_evt:*, valkey-keys-catalog.md, Rule 4).
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// WebhookDedupe returns the Valkey client used for webhook dedupe, or nil.
+func (s *Service) WebhookDedupe() valkeycompat.Cmdable { return s.vk }
+
 // WebhookSecret returns the shared secret used to authenticate provider
 // bounce/complaint webhooks (§62 Compliance, ADR-080 §4). Read from the
 // JC_NEWSLETTER_WEBHOOK_SECRET environment variable. An empty string means
@@ -188,6 +197,42 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUI
 	}
 
 	slog.Info("newsletter: send task enqueued", "campaign_id", campaignID.String(), "task_id", info.ID)
+
+	return nil
+}
+
+// EnqueueNewsletterSendAt schedules a newsletter_send task for a future time
+// (§62 campaign scheduling). The worker re-fetches the campaign at execution
+// time and resolves segment-aware recipients — only the ID travels in the
+// payload. Dedupes on (campaign_id, scheduled_at) so re-scheduling to a new
+// time enqueues a fresh task.
+func (s *Service) EnqueueNewsletterSendAt(_ context.Context, campaignID pgtype.UUID, at time.Time) error {
+	if s.client == nil {
+		return errors.New("asynq client not configured")
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"newsletter_id": campaignID.String(),
+		// Included in the Unique() fingerprint so re-scheduling the campaign
+		// to a different time enqueues a fresh task; the worker ignores it.
+		"scheduled_at": at.UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return fmt.Errorf("marshalling newsletter payload: %w", err)
+	}
+
+	task := asynq.NewTask(worker.TypeNewsletterSend, payload)
+
+	info, err := s.client.Enqueue(task,
+		asynq.Queue(worker.QueueForTask(worker.TypeNewsletterSend)),
+		asynq.ProcessAt(at),
+		asynq.Unique(24*time.Hour),
+	)
+	if err != nil {
+		return fmt.Errorf("enqueuing scheduled newsletter send: %w", err)
+	}
+
+	slog.Info("newsletter: scheduled send enqueued", "campaign_id", campaignID.String(), "at", at, "task_id", info.ID)
 
 	return nil
 }
@@ -344,6 +389,16 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, par
 		return gen.NewsletterCampaign{}, fmt.Errorf("creating newsletter campaign: %w", err)
 	}
 
+	// §62 scheduling: a scheduled_at puts the campaign on the asynq delayed
+	// queue — without this, 'scheduled' was a dead-end status. A failed
+	// enqueue is logged, not fatal: the admin Send button still works and
+	// the campaign row reflects the intended time.
+	if params.ScheduledAt != nil {
+		if err := s.EnqueueNewsletterSendAt(ctx, campaign.ID, *params.ScheduledAt); err != nil {
+			slog.Error("newsletter: schedule enqueue failed", "campaign_id", campaign.ID.String(), "error", err)
+		}
+	}
+
 	return campaign, nil
 }
 
@@ -410,6 +465,14 @@ func (s *Service) UpdateCampaign(ctx context.Context, id pgtype.UUID, input Upda
 	})
 	if err != nil {
 		return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign %s: %w", id, err)
+	}
+
+	// Re-scheduling a scheduled campaign enqueues the task at the new time
+	// (payload carries scheduled_at so Unique() doesn't collapse it).
+	if campaign.Status == CampaignScheduled && campaign.ScheduledAt.Valid {
+		if err := s.EnqueueNewsletterSendAt(ctx, campaign.ID, campaign.ScheduledAt.Time); err != nil {
+			slog.Error("newsletter: schedule enqueue failed", "campaign_id", campaign.ID.String(), "error", err)
+		}
 	}
 
 	return campaign, nil

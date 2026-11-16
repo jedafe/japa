@@ -1228,6 +1228,46 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:digest:generate: edition assembled", "space_id", p.SpaceID)
 
+	// §84 per-Space digests: the weekly cron (empty payload) also produces a
+	// localised edition for every Space with recent activity — without this
+	// only the platform-wide edition ever existed and the space widget
+	// stayed permanently empty (audit DG-01). "Active" = published content
+	// or forum threads in the digest window; bounded at 100 spaces per run.
+	// Admin-triggered runs carry an explicit space_id and skip this fan-out.
+	if p.SpaceID == "" && dbPool != nil {
+		rows, err := dbPool.Reader.Query(ctx, `
+SELECT DISTINCT space_id FROM (
+	SELECT space_id FROM contents
+	 WHERE space_id IS NOT NULL AND status = 'published' AND deleted_at IS NULL
+	   AND created_at >= now() - interval '7 days'
+	UNION
+	SELECT space_id FROM forum_threads
+	 WHERE space_id IS NOT NULL AND deleted_at IS NULL
+	   AND created_at >= now() - interval '7 days'
+) active_spaces
+LIMIT 100`)
+		if err != nil {
+			slog.Warn("task:digest:generate: active space scan failed", "error", err)
+			return nil
+		}
+		var spaceIDs []pgtype.UUID
+		for rows.Next() {
+			var sid pgtype.UUID
+			if err := rows.Scan(&sid); err == nil && sid.Valid {
+				spaceIDs = append(spaceIDs, sid)
+			}
+		}
+		rows.Close()
+
+		for _, sid := range spaceIDs {
+			if err := digestProcessor.GenerateEdition(ctx, sid); err != nil {
+				slog.Warn("task:digest:generate: per-space edition failed", "space_id", sid.String(), "error", err)
+			}
+		}
+
+		slog.Info("task:digest:generate: per-space fan-out complete", "spaces", len(spaceIDs))
+	}
+
 	return nil
 }
 

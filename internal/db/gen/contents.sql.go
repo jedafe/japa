@@ -4641,7 +4641,7 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 }
 
 const listPublishedContentForDigest = `-- name: ListPublishedContentForDigest :many
-SELECT title, slug, created_at
+SELECT title, slug, content_type, created_at
 FROM contents
 WHERE status = 'published'
  AND created_at >= now() - interval '7 days'
@@ -4650,9 +4650,10 @@ LIMIT 10
 `
 
 type ListPublishedContentForDigestRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListPublishedContentForDigest(ctx context.Context) ([]ListPublishedContentForDigestRow, error) {
@@ -4664,7 +4665,12 @@ func (q *Queries) ListPublishedContentForDigest(ctx context.Context) ([]ListPubl
 	var items []ListPublishedContentForDigestRow
 	for rows.Next() {
 		var i ListPublishedContentForDigestRow
-		if err := rows.Scan(&i.Title, &i.Slug, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
