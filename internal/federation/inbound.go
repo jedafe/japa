@@ -14,6 +14,8 @@ package federation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -258,6 +260,17 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 // delivery worker. The embedded object is the verbatim incoming Follow —
 // remote servers correlate on the original activity id.
 func (s *Service) insertAcceptDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
+	return s.insertFollowResponseDelivery(ctx, q, "Accept", actor, remote, followAct)
+}
+
+// insertRejectDelivery is the member-driven counterpart — Reject{Follow}
+// when a pending request is declined.
+func (s *Service) insertRejectDelivery(ctx context.Context, q *gen.Queries, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
+	return s.insertFollowResponseDelivery(ctx, q, "Reject", actor, remote, followAct)
+}
+
+// insertFollowResponseDelivery ledgers one Accept|Reject{Follow} row.
+func (s *Service) insertFollowResponseDelivery(ctx context.Context, q *gen.Queries, typ string, actor gen.FederatedActor, remote *gen.RemoteActor, followAct map[string]any) (pgtype.UUID, error) {
 	inbox := remote.InboxUrl
 	if remote.SharedInboxUrl != nil && *remote.SharedInboxUrl != "" {
 		inbox = remote.SharedInboxUrl
@@ -265,30 +278,44 @@ func (s *Service) insertAcceptDelivery(ctx context.Context, q *gen.Queries, acto
 	if inbox == nil || *inbox == "" {
 		return pgtype.UUID{}, fmt.Errorf("remote actor has no inbox")
 	}
-	acceptID := actor.ActorUrl + "#accepts/" + apStr(followAct["id"])
+	responseID := actor.ActorUrl + "#" + lowerType(typ) + "s/" + followActivityRef(followAct)
 	payload, _ := json.Marshal(map[string]any{
 		"@context": "https://www.w3.org/ns/activitystreams",
-		"id":       acceptID,
-		"type":     "Accept",
+		"id":       responseID,
+		"type":     typ,
 		"actor":    actor.ActorUrl,
 		"object":   followAct,
 		"to":       []string{remote.ActorUrl},
 	})
 	row, err := q.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
-		ActivityApID:  acceptID,
-		ActivityType:  "Accept",
+		ActivityApID:  responseID,
+		ActivityType:  typ,
 		ActivityJson:  payload,
 		LocalActorID:  actor.ID,
 		RemoteActorID: remote.ID,
 		InboxUrl:      *inbox,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return pgtype.UUID{}, nil // Accept already ledgered — replay no-ops
+		return pgtype.UUID{}, nil // response already ledgered — replay no-ops
 	}
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
 	return row.ID, nil
+}
+
+// followActivityRef keys the Accept/Reject delivery on the Follow's
+// identity. Id-less Follows (several implementations omit @id) fall back
+// to a payload hash so distinct Follows sharing a shared inbox don't
+// collide on one "#accepts/" key — replays still dedup because a Go map
+// marshals canonically.
+func followActivityRef(followAct map[string]any) string {
+	if id := apStr(followAct["id"]); id != "" {
+		return id
+	}
+	raw, _ := json.Marshal(followAct)
+	sum := sha256.Sum256(raw)
+	return "sha256-" + hex.EncodeToString(sum[:16])
 }
 
 // followIntent notifies the member of a new remote follower/request.
@@ -314,6 +341,116 @@ func remoteHandle(remote gen.RemoteActor) string {
 		return "@" + u.Hostname()
 	}
 	return remote.ActorUrl
+}
+
+// ---------------------------------------------------------------------------
+// Member follow-request resolution (/me/federation/follow-requests, §126)
+// ---------------------------------------------------------------------------
+
+// ListFollowRequests returns the member's pending remote follow requests —
+// the rows manual approval (profile_visibility='followers') parks on.
+func (s *Service) ListFollowRequests(ctx context.Context, userID pgtype.UUID) ([]gen.ListPendingFederationFollowsByUserRow, error) {
+	return s.store.pendingFollowRequests(ctx, userID)
+}
+
+// ResolveFollowRequest accepts or rejects one pending remote follow. The
+// status='pending' predicate is the whole authorization: a resolved or
+// nonexistent edge updates zero rows → ErrNotFound, so double-clicks and
+// replayed resolutions can't resurrect or re-notify. Accept mirrors the
+// local follows edge and ledgers Accept{Follow}; reject ledgers
+// Reject{Follow}. Both embed the verbatim Follow so the remote correlates.
+func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorID pgtype.UUID, accept bool) error {
+	actor, err := s.store.actorByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if actor.Status != "active" {
+		return ErrNotFound // opted out — pending edges are unresolvable
+	}
+	remote, err := s.store.remoteActorByID(ctx, remoteActorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	follow, err := s.store.followByPair(ctx, actor.ID, remoteActorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// The response embeds the verbatim Follow — remotes correlate on it.
+	// Id-less Follows left ap_activity_id NULL (and a pruned inbound row
+	// resolves nothing), so fall back to a minimal reconstruction.
+	followAct := map[string]any{
+		"type":   "Follow",
+		"actor":  remote.ActorUrl,
+		"object": actor.ActorUrl,
+	}
+	if follow.ApActivityID != nil && *follow.ApActivityID != "" {
+		if inb, rerr := s.store.inboundByActivityID(ctx, *follow.ApActivityID); rerr == nil {
+			var act map[string]any
+			if jerr := json.Unmarshal(inb.Payload, &act); jerr == nil {
+				followAct = act
+			}
+		}
+	}
+
+	status := "rejected"
+	if accept {
+		status = "accepted"
+	}
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := gen.New(tx)
+	n, err := q.ResolveFederationFollow(ctx, gen.ResolveFederationFollowParams{
+		LocalActorID:  actor.ID,
+		RemoteActorID: remoteActorID,
+		Status:        status,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound // already resolved or never pending
+	}
+	var deliverID pgtype.UUID
+	// A tombstoned/blocked remote has no live inbox — resolve the edge
+	// honestly and skip the response POST that could only dead-letter.
+	if remote.Status == "active" {
+		if accept {
+			if _, err := q.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
+				RemoteActorID: remoteActorID,
+				UserID:        userID,
+			}); err != nil {
+				return err
+			}
+			deliverID, err = s.insertAcceptDelivery(ctx, q, actor, &remote, followAct)
+		} else {
+			deliverID, err = s.insertRejectDelivery(ctx, q, actor, &remote, followAct)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if deliverID.Valid {
+		if err := s.enqueueDelivery(ctx, deliverID); err != nil {
+			slog.Warn("federation: delivery enqueue failed — sweeper picks up pending rows", "delivery_id", deliverID, "error", err)
+		}
+	}
+	return nil
 }
 
 // dispatchAcceptReject flips a pending outbound federation_follows edge.

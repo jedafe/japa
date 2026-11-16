@@ -203,6 +203,25 @@ SELECT * FROM federation_follows WHERE ap_activity_id = @ap_activity_id;
 SELECT * FROM federation_follows
 WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
 
+-- name: ListPendingFederationFollowsByUser :many
+-- Member follow-request surface (§126): pending remote Follows for the
+-- caller's actor, with the remote actor's display fields for rendering.
+SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
+       ra.actor_url, ra.acct, ra.display_name, ra.avatar_url
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE fa.user_id = @user_id AND ff.status = 'pending'
+ORDER BY ff.created_at DESC;
+
+-- name: ResolveFederationFollow :execrows
+-- Member Accept/Reject of a pending request — the status='pending'
+-- predicate makes the transition conditional: a resolved request can't
+-- be re-answered (idempotent under double-clicks and replays).
+UPDATE federation_follows SET status = @status, updated_at = now()
+WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id
+  AND status = 'pending';
+
 -- name: UpdateFederationFollowStatus :exec
 UPDATE federation_follows SET status = @status, updated_at = now()
 WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
@@ -219,7 +238,7 @@ WHERE remote_actor_id = @remote_actor_id AND status <> 'undone';
 -- single POST. remote_actor_id is a representative for ledger
 -- attribution (ON DELETE SET NULL, so the row survives actor churn).
 SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
-       MIN(ra.id)::uuid AS remote_actor_id
+       MIN(ra.id::text)::uuid AS remote_actor_id
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = @local_actor_id
@@ -329,6 +348,12 @@ WHERE c.id = @id
   AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[]);
 
+-- name: GetContentLiteByID :one
+-- Ungated contents read for delete propagation: soft-deleted and
+-- unpublished rows still resolve — the question the fanout answers is
+-- whether a remote copy could exist, not whether the object is live.
+SELECT author_id, published_at FROM contents WHERE id = @id;
+
 -- name: InsertFederationDelivery :one
 INSERT INTO federation_deliveries (
     activity_ap_id, activity_type, activity_json, local_actor_id,
@@ -346,9 +371,13 @@ RETURNING *;
 SELECT * FROM federation_deliveries WHERE id = @id;
 
 -- name: ListDueFederationDeliveries :many
+-- Stranded-work sweep: 'failed' rows whose ledgered retry time arrived,
+-- plus 'pending' rows old enough that their initial enqueue is presumed
+-- lost (a fresh pending row's own task is the normal driver — the 5-min
+-- floor keeps the sweep from double-arming in-flight work).
 SELECT * FROM federation_deliveries
-WHERE status IN ('pending','failed')
-  AND (next_retry_at IS NULL OR next_retry_at <= now())
+WHERE (status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= now())
+   OR (status = 'pending' AND created_at < now() - make_interval(mins => 5))
 ORDER BY created_at ASC
 LIMIT @page_limit;
 

@@ -4987,6 +4987,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation", federationHandlers.GetMyFederation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation", federationHandlers.EnableMyFederation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/federation", federationHandlers.DisableMyFederation)
+				// §126 M2: pending remote-Follow resolution for manually_approves_followers
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/follow-requests", federationHandlers.ListFollowRequests)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/follow-requests/{remote_actor_id}/accept", federationHandlers.AcceptFollowRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/follow-requests/{remote_actor_id}/reject", federationHandlers.RejectFollowRequest)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/actors", federationHandlers.ListActors)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/stats", federationHandlers.GetStats)

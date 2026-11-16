@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -461,6 +462,300 @@ func TestDBInboundRejectsActorMismatch(t *testing.T) {
 		t.Fatalf("forged follow wrote rows: %d", n)
 	}
 }
+
+// approveFollowers seeds profile_visibility='followers' so the member's
+// federated actor lands manually_approves_followers at EnableFederation.
+func approveFollowers(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID) {
+	t.Helper()
+	if _, err := d.Writer.Exec(ctx,
+		`INSERT INTO user_privacy_settings (user_id, profile_visibility)
+		 VALUES ($1, 'followers') ON CONFLICT (user_id) DO UPDATE SET profile_visibility = 'followers'`,
+		userID); err != nil {
+		t.Fatalf("privacy settings: %v", err)
+	}
+}
+
+// cleanDeliveries wipes ledger rows for the involved actors —
+// federation_deliveries FKs are NO ACTION so rows outlive test cleanups.
+func cleanDeliveries(t *testing.T, ctx context.Context, svc *Service) {
+	t.Helper()
+	t.Cleanup(func() {
+		_, _ = svc.db.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries`)
+	})
+}
+
+func TestDBFollowRequestApproveReject(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	approveFollowers(t, ctx, d, userID)
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+
+	// Manual approval parks the edge pending — no mirror, no Accept.
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id":     actorURL + "#follow-req",
+		"type":   "Follow",
+		"actor":  actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("follow status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'pending'`, remote.ID); n != 1 {
+		t.Fatalf("pending edge: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1`, remote.ID); n != 0 {
+		t.Fatalf("premature mirror rows: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1`, remote.ID); n != 0 {
+		t.Fatalf("premature deliveries: %d", n)
+	}
+
+	// The member sees exactly one pending request.
+	reqs, err := svc.ListFollowRequests(ctx, userID)
+	if err != nil || len(reqs) != 1 {
+		t.Fatalf("follow requests: %v %d", err, len(reqs))
+	}
+	if reqs[0].RemoteActorID != remote.ID || reqs[0].ActorUrl != actorURL {
+		t.Fatalf("request row: %+v", reqs[0])
+	}
+
+	// Another member cannot resolve it.
+	otherID, _ := newFederationUser(t, ctx, d, "active")
+	if _, err := svc.EnableFederation(ctx, otherID); err != nil {
+		t.Fatalf("enable other: %v", err)
+	}
+	if err := svc.ResolveFollowRequest(ctx, otherID, remote.ID, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("foreign resolve: %v", err)
+	}
+
+	// Reject writes the edge and ledgers Reject{Follow} verbatim.
+	if err := svc.ResolveFollowRequest(ctx, userID, remote.ID, false); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'rejected'`, remote.ID); n != 1 {
+		t.Fatalf("rejected edge: %d", n)
+	}
+	var rejType string
+	var rejObj []byte
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT activity_type, activity_json FROM federation_deliveries WHERE remote_actor_id = $1`,
+		remote.ID).Scan(&rejType, &rejObj); err != nil {
+		t.Fatalf("reject delivery: %v", err)
+	}
+	if rejType != "Reject" {
+		t.Fatalf("delivery type %q", rejType)
+	}
+	var rejAct map[string]any
+	_ = json.Unmarshal(rejObj, &rejAct)
+	obj, _ := rejAct["object"].(map[string]any)
+	if obj["id"] != actorURL+"#follow-req" {
+		t.Fatalf("reject does not embed the verbatim follow: %s", rejObj)
+	}
+
+	// Resolved edges are terminal — a replayed resolve is a clean 404.
+	if err := svc.ResolveFollowRequest(ctx, userID, remote.ID, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("re-resolve: %v", err)
+	}
+}
+
+func TestDBFollowRequestAcceptMirrors(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	approveFollowers(t, ctx, d, userID)
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote2.example")
+	runInbound(t, ctx, svc, map[string]any{
+		"id":     actorURL + "#follow-acc",
+		"type":   "Follow",
+		"actor":  actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+
+	if err := svc.ResolveFollowRequest(ctx, userID, remote.ID, true); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'accepted'`, remote.ID); n != 1 {
+		t.Fatalf("accepted edge: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1 AND entity_type = 'user'`, remote.ID); n != 1 {
+		t.Fatalf("mirror rows: %d", n)
+	}
+	var actType string
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT activity_type FROM federation_deliveries WHERE remote_actor_id = $1`,
+		remote.ID).Scan(&actType); err != nil {
+		t.Fatalf("accept delivery: %v", err)
+	}
+	if actType != "Accept" {
+		t.Fatalf("delivery type %q", actType)
+	}
+}
+
+// Two id-less Follows from different actors on one shared inbox must not
+// collapse onto a single "#accepts/" delivery key.
+func TestDBIdlessFollowAcceptDistinct(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	// Same domain → same seeded inbox_url; the payloads differ only by
+	// actor, which is exactly the collision the hash fallback prevents.
+	r1, u1 := newRemoteActor(t, ctx, svc, "shared.example")
+	r2, u2 := newRemoteActor(t, ctx, svc, "shared.example")
+	for _, u := range []string{u1, u2} {
+		row := runInbound(t, ctx, svc, map[string]any{
+			"type":   "Follow",
+			"actor":  u,
+			"object": svc.apiBase() + "/federation/actors/" + uname,
+		})
+		if row.Status != "processed" {
+			t.Fatalf("follow status %q", row.Status)
+		}
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id IN ($1, $2) AND activity_type = 'Accept'`,
+		r1.ID, r2.ID); n != 2 {
+		t.Fatalf("accept deliveries: %d (want 2)", n)
+	}
+}
+
+// Stranded-work sweep: PruneDeliveries re-arms failed-due and stale
+// pending rows whose task enqueue was lost, while fresh pending rows are
+// left to their in-flight task.
+func TestDBPruneDeliveriesSweepsStranded(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	q := gen.New(d.Writer)
+	mkDelivery := func(apID, inbox string) gen.FederationDelivery {
+		row, err := q.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+			ActivityApID: apID, ActivityType: "Create", ActivityJson: []byte(`{}`),
+			LocalActorID: actor.ID, InboxUrl: inbox,
+		})
+		if err != nil {
+			t.Fatalf("insert delivery: %v", err)
+		}
+		return row
+	}
+	stale := mkDelivery("https://x/d1", "https://remote.example/i1")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET created_at = now() - interval '10 minutes' WHERE id = $1`, stale.ID); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	failedDue := mkDelivery("https://x/d2", "https://remote.example/i2")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status='failed', next_retry_at = now() - interval '1 minute' WHERE id = $1`, failedDue.ID); err != nil {
+		t.Fatalf("failed due: %v", err)
+	}
+	failedFuture := mkDelivery("https://x/d3", "https://remote.example/i3")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status='failed', next_retry_at = now() + interval '1 hour' WHERE id = $1`, failedFuture.ID); err != nil {
+		t.Fatalf("failed future: %v", err)
+	}
+	fresh := mkDelivery("https://x/d4", "https://remote.example/i4")
+
+	enq := &recordingEnqueuer{}
+	svc.SetEnqueuer(enq)
+	if err := svc.PruneDeliveries(ctx, 30); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	got := map[pgtype.UUID]bool{}
+	for _, id := range enq.deliveries {
+		got[id] = true
+	}
+	if !got[stale.ID] {
+		t.Error("stale pending delivery not re-enqueued")
+	}
+	if !got[failedDue.ID] {
+		t.Error("due failed delivery not re-enqueued")
+	}
+	if got[failedFuture.ID] {
+		t.Error("future-retry delivery re-enqueued early")
+	}
+	if got[fresh.ID] {
+		t.Error("fresh pending delivery double-armed by the sweep")
+	}
+}
+
+// After the 30-day delivery prune drops a delivered object's ledger rows,
+// published_at is the surviving "remote copy plausible" signal — an
+// unpublish must still fan out Delete.
+func TestDBFanoutDeleteAfterLedgerPrune(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	contentID, _ := newFederatedContent(t, ctx, svc, userID)
+	remote, _ := newRemoteActor(t, ctx, svc, "remote3.example")
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+	if _, err := gen.New(d.Writer).UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
+		LocalActorID: actor.ID, RemoteActorID: remote.ID, Status: "accepted",
+	}); err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+	// Pruned-ledger state: the object left the federatable set with no
+	// surviving delivery row to prove a remote copy.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET visibility = 'private' WHERE id = $1`, contentID); err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("fanout: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND activity_type = 'Delete'`,
+		remote.ID); n != 1 {
+		t.Fatalf("delete deliveries after prune: %d (want 1)", n)
+	}
+}
+
+type recordingEnqueuer struct{ deliveries []pgtype.UUID }
+
+func (e *recordingEnqueuer) EnqueueDelivery(_ context.Context, id pgtype.UUID) error {
+	e.deliveries = append(e.deliveries, id)
+	return nil
+}
+func (e *recordingEnqueuer) EnqueueDeliveryAfter(context.Context, pgtype.UUID, time.Duration) error {
+	return nil
+}
+func (e *recordingEnqueuer) EnqueueInbound(context.Context, pgtype.UUID) error { return nil }
 
 func TestDBRemoteProvenanceConstraints(t *testing.T) {
 	d := testDB(t)

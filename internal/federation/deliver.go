@@ -138,16 +138,45 @@ func lowerType(t string) string {
 
 // fanoutDeleteIfDelivered delivers Delete{object} when a previously
 // delivered object left the federatable set — unpublished, made private,
-// deleted, opted out, or content-type un-gated. No prior delivery → no-op.
+// deleted, opted out, or content-type un-gated. The delivery ledger is
+// proof a remote copy exists; when the 30-day prune already dropped it,
+// a non-NULL published_at is the durable signal the object once fanned
+// out. Over-approximating is protocol-safe: Delete for an object the
+// remote never saw is a no-op there.
 func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.UUID) error {
 	objID := s.apiBase() + "/federation/objects/contents/" + contentID.String()
-	localActorID, delivered := s.store.deliveredObjectActor(ctx, objID)
-	if !delivered {
-		return nil
+	var author gen.FederatedActor
+	if localActorID, delivered := s.store.deliveredObjectActor(ctx, objID); delivered {
+		a, err := s.store.actorByID(ctx, localActorID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // actor row erased — nothing left to sign with
+			}
+			return err
+		}
+		author = a
+	} else {
+		authorID, wasPublished, err := s.store.contentLiteByID(ctx, contentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // row gone entirely — nothing ever fanned out
+			}
+			return err
+		}
+		if !wasPublished {
+			return nil // never published → no Create ever reached remotes
+		}
+		a, err := s.store.actorByUserID(ctx, authorID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		author = a
 	}
-	author, err := s.store.actorByID(ctx, localActorID)
-	if err != nil || author.Status != "active" {
-		return err // disabled actors propagate Delete via the lifecycle path
+	if author.Status != "active" {
+		return nil // disabled actors propagate Delete via the lifecycle path
 	}
 	inboxes, err := s.store.remoteFollowerInboxes(ctx, author.ID)
 	if err != nil || len(inboxes) == 0 {
@@ -390,11 +419,25 @@ func (s *Service) ResolveRemoteActorTask(ctx context.Context, actorURL string) e
 	return err
 }
 
-// PruneDeliveries sweeps delivered/dead rows past retention — §126's
-// 30-day ledger hygiene task.
+// PruneDeliveries is the daily ledger hygiene task (§126, §11). It first
+// re-arms stranded work — 'failed' rows whose scheduled retry was lost to
+// an enqueue failure, and 'pending' rows whose initial task never fired —
+// then sweeps delivered/dead rows past retention. Re-enqueue is cheap:
+// the ledger gates make a duplicate kick converge in Deliver.
 func (s *Service) PruneDeliveries(ctx context.Context, retentionDays int) error {
 	if retentionDays <= 0 {
 		retentionDays = 30
+	}
+	if s.enqueue != nil {
+		due, err := s.store.dueDeliveries(ctx, 200)
+		if err != nil {
+			return fmt.Errorf("federation delivery sweep: %w", err)
+		}
+		for _, d := range due {
+			if err := s.enqueueDelivery(ctx, d.ID); err != nil {
+				slog.Warn("federation: sweep re-enqueue failed — next run retries", "delivery_id", d.ID, "error", err)
+			}
+		}
 	}
 	return s.store.pruneDeliveries(ctx, int32(retentionDays))
 }

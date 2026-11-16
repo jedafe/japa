@@ -437,6 +437,25 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 	return i, err
 }
 
+const getContentLiteByID = `-- name: GetContentLiteByID :one
+SELECT author_id, published_at FROM contents WHERE id = $1
+`
+
+type GetContentLiteByIDRow struct {
+	AuthorID    pgtype.UUID        `json:"author_id"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+}
+
+// Ungated contents read for delete propagation: soft-deleted and
+// unpublished rows still resolve — the question the fanout answers is
+// whether a remote copy could exist, not whether the object is live.
+func (q *Queries) GetContentLiteByID(ctx context.Context, id pgtype.UUID) (GetContentLiteByIDRow, error) {
+	row := q.db.QueryRow(ctx, getContentLiteByID, id)
+	var i GetContentLiteByIDRow
+	err := row.Scan(&i.AuthorID, &i.PublishedAt)
+	return i, err
+}
+
 const getDeliveredObjectActor = `-- name: GetDeliveredObjectActor :one
 SELECT local_actor_id FROM federation_deliveries
 WHERE activity_type IN ('Create','Update')
@@ -1174,12 +1193,16 @@ func (q *Queries) InsertRemoteShare(ctx context.Context, arg InsertRemoteSharePa
 
 const listDueFederationDeliveries = `-- name: ListDueFederationDeliveries :many
 SELECT id, activity_ap_id, activity_type, activity_json, local_actor_id, inbox_url, remote_actor_id, status, attempts, next_retry_at, last_error, created_at, delivered_at FROM federation_deliveries
-WHERE status IN ('pending','failed')
-  AND (next_retry_at IS NULL OR next_retry_at <= now())
+WHERE (status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= now())
+   OR (status = 'pending' AND created_at < now() - make_interval(mins => 5))
 ORDER BY created_at ASC
 LIMIT $1
 `
 
+// Stranded-work sweep: 'failed' rows whose ledgered retry time arrived,
+// plus 'pending' rows old enough that their initial enqueue is presumed
+// lost (a fresh pending row's own task is the normal driver — the 5-min
+// floor keeps the sweep from double-arming in-flight work).
 func (q *Queries) ListDueFederationDeliveries(ctx context.Context, pageLimit int32) ([]FederationDelivery, error) {
 	rows, err := q.db.Query(ctx, listDueFederationDeliveries, pageLimit)
 	if err != nil {
@@ -1516,9 +1539,63 @@ func (q *Queries) ListLocalFederatedFollowingURLs(ctx context.Context, arg ListL
 	return items, nil
 }
 
+const listPendingFederationFollowsByUser = `-- name: ListPendingFederationFollowsByUser :many
+SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
+       ra.actor_url, ra.acct, ra.display_name, ra.avatar_url
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE fa.user_id = $1 AND ff.status = 'pending'
+ORDER BY ff.created_at DESC
+`
+
+type ListPendingFederationFollowsByUserRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ApActivityID  *string            `json:"ap_activity_id"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ActorUrl      string             `json:"actor_url"`
+	Acct          *string            `json:"acct"`
+	DisplayName   *string            `json:"display_name"`
+	AvatarUrl     *string            `json:"avatar_url"`
+}
+
+// Member follow-request surface (§126): pending remote Follows for the
+// caller's actor, with the remote actor's display fields for rendering.
+func (q *Queries) ListPendingFederationFollowsByUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingFederationFollowsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listPendingFederationFollowsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingFederationFollowsByUserRow
+	for rows.Next() {
+		var i ListPendingFederationFollowsByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RemoteActorID,
+			&i.ApActivityID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ActorUrl,
+			&i.Acct,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemoteFollowerInboxesByActor = `-- name: ListRemoteFollowerInboxesByActor :many
 SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
-       MIN(ra.id)::uuid AS remote_actor_id
+       MIN(ra.id::text)::uuid AS remote_actor_id
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = $1
@@ -1627,6 +1704,29 @@ func (q *Queries) RemoveRemoteReaction(ctx context.Context, arg RemoveRemoteReac
 		arg.RemoteActorID,
 		arg.ReactionKey,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resolveFederationFollow = `-- name: ResolveFederationFollow :execrows
+UPDATE federation_follows SET status = $1, updated_at = now()
+WHERE local_actor_id = $2 AND remote_actor_id = $3
+  AND status = 'pending'
+`
+
+type ResolveFederationFollowParams struct {
+	Status        string      `json:"status"`
+	LocalActorID  pgtype.UUID `json:"local_actor_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Member Accept/Reject of a pending request — the status='pending'
+// predicate makes the transition conditional: a resolved request can't
+// be re-answered (idempotent under double-clicks and replays).
+func (q *Queries) ResolveFederationFollow(ctx context.Context, arg ResolveFederationFollowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveFederationFollow, arg.Status, arg.LocalActorID, arg.RemoteActorID)
 	if err != nil {
 		return 0, err
 	}

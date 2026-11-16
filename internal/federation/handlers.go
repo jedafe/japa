@@ -211,6 +211,52 @@ func (h *Handlers) DisableMyFederation(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, st)
 }
 
+// ListFollowRequests serves GET /api/v1/me/federation/follow-requests —
+// the pending remote Follow queue for manually_approves_followers members.
+func (h *Handlers) ListFollowRequests(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListFollowRequests(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"requests": rows})
+}
+
+// AcceptFollowRequest serves POST /api/v1/me/federation/follow-requests/{remote_actor_id}/accept.
+func (h *Handlers) AcceptFollowRequest(w http.ResponseWriter, r *http.Request) {
+	h.resolveFollowRequest(w, r, true)
+}
+
+// RejectFollowRequest serves POST /api/v1/me/federation/follow-requests/{remote_actor_id}/reject.
+func (h *Handlers) RejectFollowRequest(w http.ResponseWriter, r *http.Request) {
+	h.resolveFollowRequest(w, r, false)
+}
+
+func (h *Handlers) resolveFollowRequest(w http.ResponseWriter, r *http.Request, accept bool) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var remoteID pgtype.UUID
+	if err := remoteID.Scan(chi.URLParam(r, "remote_actor_id")); err != nil || !remoteID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid remote actor id")
+		return
+	}
+	if err := h.service.ResolveFollowRequest(r.Context(), user.UserID, remoteID, accept); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	status := "rejected"
+	if accept {
+		status = "accepted"
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": status})
+}
+
 // ---------------------------------------------------------------------------
 // Admin (/api/v1/admin/federation/*)
 // ---------------------------------------------------------------------------

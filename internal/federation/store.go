@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -326,4 +327,31 @@ func (s *Store) deliveredObjectActor(ctx context.Context, objectID string) (pgty
 		return pgtype.UUID{}, false
 	}
 	return id, true
+}
+
+func (s *Store) pendingFollowRequests(ctx context.Context, userID pgtype.UUID) ([]gen.ListPendingFederationFollowsByUserRow, error) {
+	return s.read.ListPendingFederationFollowsByUser(ctx, userID)
+}
+
+func (s *Store) resolveFederationFollow(ctx context.Context, localActorID, remoteActorID pgtype.UUID, status string) (int64, error) {
+	return s.write.ResolveFederationFollow(ctx, gen.ResolveFederationFollowParams{
+		LocalActorID:  localActorID,
+		RemoteActorID: remoteActorID,
+		Status:        status,
+	})
+}
+
+func (s *Store) inboundByActivityID(ctx context.Context, apID string) (gen.FederationInbound, error) {
+	return s.read.GetFederationInboundByActivityID(ctx, &apID)
+}
+
+// contentLiteByID is the ungated contents read the delete fanout needs —
+// soft-deleted/unpublished rows still resolve (the question is whether a
+// remote copy could exist, not whether the object is currently live).
+func (s *Store) contentLiteByID(ctx context.Context, id pgtype.UUID) (authorID pgtype.UUID, wasPublished bool, err error) {
+	row, err := s.read.GetContentLiteByID(ctx, id)
+	if err != nil {
+		return pgtype.UUID{}, false, err
+	}
+	return row.AuthorID, row.PublishedAt.Valid && row.PublishedAt.Time.Before(time.Now()), nil
 }
