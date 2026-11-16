@@ -113,6 +113,20 @@ var fetchClient = &http.Client{
 	},
 }
 
+// deliverClient is fetchClient minus redirect chasing: a signed POST that
+// follows a 301/302/303 silently converts to a GET (the remote sees no
+// activity yet a 200 response would stamp "delivered"), and a 307/308
+// replays the body with a signature bound to the ORIGINAL
+// (request-target)/host — rejected at the far end either way. The 3xx
+// surfaces to Deliver, which retries then dead-letters honestly.
+var deliverClient = &http.Client{
+	Timeout:   15 * time.Second,
+	Transport: fetchTransport,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // checkFetchURL enforces the outbound allowlist: https only, public
 // hostnames (literal IPs are validated at dial, but a private literal
 // should fail before resolution is even attempted).
@@ -192,6 +206,8 @@ func (s *Service) fetchAP(ctx context.Context, rawURL string) ([]byte, error) {
 
 // deliverAP POSTs a signed activity through the guarded client. The
 // caller sets headers — this only enforces the URL checks + throttle.
+// deliverClient follows no redirects: see its comment for why a chased
+// 3xx can never produce a valid signed delivery.
 func (s *Service) deliverAP(ctx context.Context, req *http.Request) (*http.Response, error) {
 	u, err := url.Parse(req.URL.String())
 	if err != nil {
@@ -201,7 +217,7 @@ func (s *Service) deliverAP(ctx context.Context, req *http.Request) (*http.Respo
 		return nil, err
 	}
 	s.throttleDomain(ctx, u.Hostname())
-	return fetchClient.Do(req)
+	return deliverClient.Do(req)
 }
 
 // tlsConfig keeps a modern floor on outbound federation connections.

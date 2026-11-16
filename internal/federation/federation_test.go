@@ -256,6 +256,42 @@ func TestVerifySignatureRejectsNoTimeBound(t *testing.T) {
 	}
 }
 
+func TestVerifySignatureRequiresDigestCoverage(t *testing.T) {
+	// §126: Digest is required on inbound POST bodies — a signature that
+	// doesn't cover digest leaves the payload unauthenticated (the body
+	// could be swapped wholesale without invalidating the signature).
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	body := []byte(`{"type":"Follow"}`)
+	req := httptest.NewRequest("POST", "https://remote.example/inbox", strings.NewReader(string(body)))
+	req.Host = "remote.example"
+	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	req.Header.Set("Digest", DigestHeader(body))
+	covered := []string{"(request-target)", "host", "date"}
+	signingString, err := BuildSigningString(req, covered, body, nil)
+	if err != nil {
+		t.Fatalf("BuildSigningString: %v", err)
+	}
+	sum := sha256.Sum256([]byte(signingString))
+	sig, _ := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, sum[:])
+	req.Header.Set("Signature", fmt.Sprintf(
+		`keyId=%q,algorithm=%q,headers=%q,signature=%q`,
+		"k", signatureAlgorithm, strings.Join(covered, " "),
+		base64.StdEncoding.EncodeToString(sig)))
+	if err := VerifySignature(req, &priv.PublicKey, body); err == nil {
+		t.Error("expected digest-not-covered rejection")
+	}
+}
+
+func TestDeliverClientRefusesRedirects(t *testing.T) {
+	// A chased 3xx either converts the signed POST into a GET (301/302/303)
+	// or replays a signature bound to the original (request-target)/host —
+	// neither is a valid delivery. The 3xx must surface to the ledger.
+	req := httptest.NewRequest("POST", "https://remote.example/inbox", nil)
+	if err := deliverClient.CheckRedirect(req, []*http.Request{req}); err != http.ErrUseLastResponse {
+		t.Errorf("deliverClient redirect policy: got %v, want ErrUseLastResponse", err)
+	}
+}
+
 func TestParseSignatureHeaderQuotedCommas(t *testing.T) {
 	params := ParseSignatureHeader(`keyId="https://a.example/u#k,with,commas",algorithm="rsa-sha256",headers="(request-target) host date",signature="abc123"`)
 	if params["keyId"] != "https://a.example/u#k,with,commas" {

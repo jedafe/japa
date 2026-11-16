@@ -24,6 +24,13 @@ func (s *Store) actorByUsername(ctx context.Context, username string) (gen.Feder
 	return s.read.GetFederatedActorByUsername(ctx, username)
 }
 
+// actorByUsernameAnyStatus resolves the actor row regardless of fa.status —
+// the tombstone/inbox paths need the row precisely when it is non-active.
+// The user-status gate stays: suspended/deleted members stay hidden.
+func (s *Store) actorByUsernameAnyStatus(ctx context.Context, username string) (gen.FederatedActor, error) {
+	return s.read.GetFederatedActorByUsernameAnyStatus(ctx, username)
+}
+
 func (s *Store) actorProfile(ctx context.Context, username string) (gen.GetActorProfileByUsernameRow, error) {
 	return s.read.GetActorProfileByUsername(ctx, username)
 }
@@ -274,7 +281,7 @@ func (s *Store) deleteRemoteFollow(ctx context.Context, remoteActorID, userID pg
 	})
 }
 
-func (s *Store) deleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+func (s *Store) deleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]pgtype.UUID, error) {
 	return s.write.DeleteRemoteFollowsByActor(ctx, remoteActorID)
 }
 
@@ -364,4 +371,11 @@ func wasPublished(row gen.GetContentLiteByIDRow) bool {
 
 func (s *Store) staleInbound(ctx context.Context, limit int32) ([]pgtype.UUID, error) {
 	return s.read.ListStaleFederationInbound(ctx, limit)
+}
+
+// undeliveredDeliveriesByActor lists this actor's non-terminal delivery
+// rows — the erasure flush gives them one last synchronous attempt before
+// the user cascade burns key custody.
+func (s *Store) undeliveredDeliveriesByActor(ctx context.Context, localActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	return s.read.ListUndeliveredFederationDeliveriesByActor(ctx, localActorID)
 }

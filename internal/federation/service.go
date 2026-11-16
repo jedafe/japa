@@ -755,9 +755,21 @@ func (s *Service) EraseFederation(ctx context.Context, userID pgtype.UUID) error
 		return fmt.Errorf("federation erase: lookup actor: %w", err)
 	}
 	if actor.Status != ActorStatusTombstone {
-		if err := s.FanoutActorDelete(ctx, actor.ID); err != nil {
+		if _, err := s.fanoutActorDelete(ctx, actor.ID, false); err != nil {
 			return fmt.Errorf("federation erase: delete fanout: %w", err)
 		}
+		// Synchronous best-effort flush BEFORE tombstoning: the user-row
+		// cascade moments after this call drops federated_actors (key
+		// custody included), and every queued deliver_activity then dead-
+		// letters on "local actor missing". Signing can only happen inside
+		// this call — the Delete{actor} spec wants fanned out gets its one
+		// real attempt now, and any other still-undelivered row for this
+		// actor (stranded retries, an earlier disable's Delete) flushes too.
+		ids, err := s.store.undeliveredDeliveriesByActor(ctx, actor.ID)
+		if err != nil {
+			return fmt.Errorf("federation erase: undelivered sweep: %w", err)
+		}
+		s.flushDeliveriesInline(ctx, ids)
 		// Unconditional write — tombstone is terminal and wins every race;
 		// a concurrent enable landing in between must not resurrect an
 		// account whose user row is about to be hard-deleted.
@@ -944,9 +956,10 @@ func InboxDedupKey(activityApID string) string {
 
 // ActorExists returns the actor row for a per-actor inbox target —
 // ErrNotFound when no federated actor holds the handle (the handler maps
-// non-active statuses to 410 itself, so this returns the row unfiltered).
+// non-active statuses to 410 itself, so this returns the row unfiltered
+// on fa.status; the user-status gate stays — suspended members hide).
 func (s *Service) ActorExists(ctx context.Context, username string) (gen.FederatedActor, error) {
-	actor, err := s.store.actorByUsername(ctx, username)
+	actor, err := s.store.actorByUsernameAnyStatus(ctx, username)
 	if err != nil {
 		return gen.FederatedActor{}, ErrNotFound
 	}
@@ -976,9 +989,11 @@ func (s *Service) rejectInbound(ctx context.Context, act map[string]any, actorUR
 
 // ActorTombstone returns the Tombstone document for a handle whose actor
 // row exists but is non-active (disabled/tombstone) — nil when no actor
-// holds the handle at all. Served at 410 Gone per §126 M2.
+// holds the handle at all. Served at 410 Gone per §126 M2. The lookup is
+// deliberately ungated on fa.status: the status-gated actorByUsername
+// would go blind at exactly the moment a tombstone must answer.
 func (s *Service) ActorTombstone(ctx context.Context, username string) map[string]any {
-	actor, err := s.store.actorByUsername(ctx, username)
+	actor, err := s.store.actorByUsernameAnyStatus(ctx, username)
 	if err != nil || actor.Status == "active" {
 		return nil
 	}

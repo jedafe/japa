@@ -50,6 +50,19 @@ WHERE (lower(fa.preferred_username) = lower(@username) OR u.username = @username
 ORDER BY (u.username = @username) DESC, fa.created_at DESC
 LIMIT 1;
 
+-- name: GetFederatedActorByUsernameAnyStatus :one
+-- Tombstone/inbox lookup: the actor row must resolve regardless of
+-- fa.status so disabled/tombstone actors answer 410 rather than the
+-- status-gated lookup's blind 404. u.status stays gated — a suspended or
+-- deleted member's actor is hidden, not gone.
+SELECT fa.*
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE (lower(fa.preferred_username) = lower(@username) OR u.username = @username)
+  AND u.status = 'active'
+ORDER BY (u.username = @username) DESC, fa.created_at DESC
+LIMIT 1;
+
 -- name: GetFederatedActorByID :one
 SELECT * FROM federated_actors WHERE id = @id;
 
@@ -359,7 +372,7 @@ WHERE c.id = @id
 -- soft-deleted and unpublished rows still resolve — the questions the
 -- callers answer are "could a remote copy exist" and "are comments
 -- locked", not whether the object is currently live.
-SELECT author_id, published_at, is_locked, deleted_at, visibility FROM contents WHERE id = @id;
+SELECT author_id, published_at, is_locked, deleted_at, visibility, updated_at FROM contents WHERE id = @id;
 
 -- name: InsertFederationDelivery :one
 INSERT INTO federation_deliveries (
@@ -387,6 +400,13 @@ WHERE (status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= now(
    OR (status = 'pending' AND created_at < now() - make_interval(mins => 5))
 ORDER BY created_at ASC
 LIMIT @page_limit;
+
+-- name: ListUndeliveredFederationDeliveriesByActor :many
+-- Erasure flush (§126): every non-terminal delivery an actor owns. The
+-- user-row cascade about to burn key custody is why EraseFederation gives
+-- these one last synchronous attempt before tombstoning.
+SELECT id FROM federation_deliveries
+WHERE local_actor_id = @local_actor_id AND status IN ('pending','failed');
 
 -- name: UpdateFederationDeliveryStatus :exec
 UPDATE federation_deliveries
@@ -482,9 +502,17 @@ DELETE FROM follows
 WHERE follower_remote_actor_id = @remote_actor_id
   AND entity_type = 'user' AND entity_id = @user_id;
 
--- name: DeleteRemoteFollowsByActor :exec
--- Delete{actor} propagation: every native follow edge by the actor goes.
-DELETE FROM follows WHERE follower_remote_actor_id = @remote_actor_id;
+-- name: DeleteRemoteFollowsByActor :many
+-- Delete{actor} propagation: every native follow edge by the actor goes;
+-- RETURNING feeds the per-user follower_count unwind.
+DELETE FROM follows WHERE follower_remote_actor_id = @remote_actor_id
+RETURNING entity_id;
+
+-- name: AdjustUserFollowerCount :exec
+-- Remote-provenance follow edges land/undo outside follows.Service —
+-- keep the denormalized users.follower_count honest the same way
+-- updateFollowerCount does for member edges.
+UPDATE users SET follower_count = GREATEST(0, follower_count + @delta) WHERE id = @user_id;
 
 -- name: AddRemoteReaction :execrows
 -- §126 inbound Like: a real reactions row with remote provenance — it

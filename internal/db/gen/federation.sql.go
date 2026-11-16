@@ -41,6 +41,23 @@ func (q *Queries) AddRemoteReaction(ctx context.Context, arg AddRemoteReactionPa
 	return result.RowsAffected(), nil
 }
 
+const adjustUserFollowerCount = `-- name: AdjustUserFollowerCount :exec
+UPDATE users SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2
+`
+
+type AdjustUserFollowerCountParams struct {
+	Delta  int32       `json:"delta"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Remote-provenance follow edges land/undo outside follows.Service —
+// keep the denormalized users.follower_count honest the same way
+// updateFollowerCount does for member edges.
+func (q *Queries) AdjustUserFollowerCount(ctx context.Context, arg AdjustUserFollowerCountParams) error {
+	_, err := q.db.Exec(ctx, adjustUserFollowerCount, arg.Delta, arg.UserID)
+	return err
+}
+
 const countFederatableContentByAuthor = `-- name: CountFederatableContentByAuthor :one
 SELECT COUNT(*)::bigint
 FROM contents c
@@ -275,14 +292,31 @@ func (q *Queries) DeleteRemoteFollow(ctx context.Context, arg DeleteRemoteFollow
 	return result.RowsAffected(), nil
 }
 
-const deleteRemoteFollowsByActor = `-- name: DeleteRemoteFollowsByActor :exec
+const deleteRemoteFollowsByActor = `-- name: DeleteRemoteFollowsByActor :many
 DELETE FROM follows WHERE follower_remote_actor_id = $1
+RETURNING entity_id
 `
 
-// Delete{actor} propagation: every native follow edge by the actor goes.
-func (q *Queries) DeleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteRemoteFollowsByActor, remoteActorID)
-	return err
+// Delete{actor} propagation: every native follow edge by the actor goes;
+// RETURNING feeds the per-user follower_count unwind.
+func (q *Queries) DeleteRemoteFollowsByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteRemoteFollowsByActor, remoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entity_id pgtype.UUID
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteRemoteReactionsByActor = `-- name: DeleteRemoteReactionsByActor :many
@@ -438,7 +472,7 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 }
 
 const getContentLiteByID = `-- name: GetContentLiteByID :one
-SELECT author_id, published_at, is_locked, deleted_at, visibility FROM contents WHERE id = $1
+SELECT author_id, published_at, is_locked, deleted_at, visibility, updated_at FROM contents WHERE id = $1
 `
 
 type GetContentLiteByIDRow struct {
@@ -447,6 +481,7 @@ type GetContentLiteByIDRow struct {
 	IsLocked    bool               `json:"is_locked"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 	Visibility  string             `json:"visibility"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Ungated contents read for delete propagation and inbound lock checks:
@@ -462,6 +497,7 @@ func (q *Queries) GetContentLiteByID(ctx context.Context, id pgtype.UUID) (GetCo
 		&i.IsLocked,
 		&i.DeletedAt,
 		&i.Visibility,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -635,6 +671,43 @@ LIMIT 1
 // do not federate.
 func (q *Queries) GetFederatedActorByUsername(ctx context.Context, username string) (FederatedActor, error) {
 	row := q.db.QueryRow(ctx, getFederatedActorByUsername, username)
+	var i FederatedActor
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ActorUrl,
+		&i.PreferredUsername,
+		&i.PublicKeyPem,
+		&i.PrivateKeyEnc,
+		&i.PublicKeyID,
+		&i.Status,
+		&i.InboxUrl,
+		&i.OutboxUrl,
+		&i.FollowersUrl,
+		&i.FollowingUrl,
+		&i.ManuallyApprovesFollowers,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getFederatedActorByUsernameAnyStatus = `-- name: GetFederatedActorByUsernameAnyStatus :one
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
+  AND u.status = 'active'
+ORDER BY (u.username = $1) DESC, fa.created_at DESC
+LIMIT 1
+`
+
+// Tombstone/inbox lookup: the actor row must resolve regardless of
+// fa.status so disabled/tombstone actors answer 410 rather than the
+// status-gated lookup's blind 404. u.status stays gated — a suspended or
+// deleted member's actor is hidden, not gone.
+func (q *Queries) GetFederatedActorByUsernameAnyStatus(ctx context.Context, username string) (FederatedActor, error) {
+	row := q.db.QueryRow(ctx, getFederatedActorByUsernameAnyStatus, username)
 	var i FederatedActor
 	err := row.Scan(
 		&i.ID,
@@ -1692,6 +1765,34 @@ LIMIT $1
 // is best-effort — a lost kick leaves 'received' rows with no driver.
 func (q *Queries) ListStaleFederationInbound(ctx context.Context, pageLimit int32) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listStaleFederationInbound, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUndeliveredFederationDeliveriesByActor = `-- name: ListUndeliveredFederationDeliveriesByActor :many
+SELECT id FROM federation_deliveries
+WHERE local_actor_id = $1 AND status IN ('pending','failed')
+`
+
+// Erasure flush (§126): every non-terminal delivery an actor owns. The
+// user-row cascade about to burn key custody is why EraseFederation gives
+// these one last synchronous attempt before tombstoning.
+func (q *Queries) ListUndeliveredFederationDeliveriesByActor(ctx context.Context, localActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listUndeliveredFederationDeliveriesByActor, localActorID)
 	if err != nil {
 		return nil, err
 	}

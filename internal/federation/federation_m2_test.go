@@ -1266,3 +1266,91 @@ func TestDBObjectTombstone(t *testing.T) {
 		t.Fatalf("draft object: got %v, want ErrNotFound", err)
 	}
 }
+
+// The remote follower edge is a real follows row — the member's
+// denormalized users.follower_count must count it like a local follow,
+// and unwind on Undo.
+func TestDBRemoteFollowAdjustsFollowerCount(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	actorIRI := svc.apiBase() + "/federation/actors/" + uname
+	followerCount := func() int64 {
+		var n int64
+		if err := svc.db.Reader.QueryRow(ctx,
+			`SELECT follower_count FROM users WHERE id = $1`, userID).Scan(&n); err != nil {
+			t.Fatalf("follower_count: %v", err)
+		}
+		return n
+	}
+	before := followerCount()
+
+	follow := map[string]any{
+		"id": actorURL + "#fc1", "type": "Follow", "actor": actorURL, "object": actorIRI,
+	}
+	if row := runInbound(t, ctx, svc, follow); row.Status != "processed" {
+		t.Fatalf("follow: %q (%v)", row.Status, row.Error)
+	}
+	if got := followerCount(); got != before+1 {
+		t.Fatalf("follower_count after remote follow: got %d, want %d", got, before+1)
+	}
+
+	undo := map[string]any{
+		"id": actorURL + "#fc2", "type": "Undo", "actor": actorURL,
+		"object": map[string]any{
+			"id": actorURL + "#fc1", "type": "Follow", "actor": actorURL, "object": actorIRI,
+		},
+	}
+	if row := runInbound(t, ctx, svc, undo); row.Status != "processed" {
+		t.Fatalf("undo: %q", row.Status)
+	}
+	if got := followerCount(); got != before {
+		t.Fatalf("follower_count after undo: got %d, want %d", got, before)
+	}
+}
+
+// Two successive unpublish events on the same object must ledger two
+// DISTINCT Delete ap_ids — (activity_ap_id, inbox) dedup plus remote-side
+// activity-id dedup would otherwise collapse the second Delete and leave
+// the remote serving a resurrected copy.
+func TestDBDeleteFanoutDistinctApIDs(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	if row := runInbound(t, ctx, svc, map[string]any{
+		"type": "Follow", "actor": actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	}); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+
+	// Unpublish event #1 → Delete#1.
+	if err := svc.fanoutDeleteIfDelivered(ctx, contentID); err != nil {
+		t.Fatalf("first delete fanout: %v", err)
+	}
+	// A later lifecycle event carries a fresh updated_at — its Delete
+	// ap_id must differ from the first.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET updated_at = updated_at + interval '1 second' WHERE id = $1`, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.fanoutDeleteIfDelivered(ctx, contentID); err != nil {
+		t.Fatalf("second delete fanout: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE activity_type = 'Delete' AND activity_ap_id LIKE $1`,
+		objIRI+"#delete/%"); n != 2 {
+		t.Fatalf("distinct delete deliveries: %d (want 2)", n)
+	}
+}

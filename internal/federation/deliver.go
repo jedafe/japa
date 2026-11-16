@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -104,17 +105,24 @@ func (s *Service) Fanout(ctx context.Context, contentID pgtype.UUID) error {
 	objID, _ := object["id"].(string)
 
 	// First fanout for this object → Create; re-fanout after a delivered
-	// Create/Update → Update (remote servers update in place).
+	// Create/Update → Update (remote servers update in place). The
+	// activity id carries an updated_at discriminator: distinct edits are
+	// distinct events — both our (activity_ap_id, inbox) dedup and the
+	// remote's own activity-id dedup must not swallow a second Update.
+	// Retries of THIS event re-read the same updated_at and converge.
 	activityType := "Create"
 	if s.store.hasDeliveredObject(ctx, author.ID, objID) {
 		activityType = "Update"
 	}
 	var activity map[string]any
+	var apID string
 	if activityType == "Create" {
 		activity = createActivity(author.ActorUrl, author.FollowersUrl, object)
+		apID = objID + "#create"
 	} else {
+		apID = fmt.Sprintf("%s#update/%d", objID, content.UpdatedAt.Time.Unix())
 		activity = map[string]any{
-			"id":     objID + "#update",
+			"id":     apID,
 			"type":   "Update",
 			"actor":  author.ActorUrl,
 			"to":     []string{asPublic},
@@ -122,7 +130,8 @@ func (s *Service) Fanout(ctx context.Context, contentID pgtype.UUID) error {
 			"object": object,
 		}
 	}
-	return s.insertDeliveries(ctx, author.ID, activity, objID+"#"+lowerType(activityType), inboxes)
+	_, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, true)
+	return err
 }
 
 // lowerType keeps activity_ap_id derivation boring — ids ride a fragment.
@@ -182,8 +191,22 @@ func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.
 	if err != nil || len(inboxes) == 0 {
 		return err
 	}
+	// Per-event discriminator: a publish→unpublish→republish→unpublish
+	// cycle produces TWO distinct Deletes — identical ap_ids would collapse
+	// in the (activity_ap_id, inbox) dedup and the remote would keep
+	// serving the resurrected copy. updated_at bumps on every lifecycle
+	// transition, so the id is stable across retries of THIS event and
+	// distinct across events. When the lite row is gone (hard delete),
+	// the actor's own updated_at is the fallback discriminator — any
+	// earlier same-stamped delete for this object already reached remotes.
+	lite, lerr := s.store.contentLiteByID(ctx, contentID)
+	disc := author.UpdatedAt
+	if lerr == nil && lite.UpdatedAt.Valid {
+		disc = lite.UpdatedAt
+	}
+	apID := fmt.Sprintf("%s#delete/%d", objID, disc.Time.Unix())
 	activity := map[string]any{
-		"id":    objID + "#delete",
+		"id":    apID,
 		"type":  "Delete",
 		"actor": author.ActorUrl,
 		"to":    []string{asPublic},
@@ -192,7 +215,8 @@ func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.
 			"type": "Tombstone",
 		},
 	}
-	return s.insertDeliveries(ctx, author.ID, activity, objID+"#delete", inboxes)
+	_, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, true)
+	return err
 }
 
 // FanoutActorDelete delivers Delete{actor} to every remote-follower
@@ -200,22 +224,35 @@ func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.
 // Follower rows stay untouched here; the lifecycle write that calls this
 // owns the status transition.
 func (s *Service) FanoutActorDelete(ctx context.Context, actorID pgtype.UUID) error {
+	_, err := s.fanoutActorDelete(ctx, actorID, true)
+	return err
+}
+
+// fanoutActorDelete ledgers the Delete{actor} rows and returns the ids it
+// created. enqueue=false leaves them pending for a synchronous drive —
+// the erasure path must attempt them while the actor's key still exists.
+// The activity id keys on the actor's updated_at: disable→re-enable→
+// disable are distinct events whose deliveries must not dedup-collapse,
+// while a disable→erasure sequence (no interim write) reuses the earlier
+// stamp — a remote that already got that Delete needs no second copy.
+func (s *Service) fanoutActorDelete(ctx context.Context, actorID pgtype.UUID, enqueue bool) ([]pgtype.UUID, error) {
 	author, err := s.store.actorByID(ctx, actorID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("federation actor delete: load actor: %w", err)
+		return nil, fmt.Errorf("federation actor delete: load actor: %w", err)
 	}
 	inboxes, err := s.store.remoteFollowerInboxes(ctx, author.ID)
 	if err != nil {
-		return fmt.Errorf("federation actor delete: expand inboxes: %w", err)
+		return nil, fmt.Errorf("federation actor delete: expand inboxes: %w", err)
 	}
 	if len(inboxes) == 0 {
-		return nil
+		return nil, nil
 	}
+	apID := fmt.Sprintf("%s#delete/%d", author.ActorUrl, author.UpdatedAt.Time.Unix())
 	activity := map[string]any{
-		"id":    author.ActorUrl + "#delete",
+		"id":    apID,
 		"type":  "Delete",
 		"actor": author.ActorUrl,
 		"to":    []string{asPublic},
@@ -224,19 +261,21 @@ func (s *Service) FanoutActorDelete(ctx context.Context, actorID pgtype.UUID) er
 			"type": "Tombstone",
 		},
 	}
-	return s.insertDeliveries(ctx, author.ID, activity, author.ActorUrl+"#delete", inboxes)
+	return s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, enqueue)
 }
 
 // insertDeliveries ledgers one row per distinct inbox and kicks each into
-// the queue post-insert. Insert errors fail the whole expansion — the
+// the queue post-insert (unless enqueue=false — the erasure path drives
+// rows synchronously). Insert errors fail the whole expansion — the
 // caller's retry replays a clean expansion (activity_ap_id dedup keeps
-// retries honest on rows that did land).
-func (s *Service) insertDeliveries(ctx context.Context, localActorID pgtype.UUID, activity map[string]any, apID string, inboxes []gen.ListRemoteFollowerInboxesByActorRow) error {
+// retries honest on rows that did land). Returns the created row ids.
+func (s *Service) insertDeliveries(ctx context.Context, localActorID pgtype.UUID, activity map[string]any, apID string, inboxes []gen.ListRemoteFollowerInboxesByActorRow, enqueue bool) ([]pgtype.UUID, error) {
 	payload, err := json.Marshal(activity)
 	if err != nil {
-		return fmt.Errorf("federation fanout: marshal activity: %w", err)
+		return nil, fmt.Errorf("federation fanout: marshal activity: %w", err)
 	}
 	typ, _ := activity["type"].(string)
+	var ids []pgtype.UUID
 	for _, inbox := range inboxes {
 		if inbox.InboxUrl == nil || *inbox.InboxUrl == "" {
 			continue
@@ -259,13 +298,16 @@ func (s *Service) insertDeliveries(ctx context.Context, localActorID pgtype.UUID
 			continue // replayed fanout — the row's task is already queued
 		}
 		if err != nil {
-			return fmt.Errorf("federation fanout: insert delivery: %w", err)
+			return nil, fmt.Errorf("federation fanout: insert delivery: %w", err)
 		}
-		if err := s.enqueueDelivery(ctx, row.ID); err != nil {
-			slog.Warn("federation: delivery enqueue failed — sweeper picks up pending rows", "delivery_id", row.ID, "error", err)
+		ids = append(ids, row.ID)
+		if enqueue {
+			if err := s.enqueueDelivery(ctx, row.ID); err != nil {
+				slog.Warn("federation: delivery enqueue failed — sweeper picks up pending rows", "delivery_id", row.ID, "error", err)
+			}
 		}
 	}
-	return nil
+	return ids, nil
 }
 
 // contentPageURL is the member-facing permalink the AP object's "url"
@@ -303,7 +345,14 @@ func (s *Service) Deliver(ctx context.Context, deliveryID pgtype.UUID) error {
 	if row.Status == "failed" && row.NextRetryAt.Valid && row.NextRetryAt.Time.After(time.Now()) {
 		return nil
 	}
+	return s.attemptDelivery(ctx, row)
+}
 
+// attemptDelivery performs one signed POST for the row and stamps the
+// outcome. Split from Deliver so the erasure flush can drive rows without
+// the backoff gate — key custody is about to burn, a last attempt beats
+// a schedule the actor row will not survive to honor.
+func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDelivery) error {
 	// Instance gate re-checked at send time — a domain blocked between
 	// fanout and delivery must not receive the POST.
 	if u, uerr := url.Parse(row.InboxUrl); uerr != nil || !s.instanceAllowed(ctx, u.Hostname()) {
@@ -409,6 +458,38 @@ func (s *Service) stampDeliveryAttempts(ctx context.Context, row gen.FederationD
 		NextRetryAt: nextRetry,
 		DeliveredAt: deliveredAt,
 	})
+}
+
+// flushDeliveriesInline drives delivery rows synchronously — the erasure
+// path's only window to sign before the user cascade drops
+// federated_actors. Bounded concurrency keeps a large follower set from
+// serializing into minutes; outcomes still land on the ledger rows, so
+// failures dead-letter honestly once custody is gone.
+func (s *Service) flushDeliveriesInline(ctx context.Context, ids []pgtype.UUID) {
+	if len(ids) == 0 {
+		return
+	}
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		row, err := s.store.deliveryByID(ctx, id)
+		if err != nil {
+			continue
+		}
+		if row.Status == "delivered" || row.Status == "dead" {
+			continue
+		}
+		wg.Add(1)
+		go func(row gen.FederationDelivery) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if err := s.attemptDelivery(ctx, row); err != nil {
+				slog.Warn("federation: inline delivery failed", "delivery_id", row.ID.String(), "error", err)
+			}
+		}(row)
+	}
+	wg.Wait()
 }
 
 // ResolveRemoteActorTask is the worker seam for federation:resolve_actor —

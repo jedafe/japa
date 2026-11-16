@@ -399,6 +399,52 @@ func TestDBTombstoneNeverResurrected(t *testing.T) {
 	}
 }
 
+func TestDBActorTombstoneAfterDisable(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if _, err := svc.DisableFederation(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	// §126 M2: a disabled actor answers 410 + Tombstone, not 404 — the
+	// tombstone lookup must see non-active rows (the status-gated
+	// actorByUsername goes blind at exactly this moment).
+	tomb := svc.ActorTombstone(ctx, uname)
+	if tomb == nil {
+		t.Fatal("disabled actor produced no Tombstone doc — 410 path is blind")
+	}
+	if tomb["type"] != "Tombstone" {
+		t.Errorf("tombstone doc type: %v", tomb["type"])
+	}
+
+	// The per-actor inbox must also resolve the disabled row so the
+	// handler can answer 410 rather than 404.
+	actor, err := svc.ActorExists(ctx, uname)
+	if err != nil {
+		t.Fatalf("ActorExists on disabled actor: %v", err)
+	}
+	if actor.Status != "disabled" {
+		t.Errorf("ActorExists status: %q, want disabled", actor.Status)
+	}
+
+	// A suspended member's actor stays hidden (404) — suspension hides,
+	// it does not tombstone.
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, userID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if tomb := svc.ActorTombstone(ctx, uname); tomb != nil {
+		t.Error("suspended member's actor must not tombstone")
+	}
+	if _, err := svc.ActorExists(ctx, uname); !errors.Is(err, ErrNotFound) {
+		t.Errorf("ActorExists on suspended member: got %v, want ErrNotFound", err)
+	}
+}
+
 func TestDBAutoProvisionMissingUser(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

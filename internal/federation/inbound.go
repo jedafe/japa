@@ -333,6 +333,13 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	if err != nil {
 		return dispatchResult{status: "error", reason: "follows insert: " + err.Error()}
 	}
+	if n > 0 {
+		// The remote follower is a real follows edge — the member's
+		// denormalized follower_count must count it like a local follow.
+		s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+			UserID: actor.UserID, Delta: 1,
+		}))
+	}
 	deliverID, err := s.insertAcceptDelivery(ctx, q, actor, signer, act, rowID.String())
 	if err != nil {
 		return dispatchResult{status: "error", reason: "accept delivery: " + err.Error()}
@@ -521,11 +528,17 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 	// honestly and skip the response POST that could only dead-letter.
 	if remote.Status == "active" {
 		if accept {
-			if _, err := q.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
+			n, err := q.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
 				RemoteActorID: remoteActorID,
 				UserID:        userID,
-			}); err != nil {
+			})
+			if err != nil {
 				return err
+			}
+			if n > 0 {
+				s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+					UserID: userID, Delta: +1,
+				}))
 			}
 			deliverID, err = s.insertAcceptDelivery(ctx, q, actor, &remote, followAct, uuid.NewString())
 		} else {
@@ -634,10 +647,17 @@ func (s *Service) undoFollow(ctx context.Context, q *gen.Queries, innerID string
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follow undo: " + err.Error()}
 	}
-	if _, err := q.DeleteRemoteFollow(ctx, gen.DeleteRemoteFollowParams{
-		RemoteActorID: signer.ID, UserID: followUserID(ctx, q, follow.LocalActorID),
-	}); err != nil {
+	userID := followUserID(ctx, q, follow.LocalActorID)
+	n, err := q.DeleteRemoteFollow(ctx, gen.DeleteRemoteFollowParams{
+		RemoteActorID: signer.ID, UserID: userID,
+	})
+	if err != nil {
 		slog.Warn("federation: remote follows row delete failed", "error", err)
+	}
+	if n > 0 && userID.Valid {
+		s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+			UserID: userID, Delta: -1,
+		}))
 	}
 	return dispatchResult{status: "processed"}
 }
@@ -963,8 +983,14 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follow unwind failed", "error", err)
 	}
-	if err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
+	if entities, err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follows unwind failed", "error", err)
+	} else {
+		for _, entityID := range entities {
+			s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+				UserID: entityID, Delta: -1,
+			}))
+		}
 	}
 	if reactions, err := q.DeleteRemoteReactionsByActor(ctx, signer.ID); err == nil {
 		seen := map[pgtype.UUID]bool{}

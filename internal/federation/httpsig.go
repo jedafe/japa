@@ -233,14 +233,22 @@ func VerifySignature(r *http.Request, pub *rsa.PublicKey, body []byte) error {
 		return errors.New("federation: no date or (created) covered by signature")
 	}
 
-	// Body integrity: when digest is covered, it must match the payload.
+	// Body integrity (§126: Digest required on inbound POST bodies): a
+	// body-bearing request must cover digest — a signature that doesn't
+	// bind the payload leaves it unauthenticated end-to-end — and when
+	// covered, the header must match.
+	digestCovered := false
 	for _, name := range covered {
 		if !strings.EqualFold(name, "digest") {
 			continue
 		}
+		digestCovered = true
 		if r.Header.Get("Digest") != DigestHeader(body) {
 			return errors.New("federation: digest mismatch")
 		}
+	}
+	if len(body) > 0 && !digestCovered {
+		return errors.New("federation: digest not covered by signature")
 	}
 
 	signingString, err := BuildSigningString(r, covered, body, params)
