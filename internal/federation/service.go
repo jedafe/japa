@@ -913,7 +913,20 @@ func (s *Service) rotateActorKey(ctx context.Context, actor gen.FederatedActor) 
 		}
 		return KeyRotationResult{}, fmt.Errorf("federation: rotate key: %w", err)
 	}
-	s.InvalidateActorIdentityForUser(ctx, actor.UserID)
+	// Doc caches drop per kind — a remote re-fetching the actor must not
+	// see the retired key for the cache TTL. Person keys ride the
+	// user-identity path; non-person actors invalidate their own keys.
+	switch actor.Kind {
+	case ActorKindGroup:
+		s.invalidateGroupDoc(ctx, actor.PreferredUsername)
+	case ActorKindApplication:
+		if s.vk != nil {
+			_ = s.vk.Del(ctx, "jc:fed:instance:doc").Err()
+			_ = s.vk.Del(ctx, "jc:fed:webfinger:"+strings.ToLower(s.handleDomain())).Err()
+		}
+	default:
+		s.InvalidateActorIdentityForUser(ctx, actor.UserID)
+	}
 	if err := s.fanoutActorUpdate(ctx, actor.ID, true); err != nil {
 		// Fanout failure must not undo the rotation — the keyId-miss
 		// refetch path already propagates the new key; the Update only

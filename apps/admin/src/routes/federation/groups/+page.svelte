@@ -159,7 +159,7 @@
 <Modal bind:open={showTombstoneConfirm} title={t('federation.groups.tombstone', 'Tombstone')}>
 	{#if pendingTombstone}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('federation.groups.tombstone_confirm', 'Tombstone this Group actor? Remote followers are notified via a Delete{Tombstone} fanout and the actor stops resolving. This cannot be undone — re-provisioning the space mints a new actor.')}
+			{t('federation.groups.tombstone_confirm', 'Tombstone this Group actor? Remote followers are notified via a Delete{Tombstone} fanout and the actor stops resolving. This is terminal — the space can never federate as a Group again.')}
 		</p>
 		<p class="mt-2 break-all font-mono text-xs" style="color: var(--color-muted)">{pendingTombstone.actor_url}</p>
 	{/if}

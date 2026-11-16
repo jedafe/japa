@@ -12,9 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // settingsStub implements SettingsReader with an in-memory map.
@@ -607,5 +610,114 @@ func TestDBHashtagEmission(t *testing.T) {
 	}
 	if _, ok := obj["tag"]; !ok {
 		t.Error("object doc missing tag[]")
+	}
+}
+
+// TestDBGroupTombstoneDropsCaches — a tombstoned group must stop
+// resolving on BOTH cached surfaces (doc + WebFinger JRD). The
+// webfinger key originally survived: the handle kept resolving up to
+// the 5-minute TTL after the actor died.
+func TestDBGroupTombstoneDropsCaches(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
+	if err != nil {
+		t.Fatalf("valkey: %v", err)
+	}
+	t.Cleanup(vk.Close)
+	svc.SetValkey(valkeycompat.NewAdapter(vk))
+
+	spaceID, slug := newSpace(t, ctx, d, "public")
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+	actor, err := svc.ProvisionGroupActor(ctx, spaceID, adminID)
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	// Warm both surfaces.
+	if _, err := svc.GroupDocument(ctx, slug); err != nil {
+		t.Fatalf("doc warm: %v", err)
+	}
+	if _, err := svc.groupWebfinger(ctx, slug, "test.dev"); err != nil {
+		t.Fatalf("webfinger warm: %v", err)
+	}
+	lower := strings.ToLower(slug)
+	for _, k := range []string{"jc:fed:groupdoc:" + lower, "jc:fed:webfinger:!" + lower} {
+		if !mr.Exists(k) {
+			t.Fatalf("%s not cached after warm", k)
+		}
+	}
+
+	if err := svc.TombstoneGroupActor(ctx, actor.ID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
+	for _, k := range []string{"jc:fed:groupdoc:" + lower, "jc:fed:webfinger:!" + lower} {
+		if mr.Exists(k) {
+			t.Errorf("%s survived tombstone", k)
+		}
+	}
+}
+
+// TestDBListRelaysQFilter — the admin DataTable ?q= contract added in
+// pass 26: ILIKE on actor_url/domain.
+func TestDBListRelaysQFilter(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	a, _ := newRemoteActor(t, ctx, svc, "relay-q-a.example")
+	b, _ := newRemoteActor(t, ctx, svc, "other-host.test")
+	_ = newRelayRow(t, ctx, svc, a.ActorUrl, "accepted")
+	_ = newRelayRow(t, ctx, svc, b.ActorUrl, "pending")
+
+	rows, total, err := svc.ListRelays(ctx, "other-host", "", 25, 0)
+	if err != nil {
+		t.Fatalf("ListRelays q: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].Domain != "other-host.test" {
+		t.Fatalf("q filter: total=%d rows=%v", total, rows)
+	}
+	// Empty q returns at least our two (other tests may seed more).
+	if _, total, err := svc.ListRelays(ctx, "", "", 25, 0); err != nil || total < 2 {
+		t.Fatalf("unfiltered: total=%d err=%v", total, err)
+	}
+	// status + q compose.
+	if _, total, err := svc.ListRelays(ctx, "", "accepted", 25, 0); err != nil || total != 1 {
+		t.Fatalf("status filter: total=%d err=%v", total, err)
+	}
+}
+
+// TestDBListGroupActorsQ — the group list's ?q= contract: ILIKE on
+// space slug/name or actor URL.
+func TestDBListGroupActorsQ(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+
+	idA, slugA := newSpace(t, ctx, d, "public")
+	if _, err := svc.ProvisionGroupActor(ctx, idA, adminID); err != nil {
+		t.Fatalf("provision A: %v", err)
+	}
+	idB, _ := newSpace(t, ctx, d, "public")
+	if _, err := svc.ProvisionGroupActor(ctx, idB, adminID); err != nil {
+		t.Fatalf("provision B: %v", err)
+	}
+
+	rows, total, err := svc.ListGroupActors(ctx, slugA, 25, 0)
+	if err != nil {
+		t.Fatalf("ListGroupActors q: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].SpaceSlug != slugA {
+		t.Fatalf("q filter: total=%d rows=%v", total, rows)
+	}
+	if _, total, err := svc.ListGroupActors(ctx, "", 25, 0); err != nil || total < 2 {
+		t.Fatalf("unfiltered: total=%d err=%v", total, err)
 	}
 }

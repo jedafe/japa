@@ -411,12 +411,19 @@ func (s *Service) GroupTombstone(ctx context.Context, slug string) map[string]an
 	return tombstoneDocument(row.ActorUrl)
 }
 
-// invalidateGroupDoc drops the cached Group doc for a slug.
+// invalidateGroupDoc drops the cached Group doc AND its WebFinger JRD —
+// a tombstoned/eligibility-lost group must stop resolving on both
+// surfaces immediately, not after the 5-minute TTL (the person path
+// likewise drops actor + webfinger keys together).
 func (s *Service) invalidateGroupDoc(ctx context.Context, slug string) {
 	if s.vk == nil || slug == "" {
 		return
 	}
-	_ = s.vk.Del(ctx, "jc:fed:groupdoc:"+strings.ToLower(slug)).Err()
+	lower := strings.ToLower(slug)
+	// Two single-key DELs — the compat adapter rejects multi-key DEL
+	// across hash slots.
+	_ = s.vk.Del(ctx, "jc:fed:groupdoc:"+lower).Err()
+	_ = s.vk.Del(ctx, "jc:fed:webfinger:!"+lower).Err()
 }
 
 // groupDocument builds the Group actor document from the join row.
@@ -596,7 +603,14 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	if err != nil {
 		return gen.FederationRelay{}, err
 	}
-	if doc.Inbox == "" {
+	// Deliveries target sharedInbox when advertised — the relay's
+	// coalesced delivery point (same preference ListRemoteFollowerInboxes
+	// applies to followers).
+	inbox := doc.Endpoints.SharedInbox
+	if inbox == "" {
+		inbox = doc.Inbox
+	}
+	if inbox == "" {
 		return gen.FederationRelay{}, fmt.Errorf("%w: relay actor advertises no inbox", ErrRemoteFetch)
 	}
 	remote, err := s.upsertRemoteActor(ctx, actorURL, doc)
@@ -612,7 +626,7 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	}
 	followID := fmt.Sprintf("%s#relay-follow-%s", inst.ActorUrl, uuid.NewString())
 	relay, err := s.store.upsertRelay(ctx, gen.UpsertFederationRelayParams{
-		ActorUrl: actorURL, InboxUrl: doc.Inbox, Domain: domain,
+		ActorUrl: actorURL, InboxUrl: inbox, Domain: domain,
 		FollowApID: &followID, CreatedBy: adminID,
 	})
 	if err != nil {
@@ -623,7 +637,6 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	if relay.Status != "pending" {
 		return relay, nil
 	}
-	inbox := doc.Inbox
 	follow := map[string]any{
 		"@context": asContext,
 		"id":       followID,

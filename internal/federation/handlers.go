@@ -66,6 +66,10 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "signature_required", "A valid HTTP signature is required")
 	case errors.Is(err, ErrRemoteBlocked):
 		errpkg.WriteError(w, http.StatusForbidden, "instance_blocked", "Instance is not permitted")
+	case errors.Is(err, ErrRemoteFetch):
+		// Upstream AP doc unreachable — a remote-side condition, not
+		// our internal error (relay subscribe hits this path).
+		errpkg.WriteError(w, http.StatusBadGateway, "remote_fetch_failed", "Remote actor document could not be fetched")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
 	}
