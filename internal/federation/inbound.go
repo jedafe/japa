@@ -1127,6 +1127,11 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	if err := q.DeleteFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: move leftover edge cleanup failed", "error", err)
 	}
+	// The old inbox is dead — pending/retrying deliveries to it can never
+	// succeed, so deaden now instead of burning the retry schedule.
+	if _, err := q.DeadenDeliveriesByRemoteActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: move delivery deaden failed", "error", err)
+	}
 	if _, err := q.RepointRemoteFollowsByActor(ctx, gen.RepointRemoteFollowsByActorParams{
 		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
 	}); err != nil {
@@ -1206,6 +1211,11 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 		ActorUrl: signer.ActorUrl, Status: "failed",
 	}); err != nil {
 		slog.Warn("federation: relay unwind failed", "error", err)
+	}
+	// Same tombstone consequence: nothing we ever queued to that inbox
+	// can still land — deaden pending/retrying deliveries immediately.
+	if _, err := q.DeadenDeliveriesByRemoteActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: delivery deaden failed", "error", err)
 	}
 	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follow unwind failed", "error", err)

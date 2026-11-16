@@ -411,7 +411,7 @@ func (s *Service) FeaturedTags(ctx context.Context, username string) (map[string
 		return nil, fmt.Errorf("federation: featuredTags actor: %w", err)
 	}
 
-	tags, err := s.store.actorFederatedTags(ctx, actor.UserID, s.federatableTypesFor(ctx))
+	tags, err := s.store.actorFederatedTags(ctx, actor.UserID, s.federatableTypesFor(ctx), s.outboxPageSize(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("federation: featuredTags items: %w", err)
 	}

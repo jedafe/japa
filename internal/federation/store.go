@@ -119,10 +119,11 @@ func (s *Store) featuredContent(ctx context.Context, authorID pgtype.UUID, types
 
 // actorFederatedTags lists the hashtags a member uses across their
 // federatable contents — the §126 M4 featuredTags collection source.
-func (s *Store) actorFederatedTags(ctx context.Context, authorID pgtype.UUID, types []string) ([]gen.ListActorFederatedTagsRow, error) {
+func (s *Store) actorFederatedTags(ctx context.Context, authorID pgtype.UUID, types []string, pageLimit int32) ([]gen.ListActorFederatedTagsRow, error) {
 	return s.read.ListActorFederatedTags(ctx, gen.ListActorFederatedTagsParams{
 		AuthorID:     authorID,
 		ContentTypes: types,
+		PageLimit:    pageLimit,
 	})
 }
 

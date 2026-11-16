@@ -403,6 +403,23 @@ func (q *Queries) CreateInstanceBlock(ctx context.Context, arg CreateInstanceBlo
 	return i, err
 }
 
+const deadenDeliveriesByRemoteActor = `-- name: DeadenDeliveriesByRemoteActor :execrows
+UPDATE federation_deliveries SET status = 'dead'
+WHERE remote_actor_id = $1 AND status IN ('pending','failed')
+`
+
+// A tombstoned/moved remote actor's inbox is dead — pending or retrying
+// deliveries to it can never succeed, so they go 'dead' now rather than
+// burning the full retry schedule on a void endpoint. 'delivered' rows
+// are history and stay untouched.
+func (q *Queries) DeadenDeliveriesByRemoteActor(ctx context.Context, remoteActorID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deadenDeliveriesByRemoteActor, remoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deadenUndeliveredNonDeleteDeliveriesByActor = `-- name: DeadenUndeliveredNonDeleteDeliveriesByActor :exec
 UPDATE federation_deliveries SET status = 'dead'
 WHERE local_actor_id = $1
@@ -1791,11 +1808,13 @@ WHERE c.author_id = $1
   AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
 ORDER BY t.name
+LIMIT $3
 `
 
 type ListActorFederatedTagsParams struct {
 	AuthorID     pgtype.UUID `json:"author_id"`
 	ContentTypes []string    `json:"content_types"`
+	PageLimit    int32       `json:"page_limit"`
 }
 
 type ListActorFederatedTagsRow struct {
@@ -1808,7 +1827,7 @@ type ListActorFederatedTagsRow struct {
 // uses across their federatable contents — same eligibility predicate as
 // the outbox, deduped by tag row.
 func (q *Queries) ListActorFederatedTags(ctx context.Context, arg ListActorFederatedTagsParams) ([]ListActorFederatedTagsRow, error) {
-	rows, err := q.db.Query(ctx, listActorFederatedTags, arg.AuthorID, arg.ContentTypes)
+	rows, err := q.db.Query(ctx, listActorFederatedTags, arg.AuthorID, arg.ContentTypes, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

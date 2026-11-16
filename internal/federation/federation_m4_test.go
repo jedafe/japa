@@ -274,6 +274,15 @@ func TestDBInboundMoveRepointsFollows(t *testing.T) {
 	defer srv.Close()
 	swapFetchTransport(t, map[string]string{"target.test": tlsAddr(srv)})
 
+	// A queued delivery to the old inbox must deaden with the move; a
+	// delivered row is history and stays.
+	if _, err := svc.db.Writer.Exec(ctx, `
+		INSERT INTO federation_deliveries (activity_ap_id, activity_type, activity_json, inbox_url, remote_actor_id, status)
+		VALUES ($1, 'Create', '{}', $2, $3, 'pending'), ($4, 'Create', '{}', $2, $3, 'delivered')`,
+		oldURL+"#dlv-p", "https://remote.example/inbox", old.ID, oldURL+"#dlv-d"); err != nil {
+		t.Fatalf("seed deliveries: %v", err)
+	}
+
 	move := map[string]any{
 		"id": oldURL + "#move-1", "type": "Move",
 		"actor": oldURL, "object": oldURL, "target": targetURL,
@@ -322,6 +331,17 @@ func TestDBInboundMoveRepointsFollows(t *testing.T) {
 	}
 	if inbox != "https://target.test/inbox" {
 		t.Fatalf("fanout inbox: %q", inbox)
+	}
+	// Pending delivery deadened (the seeded row — plus the follow's own
+	// Accept, which can never land on a tombstoned inbox either).
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND status = 'dead' AND activity_ap_id = $2`,
+		old.ID, oldURL+"#dlv-p"); n != 1 {
+		t.Fatalf("pending delivery not deadened: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1 AND status = 'delivered'`, old.ID); n != 1 {
+		t.Fatalf("delivered row touched: %d", n)
 	}
 }
 

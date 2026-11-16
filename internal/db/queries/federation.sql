@@ -297,6 +297,14 @@ WHERE src.local_actor_id = ff.local_actor_id
 -- edge is redundant history — delete, not 'undone' (nothing unfollowed).
 DELETE FROM federation_follows WHERE remote_actor_id = @old_remote_actor_id;
 
+-- name: DeadenDeliveriesByRemoteActor :execrows
+-- A tombstoned/moved remote actor's inbox is dead — pending or retrying
+-- deliveries to it can never succeed, so they go 'dead' now rather than
+-- burning the full retry schedule on a void endpoint. 'delivered' rows
+-- are history and stay untouched.
+UPDATE federation_deliveries SET status = 'dead'
+WHERE remote_actor_id = @remote_actor_id AND status IN ('pending','failed');
+
 -- name: RepointRemoteFollowsByActor :execrows
 -- follows provenance mirror of the repoint above — same collision rule
 -- on the partial-unique (follower_remote_actor_id, entity_type,
@@ -853,7 +861,8 @@ WHERE c.author_id = @author_id
   AND c.deleted_at IS NULL
   AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[])
-ORDER BY t.name;
+ORDER BY t.name
+LIMIT @page_limit;
 
 -- name: UpsertFederationRelay :one
 -- Relay subscribe ledger (FEP-ae0c client side). A fresh subscribe on a
