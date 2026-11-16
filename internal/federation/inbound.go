@@ -28,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/notifications"
+	"github.com/jedafe/japa/internal/spam"
 )
 
 // Notifier is the narrow §35 seam — implemented by notifications.Service.
@@ -37,6 +38,16 @@ type Notifier interface {
 
 // SetNotifier injects the notifications seam for inbound events.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SpamChecker is the §41 seam — implemented by spam.SpamPipeline. Remote
+// comments route through the same content layers member comments do;
+// user/IP-scoped layers skip on the zero identity a remote actor carries.
+type SpamChecker interface {
+	Check(ctx context.Context, req spam.SpamCheckRequest) (spam.SpamCheckResult, error)
+}
+
+// SetSpamChecker injects the spam pipeline for inbound Create bodies.
+func (s *Service) SetSpamChecker(c SpamChecker) { s.spam = c }
 
 // maxRemoteCommentText bounds a remote reply's text (chars, post-strip).
 const maxRemoteCommentText = 8000
@@ -98,6 +109,13 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		}
 	}
 
+	// §126: remote comments route through the existing spam pipeline.
+	// Pre-tx on purpose — the AI layer can take seconds and must not hold
+	// a database transaction open.
+	if reason := s.spamCheckReply(ctx, act); reason != "" {
+		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{})
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("inbound tx: %w", err)
@@ -116,6 +134,41 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		return fmt.Errorf("inbound commit: %w", err)
 	}
 	return s.finishInbound(ctx, row.ID, res.status, res.reason, res.intents, res.deliverID)
+}
+
+// spamCheckReply runs the §41 pipeline on an inbound reply body. Only
+// Create objects carrying inReplyTo are checked — anything else is either
+// not content or ignored by the dispatch anyway. A zero-identity request
+// (no local user, no client IP) lets the user/IP-scoped layers skip while
+// the content layers — censored words, content hash, link analysis,
+// length, AI classification — apply exactly as they do for members. Like
+// the member path, a pipeline failure is fail-open; a blocked verdict is
+// not — the activity is rejected outright.
+func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string {
+	if s.spam == nil || apStr(act["type"]) != "Create" {
+		return ""
+	}
+	obj := apObj(act["object"])
+	if obj == nil || apID(obj["inReplyTo"]) == "" {
+		return ""
+	}
+	body := htmlToText(apStr(obj["content"]))
+	if body == "" {
+		return ""
+	}
+	res, err := s.spam.Check(ctx, spam.SpamCheckRequest{
+		Content:    body,
+		UserType:   "existing",
+		EntityType: "comment",
+	})
+	if err != nil {
+		slog.Warn("federation: inbound spam check failed", "error", err)
+		return ""
+	}
+	if res.Blocked {
+		return "content blocked by safety filters"
+	}
+	return ""
 }
 
 // finishInbound stamps the ledger row, fires deferred notifications, and

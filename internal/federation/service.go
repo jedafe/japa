@@ -58,6 +58,7 @@ type Service struct {
 	flags    features.FlagEvaluator
 	notifier Notifier
 	enqueue  TaskEnqueuer
+	spam     SpamChecker
 }
 
 // NewService creates a Service backed by the given database pool.

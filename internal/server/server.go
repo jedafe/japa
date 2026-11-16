@@ -883,6 +883,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (federation can't import worker).
 	federationService.SetNotifier(notificationService)
 	federationService.SetEnqueuer(worker.FederationEnqueuer())
+	federationService.SetSpamChecker(spamPipeline) // §126: remote comments through the §41 pipeline
 
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService

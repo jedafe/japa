@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	gen "github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/spam"
 )
 
 // newRemoteActor seeds an active remote_actors row on `domain`.
@@ -1009,5 +1010,62 @@ func TestDBRemoteProvenanceConstraints(t *testing.T) {
 	if n := countRows(t, ctx, svc,
 		`SELECT COUNT(*) FROM reactions WHERE remote_actor_id = $1`, remote.ID); n != 0 {
 		t.Errorf("reaction rows survived remote actor delete: %d", n)
+	}
+}
+
+// fakeSpamChecker records invocations and returns a fixed verdict.
+type fakeSpamChecker struct {
+	blocked bool
+	checked int
+}
+
+func (f *fakeSpamChecker) Check(_ context.Context, _ spam.SpamCheckRequest) (spam.SpamCheckResult, error) {
+	f.checked++
+	return spam.SpamCheckResult{Blocked: f.blocked, Reasons: []string{"test verdict"}}, nil
+}
+
+func TestDBInboundReplySpamCheck(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+
+	fake := &fakeSpamChecker{blocked: true}
+	svc.SetSpamChecker(fake)
+
+	create := map[string]any{
+		"id": actorURL + "#c1", "type": "Create", "actor": actorURL,
+		"object": map[string]any{
+			"id":        actorURL + "/notes/1",
+			"type":      "Note",
+			"inReplyTo": objIRI,
+			"content":   "<p>spammy</p>",
+		},
+	}
+	row := runInbound(t, ctx, svc, create)
+	if row.Status != "rejected" {
+		t.Fatalf("blocked reply status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM comments WHERE content_id = $1`, contentID); n != 0 {
+		t.Fatalf("blocked reply landed: %d comments", n)
+	}
+
+	// A clean verdict lets the same reply through.
+	fake.blocked = false
+	create["id"] = actorURL + "#c2"
+	create["object"].(map[string]any)["id"] = actorURL + "/notes/2"
+	row = runInbound(t, ctx, svc, create)
+	if row.Status != "processed" {
+		t.Fatalf("clean reply status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM comments WHERE content_id = $1`, contentID); n != 1 {
+		t.Fatalf("clean reply missing: %d comments", n)
+	}
+	if fake.checked != 2 {
+		t.Fatalf("spam checks: %d want 2", fake.checked)
 	}
 }
