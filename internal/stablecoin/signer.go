@@ -150,8 +150,14 @@ func (s *Service) RotateSignerScopes(ctx context.Context, w *Wallet) error {
 	if w == nil {
 		return fmt.Errorf("stablecoin: nil wallet")
 	}
-	// Re-register identical scopes with a fresh expiry. The provider
-	// coordinates the member's recovery approval; on success we persist
-	// the new registration (the old signer is dropped by expiry/removal).
+	// Drop the prior registration first — two live signers with the same
+	// scopes would double the blast radius during overlap. Removal needs
+	// member recovery approval like registration; if it fails the provider
+	// rejects re-registration as a duplicate and the error propagates.
+	if w.DelegatedSigner != nil && w.DelegatedSigner.SignerRef != "" {
+		if err := s.provider.RemoveDelegatedSigner(ctx, w.Locator, w.DelegatedSigner.SignerRef); err != nil {
+			return fmt.Errorf("stablecoin: remove prior signer: %w", err)
+		}
+	}
 	return s.registerDelegatedSigner(ctx, w)
 }

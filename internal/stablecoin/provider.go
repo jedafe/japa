@@ -18,6 +18,11 @@ type Provider interface {
 	// the provider drives that ceremony.
 	RegisterDelegatedSigner(ctx context.Context, locator string, in DelegatedSignerInput) error
 
+	// RemoveDelegatedSigner deregisters a prior signer — rotation drops the
+	// old registration so overlapping signers don't double the blast radius.
+	// Removal needs member recovery approval, same as registration.
+	RemoveDelegatedSigner(ctx context.Context, locator, signerRef string) error
+
 	// Transfer executes a delegated-signer operation. Calls must batch
 	// recipient + fee legs atomically where both are set.
 	Transfer(ctx context.Context, locator string, in TransferInput) (TransferResult, error)

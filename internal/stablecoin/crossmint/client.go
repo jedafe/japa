@@ -129,7 +129,13 @@ func (w walletResp) toProvider() stablecoin.ProviderWallet {
 	}
 	for _, b := range w.Balances {
 		if n, err := strconv.ParseInt(b.Amount, 10, 64); err == nil {
-			pw.Balances[b.Token] = n
+			// Normalize "solana:usdc" token locators to bare assets so
+			// callers key on usdc/usdt uniformly.
+			tok := b.Token
+			if i := len("solana:"); len(tok) > i && tok[:i] == "solana:" {
+				tok = tok[i:]
+			}
+			pw.Balances[tok] = n
 		}
 	}
 	return pw
@@ -201,6 +207,12 @@ func (c *Client) RegisterDelegatedSigner(ctx context.Context, locator string, in
 	return c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/signers", body, nil)
 }
 
+// RemoveDelegatedSigner deregisters a prior signer by reference — rotation
+// cleanup so overlapping signers don't double the blast radius.
+func (c *Client) RemoveDelegatedSigner(ctx context.Context, locator, signerRef string) error {
+	return c.do(ctx, http.MethodDelete, walletsBase+"/"+locator+"/signers/"+signerRef, nil, nil)
+}
+
 // ── Transfers ───────────────────────────────────────────────────────────
 
 type txResp struct {
@@ -212,23 +224,40 @@ type txResp struct {
 	TransactionID string `json:"transactionId"`
 }
 
-// Transfer executes a delegated-signer op — the fee leg batches as a
-// second instruction in the same transaction where supported.
+// Transfer executes the recipient leg via delegated signer, then the fee
+// leg as a second op to the hot treasury when present. Docs confirm
+// transfer-only scopes; whether one op can batch multiple SPL instructions
+// is an open validation item — until then the two legs are sequential ops
+// on the same scope (same daily cap). If the fee leg fails the principal
+// has already moved — the reconcile mirror surfaces it for recovery.
 func (c *Client) Transfer(ctx context.Context, locator string, in stablecoin.TransferInput) (stablecoin.TransferResult, error) {
-	// SPL transfer op. Crossmint wallet transactions take a token locator +
-	// destination; the fee leg rides as a sibling instruction when the API
-	// supports multi-instruction ops (open validation §128 item 1) — else
-	// the platform takes fee receipt at mirror time.
+	res, err := c.transferLeg(ctx, locator, in.Asset, in.RecipientAddr, in.AmountMinor, in.Idempotency, in.Reference)
+	if err != nil {
+		return stablecoin.TransferResult{}, err
+	}
+	if in.FeeMinor > 0 && in.FeeAddr != "" {
+		feeKey := in.Idempotency
+		if feeKey != "" {
+			feeKey += ":fee"
+		}
+		if _, err := c.transferLeg(ctx, locator, in.Asset, in.FeeAddr, in.FeeMinor, feeKey, in.Reference+":fee"); err != nil {
+			return res, fmt.Errorf("crossmint: fee leg after principal %s: %w", res.TxSignature, err)
+		}
+	}
+	return res, nil
+}
+
+func (c *Client) transferLeg(ctx context.Context, locator, asset, dest string, amountMinor int64, idem, memo string) (stablecoin.TransferResult, error) {
 	params := map[string]any{
-		"tokenLocator":       "solana:" + in.Asset,
-		"destinationAddress": in.RecipientAddr,
-		"amount":             strconv.FormatInt(in.AmountMinor, 10),
+		"tokenLocator":       "solana:" + asset,
+		"destinationAddress": dest,
+		"amount":             strconv.FormatInt(amountMinor, 10),
 	}
-	if in.Idempotency != "" {
-		params["idempotencyKey"] = in.Idempotency
+	if idem != "" {
+		params["idempotencyKey"] = idem
 	}
-	if in.Reference != "" {
-		params["memo"] = in.Reference
+	if memo != "" {
+		params["memo"] = memo
 	}
 	var out txResp
 	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/transactions",

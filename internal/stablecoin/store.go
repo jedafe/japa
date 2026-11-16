@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -405,8 +406,10 @@ func (st *Store) InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error) {
 	return domainEscrow(row), nil
 }
 
-// SetEscrowState moves the escrow through its state machine.
-func (st *Store) SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision) error {
+// SetEscrowState moves the escrow through its state machine. Nil params
+// leave prior values intact (SQL COALESCE) — funded_sig and decisions
+// persist across later transitions.
+func (st *Store) SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision, deadline *time.Time) error {
 	var fs, rs *string
 	if fundedSig != "" {
 		fs = &fundedSig
@@ -421,12 +424,17 @@ func (st *Store) SetEscrowState(ctx context.Context, id pgtype.UUID, state, fund
 			return fmt.Errorf("stablecoin: marshal arbiter decision: %w", err)
 		}
 	}
+	var dl pgtype.Timestamptz
+	if deadline != nil {
+		dl = pgtype.Timestamptz{Time: *deadline, Valid: true}
+	}
 	_, err := st.q.SetServiceEscrowState(ctx, gen.SetServiceEscrowStateParams{
-		ID:              id,
-		State:           state,
-		FundedSig:       fs,
-		ReleaseSig:      rs,
-		ArbiterDecision: dec,
+		ID:                   id,
+		State:                state,
+		FundedSig:            fs,
+		ReleaseSig:           rs,
+		ArbiterDecision:      dec,
+		ConfirmationDeadline: dl,
 	})
 	return err
 }

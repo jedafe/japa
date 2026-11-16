@@ -109,11 +109,14 @@ ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: SetServiceEscrowState :one
+-- COALESCE: transitions that don't carry a sig/decision must not wipe
+-- what earlier transitions recorded.
 UPDATE service_escrows
 SET state = @state,
-    funded_sig = sqlc.narg(funded_sig),
-    release_sig = sqlc.narg(release_sig),
-    arbiter_decision = sqlc.narg(arbiter_decision),
+    funded_sig = COALESCE(sqlc.narg(funded_sig), funded_sig),
+    release_sig = COALESCE(sqlc.narg(release_sig), release_sig),
+    arbiter_decision = COALESCE(sqlc.narg(arbiter_decision), arbiter_decision),
+    confirmation_deadline = COALESCE(sqlc.narg(confirmation_deadline), confirmation_deadline),
     updated_at = now()
 WHERE id = @id
 RETURNING *;

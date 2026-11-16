@@ -49,7 +49,10 @@ func (s *Service) IngestWebhook(ctx context.Context, payload []byte, signature s
 		sig = env.TxHash
 	}
 	if sig == "" {
-		return fmt.Errorf("stablecoin: webhook event missing tx signature")
+		// Verified but not a transaction event (wallet.created, signer
+		// approvals, ...) — acknowledge and drop; never 401 a valid event.
+		slog.Info("stablecoin: webhook event without tx signature dropped", "type", env.Type)
+		return nil
 	}
 
 	// Fast-path dedupe: SET NX on the signature. DB unique on tx_signature
@@ -119,6 +122,10 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		status = "failed"
 	}
 
+	occurred := time.Unix(ev.OccurredAt, 0).UTC()
+	if ev.OccurredAt <= 0 {
+		occurred = time.Now().UTC() // provider omitted the timestamp — don't sort to 1970
+	}
 	_, err := s.store.InsertActivity(ctx, Activity{
 		WalletID:           walletID,
 		Direction:          direction,
@@ -130,7 +137,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		TxSignature:        ev.TxSignature,
 		Slot:               ev.Slot,
 		Status:             status,
-		OccurredAt:         time.Unix(ev.OccurredAt, 0).UTC(),
+		OccurredAt:         occurred,
 	})
 	return err
 }
@@ -175,13 +182,16 @@ func normalizeAsset(a string) string {
 	}
 }
 
-// creditsPerUSD reads the display ratio — credits per 1 USD (§128.3).
+// creditsPerUSD resolves the display ratio from the currencies table
+// (credits_per_unit on the USD row, §58/ADR-065) — falls back to 1:1 in
+// minor units when the rate seam is unwired or the row is absent.
 func (s *Service) creditsPerUSD(ctx context.Context) int64 {
-	n := s.settings.GetIntOr(ctx, "wallet.credits_per_unit", 1400)
-	if n <= 0 {
-		return 1400
+	if s.creditRater != nil {
+		if n, err := s.creditRater.CreditsPerUSD(ctx); err == nil && n > 0 {
+			return n
+		}
 	}
-	return int64(n)
+	return 100 // 1 credit per USD minor-unit display unit — neutral default
 }
 
 // FeedEntry is one row of the unified member activity feed —

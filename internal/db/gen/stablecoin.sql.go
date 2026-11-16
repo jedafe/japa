@@ -918,28 +918,33 @@ func (q *Queries) MarkTreasurySweepExecuted(ctx context.Context, arg MarkTreasur
 const setServiceEscrowState = `-- name: SetServiceEscrowState :one
 UPDATE service_escrows
 SET state = $1,
-    funded_sig = $2,
-    release_sig = $3,
-    arbiter_decision = $4,
+    funded_sig = COALESCE($2, funded_sig),
+    release_sig = COALESCE($3, release_sig),
+    arbiter_decision = COALESCE($4, arbiter_decision),
+    confirmation_deadline = COALESCE($5, confirmation_deadline),
     updated_at = now()
-WHERE id = $5
+WHERE id = $6
 RETURNING id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at
 `
 
 type SetServiceEscrowStateParams struct {
-	State           string      `json:"state"`
-	FundedSig       *string     `json:"funded_sig"`
-	ReleaseSig      *string     `json:"release_sig"`
-	ArbiterDecision []byte      `json:"arbiter_decision"`
-	ID              pgtype.UUID `json:"id"`
+	State                string             `json:"state"`
+	FundedSig            *string            `json:"funded_sig"`
+	ReleaseSig           *string            `json:"release_sig"`
+	ArbiterDecision      []byte             `json:"arbiter_decision"`
+	ConfirmationDeadline pgtype.Timestamptz `json:"confirmation_deadline"`
+	ID                   pgtype.UUID        `json:"id"`
 }
 
+// COALESCE: transitions that don't carry a sig/decision must not wipe
+// what earlier transitions recorded.
 func (q *Queries) SetServiceEscrowState(ctx context.Context, arg SetServiceEscrowStateParams) (ServiceEscrow, error) {
 	row := q.db.QueryRow(ctx, setServiceEscrowState,
 		arg.State,
 		arg.FundedSig,
 		arg.ReleaseSig,
 		arg.ArbiterDecision,
+		arg.ConfirmationDeadline,
 		arg.ID,
 	)
 	var i ServiceEscrow

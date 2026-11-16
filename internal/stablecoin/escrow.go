@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -111,25 +112,14 @@ func (s *Service) setupFor(ctx context.Context, e *Escrow) (*EscrowSetup, error)
 	}, nil
 }
 
-// walletByID resolves a wallet row by its domain ID. The store seam keys
-// on userID for the hot path; escrow needs the wallet's own row — the
-// address is resolved via ListWalletsByStatus fallback when a direct
-// by-ID query isn't in the seam (kept narrow: buyer/seller are always
-// active wallets at prepare-time).
+// walletByID resolves a wallet row by its domain ID — escrow rows store
+// wallet row IDs, not user IDs.
 func (s *Service) walletByID(ctx context.Context, walletID string) (*Wallet, error) {
-	// The escrow row stores wallet row IDs; resolve through the active set.
-	// (Store seam stays narrow — a by-ID lookup query can be added if this
-	// path ever needs provisioned/suspended wallets.)
-	active, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, 1000)
+	id, err := pgUUID(walletID)
 	if err != nil {
 		return nil, err
 	}
-	for i := range active {
-		if active[i].ID == walletID {
-			return &active[i], nil
-		}
-	}
-	return nil, ErrWalletNotFound
+	return s.store.GetWalletByID(ctx, id)
 }
 
 // arbiterAddress is the platform's escrow-arbiter public key — a separate
@@ -163,13 +153,11 @@ func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID,
 	if e.State != EscrowFunding {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
-	if err := s.store.SetEscrowState(ctx, escrowID, EscrowFunded, fundedSig, "", nil); err != nil {
-		return err
-	}
-	// Deadline recorded separately — confirmation_deadline starts when the
-	// service window opens (delivery confirmation flow); the timeout task
-	// reads funded+deadline rows only.
-	return nil
+	// The buyer confirmation window opens at funding — after it lapses the
+	// escrow_timeout task releases seller+arbiter (ghosted-buyer path).
+	hours := s.settings.GetIntOr(ctx, "stablecoin.escrow_confirm_hours", 72)
+	deadline := time.Now().Add(time.Duration(hours) * time.Hour)
+	return s.store.SetEscrowState(ctx, escrowID, EscrowFunded, fundedSig, "", nil, &deadline)
 }
 
 // ConfirmRelease is the buyer-side delivery confirmation — releases
@@ -178,6 +166,11 @@ func (s *Service) ConfirmRelease(ctx context.Context, escrowID pgtype.UUID, call
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
 		return err
+	}
+	// Strict: a disputed escrow can only resolve through arbiter ruling —
+	// the buyer must not release unilaterally once a dispute is open.
+	if e.State != EscrowFunded {
+		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
 	buyer, err := s.walletByID(ctx, e.BuyerWalletID)
 	if err != nil {
@@ -207,7 +200,12 @@ func (s *Service) DisputeEscrow(ctx context.Context, escrowID pgtype.UUID, calle
 	if buyer.UserID != callerUserID.String() && seller.UserID != callerUserID.String() {
 		return ErrEscrowParty
 	}
-	return s.store.SetEscrowState(ctx, escrowID, EscrowDisputed, "", "", nil)
+	// Record who opened the dispute and why — the arbiter reads it.
+	return s.store.SetEscrowState(ctx, escrowID, EscrowDisputed, "", "", &ArbiterDecision{
+		DecidedBy: callerUserID.String(),
+		DecidedAt: time.Now().UTC(),
+		Note:      "dispute: " + reason,
+	}, nil)
 }
 
 // ReleaseEscrow executes the release after delivery confirmation or
@@ -232,7 +230,7 @@ func (s *Service) ReleaseEscrow(ctx context.Context, escrowID pgtype.UUID, decis
 	if decision != nil && decision.ReleasedTo == "buyer" {
 		newState = EscrowRefunded
 	}
-	return s.store.SetEscrowState(ctx, escrowID, newState, "", "", decision)
+	return s.store.SetEscrowState(ctx, escrowID, newState, "", "", decision, nil)
 }
 
 // ArbitrateEscrow is the admin dispute ruling — escrow.arbitrate gated at

@@ -50,9 +50,19 @@ func (s *Service) ProposeSweep(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("stablecoin: hot balance: %w", err)
 	}
+	// Skip assets with an open proposal — a cron tick must not queue a
+	// second sweep while one awaits ceremony approval.
+	open := map[string]bool{}
+	for _, st := range []string{"proposed", "approved"} {
+		if rows, lerr := s.store.ListSweepsByState(ctx, st, 100, 0); lerr == nil {
+			for _, sw := range rows {
+				open[sw.Asset] = true
+			}
+		}
+	}
 	for _, asset := range s.assetList(ctx) {
 		bal := pw.Balances[asset]
-		if bal <= capMinor {
+		if bal <= capMinor || open[asset] {
 			continue
 		}
 		if _, err := s.store.InsertTreasurySweep(ctx, TreasurySweep{

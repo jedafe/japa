@@ -1161,6 +1161,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	)
 	stablecoinService.SetEnqueuer(taskEnqueuer)
 	stablecoinService.SetBonusLedger(stablecoinBonusLedger{svc: walletService})
+	stablecoinService.SetCreditRater(stablecoinCreditRater{q: gen.New(database.Reader)})
 	stablecoinHandlers := stablecoin.NewHandlers(stablecoinService)
 	worker.RegisterStablecoinProcessor(stablecoinService)
 
@@ -10882,6 +10883,20 @@ func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stabl
 		FeeAmount:       t.FeeAmount,
 		Status:          t.Status,
 	}, nil
+}
+
+// stablecoinCreditRater resolves the USD→credits display rate from the
+// §58 currencies table (credits_per_unit on the USD row).
+type stablecoinCreditRater struct {
+	q *gen.Queries
+}
+
+func (a stablecoinCreditRater) CreditsPerUSD(ctx context.Context) (int64, error) {
+	row, err := a.q.GetCurrencyByCode(ctx, "USD")
+	if err != nil {
+		return 0, err
+	}
+	return int64(row.CreditsPerUnit), nil
 }
 
 // stablecoinBonusLedger adapts *wallet.Service to the stablecoin package's

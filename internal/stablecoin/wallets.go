@@ -2,6 +2,7 @@ package stablecoin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -49,12 +50,14 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 		if wid, perr := pgUUID(w.ID); perr == nil {
 			if rows, aerr := s.store.ListActivityByWallet(ctx, wid, 500, 0); aerr == nil {
 				for _, a := range rows {
-					if a.Status != "confirmed" {
+					switch {
+					case a.Status == "pending":
+						sum.Balance.Pending += a.CreditsAmount
+					case a.Status != "confirmed":
 						continue
-					}
-					if a.Direction == "in" {
+					case a.Direction == "in":
 						sum.Balance.BackedCredits += a.CreditsAmount
-					} else {
+					default:
 						sum.Balance.BackedCredits -= a.CreditsAmount
 					}
 				}
@@ -63,6 +66,9 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 	}
 	if sum.Balance.BackedCredits < 0 {
 		sum.Balance.BackedCredits = 0
+	}
+	if sum.Balance.Pending < 0 {
+		sum.Balance.Pending = 0
 	}
 
 	// Bonus tier: latest credits-ledger balance via the wallet seam.
@@ -79,10 +85,17 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 // The address is counterfactual: assigned now, deployed on first tx, so
 // dormant wallets cost nothing.
 func (s *Service) ProvisionWallet(ctx context.Context, userID pgtype.UUID, memberAuth string) (*Wallet, error) {
-	if existing, err := s.store.GetWalletByUser(ctx, userID); err != nil && err != ErrWalletNotFound {
+	if existing, err := s.store.GetWalletByUser(ctx, userID); err != nil && !errors.Is(err, ErrWalletNotFound) {
 		return nil, fmt.Errorf("stablecoin: wallet lookup: %w", err)
 	} else if existing != nil {
-		return existing, nil // idempotent
+		// Idempotent — but a wallet stuck at provisioned with no signer
+		// retries registration here (the deferred path below).
+		if existing.Status == WalletStatusProvisioned && existing.DelegatedSigner == nil {
+			if rerr := s.registerDelegatedSigner(ctx, existing); rerr != nil {
+				slog.Warn("stablecoin: delegated signer retry deferred", "wallet_id", existing.ID, "error", rerr)
+			}
+		}
+		return existing, nil
 	}
 
 	pw, err := s.provider.CreateWallet(ctx, CreateWalletInput{
@@ -103,6 +116,13 @@ func (s *Service) ProvisionWallet(ctx context.Context, userID pgtype.UUID, membe
 		Status:  WalletStatusProvisioned,
 	})
 	if err != nil {
+		// Concurrent provision for the same user — the other caller won the
+		// insert. Re-read and return the persisted row rather than failing;
+		// the duplicate provider wallet stays linked to this member and is
+		// unused (counterfactual addresses cost nothing until deployed).
+		if existing, lerr := s.store.GetWalletByUser(ctx, userID); lerr == nil && existing != nil {
+			return existing, nil
+		}
 		return nil, fmt.Errorf("stablecoin: persist wallet: %w", err)
 	}
 

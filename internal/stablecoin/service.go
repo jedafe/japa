@@ -49,7 +49,7 @@ type store interface {
 	GetEscrow(ctx context.Context, id pgtype.UUID) (*Escrow, error)
 	GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) (*Escrow, error)
 	InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error)
-	SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision) error
+	SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision, deadline *time.Time) error
 	SetEscrowVaultAddress(ctx context.Context, id pgtype.UUID, addr string) error
 	ListExpiredFundedEscrows(ctx context.Context, limit int32) ([]Escrow, error)
 	GetServiceBooking(ctx context.Context, id pgtype.UUID) (*ServiceBooking, error)
@@ -87,6 +87,13 @@ type Tip struct {
 	NetCredits      int64 // tip − platform fee → recipient leg
 	FeeAmount       int64 // platform fee → treasury hot leg
 	Status          string
+}
+
+// creditRater resolves the USD→credits display rate from the §58
+// currencies table — credits_per_unit lives per-currency there, not in
+// system_settings.
+type creditRater interface {
+	CreditsPerUSD(ctx context.Context) (int64, error)
 }
 
 // BonusEntry is one bonus-credit ledger row for the unified feed.
@@ -134,6 +141,7 @@ type Service struct {
 	enq         enqueuer
 	bonusLedger bonusLedger
 	tipReader   tipReader
+	creditRater creditRater
 }
 
 // NewService wires the stablecoin module.
@@ -155,6 +163,12 @@ func (s *Service) SetBonusLedger(b bonusLedger) {
 // SetTipReader injects the §125 tip read seam for tips:settle_stablecoin.
 func (s *Service) SetTipReader(t tipReader) {
 	s.tipReader = t
+}
+
+// SetCreditRater injects the §58 currencies-table rate seam — display
+// conversion for the unified feed and wallet summary.
+func (s *Service) SetCreditRater(r creditRater) {
+	s.creditRater = r
 }
 
 // killswitch reports whether delegated-signer ops are halted platform-wide

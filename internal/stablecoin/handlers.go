@@ -403,7 +403,11 @@ func (h *Handlers) AdminDecideSweep(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"state": req.Decision + "d"}})
+	state := "approved"
+	if req.Decision == "reject" {
+		state = "rejected"
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"state": state}})
 }
 
 // AdminArbitrateEscrow handles POST /admin/escrows/{id}/arbitrate —
