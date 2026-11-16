@@ -104,21 +104,30 @@ func (s *Service) Fanout(ctx context.Context, contentID pgtype.UUID) error {
 	object := objectDocument(content, author.ActorUrl, author.FollowersUrl, s.siteBase(), contentPageURL(s.siteBase(), content))
 	objID, _ := object["id"].(string)
 
-	// First fanout for this object → Create; re-fanout after a delivered
-	// Create/Update → Update (remote servers update in place). The
+	// Create-vs-Update follows the last DELIVERED state, not mere ledger
+	// presence: an Update is only meaningful where a Create/Update
+	// actually arrived — remotes ignore Updates for unknown or tombstoned
+	// objects, so a Create that never landed (dead inboxes) and a
+	// republish after a delivered Delete both need a fresh Create. The
 	// activity id carries an updated_at discriminator: distinct edits are
 	// distinct events — both our (activity_ap_id, inbox) dedup and the
 	// remote's own activity-id dedup must not swallow a second Update.
 	// Retries of THIS event re-read the same updated_at and converge.
 	activityType := "Create"
-	if s.store.hasDeliveredObject(ctx, author.ID, objID) {
+	if t := s.store.latestDeliveredObjectType(ctx, author.ID, objID); t == "Create" || t == "Update" {
 		activityType = "Update"
 	}
 	var activity map[string]any
 	var apID string
 	if activityType == "Create" {
 		activity = createActivity(author.ActorUrl, author.FollowersUrl, object)
-		apID = objID + "#create"
+		// Same discriminator rule as Update/Delete: a republish after a
+		// delivered Delete emits a SECOND Create whose bare "#create" id
+		// would collapse against the first event's row in the
+		// (activity_ap_id, inbox) dedup — and in the remote's own
+		// activity-id dedup — leaving the tombstone standing.
+		apID = fmt.Sprintf("%s#create/%d", objID, content.UpdatedAt.Time.Unix())
+		activity["id"] = apID
 	} else {
 		apID = fmt.Sprintf("%s#update/%d", objID, content.UpdatedAt.Time.Unix())
 		activity = map[string]any{

@@ -581,15 +581,18 @@ WHERE remote_actor_id = @remote_actor_id AND content_id = @content_id;
 DELETE FROM federation_remote_shares WHERE remote_actor_id = @remote_actor_id
 RETURNING content_id;
 
--- name: HasDeliveredObject :one
--- Fanout's Create-vs-Update decision: any prior delivery row carrying
--- this object means remote inboxes saw the object before → Update.
-SELECT EXISTS(
-    SELECT 1 FROM federation_deliveries
-    WHERE local_actor_id = @local_actor_id
-      AND activity_type IN ('Create','Update')
-      AND activity_json->'object'->>'id' = @object_id::text
-);
+-- name: GetLatestDeliveredObjectType :one
+-- Fanout's Create-vs-Update decision, keyed on the latest DELIVERED
+-- activity for this object: a row that never arrived proves nothing
+-- (pending/failed/dead inboxes ignored an Update anyway), and a last-seen
+-- 'Delete' means remotes hold a tombstone — only a fresh Create
+-- resurrects it. 'Create'/'Update' last-seen → Update; no row → Create.
+SELECT activity_type FROM federation_deliveries
+WHERE local_actor_id = @local_actor_id
+  AND activity_json->'object'->>'id' = @object_id::text
+  AND status = 'delivered'
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
 
 -- name: GetDeliveredObjectActor :one
 -- Tombstone fanout on eligibility loss: which local actor delivered this

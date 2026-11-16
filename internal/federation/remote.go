@@ -89,6 +89,17 @@ func (s *Service) cacheSetRemote(ctx context.Context, row *gen.RemoteActor) {
 	s.vk.Set(ctx, RemoteCacheKey(row.ActorUrl), raw, remoteCacheTTL)
 }
 
+// cacheDelRemote drops the hot-cache copy of a remote actor — a row
+// cached while 'active' must stop serving the moment a Delete{actor}
+// tombstones it, or resolveRemoteActor's hit path returns the stale
+// pre-delete snapshot and keeps dispatching for a dead actor.
+func (s *Service) cacheDelRemote(ctx context.Context, actorURL string) {
+	if s.vk == nil || actorURL == "" {
+		return
+	}
+	_ = s.vk.Del(ctx, RemoteCacheKey(actorURL)).Err()
+}
+
 // instanceAllowed applies the §126 inbound gate: 'open' mode consults the
 // blocklist; 'allowlist' inverts — only domains present in
 // federation_instance_blocks (the operator-curated domain list) are

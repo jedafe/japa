@@ -327,9 +327,15 @@ func (s *Store) actorByID(ctx context.Context, id pgtype.UUID) (gen.FederatedAct
 	return s.read.GetFederatedActorByID(ctx, id)
 }
 
-func (s *Store) hasDeliveredObject(ctx context.Context, localActorID pgtype.UUID, objectID string) bool {
-	v, err := s.read.HasDeliveredObject(ctx, gen.HasDeliveredObjectParams{LocalActorID: localActorID, ObjectID: objectID})
-	return err == nil && v
+// latestDeliveredObjectType returns the newest DELIVERED activity type
+// carrying this object ('' when none arrived) — the fanout decision's
+// input: 'Create'/'Update' → Update; ''/'Delete' → Create.
+func (s *Store) latestDeliveredObjectType(ctx context.Context, localActorID pgtype.UUID, objectID string) string {
+	t, err := s.read.GetLatestDeliveredObjectType(ctx, gen.GetLatestDeliveredObjectTypeParams{LocalActorID: localActorID, ObjectID: objectID})
+	if err != nil {
+		return ""
+	}
+	return t
 }
 
 func (s *Store) deliveredObjectActor(ctx context.Context, objectID string) (pgtype.UUID, bool) {

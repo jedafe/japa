@@ -77,6 +77,10 @@ type dispatchResult struct {
 	reason    string
 	intents   []notifyIntent
 	deliverID pgtype.UUID // optional — a delivery row just created (Accept)
+	// invalidateRemote is a remote-actor URL whose jc:fed:remote:* cache
+	// entry must drop post-commit — the dispatch tombstoned the row and a
+	// stale 'active' snapshot must not keep resolving it.
+	invalidateRemote string
 }
 
 // ProcessInbound dispatches one federation_inbound row. It returns nil
@@ -144,6 +148,13 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("inbound commit: %w", err)
+	}
+	// Post-commit invalidation — inside the dispatch tx a concurrent
+	// resolve could re-cache the pre-delete row between the tombstone
+	// write and commit; dropping the key after commit is the point the
+	// ledger actually says tombstone.
+	if res.invalidateRemote != "" {
+		s.cacheDelRemote(ctx, res.invalidateRemote)
 	}
 	return s.finishInbound(ctx, row.ID, res.status, res.reason, res.intents, res.deliverID)
 }
@@ -585,31 +596,16 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 	return nil
 }
 
-// dispatchAcceptReject flips a pending outbound federation_follows edge.
-// M2 sends no outbound Follows, so most Accept traffic matches nothing —
-// kept for protocol completeness and future outbound-follow work.
+// dispatchAcceptReject is deliberately inert in M2: it answers outbound
+// Follows — which this implementation never sends — so a match can only
+// key on an INBOUND follow row's ap_activity_id. Letting the signer flip
+// that edge would be protocol-mismatched AND desync the two ledgers:
+// a Reject{their own Follow} would drop them from fanout inboxes while
+// the follows mirror + follower_count keep counting them, and an
+// Accept{undone edge} would resurrect fanout without a mirror row.
+// Outbound Follow lands with M3 — until then, ignore.
 func (s *Service) dispatchAcceptReject(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
-	followID := apObjectID(act)
-	if followID == "" || signer == nil {
-		return dispatchResult{status: "ignored", reason: "accept without object"}
-	}
-	follow, err := q.GetFederationFollowByActivityID(ctx, &followID)
-	if err != nil {
-		return dispatchResult{status: "ignored", reason: "no matching follow"}
-	}
-	if follow.RemoteActorID != signer.ID {
-		return dispatchResult{status: "rejected", reason: "accept from non-followed actor"}
-	}
-	newStatus := "accepted"
-	if apStr(act["type"]) == "Reject" {
-		newStatus = "rejected"
-	}
-	if err := q.UpdateFederationFollowStatus(ctx, gen.UpdateFederationFollowStatusParams{
-		LocalActorID: follow.LocalActorID, RemoteActorID: follow.RemoteActorID, Status: newStatus,
-	}); err != nil {
-		return dispatchResult{status: "error", reason: "follow status: " + err.Error()}
-	}
-	return dispatchResult{status: "processed"}
+	return dispatchResult{status: "ignored", reason: "accept/reject answers outbound follows — none exist in M2"}
 }
 
 // dispatchUndo reverses Follow / Like / Announce / Create by wrapping
@@ -1006,6 +1002,7 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "actor tombstone: " + err.Error()}
 	}
+	res := dispatchResult{status: "processed", invalidateRemote: signer.ActorUrl}
 	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follow unwind failed", "error", err)
 	}
@@ -1055,7 +1052,7 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 			s.bumpCounter(q.DecrementCommentReplyCountBy(ctx, gen.DecrementCommentReplyCountByParams{ParentID: pid, N: n}))
 		}
 	}
-	return dispatchResult{status: "processed"}
+	return res
 }
 
 // localContentForObject resolves a local object URL

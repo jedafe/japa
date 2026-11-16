@@ -922,6 +922,32 @@ func (q *Queries) GetInstanceBlockByDomain(ctx context.Context, domain string) (
 	return i, err
 }
 
+const getLatestDeliveredObjectType = `-- name: GetLatestDeliveredObjectType :one
+SELECT activity_type FROM federation_deliveries
+WHERE local_actor_id = $1
+  AND activity_json->'object'->>'id' = $2::text
+  AND status = 'delivered'
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLatestDeliveredObjectTypeParams struct {
+	LocalActorID pgtype.UUID `json:"local_actor_id"`
+	ObjectID     string      `json:"object_id"`
+}
+
+// Fanout's Create-vs-Update decision, keyed on the latest DELIVERED
+// activity for this object: a row that never arrived proves nothing
+// (pending/failed/dead inboxes ignored an Update anyway), and a last-seen
+// 'Delete' means remotes hold a tombstone — only a fresh Create
+// resurrects it. 'Create'/'Update' last-seen → Update; no row → Create.
+func (q *Queries) GetLatestDeliveredObjectType(ctx context.Context, arg GetLatestDeliveredObjectTypeParams) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestDeliveredObjectType, arg.LocalActorID, arg.ObjectID)
+	var activity_type string
+	err := row.Scan(&activity_type)
+	return activity_type, err
+}
+
 const getNodeInfoUsage = `-- name: GetNodeInfoUsage :one
 SELECT
     (SELECT COUNT(*) FROM users WHERE status = 'active' AND is_synthetic = false)::bigint AS total_users,
@@ -1027,29 +1053,6 @@ func (q *Queries) GetRemoteActorByURL(ctx context.Context, actorUrl string) (Rem
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const hasDeliveredObject = `-- name: HasDeliveredObject :one
-SELECT EXISTS(
-    SELECT 1 FROM federation_deliveries
-    WHERE local_actor_id = $1
-      AND activity_type IN ('Create','Update')
-      AND activity_json->'object'->>'id' = $2::text
-)
-`
-
-type HasDeliveredObjectParams struct {
-	LocalActorID pgtype.UUID `json:"local_actor_id"`
-	ObjectID     string      `json:"object_id"`
-}
-
-// Fanout's Create-vs-Update decision: any prior delivery row carrying
-// this object means remote inboxes saw the object before → Update.
-func (q *Queries) HasDeliveredObject(ctx context.Context, arg HasDeliveredObjectParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasDeliveredObject, arg.LocalActorID, arg.ObjectID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }
 
 const incrementContentShareCount = `-- name: IncrementContentShareCount :exec

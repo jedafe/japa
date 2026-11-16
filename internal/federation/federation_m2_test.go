@@ -1657,3 +1657,158 @@ func TestDBInboundLikeDisabledAuthorIgnored(t *testing.T) {
 		t.Fatalf("reaction landed on disabled author's object: %d", n)
 	}
 }
+
+// HasDeliveredObject → GetLatestDeliveredObjectType: a Create that never
+// arrived (dead delivery) proves nothing to the remote — an Update after
+// it would be ignored there, so re-fanout must emit another Create with
+// a fresh discriminated ap_id.
+func TestDBDeadCreateRefanoutStillCreates(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	if row := runInbound(t, ctx, svc, map[string]any{
+		"type": "Follow", "actor": actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	}); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("fanout: %v", err)
+	}
+	// Every inbox dead-lettered — nothing remote ever saw the object.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status = 'dead'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET updated_at = updated_at + interval '1 second' WHERE id = $1`, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("re-fanout: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(DISTINCT activity_ap_id) FROM federation_deliveries
+		 WHERE activity_type = 'Create' AND activity_ap_id LIKE $1`, objIRI+"#create/%"); n != 2 {
+		t.Fatalf("create deliveries after dead-letter re-fanout: %d (want 2)", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries
+		 WHERE activity_type = 'Update' AND activity_json->'object'->>'id' = $1`, objIRI); n != 0 {
+		t.Fatalf("update deliveries after dead-letter re-fanout: %d (want 0)", n)
+	}
+}
+
+// Republish after a delivered Delete: the remote holds a tombstone, so
+// the lifecycle must restart at Create — and the second Create's ap_id
+// must differ from the first's or (activity_ap_id, inbox) dedup and
+// remote-side activity-id dedup would swallow it.
+func TestDBRepublishAfterDeleteSendsCreate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	cleanDeliveries(t, ctx, svc)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	if row := runInbound(t, ctx, svc, map[string]any{
+		"type": "Follow", "actor": actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	}); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("fanout: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status = 'delivered'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.fanoutDeleteIfDelivered(ctx, contentID); err != nil {
+		t.Fatalf("delete fanout: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET status = 'delivered'`); err != nil {
+		t.Fatal(err)
+	}
+	// Republish carries a fresh updated_at.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET updated_at = updated_at + interval '1 second' WHERE id = $1`, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Fanout(ctx, contentID); err != nil {
+		t.Fatalf("republish fanout: %v", err)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(DISTINCT activity_ap_id) FROM federation_deliveries
+		 WHERE activity_type = 'Create' AND activity_ap_id LIKE $1`, objIRI+"#create/%"); n != 2 {
+		t.Fatalf("create deliveries after republish: %d (want 2)", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries
+		 WHERE activity_type = 'Update' AND activity_json->'object'->>'id' = $1`, objIRI); n != 0 {
+		t.Fatalf("update deliveries on tombstone republish: %d (want 0)", n)
+	}
+}
+
+// Accept/Reject answer outbound Follows — M2 sends none, so an inbound
+// one can only desynchronize the ledgers (a Reject flipping the accepted
+// edge would strand the native mirror and follower_count; an Accept
+// could resurrect an undone edge). It must be ignored, edge untouched.
+func TestDBInboundAcceptRejectIgnored(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	localActorURL := svc.apiBase() + "/federation/actors/" + uname
+
+	if row := runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#follow-1", "type": "Follow",
+		"actor": actorURL, "object": localActorURL,
+	}); row.Status != "processed" {
+		t.Fatalf("follow: %q", row.Status)
+	}
+	edgeStatus := func() string {
+		var st string
+		if err := svc.db.Reader.QueryRow(ctx,
+			`SELECT status FROM federation_follows WHERE remote_actor_id = $1`, remote.ID).Scan(&st); err != nil {
+			t.Fatalf("read edge: %v", err)
+		}
+		return st
+	}
+	if st := edgeStatus(); st != "accepted" {
+		t.Fatalf("edge after follow: %q", st)
+	}
+
+	for i, typ := range []string{"Reject", "Accept"} {
+		row := runInbound(t, ctx, svc, map[string]any{
+			"id": fmt.Sprintf("%s#resp-%d", actorURL, i), "type": typ, "actor": actorURL,
+			"object": map[string]any{
+				"id": actorURL + "#follow-1", "type": "Follow",
+				"actor": actorURL, "object": localActorURL,
+			},
+		})
+		if row.Status != "ignored" {
+			t.Fatalf("inbound %s of own follow: status %q", typ, row.Status)
+		}
+	}
+	if st := edgeStatus(); st != "accepted" {
+		t.Fatalf("edge after accept/reject: %q (want accepted)", st)
+	}
+}

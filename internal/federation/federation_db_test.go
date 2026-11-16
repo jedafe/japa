@@ -615,3 +615,60 @@ func TestDBLifecycleCacheInvalidation(t *testing.T) {
 		}
 	}
 }
+
+// A remote actor cached while active must stop resolving the moment an
+// inbound Delete{actor} tombstones the row — the jc:fed:remote:* snapshot
+// would otherwise keep the dead actor dispatchable for the full TTL.
+// The invalidation is post-commit so a concurrent resolve can't repopulate.
+func TestDBDeleteRemoteActorDropsCache(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
+	if err != nil {
+		t.Fatalf("valkey: %v", err)
+	}
+	t.Cleanup(vk.Close)
+
+	svc := newFederationService(t, d)
+	svc.SetValkey(valkeycompat.NewAdapter(vk))
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "gone.example")
+
+	// Warm the cache exactly as a resolve hit would have left it.
+	svc.cacheSetRemote(ctx, &remote)
+	key := RemoteCacheKey(actorURL)
+	if !mr.Exists(key) {
+		t.Fatalf("remote actor not cached after warm")
+	}
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#delete-1", "type": "Delete",
+		"actor": actorURL, "object": actorURL,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("actor delete status %q (reason %v)", row.Status, row.Error)
+	}
+	if mr.Exists(key) {
+		t.Fatalf("%s survived actor tombstone — stale active snapshot kept serving", key)
+	}
+	var status string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status FROM remote_actors WHERE id = $1`, remote.ID).Scan(&status); err != nil {
+		t.Fatalf("read remote status: %v", err)
+	}
+	if status != "tombstone" {
+		t.Fatalf("remote status %q (want tombstone)", status)
+	}
+	if _, err := svc.resolveRemoteActor(ctx, actorURL); !errors.Is(err, ErrRemoteBlocked) {
+		t.Fatalf("resolve after tombstone: %v (want ErrRemoteBlocked)", err)
+	}
+}
