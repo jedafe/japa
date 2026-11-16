@@ -834,7 +834,7 @@
 		const email = newsletterEmail.trim();
 		if (!email) return;
 		newsletterStatus = 'loading';
-		const res = await api.post<{ message?: string; status?: string }>('/newsletter/subscribe', { email });
+		const res = await api.post<{ message?: string; status?: string; double_opt_in?: boolean }>('/newsletter/subscribe', { email });
 		if (res.error) {
 			newsletterStatus = 'error';
 			newsletterMessage = res.error.message ?? t('travel.newsletter_error', 'Something went wrong. Please try again.');
@@ -842,7 +842,7 @@
 		}
 		newsletterStatus = 'success';
 		newsletterMessage =
-			res.data?.status === 'pending'
+			res.data?.double_opt_in === true
 				? t('travel.newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.')
 				: (res.data?.message ?? t('travel.newsletter_success', "You're on the list — watch your inbox."));
 		newsletterEmail = '';

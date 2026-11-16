@@ -557,17 +557,17 @@
 		}
 		newsletterSubmitting = true;
 		newsletterMessage = null;
-		const res = await api.post<{ status?: string }>('/newsletter/subscribe', { email });
+		const res = await api.post<{ status?: string; double_opt_in?: boolean }>('/newsletter/subscribe', { email });
 		newsletterSubmitting = false;
 		if (res.error) {
 			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_error') };
 			return;
 		}
-		// The backend returns the subscriber object with status='subscribed'
-		// for both new and re-subscribes (idempotent upsert, §62), or 'pending'
-		// when newsletter.double_opt_in is on (migration 001170) — the signup
-		// then completes via the emailed confirm link.
-		if (res.data?.status === 'pending') {
+		// The API returns a uniform anti-enumeration response — per-email
+		// state is never reflected, so the copy keys off the site-level
+		// double_opt_in flag (migration 001170): on → the signup completes
+		// via the emailed confirm link; off → subscribed immediately (§62).
+		if (res.data?.double_opt_in === true) {
 			newsletterMessage = { kind: 'info', text: t('sidebar.newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.') };
 		} else {
 			newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };

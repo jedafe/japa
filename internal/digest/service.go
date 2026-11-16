@@ -608,8 +608,8 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	const pageSize = int32(500)
 	sent, failed, total := 0, 0, 0
 
-	for offset := int32(0); ; offset += pageSize {
-		page, err := s.store.GetDigestSubscriberEmailsPage(ctx, offset, pageSize)
+	for lastEmail := ""; ; {
+		page, err := s.store.GetDigestSubscriberEmailsPage(ctx, lastEmail, pageSize)
 		if err != nil {
 			return fmt.Errorf("digest: send_email: list subscribers: %w", err)
 		}
@@ -618,6 +618,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 			break
 		}
 
+		lastEmail = page[len(page)-1]
 		total += len(page)
 
 		for _, recipient := range page {
@@ -702,6 +703,17 @@ func (s *Service) emailSubject(ctx context.Context) string {
 // List-Unsubscribe SMTP headers (§62 compliance, ADR-080 §4). Returns
 // ("", nil) if the subscriber cannot be resolved (best-effort).
 func (s *Service) unsubscribeLink(ctx context.Context, recipient, baseURL string) (string, map[string]string) {
+	base := baseURL
+	if base == "" {
+		base = os.Getenv("JC_SITE_URL")
+	}
+	if base == "" {
+		// No base URL — emit no link/header at all rather than a relative
+		// List-Unsubscribe URI (invalid per RFC 2369, worse than absent).
+		slog.Warn("task:digest:send_email: no base URL for unsubscribe link — sending without it")
+		return "", nil
+	}
+
 	token, err := s.store.CreateUnsubscribeTokenForEmail(ctx, recipient)
 	if err != nil {
 		slog.Warn("task:digest:send_email: unsubscribe token failed", "recipient", recipient, "error", err)
@@ -710,11 +722,6 @@ func (s *Service) unsubscribeLink(ctx context.Context, recipient, baseURL string
 
 	if token == "" {
 		return "", nil
-	}
-
-	base := baseURL
-	if base == "" {
-		base = os.Getenv("JC_SITE_URL")
 	}
 
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token

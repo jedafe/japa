@@ -128,9 +128,12 @@ WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
   AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL;
 
 -- Paged like the campaign fan-out (audit DG-11): the full digest-enabled
--- list is never materialized at once. Stable ORDER BY for OFFSET paging.
+-- list is never materialized at once. Keyset-paged — `email >
+-- @after_email` is stable under mid-scan subscribe/unsubscribe, where
+-- OFFSET would skip or dupe recipients as rows enter/leave the
+-- digest-enabled set between pages.
 -- name: ListDigestSubscriberEmailsPage :many
 SELECT email FROM newsletter_subscribers
-WHERE status = 'subscribed' AND digest_enabled = true
+WHERE status = 'subscribed' AND digest_enabled = true AND email > @after_email
 ORDER BY email
-LIMIT @page_limit OFFSET @page_offset;
+LIMIT @page_limit;

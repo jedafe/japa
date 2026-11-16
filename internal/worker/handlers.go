@@ -530,7 +530,11 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 		return "", nil
 	}
 
-	q := gen.New(dbPool.Reader)
+	// Subscriber lookup on the Writer pool — the send-state pending row
+	// was just populated on Writer, and under replica lag a just-subscribed
+	// recipient could miss on Reader: the mail would then go out with no
+	// unsubscribe link at all (CAN-SPAM/GDPR regression, §62 Compliance).
+	q := gen.New(dbPool.Writer)
 
 	sub, err := q.GetSubscriberByEmail(ctx,
 		recipient,
@@ -540,26 +544,30 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 		return "", nil
 	}
 
+	base := resolveBaseURL(ctx)
+	if base == "" {
+		base = os.Getenv("JC_SITE_URL")
+	}
+	if base == "" {
+		// No base URL — emit no link/header at all rather than a relative
+		// List-Unsubscribe URI, which is invalid per RFC 2369 and worse
+		// than absent (mail clients may surface a broken button).
+		slog.Warn("newsletter: no base URL for unsubscribe link — sending without it")
+		return "", nil
+	}
+
 	token, err := newsletterGenerateUnsubscribeToken()
 	if err != nil {
 		slog.Warn("newsletter: generate unsubscribe token failed", "error", err)
 		return "", nil
 	}
 
-	// Token insert must go to the Writer pool — dbPool.Reader points at the
-	// read replica when JC_DATABASE_READER_URL is set, and the INSERT fails
-	// with SQLSTATE 25006 (read-only transaction).
-	if _, err := gen.New(dbPool.Writer).CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
+	if _, err := q.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
 		Token:        token,
 		SubscriberID: sub.ID,
 	}); err != nil {
 		slog.Warn("newsletter: persist unsubscribe token failed", "error", err)
 		return "", nil
-	}
-
-	base := resolveBaseURL(ctx)
-	if base == "" {
-		base = os.Getenv("JC_SITE_URL")
 	}
 
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
@@ -3748,6 +3756,15 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
 
+	// Honor the feature.newsletter kill-switch: when the flag is off no
+	// campaign mail may leave the platform — including a queued send.
+	// Skipping BEFORE the claim means a disabled platform never lands in
+	// 'sending'; a flag flip mid-send is re-checked per page below.
+	if featureChecker != nil && !featureChecker.IsEnabled(ctx, "feature.newsletter") {
+		slog.Info("task:newsletter:send: feature.newsletter disabled, skipping", "newsletter_id", payload.NewsletterID)
+		return nil
+	}
+
 	writer := gen.New(dbPool.Writer)
 
 	// Fetch the campaign row — needed for the claim check, subject/body,
@@ -3758,6 +3775,13 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	// (wrong claim outcome) or an empty pending set (silent no-send).
 	campaign, err := writer.GetNewsletterCampaignForSend(ctx, campaignID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Campaign was deleted after the task was queued — nothing to
+			// send; returning an error would spin pointless retries.
+			slog.Info("task:newsletter:send: campaign deleted, skipping", "newsletter_id", payload.NewsletterID)
+			return nil
+		}
+
 		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
 	}
 
@@ -3857,6 +3881,14 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 		if lease.Status != "sending" || lease.SendID == nil || *lease.SendID != mySendID {
 			slog.Info("task:newsletter:send: send superseded (cancelled, reset, or newer claim) — stopping", "newsletter_id", payload.NewsletterID, "status", lease.Status, "sent", sent)
+			return nil
+		}
+
+		// The feature kill-switch is also fenced per page — disabling
+		// newsletter mid-send stops mail at the next page boundary rather
+		// than only on the next task.
+		if featureChecker != nil && !featureChecker.IsEnabled(ctx, "feature.newsletter") {
+			slog.Info("task:newsletter:send: feature.newsletter disabled mid-send — stopping", "newsletter_id", payload.NewsletterID, "sent", sent)
 			return nil
 		}
 
@@ -5171,6 +5203,13 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
+	// Honor the feature.newsletter kill-switch: when the flag is off no
+	// newsletter mail may leave the platform — including a queued digest.
+	if featureChecker != nil && !featureChecker.IsEnabled(ctx, "feature.newsletter") {
+		slog.Info("task:newsletter:digest: feature.newsletter disabled, skipping")
+		return nil
+	}
+
 	var payload struct{}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -5214,9 +5253,9 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	total := 0
 	q := gen.New(dbPool.Reader)
 
-	for offset := int32(0); ; offset += pageSize {
+	for lastEmail := ""; ; {
 		subscribers, err := q.ListDigestSubscriberEmailsPage(ctx, gen.ListDigestSubscriberEmailsPageParams{
-			PageLimit: pageSize, PageOffset: offset,
+			PageLimit: pageSize, AfterEmail: lastEmail,
 		})
 		if err != nil {
 			slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
@@ -5227,6 +5266,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 			break
 		}
 
+		lastEmail = subscribers[len(subscribers)-1]
 		total += len(subscribers)
 
 		for _, recipient := range subscribers {

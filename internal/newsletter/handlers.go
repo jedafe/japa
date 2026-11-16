@@ -215,16 +215,18 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The Subscribe query is an upsert (ON CONFLICT DO UPDATE), so the
-	// operation is idempotent: a re-subscribe re-activates the existing row
-	// with status='subscribed' and unsubscribed_at=NULL. Because the upsert
-	// always sets subscribed_at=now() (NOT NULL DEFAULT now()), the row's
-	// SubscribedAt is always valid and cannot be used to distinguish a new
-	// insert from a re-subscribe. Return 200 for the idempotent success —
-	// the subscriber is subscribed either way.
-	h.resolveLiterals(r, &subscriber)
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+	// Anti-enumeration: the response is identical whether the address was
+	// new, already pending, or already subscribed — reflecting the stored
+	// row (status/id/user_id linkage) to an unauthenticated caller would
+	// leak who is on the list and whether an email maps to an account.
+	// double_opt_in is site configuration, not per-email data: the
+	// frontend uses it to pick "check your inbox" vs "subscribed" copy,
+	// and callers that need confirmation messaging get the same answer
+	// for every address (§62 compliance).
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"status":        "ok",
+		"double_opt_in": h.Service.DoubleOptIn(r.Context()),
+	}})
 }
 
 // HandleConfirm handles GET /newsletter/confirm — double opt-in
@@ -646,13 +648,15 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	//   draft/scheduled/sending → cancelled
 	// The PATCH endpoint may not jump to 'sending' or 'sent' directly —
 	// those transitions are owned by the send endpoint and worker.
-	if body.Status != nil && *body.Status != "" {
-		existing, err := h.Service.GetCampaign(r.Context(), id)
-		if err != nil {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
-			return
-		}
+	// Fetch once — needed for both the transition table and the field-edit
+	// guard below.
+	existing, err := h.Service.GetCampaign(r.Context(), id)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
+		return
+	}
 
+	if body.Status != nil && *body.Status != "" {
 		next := *body.Status
 		allowed := false
 
@@ -668,6 +672,27 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		if !allowed {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status_transition",
 				"cannot transition campaign from '"+existing.Status+"' to '"+next+"' via PATCH")
+			return
+		}
+	}
+
+	// Field-edit guard: content/targeting fields are only editable in
+	// draft or scheduled. Rewriting subject/body/segment on a 'sending'
+	// campaign has no effect on the in-flight send (the worker already
+	// fetched it) but corrupts the record; editing a 'sent' or
+	// 'cancelled' campaign falsifies history/analytics. The guard checks
+	// the RESULTING status so a combined {status:'draft', subject:...}
+	// reset-and-edit stays legal.
+	resulting := existing.Status
+	if body.Status != nil && *body.Status != "" {
+		resulting = *body.Status
+	}
+
+	if resulting != CampaignDraft && resulting != CampaignScheduled {
+		if body.Name != nil || body.Subject != nil || body.HTML != nil || body.PreviewText != nil ||
+			body.Body != nil || body.Segment != nil || body.SegmentID != nil || body.ScheduledAt != nil {
+			errpkg.WriteError(w, http.StatusConflict, "campaign_not_editable",
+				"Campaign content is only editable while draft or scheduled")
 			return
 		}
 	}

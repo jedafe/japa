@@ -27,6 +27,7 @@
 		status?: string;
 		digest_enabled?: boolean;
 		campaign_enabled?: boolean;
+		double_opt_in?: boolean;
 	};
 
 	let { data }: { data: unknown } = $props();
@@ -88,10 +89,12 @@
 			subscribeMessage = { kind: 'error', text: res.error.message ?? t('settings.newsletter.error', 'Something went wrong. Please try again.') };
 			return;
 		}
-		if (res.data?.status === 'pending') {
+		if (res.data?.double_opt_in === true) {
 			// Double opt-in (newsletter.double_opt_in, migration 001170): the
 			// row is 'pending' until the emailed confirm link is used — don't
-			// flip to the toggles until the row is actually subscribed.
+			// flip to the toggles until the row is actually subscribed. The
+			// API returns a uniform anti-enumeration response, so this fires
+			// on the site flag rather than per-email state.
 			subscribeMessage = { kind: 'success', text: t('settings.newsletter.confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.') };
 			return;
 		}

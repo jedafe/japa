@@ -459,9 +459,10 @@ func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token stri
 		"html":          true,
 		"template_slug": "newsletter_confirm",
 		"template_data": map[string]any{
-			"action_url": confirmURL,
-			"site_url":   base,
-			"expiry":     "7 days",
+			"action_url":  confirmURL,
+			"site_url":    base,
+			"support_url": strings.TrimRight(base, "/") + "/support",
+			"expiry":      "7 days",
 		},
 	})
 	if err != nil {
@@ -603,16 +604,21 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, par
 
 // DeleteCampaign removes a newsletter campaign.
 func (s *Service) DeleteCampaign(ctx context.Context, id pgtype.UUID) error {
+	// Refuse to delete an in-flight send — a 'sending' campaign must be
+	// cancelled or reset to draft first. Deleting mid-send would orphan
+	// the running task (its lease checks start failing) and drop the
+	// send_state audit trail (ON DELETE CASCADE) while mail is still
+	// going out.
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM newsletter_campaigns
-		WHERE id = $1
+		WHERE id = $1 AND status != 'sending'
 	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting newsletter campaign %s: %w", id, err)
 	}
 
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("newsletter campaign %s not found", id)
+		return fmt.Errorf("newsletter campaign %s not found or currently sending", id)
 	}
 
 	return nil
@@ -695,7 +701,9 @@ func (s *Service) Unsubscribe(ctx context.Context, email string) error {
 // row, so a platform mismatch (token belongs to a different platform's
 // subscriber) yields a "no rows" error rather than a silent no-op (§62).
 func (s *Service) UnsubscribeByToken(ctx context.Context, token string) error {
-	tokenRow, err := s.queries.GetUnsubscribeToken(ctx, token)
+	// Writer-pool read — a token minted seconds ago (send → immediate
+	// click) must not 404 under replica lag.
+	tokenRow, err := s.writeQueries.GetUnsubscribeToken(ctx, token)
 	if err != nil {
 		return fmt.Errorf("newsletter: get unsubscribe token: %w", err)
 	}
@@ -794,7 +802,9 @@ func (s *Service) CreateConfirmToken(ctx context.Context, subscriberID pgtype.UU
 // successful confirm. pgx.ErrNoRows propagates for the handler's 404
 // mapping (unknown token, wrong purpose, or subscriber no longer pending).
 func (s *Service) ConfirmByToken(ctx context.Context, token string) (gen.NewsletterSubscriber, error) {
-	tokenRow, err := s.queries.GetConfirmToken(ctx, token)
+	// Writer-pool read — same read-your-writes reason as the unsubscribe
+	// token lookup (a just-emailed confirm link must never 404 on lag).
+	tokenRow, err := s.writeQueries.GetConfirmToken(ctx, token)
 	if err != nil {
 		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: get confirm token: %w", err)
 	}

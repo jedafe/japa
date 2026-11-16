@@ -156,13 +156,17 @@
 		}
 		newsletterSubmitting = true;
 		newsletterMessage = null;
-		const res = await api.post<{ status?: string }>('/newsletter/subscribe', { email });
+		const res = await api.post<{ status?: string; double_opt_in?: boolean }>('/newsletter/subscribe', { email });
 		newsletterSubmitting = false;
 		if (res.error) {
 			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_error', 'Subscription failed. Please try again.') };
 			return;
 		}
-		newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success', 'You are subscribed!') };
+		// Uniform anti-enumeration response — copy keys off the site-level
+		// double_opt_in flag, not per-email state (migration 001170, §62).
+		newsletterMessage = res.data?.double_opt_in === true
+			? { kind: 'info', text: t('sidebar.newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.') }
+			: { kind: 'success', text: t('sidebar.newsletter_success', 'You are subscribed!') };
 		newsletterEmail = '';
 	}
 </script>

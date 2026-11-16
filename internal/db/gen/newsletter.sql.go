@@ -177,20 +177,23 @@ func (q *Queries) ListDigestSubscribedUsers(ctx context.Context) ([]ListDigestSu
 
 const listDigestSubscriberEmailsPage = `-- name: ListDigestSubscriberEmailsPage :many
 SELECT email FROM newsletter_subscribers
-WHERE status = 'subscribed' AND digest_enabled = true
+WHERE status = 'subscribed' AND digest_enabled = true AND email > $1
 ORDER BY email
-LIMIT $2 OFFSET $1
+LIMIT $2
 `
 
 type ListDigestSubscriberEmailsPageParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
+	AfterEmail string `json:"after_email"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 // Paged like the campaign fan-out (audit DG-11): the full digest-enabled
-// list is never materialized at once. Stable ORDER BY for OFFSET paging.
+// list is never materialized at once. Keyset-paged — `email >
+// @after_email` is stable under mid-scan subscribe/unsubscribe, where
+// OFFSET would skip or dupe recipients as rows enter/leave the
+// digest-enabled set between pages.
 func (q *Queries) ListDigestSubscriberEmailsPage(ctx context.Context, arg ListDigestSubscriberEmailsPageParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, listDigestSubscriberEmailsPage, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listDigestSubscriberEmailsPage, arg.AfterEmail, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

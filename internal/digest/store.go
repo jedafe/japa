@@ -930,24 +930,22 @@ LIMIT 1`)
 	return raw, nil
 }
 
-// GetDigestSubscriberEmailsPage returns one page of subscriber emails with
-// digest_enabled=true, ordered for stable pagination. SendEditionEmail
-// consumes pages directly so the full recipient list is never materialized
-// in memory (audit DG-11 — mirrors newsletter:send's paged fan-out).
-func (s *Store) GetDigestSubscriberEmailsPage(ctx context.Context, offset, limit int32) ([]string, error) {
+// GetDigestSubscriberEmailsPage returns one keyset page of subscriber
+// emails with digest_enabled=true — callers pass the last email of the
+// previous page ("" for the first). Keyset is stable under mid-scan
+// subscribe/unsubscribe where OFFSET would skip or dupe recipients.
+// SendEditionEmail consumes pages directly so the full recipient list is
+// never materialized in memory (audit DG-11 — mirrors newsletter:send's
+// paged fan-out).
+func (s *Store) GetDigestSubscriberEmailsPage(ctx context.Context, afterEmail string, limit int32) ([]string, error) {
 	q := gen.New(s.pool.Reader)
 
-	rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
-		PageOffset: offset,
+	emails, err := q.ListDigestSubscriberEmailsPage(ctx, gen.ListDigestSubscriberEmailsPageParams{
+		AfterEmail: afterEmail,
 		PageLimit:  limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("digest: get subscribers page: %w", err)
-	}
-
-	emails := make([]string, 0, len(rows))
-	for _, r := range rows {
-		emails = append(emails, r.Email)
 	}
 
 	return emails, nil
@@ -958,7 +956,11 @@ func (s *Store) GetDigestSubscriberEmailsPage(ctx context.Context, offset, limit
 // Returns ("", nil) if the subscriber is not found (best-effort — the email
 // is still sent without an unsubscribe header).
 func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, emailAddr string) (string, error) {
-	q := gen.New(s.pool.Reader)
+	// Writer pool for both ops: the token INSERT fails outright on a
+	// read replica (SQLSTATE 25006), and the subscriber lookup needs
+	// read-your-writes — a just-subscribed recipient could miss on Reader
+	// and the mail would go out with no unsubscribe link (§62 Compliance).
+	q := gen.New(s.pool.Writer)
 
 	sub, err := q.GetSubscriberByEmail(ctx,
 		emailAddr,
