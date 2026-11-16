@@ -2513,12 +2513,12 @@ func sanitizeTipTapNodes(node map[string]any) {
 }
 
 // wikiMinWords resolves the §43 wiki word floor from system_settings
-// (seo.sitemap.wiki_min_words), default 500.
+// (seo.sitemap.wiki_min_words), default 250.
 func (s *Service) wikiMinWords(ctx context.Context) int {
 	if s.settings == nil {
-		return 500
+		return 250
 	}
-	return s.settings.GetIntOr(ctx, "seo.sitemap.wiki_min_words", 500)
+	return s.settings.GetIntOr(ctx, "seo.sitemap.wiki_min_words", 250)
 }
 
 // wikiText extracts plain text from a TipTap JSON doc for word counting —

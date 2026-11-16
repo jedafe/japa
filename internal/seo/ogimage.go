@@ -175,7 +175,7 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		// /wiki/{slug} noindexes when the space has no approved prose page
 		// meeting seo.sitemap.wiki_min_words — the wiki index's own gate,
 		// independent of the space's social-signal floors.
-		minWords := 500
+		minWords := 250
 		if h.settings != nil {
 			minWords = h.settings.GetIntOr(ctx, "seo.sitemap.wiki_min_words", minWords)
 		}

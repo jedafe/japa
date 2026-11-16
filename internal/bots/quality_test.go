@@ -199,26 +199,26 @@ func TestIsContentIndexableByType(t *testing.T) {
 		},
 		// Guides — higher word count threshold.
 		{
-			"guide meets default 200 words",
-			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 1050, SeoIndexable: true},
+			"guide meets default 500 words",
+			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 550, SeoIndexable: true},
 			def,
 			true,
 		},
 		{
-			"guide below default 200 words",
+			"guide below default 500 words",
 			ContentIndexableInput{ContentType: "guide", Status: "published", Visibility: "public", WordCount: 300, SeoIndexable: true},
 			def,
 			false,
 		},
 		// Comparison — lower word count threshold.
 		{
-			"comparison meets default 50 words",
+			"comparison meets default 250 words",
 			ContentIndexableInput{ContentType: "comparison", Status: "published", Visibility: "public", WordCount: 550, SeoIndexable: true},
 			def,
 			true,
 		},
 		{
-			"comparison below default 50 words",
+			"comparison below default 250 words",
 			ContentIndexableInput{ContentType: "comparison", Status: "published", Visibility: "public", WordCount: 30, SeoIndexable: true},
 			def,
 			false,
@@ -284,9 +284,9 @@ func TestComparisonSeoIndexable(t *testing.T) {
 		{"members not indexable", "detailed", "published", "members", 1000, 500, false},
 		{"in_review not indexable", "detailed", "in_review", "public", 1000, 500, false},
 		{"archived not indexable", "detailed", "archived", "public", 1000, 500, false},
-		{"zero min falls back to default 500", "detailed", "published", "public", 400, 0, false},
-		{"zero min falls back, above default", "detailed", "published", "public", 600, 0, true},
-		{"negative min falls back to default", "detailed", "published", "public", 600, -1, true},
+		{"zero min falls back to default 250", "detailed", "published", "public", 200, 0, false},
+		{"zero min falls back, above default", "detailed", "published", "public", 400, 0, true},
+		{"negative min falls back to default", "detailed", "published", "public", 400, -1, true},
 		{"custom threshold respected", "detailed", "published", "public", 300, 250, true},
 		{"custom threshold below", "detailed", "published", "public", 200, 250, false},
 	}
@@ -324,34 +324,34 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 		t.Errorf("expected MinQuestions 1, got %d", cfg.MinQuestions)
 	}
 
-	if cfg.MinWords != 100 {
-		t.Errorf("expected MinWords 100, got %d", cfg.MinWords)
+	if cfg.MinWords != 50 {
+		t.Errorf("expected MinWords 50, got %d", cfg.MinWords)
 	}
 
-	if cfg.BlogMinWords != 600 {
-		t.Errorf("expected BlogMinWords 600, got %d", cfg.BlogMinWords)
+	if cfg.BlogMinWords != 300 {
+		t.Errorf("expected BlogMinWords 300, got %d", cfg.BlogMinWords)
 	}
-	if cfg.StoryMinWords != 600 {
-		t.Errorf("expected StoryMinWords 600, got %d", cfg.StoryMinWords)
+	if cfg.StoryMinWords != 300 {
+		t.Errorf("expected StoryMinWords 300, got %d", cfg.StoryMinWords)
 	}
-	if cfg.ListMinWords != 500 {
-		t.Errorf("expected ListMinWords 500, got %d", cfg.ListMinWords)
-	}
-
-	if cfg.ForumMinWords != 30 {
-		t.Errorf("expected ForumMinWords 30, got %d", cfg.ForumMinWords)
+	if cfg.ListMinWords != 250 {
+		t.Errorf("expected ListMinWords 250, got %d", cfg.ListMinWords)
 	}
 
-	if cfg.DiscussionMinWords != 50 {
-		t.Errorf("expected DiscussionMinWords 50, got %d", cfg.DiscussionMinWords)
+	if cfg.ForumMinWords != 15 {
+		t.Errorf("expected ForumMinWords 15, got %d", cfg.ForumMinWords)
 	}
 
-	if cfg.GuideMinWords != 1000 {
-		t.Errorf("expected GuideMinWords 1000, got %d", cfg.GuideMinWords)
+	if cfg.DiscussionMinWords != 25 {
+		t.Errorf("expected DiscussionMinWords 25, got %d", cfg.DiscussionMinWords)
 	}
 
-	if cfg.ComparisonMinWords != 500 {
-		t.Errorf("expected ComparisonMinWords 500, got %d", cfg.ComparisonMinWords)
+	if cfg.GuideMinWords != 500 {
+		t.Errorf("expected GuideMinWords 500, got %d", cfg.GuideMinWords)
+	}
+
+	if cfg.ComparisonMinWords != 250 {
+		t.Errorf("expected ComparisonMinWords 250, got %d", cfg.ComparisonMinWords)
 	}
 
 	if cfg.BlogMinEngagement != 0 {

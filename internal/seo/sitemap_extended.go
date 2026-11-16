@@ -458,9 +458,9 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 
 	defer rows.Close()
 
-	minWords := 500
+	minWords := 250
 	if h.settings != nil {
-		minWords = h.settings.GetIntOr(r.Context(), "seo.sitemap.wiki_min_words", 500)
+		minWords = h.settings.GetIntOr(r.Context(), "seo.sitemap.wiki_min_words", 250)
 	}
 
 	base := h.baseURL(r)
