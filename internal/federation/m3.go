@@ -667,13 +667,14 @@ func (s *Service) UnsubscribeRelay(ctx context.Context, relayID pgtype.UUID) err
 	return s.store.deleteRelay(ctx, relayID)
 }
 
-// ListRelays is the admin DataTable source for relay subscriptions.
-func (s *Service) ListRelays(ctx context.Context, limit, offset int32) ([]gen.FederationRelay, int64, error) {
-	rows, err := s.store.read.ListFederationRelays(ctx, gen.ListFederationRelaysParams{PageLimit: limit, PageOffset: offset})
+// ListRelays is the admin DataTable source for relay subscriptions —
+// `?status=` narrows to one subscription state (empty = all).
+func (s *Service) ListRelays(ctx context.Context, status string, limit, offset int32) ([]gen.FederationRelay, int64, error) {
+	rows, err := s.store.read.ListFederationRelays(ctx, gen.ListFederationRelaysParams{Status: status, PageLimit: limit, PageOffset: offset})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.read.CountFederationRelays(ctx)
+	total, err := s.store.read.CountFederationRelays(ctx, status)
 	if err != nil {
 		return nil, 0, err
 	}

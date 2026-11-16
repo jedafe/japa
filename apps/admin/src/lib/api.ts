@@ -2022,6 +2022,26 @@ export const sharePlatformsAdminApi = {
 		api(`/share-platforms/${key}`, { method: 'DELETE' }),
 };
 
+// §126 ActivityPub federation admin API — M3 ops surface: relay
+// subscriptions, space Group actors, instance domain blocks.
+export const federationAdminApi = {
+	listRelays: (params?: string) => api<unknown>(`/admin/federation/relays${params ? `?${params}` : ''}`),
+	createRelay: (body: { actor_url: string }) =>
+		api('/admin/federation/relays', { method: 'POST', body }),
+	deleteRelay: (id: string) =>
+		api(`/admin/federation/relays/${id}`, { method: 'DELETE' }),
+	listGroups: (params?: string) => api<unknown>(`/admin/federation/groups${params ? `?${params}` : ''}`),
+	createGroup: (body: { space_id: string }) =>
+		api('/admin/federation/groups', { method: 'POST', body }),
+	deleteGroup: (id: string) =>
+		api(`/admin/federation/groups/${id}`, { method: 'DELETE' }),
+	listInstances: (params?: string) => api<unknown>(`/admin/federation/instances${params ? `?${params}` : ''}`),
+	createInstance: (body: { domain: string; reason?: string }) =>
+		api('/admin/federation/instances', { method: 'POST', body }),
+	deleteInstance: (id: string) =>
+		api(`/admin/federation/instances/${id}`, { method: 'DELETE' }),
+};
+
 // §125 Tips & Donations admin API.
 export const tipsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/tips${params ? `?${params}` : ''}`),

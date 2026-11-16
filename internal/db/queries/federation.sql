@@ -771,11 +771,14 @@ SELECT * FROM federation_relays WHERE follow_ap_id = @follow_ap_id;
 SELECT * FROM federation_relays WHERE actor_url = @actor_url;
 
 -- name: ListFederationRelays :many
-SELECT * FROM federation_relays ORDER BY created_at DESC
+SELECT * FROM federation_relays
+WHERE (@status::text = '' OR status = @status)
+ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountFederationRelays :one
-SELECT COUNT(*)::bigint FROM federation_relays;
+SELECT COUNT(*)::bigint FROM federation_relays
+WHERE (@status::text = '' OR status = @status);
 
 -- name: SetFederationRelayStatus :exec
 UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()

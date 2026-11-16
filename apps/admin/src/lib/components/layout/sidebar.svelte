@@ -138,6 +138,15 @@
 			]
 		},
 		{
+			id: "federation",
+			label: t("nav.section.federation", "Federation"),
+			items: [
+				{ path: "/federation/groups", label: t("nav.federation_groups", "Group Actors"), icon: Users, permission: "federation.actors.manage" },
+				{ path: "/federation/relays", label: t("nav.federation_relays", "Relays"), icon: Rss, permission: "federation.instances.manage" },
+				{ path: "/federation/instances", label: t("nav.federation_instances", "Instance Blocks"), icon: Shield, permission: "federation.instances.manage" }
+			]
+		},
+		{
 			id: "analytics",
 			label: t("nav.section.analytics", "Analytics & Reports"),
 			items: [

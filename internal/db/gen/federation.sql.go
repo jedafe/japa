@@ -137,10 +137,11 @@ func (q *Queries) CountFederatedActors(ctx context.Context, q_ string) (int64, e
 
 const countFederationRelays = `-- name: CountFederationRelays :one
 SELECT COUNT(*)::bigint FROM federation_relays
+WHERE ($1::text = '' OR status = $1)
 `
 
-func (q *Queries) CountFederationRelays(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countFederationRelays)
+func (q *Queries) CountFederationRelays(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countFederationRelays, status)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -2119,17 +2120,20 @@ func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActo
 }
 
 const listFederationRelays = `-- name: ListFederationRelays :many
-SELECT id, actor_url, inbox_url, domain, status, follow_ap_id, last_error, created_by, created_at, updated_at FROM federation_relays ORDER BY created_at DESC
-LIMIT $2 OFFSET $1
+SELECT id, actor_url, inbox_url, domain, status, follow_ap_id, last_error, created_by, created_at, updated_at FROM federation_relays
+WHERE ($1::text = '' OR status = $1)
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
 `
 
 type ListFederationRelaysParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListFederationRelays(ctx context.Context, arg ListFederationRelaysParams) ([]FederationRelay, error) {
-	rows, err := q.db.Query(ctx, listFederationRelays, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listFederationRelays, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
