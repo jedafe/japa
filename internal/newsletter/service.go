@@ -217,8 +217,9 @@ func (s *Service) EnqueueNewsletterSendAt(_ context.Context, campaignID pgtype.U
 
 	payload, err := json.Marshal(map[string]any{
 		"newsletter_id": campaignID.String(),
-		// Included in the Unique() fingerprint so re-scheduling the campaign
-		// to a different time enqueues a fresh task; the worker ignores it.
+		// Carried in the payload so (a) Unique() doesn't collapse a
+		// reschedule onto the old task's fingerprint and (b) the worker can
+		// reject stale tasks whose campaign was rescheduled/cancelled.
 		"scheduled_at": at.UTC().Format(time.RFC3339),
 	})
 	if err != nil {
@@ -400,6 +401,9 @@ func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token stri
 	}
 
 	base := s.siteBaseURL(ctx)
+	if base == "" {
+		return errors.New("site base URL unset — cannot build confirm link")
+	}
 	confirmURL := strings.TrimRight(base, "/") + "/newsletter/confirm?token=" + token
 
 	payload, err := json.Marshal(map[string]any{
@@ -419,6 +423,42 @@ func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token stri
 	}
 
 	return nil
+}
+
+// ReserveConfirmSend records a confirm-email send for the address under a
+// 1-hour cooldown key (jc:newsletter_confirm_sent:{email} — catalog). Returns
+// true when the caller may send (first send in the window); false when a
+// confirmation was already sent recently. Without it, resubmitting a
+// victim's address emails them a fresh confirm link every time — the same
+// mail-bomb vector double opt-in exists to close. Fails open when valkey is
+// unwired (the row is pending — silent suppression would be worse).
+func (s *Service) ReserveConfirmSend(ctx context.Context, email string) bool {
+	if s.vk == nil {
+		return true
+	}
+
+	key := "jc:newsletter_confirm_sent:" + strings.ToLower(strings.TrimSpace(email))
+	set, err := s.vk.SetNX(ctx, key, 1, time.Hour).Result()
+	if err != nil {
+		slog.Warn("newsletter: confirm cooldown check failed (sending anyway)", "error", err)
+		return true
+	}
+
+	return set
+}
+
+// ReleaseConfirmSend drops the cooldown reservation after a failed send —
+// otherwise a pending subscriber whose enqueue died would be locked out of
+// a working confirmation email for the rest of the window.
+func (s *Service) ReleaseConfirmSend(ctx context.Context, email string) {
+	if s.vk == nil {
+		return
+	}
+
+	key := "jc:newsletter_confirm_sent:" + strings.ToLower(strings.TrimSpace(email))
+	if err := s.vk.Del(ctx, key).Err(); err != nil {
+		slog.Warn("newsletter: confirm cooldown release failed", "error", err)
+	}
 }
 
 // siteBaseURL resolves the platform site base URL (site.base_url setting,

@@ -224,7 +224,7 @@ RETURNING *;
 -- =====================================================================
 
 -- name: GetNewsletterCampaignForSend :one
-SELECT id, subject, html, body, segment, segment_id, status
+SELECT id, subject, html, body, segment, segment_id, status, scheduled_at
 FROM newsletter_campaigns
 WHERE id = @id;
 

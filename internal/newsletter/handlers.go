@@ -199,14 +199,19 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// Double opt-in (migration 001170): a 'pending' row must not receive any
 	// mail until the owner confirms — mint a purpose='confirm' token and
 	// enqueue the confirmation email. Failures degrade to logging: the row
-	// exists and re-subscribing re-triggers the flow.
-	if subscriber.Status == StatusPending {
+	// exists and re-subscribing re-triggers the flow. ReserveConfirmSend
+	// caps one confirm email per address per hour so repeated sign-ups for
+	// a victim's address can't mail-bomb them; the earlier token stays
+	// valid, so a suppressed resend is still confirmable.
+	if subscriber.Status == StatusPending && h.Service.ReserveConfirmSend(r.Context(), email) {
 		if tok, terr := h.Service.CreateConfirmToken(r.Context(), subscriber.ID); terr == nil {
 			if eerr := h.Service.EnqueueConfirmEmail(r.Context(), email, tok); eerr != nil {
 				slog.Warn("newsletter: enqueue confirm email failed", "error", eerr)
+				h.Service.ReleaseConfirmSend(r.Context(), email)
 			}
 		} else {
 			slog.Warn("newsletter: create confirm token failed", "error", terr)
+			h.Service.ReleaseConfirmSend(r.Context(), email)
 		}
 	}
 
@@ -235,7 +240,12 @@ func (h *Handlers) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 
 	subscriber, err := h.Service.ConfirmByToken(r.Context(), token)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "invalid_token", "Invalid or expired confirmation link")
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "invalid_token", "Invalid or expired confirmation link")
+			return
+		}
+		slog.Error("newsletter: confirm_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 		return
 	}
 
@@ -961,15 +971,27 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	// re-flip subscriber status. Dedupe exact-duplicate payloads for 24h via
 	// jc:newsletter_webhook_evt:{sha256(body)} — a SET NX that fails means
 	// "already processed" → acknowledge 200 so the provider stops retrying.
+	// The claim is released on processing failure — otherwise a transient
+	// error would swallow the event (the retry would read as "duplicate").
 	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
+	dedupeKey := ""
+	releaseDedupe := func() {
+		if dedupeKey != "" {
+			if vk := h.Service.WebhookDedupe(); vk != nil {
+				_ = vk.Del(r.Context(), dedupeKey).Err()
+			}
+		}
+	}
+
 	if vk := h.Service.WebhookDedupe(); vk != nil {
 		sum := sha256.Sum256(rawBody)
-		set, derr := vk.SetNX(r.Context(), "jc:newsletter_webhook_evt:"+hex.EncodeToString(sum[:]), 1, 24*time.Hour).Result()
+		dedupeKey = "jc:newsletter_webhook_evt:" + hex.EncodeToString(sum[:])
+		set, derr := vk.SetNX(r.Context(), dedupeKey, 1, 24*time.Hour).Result()
 		if derr == nil && !set {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "duplicate"}})
 			return
@@ -995,6 +1017,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch payload.EventType {
 	case "bounce":
 		if err := h.Service.MarkBounced(r.Context(), payload.Email); err != nil {
+			releaseDedupe()
 			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
 
@@ -1002,6 +1025,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	case "complaint":
 		if err := h.Service.MarkComplained(r.Context(), payload.Email); err != nil {
+			releaseDedupe()
 			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
 
@@ -1031,7 +1055,11 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			err = h.Service.IncrementCampaignClicks(r.Context(), payload.CampaignID)
 		}
 		if err != nil {
+			releaseDedupe()
 			slog.Error("newsletter webhook: increment "+payload.EventType+"s", "campaign_id", payload.CampaignID, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to record "+payload.EventType)
+
+			return
 		}
 	case "delivered":
 		// No status change needed; provider delivery events are out of

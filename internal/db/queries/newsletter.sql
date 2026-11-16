@@ -13,7 +13,16 @@ ON CONFLICT (campaign_id, recipient) DO NOTHING;
 
 -- name: ListPendingNewsletterRecipients :many
 SELECT recipient FROM newsletter_send_state
-WHERE campaign_id = @campaign_id AND status = 'pending';
+WHERE campaign_id = @campaign_id AND status = 'pending'
+ORDER BY recipient
+LIMIT @page_limit;
+
+-- name: CountNewsletterRecipientStates :one
+SELECT
+  COUNT(*) FILTER (WHERE status = 'sent')   AS sent,
+  COUNT(*) FILTER (WHERE status = 'failed') AS failed
+FROM newsletter_send_state
+WHERE campaign_id = @campaign_id;
 
 -- name: MarkNewsletterRecipientFailed :exec
 UPDATE newsletter_send_state

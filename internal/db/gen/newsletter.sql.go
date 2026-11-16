@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countNewsletterRecipientStates = `-- name: CountNewsletterRecipientStates :one
+SELECT
+  COUNT(*) FILTER (WHERE status = 'sent')   AS sent,
+  COUNT(*) FILTER (WHERE status = 'failed') AS failed
+FROM newsletter_send_state
+WHERE campaign_id = $1
+`
+
+type CountNewsletterRecipientStatesRow struct {
+	Sent   int64 `json:"sent"`
+	Failed int64 `json:"failed"`
+}
+
+func (q *Queries) CountNewsletterRecipientStates(ctx context.Context, campaignID pgtype.UUID) (CountNewsletterRecipientStatesRow, error) {
+	row := q.db.QueryRow(ctx, countNewsletterRecipientStates, campaignID)
+	var i CountNewsletterRecipientStatesRow
+	err := row.Scan(&i.Sent, &i.Failed)
+	return i, err
+}
+
 const getNewsletterCampaign = `-- name: GetNewsletterCampaign :one
 
 SELECT subject, html FROM newsletter_campaigns
@@ -95,10 +115,17 @@ func (q *Queries) ListDigestSubscriberEmails(ctx context.Context) ([]string, err
 const listPendingNewsletterRecipients = `-- name: ListPendingNewsletterRecipients :many
 SELECT recipient FROM newsletter_send_state
 WHERE campaign_id = $1 AND status = 'pending'
+ORDER BY recipient
+LIMIT $2
 `
 
-func (q *Queries) ListPendingNewsletterRecipients(ctx context.Context, campaignID pgtype.UUID) ([]string, error) {
-	rows, err := q.db.Query(ctx, listPendingNewsletterRecipients, campaignID)
+type ListPendingNewsletterRecipientsParams struct {
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListPendingNewsletterRecipients(ctx context.Context, arg ListPendingNewsletterRecipientsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listPendingNewsletterRecipients, arg.CampaignID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

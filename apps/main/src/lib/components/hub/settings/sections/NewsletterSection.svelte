@@ -125,6 +125,13 @@
 	</header>
 
 	{#if prefs}
+		{#if prefs.status === 'pending'}
+			<!-- Double opt-in (migration 001170): awaiting email confirmation —
+			     preferences can be set now but no mail is sent until confirmed. -->
+			<p class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-xs text-[var(--color-muted)]">
+				{t('settings.newsletter.pending_notice', 'Awaiting confirmation — check your inbox for the confirmation link to activate your subscription.')}
+			</p>
+		{/if}
 		<!-- Subscriber preferences: digest + campaign toggles -->
 		<ul class="space-y-2">
 			<li class="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
@@ -168,7 +175,9 @@
 		{#if prefs.email}
 			<div class="mt-3 flex items-center justify-between gap-3">
 				<p class="text-xs text-[var(--color-muted)]">
-					{t('settings.newsletter.subscribed_as', 'Subscribed as')} <strong>{prefs.email}</strong>
+					{prefs.status === 'pending'
+						? t('settings.newsletter.pending_as', 'Pending confirmation for')
+						: t('settings.newsletter.subscribed_as', 'Subscribed as')} <strong>{prefs.email}</strong>
 				</p>
 				<button
 					type="button"

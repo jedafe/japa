@@ -3735,6 +3735,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		NewsletterID string `json:"newsletter_id"`
+		ScheduledAt  string `json:"scheduled_at"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -3754,6 +3755,29 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	campaign, err := reader.GetNewsletterCampaignForSend(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
+	}
+
+	// A queued task must not outlive its campaign state (NL-02 follow-up):
+	//   scheduled task — fires only when the campaign is still 'scheduled'
+	//     for exactly this slot. Cancelling, moving back to draft, or
+	//     rescheduling (which leaves the old ProcessAt task queued under a
+	//     different Unique fingerprint) all invalidate it.
+	//   send-now task — 'draft'/'scheduled' are legitimate (the status flip
+	//     trails the enqueue); 'sending' covers crash-retry. Only terminal
+	//     states skip.
+	if payload.ScheduledAt != "" {
+		stale := campaign.Status != "scheduled"
+		if !stale {
+			want, perr := time.Parse(time.RFC3339, payload.ScheduledAt)
+			stale = perr != nil || !campaign.ScheduledAt.Valid || !campaign.ScheduledAt.Time.Equal(want)
+		}
+		if stale {
+			slog.Info("task:newsletter:send: scheduled send no longer valid, skipping", "newsletter_id", payload.NewsletterID, "status", campaign.Status, "task_scheduled_at", payload.ScheduledAt)
+			return nil
+		}
+	} else if campaign.Status == "sent" || campaign.Status == "cancelled" {
+		slog.Info("task:newsletter:send: campaign in terminal state, skipping", "newsletter_id", payload.NewsletterID, "status", campaign.Status)
+		return nil
 	}
 
 	subject, htmlBody := campaign.Subject, campaign.Html
@@ -3776,29 +3800,59 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	sent := 0
 	failed := 0
 	total := 0
-	page := int32(0)
 
-	for {
-		recipients, err := newsletterRecipientsForSegment(ctx, reader, campaign.Segment, campaign.SegmentID, page, batchSize)
-		if err != nil {
-			return fmt.Errorf("task:newsletter:send: resolve recipients (segment=%s page=%d): %w", campaign.Segment, page, err)
+	if campaign.Segment == "all" {
+		// Resume-safe path for 'all' campaigns: consume send-state 'pending'
+		// rows directly (LIMIT without OFFSET — marked rows leave the set,
+		// so each fetch returns the next unmailed batch). A crash-retry
+		// re-mails only recipients that never got a 'sent' mark instead of
+		// double-mailing the whole list.
+		for {
+			recipients, err := reader.ListPendingNewsletterRecipients(ctx, gen.ListPendingNewsletterRecipientsParams{
+				CampaignID: campaignID, PageLimit: batchSize,
+			})
+			if err != nil {
+				return fmt.Errorf("task:newsletter:send: resolve pending recipients: %w", err)
+			}
+
+			if len(recipients) == 0 {
+				break
+			}
+
+			s, f := sendNewsletterPage(ctx, writer, campaignID, subject, htmlBody, recipients)
+			sent += s
+			failed += f
+			total += len(recipients)
 		}
+	} else {
+		// Scoped segments (space/tag/pro): the send-state upsert captures
+		// the 'all' set, not the segment membership, so pending-state
+		// resume isn't available — page the segment query directly.
+		// Retry may re-mail early recipients (pre-existing gap).
+		page := int32(0)
 
-		if len(recipients) == 0 {
-			break
+		for {
+			recipients, err := newsletterRecipientsForSegment(ctx, reader, campaign.Segment, campaign.SegmentID, page, batchSize)
+			if err != nil {
+				return fmt.Errorf("task:newsletter:send: resolve recipients (segment=%s page=%d): %w", campaign.Segment, page, err)
+			}
+
+			if len(recipients) == 0 {
+				break
+			}
+
+			s, f := sendNewsletterPage(ctx, writer, campaignID, subject, htmlBody, recipients)
+			sent += s
+			failed += f
+			total += len(recipients)
+
+			//nolint:gosec // G115: bounded
+			if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
+				break
+			}
+
+			page++
 		}
-
-		s, f := sendNewsletterPage(ctx, writer, campaignID, subject, htmlBody, recipients)
-		sent += s
-		failed += f
-		total += len(recipients)
-
-		//nolint:gosec // G115: bounded
-		if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
-			break
-		}
-
-		page++
 	}
 
 	// Only stamp 'sent' when at least one recipient actually received the
@@ -3812,6 +3866,21 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 			RecipientCount: int32(sent), // #nosec
 		})
 	case total == 0:
+		// Pending set is empty. Two cases: the segment never had
+		// recipients (revert to draft — §62), or a prior run already
+		// delivered everything and died before stamping 'sent' — the
+		// send-state rows survive, so complete the bookkeeping instead of
+		// reverting a delivered campaign to draft.
+		states, cerr := reader.CountNewsletterRecipientStates(ctx, campaignID)
+		if cerr == nil && states.Sent > 0 {
+			slog.Info("task:newsletter:send: prior run delivered all recipients — marking sent", "newsletter_id", payload.NewsletterID, "sent", states.Sent)
+			_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
+				ID:             campaignID,
+				RecipientCount: int32(states.Sent), // #nosec
+			})
+			break
+		}
+
 		slog.Warn("task:newsletter:send: segment resolved zero recipients, reverting to draft", "newsletter_id", payload.NewsletterID, "segment", campaign.Segment)
 		if _, err := dbPool.Writer.Exec(ctx, `UPDATE newsletter_campaigns SET status = 'draft' WHERE id = $1`, campaignID); err != nil {
 			slog.Warn("task:newsletter:send: revert to draft failed", "error", err)

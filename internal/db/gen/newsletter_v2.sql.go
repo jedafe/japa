@@ -422,19 +422,20 @@ func (q *Queries) GetDigestSubscribers(ctx context.Context, arg GetDigestSubscri
 
 const getNewsletterCampaignForSend = `-- name: GetNewsletterCampaignForSend :one
 
-SELECT id, subject, html, body, segment, segment_id, status
+SELECT id, subject, html, body, segment, segment_id, status, scheduled_at
 FROM newsletter_campaigns
 WHERE id = $1
 `
 
 type GetNewsletterCampaignForSendRow struct {
-	ID        pgtype.UUID `json:"id"`
-	Subject   string      `json:"subject"`
-	Html      string      `json:"html"`
-	Body      []byte      `json:"body"`
-	Segment   string      `json:"segment"`
-	SegmentID pgtype.UUID `json:"segment_id"`
-	Status    string      `json:"status"`
+	ID          pgtype.UUID        `json:"id"`
+	Subject     string             `json:"subject"`
+	Html        string             `json:"html"`
+	Body        []byte             `json:"body"`
+	Segment     string             `json:"segment"`
+	SegmentID   pgtype.UUID        `json:"segment_id"`
+	Status      string             `json:"status"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
 }
 
 // =====================================================================
@@ -451,6 +452,7 @@ func (q *Queries) GetNewsletterCampaignForSend(ctx context.Context, id pgtype.UU
 		&i.Segment,
 		&i.SegmentID,
 		&i.Status,
+		&i.ScheduledAt,
 	)
 	return i, err
 }

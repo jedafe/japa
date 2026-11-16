@@ -609,8 +609,8 @@
 								}))}
 							x="name"
 							series={[
-								{ key: 'open_rate', label: t('newsletter.avg_open_rate', 'Avg open rate'), color: 'var(--chart-1)' },
-								{ key: 'click_rate', label: t('newsletter.avg_click_rate', 'Avg click rate'), color: 'var(--chart-2)' }
+								{ key: 'open_rate', label: t('app.newsletter.col_open_rate', 'Open rate'), color: 'var(--chart-1)' },
+								{ key: 'click_rate', label: t('app.newsletter.col_click_rate', 'Click rate'), color: 'var(--chart-2)' }
 							]}
 							seriesLayout="group"
 							xPadding={[0.1, 0.1]}
