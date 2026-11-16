@@ -23,6 +23,15 @@
 				return '';
 			}
 		}
+		if (h.includes('/')) {
+			// Scheme-less profile URL — 'mastodon.social/@user' is a common
+			// paste form; anchor the scheme and read the hostname.
+			try {
+				return new URL('https://' + h).hostname.toLowerCase();
+			} catch {
+				return '';
+			}
+		}
 		const at = h.lastIndexOf('@');
 		if (at < 0) return '';
 		const domain = h.slice(at + 1).toLowerCase();
