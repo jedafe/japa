@@ -136,8 +136,9 @@ func applicationDocument(actor gen.FederatedActor, domain, siteBase string) map[
 }
 
 // InstanceOutbox serves the instance-level OrderedCollection — every
-// public federatable object surfaced as Create items attributed to their
-// real authors (relay/crawl backfill).
+// public federatable object surfaced as Announce{object} items by the
+// instance actor (relay/crawl backfill — the member's own Create rides
+// their personal outbox; here the instance boosts).
 func (s *Service) InstanceOutbox(ctx context.Context, page int) (map[string]any, error) {
 	actor, err := s.ensureInstanceActor(ctx)
 	if err != nil {
@@ -345,7 +346,7 @@ func groupActorFromRow(r gen.GetGroupActorDocBySlugRow) gen.FederatedActor {
 		Status: r.Status, InboxUrl: r.InboxUrl, OutboxUrl: r.OutboxUrl,
 		FollowersUrl: r.FollowersUrl, FollowingUrl: r.FollowingUrl,
 		ManuallyApprovesFollowers: r.ManuallyApprovesFollowers,
-		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		CreatedAt:                 r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		KeyRotatedAt: r.KeyRotatedAt, Kind: r.Kind, SpaceID: r.SpaceID,
 	}
 }
@@ -726,6 +727,23 @@ func (s *Service) isAcceptedRelay(ctx context.Context, actorURL string) bool {
 	return err == nil && relay.Status == "accepted"
 }
 
+// markRelayUnreachable unwinds an accepted relay whose inbox can no
+// longer be delivered to — the §126 "becomes unreachable" arm. Relay
+// deliveries carry no remote_actor_id (reach expansion adds bare inbox
+// URLs), so the match is on the subscribed inbox_url — a sharedInbox
+// coalesces every subscription on a host anyway, so one dead inbox
+// means that host's relays are all unreachable. Best-effort: a missed
+// mark only means future fanout burns a few more retry budgets until an
+// admin resubscribes or a Delete{actor} lands.
+func (s *Service) markRelayUnreachable(ctx context.Context, inboxURL, reason string) {
+	if s.store == nil || inboxURL == "" {
+		return
+	}
+	if err := s.store.markRelayFailedByInbox(ctx, inboxURL, reason); err != nil {
+		slog.Warn("federation: relay unreachable mark failed", "inbox", inboxURL, "error", err)
+	}
+}
+
 // relayInboxes expands accepted relays into delivery targets — the
 // sharedInbox-coalescing shape insertDeliveries consumes.
 func (s *Service) relayInboxes(ctx context.Context) []gen.ListRemoteFollowerInboxesByActorRow {
@@ -862,5 +880,3 @@ func (s *Service) decorateTags(ctx context.Context, doc map[string]any, contentI
 	}
 	doc["tag"] = tags
 }
-
-

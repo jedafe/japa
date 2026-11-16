@@ -810,6 +810,14 @@ WHERE id = @id;
 UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
 WHERE actor_url = @actor_url AND status = 'accepted';
 
+-- name: SetFederationRelayStatusByInbox :exec
+-- Unreachable unwind — a delivery to the relay's inbox dead-lettered for
+-- a remote-caused reason (inbox gone/refused, retry budget exhausted,
+-- destination blocked). Fanout stops targeting it until an admin
+-- resubscribes. Only live (accepted) rows transition.
+UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
+WHERE inbox_url = @inbox_url AND status = 'accepted';
+
 -- name: DeleteFederationRelay :exec
 DELETE FROM federation_relays WHERE id = @id;
 

@@ -509,6 +509,87 @@ func TestDBRelayInboxExpansion(t *testing.T) {
 	}
 }
 
+// TestDBRelayUnreachableMarksFailed — a delivery dead-lettered for a
+// remote-caused reason unwinds the accepted relay behind its inbox so
+// fanout stops targeting it (re-subscribe re-arms).
+func TestDBRelayUnreachableMarksFailed(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	signer, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("signer actor: %v", err)
+	}
+
+	// An http inbox makes deliverAP's https-only guard fail the attempt
+	// at the transport layer — no remote needed to burn the budget.
+	inbox := "http://dead-relay.example/inbox"
+	followID := svc.apiBase() + "/federation/instance#relay-follow-dead"
+	relay, err := svc.store.upsertRelay(ctx, gen.UpsertFederationRelayParams{
+		ActorUrl:   "https://dead-relay.example/actor",
+		InboxUrl:   inbox,
+		Domain:     "dead-relay.example",
+		FollowApID: &followID,
+	})
+	if err != nil {
+		t.Fatalf("seed relay: %v", err)
+	}
+	if err := svc.store.write.SetFederationRelayStatus(ctx, gen.SetFederationRelayStatusParams{
+		ID: relay.ID, Status: "accepted",
+	}); err != nil {
+		t.Fatalf("relay status: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_relays WHERE id = $1`, relay.ID)
+	})
+
+	row, err := svc.store.write.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+		ActivityApID: "https://api.test.dev/federation/objects/contents/dead-activity",
+		ActivityType: "Create",
+		ActivityJson: []byte(`{"type":"Create"}`),
+		LocalActorID: signer.ID,
+		InboxUrl:     inbox,
+	})
+	if err != nil {
+		t.Fatalf("seed delivery: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE id = $1`, row.ID)
+	})
+	// One attempt shy of the retry ceiling — the next failure must
+	// dead-letter the delivery AND unwind the subscription.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET attempts = 7 WHERE id = $1`, row.ID); err != nil {
+		t.Fatalf("attempts: %v", err)
+	}
+
+	if err := svc.Deliver(ctx, row.ID); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+
+	var dst string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status FROM federation_deliveries WHERE id = $1`, row.ID).Scan(&dst); err != nil {
+		t.Fatalf("delivery status: %v", err)
+	}
+	if dst != "dead" {
+		t.Fatalf("delivery status: %q", dst)
+	}
+	var rst string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status FROM federation_relays WHERE id = $1`, relay.ID).Scan(&rst); err != nil {
+		t.Fatalf("relay status: %v", err)
+	}
+	if rst != "failed" {
+		t.Fatalf("relay not unwound: %q", rst)
+	}
+}
+
 func TestDBAuthorizedFetchGate(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

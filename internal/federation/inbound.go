@@ -132,6 +132,27 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{})
 	}
 
+	// M3: relay couriers carry activities whose actor is NOT the signer —
+	// the relay re-signs subscribers' public content for its audience.
+	// Only an accepted relay subscription earns this: the embedded actor
+	// is resolved fresh and becomes the effective signer, so every
+	// downstream provenance check binds to the real author, not the
+	// courier. Pre-tx on purpose like the spam check — a fresh couriered
+	// actor triggers a remote fetch that must not hold the dispatch tx
+	// open. A mismatched non-relay signer is lying about authorship.
+	if signer != nil {
+		if actorID := apActorID(act); actorID != "" && !strings.EqualFold(actorID, signer.ActorUrl) {
+			if !s.isAcceptedRelay(ctx, signer.ActorUrl) {
+				return s.finishInbound(ctx, row.ID, "rejected", "activity actor does not match signer", nil, pgtype.UUID{})
+			}
+			resolved, rerr := s.resolveRemoteActor(ctx, actorID)
+			if rerr != nil || resolved == nil || resolved.Status != "active" {
+				return s.finishInbound(ctx, row.ID, "rejected", "couriered actor unresolvable", nil, pgtype.UUID{})
+			}
+			signer = resolved
+		}
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("inbound tx: %w", err)
@@ -245,21 +266,11 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor) dispatchResult {
 	typ := apStr(act["type"])
 	actorID := apActorID(act)
-	// M3: relay couriers carry activities whose actor is NOT the signer —
-	// the relay re-signs subscribers' public content for its audience.
-	// Only an accepted relay subscription earns this: the embedded actor
-	// is resolved fresh and becomes the effective signer, so every
-	// downstream provenance check binds to the real author, not the
-	// courier.
+	// The relay-courier swap ran pre-tx in ProcessInbound (a remote fetch
+	// must not hold this tx open) — a mismatched actor reaching dispatch
+	// can only be a non-relay signer lying about authorship.
 	if signer != nil && actorID != "" && !strings.EqualFold(actorID, signer.ActorUrl) {
-		if !s.isAcceptedRelay(ctx, signer.ActorUrl) {
-			return dispatchResult{status: "rejected", reason: "activity actor does not match signer"}
-		}
-		resolved, rerr := s.resolveRemoteActor(ctx, actorID)
-		if rerr != nil || resolved == nil || resolved.Status != "active" {
-			return dispatchResult{status: "rejected", reason: "couriered actor unresolvable"}
-		}
-		signer = resolved
+		return dispatchResult{status: "rejected", reason: "activity actor does not match signer"}
 	}
 	switch typ {
 	case "Follow":
@@ -285,10 +296,12 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.Federati
 
 // localActorForObject resolves object → the local actor it addresses.
 // Three actor-URL shapes are valid Follow targets (§126 M3):
-//   {api}/federation/actors/{username} — member Person actors (profile
-//     join keeps suspended/deleted members out)
-//   {api}/federation/instance — the singleton Application actor (M3)
-//   {api}/federation/groups/{slug} — a public space's Group actor (M3)
+//
+//	{api}/federation/actors/{username} — member Person actors (profile
+//	  join keeps suspended/deleted members out)
+//	{api}/federation/instance — the singleton Application actor (M3)
+//	{api}/federation/groups/{slug} — a public space's Group actor (M3)
+//
 // The profile row is only populated for person actors; non-person
 // callers must branch on actor.Kind.
 func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objectID string) (gen.FederatedActor, gen.GetActorProfileByUsernameRow, error) {

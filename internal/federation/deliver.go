@@ -464,6 +464,7 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 	// Instance gate re-checked at send time — a domain blocked between
 	// fanout and delivery must not receive the POST.
 	if u, uerr := url.Parse(row.InboxUrl); uerr != nil || !s.instanceAllowed(ctx, u.Hostname()) {
+		s.markRelayUnreachable(ctx, row.InboxUrl, "destination instance blocked")
 		return s.stampDelivery(ctx, row, "dead", "destination instance blocked")
 	}
 
@@ -501,6 +502,7 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 		return s.stampDelivery(ctx, row, "delivered", "")
 	case resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound:
 		// Remote account/instance removed — retrying can never succeed.
+		s.markRelayUnreachable(ctx, row.InboxUrl, fmt.Sprintf("remote %d", resp.StatusCode))
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))
 	case resp.StatusCode == http.StatusTooManyRequests:
 		// A rate-limited inbox is transient — the ledger's backoff retries
@@ -508,6 +510,7 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 		return s.failDelivery(ctx, row, "remote 429")
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
 		// 4xx is a refusal — dead-letter rather than burn the retry budget.
+		s.markRelayUnreachable(ctx, row.InboxUrl, fmt.Sprintf("remote %d", resp.StatusCode))
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))
 	default:
 		return s.failDelivery(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode))
@@ -522,6 +525,9 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 func (s *Service) failDelivery(ctx context.Context, row gen.FederationDelivery, reason string) error {
 	attempts := row.Attempts + 1
 	if int(attempts) >= s.deliveryMaxAttempts(ctx) {
+		// Retry budget exhausted — the remote was unreachable across the
+		// whole schedule; a relay subscription behind this inbox unwinds.
+		s.markRelayUnreachable(ctx, row.InboxUrl, reason)
 		return s.stampDeliveryAttempts(ctx, row, "dead", reason, attempts, pgtype.Timestamptz{})
 	}
 	// Exponential backoff: 2m, 4m, 8m, … capped at 1h.

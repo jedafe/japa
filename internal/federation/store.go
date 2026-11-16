@@ -424,6 +424,15 @@ func (s *Store) relayByID(ctx context.Context, id pgtype.UUID) (gen.FederationRe
 	return s.read.GetFederationRelayByID(ctx, id)
 }
 
+// markRelayFailedByInbox unwinds a live subscription whose delivery
+// target died — the accepted-only gate keeps pending rows (Follow still
+// in flight) and tombstoned/admin-resolved rows untouched.
+func (s *Store) markRelayFailedByInbox(ctx context.Context, inboxURL, reason string) error {
+	return s.write.SetFederationRelayStatusByInbox(ctx, gen.SetFederationRelayStatusByInboxParams{
+		InboxUrl: inboxURL, Status: "failed", LastError: &reason,
+	})
+}
+
 func (s *Store) deleteRelay(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteFederationRelay(ctx, id)
 }
