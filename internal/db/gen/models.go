@@ -2286,6 +2286,8 @@ type FederatedActor struct {
 	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
 	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
+	Kind                      string             `json:"kind"`
+	SpaceID                   pgtype.UUID        `json:"space_id"`
 }
 
 type FederationDelivery struct {
@@ -2333,6 +2335,19 @@ type FederationInstanceBlock struct {
 	Reason    *string            `json:"reason"`
 	BlockedBy pgtype.UUID        `json:"blocked_by"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type FederationRelay struct {
+	ID         pgtype.UUID        `json:"id"`
+	ActorUrl   string             `json:"actor_url"`
+	InboxUrl   string             `json:"inbox_url"`
+	Domain     string             `json:"domain"`
+	Status     string             `json:"status"`
+	FollowApID *string            `json:"follow_ap_id"`
+	LastError  *string            `json:"last_error"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type FederationRemoteShare struct {

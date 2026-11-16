@@ -40,6 +40,11 @@ var ErrInvalidDomain = errors.New("federation: invalid domain")
 // handler maps it to 429. The admin path skips this gate.
 var ErrRotationCooldown = errors.New("federation: rotation cooldown active")
 
+// ErrNotFederated marks an identity that once federated but no longer
+// does (disabled/opted-out actor) — §126 maps it to 404 `not_federated`,
+// distinct from a never-federated handle's `not_found`.
+var ErrNotFederated = errors.New("federation: not federated")
+
 // Federatable content types (§126 Object Mapping) — real contents
 // content_type values only. blog_post and guide serialize as Article;
 // everything else as Note. Flag-gated types are pruned per request by

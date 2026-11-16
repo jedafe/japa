@@ -245,8 +245,21 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor) dispatchResult {
 	typ := apStr(act["type"])
 	actorID := apActorID(act)
+	// M3: relay couriers carry activities whose actor is NOT the signer —
+	// the relay re-signs subscribers' public content for its audience.
+	// Only an accepted relay subscription earns this: the embedded actor
+	// is resolved fresh and becomes the effective signer, so every
+	// downstream provenance check binds to the real author, not the
+	// courier.
 	if signer != nil && actorID != "" && !strings.EqualFold(actorID, signer.ActorUrl) {
-		return dispatchResult{status: "rejected", reason: "activity actor does not match signer"}
+		if !s.isAcceptedRelay(ctx, signer.ActorUrl) {
+			return dispatchResult{status: "rejected", reason: "activity actor does not match signer"}
+		}
+		resolved, rerr := s.resolveRemoteActor(ctx, actorID)
+		if rerr != nil || resolved == nil || resolved.Status != "active" {
+			return dispatchResult{status: "rejected", reason: "couriered actor unresolvable"}
+		}
+		signer = resolved
 	}
 	switch typ {
 	case "Follow":
@@ -271,10 +284,32 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.Federati
 }
 
 // localActorForObject resolves object → the local actor it addresses.
-// Only our actor-URL shape is a valid Follow target, and the profile join
-// keeps suspended/deleted members out (users.status = 'active').
+// Three actor-URL shapes are valid Follow targets (§126 M3):
+//   {api}/federation/actors/{username} — member Person actors (profile
+//     join keeps suspended/deleted members out)
+//   {api}/federation/instance — the singleton Application actor (M3)
+//   {api}/federation/groups/{slug} — a public space's Group actor (M3)
+// The profile row is only populated for person actors; non-person
+// callers must branch on actor.Kind.
 func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objectID string) (gen.FederatedActor, gen.GetActorProfileByUsernameRow, error) {
-	prefix := s.apiBase() + "/federation/actors/"
+	base := s.apiBase() + "/federation/"
+	if objectID == base+"instance" {
+		actor, err := s.ensureInstanceActor(ctx)
+		return actor, gen.GetActorProfileByUsernameRow{}, err
+	}
+	if slug, ok := strings.CutPrefix(objectID, base+"groups/"); ok && slug != "" && !strings.Contains(slug, "/") {
+		row, err := q.GetGroupActorDocBySlug(ctx, slug)
+		if err != nil {
+			return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, err
+		}
+		// A flipped-private or inactive space stops being a follow
+		// target — its actor only answers while the space resolves.
+		if row.SpaceDeletedAt.Valid || row.SpaceStatus != "active" || row.SpaceVisibility != "public" {
+			return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, pgx.ErrNoRows
+		}
+		return groupActorFromRow(row), gen.GetActorProfileByUsernameRow{}, nil
+	}
+	prefix := base + "actors/"
 	username, ok := strings.CutPrefix(objectID, prefix)
 	if !ok || username == "" || strings.Contains(username, "/") {
 		return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, fmt.Errorf("object %q is not a local actor", objectID)
@@ -308,8 +343,10 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	// Manual approval reads the live profile-join flag — the stored
 	// federated_actors column only refreshes at enable/reactivate, so a
 	// privacy change while the actor is active must still gate new edges.
+	// Non-person actors (instance/group) auto-accept — the approval
+	// semantics are member-only.
 	status := "accepted"
-	if profile.ManuallyApprovesFollowers {
+	if actor.Kind == ActorKindPerson && profile.ManuallyApprovesFollowers {
 		status = "pending"
 	}
 	// Prior edge state gates the notification: remote implementations
@@ -339,7 +376,7 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	// survives a pending-desired upsert and must not notify as a request.
 	if follow.Status == "pending" {
 		res := dispatchResult{status: "processed"}
-		if priorStatus != "pending" { // fresh edge, or re-request after rejection
+		if actor.Kind == ActorKindPerson && priorStatus != "pending" { // fresh edge, or re-request after rejection
 			res.intents = []notifyIntent{s.followIntent(actor, profile, *signer)}
 		}
 		return res
@@ -348,19 +385,24 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	// accepted — mirror the §49 follower edge and emit Accept. Mastodon
 	// sends Accept for every honored Follow, so the delivery fires on
 	// replays too; the notification lands only when the edge is new.
-	n, err := q.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
-		RemoteActorID: signer.ID,
-		UserID:        actor.UserID,
-	})
-	if err != nil {
-		return dispatchResult{status: "error", reason: "follows insert: " + err.Error()}
-	}
-	if n > 0 {
-		// The remote follower is a real follows edge — the member's
-		// denormalized follower_count must count it like a local follow.
-		s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
-			UserID: actor.UserID, Delta: 1,
-		}))
+	// The follows-mirror, follower_count, and member notification are
+	// person-only: group/instance edges live solely in federation_follows.
+	var n int64
+	if actor.Kind == ActorKindPerson {
+		n, err = q.InsertRemoteFollow(ctx, gen.InsertRemoteFollowParams{
+			RemoteActorID: signer.ID,
+			UserID:        actor.UserID,
+		})
+		if err != nil {
+			return dispatchResult{status: "error", reason: "follows insert: " + err.Error()}
+		}
+		if n > 0 {
+			// The remote follower is a real follows edge — the member's
+			// denormalized follower_count must count it like a local follow.
+			s.bumpCounter(q.AdjustUserFollowerCount(ctx, gen.AdjustUserFollowerCountParams{
+				UserID: actor.UserID, Delta: 1,
+			}))
+		}
 	}
 	deliverID, err := s.insertAcceptDelivery(ctx, q, actor, signer, act, rowID.String())
 	res := dispatchResult{status: "processed", deliverID: deliverID}
@@ -373,7 +415,7 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	case err != nil:
 		return dispatchResult{status: "error", reason: "accept delivery: " + err.Error()}
 	}
-	if n > 0 {
+	if n > 0 && actor.Kind == ActorKindPerson {
 		res.intents = []notifyIntent{s.followIntent(actor, profile, *signer)}
 	}
 	return res
@@ -596,16 +638,46 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 	return nil
 }
 
-// dispatchAcceptReject is deliberately inert in M2: it answers outbound
-// Follows — which this implementation never sends — so a match can only
-// key on an INBOUND follow row's ap_activity_id. Letting the signer flip
-// that edge would be protocol-mismatched AND desync the two ledgers:
-// a Reject{their own Follow} would drop them from fanout inboxes while
-// the follows mirror + follower_count keep counting them, and an
-// Accept{undone edge} would resurrect fanout without a mirror row.
-// Outbound Follow lands with M3 — until then, ignore.
+// dispatchAcceptReject answers outbound Follows — in M3 the only
+// outbound Follow is the instance actor's Follow{Public} to a relay, so
+// the match keys on federation_relays.follow_ap_id and only the relay
+// actor itself may flip the subscription state. No match keeps the M2
+// posture: member outbound Follows don't exist, so an unmatched
+// Accept/Reject is protocol-inert and ignored.
 func (s *Service) dispatchAcceptReject(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
-	return dispatchResult{status: "ignored", reason: "accept/reject answers outbound follows — none exist in M2"}
+	if signer == nil {
+		return dispatchResult{status: "rejected", reason: "unsigned accept/reject"}
+	}
+	followID := apID(act["object"])
+	if followID == "" {
+		if obj := apObj(act["object"]); obj != nil {
+			followID = apID(obj["id"])
+		}
+	}
+	if followID == "" {
+		return dispatchResult{status: "ignored", reason: "accept/reject without follow id"}
+	}
+	relay, err := q.GetFederationRelayByFollowApID(ctx, &followID)
+	if err != nil {
+		return dispatchResult{status: "ignored", reason: "accept/reject answers an unknown follow"}
+	}
+	// Only the relay actor may resolve its own subscription — a third
+	// party embedding our Follow id must not flip state.
+	if !strings.EqualFold(signer.ActorUrl, relay.ActorUrl) {
+		return dispatchResult{status: "rejected", reason: "accept/reject from non-relay signer"}
+	}
+	newStatus := "accepted"
+	if apStr(act["type"]) == "Reject" {
+		newStatus = "rejected"
+	}
+	if relay.Status == "pending" {
+		if err := q.SetFederationRelayStatus(ctx, gen.SetFederationRelayStatusParams{
+			ID: relay.ID, Status: newStatus,
+		}); err != nil {
+			return dispatchResult{status: "error", reason: "relay status: " + err.Error()}
+		}
+	}
+	return dispatchResult{status: "processed"}
 }
 
 // dispatchUndo reverses Follow / Like / Announce / Create by wrapping
@@ -1003,6 +1075,13 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 		return dispatchResult{status: "error", reason: "actor tombstone: " + err.Error()}
 	}
 	res := dispatchResult{status: "processed", invalidateRemote: signer.ActorUrl}
+	// A dead relay actor kills the subscription too — fanout must stop
+	// targeting it (re-subscribe re-arms via UpsertFederationRelay).
+	if err := q.SetFederationRelayStatusByActorURL(ctx, gen.SetFederationRelayStatusByActorURLParams{
+		ActorUrl: signer.ActorUrl, Status: "failed",
+	}); err != nil {
+		slog.Warn("federation: relay unwind failed", "error", err)
+	}
 	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follow unwind failed", "error", err)
 	}

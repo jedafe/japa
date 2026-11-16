@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -49,15 +50,36 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
+	case errors.Is(err, ErrNotFederated):
+		// §126: a disabled/opted-out actor answers 404 with the
+		// not_federated code — never-found handles keep "not_found".
+		errpkg.WriteError(w, http.StatusNotFound, "not_federated", "Federation is not enabled for this identity")
 	case errors.Is(err, ErrRotationCooldown):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "rotation_too_soon", "Key was rotated recently; try again later")
 	case errors.Is(err, ErrHandleDomain):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_resource", "Unsupported resource")
 	case errors.Is(err, ErrInvalidDomain):
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_domain", "Invalid instance domain")
+	case errors.Is(err, ErrConflict):
+		errpkg.WriteError(w, http.StatusConflict, "conflict", "The target does not meet the required state")
+	case errors.Is(err, ErrSignatureRequired):
+		errpkg.WriteError(w, http.StatusUnauthorized, "signature_required", "A valid HTTP signature is required")
+	case errors.Is(err, ErrRemoteBlocked):
+		errpkg.WriteError(w, http.StatusForbidden, "instance_blocked", "Instance is not permitted")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
 	}
+}
+
+// authorizeFetch applies the §126 authorized-fetch gate to a public GET:
+// when federation.authorized_fetch is on, the request must carry a valid
+// HTTP signature. Returns false once a response has been written.
+func (h *Handlers) authorizeFetch(w http.ResponseWriter, r *http.Request) bool {
+	if err := h.service.VerifyFetchSignature(r); err != nil {
+		handleServiceErr(w, err)
+		return false
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +120,9 @@ func (h *Handlers) GetNodeInfo(w http.ResponseWriter, r *http.Request) {
 // actor row answers 410 + Tombstone — the terminal signal remotes stop
 // retrying on (404 stays for handles that never federated).
 func (h *Handlers) GetActor(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
 	username := chi.URLParam(r, "username")
 	doc, err := h.service.ActorDocument(r.Context(), username)
 	if err != nil {
@@ -115,6 +140,9 @@ func (h *Handlers) GetActor(w http.ResponseWriter, r *http.Request) {
 
 // GetOutbox serves GET /federation/actors/{username}/outbox[?page=N].
 func (h *Handlers) GetOutbox(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
 	doc, err := h.service.Outbox(r.Context(), chi.URLParam(r, "username"), parsePage(r))
 	if err != nil {
 		handleServiceErr(w, err)
@@ -125,6 +153,9 @@ func (h *Handlers) GetOutbox(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowers serves GET /federation/actors/{username}/followers[?page=N].
 func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
 	doc, err := h.service.Followers(r.Context(), chi.URLParam(r, "username"), parsePage(r))
 	if err != nil {
 		handleServiceErr(w, err)
@@ -135,6 +166,9 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowing serves GET /federation/actors/{username}/following[?page=N].
 func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
 	doc, err := h.service.Following(r.Context(), chi.URLParam(r, "username"), parsePage(r))
 	if err != nil {
 		handleServiceErr(w, err)
@@ -145,6 +179,9 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 
 // GetObject serves GET /federation/objects/contents/{id}.
 func (h *Handlers) GetObject(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid object id")
@@ -577,7 +614,15 @@ func (h *Handlers) postInbox(w http.ResponseWriter, r *http.Request, username st
 	// dedups away unprocessed. Rejected BEFORE the id can touch the
 	// marker or the ledger — storing it would itself be the squat.
 	apID := apStr(act["id"])
-	if apID != "" && !sameURLHost(apID, signer.ActorUrl) {
+	// M3: a relay courier re-signs subscribers' activities — the id then
+	// lives on the AUTHOR's domain, not the signer's. Only an accepted
+	// relay subscription relaxes the check (and only to the actor's own
+	// host; anything else is still a squat).
+	foreignID := apID != "" && !sameURLHost(apID, signer.ActorUrl)
+	if foreignID && h.service.isAcceptedRelay(ctx, signer.ActorUrl) {
+		foreignID = !sameURLHost(apID, apActorID(act))
+	}
+	if foreignID {
 		h.service.rejectInbound(ctx, act, signer.ActorUrl, "activity id outside signer domain", body)
 		errpkg.WriteError(w, http.StatusForbidden, "foreign_activity_id", "Activity id must live on the signer's domain")
 		return
@@ -618,4 +663,202 @@ func (h *Handlers) postInbox(w http.ResponseWriter, r *http.Request, username st
 		}
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// ---------------------------------------------------------------------------
+// M3 — instance actor + group actors (public surface)
+// ---------------------------------------------------------------------------
+
+// GetInstance serves GET /federation/instance — the Application doc.
+func (h *Handlers) GetInstance(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.InstanceDocument(r.Context())
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetInstanceOutbox serves GET /federation/instance/outbox[?page=N].
+func (h *Handlers) GetInstanceOutbox(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.InstanceOutbox(r.Context(), parsePage(r))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetInstanceFollowers serves GET /federation/instance/followers[?page=N].
+func (h *Handlers) GetInstanceFollowers(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.InstanceFollowers(r.Context(), parsePage(r))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetGroup serves GET /federation/groups/{slug} — 410 + Tombstone for a
+// tombstoned group actor; 404 when the space is private or never federated.
+func (h *Handlers) GetGroup(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	slug := chi.URLParam(r, "slug")
+	doc, err := h.service.GroupDocument(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, ErrGone) {
+			if tomb := h.service.GroupTombstone(r.Context(), slug); tomb != nil {
+				writeTypedJSON(w, http.StatusGone, ContentTypeActivity, tomb)
+				return
+			}
+		}
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetGroupOutbox serves GET /federation/groups/{slug}/outbox[?page=N].
+func (h *Handlers) GetGroupOutbox(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.GroupOutbox(r.Context(), chi.URLParam(r, "slug"), parsePage(r))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetGroupFollowers serves GET /federation/groups/{slug}/followers[?page=N].
+func (h *Handlers) GetGroupFollowers(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.GroupFollowers(r.Context(), chi.URLParam(r, "slug"), parsePage(r))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// ---------------------------------------------------------------------------
+// M3 — admin: relays + group actors
+// ---------------------------------------------------------------------------
+
+// ListRelays serves GET /admin/federation/relays[?page=&limit=].
+func (h *Handlers) ListRelays(w http.ResponseWriter, r *http.Request) {
+	limit, offset, page := parseLimitOffset(r)
+	rows, total, err := h.service.ListRelays(r.Context(), limit, offset)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"relays": rows, "total": total, "page": page, "limit": limit,
+		"total_pages": totalPages(total, limit),
+	})
+}
+
+// CreateRelay serves POST /admin/federation/relays — body {actor_url}.
+func (h *Handlers) CreateRelay(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ActorURL string `json:"actor_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ActorURL) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "actor_url is required")
+		return
+	}
+	relay, err := h.service.SubscribeRelay(r.Context(), strings.TrimSpace(body.ActorURL), user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, relay)
+}
+
+// DeleteRelay serves DELETE /admin/federation/relays/{id} — Undo{Follow} + remove.
+func (h *Handlers) DeleteRelay(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid relay id")
+		return
+	}
+	if err := h.service.UnsubscribeRelay(r.Context(), id); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListGroups serves GET /admin/federation/groups[?page=&limit=].
+func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
+	limit, offset, page := parseLimitOffset(r)
+	rows, total, err := h.service.ListGroupActors(r.Context(), limit, offset)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"groups": rows, "total": total, "page": page, "limit": limit,
+		"total_pages": totalPages(total, limit),
+	})
+}
+
+// CreateGroup serves POST /admin/federation/groups — body {space_id}.
+func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		SpaceID string `json:"space_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "space_id is required")
+		return
+	}
+	var spaceID pgtype.UUID
+	if err := spaceID.Scan(body.SpaceID); err != nil || !spaceID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+		return
+	}
+	actor, err := h.service.ProvisionGroupActor(r.Context(), spaceID, user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, actor)
+}
+
+// DeleteGroup serves DELETE /admin/federation/groups/{id} — tombstone +
+// Delete{Group} fanout.
+func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid actor id")
+		return
+	}
+	if err := h.service.TombstoneGroupActor(r.Context(), id); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -222,6 +222,8 @@ var settingsCatalog = map[string]settingMeta{
 	"federation.outbox_page_size":      {Type: "int", DefaultValue: "20", Description: "Items per OrderedCollectionPage on actor outbox/followers/following collections (§126). Hot-reloadable.", Panel: "control"},
 	"federation.delivery.max_attempts": {Type: "int", DefaultValue: "8", Description: "Outbound delivery attempts before a federation_deliveries row goes dead (M2 worker).", Panel: "control"},
 	"federation.instances.mode":        {Type: "string", DefaultValue: "open", Description: "open (blocklist enforcement) or allowlist (default-deny inbound). M2 inbound gate — no effect in M1.", Panel: "control"},
+	"federation.key_rotation.cooldown_hours": {Type: "int", DefaultValue: "24", Description: "Minimum hours between member-initiated federated-actor key rotations (§126 M3a). The admin rotate path bypasses the cooldown.", Panel: "control"},
+	"federation.authorized_fetch":            {Type: "bool", DefaultValue: "false", Description: "Require a valid HTTP signature on public /federation/* document and collection GETs (Mastodon AUTHORIZED_FETCH semantics, §126 M3). WebFinger and NodeInfo stay unsigned for discovery bootstrap.", Panel: "control"},
 	// Ads
 	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},

@@ -4094,6 +4094,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/federation/actors/{username}/followers", federationHandlers.GetFollowers)
 		r.Get("/federation/actors/{username}/following", federationHandlers.GetFollowing)
 		r.Get("/federation/objects/contents/{id}", federationHandlers.GetObject)
+		// §126 M3 — instance Application actor + space Group actors.
+		r.Get("/federation/instance", federationHandlers.GetInstance)
+		r.Get("/federation/instance/outbox", federationHandlers.GetInstanceOutbox)
+		r.Get("/federation/instance/followers", federationHandlers.GetInstanceFollowers)
+		r.Get("/federation/groups/{slug}", federationHandlers.GetGroup)
+		r.Get("/federation/groups/{slug}/outbox", federationHandlers.GetGroupOutbox)
+		r.Get("/federation/groups/{slug}/followers", federationHandlers.GetGroupFollowers)
 		// §126 M2 — ActivityPub delivery targets.
 		r.Post("/federation/inbox", federationHandlers.PostInbox)
 		r.Post("/federation/actors/{username}/inbox", federationHandlers.PostActorInbox)
@@ -5003,6 +5010,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Get("/admin/federation/instances", federationHandlers.ListBlocks)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Post("/admin/federation/instances", federationHandlers.CreateBlock)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Delete("/admin/federation/instances/{id}", federationHandlers.DeleteBlock)
+				// §126 M3 — relay subscriptions (FEP-ae0c) + space Group actors.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Get("/admin/federation/relays", federationHandlers.ListRelays)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Post("/admin/federation/relays", federationHandlers.CreateRelay)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.instances.manage")).Delete("/admin/federation/relays/{id}", federationHandlers.DeleteRelay)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/groups", federationHandlers.ListGroups)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.manage")).Post("/admin/federation/groups", federationHandlers.CreateGroup)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.manage")).Delete("/admin/federation/groups/{id}", federationHandlers.DeleteGroup)
 			})
 
 			// Section 127 — AT Protocol mini-PDS (ADR-139). Member opt-in; the

@@ -97,11 +97,13 @@ func (s *Service) Fanout(ctx context.Context, contentID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("federation fanout: expand inboxes: %w", err)
 	}
-	if len(inboxes) == 0 {
-		return nil // no remote followers — nothing to fan out
-	}
+	// M3: public object activities also reach accepted relays and the
+	// instance actor's followers — discovery surface beyond the member's
+	// own edge list.
+	inboxes = append(inboxes, s.reachInboxes(ctx)...)
 
 	object := objectDocument(content, author.ActorUrl, author.FollowersUrl, s.siteBase(), contentPageURL(s.siteBase(), content))
+	s.decorateTags(ctx, object, content.ID)
 	objID, _ := object["id"].(string)
 
 	// Create-vs-Update follows the last DELIVERED state, not mere ledger
@@ -139,8 +141,19 @@ func (s *Service) Fanout(ctx context.Context, contentID pgtype.UUID) error {
 			"object": object,
 		}
 	}
-	_, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, true)
-	return err
+	// An empty inbox list can't skip the group announce below — the
+	// space's Group actor has its own federation_follows audience,
+	// independent of the member's.
+	if len(inboxes) > 0 {
+		if _, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, true); err != nil {
+			return err
+		}
+	}
+	// M3: a space-scoped public post is boosted by the space's Group
+	// actor — FEP-1b12 Announce{member-activity} to the group's
+	// federation_follows edges, signed by the group's key.
+	s.fanoutGroupAnnounce(ctx, content.SpaceID, activity, content.ID)
+	return nil
 }
 
 // lowerType keeps activity_ap_id derivation boring — ids ride a fragment.
@@ -197,8 +210,15 @@ func (s *Service) fanoutDeleteIfDelivered(ctx context.Context, contentID pgtype.
 		return nil // disabled actors propagate Delete via the lifecycle path
 	}
 	inboxes, err := s.store.remoteFollowerInboxes(ctx, author.ID)
-	if err != nil || len(inboxes) == 0 {
+	if err != nil {
 		return err
+	}
+	// M3: Deletes of public objects propagate to relays + instance
+	// followers too — remotes that learned the object via reach must
+	// also learn its tombstone.
+	inboxes = append(inboxes, s.reachInboxes(ctx)...)
+	if len(inboxes) == 0 {
+		return nil
 	}
 	// Per-event discriminator: a publish→unpublish→republish→unpublish
 	// cycle produces TWO distinct Deletes — identical ap_ids would collapse
@@ -302,13 +322,12 @@ func (s *Service) fanoutActorUpdate(ctx context.Context, actorID pgtype.UUID, en
 	if len(inboxes) == 0 {
 		return nil
 	}
-	user, err := s.store.userByID(ctx, author.UserID)
+	// The Update object is the actor's own doc — built per kind: a Person
+	// doc needs the user/profile join; Group and Application docs come
+	// from the actor row (+ space join) alone.
+	doc, err := s.actorDocForUpdate(ctx, author)
 	if err != nil {
-		return fmt.Errorf("federation actor update: load user: %w", err)
-	}
-	profile, err := s.store.actorProfile(ctx, user.Username)
-	if err != nil {
-		return fmt.Errorf("federation actor update: profile: %w", err)
+		return fmt.Errorf("federation actor update: %w", err)
 	}
 	// Nanosecond stamp — two rotations in the same second mint distinct
 	// activity ids; a repeated ap_id would dedup-collapse the second
@@ -320,10 +339,37 @@ func (s *Service) fanoutActorUpdate(ctx context.Context, actorID pgtype.UUID, en
 		"actor":  author.ActorUrl,
 		"to":     []string{asPublic},
 		"cc":     []string{author.FollowersUrl},
-		"object": actorDocument(profile, s.siteBase()),
+		"object": doc,
 	}
 	_, err = s.insertDeliveries(ctx, author.ID, activity, apID, inboxes, enqueue)
 	return err
+}
+
+// actorDocForUpdate builds the actor document an Update{actor} carries,
+// per kind — Person docs need the member profile join; Group/Application
+// docs derive from the actor row (group adds the space join).
+func (s *Service) actorDocForUpdate(ctx context.Context, author gen.FederatedActor) (map[string]any, error) {
+	switch author.Kind {
+	case ActorKindGroup:
+		row, err := s.store.read.GetGroupActorDocBySlug(ctx, author.PreferredUsername)
+		if err != nil {
+			return nil, fmt.Errorf("group doc: %w", err)
+		}
+		doc := groupDocument(row, s.siteBase())
+		return doc, nil
+	case ActorKindApplication:
+		return applicationDocument(author, s.handleDomain(), s.siteBase()), nil
+	default:
+		user, err := s.store.userByID(ctx, author.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("load user: %w", err)
+		}
+		profile, err := s.store.actorProfile(ctx, user.Username)
+		if err != nil {
+			return nil, fmt.Errorf("profile: %w", err)
+		}
+		return actorDocument(profile, s.siteBase()), nil
+	}
 }
 
 // insertDeliveries ledgers one row per distinct inbox and kicks each into

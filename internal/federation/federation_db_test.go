@@ -835,10 +835,12 @@ func TestDBRotateActorKeyStatusGate(t *testing.T) {
 	if _, err := svc.DisableFederation(ctx, userID); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := svc.RotateActorKey(ctx, userID); !errors.Is(err, ErrNotFound) {
+	// Disabled actors surface the §126 semantic code — not_federated —
+	// while tombstones remain a plain not_found.
+	if _, err := svc.RotateActorKey(ctx, userID); !errors.Is(err, ErrNotFederated) {
 		t.Fatalf("disabled member rotate: %v", err)
 	}
-	if _, err := svc.AdminRotateActorKey(ctx, actor.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.AdminRotateActorKey(ctx, actor.ID); !errors.Is(err, ErrNotFederated) {
 		t.Fatalf("disabled admin rotate: %v", err)
 	}
 	if _, err := d.Writer.Exec(ctx,

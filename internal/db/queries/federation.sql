@@ -367,7 +367,7 @@ WHERE c.author_id = @author_id
 
 -- name: GetFederatableContentByID :one
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
-       c.canonical_url, c.featured_image_id, c.header_image_id,
+       c.canonical_url, c.featured_image_id, c.header_image_id, c.space_id,
        c.published_at, c.updated_at, c.created_at,
        mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
        mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
@@ -626,3 +626,170 @@ SELECT local_actor_id FROM federation_deliveries
 WHERE activity_type IN ('Create','Update')
   AND activity_json->'object'->>'id' = @object_id::text
 LIMIT 1;
+
+-- ---------------------------------------------------------------------------
+-- M3 — discovery & reach: non-person actors, relays, groups, hashtags
+-- ---------------------------------------------------------------------------
+
+-- name: GetFederatedActorByKind :one
+-- Singleton-style lookup for the instance Application actor (and any
+-- future singleton kinds). Picks the oldest row defensively — the partial
+-- unique index already guarantees at most one 'application' row.
+SELECT * FROM federated_actors WHERE kind = @kind ORDER BY created_at ASC LIMIT 1;
+
+-- name: GetFederatedActorBySpaceID :one
+-- Group-fanout lookup: content.space_id → the space's Group actor row.
+SELECT * FROM federated_actors WHERE kind = 'group' AND space_id = @space_id;
+
+-- name: CreateFederatedActorOfKind :one
+-- Non-person actor insert (kind application|group, NULL user_id, optional
+-- space_id). ON CONFLICT DO NOTHING keeps concurrent minters honest —
+-- a lost race returns ErrNoRows and the caller re-reads the winner.
+INSERT INTO federated_actors (
+    user_id, actor_url, preferred_username, public_key_pem, private_key_enc,
+    public_key_id, inbox_url, outbox_url, followers_url, following_url,
+    manually_approves_followers, kind, space_id
+) VALUES (
+    @user_id, @actor_url, @preferred_username, @public_key_pem, @private_key_enc,
+    @public_key_id, @inbox_url, @outbox_url, @followers_url, @following_url,
+    @manually_approves_followers, @kind, @space_id
+)
+ON CONFLICT DO NOTHING
+RETURNING *;
+
+-- name: GetGroupActorDocBySlug :one
+-- Group-document source row: the actor joined to its space (with logo
+-- media). Space gates apply in the service — this row resolves even when
+-- the space flipped private so callers distinguish 404 from 410.
+SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
+       s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
+       ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
+FROM federated_actors fa
+JOIN spaces s ON s.id = fa.space_id
+LEFT JOIN media ml ON ml.id = s.logo_media_id AND ml.deleted_at IS NULL AND ml.confirmed = true
+WHERE fa.kind = 'group' AND s.slug = @slug;
+
+-- name: GetSpaceForGroupActor :one
+-- Provisioning gate: only a live, public space may mint a Group actor.
+SELECT s.id, s.slug, s.name FROM spaces s
+WHERE s.id = @id AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL;
+
+-- name: ListGroupActors :many
+SELECT fa.*, s.slug AS space_slug, s.name AS space_name
+FROM federated_actors fa
+JOIN spaces s ON s.id = fa.space_id
+WHERE fa.kind = 'group'
+ORDER BY fa.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountGroupActors :one
+SELECT COUNT(*)::bigint FROM federated_actors WHERE kind = 'group';
+
+-- name: ListFederatableContentBySpace :many
+-- Group outbox items: the space's live, public, federatable content —
+-- same gate set as the member outbox, keyed on contents.space_id.
+SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
+       c.canonical_url, c.published_at, c.created_at
+FROM contents c
+WHERE c.space_id = @space_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountFederatableContentBySpace :one
+SELECT COUNT(*)::bigint
+FROM contents c
+WHERE c.space_id = @space_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[]);
+
+-- name: ListAllFederatableContent :many
+-- Instance outbox: every live public federatable object — the crawlable
+-- instance-level collection.
+SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
+       c.canonical_url, c.published_at, c.created_at
+FROM contents c
+WHERE c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAllFederatableContent :one
+SELECT COUNT(*)::bigint
+FROM contents c
+WHERE c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[]);
+
+-- name: ListContentHashtags :many
+-- tag[] emission source for objectDocument — dedup keeps a body that
+-- links the same tag twice from emitting duplicate entries.
+SELECT DISTINCT t.name, t.slug
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+WHERE ct.content_id = @content_id
+ORDER BY t.name;
+
+-- name: UpsertFederationRelay :one
+-- Relay subscribe ledger (FEP-ae0c client side). A fresh subscribe on a
+-- dead-status row re-arms it (pending + new follow_ap_id supplied by the
+-- caller); a live row keeps its status/follow identity so resubscribing
+-- is a no-op.
+INSERT INTO federation_relays (actor_url, inbox_url, domain, status, follow_ap_id, created_by)
+VALUES (@actor_url, @inbox_url, @domain, 'pending', @follow_ap_id, @created_by)
+ON CONFLICT (actor_url) DO UPDATE SET
+    inbox_url = EXCLUDED.inbox_url,
+    domain = EXCLUDED.domain,
+    last_error = NULL,
+    follow_ap_id = CASE WHEN federation_relays.status IN ('rejected','failed','disabled')
+                        THEN EXCLUDED.follow_ap_id
+                        ELSE federation_relays.follow_ap_id END,
+    status = CASE WHEN federation_relays.status IN ('rejected','failed','disabled')
+                  THEN 'pending' ELSE federation_relays.status END,
+    updated_at = now()
+RETURNING *;
+
+-- name: GetFederationRelayByID :one
+SELECT * FROM federation_relays WHERE id = @id;
+
+-- name: GetFederationRelayByFollowApID :one
+SELECT * FROM federation_relays WHERE follow_ap_id = @follow_ap_id;
+
+-- name: GetFederationRelayByActorURL :one
+SELECT * FROM federation_relays WHERE actor_url = @actor_url;
+
+-- name: ListFederationRelays :many
+SELECT * FROM federation_relays ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountFederationRelays :one
+SELECT COUNT(*)::bigint FROM federation_relays;
+
+-- name: SetFederationRelayStatus :exec
+UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
+WHERE id = @id;
+
+-- name: SetFederationRelayStatusByActorURL :exec
+-- Delete{actor}/unreachable unwind — fanout must stop targeting the dead
+-- relay until an admin resubscribes.
+UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
+WHERE actor_url = @actor_url AND status = 'accepted';
+
+-- name: DeleteFederationRelay :exec
+DELETE FROM federation_relays WHERE id = @id;
+
+-- name: ListActiveRelayInboxes :many
+-- Fanout expansion: every accepted relay's delivery target.
+SELECT inbox_url FROM federation_relays WHERE status = 'accepted';

@@ -185,6 +185,9 @@ func (s *Service) fetchAP(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 	req.Header.Set("Accept", `application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams", application/json`)
 	req.Header.Set("User-Agent", "JapaConnect/"+s.cfg.APIBase)
+	// M3: sign outbound fetches with the instance actor — peers running
+	// authorized-fetch (secure mode) only answer signed document GETs.
+	s.signOutboundFetch(ctx, req)
 
 	resp, err := fetchClient.Do(req)
 	if err != nil {

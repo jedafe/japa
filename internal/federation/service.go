@@ -151,7 +151,10 @@ func (s *Service) outboxPageSize(ctx context.Context) int32 {
 // WebFinger
 // ---------------------------------------------------------------------------
 
-var acctResourceRe = regexp.MustCompile(`^acct:([A-Za-z0-9_\-.]{1,64})@([A-Za-z0-9.\-]+)$`)
+// acctResourceRe accepts the person localpart plus the M3 forms: the
+// '!'-prefixed Group handle (Mastodon group convention) and the bare
+// handle domain (instance actor, acct:japa.to@japa.to).
+var acctResourceRe = regexp.MustCompile(`^acct:(!?[A-Za-z0-9_\-.]{1,64})@([A-Za-z0-9.\-]+)$`)
 
 // Webfinger resolves an acct: resource to a JRD. Only the configured
 // handle domain is served; other domains return ErrHandleDomain.
@@ -164,6 +167,16 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 
 	if hd := s.handleDomain(); hd != "" && !strings.EqualFold(domain, hd) {
 		return nil, ErrHandleDomain
+	}
+
+	// M3 non-person handles resolve before the person path: a '!'-prefixed
+	// localpart names a space's Group actor; the bare handle domain names
+	// the instance Application actor.
+	if strings.HasPrefix(username, "!") {
+		return s.groupWebfinger(ctx, username[1:], domain)
+	}
+	if hd := s.handleDomain(); hd != "" && strings.EqualFold(username, hd) {
+		return s.instanceWebfinger(ctx, domain)
 	}
 
 	// Unconfigured handle domain (dev fallback) serves ANY acct domain and
@@ -200,6 +213,66 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		profile.Username, canonical, profile.ActorUrl,
 		s.profileURL(profile.Username),
 	)
+	if cacheable {
+		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
+	}
+	return doc, nil
+}
+
+// groupWebfinger serves acct:!{slug}@{domain} — the Group actor JRD for
+// a federated space. Group handles only resolve while the space is
+// public/active and the actor is live (same gates as the doc route).
+func (s *Service) groupWebfinger(ctx context.Context, slug, domain string) (map[string]any, error) {
+	cacheable := s.handleDomain() != ""
+	cacheKey := "jc:fed:webfinger:!" + strings.ToLower(slug)
+	if cacheable {
+		if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+			return doc, nil
+		}
+	}
+	row, err := s.groupDocRow(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != ActorStatusActive {
+		return nil, ErrNotFound
+	}
+	canonical := s.handleDomain()
+	if canonical == "" {
+		canonical = domain
+	}
+	doc := webfingerJRD(
+		"!"+row.SpaceSlug, canonical, row.ActorUrl,
+		s.siteBase()+"/spaces/"+row.SpaceSlug,
+	)
+	if cacheable {
+		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
+	}
+	return doc, nil
+}
+
+// instanceWebfinger serves acct:{domain}@{domain} — the instance
+// Application actor JRD.
+func (s *Service) instanceWebfinger(ctx context.Context, domain string) (map[string]any, error) {
+	cacheable := s.handleDomain() != ""
+	cacheKey := "jc:fed:webfinger:" + strings.ToLower(s.handleDomain())
+	if cacheable {
+		if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+			return doc, nil
+		}
+	}
+	actor, err := s.ensureInstanceActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if actor.Status != ActorStatusActive {
+		return nil, ErrNotFound
+	}
+	canonical := s.handleDomain()
+	if canonical == "" {
+		canonical = domain
+	}
+	doc := webfingerJRD(canonical, canonical, actor.ActorUrl, s.siteBase())
 	if cacheable {
 		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
 	}
@@ -267,7 +340,7 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 
 	items := make([]any, 0, len(rows))
 	for _, row := range rows {
-		obj := s.objectFromListRow(row, actor)
+		obj := s.objectFromListRow(ctx, row, actor)
 		items = append(items, createActivity(actor.ActorUrl, actor.FollowersUrl, obj))
 	}
 
@@ -408,14 +481,14 @@ func (s *Service) ObjectDocument(ctx context.Context, contentID pgtype.UUID) (ma
 		return nil, ErrNotFound
 	}
 
-	obj := s.objectFromGetRow(row, actor)
+	obj := s.objectFromGetRow(ctx, row, actor)
 	obj["@context"] = asContext
 	return obj, nil
 }
 
 // objectFromListRow maps an outbox row to its AP object document.
-func (s *Service) objectFromListRow(row gen.ListFederatableContentByAuthorRow, actor gen.FederatedActor) map[string]any {
-	return objectDocument(gen.GetFederatableContentByIDRow{
+func (s *Service) objectFromListRow(ctx context.Context, row gen.ListFederatableContentByAuthorRow, actor gen.FederatedActor) map[string]any {
+	obj := objectDocument(gen.GetFederatableContentByIDRow{
 		ID:             row.ID,
 		ContentType:    row.ContentType,
 		Title:          row.Title,
@@ -430,10 +503,14 @@ func (s *Service) objectFromListRow(row gen.ListFederatableContentByAuthorRow, a
 		HeaderPath:     row.HeaderPath,
 		HeaderMime:     row.HeaderMime,
 	}, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
+	s.decorateTags(ctx, obj, row.ID)
+	return obj
 }
 
-func (s *Service) objectFromGetRow(row gen.GetFederatableContentByIDRow, actor gen.FederatedActor) map[string]any {
-	return objectDocument(row, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
+func (s *Service) objectFromGetRow(ctx context.Context, row gen.GetFederatableContentByIDRow, actor gen.FederatedActor) map[string]any {
+	obj := objectDocument(row, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
+	s.decorateTags(ctx, obj, row.ID)
+	return obj
 }
 
 // pageURL resolves the human-facing URL for a contents row: the editorial
@@ -771,8 +848,11 @@ func (s *Service) RotateActorKey(ctx context.Context, userID pgtype.UUID) (KeyRo
 		}
 		return KeyRotationResult{}, fmt.Errorf("federation: lookup actor: %w", err)
 	}
-	if actor.Status != ActorStatusActive {
+	switch actor.Status {
+	case ActorStatusTombstone:
 		return KeyRotationResult{}, ErrNotFound
+	case ActorStatusDisabled:
+		return KeyRotationResult{}, ErrNotFederated
 	}
 	if actor.KeyRotatedAt.Valid && time.Since(actor.KeyRotatedAt.Time) < s.keyRotationCooldown(ctx) {
 		return KeyRotationResult{}, ErrRotationCooldown
@@ -790,8 +870,11 @@ func (s *Service) AdminRotateActorKey(ctx context.Context, actorID pgtype.UUID) 
 		}
 		return KeyRotationResult{}, fmt.Errorf("federation: lookup actor: %w", err)
 	}
-	if actor.Status != ActorStatusActive {
+	switch actor.Status {
+	case ActorStatusTombstone:
 		return KeyRotationResult{}, ErrNotFound
+	case ActorStatusDisabled:
+		return KeyRotationResult{}, ErrNotFederated
 	}
 	return s.rotateActorKey(ctx, actor)
 }

@@ -399,3 +399,31 @@ func (s *Store) staleInbound(ctx context.Context, limit int32) ([]pgtype.UUID, e
 func (s *Store) undeliveredDeliveriesByActor(ctx context.Context, localActorID pgtype.UUID) ([]pgtype.UUID, error) {
 	return s.read.ListUndeliveredFederationDeliveriesByActor(ctx, localActorID)
 }
+
+// ---------------------------------------------------------------------------
+// M3 — non-person actors + relays
+// ---------------------------------------------------------------------------
+
+func (s *Store) actorByKind(ctx context.Context, kind string) (gen.FederatedActor, error) {
+	return s.read.GetFederatedActorByKind(ctx, kind)
+}
+
+func (s *Store) actorBySpaceID(ctx context.Context, spaceID pgtype.UUID) (gen.FederatedActor, error) {
+	return s.read.GetFederatedActorBySpaceID(ctx, spaceID)
+}
+
+func (s *Store) createActorOfKind(ctx context.Context, arg gen.CreateFederatedActorOfKindParams) (gen.FederatedActor, error) {
+	return s.write.CreateFederatedActorOfKind(ctx, arg)
+}
+
+func (s *Store) upsertRelay(ctx context.Context, arg gen.UpsertFederationRelayParams) (gen.FederationRelay, error) {
+	return s.write.UpsertFederationRelay(ctx, arg)
+}
+
+func (s *Store) relayByID(ctx context.Context, id pgtype.UUID) (gen.FederationRelay, error) {
+	return s.read.GetFederationRelayByID(ctx, id)
+}
+
+func (s *Store) deleteRelay(ctx context.Context, id pgtype.UUID) error {
+	return s.write.DeleteFederationRelay(ctx, id)
+}
