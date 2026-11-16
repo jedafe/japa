@@ -27,11 +27,24 @@
 		created_at?: string;
 	};
 
+	type RemoteFollowRequest = {
+		remote_actor_id: string;
+		actor_url?: string | null;
+		acct?: string | null;
+		display_name?: string | null;
+		avatar_url?: string | null;
+		created_at?: string;
+	};
+
 	let { data }: { data: unknown } = $props();
-	const sectionData = $derived(data as { status: FederationStatus | null } | null ?? null);
+	const sectionData = $derived(
+		data as { status: FederationStatus | null; requests: RemoteFollowRequest[] } | null ?? null
+	);
 	const fed = $derived(sectionData?.status ?? null);
+	const requests = $derived(sectionData?.requests ?? []);
 
 	let busy = $state(false);
+	let busyRequest = $state<string | null>(null);
 	let message = $state<{ kind: 'success' | 'error'; text: string } | null>(null);
 	let disableOpen = $state(false);
 
@@ -46,6 +59,27 @@
 			return;
 		}
 		message = { kind: 'success', text: t('settings.federation.enabled_msg', 'Federation is now enabled for your account.') };
+		await invalidateAll();
+	}
+
+	async function handleResolve(req: RemoteFollowRequest, accept: boolean) {
+		if (busyRequest) return;
+		busyRequest = req.remote_actor_id;
+		message = null;
+		const res = await api.post<{ status: string }>(
+			`/me/federation/follow-requests/${req.remote_actor_id}/${accept ? 'accept' : 'reject'}`
+		);
+		busyRequest = null;
+		if (res.error) {
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		message = {
+			kind: 'success',
+			text: accept
+				? t('settings.federation.request_accepted', 'Follow request accepted.')
+				: t('settings.federation.request_rejected', 'Follow request rejected.')
+		};
 		await invalidateAll();
 	}
 
@@ -109,6 +143,52 @@
 				</dl>
 			</li>
 		</ul>
+
+		{#if fed.enabled && requests.length > 0}
+			<div class="mt-4">
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{t('settings.federation.requests_title', 'Follow requests')}</h2>
+				<p class="mt-0.5 text-xs text-[var(--color-muted)]">{t('settings.federation.requests_desc', 'Remote accounts waiting for your approval before they can follow you.')}</p>
+				<ul class="mt-2 space-y-2">
+					{#each requests as req (req.remote_actor_id)}
+						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+							{#if req.avatar_url}
+								<img src={req.avatar_url} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
+							{:else}
+								<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-subtle)]">
+									<AtSign size={14} class="text-[var(--color-muted)]" />
+								</span>
+							{/if}
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">
+									{req.display_name || req.acct || req.actor_url}
+								</p>
+								{#if req.acct}
+									<p class="truncate text-xs text-[var(--color-muted)]">{req.acct}</p>
+								{/if}
+							</div>
+							<div class="flex shrink-0 items-center gap-1.5">
+								<button
+									type="button"
+									disabled={busyRequest === req.remote_actor_id}
+									onclick={() => handleResolve(req, true)}
+									class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+								>
+									{t('settings.federation.request_accept', 'Accept')}
+								</button>
+								<button
+									type="button"
+									disabled={busyRequest === req.remote_actor_id}
+									onclick={() => handleResolve(req, false)}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								>
+									{t('settings.federation.request_reject', 'Reject')}
+								</button>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 
 		<div class="mt-3 flex items-center justify-end gap-2">
 			{#if fed.enabled}

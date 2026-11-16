@@ -438,7 +438,7 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 }
 
 const getContentLiteByID = `-- name: GetContentLiteByID :one
-SELECT author_id, published_at, is_locked, deleted_at FROM contents WHERE id = $1
+SELECT author_id, published_at, is_locked, deleted_at, visibility FROM contents WHERE id = $1
 `
 
 type GetContentLiteByIDRow struct {
@@ -446,6 +446,7 @@ type GetContentLiteByIDRow struct {
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
 	IsLocked    bool               `json:"is_locked"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	Visibility  string             `json:"visibility"`
 }
 
 // Ungated contents read for delete propagation and inbound lock checks:
@@ -460,6 +461,7 @@ func (q *Queries) GetContentLiteByID(ctx context.Context, id pgtype.UUID) (GetCo
 		&i.PublishedAt,
 		&i.IsLocked,
 		&i.DeletedAt,
+		&i.Visibility,
 	)
 	return i, err
 }

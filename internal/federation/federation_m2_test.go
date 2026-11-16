@@ -1227,3 +1227,42 @@ func TestDBInboundPrune(t *testing.T) {
 		t.Fatalf("inbound rows past retention survived prune: %d", remaining)
 	}
 }
+
+func TestDBObjectTombstone(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	contentID, _ := newFederatedContent(t, ctx, svc, userID)
+
+	// Live → document.
+	if _, err := svc.ObjectDocument(ctx, contentID); err != nil {
+		t.Fatalf("live object: %v", err)
+	}
+	// Soft-deleted → 410 Tombstone (was publicly addressable).
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE contents SET deleted_at = now() WHERE id = $1`, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ObjectDocument(ctx, contentID); err != ErrGone {
+		t.Fatalf("deleted object: got %v, want ErrGone", err)
+	}
+	// Never-published → still 404 (existence stays hidden).
+	var neverPub pgtype.UUID
+	if err := d.Writer.QueryRow(ctx,
+		`INSERT INTO contents (author_id, content_type, title, slug, body, content_hash, status, visibility)
+		 VALUES ($1, 'story', 'draft', $2, 'x', $3, 'draft', 'public') RETURNING id`,
+		userID, fmt.Sprintf("draft-%d", time.Now().UnixNano()),
+		fmt.Sprintf("draft-hash-%d", time.Now().UnixNano())).Scan(&neverPub); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM contents WHERE id = $1`, neverPub)
+	})
+	if _, err := svc.ObjectDocument(ctx, neverPub); err != ErrNotFound {
+		t.Fatalf("draft object: got %v, want ErrNotFound", err)
+	}
+}

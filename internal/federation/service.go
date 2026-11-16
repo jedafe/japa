@@ -384,12 +384,26 @@ func (s *Service) ObjectDocument(ctx context.Context, contentID pgtype.UUID) (ma
 	row, err := s.store.federatableContentByID(ctx, contentID, s.federatableTypesFor(ctx))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// A deleted or once-published PUBLIC row gets 410
+			// Tombstone, not 404 — remotes distinguish "gone" from
+			// "never existed" and drop their cached copy. Non-public
+			// rows were never remotely addressable: 404 must keep
+			// hiding their existence entirely. published_at is the
+			// durable was-live signal (it survives unpublish).
+			if lite, lerr := s.store.contentLiteByID(ctx, contentID); lerr == nil &&
+				lite.Visibility == "public" &&
+				(lite.DeletedAt.Valid || lite.PublishedAt.Valid) {
+				return nil, ErrGone
+			}
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("federation: object lookup: %w", err)
 	}
 
 	actor, err := s.store.actorByUserID(ctx, row.AuthorID)
+	if err == nil && actor.Status == "tombstone" {
+		return nil, ErrGone // erased actor — its objects are gone for good
+	}
 	if err != nil || actor.Status != ActorStatusActive {
 		return nil, ErrNotFound
 	}

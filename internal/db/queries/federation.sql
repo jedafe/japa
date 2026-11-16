@@ -359,7 +359,7 @@ WHERE c.id = @id
 -- soft-deleted and unpublished rows still resolve — the questions the
 -- callers answer are "could a remote copy exist" and "are comments
 -- locked", not whether the object is currently live.
-SELECT author_id, published_at, is_locked, deleted_at FROM contents WHERE id = @id;
+SELECT author_id, published_at, is_locked, deleted_at, visibility FROM contents WHERE id = @id;
 
 -- name: InsertFederationDelivery :one
 INSERT INTO federation_deliveries (

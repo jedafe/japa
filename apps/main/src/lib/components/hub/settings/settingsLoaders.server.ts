@@ -238,9 +238,13 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	}),
 
 	// §126 / ADR-138: member federation state — {enabled, status, actor_url,
-	// handle, follower_count, created_at}. Best-effort: degrades to null so
-	// the section renders the enable CTA.
+	// handle, follower_count, created_at} plus the pending remote follow
+	// queue (manual-approval members act on it in the section). Both
+	// best-effort: degrade independently so the section still renders.
 	federation: async (ctx) => ({
-		status: await apiGet<unknown>(ctx, '/me/federation').catch(() => null)
+		status: await apiGet<unknown>(ctx, '/me/federation').catch(() => null),
+		requests: await apiGet<{ requests: unknown[] }>(ctx, '/me/federation/follow-requests')
+			.then((r) => r.requests ?? [])
+			.catch(() => [] as unknown[])
 	}),
 };

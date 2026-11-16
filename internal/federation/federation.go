@@ -21,6 +21,12 @@ import (
 // content object, or remote entity exists for the requested identifier.
 var ErrNotFound = errors.New("federation: not found")
 
+// ErrGone marks a once-live object that is now deleted or withdrawn —
+// answered 410 + a Tombstone body so remotes can garbage-collect the
+// copy they may hold (the same was-ever-live signal the Delete fanout
+// uses: deleted_at or published_at on the lite row).
+var ErrGone = errors.New("federation: object tombstoned")
+
 // ErrHandleDomain is returned when a WebFinger resource targets a domain
 // other than the configured handle domain.
 var ErrHandleDomain = errors.New("federation: foreign handle domain")

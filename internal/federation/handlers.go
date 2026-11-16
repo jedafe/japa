@@ -150,6 +150,13 @@ func (h *Handlers) GetObject(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := h.service.ObjectDocument(r.Context(), id)
 	if err != nil {
+		// §126: once-live objects answer 410 + Tombstone — remotes
+		// distinguish "deleted" from "never existed" and drop the copy.
+		if errors.Is(err, ErrGone) {
+			writeTypedJSON(w, http.StatusGone, ContentTypeActivity,
+				tombstoneDocument(h.service.objectURL(id.String())))
+			return
+		}
 		handleServiceErr(w, err)
 		return
 	}
