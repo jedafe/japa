@@ -31,6 +31,10 @@ func (s *Store) actorByUserID(ctx context.Context, userID pgtype.UUID) (gen.Fede
 	return s.read.GetFederatedActorByUserID(ctx, userID)
 }
 
+func (s *Store) actorHandlesByUserID(ctx context.Context, userID pgtype.UUID) (gen.GetFederatedActorHandlesByUserIDRow, error) {
+	return s.read.GetFederatedActorHandlesByUserID(ctx, userID)
+}
+
 func (s *Store) userByID(ctx context.Context, userID pgtype.UUID) (gen.GetUserByIDRow, error) {
 	return s.read.GetUserByID(ctx, userID)
 }

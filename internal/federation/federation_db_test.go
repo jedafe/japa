@@ -9,9 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // DB integration tests — follow the refund_db_test.go pattern: real
@@ -330,8 +333,16 @@ func TestDBInstanceBlockCRUD(t *testing.T) {
 		t.Errorf("domain not normalized: %q", block.Domain)
 	}
 
-	if _, err := svc.CreateBlock(ctx, "bad/host", "", userID); err != ErrInvalidDomain {
-		t.Errorf("bad domain: got %v, want ErrInvalidDomain", err)
+	for _, bad := range []string{
+		"bad/host",
+		"evil.com:443", // ports never match a URL-derived host
+		"evil.com:443/path",
+		strings.Repeat("a", 254), // over the DNS name limit
+		"white space.example",
+	} {
+		if _, err := svc.CreateBlock(ctx, bad, "", userID); err != ErrInvalidDomain {
+			t.Errorf("domain %q: got %v, want ErrInvalidDomain", bad, err)
+		}
 	}
 
 	if err := svc.DeleteBlock(ctx, block.ID); err != nil {
@@ -357,6 +368,11 @@ func TestDBTombstoneNeverResurrected(t *testing.T) {
 	// Re-opting-in must NOT revive an erased identity.
 	if _, err := svc.EnableFederation(ctx, userID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("enable over tombstone: got %v, want ErrNotFound", err)
+	}
+	// The disable path must not flip tombstone back to disabled either —
+	// that would reopen the resurrection the enable path refuses.
+	if _, err := svc.DisableFederation(ctx, userID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("disable over tombstone: got %v, want ErrNotFound", err)
 	}
 	var status string
 	if err := d.Reader.QueryRow(ctx,
@@ -488,5 +504,57 @@ func TestDBCollectionsAndFollowerCountExcludeSuspended(t *testing.T) {
 	}
 	if followingPage["totalItems"].(int64) != 0 {
 		t.Fatalf("suspended followee still counted: %v", followingPage["totalItems"])
+	}
+}
+
+// TestDBLifecycleCacheInvalidation covers InvalidateActorIdentityForUser —
+// fired by atproto:lifecycle_sync on transitions OUT of active, it must
+// resolve the actor's handles even though the status-gated lookups can no
+// longer see the suspended member, and drop both doc caches.
+func TestDBLifecycleCacheInvalidation(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
+	if err != nil {
+		t.Fatalf("valkey: %v", err)
+	}
+	t.Cleanup(vk.Close)
+
+	svc := newFederationService(t, d)
+	svc.SetValkey(valkeycompat.NewAdapter(vk))
+
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	// Warm both doc caches.
+	if _, err := svc.Webfinger(ctx, "acct:"+uname+"@test.dev"); err != nil {
+		t.Fatalf("webfinger warm: %v", err)
+	}
+	if _, err := svc.ActorDocument(ctx, uname); err != nil {
+		t.Fatalf("actor warm: %v", err)
+	}
+	for _, k := range []string{"jc:fed:webfinger:" + uname, "jc:fed:actor:" + uname} {
+		if !mr.Exists(k) {
+			t.Fatalf("%s not cached after warm", k)
+		}
+	}
+
+	// Suspend, then invalidate as the lifecycle task would — the cached
+	// docs must go even though actorProfile/actorByUsername now 404.
+	if _, err := d.Writer.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE id = $1`, userID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	svc.InvalidateActorIdentityForUser(ctx, userID)
+	for _, k := range []string{"jc:fed:webfinger:" + uname, "jc:fed:actor:" + uname} {
+		if mr.Exists(k) {
+			t.Errorf("%s survived lifecycle invalidation", k)
+		}
 	}
 }

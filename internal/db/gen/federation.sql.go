@@ -458,6 +458,29 @@ func (q *Queries) GetFederatedActorByUsername(ctx context.Context, username stri
 	return i, err
 }
 
+const getFederatedActorHandlesByUserID = `-- name: GetFederatedActorHandlesByUserID :one
+SELECT fa.preferred_username, u.username
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE fa.user_id = $1
+`
+
+type GetFederatedActorHandlesByUserIDRow struct {
+	PreferredUsername string `json:"preferred_username"`
+	Username          string `json:"username"`
+}
+
+// Cache-invalidation lookup: both handles an actor's docs may be cached
+// under (creation-time preferred_username + live u.username), resolved
+// WITHOUT status gates — lifecycle sync needs them precisely when the
+// member is no longer active, where the status-joined lookups go blind.
+func (q *Queries) GetFederatedActorHandlesByUserID(ctx context.Context, userID pgtype.UUID) (GetFederatedActorHandlesByUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getFederatedActorHandlesByUserID, userID)
+	var i GetFederatedActorHandlesByUserIDRow
+	err := row.Scan(&i.PreferredUsername, &i.Username)
+	return i, err
+}
+
 const getFederationFollowByActivityID = `-- name: GetFederationFollowByActivityID :one
 SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at FROM federation_follows WHERE ap_activity_id = $1
 `

@@ -309,6 +309,11 @@ func parsePage(r *http.Request) int {
 	if err != nil || n < 0 {
 		return 0
 	}
+	// Bound page — (page-1)*size must not overflow int32 at the service
+	// layer (outbox_page_size caps at 200, so 1e6 pages stays well under).
+	if n > 1_000_000 {
+		return 1_000_000
+	}
 	return n
 }
 

@@ -185,6 +185,11 @@ func HandleAtprotoLifecycleSync(ctx context.Context, t *asynq.Task) error {
 	// suspended/banned/deleted never produce the task at all.
 	if userActive {
 		fireFederationAutoOptin(ctx, userID)
+	} else if federationSvc != nil {
+		// A transition OUT of active hides the actor behind the
+		// status-gated lookups — drop its cached WebFinger/actor docs so
+		// suspension stops serving immediately rather than at TTL expiry.
+		federationSvc.InvalidateActorIdentityForUser(ctx, userID)
 	}
 	return nil
 }

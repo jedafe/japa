@@ -219,14 +219,14 @@ func orderedCollectionPage(pageID, collectionID string, items []any, total int64
 }
 
 // nodeInfoDocument builds the NodeInfo 2.1 stats document.
-func nodeInfoDocument(version, apiBase string, usage gen.GetNodeInfoUsageRow, openRegistrations bool) map[string]any {
+func nodeInfoDocument(version, homepage string, usage gen.GetNodeInfoUsageRow, openRegistrations bool) map[string]any {
 	return map[string]any{
 		"version": "2.1",
 		"software": map[string]any{
 			"name":       "japaconnect",
 			"version":    version,
 			"repository": "https://github.com/jedafe/japa",
-			"homepage":   apiBase,
+			"homepage":   homepage,
 		},
 		"protocols": []string{"activitypub"},
 		"services": map[string]any{

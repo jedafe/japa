@@ -161,9 +161,16 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		return nil, ErrHandleDomain
 	}
 
+	// Unconfigured handle domain (dev fallback) serves ANY acct domain and
+	// embeds the request domain in the subject — caching under the bare
+	// username would poison every other domain's lookup, so only the
+	// configured-domain path uses the cache.
+	cacheable := s.handleDomain() != ""
 	cacheKey := "jc:fed:webfinger:" + strings.ToLower(username)
-	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
-		return doc, nil
+	if cacheable {
+		if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+			return doc, nil
+		}
 	}
 
 	// The profile query carries the live users.username — the JRD subject
@@ -188,7 +195,9 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 		profile.Username, canonical, profile.ActorUrl,
 		s.profileURL(profile.Username),
 	)
-	s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
+	if cacheable {
+		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
+	}
 	return doc, nil
 }
 
@@ -449,7 +458,7 @@ func (s *Service) NodeInfo(ctx context.Context) (map[string]any, error) {
 	if version == "" {
 		version = "1.0.0"
 	}
-	return nodeInfoDocument(version, s.apiBase(), usage, open), nil
+	return nodeInfoDocument(version, s.siteBase(), usage, open), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +645,13 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 	if err != nil {
 		return FederationStatus{}, fmt.Errorf("federation: lookup user: %w", err)
 	}
-	if actor.Status != ActorStatusDisabled {
+	// Only an active actor deactivates: disabled is an idempotent no-op,
+	// and a tombstone (M2 erasure) is terminal — flipping it back to
+	// disabled would reopen the resurrection path the upsert guards.
+	if actor.Status == ActorStatusTombstone {
+		return FederationStatus{}, ErrNotFound
+	}
+	if actor.Status == ActorStatusActive {
 		if err := s.store.setActorStatus(ctx, actor.ID, ActorStatusDisabled); err != nil {
 			return FederationStatus{}, fmt.Errorf("federation: disable: %w", err)
 		}
@@ -677,7 +692,10 @@ func (s *Service) ListActors(ctx context.Context, q, sortKey, sortDir string, li
 		r.PrivateKeyEnc = ""
 		out = append(out, AdminActorRow{
 			ListFederatedActorsRow: r,
-			Handle:                 r.PreferredUsername + "@" + s.handleDomain(),
+			// The handle tracks the live username, not the creation-time
+			// preferred_username snapshot — renamed members answer at the
+			// new handle.
+			Handle: r.Username + "@" + s.handleDomain(),
 		})
 	}
 	return out, total, nil
@@ -691,7 +709,11 @@ func (s *Service) Stats(ctx context.Context) (gen.GetFederationStatsRow, error) 
 // CreateBlock blocks a remote instance domain (normalized lowercase).
 func (s *Service) CreateBlock(ctx context.Context, domain, reason string, blockedBy pgtype.UUID) (gen.FederationInstanceBlock, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
-	if domain == "" || strings.ContainsAny(domain, "/@ \t") {
+	// ':' rejects ports — GetInstanceBlockByDomain matches on URL-derived
+	// hosts (no port), so a stored 'evil.com:443' would never fire. 253 is
+	// the DNS name limit; longer input is rejected rather than erroring
+	// on the column at insert time.
+	if domain == "" || len(domain) > 253 || strings.ContainsAny(domain, "/@ \t:") {
 		return gen.FederationInstanceBlock{}, ErrInvalidDomain
 	}
 	return s.store.createBlock(ctx, domain, reason, blockedBy)
@@ -773,6 +795,22 @@ func (s *Service) invalidateActorCache(ctx context.Context, usernames ...string)
 // the newly claimed username serves a stale document (jc:fed:* keys).
 func (s *Service) InvalidateActorIdentity(ctx context.Context, usernames ...string) {
 	s.invalidateActorCache(ctx, usernames...)
+}
+
+// InvalidateActorIdentityForUser resolves the member's actor handles and
+// drops their cached WebFinger/actor docs. Fired by lifecycle sync on
+// transitions OUT of active (suspend/ban/delete) — the status-gated
+// lookups go blind at exactly that moment, so handles resolve without
+// status filters. A member with no actor row is a cheap no-op.
+func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID) {
+	if s.store == nil {
+		return
+	}
+	row, err := s.store.actorHandlesByUserID(ctx, userID)
+	if err != nil {
+		return
+	}
+	s.invalidateActorCache(ctx, row.PreferredUsername, row.Username)
 }
 
 // RemoteCacheKey is the catalogued jc:fed:remote:{sha256(actor_url)} key.

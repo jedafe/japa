@@ -20,13 +20,18 @@ type fakeFlagChecker struct{ on map[string]bool }
 func (f fakeFlagChecker) IsEnabled(_ context.Context, key string) bool { return f.on[key] }
 
 type fakeProvisioner struct {
-	calls []string
-	err   error
+	calls       []string
+	invalidated []string
+	err         error
 }
 
 func (f *fakeProvisioner) AutoProvision(_ context.Context, userID pgtype.UUID) error {
 	f.calls = append(f.calls, userID.String())
 	return f.err
+}
+
+func (f *fakeProvisioner) InvalidateActorIdentityForUser(_ context.Context, userID pgtype.UUID) {
+	f.invalidated = append(f.invalidated, userID.String())
 }
 
 // Remaining atprotoRepoWriter methods — unused by the auto-opt-in handler.
@@ -216,6 +221,11 @@ func TestLifecycleSyncAutoOptinGate(t *testing.T) {
 	if len(fired) != 0 {
 		t.Fatalf("auto_optin fired on non-active transition: %v", fired)
 	}
+	// The same transition drops cached actor docs — a suspended member's
+	// identity stops serving immediately rather than at the 5-min TTL.
+	if len(fed.invalidated) != 1 || fed.invalidated[0] != userID.String() {
+		t.Fatalf("actor docs not invalidated on non-active transition: %v", fed.invalidated)
+	}
 
 	fakeUserActive = true // restore to active
 	if err := HandleAtprotoLifecycleSync(context.Background(),
@@ -224,6 +234,9 @@ func TestLifecycleSyncAutoOptinGate(t *testing.T) {
 	}
 	if len(fired) != 1 || fired[0] != userID.String() {
 		t.Fatalf("auto_optin not fired on active transition: %v", fired)
+	}
+	if len(fed.invalidated) != 1 {
+		t.Fatalf("invalidation fired on active transition: %v", fed.invalidated)
 	}
 }
 

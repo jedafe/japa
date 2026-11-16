@@ -531,7 +531,15 @@ func TestParsePage(t *testing.T) {
 	if got := parsePage(req); got != 0 {
 		t.Errorf("no page param: got %d, want 0 (collection)", got)
 	}
-	for raw, want := range map[string]int{"?page=1": 1, "?page=true": 1, "?page=3": 3, "?page=abc": 0, "?page=-2": 0, "?page=0": 0} {
+	for raw, want := range map[string]int{
+		"?page=1": 1, "?page=true": 1, "?page=3": 3,
+		"?page=abc": 0, "?page=-2": 0, "?page=0": 0,
+		// Capped — (page-1)*outbox_page_size must not overflow int32.
+		"?page=1000001":    1000000,
+		"?page=2147483647": 1000000,
+		// Beyond int64 → Atoi error → collection document.
+		"?page=99999999999999999999": 0,
+	} {
 		req := httptest.NewRequest("GET", "/x/outbox"+raw, nil)
 		if got := parsePage(req); got != want {
 			t.Errorf("%s: got %d, want %d", raw, got, want)

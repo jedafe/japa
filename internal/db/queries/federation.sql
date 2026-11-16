@@ -53,6 +53,16 @@ LIMIT 1;
 -- name: GetFederatedActorByID :one
 SELECT * FROM federated_actors WHERE id = @id;
 
+-- name: GetFederatedActorHandlesByUserID :one
+-- Cache-invalidation lookup: both handles an actor's docs may be cached
+-- under (creation-time preferred_username + live u.username), resolved
+-- WITHOUT status gates — lifecycle sync needs them precisely when the
+-- member is no longer active, where the status-joined lookups go blind.
+SELECT fa.preferred_username, u.username
+FROM federated_actors fa
+JOIN users u ON u.id = fa.user_id
+WHERE fa.user_id = @user_id;
+
 -- name: CreateFederatedActor :one
 INSERT INTO federated_actors (
     user_id, actor_url, preferred_username, public_key_pem, private_key_enc,

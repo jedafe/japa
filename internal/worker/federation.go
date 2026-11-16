@@ -18,9 +18,12 @@ import (
 // federationProvisioner is the seam the auto-opt-in handler provisions
 // actors through — *federation.Service satisfies it in production. A
 // local interface keeps worker out of federation's import graph (same
-// shape as atprotoRepoWriter above).
+// shape as atprotoRepoWriter above). InvalidateActorIdentityForUser
+// joins it for the lifecycle path: transitions out of 'active' must
+// drop cached WebFinger/actor docs, not just freeze provisioning.
 type federationProvisioner interface {
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
+	InvalidateActorIdentityForUser(ctx context.Context, userID pgtype.UUID)
 }
 
 var federationSvc federationProvisioner
