@@ -3913,12 +3913,20 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	// campaign (Section 62). An empty segment reverts the campaign to draft
 	// so admins see it never delivered; a total delivery failure returns an
 	// error so asynq retries instead of falsely reporting success.
+	// recipient_count is the send_state 'sent' total — this task's `sent`
+	// counter only covers what THIS attempt delivered, so a resumed send
+	// would otherwise undercount (e.g. 10 of 500 after a crash-retry).
 	switch {
 	case sent > 0:
+		delivered := sent
+		if states, cerr := writer.CountNewsletterRecipientStates(ctx, campaignID); cerr == nil && int(states.Sent) > delivered {
+			delivered = int(states.Sent)
+		}
+
 		_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
 			ID:             campaignID,
 			SendID:         &mySendID,
-			RecipientCount: int32(sent), // #nosec
+			RecipientCount: int32(delivered), // #nosec
 		})
 	case total == 0:
 		// Pending set is empty. Two cases: the segment never had

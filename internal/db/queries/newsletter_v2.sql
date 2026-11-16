@@ -9,7 +9,7 @@
 
 -- name: GetSubscriberByEmail :one
 SELECT * FROM newsletter_subscribers
-WHERE email = @email;
+WHERE lower(email) = lower(@email);
 
 -- name: GetSubscriberByID :one
 SELECT * FROM newsletter_subscribers
@@ -46,7 +46,8 @@ ON CONFLICT (email) DO UPDATE SET
                THEN newsletter_subscribers.status ELSE 'pending' END,
  unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
                         THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
- subscribed_at = now()
+ subscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+                      THEN newsletter_subscribers.subscribed_at ELSE now() END
 RETURNING *;
 
 -- name: ConfirmSubscriber :one
@@ -58,7 +59,7 @@ RETURNING *;
 -- name: Unsubscribe :exec
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
-WHERE email = @email;
+WHERE lower(email) = lower(@email);
 
 -- name: UnsubscribeByID :one
 UPDATE newsletter_subscribers
@@ -77,12 +78,12 @@ RETURNING *;
 -- name: MarkBounced :exec
 UPDATE newsletter_subscribers
 SET status = 'bounced'
-WHERE email = @email;
+WHERE lower(email) = lower(@email);
 
 -- name: MarkComplained :exec
 UPDATE newsletter_subscribers
 SET status = 'complained'
-WHERE email = @email;
+WHERE lower(email) = lower(@email);
 
 -- =====================================================================
 -- Unsubscribe tokens

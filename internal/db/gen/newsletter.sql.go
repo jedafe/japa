@@ -300,16 +300,24 @@ func (q *Queries) RevertNewsletterSendClaim(ctx context.Context, arg RevertNewsl
 
 const upsertNewsletterSendState = `-- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT $1, ns.email, 'pending'
+SELECT $1, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
-ON CONFLICT (campaign_id, recipient) DO NOTHING
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed'
 `
 
 // Send-state population is segment-aware: each upsert mirrors exactly one
 // segment's membership rules so pending-row consumption (resume) works
 // uniformly for every campaign type and the send_state table is an accurate
 // record of the campaign's real recipient set (§62, ADR-080 §3).
+// All four upserts share the same resend semantics (§62): DO UPDATE
+// re-pends only rows still in 'failed' state — a reset+resend (or an
+// asynq retry of the send task itself) re-attempts transient failures,
+// while 'sent' rows stay sent (never re-mailed) and 'pending' rows stay
+// pending. Rows whose subscriber has since bounced/unsubscribed no
+// longer match the INSERT's source filter, so they stay 'failed' — the
+// suppression is enforced at population time.
 func (q *Queries) UpsertNewsletterSendState(ctx context.Context, campaignID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, upsertNewsletterSendState, campaignID)
 	return err
@@ -317,12 +325,13 @@ func (q *Queries) UpsertNewsletterSendState(ctx context.Context, campaignID pgty
 
 const upsertNewsletterSendStateBySpace = `-- name: UpsertNewsletterSendStateBySpace :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT $1, ns.email, 'pending'
+SELECT $1, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN follows f ON f.follower_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND f.entity_type = 'space' AND f.entity_id = $2
-ON CONFLICT (campaign_id, recipient) DO NOTHING
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed'
 `
 
 type UpsertNewsletterSendStateBySpaceParams struct {
@@ -337,12 +346,13 @@ func (q *Queries) UpsertNewsletterSendStateBySpace(ctx context.Context, arg Upse
 
 const upsertNewsletterSendStateByTag = `-- name: UpsertNewsletterSendStateByTag :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT $1, ns.email, 'pending'
+SELECT $1, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN follows f ON f.follower_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND f.entity_type = 'tag' AND f.entity_id = $2
-ON CONFLICT (campaign_id, recipient) DO NOTHING
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed'
 `
 
 type UpsertNewsletterSendStateByTagParams struct {
@@ -357,12 +367,13 @@ func (q *Queries) UpsertNewsletterSendStateByTag(ctx context.Context, arg Upsert
 
 const upsertNewsletterSendStatePro = `-- name: UpsertNewsletterSendStatePro :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT $1, ns.email, 'pending'
+SELECT $1, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN subscriptions sub ON sub.user_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND sub.status = 'active' AND sub.plan LIKE 'pro_%'
-ON CONFLICT (campaign_id, recipient) DO NOTHING
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed'
 `
 
 func (q *Queries) UpsertNewsletterSendStatePro(ctx context.Context, campaignID pgtype.UUID) error {

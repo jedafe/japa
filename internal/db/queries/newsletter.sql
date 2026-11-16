@@ -8,39 +8,50 @@ WHERE id = @id;
 -- segment's membership rules so pending-row consumption (resume) works
 -- uniformly for every campaign type and the send_state table is an accurate
 -- record of the campaign's real recipient set (§62, ADR-080 §3).
+-- All four upserts share the same resend semantics (§62): DO UPDATE
+-- re-pends only rows still in 'failed' state — a reset+resend (or an
+-- asynq retry of the send task itself) re-attempts transient failures,
+-- while 'sent' rows stay sent (never re-mailed) and 'pending' rows stay
+-- pending. Rows whose subscriber has since bounced/unsubscribed no
+-- longer match the INSERT's source filter, so they stay 'failed' — the
+-- suppression is enforced at population time.
 -- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT @campaign_id, ns.email, 'pending'
+SELECT @campaign_id, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
-ON CONFLICT (campaign_id, recipient) DO NOTHING;
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed';
 
 -- name: UpsertNewsletterSendStatePro :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT @campaign_id, ns.email, 'pending'
+SELECT @campaign_id, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN subscriptions sub ON sub.user_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND sub.status = 'active' AND sub.plan LIKE 'pro_%'
-ON CONFLICT (campaign_id, recipient) DO NOTHING;
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed';
 
 -- name: UpsertNewsletterSendStateBySpace :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT @campaign_id, ns.email, 'pending'
+SELECT @campaign_id, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN follows f ON f.follower_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND f.entity_type = 'space' AND f.entity_id = @segment_id
-ON CONFLICT (campaign_id, recipient) DO NOTHING;
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed';
 
 -- name: UpsertNewsletterSendStateByTag :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
-SELECT @campaign_id, ns.email, 'pending'
+SELECT @campaign_id, lower(ns.email), 'pending'
 FROM newsletter_subscribers ns
 JOIN follows f ON f.follower_id = ns.user_id
 WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
  AND f.entity_type = 'tag' AND f.entity_id = @segment_id
-ON CONFLICT (campaign_id, recipient) DO NOTHING;
+ON CONFLICT (campaign_id, recipient) DO UPDATE SET status = 'pending', sent_at = NULL, error = NULL
+WHERE newsletter_send_state.status = 'failed';
 
 -- Atomic send claims (§62): the first writer to flip a campaign into
 -- 'sending' owns the send and stamps send_id as the lease identity —

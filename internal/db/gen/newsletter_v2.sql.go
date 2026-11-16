@@ -482,7 +482,7 @@ const getSubscriberByEmail = `-- name: GetSubscriberByEmail :one
 
 
 SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
-WHERE email = $1
+WHERE lower(email) = lower($1)
 `
 
 // newsletter_v2.sql — Newsletter & Digest V2 queries (Section 62, ADR-080).
@@ -600,7 +600,7 @@ func (q *Queries) IncrementCampaignOpens(ctx context.Context, id pgtype.UUID) er
 const markBounced = `-- name: MarkBounced :exec
 UPDATE newsletter_subscribers
 SET status = 'bounced'
-WHERE email = $1
+WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) MarkBounced(ctx context.Context, email string) error {
@@ -635,7 +635,7 @@ func (q *Queries) MarkCampaignSent(ctx context.Context, arg MarkCampaignSentPara
 const markComplained = `-- name: MarkComplained :exec
 UPDATE newsletter_subscribers
 SET status = 'complained'
-WHERE email = $1
+WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) MarkComplained(ctx context.Context, email string) error {
@@ -690,7 +690,8 @@ ON CONFLICT (email) DO UPDATE SET
                THEN newsletter_subscribers.status ELSE 'pending' END,
  unsubscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
                         THEN newsletter_subscribers.unsubscribed_at ELSE NULL END,
- subscribed_at = now()
+ subscribed_at = CASE WHEN newsletter_subscribers.status IN ('bounced', 'complained', 'subscribed')
+                      THEN newsletter_subscribers.subscribed_at ELSE now() END
 RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
@@ -726,7 +727,7 @@ func (q *Queries) SubscribePending(ctx context.Context, arg SubscribePendingPara
 const unsubscribe = `-- name: Unsubscribe :exec
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
-WHERE email = $1
+WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) Unsubscribe(ctx context.Context, email string) error {

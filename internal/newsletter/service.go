@@ -352,6 +352,12 @@ func (s *Service) UpdateSubscriberStatus(ctx context.Context, id pgtype.UUID, st
 // previously unsubscribed email). The source parameter tracks where the
 // subscription originated ('signup', 'onboarding', 'footer', 'import', 'api').
 func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pgtype.UUID, source string) (gen.NewsletterSubscriber, error) {
+	// Canonical form: the column is case-sensitive text, so 'Alice@X.com'
+	// and 'alice@x.com' would be two rows (double-mail) without a single
+	// normalization point. All write paths funnel through here or
+	// CreateSubscriberDirect; read paths use lower(email) = lower(@email)
+	// so legacy mixed-case rows still match.
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return gen.NewsletterSubscriber{}, errors.New("newsletter: email is required")
 	}
@@ -400,6 +406,7 @@ func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pg
 // public signups only: admin-added rows send no confirmation email, so a
 // pending insert there would be stuck with no way to confirm.
 func (s *Service) CreateSubscriberDirect(ctx context.Context, email string, userID *pgtype.UUID, source string) (gen.NewsletterSubscriber, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return gen.NewsletterSubscriber{}, errors.New("newsletter: email is required")
 	}
