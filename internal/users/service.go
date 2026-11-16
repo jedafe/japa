@@ -830,6 +830,13 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 		s.enqueueAtprotoProfile(ctx, userID)
 	}
 
+	// §126: the Person actor doc renders display_name/avatar/bio — drop
+	// the cached WebFinger/actor docs on those edits so remote fetches
+	// see the new identity immediately rather than at the 5-min TTL.
+	if s.fedCache != nil && (req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil) {
+		s.fedCache.InvalidateActorIdentityForUser(ctx, userID)
+	}
+
 	return nil
 }
 
@@ -2655,8 +2662,10 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// and may collide with docs cached under the newly claimed handle —
 	// drop both so lookups resolve immediately, not after the 5-min TTL.
 	// The service additionally drops the stored preferred_username key,
-	// which an earlier rename may have stranded.
-	if result.UsernameChanged && s.fedCache != nil {
+	// which an earlier rename may have stranded. The actor doc also
+	// renders display_name and the public identity fields, so those
+	// mutations drop the same caches.
+	if (result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged) && s.fedCache != nil {
 		s.fedCache.InvalidateActorIdentityForUser(ctx, userID, result.OldUsername, result.NewUsername)
 	}
 

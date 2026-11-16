@@ -186,6 +186,7 @@ func (s *Service) instanceAnnounceItem(ctx context.Context, row gen.ListAllFeder
 		"actor":  s.instanceURL(),
 		"object": objID,
 		"to":     []string{asPublic},
+		"cc":     []string{s.instanceURL() + "/followers"},
 	}
 }
 
@@ -381,12 +382,12 @@ func (s *Service) groupDocRow(ctx context.Context, slug string) (gen.GetGroupAct
 	return row, nil
 }
 
-// GroupDocument serves GET /federation/groups/{slug}.
+// GroupDocument serves GET /federation/groups/{slug}. The space
+// envelope gate runs live on EVERY request — the cache may only elide
+// the doc build, never the eligibility join: a flipped-private (or
+// deactivated, deleted, creator-erased) space must stop resolving
+// immediately, not at the 5-minute TTL.
 func (s *Service) GroupDocument(ctx context.Context, slug string) (map[string]any, error) {
-	cacheKey := "jc:fed:groupdoc:" + strings.ToLower(slug)
-	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
-		return doc, nil
-	}
 	row, err := s.groupDocRow(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -396,6 +397,10 @@ func (s *Service) GroupDocument(ctx context.Context, slug string) (map[string]an
 	}
 	if row.Status != ActorStatusActive {
 		return nil, ErrNotFound
+	}
+	cacheKey := "jc:fed:groupdoc:" + strings.ToLower(slug)
+	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+		return doc, nil
 	}
 	doc := groupDocument(row, s.siteBase())
 	s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
@@ -516,6 +521,7 @@ func (s *Service) GroupOutbox(ctx context.Context, slug string, page int) (map[s
 			"actor":  row.ActorUrl,
 			"object": objID,
 			"to":     []string{asPublic},
+			"cc":     []string{row.FollowersUrl},
 		})
 	}
 	return orderedCollectionPage(pageID(page), row.OutboxUrl, items, total,

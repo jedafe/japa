@@ -221,21 +221,23 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 
 // groupWebfinger serves acct:!{slug}@{domain} — the Group actor JRD for
 // a federated space. Group handles only resolve while the space is
-// public/active and the actor is live (same gates as the doc route).
+// public/active and the actor is live (same gates as the doc route —
+// the envelope join runs live on every request; the cache only elides
+// the JRD build).
 func (s *Service) groupWebfinger(ctx context.Context, slug, domain string) (map[string]any, error) {
-	cacheable := s.handleDomain() != ""
-	cacheKey := "jc:fed:webfinger:!" + strings.ToLower(slug)
-	if cacheable {
-		if doc, ok := s.cacheGet(ctx, cacheKey); ok {
-			return doc, nil
-		}
-	}
 	row, err := s.groupDocRow(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
 	if row.Status != ActorStatusActive {
 		return nil, ErrNotFound
+	}
+	cacheable := s.handleDomain() != ""
+	cacheKey := "jc:fed:webfinger:!" + strings.ToLower(slug)
+	if cacheable {
+		if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+			return doc, nil
+		}
 	}
 	canonical := s.handleDomain()
 	if canonical == "" {

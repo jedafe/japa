@@ -863,6 +863,65 @@ func TestDBGroupTombstoneDropsCaches(t *testing.T) {
 	}
 }
 
+// TestDBGroupEnvelopeLapseStopsCachedResolution — the envelope gate must
+// run live on every request: a space that flips private stops resolving
+// immediately even while its cached doc and WebFinger JRD are still warm.
+// The caches only elide the doc/JRD build, never the eligibility join.
+func TestDBGroupEnvelopeLapseStopsCachedResolution(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	vk, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{mr.Addr()}, DisableCache: true})
+	if err != nil {
+		t.Fatalf("valkey: %v", err)
+	}
+	t.Cleanup(vk.Close)
+	svc.SetValkey(valkeycompat.NewAdapter(vk))
+
+	spaceID, slug := newSpace(t, ctx, d, "public")
+	adminID, _ := newFederationUser(t, ctx, d, "active")
+	if _, err := svc.ProvisionGroupActor(ctx, spaceID, adminID); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if _, err := svc.GroupDocument(ctx, slug); err != nil {
+		t.Fatalf("doc warm: %v", err)
+	}
+	if _, err := svc.groupWebfinger(ctx, slug, "test.dev"); err != nil {
+		t.Fatalf("webfinger warm: %v", err)
+	}
+	lower := strings.ToLower(slug)
+	for _, k := range []string{"jc:fed:groupdoc:" + lower, "jc:fed:webfinger:!" + lower} {
+		if !mr.Exists(k) {
+			t.Fatalf("%s not cached after warm", k)
+		}
+	}
+
+	// The space leaves the envelope with no cache invalidation wired.
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE spaces SET visibility = 'private' WHERE id = $1`, spaceID); err != nil {
+		t.Fatalf("flip private: %v", err)
+	}
+
+	// Both surfaces must gate live even though both keys remain warm.
+	for _, k := range []string{"jc:fed:groupdoc:" + lower, "jc:fed:webfinger:!" + lower} {
+		if !mr.Exists(k) {
+			t.Fatalf("%s should still be cached — the fix is gating order, not invalidation", k)
+		}
+	}
+	if _, err := svc.GroupDocument(ctx, slug); err != ErrNotFound {
+		t.Fatalf("doc after envelope lapse: %v", err)
+	}
+	if _, err := svc.groupWebfinger(ctx, slug, "test.dev"); err != ErrNotFound {
+		t.Fatalf("webfinger after envelope lapse: %v", err)
+	}
+}
+
 // TestDBListRelaysQFilter — the admin DataTable ?q= contract added in
 // pass 26: ILIKE on actor_url/domain.
 func TestDBListRelaysQFilter(t *testing.T) {
