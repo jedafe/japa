@@ -267,14 +267,35 @@ WHERE remote_actor_id = @remote_actor_id AND status <> 'undone';
 
 -- name: RepointFederationFollowsToRemoteActor :execrows
 -- §126 M4 Move{actor→target}: every edge that does not already exist on
--- the new actor rebinds to it. Colliding rows (the member was followed
--- from BOTH accounts pre-move) stay on the old id — the caller undoes
--- them via UndoFederationFollowsByRemoteActor so the new-actor edge wins.
+-- the new actor rebinds to it. Colliding pairs merge via
+-- MergeFederationFollowsToRemoteActor first so the live status wins.
 UPDATE federation_follows ff SET remote_actor_id = @new_remote_actor_id, updated_at = now()
 WHERE ff.remote_actor_id = @old_remote_actor_id
   AND NOT EXISTS (SELECT 1 FROM federation_follows dup
                   WHERE dup.local_actor_id = ff.local_actor_id
                     AND dup.remote_actor_id = @new_remote_actor_id);
+
+-- name: MergeFederationFollowsToRemoteActor :execrows
+-- §126 M4 Move collision half: where an edge already exists on the new
+-- actor, the LIVE status wins — the remote's identities merged, so a
+-- stale 'undone'/'rejected' on the new account must not bury a live
+-- follow from the old (accepted beats pending, pending beats dead).
+UPDATE federation_follows ff
+SET status = CASE
+        WHEN ff.status = 'accepted' OR src.status = 'accepted' THEN 'accepted'
+        WHEN ff.status = 'pending' OR src.status = 'pending' THEN 'pending'
+        ELSE ff.status END,
+    ap_activity_id = COALESCE(src.ap_activity_id, ff.ap_activity_id),
+    updated_at = now()
+FROM federation_follows src
+WHERE src.local_actor_id = ff.local_actor_id
+  AND src.remote_actor_id = @old_remote_actor_id
+  AND ff.remote_actor_id = @new_remote_actor_id;
+
+-- name: DeleteFederationFollowsByRemoteActor :exec
+-- Move{actor→target} tail: after merge+repoint every remaining old-actor
+-- edge is redundant history — delete, not 'undone' (nothing unfollowed).
+DELETE FROM federation_follows WHERE remote_actor_id = @old_remote_actor_id;
 
 -- name: RepointRemoteFollowsByActor :execrows
 -- follows provenance mirror of the repoint above — same collision rule

@@ -1098,20 +1098,34 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	if moveTarget == nil || moveTarget.ID == signer.ID {
 		return dispatchResult{status: "ignored", reason: "move target did not verify"}
 	}
+	// The target row may pre-exist as tombstone/blocked — repointing live
+	// edges onto a non-active actor would strand followers on a dead row
+	// (inbox expansion filters ra.status='active'). Only an active target
+	// may absorb migrated edges; anything else rejects.
+	if moveTarget.Status != "active" {
+		return dispatchResult{status: "rejected", reason: "move target is " + moveTarget.Status}
+	}
 	if err := q.SetRemoteActorStatus(ctx, gen.SetRemoteActorStatusParams{
 		ID: signer.ID, Status: "tombstone",
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "moved-actor tombstone: " + err.Error()}
+	}
+	// Colliding pairs merge FIRST — the live status wins (a stale
+	// 'undone' on the new account must not bury a live follow from the
+	// old); then non-colliding edges repoint; then redundant leftovers
+	// delete. Order matters — repoint before merge would collide.
+	if _, err := q.MergeFederationFollowsToRemoteActor(ctx, gen.MergeFederationFollowsToRemoteActorParams{
+		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "follow merge: " + err.Error()}
 	}
 	if _, err := q.RepointFederationFollowsToRemoteActor(ctx, gen.RepointFederationFollowsToRemoteActorParams{
 		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follow repoint: " + err.Error()}
 	}
-	// Edges already held by the new actor's account supersede the old
-	// row's leftovers — they go undone rather than dangling on a tombstone.
-	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
-		slog.Warn("federation: move leftover edge unwind failed", "error", err)
+	if err := q.DeleteFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: move leftover edge cleanup failed", "error", err)
 	}
 	if _, err := q.RepointRemoteFollowsByActor(ctx, gen.RepointRemoteFollowsByActorParams{
 		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,

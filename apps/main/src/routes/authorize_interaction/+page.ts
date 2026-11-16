@@ -8,9 +8,14 @@ import type { PageLoad } from './$types';
  * their home instance's authorize_interaction endpoint with our actor
  * as the target. Client-side only — no API call needed.
  *
+ * The uri param is shape-checked to acct:/https:// actor identifiers —
+ * the visitor's own instance does the real resolution, but this page
+ * refuses to forward malformed or non-web schemes downstream.
+ *
  * Ref: japaconnect-engineering/sections/126-activitypub-federation.md
  */
 export const load: PageLoad = async ({ url }) => {
-	const uri = url.searchParams.get('uri') ?? '';
+	const raw = (url.searchParams.get('uri') ?? '').trim();
+	const uri = /^(acct:|https?:\/\/)/i.test(raw) ? raw : '';
 	return { uri };
 };

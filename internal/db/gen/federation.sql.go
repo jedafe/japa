@@ -461,6 +461,17 @@ func (q *Queries) DeleteDuplicateRemoteFollowsByActor(ctx context.Context, oldRe
 	return items, nil
 }
 
+const deleteFederationFollowsByRemoteActor = `-- name: DeleteFederationFollowsByRemoteActor :exec
+DELETE FROM federation_follows WHERE remote_actor_id = $1
+`
+
+// Move{actor→target} tail: after merge+repoint every remaining old-actor
+// edge is redundant history — delete, not 'undone' (nothing unfollowed).
+func (q *Queries) DeleteFederationFollowsByRemoteActor(ctx context.Context, oldRemoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFederationFollowsByRemoteActor, oldRemoteActorID)
+	return err
+}
+
 const deleteFederationRelay = `-- name: DeleteFederationRelay :exec
 DELETE FROM federation_relays WHERE id = $1
 `
@@ -2751,6 +2762,37 @@ func (q *Queries) ListUndeliveredFederationDeliveriesByActor(ctx context.Context
 	return items, nil
 }
 
+const mergeFederationFollowsToRemoteActor = `-- name: MergeFederationFollowsToRemoteActor :execrows
+UPDATE federation_follows ff
+SET status = CASE
+        WHEN ff.status = 'accepted' OR src.status = 'accepted' THEN 'accepted'
+        WHEN ff.status = 'pending' OR src.status = 'pending' THEN 'pending'
+        ELSE ff.status END,
+    ap_activity_id = COALESCE(src.ap_activity_id, ff.ap_activity_id),
+    updated_at = now()
+FROM federation_follows src
+WHERE src.local_actor_id = ff.local_actor_id
+  AND src.remote_actor_id = $1
+  AND ff.remote_actor_id = $2
+`
+
+type MergeFederationFollowsToRemoteActorParams struct {
+	OldRemoteActorID pgtype.UUID `json:"old_remote_actor_id"`
+	NewRemoteActorID pgtype.UUID `json:"new_remote_actor_id"`
+}
+
+// §126 M4 Move collision half: where an edge already exists on the new
+// actor, the LIVE status wins — the remote's identities merged, so a
+// stale 'undone'/'rejected' on the new account must not bury a live
+// follow from the old (accepted beats pending, pending beats dead).
+func (q *Queries) MergeFederationFollowsToRemoteActor(ctx context.Context, arg MergeFederationFollowsToRemoteActorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, mergeFederationFollowsToRemoteActor, arg.OldRemoteActorID, arg.NewRemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const pruneFederationDeliveries = `-- name: PruneFederationDeliveries :exec
 DELETE FROM federation_deliveries
 WHERE status IN ('delivered','dead') AND created_at < now() - make_interval(days => $1)
@@ -2816,9 +2858,8 @@ type RepointFederationFollowsToRemoteActorParams struct {
 }
 
 // §126 M4 Move{actor→target}: every edge that does not already exist on
-// the new actor rebinds to it. Colliding rows (the member was followed
-// from BOTH accounts pre-move) stay on the old id — the caller undoes
-// them via UndoFederationFollowsByRemoteActor so the new-actor edge wins.
+// the new actor rebinds to it. Colliding pairs merge via
+// MergeFederationFollowsToRemoteActor first so the live status wins.
 func (q *Queries) RepointFederationFollowsToRemoteActor(ctx context.Context, arg RepointFederationFollowsToRemoteActorParams) (int64, error) {
 	result, err := q.db.Exec(ctx, repointFederationFollowsToRemoteActor, arg.NewRemoteActorID, arg.OldRemoteActorID)
 	if err != nil {

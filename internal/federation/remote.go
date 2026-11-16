@@ -267,7 +267,7 @@ func (s *Service) upsertRemoteActor(ctx context.Context, actorURL string, doc *r
 // ErrMoveNotConfirmed / ErrRemoteBlocked reject permanently.
 func (s *Service) verifyMoveTarget(ctx context.Context, oldURL, targetURL string) (*gen.RemoteActor, error) {
 	u, err := url.Parse(targetURL)
-	if err != nil || u.Hostname() == "" {
+	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") {
 		return nil, fmt.Errorf("%w: bad move target url %q", ErrMoveNotConfirmed, targetURL)
 	}
 	if !s.instanceAllowed(ctx, u.Hostname()) {

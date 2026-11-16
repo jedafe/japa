@@ -447,14 +447,15 @@ func TestDBInboundMoveCollision(t *testing.T) {
 	if row.Status != "processed" {
 		t.Fatalf("move status %q (reason %v)", row.Status, row.Error)
 	}
-	// Exactly one accepted edge — on the NEW actor.
+	// Exactly one accepted edge — on the NEW actor; the merged leftover
+	// deletes (post-merge old edges are redundant history, not unfollows).
 	if n := countRows(t, ctx, svc,
 		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1::uuid AND status = 'accepted'`, newID); n != 1 {
 		t.Fatalf("new-actor accepted edges: %d", n)
 	}
 	if n := countRows(t, ctx, svc,
-		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'undone'`, old.ID); n != 1 {
-		t.Fatalf("colliding leftover not undone: %d", n)
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1`, old.ID); n != 0 {
+		t.Fatalf("old-actor edges left after merge: %d", n)
 	}
 	if n := countRows(t, ctx, svc,
 		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1::uuid`, newID); n != 1 {
@@ -473,6 +474,81 @@ func TestDBInboundMoveCollision(t *testing.T) {
 	}
 	if fcount != 1 {
 		t.Fatalf("follower_count after merge: %d (want 1)", fcount)
+	}
+}
+
+// The sharpest collision: the new account followed then UNFOLLOWED (edge
+// 'undone') while the old still follows — the person's live state is a
+// follower, so the Move must resurrect the new edge as 'accepted', not
+// undo the old one and lose the follower entirely.
+func TestDBInboundMoveUndoneEdgeMerges(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	old, oldURL := newRemoteActor(t, ctx, svc, "remote.example")
+	actorIRI := svc.apiBase() + "/federation/actors/" + uname
+	targetURL := fmt.Sprintf("https://target.test/actors/new%d", time.Now().UnixNano())
+
+	srv := httptest.NewTLSServer(actorDocHandler(moveTargetDoc(targetURL, []string{oldURL})))
+	defer srv.Close()
+	swapFetchTransport(t, map[string]string{"target.test": tlsAddr(srv)})
+
+	// old follows; new follows then undoes its own follow.
+	for _, act := range []map[string]any{
+		{"id": oldURL + "#follow-1", "type": "Follow", "actor": oldURL, "object": actorIRI},
+		{"id": targetURL + "#follow-1", "type": "Follow", "actor": targetURL, "object": actorIRI},
+		{"id": targetURL + "#undo-1", "type": "Undo", "actor": targetURL,
+			"object": map[string]any{"type": "Follow", "actor": targetURL, "object": actorIRI}},
+	} {
+		if row := runInbound(t, ctx, svc, act); row.Status != "processed" {
+			t.Fatalf("%s status %q (reason %v)", act["type"], row.Status, row.Error)
+		}
+	}
+	var newID string
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT id::text FROM remote_actors WHERE actor_url = $1`, targetURL).Scan(&newID); err != nil {
+		t.Fatalf("target actor row: %v", err)
+	}
+	var fcount int
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT follower_count FROM users WHERE id = $1`, userID).Scan(&fcount); err != nil {
+		t.Fatalf("pre-move follower_count: %v", err)
+	}
+	if fcount != 1 {
+		t.Fatalf("pre-move follower_count: %d (want 1)", fcount)
+	}
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": oldURL + "#move-1", "type": "Move",
+		"actor": oldURL, "object": oldURL, "target": targetURL,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("move status %q (reason %v)", row.Status, row.Error)
+	}
+	// The live edge must SURVIVE on the new actor — 'undone' + live
+	// merge = accepted, not undone+undone = lost follower.
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1::uuid AND status = 'accepted'`, newID); n != 1 {
+		t.Fatalf("merged edge not accepted: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1`, old.ID); n != 0 {
+		t.Fatalf("old edges left: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1::uuid`, newID); n != 1 {
+		t.Fatalf("mirror on new actor: %d", n)
+	}
+	if err := svc.db.Reader.QueryRow(ctx,
+		`SELECT follower_count FROM users WHERE id = $1`, userID).Scan(&fcount); err != nil {
+		t.Fatalf("post-move follower_count: %v", err)
+	}
+	if fcount != 1 {
+		t.Fatalf("post-move follower_count: %d (want 1)", fcount)
 	}
 }
 
