@@ -969,10 +969,17 @@ func (s *Service) ActorExists(ctx context.Context, username string) (gen.Federat
 // rejectInbound ledgers a blocked-domain activity as 'rejected' for audit —
 // the §126 contract keeps blocked traffic visible without processing it.
 // Best-effort: a DB hiccup here must not change the handler's 403.
+// The activity id is only stored when it shares the declared actor's
+// host — ledgering a foreign-domain id would itself squat the global
+// ap_id dedup the provenance rule exists to protect.
 func (s *Service) rejectInbound(ctx context.Context, act map[string]any, actorURL, reason string, body []byte) {
 	rejected := "rejected"
+	apID := apStr(act["id"])
+	if apID != "" && !sameURLHost(apID, actorURL) {
+		apID = ""
+	}
 	row, err := s.store.insertInbound(ctx, gen.InsertFederationInboundParams{
-		ActivityApID:   stringPtrOrNil(apStr(act["id"])),
+		ActivityApID:   stringPtrOrNil(apID),
 		ActivityType:   apStr(act["type"]),
 		ActorUrl:       stringPtrOrNil(actorURL),
 		SignatureValid: false,

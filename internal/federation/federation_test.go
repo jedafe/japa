@@ -282,6 +282,26 @@ func TestVerifySignatureRequiresDigestCoverage(t *testing.T) {
 	}
 }
 
+func TestSameURLHost(t *testing.T) {
+	// The activity-id provenance rule: ids must live on the signer's host.
+	cases := []struct {
+		id, actor string
+		want      bool
+	}{
+		{"https://m.example/users/a#like-1", "https://m.example/users/a", true},
+		{"https://m.example/x", "https://M.Example/users/a", true}, // host case-insensitive
+		{"https://victim.example/x#1", "https://evil.example/u/b", false},
+		{"not a url", "https://m.example/users/a", false},
+		{"https://m.example/x", "", false},
+		{"", "https://m.example/users/a", false},
+	}
+	for _, c := range cases {
+		if got := sameURLHost(c.id, c.actor); got != c.want {
+			t.Errorf("sameURLHost(%q, %q) = %v, want %v", c.id, c.actor, got, c.want)
+		}
+	}
+}
+
 func TestDeliverClientRefusesRedirects(t *testing.T) {
 	// A chased 3xx either converts the signed POST into a GET (301/302/303)
 	// or replays a signature bound to the original (request-target)/host —

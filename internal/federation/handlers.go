@@ -519,12 +519,24 @@ func (h *Handlers) postInbox(w http.ResponseWriter, r *http.Request, username st
 		return
 	}
 
+	// Activity-id provenance: the id must live on the signer's domain —
+	// the same rule dispatchCreate applies to object ids. The global
+	// (activity_ap_id) dedup would otherwise let any instance squat the
+	// ids another instance legitimately owns: their real delivery then
+	// dedups away unprocessed. Rejected BEFORE the id can touch the
+	// marker or the ledger — storing it would itself be the squat.
+	apID := apStr(act["id"])
+	if apID != "" && !sameURLHost(apID, signer.ActorUrl) {
+		h.service.rejectInbound(ctx, act, signer.ActorUrl, "activity id outside signer domain", body)
+		errpkg.WriteError(w, http.StatusForbidden, "foreign_activity_id", "Activity id must live on the signer's domain")
+		return
+	}
+
 	// Dedup — Valkey marker is the fast path; the partial unique on
 	// federation_inbound is the backstop. Either short-circuits to 202.
 	// On a marker hit the ledger row is verified before short-circuiting:
 	// a first delivery whose insert failed AFTER the marker landed would
 	// otherwise swallow the remote's redelivery without ever ledgering it.
-	apID := apStr(act["id"])
 	if apID != "" && h.service.vk != nil {
 		if ok, serr := h.service.vk.SetNX(ctx, InboxDedupKey(apID), "1", 48*time.Hour).Result(); serr == nil && !ok {
 			if _, derr := h.service.store.inboundByActivityID(ctx, apID); derr == nil {

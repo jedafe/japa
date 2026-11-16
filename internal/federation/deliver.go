@@ -394,6 +394,10 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 	case resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound:
 		// Remote account/instance removed — retrying can never succeed.
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))
+	case resp.StatusCode == http.StatusTooManyRequests:
+		// A rate-limited inbox is transient — the ledger's backoff retries
+		// later rather than dead-lettering on one throttled attempt.
+		return s.failDelivery(ctx, row, "remote 429")
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
 		// 4xx is a refusal — dead-letter rather than burn the retry budget.
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))

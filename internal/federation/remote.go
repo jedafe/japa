@@ -151,6 +151,18 @@ func (s *Service) resolveRemoteActor(ctx context.Context, actorURL string) (*gen
 	return row, nil
 }
 
+// sameURLHost reports whether two URL strings share a host — the
+// provenance rule for activity/object ids (an activity's id must live
+// on its signer's domain, per the dispatchCreate object-id rule).
+func sameURLHost(a, b string) bool {
+	au, aerr := url.Parse(a)
+	bu, berr := url.Parse(b)
+	if aerr != nil || berr != nil || au.Hostname() == "" || bu.Hostname() == "" {
+		return false
+	}
+	return strings.EqualFold(au.Hostname(), bu.Hostname())
+}
+
 // fetchRemoteActorDoc fetches and minimally parses an actor document.
 func (s *Service) fetchRemoteActorDoc(ctx context.Context, actorURL string) (*remoteActorDoc, error) {
 	body, err := s.fetchAP(ctx, actorURL)
@@ -247,6 +259,9 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 	if actorURL == "" {
 		return nil, fmt.Errorf("%w: key document missing id", ErrRemoteFetch)
 	}
+	// fetchedFrom records the URL the accepted document actually came
+	// from — the canonical-confirmation gate below decides on it.
+	fetchedFrom := base
 	if !remoteActorTypes[doc.Type] {
 		// Bare Key document — resolve its owner as the actor.
 		if doc.PublicKey.Owner == "" {
@@ -259,10 +274,11 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 		if !remoteActorTypes[owner.Type] {
 			return nil, fmt.Errorf("%w: key owner is not an actor", ErrRemoteFetch)
 		}
-		actorURL = owner.ID
 		if !strings.EqualFold(owner.PublicKey.ID, keyID) && owner.PublicKey.PublicKeyPem != doc.PublicKey.PublicKeyPem {
 			return nil, fmt.Errorf("%w: owner does not advertise key %q", ErrRemoteFetch, keyID)
 		}
+		fetchedFrom = doc.PublicKey.Owner
+		actorURL = owner.ID
 		doc = owner
 	} else if !strings.EqualFold(doc.PublicKey.ID, keyID) {
 		return nil, fmt.Errorf("%w: actor does not advertise key %q", ErrRemoteFetch, keyID)
@@ -270,11 +286,39 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 	if doc.PublicKey.PublicKeyPem == "" {
 		return nil, fmt.Errorf("%w: actor advertises no public key", ErrRemoteFetch)
 	}
+	au, aerr := url.Parse(actorURL)
+	if aerr != nil || au.Hostname() == "" {
+		return nil, fmt.Errorf("%w: actor id is not a URL: %q", ErrRemoteFetch, actorURL)
+	}
 	// The actor document's own id may point at a different host than the
 	// keyId URL did (redirected identities, key proxies) — the instance
 	// gate applies to the identity we actually cache, not only the hop.
-	if u, uerr := url.Parse(actorURL); uerr == nil && !s.instanceAllowed(ctx, u.Hostname()) {
-		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
+	if !s.instanceAllowed(ctx, au.Hostname()) {
+		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, au.Hostname())
+	}
+	// Canonical confirmation: a document served at X claiming to BE actor
+	// Y only binds keyId to Y when Y's own address advertises the same
+	// key — otherwise any host could mint remote_actors rows keyed under
+	// someone else's actor URL, and their signature would then verify
+	// against the minted key while dispatch trusts actor_url (full
+	// impersonation). When the fetched URL already IS the claimed id the
+	// self-claim is canonical — Mastodon's keyId layout lands here.
+	if !strings.EqualFold(actorURL, fetchedFrom) {
+		canonical, err := s.fetchRemoteActorDoc(ctx, actorURL)
+		if err != nil {
+			return nil, err
+		}
+		if !remoteActorTypes[canonical.Type] ||
+			!strings.EqualFold(canonical.ID, actorURL) ||
+			!strings.EqualFold(canonical.PublicKey.ID, keyID) {
+			return nil, fmt.Errorf("%w: actor %q does not confirm key %q", ErrRemoteFetch, actorURL, keyID)
+		}
+		doc = canonical
+	}
+	// An advertised key owner must name the actor itself — a document
+	// may not point its signing key at a different actor.
+	if doc.PublicKey.Owner != "" && !strings.EqualFold(doc.PublicKey.Owner, actorURL) {
+		return nil, fmt.Errorf("%w: key owner %q does not match actor %q", ErrRemoteFetch, doc.PublicKey.Owner, actorURL)
 	}
 	return s.upsertRemoteActor(ctx, actorURL, doc)
 }

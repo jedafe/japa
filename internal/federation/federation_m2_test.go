@@ -9,9 +9,13 @@ package federation
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -214,6 +218,9 @@ func TestDBInboundLikeAnnounceUndo(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := newFederationUser(t, ctx, d, "active")
 	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
 	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
 	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
 
@@ -294,6 +301,9 @@ func TestDBInboundCreateReplyAndDelete(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := newFederationUser(t, ctx, d, "active")
 	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
 	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
 	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
 	other, otherURL := newRemoteActor(t, ctx, svc, "evil.example")
@@ -1029,6 +1039,9 @@ func TestDBInboundReplySpamCheck(t *testing.T) {
 	ctx := context.Background()
 	userID, _ := newFederationUser(t, ctx, d, "active")
 	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
 	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
 	_, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
 
@@ -1352,5 +1365,295 @@ func TestDBDeleteFanoutDistinctApIDs(t *testing.T) {
 		`SELECT COUNT(*) FROM federation_deliveries WHERE activity_type = 'Delete' AND activity_ap_id LIKE $1`,
 		objIRI+"#delete/%"); n != 2 {
 		t.Fatalf("distinct delete deliveries: %d (want 2)", n)
+	}
+}
+
+// swapFetchTransport routes fake public hostnames to TLS test servers —
+// the documents use .test hostnames so checkFetchURL's literal-IP rule
+// doesn't fire, the dial maps each host to a server's real address, and
+// skip-verify absorbs the cert mismatch. The SSRF transport is restored
+// on cleanup.
+func swapFetchTransport(t *testing.T, routes map[string]string) {
+	t.Helper()
+	old := fetchClient.Transport
+	fetchClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if host, _, err := net.SplitHostPort(addr); err == nil {
+				if real, ok := routes[host]; ok {
+					addr = real
+				}
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+	t.Cleanup(func() { fetchClient.Transport = old })
+}
+
+func actorDocHandler(doc map[string]any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/activity+json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}
+}
+
+func tlsAddr(srv *httptest.Server) string { return srv.Listener.Addr().String() }
+
+// A document fetched at keyId's base may CLAIM any actor id — without
+// confirming that claim at the actor's own address, an attacker mints
+// remote_actors rows under a victim URL keyed to the attacker's pem
+// (full signing impersonation). The canonical re-fetch must reject it.
+func TestResolveKeyActorRejectsForgedActorID(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	victimActorURL := "https://victim.test/users/alice"
+	victim := httptest.NewTLSServer(actorDocHandler(map[string]any{
+		"id":                victimActorURL,
+		"type":              "Person",
+		"preferredUsername": "alice",
+		"inbox":             "https://victim.test/inbox",
+		"publicKey": map[string]any{
+			"id":           victimActorURL + "#main-key",
+			"owner":        victimActorURL,
+			"publicKeyPem": "-----BEGIN PUBLIC KEY-----\nVICTIM\n-----END PUBLIC KEY-----",
+		},
+	}))
+	defer victim.Close()
+
+	keyID := "https://evil.test/keys/k1#main"
+	evil := httptest.NewTLSServer(actorDocHandler(map[string]any{
+		"id":                victimActorURL, // the lie — claims to BE the victim
+		"type":              "Person",
+		"preferredUsername": "alice",
+		"inbox":             "https://evil.test/inbox",
+		"publicKey": map[string]any{
+			"id":           keyID,
+			"publicKeyPem": "-----BEGIN PUBLIC KEY-----\nEVIL\n-----END PUBLIC KEY-----",
+		},
+	}))
+	defer evil.Close()
+	swapFetchTransport(t, map[string]string{
+		"victim.test": tlsAddr(victim), "evil.test": tlsAddr(evil),
+	})
+
+	if _, err := svc.resolveKeyActor(ctx, keyID); err == nil {
+		t.Fatal("forged actor id accepted — attacker row cached under victim URL")
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM remote_actors WHERE actor_url = $1`, victimActorURL); n != 0 {
+		t.Fatalf("impersonated actor row persisted: %d", n)
+	}
+}
+
+// The common case — keyId base IS the actor URL: self-claim is canonical,
+// no second fetch, resolve succeeds.
+func TestResolveKeyActorAcceptsSelfClaimedActor(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	actorURL := "https://real.test/users/alice"
+	srv := httptest.NewTLSServer(actorDocHandler(map[string]any{
+		"id":                actorURL,
+		"type":              "Person",
+		"preferredUsername": "alice",
+		"inbox":             "https://real.test/inbox",
+		"publicKey": map[string]any{
+			"id":           actorURL + "#main-key",
+			"owner":        actorURL,
+			"publicKeyPem": "-----BEGIN PUBLIC KEY-----\nREAL\n-----END PUBLIC KEY-----",
+		},
+	}))
+	defer srv.Close()
+	swapFetchTransport(t, map[string]string{"real.test": tlsAddr(srv)})
+
+	row, err := svc.resolveKeyActor(ctx, actorURL+"#main-key")
+	if err != nil {
+		t.Fatalf("self-claimed actor rejected: %v", err)
+	}
+	if row.ActorUrl != actorURL {
+		t.Fatalf("actor_url: %q", row.ActorUrl)
+	}
+}
+
+// A stale signer row + an unreachable remote must not stall dispatch —
+// Delete{actor} in particular arrives precisely when the remote can never
+// refresh again. The cached row's identity is what dispatch needs.
+func TestDBInboundStaleSignerFallsBackToCacheRow(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE remote_actors SET fetched_at = now() - interval '7 hours' WHERE id = $1`, remote.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id":     actorURL + "#stale-f1",
+		"type":   "Follow",
+		"actor":  actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("stale-signer follow status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM follows WHERE follower_remote_actor_id = $1`, remote.ID); n != 1 {
+		t.Fatalf("mirror row missing after stale-signer dispatch: %d", n)
+	}
+}
+
+// rejectInbound must not ledger a foreign-domain activity id — storing it
+// would squat the global ap_id dedup the provenance rule protects.
+func TestDBRejectInboundStripsForeignActivityID(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+
+	act := map[string]any{
+		"id":     "https://victim.example/statuses/1#like",
+		"type":   "Like",
+		"actor":  "https://evil.example/actors/bob",
+		"object": "https://api.test.dev/federation/objects/contents/x",
+	}
+	svc.rejectInbound(ctx, act, "https://evil.example/actors/bob", "test rejection", []byte(`{}`))
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_inbound WHERE activity_ap_id = 'https://victim.example/statuses/1#like'`); n != 0 {
+		t.Fatal("foreign-domain activity id ledgered — dedup key squatted")
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_inbound WHERE activity_ap_id IS NULL AND status = 'rejected' AND error = 'test rejection'`); n != 1 {
+		t.Fatalf("rejected audit row missing: %d", n)
+	}
+}
+
+// A follower advertising no inbox can never receive the Accept — the
+// edge still lands; the activity must not error-retry forever.
+func TestDBFollowNoInboxProcessed(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, uname := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	actorURL := fmt.Sprintf("https://noinbox.example/actors/%d", time.Now().UnixNano())
+	remote, err := svc.store.upsertRemoteActor(ctx, gen.UpsertRemoteActorParams{
+		ActorUrl:          actorURL,
+		Domain:            "noinbox.example",
+		PublicKeyPem:      strPtr("-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----"),
+		PublicKeyID:       strPtr(actorURL + "#main-key"),
+		PreferredUsername: strPtr("ghost"),
+	})
+	if err != nil {
+		t.Fatalf("seed inboxless remote: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = svc.db.Writer.Exec(context.Background(), `DELETE FROM remote_actors WHERE id = $1`, remote.ID)
+	})
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id":     actorURL + "#f-noinbox",
+		"type":   "Follow",
+		"actor":  actorURL,
+		"object": svc.apiBase() + "/federation/actors/" + uname,
+	})
+	if row.Status != "processed" {
+		t.Fatalf("inboxless follow status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_follows WHERE remote_actor_id = $1 AND status = 'accepted'`, remote.ID); n != 1 {
+		t.Fatalf("edge not honored: %d", n)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_deliveries WHERE remote_actor_id = $1`, remote.ID); n != 0 {
+		t.Fatalf("phantom delivery rows: %d", n)
+	}
+}
+
+// A 429 is a throttle, not a refusal — the delivery retries on the
+// ledger's backoff instead of dead-lettering on one attempt.
+func TestDBDelivery429Retries(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	actor, err := svc.store.actorByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("actor: %v", err)
+	}
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	old := deliverClient.Transport
+	deliverClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	t.Cleanup(func() { deliverClient.Transport = old })
+
+	row, err := gen.New(d.Writer).InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+		ActivityApID: fmt.Sprintf("https://api.test.dev/x#c-%d", time.Now().UnixNano()),
+		ActivityType: "Create",
+		ActivityJson: []byte(`{"type":"Create"}`),
+		LocalActorID: actor.ID,
+		InboxUrl:     srv.URL + "/inbox",
+	})
+	if err != nil {
+		t.Fatalf("insert delivery: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE id = $1`, row.ID)
+	})
+
+	if err := svc.attemptDelivery(ctx, row); err != nil {
+		t.Fatalf("attemptDelivery: %v", err)
+	}
+	var status string
+	var attempts int32
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT status, attempts FROM federation_deliveries WHERE id = $1`, row.ID).Scan(&status, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if status != "failed" || attempts != 1 {
+		t.Fatalf("429 outcome: status=%q attempts=%d, want failed/1", status, attempts)
+	}
+}
+
+// A disabled author's objects 410 publicly — remote engagement landing
+// (and notifying) on them after the Delete{actor} fanout is incoherent.
+func TestDBInboundLikeDisabledAuthorIgnored(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	contentID, objIRI := newFederatedContent(t, ctx, svc, userID)
+	if _, err := svc.DisableFederation(ctx, userID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	remote, actorURL := newRemoteActor(t, ctx, svc, "remote.example")
+
+	row := runInbound(t, ctx, svc, map[string]any{
+		"id": actorURL + "#l-disabled", "type": "Like", "actor": actorURL, "object": objIRI,
+	})
+	if row.Status != "ignored" {
+		t.Fatalf("like on disabled author's object: status %q", row.Status)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM reactions WHERE entity_id = $1 AND remote_actor_id = $2`,
+		contentID, remote.ID); n != 0 {
+		t.Fatalf("reaction landed on disabled author's object: %d", n)
 	}
 }

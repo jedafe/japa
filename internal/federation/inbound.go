@@ -106,7 +106,18 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 			if errors.Is(err, ErrRemoteBlocked) {
 				return s.finishInbound(ctx, row.ID, "rejected", "signer instance blocked", nil, pgtype.UUID{})
 			}
-			return fmt.Errorf("resolve signer: %w", err) // retryable fetch failure
+			// Freshness fetches are best-effort: the stale cached row still
+			// carries the identity dispatch needs — and a Delete{actor} from
+			// a remote that just died can NEVER refresh, so it must run off
+			// the stale row or the dead actor's data never unwinds.
+			stale, derr := s.store.remoteActorByURL(ctx, *row.ActorUrl)
+			if derr != nil {
+				return fmt.Errorf("resolve signer: %w", err) // retryable fetch failure
+			}
+			if stale.Status != "active" {
+				return s.finishInbound(ctx, row.ID, "rejected", "signer actor "+stale.Status, nil, pgtype.UUID{})
+			}
+			signer = &stale
 		}
 	}
 
@@ -341,10 +352,16 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 		}))
 	}
 	deliverID, err := s.insertAcceptDelivery(ctx, q, actor, signer, act, rowID.String())
-	if err != nil {
+	res := dispatchResult{status: "processed", deliverID: deliverID}
+	switch {
+	case errors.Is(err, errNoRemoteInbox):
+		// The edge is honored; a follower advertising no inbox simply can
+		// never receive the Accept — a permanent condition must not spin
+		// the retry queue on every re-sent Follow.
+		res.reason = "follower advertises no inbox"
+	case err != nil:
 		return dispatchResult{status: "error", reason: "accept delivery: " + err.Error()}
 	}
-	res := dispatchResult{status: "processed", deliverID: deliverID}
 	if n > 0 {
 		res.intents = []notifyIntent{s.followIntent(actor, profile, *signer)}
 	}
@@ -364,6 +381,11 @@ func (s *Service) insertRejectDelivery(ctx context.Context, q *gen.Queries, acto
 	return s.insertFollowResponseDelivery(ctx, q, "Reject", actor, remote, followAct, discriminator)
 }
 
+// errNoRemoteInbox marks the permanent "actor advertises no inbox"
+// condition — the edge is real but no response can ever be POSTed, so
+// callers must not treat it as a retryable failure.
+var errNoRemoteInbox = errors.New("federation: remote actor has no inbox")
+
 // insertFollowResponseDelivery ledgers one Accept|Reject{Follow} row.
 // The response id carries a per-event discriminator — the inbound row id
 // in dispatch, a fresh uuid in member resolution — because the delivery
@@ -376,7 +398,7 @@ func (s *Service) insertFollowResponseDelivery(ctx context.Context, q *gen.Queri
 		inbox = remote.SharedInboxUrl
 	}
 	if inbox == nil || *inbox == "" {
-		return pgtype.UUID{}, fmt.Errorf("remote actor has no inbox")
+		return pgtype.UUID{}, errNoRemoteInbox
 	}
 	responseID := actor.ActorUrl + "#" + lowerType(typ) + "s/" + followActivityRef(followAct) + "/" + discriminator
 	payload, _ := json.Marshal(map[string]any{
@@ -545,7 +567,11 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 			deliverID, err = s.insertRejectDelivery(ctx, q, actor, &remote, followAct, uuid.NewString())
 		}
 		if err != nil {
-			return err
+			if errors.Is(err, errNoRemoteInbox) {
+				deliverID = pgtype.UUID{} // response undeliverable — edge still resolved
+			} else {
+				return err
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1035,7 +1061,10 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 // localContentForObject resolves a local object URL
 // ({api}/federation/objects/contents/{uuid}) to a live, federatable
 // content row — Likes/Announces/replies against unpublished, private,
-// deleted, or opted-out content are ignored, not counted.
+// deleted, or opted-out content are ignored, not counted. The author's
+// federated actor must also be active: a disabled/tombstoned member's
+// objects answer 410, so engagement landing (and notifying) on them
+// after the Delete{actor} fanout would be incoherent.
 func (s *Service) localContentForObject(ctx context.Context, q *gen.Queries, objectID string) (gen.GetFederatableContentByIDRow, bool) {
 	prefix := s.apiBase() + "/federation/objects/contents/"
 	raw, ok := strings.CutPrefix(objectID, prefix)
@@ -1051,6 +1080,10 @@ func (s *Service) localContentForObject(ctx context.Context, q *gen.Queries, obj
 		ContentTypes: s.federatableTypesFor(ctx),
 	})
 	if err != nil {
+		return gen.GetFederatableContentByIDRow{}, false
+	}
+	actor, aerr := q.GetFederatedActorByUserID(ctx, row.AuthorID)
+	if aerr != nil || actor.Status != ActorStatusActive {
 		return gen.GetFederatableContentByIDRow{}, false
 	}
 	return row, true
