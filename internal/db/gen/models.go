@@ -4213,6 +4213,24 @@ type ServiceCategory struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ServiceEscrow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	BookingID            pgtype.UUID        `json:"booking_id"`
+	BuyerWalletID        pgtype.UUID        `json:"buyer_wallet_id"`
+	SellerWalletID       pgtype.UUID        `json:"seller_wallet_id"`
+	VaultAddress         string             `json:"vault_address"`
+	Asset                string             `json:"asset"`
+	AmountMinor          int64              `json:"amount_minor"`
+	FeeMinor             int64              `json:"fee_minor"`
+	State                string             `json:"state"`
+	FundedSig            *string            `json:"funded_sig"`
+	ReleaseSig           *string            `json:"release_sig"`
+	ConfirmationDeadline pgtype.Timestamptz `json:"confirmation_deadline"`
+	ArbiterDecision      []byte             `json:"arbiter_decision"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ServiceListingCoupon struct {
 	ID            pgtype.UUID        `json:"id"`
 	CouponID      pgtype.UUID        `json:"coupon_id"`
@@ -4545,6 +4563,35 @@ type SpaceType struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	Category     *string            `json:"category"`
 	WikiOnly     bool               `json:"wiki_only"`
+}
+
+type StablecoinActivity struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WalletID           pgtype.UUID        `json:"wallet_id"`
+	Direction          string             `json:"direction"`
+	Kind               string             `json:"kind"`
+	Asset              string             `json:"asset"`
+	AmountMinor        int64              `json:"amount_minor"`
+	CreditsAmount      int64              `json:"credits_amount"`
+	CounterpartyUserID pgtype.UUID        `json:"counterparty_user_id"`
+	TxSignature        *string            `json:"tx_signature"`
+	Slot               *int64             `json:"slot"`
+	Status             string             `json:"status"`
+	OccurredAt         pgtype.Timestamptz `json:"occurred_at"`
+	Raw                []byte             `json:"raw"`
+}
+
+type StablecoinWallet struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Chain           string             `json:"chain"`
+	Address         string             `json:"address"`
+	Locator         string             `json:"locator"`
+	Status          string             `json:"status"`
+	RecoveryMethods []byte             `json:"recovery_methods"`
+	DelegatedSigner []byte             `json:"delegated_signer"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type StockProvider struct {
@@ -5029,6 +5076,16 @@ type TravelSearchResult struct {
 	FetchedAt  pgtype.Timestamptz `json:"fetched_at"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	HitCount   int32              `json:"hit_count"`
+}
+
+type TreasuryWallet struct {
+	ID            pgtype.UUID        `json:"id"`
+	Role          string             `json:"role"`
+	Chain         string             `json:"chain"`
+	Address       string             `json:"address"`
+	Locator       *string            `json:"locator"`
+	FloatCapMinor *int64             `json:"float_cap_minor"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type TrendingSnapshot struct {
