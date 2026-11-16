@@ -44,7 +44,7 @@ func (q *Queries) AdminCountSubscribers(ctx context.Context, arg AdminCountSubsc
 }
 
 const adminListCampaigns = `-- name: AdminListCampaigns :many
-SELECT id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by FROM newsletter_campaigns
+SELECT id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by, send_id FROM newsletter_campaigns
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -83,6 +83,7 @@ func (q *Queries) AdminListCampaigns(ctx context.Context, arg AdminListCampaigns
 			&i.OpenCount,
 			&i.ClickCount,
 			&i.CreatedBy,
+			&i.SendID,
 		); err != nil {
 			return nil, err
 		}
@@ -225,7 +226,7 @@ const createCampaign = `-- name: CreateCampaign :one
 
 INSERT INTO newsletter_campaigns (name, subject, html, preview_text, body, segment, segment_id, status, scheduled_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 
-RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
+RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by, send_id
 `
 
 type CreateCampaignParams struct {
@@ -276,6 +277,7 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 		&i.OpenCount,
 		&i.ClickCount,
 		&i.CreatedBy,
+		&i.SendID,
 	)
 	return i, err
 }
@@ -610,21 +612,23 @@ const markCampaignSent = `-- name: MarkCampaignSent :exec
 
 UPDATE newsletter_campaigns
 SET status = 'sent', sent_at = now(), recipient_count = $1
-WHERE id = $2 AND status = 'sending'
+WHERE id = $2 AND status = 'sending' AND send_id = $3
 `
 
 type MarkCampaignSentParams struct {
 	RecipientCount int32       `json:"recipient_count"`
 	ID             pgtype.UUID `json:"id"`
+	SendID         *string     `json:"send_id"`
 }
 
 // The status='sending' transition is owned by the atomic claims in
 // newsletter.sql (ClaimNewsletterSendNow / ClaimNewsletterScheduledSend) —
 // an unconditional mark would let a stale writer clobber terminal states.
-// Guarded by status='sending': only the send claim owner may stamp 'sent',
-// and a concurrent cancel can't be overwritten back to 'sent'.
+// Guarded by status='sending' AND the send_id lease: only the current
+// claim's owner may stamp 'sent' — a superseded task (cancelled, reset,
+// or replaced by a newer claim) can never clobber the newer send.
 func (q *Queries) MarkCampaignSent(ctx context.Context, arg MarkCampaignSentParams) error {
-	_, err := q.db.Exec(ctx, markCampaignSent, arg.RecipientCount, arg.ID)
+	_, err := q.db.Exec(ctx, markCampaignSent, arg.RecipientCount, arg.ID, arg.SendID)
 	return err
 }
 
@@ -768,7 +772,7 @@ SET
  status = COALESCE($8, status),
  scheduled_at = COALESCE($9, scheduled_at)
 WHERE id = $10
-RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
+RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by, send_id
 `
 
 type UpdateCampaignParams struct {
@@ -816,6 +820,7 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 		&i.OpenCount,
 		&i.ClickCount,
 		&i.CreatedBy,
+		&i.SendID,
 	)
 	return i, err
 }

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
@@ -179,26 +180,39 @@ func (s *Service) WebhookSecret(_ context.Context) string {
 }
 
 // ClaimSend atomically transitions a draft|scheduled campaign to 'sending'
-// (§62). The send endpoint calls this BEFORE enqueueing the task: a winning
-// claim owns the send and guarantees the queued task finds 'sending'; a
-// losing claim means another send is in flight or the campaign is in a
-// terminal state, so the caller returns 409 instead of queueing a duplicate
-// task that could double-send. Returns (true, nil) when the claim won.
-func (s *Service) ClaimSend(ctx context.Context, campaignID pgtype.UUID) (bool, error) {
-	n, err := s.writeQueries.ClaimNewsletterSendNow(ctx, campaignID)
+// and stamps a fresh send_id lease (§62). The send endpoint calls this
+// BEFORE enqueueing the task: a winning claim owns the send and guarantees
+// the queued task finds 'sending'; a losing claim means another send is in
+// flight or the campaign is in a terminal state, so the caller returns 409
+// instead of queueing a duplicate task that could double-send. Returns
+// (true, nil) when the claim won.
+// Returns (claimed, prevStatus, error) — prevStatus is the exact status the
+// claim displaced (draft or scheduled), for RevertSendClaim on enqueue
+// failure. Using the claim's own pre-image — not the handler's earlier
+// fetch — means a concurrent PATCH in the fetch→claim gap is restored
+// faithfully rather than silently undone.
+func (s *Service) ClaimSend(ctx context.Context, campaignID pgtype.UUID, sendID string) (bool, string, error) {
+	row, err := s.writeQueries.ClaimNewsletterSendNow(ctx, gen.ClaimNewsletterSendNowParams{
+		ID:     campaignID,
+		SendID: &sendID,
+	})
 	if err != nil {
-		return false, fmt.Errorf("claiming newsletter send: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, "", nil
+		}
+
+		return false, "", fmt.Errorf("claiming newsletter send: %w", err)
 	}
 
-	return n > 0, nil
+	return true, row.PrevStatus, nil
 }
 
 // RevertSendClaim undoes a send claim after a failed enqueue — restores the
 // pre-claim status (draft or scheduled), guarded by status='sending' so it
 // can never clobber a state that arrived after the claim.
-func (s *Service) RevertSendClaim(ctx context.Context, campaignID pgtype.UUID, status string) {
+func (s *Service) RevertSendClaim(ctx context.Context, campaignID pgtype.UUID, sendID, status string) {
 	if err := s.writeQueries.RevertNewsletterSendClaim(ctx, gen.RevertNewsletterSendClaimParams{
-		ID: campaignID, Status: status,
+		ID: campaignID, Status: status, SendID: &sendID,
 	}); err != nil {
 		slog.Warn("newsletter: revert send claim failed", "campaign_id", campaignID.String(), "error", err)
 	}
@@ -207,13 +221,17 @@ func (s *Service) RevertSendClaim(ctx context.Context, campaignID pgtype.UUID, s
 // EnqueueNewsletterSend enqueues a newsletter_send Asynq task. The worker
 // re-fetches the campaign and resolves segment-aware recipients from the
 // DB, so only the IDs are carried in the payload (§62, ADR-080 §3).
-func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUID) error {
+func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID pgtype.UUID, sendID string) error {
 	if s.client == nil {
 		return errors.New("asynq client not configured")
 	}
 
 	payload, err := json.Marshal(map[string]any{
 		"newsletter_id": campaignID.String(),
+		// The lease this send was claimed under — the worker proceeds only
+		// while the campaign's send_id still matches, so a stale task
+		// can't mail for a send that was reset/re-claimed (§62).
+		"send_id": sendID,
 	})
 	if err != nil {
 		return fmt.Errorf("marshalling newsletter payload: %w", err)
@@ -786,8 +804,12 @@ func (s *Service) ConfirmByToken(ctx context.Context, token string) (gen.Newslet
 		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: confirm subscriber (not pending or not found): %w", err)
 	}
 
+	// The confirm already committed — a failed single-use delete must not
+	// surface as an error to the subscriber. The leftover token can't
+	// confirm again anyway (the pending check above rejects replays) and
+	// the weekly GC sweeps it.
 	if err := s.writeQueries.DeleteUnsubscribeToken(ctx, token); err != nil {
-		return gen.NewsletterSubscriber{}, fmt.Errorf("newsletter: delete confirm token (single-use): %w", err)
+		slog.Warn("newsletter: delete confirm token failed (token left for GC)", "error", err)
 	}
 
 	return subscriber, nil

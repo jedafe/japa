@@ -170,12 +170,13 @@ RETURNING *;
 -- newsletter.sql (ClaimNewsletterSendNow / ClaimNewsletterScheduledSend) —
 -- an unconditional mark would let a stale writer clobber terminal states.
 
--- Guarded by status='sending': only the send claim owner may stamp 'sent',
--- and a concurrent cancel can't be overwritten back to 'sent'.
+-- Guarded by status='sending' AND the send_id lease: only the current
+-- claim's owner may stamp 'sent' — a superseded task (cancelled, reset,
+-- or replaced by a newer claim) can never clobber the newer send.
 -- name: MarkCampaignSent :exec
 UPDATE newsletter_campaigns
 SET status = 'sent', sent_at = now(), recipient_count = @recipient_count
-WHERE id = @id AND status = 'sending';
+WHERE id = @id AND status = 'sending' AND send_id = @send_id;
 
 -- name: IncrementCampaignOpens :exec
 UPDATE newsletter_campaigns

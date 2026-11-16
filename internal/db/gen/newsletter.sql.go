@@ -11,45 +11,72 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const claimNewsletterScheduledSend = `-- name: ClaimNewsletterScheduledSend :execrows
-UPDATE newsletter_campaigns
-SET status = 'sending', updated_at = now()
-WHERE id = $1 AND status = 'scheduled'
- AND date_trunc('second', scheduled_at) = $2
+const claimNewsletterScheduledSend = `-- name: ClaimNewsletterScheduledSend :one
+UPDATE newsletter_campaigns c
+SET status = 'sending', send_id = $1, updated_at = now()
+WHERE c.id = $2 AND (
+     (c.status = 'scheduled' AND date_trunc('second', c.scheduled_at) = $3)
+  OR (c.status = 'sending' AND c.send_id = $1)
+)
+RETURNING c.send_id
 `
 
 type ClaimNewsletterScheduledSendParams struct {
+	SendID      *string            `json:"send_id"`
 	ID          pgtype.UUID        `json:"id"`
 	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
 }
 
-func (q *Queries) ClaimNewsletterScheduledSend(ctx context.Context, arg ClaimNewsletterScheduledSendParams) (int64, error) {
-	result, err := q.db.Exec(ctx, claimNewsletterScheduledSend, arg.ID, arg.ScheduledAt)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) ClaimNewsletterScheduledSend(ctx context.Context, arg ClaimNewsletterScheduledSendParams) (*string, error) {
+	row := q.db.QueryRow(ctx, claimNewsletterScheduledSend, arg.SendID, arg.ID, arg.ScheduledAt)
+	var send_id *string
+	err := row.Scan(&send_id)
+	return send_id, err
 }
 
-const claimNewsletterSendNow = `-- name: ClaimNewsletterSendNow :execrows
-UPDATE newsletter_campaigns
-SET status = 'sending', updated_at = now()
-WHERE id = $1 AND status IN ('draft', 'scheduled')
+const claimNewsletterSendNow = `-- name: ClaimNewsletterSendNow :one
+WITH prev AS (
+  SELECT status FROM newsletter_campaigns WHERE id = $2 FOR UPDATE
+)
+UPDATE newsletter_campaigns c
+SET status = 'sending', send_id = $1, updated_at = now()
+FROM prev
+WHERE c.id = $2 AND (
+     c.status IN ('draft', 'scheduled')
+  OR (c.status = 'sending' AND c.send_id = $1)
+)
+RETURNING c.send_id, prev.status AS prev_status
 `
 
+type ClaimNewsletterSendNowParams struct {
+	SendID *string     `json:"send_id"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+type ClaimNewsletterSendNowRow struct {
+	SendID     *string `json:"send_id"`
+	PrevStatus string  `json:"prev_status"`
+}
+
 // Atomic send claims (§62): the first writer to flip a campaign into
-// 'sending' owns the send; every other claim loses. ClaimNewsletterSendNow
-// backs the admin send endpoint (claim-before-enqueue) and worker-side
-// claiming for directly-enqueued tasks; ClaimNewsletterScheduledSend backs
-// ProcessAt tasks — it succeeds only while the campaign is still
-// 'scheduled' for exactly the task's slot, so cancelling, unscheduling,
-// rescheduling, or a prior send-now claim all invalidate the queued task.
-func (q *Queries) ClaimNewsletterSendNow(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, claimNewsletterSendNow, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// 'sending' owns the send and stamps send_id as the lease identity —
+// the asynq task ID for worker-claimed sends (stable across retries, so
+// the sending-leg is a self-resume) or a caller-generated ID for
+// endpoint-claimed sends. Every other claim loses (pgx.ErrNoRows).
+// ClaimNewsletterSendNow backs the admin send endpoint (claim-before-
+// enqueue) and worker-side claiming for directly-enqueued tasks;
+// ClaimNewsletterScheduledSend backs ProcessAt tasks — the scheduled leg
+// requires the campaign still 'scheduled' for exactly the task's slot, so
+// cancelling, unscheduling, rescheduling, or a prior send-now claim all
+// invalidate the queued task.
+// The prev CTE captures the pre-claim status under a row lock so the send
+// endpoint can revert to exactly what the claim displaced — a concurrent
+// PATCH in the handler's fetch→claim gap can't be silently undone.
+func (q *Queries) ClaimNewsletterSendNow(ctx context.Context, arg ClaimNewsletterSendNowParams) (ClaimNewsletterSendNowRow, error) {
+	row := q.db.QueryRow(ctx, claimNewsletterSendNow, arg.SendID, arg.ID)
+	var i ClaimNewsletterSendNowRow
+	err := row.Scan(&i.SendID, &i.PrevStatus)
+	return i, err
 }
 
 const countNewsletterRecipientStates = `-- name: CountNewsletterRecipientStates :one
@@ -91,16 +118,24 @@ func (q *Queries) GetNewsletterCampaign(ctx context.Context, id pgtype.UUID) (Ge
 	return i, err
 }
 
-const getNewsletterCampaignStatus = `-- name: GetNewsletterCampaignStatus :one
-SELECT status FROM newsletter_campaigns
+const getNewsletterSendLease = `-- name: GetNewsletterSendLease :one
+SELECT status, send_id FROM newsletter_campaigns
 WHERE id = $1
 `
 
-func (q *Queries) GetNewsletterCampaignStatus(ctx context.Context, id pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getNewsletterCampaignStatus, id)
-	var status string
-	err := row.Scan(&status)
-	return status, err
+type GetNewsletterSendLeaseRow struct {
+	Status string  `json:"status"`
+	SendID *string `json:"send_id"`
+}
+
+// GetNewsletterSendLease returns the current send lease for the fencing
+// check: the worker proceeds only while status='sending' and send_id is
+// still the lease it claimed (or adopted) at send start.
+func (q *Queries) GetNewsletterSendLease(ctx context.Context, id pgtype.UUID) (GetNewsletterSendLeaseRow, error) {
+	row := q.db.QueryRow(ctx, getNewsletterSendLease, id)
+	var i GetNewsletterSendLeaseRow
+	err := row.Scan(&i.Status, &i.SendID)
+	return i, err
 }
 
 const listDigestSubscribedUsers = `-- name: ListDigestSubscribedUsers :many
@@ -140,13 +175,22 @@ func (q *Queries) ListDigestSubscribedUsers(ctx context.Context) ([]ListDigestSu
 	return items, nil
 }
 
-const listDigestSubscriberEmails = `-- name: ListDigestSubscriberEmails :many
+const listDigestSubscriberEmailsPage = `-- name: ListDigestSubscriberEmailsPage :many
 SELECT email FROM newsletter_subscribers
 WHERE status = 'subscribed' AND digest_enabled = true
+ORDER BY email
+LIMIT $2 OFFSET $1
 `
 
-func (q *Queries) ListDigestSubscriberEmails(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, listDigestSubscriberEmails)
+type ListDigestSubscriberEmailsPageParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+// Paged like the campaign fan-out (audit DG-11): the full digest-enabled
+// list is never materialized at once. Stable ORDER BY for OFFSET paging.
+func (q *Queries) ListDigestSubscriberEmailsPage(ctx context.Context, arg ListDigestSubscriberEmailsPageParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDigestSubscriberEmailsPage, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -232,20 +276,22 @@ func (q *Queries) MarkNewsletterRecipientSent(ctx context.Context, arg MarkNewsl
 
 const revertNewsletterSendClaim = `-- name: RevertNewsletterSendClaim :exec
 UPDATE newsletter_campaigns
-SET status = $1, updated_at = now()
-WHERE id = $2 AND status = 'sending'
+SET status = $1, send_id = NULL, updated_at = now()
+WHERE id = $2 AND status = 'sending' AND send_id = $3
 `
 
 type RevertNewsletterSendClaimParams struct {
 	Status string      `json:"status"`
 	ID     pgtype.UUID `json:"id"`
+	SendID *string     `json:"send_id"`
 }
 
 // RevertNewsletterSendClaim undoes a claim when the send task could not be
-// enqueued — restores the pre-claim status, guarded by status='sending' so
-// it can never clobber a state that arrived after our claim.
+// enqueued — restores the pre-claim status, fenced by status='sending' AND
+// send_id so it can never clobber a claim that landed after ours (PATCH
+// reset → re-claim between our claim and the failed enqueue).
 func (q *Queries) RevertNewsletterSendClaim(ctx context.Context, arg RevertNewsletterSendClaimParams) error {
-	_, err := q.db.Exec(ctx, revertNewsletterSendClaim, arg.Status, arg.ID)
+	_, err := q.db.Exec(ctx, revertNewsletterSendClaim, arg.Status, arg.ID, arg.SendID)
 	return err
 }
 

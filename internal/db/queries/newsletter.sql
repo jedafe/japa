@@ -43,34 +43,56 @@ WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
 ON CONFLICT (campaign_id, recipient) DO NOTHING;
 
 -- Atomic send claims (§62): the first writer to flip a campaign into
--- 'sending' owns the send; every other claim loses. ClaimNewsletterSendNow
--- backs the admin send endpoint (claim-before-enqueue) and worker-side
--- claiming for directly-enqueued tasks; ClaimNewsletterScheduledSend backs
--- ProcessAt tasks — it succeeds only while the campaign is still
--- 'scheduled' for exactly the task's slot, so cancelling, unscheduling,
--- rescheduling, or a prior send-now claim all invalidate the queued task.
--- name: ClaimNewsletterSendNow :execrows
-UPDATE newsletter_campaigns
-SET status = 'sending', updated_at = now()
-WHERE id = @id AND status IN ('draft', 'scheduled');
+-- 'sending' owns the send and stamps send_id as the lease identity —
+-- the asynq task ID for worker-claimed sends (stable across retries, so
+-- the sending-leg is a self-resume) or a caller-generated ID for
+-- endpoint-claimed sends. Every other claim loses (pgx.ErrNoRows).
+-- ClaimNewsletterSendNow backs the admin send endpoint (claim-before-
+-- enqueue) and worker-side claiming for directly-enqueued tasks;
+-- ClaimNewsletterScheduledSend backs ProcessAt tasks — the scheduled leg
+-- requires the campaign still 'scheduled' for exactly the task's slot, so
+-- cancelling, unscheduling, rescheduling, or a prior send-now claim all
+-- invalidate the queued task.
+-- The prev CTE captures the pre-claim status under a row lock so the send
+-- endpoint can revert to exactly what the claim displaced — a concurrent
+-- PATCH in the handler's fetch→claim gap can't be silently undone.
+-- name: ClaimNewsletterSendNow :one
+WITH prev AS (
+  SELECT status FROM newsletter_campaigns WHERE id = @id FOR UPDATE
+)
+UPDATE newsletter_campaigns c
+SET status = 'sending', send_id = @send_id, updated_at = now()
+FROM prev
+WHERE c.id = @id AND (
+     c.status IN ('draft', 'scheduled')
+  OR (c.status = 'sending' AND c.send_id = @send_id)
+)
+RETURNING c.send_id, prev.status AS prev_status;
 
--- name: ClaimNewsletterScheduledSend :execrows
-UPDATE newsletter_campaigns
-SET status = 'sending', updated_at = now()
-WHERE id = @id AND status = 'scheduled'
- AND date_trunc('second', scheduled_at) = @scheduled_at;
+-- name: ClaimNewsletterScheduledSend :one
+UPDATE newsletter_campaigns c
+SET status = 'sending', send_id = @send_id, updated_at = now()
+WHERE c.id = @id AND (
+     (c.status = 'scheduled' AND date_trunc('second', c.scheduled_at) = @scheduled_at)
+  OR (c.status = 'sending' AND c.send_id = @send_id)
+)
+RETURNING c.send_id;
+
+-- GetNewsletterSendLease returns the current send lease for the fencing
+-- check: the worker proceeds only while status='sending' and send_id is
+-- still the lease it claimed (or adopted) at send start.
+-- name: GetNewsletterSendLease :one
+SELECT status, send_id FROM newsletter_campaigns
+WHERE id = @id;
 
 -- RevertNewsletterSendClaim undoes a claim when the send task could not be
--- enqueued — restores the pre-claim status, guarded by status='sending' so
--- it can never clobber a state that arrived after our claim.
+-- enqueued — restores the pre-claim status, fenced by status='sending' AND
+-- send_id so it can never clobber a claim that landed after ours (PATCH
+-- reset → re-claim between our claim and the failed enqueue).
 -- name: RevertNewsletterSendClaim :exec
 UPDATE newsletter_campaigns
-SET status = @status, updated_at = now()
-WHERE id = @id AND status = 'sending';
-
--- name: GetNewsletterCampaignStatus :one
-SELECT status FROM newsletter_campaigns
-WHERE id = @id;
+SET status = @status, send_id = NULL, updated_at = now()
+WHERE id = @id AND status = 'sending' AND send_id = @send_id;
 
 -- name: ListPendingNewsletterRecipients :many
 SELECT recipient FROM newsletter_send_state
@@ -105,6 +127,10 @@ JOIN newsletter_subscribers ns ON ns.email = u.email
 WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
   AND u.status = 'active' AND u.email_verified_at IS NOT NULL AND u.deleted_at IS NULL;
 
--- name: ListDigestSubscriberEmails :many
+-- Paged like the campaign fan-out (audit DG-11): the full digest-enabled
+-- list is never materialized at once. Stable ORDER BY for OFFSET paging.
+-- name: ListDigestSubscriberEmailsPage :many
 SELECT email FROM newsletter_subscribers
-WHERE status = 'subscribed' AND digest_enabled = true;
+WHERE status = 'subscribed' AND digest_enabled = true
+ORDER BY email
+LIMIT @page_limit OFFSET @page_offset;

@@ -3736,6 +3736,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		NewsletterID string `json:"newsletter_id"`
 		ScheduledAt  string `json:"scheduled_at"`
+		SendID       string `json:"send_id"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -3747,55 +3748,71 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
 
-	reader := gen.New(dbPool.Reader)
 	writer := gen.New(dbPool.Writer)
 
 	// Fetch the campaign row — needed for the claim check, subject/body,
 	// and the segment that drives send-state population (§62/ADR-080 §3).
-	campaign, err := reader.GetNewsletterCampaignForSend(ctx, campaignID)
+	// All reads in this task go through the WRITER pool on purpose: the
+	// claim decision and the pending-row consume are causally after our
+	// own writes, so a replica-lagged Reader could show a stale status
+	// (wrong claim outcome) or an empty pending set (silent no-send).
+	campaign, err := writer.GetNewsletterCampaignForSend(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
 	}
 
 	// Atomically claim the send — the first writer to flip the campaign to
-	// 'sending' owns it (§62).
+	// 'sending' owns it and stamps send_id as the lease identity (§62).
+	// Two lease shapes:
 	//
-	//   scheduled task — claims only while the campaign is still
-	//     'scheduled' for exactly the payload's slot, so cancelling,
-	//     unscheduling, rescheduling (which leaves stale ProcessAt tasks
-	//     queued under a different Unique fingerprint), or a prior send-now
-	//     claim all lose. A lost claim is still legitimate when this task
-	//     is a retry of the attempt that already claimed (status='sending'
-	//     + asynq retry_count > 0) — resume; retry_count == 0 means another
-	//     task owns the send and this one must stand down.
-	//   send-now task — the send endpoint claims draft|scheduled→sending
-	//     BEFORE enqueueing (a losing claim is a 409, not a second queued
-	//     task), so a queued send-now task finding 'sending' is either that
-	//     claim or a self-retry — both proceed. 'draft'/'scheduled' is
-	//     still claimed here for directly-enqueued tasks that bypass the
-	//     endpoint.
+	//   scheduled task — the task's own asynq ID is the lease: it claims
+	//     while the campaign is still 'scheduled' for exactly the payload's
+	//     slot (cancels, unschedules, reschedules, and prior send-now
+	//     claims all lose), and the sending-leg (status='sending' AND
+	//     send_id=taskID) makes a crashed attempt's retry a self-resume —
+	//     no separate retry bookkeeping needed.
+	//   send-now task — the send endpoint generates the lease, claims
+	//     draft|scheduled→sending with it BEFORE enqueueing, and carries it
+	//     in the payload. A losing endpoint claim is a 409, not a second
+	//     queued task; the worker proceeds only while the lease still
+	//     matches the payload's ID, so a re-claimed campaign can't be
+	//     double-mailed by a stale task. Directly-enqueued tasks with no
+	//     payload lease self-claim under their task ID — the same
+	//     claim/resume semantics as scheduled.
+	taskID, _ := asynq.GetTaskID(ctx)
+	if taskID == "" {
+		b := make([]byte, 8)
+		_, _ = rand.Read(b)
+		taskID = "local-" + hex.EncodeToString(b) // non-asynq callers (tests)
+	}
+
+	var mySendID string
 	claimed := false
 	if payload.ScheduledAt != "" {
 		if want, perr := time.Parse(time.RFC3339, payload.ScheduledAt); perr == nil {
-			if n, cerr := writer.ClaimNewsletterScheduledSend(ctx, gen.ClaimNewsletterScheduledSendParams{
-				ID: campaignID, ScheduledAt: pgtype.Timestamptz{Time: want, Valid: true},
-			}); cerr == nil && n > 0 {
-				claimed = true
+			if sid, cerr := writer.ClaimNewsletterScheduledSend(ctx, gen.ClaimNewsletterScheduledSendParams{
+				ID: campaignID, ScheduledAt: pgtype.Timestamptz{Time: want, Valid: true}, SendID: &taskID,
+			}); cerr == nil && sid != nil {
+				claimed, mySendID = true, *sid
+			} else if cerr != nil && !errors.Is(cerr, pgx.ErrNoRows) {
+				return fmt.Errorf("task:newsletter:send: claim scheduled send: %w", cerr)
 			}
 		}
-
-		if !claimed {
-			retry, _ := asynq.GetRetryCount(ctx)
-			claimed = campaign.Status == "sending" && retry > 0
+	} else if payload.SendID != "" {
+		// Endpoint-claimed send: verify the lease still matches our
+		// payload's ID rather than claiming — a re-claimed campaign (reset
+		// or cancelled, then re-sent) must not run under a stale task.
+		if lease, lerr := writer.GetNewsletterSendLease(ctx, campaignID); lerr != nil {
+			return fmt.Errorf("task:newsletter:send: fetch send lease: %w", lerr)
+		} else if lease.Status == "sending" && lease.SendID != nil && *lease.SendID == payload.SendID {
+			claimed, mySendID = true, payload.SendID
 		}
-	} else {
-		if n, cerr := writer.ClaimNewsletterSendNow(ctx, campaignID); cerr == nil && n > 0 {
-			claimed = true
-		}
-
-		if !claimed && campaign.Status == "sending" {
-			claimed = true
-		}
+	} else if row, cerr := writer.ClaimNewsletterSendNow(ctx, gen.ClaimNewsletterSendNowParams{
+		ID: campaignID, SendID: &taskID,
+	}); cerr == nil && row.SendID != nil {
+		claimed, mySendID = true, *row.SendID
+	} else if cerr != nil && !errors.Is(cerr, pgx.ErrNoRows) {
+		return fmt.Errorf("task:newsletter:send: claim send: %w", cerr)
 	}
 
 	if !claimed {
@@ -3828,20 +3845,22 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	total := 0
 
 	for {
-		// sending→cancelled is an allowed PATCH transition — check cheaply
-		// per page so an admin cancel stops the fan-out mid-send instead of
-		// only after the last batch.
-		st, serr := reader.GetNewsletterCampaignStatus(ctx, campaignID)
+		// Per-page lease check: this task proceeds only while the campaign
+		// is still 'sending' under OUR send_id. A PATCH cancel, a
+		// sending→draft reset, or a newer claim all supersede the lease —
+		// the superseded task exits at the next boundary instead of
+		// mailing (or stamping 'sent') for an abandoned send.
+		lease, serr := writer.GetNewsletterSendLease(ctx, campaignID)
 		if serr != nil {
-			return fmt.Errorf("task:newsletter:send: campaign status check: %w", serr)
+			return fmt.Errorf("task:newsletter:send: send lease check: %w", serr)
 		}
 
-		if st == "cancelled" {
-			slog.Info("task:newsletter:send: campaign cancelled mid-send, stopping", "newsletter_id", payload.NewsletterID, "sent", sent)
+		if lease.Status != "sending" || lease.SendID == nil || *lease.SendID != mySendID {
+			slog.Info("task:newsletter:send: send superseded (cancelled, reset, or newer claim) — stopping", "newsletter_id", payload.NewsletterID, "status", lease.Status, "sent", sent)
 			return nil
 		}
 
-		recipients, err := reader.ListPendingNewsletterRecipients(ctx, gen.ListPendingNewsletterRecipientsParams{
+		recipients, err := writer.ListPendingNewsletterRecipients(ctx, gen.ListPendingNewsletterRecipientsParams{
 			CampaignID: campaignID, PageLimit: batchSize,
 		})
 		if err != nil {
@@ -3866,6 +3885,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	case sent > 0:
 		_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
 			ID:             campaignID,
+			SendID:         &mySendID,
 			RecipientCount: int32(sent), // #nosec
 		})
 	case total == 0:
@@ -3874,20 +3894,21 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		// delivered everything and died before stamping 'sent' — the
 		// send-state rows survive, so complete the bookkeeping instead of
 		// reverting a delivered campaign to draft.
-		states, cerr := reader.CountNewsletterRecipientStates(ctx, campaignID)
+		states, cerr := writer.CountNewsletterRecipientStates(ctx, campaignID)
 		if cerr == nil && states.Sent > 0 {
 			slog.Info("task:newsletter:send: prior run delivered all recipients — marking sent", "newsletter_id", payload.NewsletterID, "sent", states.Sent)
 			_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
 				ID:             campaignID,
+				SendID:         &mySendID,
 				RecipientCount: int32(states.Sent), // #nosec
 			})
 			break
 		}
 
 		slog.Warn("task:newsletter:send: segment resolved zero recipients, reverting to draft", "newsletter_id", payload.NewsletterID, "segment", campaign.Segment)
-		// Guarded by status='sending' like RevertNewsletterSendClaim — only
-		// undo our own claim, never clobber a state that arrived after it.
-		if _, err := dbPool.Writer.Exec(ctx, `UPDATE newsletter_campaigns SET status = 'draft' WHERE id = $1 AND status = 'sending'`, campaignID); err != nil {
+		// Guarded by status + send_id — only undo our own send, never
+		// clobber a claim that arrived after ours.
+		if _, err := dbPool.Writer.Exec(ctx, `UPDATE newsletter_campaigns SET status = 'draft' WHERE id = $1 AND status = 'sending' AND send_id = $2`, campaignID, mySendID); err != nil {
 			slog.Warn("task:newsletter:send: revert to draft failed", "error", err)
 		}
 	default:
@@ -5169,18 +5190,6 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Fetch newsletter subscribers with digest enabled for this platform.
-	subscribers, err := listDigestSubscribers(ctx)
-	if err != nil {
-		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
-		return err
-	}
-
-	if len(subscribers) == 0 {
-		slog.Info("task:newsletter:digest: no digest subscribers, skipping")
-		return nil
-	}
-
 	// Resolve the site name for the email subject.
 	name := siteName
 	if name == "" {
@@ -5190,39 +5199,65 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	subject := "Weekly Digest — " + name
 	body := buildDigestBody(ctx, subject, digestItems)
 
-	// Weekly GC of spent unsubscribe tokens (§62 Compliance): tokens are
-	// minted per recipient per send; without a sweep the table grows
-	// unboundedly. 90-day retention is generous for an unsubscribe link.
+	// Weekly GC of spent unsubscribe/confirm tokens (§62 Compliance):
+	// unsubscribe tokens >90d, confirm tokens >7d — without a sweep the
+	// table grows unboundedly.
 	if err := gen.New(dbPool.Writer).DeleteOldUnsubscribeTokens(ctx); err != nil {
 		slog.Warn("task:newsletter:digest: token GC failed", "error", err)
 	}
 
+	// Page recipients (audit DG-11) — the full digest-enabled list is
+	// never materialized at once, matching newsletter:send's fan-out.
+	const pageSize = int32(500)
 	sent := 0
 	failed := 0
+	total := 0
+	q := gen.New(dbPool.Reader)
 
-	for _, recipient := range subscribers {
-		// Generate a per-recipient one-click unsubscribe token + headers
-		// (§62 Compliance, ADR-080 §4) and send via the marketing-category
-		// provider (ADR-015/ADR-080).
-		unsubURL, headers := newsletterUnsubscribeLink(ctx, recipient)
-		htmlBody := body
-
-		if unsubURL != "" {
-			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+	for offset := int32(0); ; offset += pageSize {
+		subscribers, err := q.ListDigestSubscriberEmailsPage(ctx, gen.ListDigestSubscriberEmailsPageParams{
+			PageLimit: pageSize, PageOffset: offset,
+		})
+		if err != nil {
+			slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
+			return err
 		}
 
-		if err := sendMarketingEmail(ctx, recipient, subject, htmlBody, true, headers); err != nil {
-			slog.Error("task:newsletter:digest: email failed", "recipient", recipient, "error", err)
-
-			failed++
-
-			continue
+		if len(subscribers) == 0 {
+			break
 		}
 
-		sent++
+		total += len(subscribers)
+
+		for _, recipient := range subscribers {
+			// Generate a per-recipient one-click unsubscribe token +
+			// headers (§62 Compliance, ADR-080 §4) and send via the
+			// marketing-category provider (ADR-015/ADR-080).
+			unsubURL, headers := newsletterUnsubscribeLink(ctx, recipient)
+			htmlBody := body
+
+			if unsubURL != "" {
+				htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+			}
+
+			if err := sendMarketingEmail(ctx, recipient, subject, htmlBody, true, headers); err != nil {
+				slog.Error("task:newsletter:digest: email failed", "recipient", recipient, "error", err)
+
+				failed++
+
+				continue
+			}
+
+			sent++
+		}
 	}
 
-	slog.Info("task:newsletter:digest: digest sent", "item_count", len(digestItems), "subscribers", len(subscribers), "sent", sent, "failed", failed)
+	if total == 0 {
+		slog.Info("task:newsletter:digest: no digest subscribers, skipping")
+		return nil
+	}
+
+	slog.Info("task:newsletter:digest: digest sent", "item_count", len(digestItems), "subscribers", total, "sent", sent, "failed", failed)
 
 	return nil
 }
@@ -5251,13 +5286,6 @@ func listDigestSubscribedUsers(ctx context.Context) ([]digestRecipient, error) {
 	}
 
 	return out, nil
-}
-
-// listDigestSubscribers returns the email addresses of this platform's
-// subscribers with digest_enabled = true. (BUG-028: sqlc
-// ListDigestSubscriberEmails.)
-func listDigestSubscribers(ctx context.Context) ([]string, error) {
-	return gen.New(dbPool.Reader).ListDigestSubscriberEmails(ctx)
 }
 
 // digestContentRoutePrefix maps content_type to its canonical detail path,

@@ -641,6 +641,8 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	//   draft ↔ scheduled
 	//   draft/scheduled → sending (only via the send endpoint, not PATCH)
 	//   sending → sent (only via the worker, not PATCH)
+	//   sending → draft — reset a stuck/abandoned send; the send_id lease
+	//     fences the old task, which self-terminates at the next page check
 	//   draft/scheduled/sending → cancelled
 	// The PATCH endpoint may not jump to 'sending' or 'sent' directly —
 	// those transitions are owned by the send endpoint and worker.
@@ -656,7 +658,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 
 		switch next {
 		case CampaignDraft:
-			allowed = existing.Status == CampaignScheduled
+			allowed = existing.Status == CampaignScheduled || existing.Status == CampaignSending
 		case CampaignScheduled:
 			allowed = existing.Status == CampaignDraft
 		case CampaignCancelled:
@@ -768,7 +770,17 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	// means another send is in flight — a 409, not a second queued task
 	// that could double-send. The winning claim also guarantees the queued
 	// task finds 'sending' (no enqueue-then-flip race for the worker).
-	claimed, err := h.Service.ClaimSend(r.Context(), id)
+	// The generated sendID is the send's lease identity — stamped by the
+	// claim and carried in the task payload, so a stale task can't mail
+	// for a send that was reset or re-claimed.
+	sendID, err := GenerateUnsubscribeToken()
+	if err != nil {
+		slog.Error("generating send id", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate send")
+		return
+	}
+
+	claimed, prevStatus, err := h.Service.ClaimSend(r.Context(), id, sendID)
 	if err != nil {
 		slog.Error("claiming newsletter send", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to claim newsletter send")
@@ -780,11 +792,13 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.EnqueueNewsletterSend(r.Context(), id); err != nil {
+	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, sendID); err != nil {
 		slog.Error("enqueuing newsletter send", "error", err)
 		// Undo the claim so the campaign is not stuck in 'sending' with no
 		// task behind it — the admin can retry once the queue recovers.
-		h.Service.RevertSendClaim(r.Context(), id, campaign.Status)
+		// prevStatus (not the earlier fetch) restores exactly what the
+		// claim displaced.
+		h.Service.RevertSendClaim(r.Context(), id, sendID, prevStatus)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 
 		return

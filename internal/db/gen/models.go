@@ -3106,6 +3106,7 @@ type NewsletterCampaign struct {
 	OpenCount      int32              `json:"open_count"`
 	ClickCount     int32              `json:"click_count"`
 	CreatedBy      pgtype.UUID        `json:"created_by"`
+	SendID         *string            `json:"send_id"`
 }
 
 type NewsletterList struct {

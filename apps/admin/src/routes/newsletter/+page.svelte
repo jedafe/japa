@@ -17,7 +17,7 @@
 	import { BarChart } from 'layerchart';
 	import { api } from '#lib/api.js';
 	import { sanitizeHtml } from '#lib/utils/html.js';
-	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
+	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload, RotateCcw } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type Subscriber = {
@@ -170,7 +170,17 @@
 			icon: Trash2,
 			variant: 'destructive',
 			onclick: (row) => cancelCampaign(row.id),
-			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
+			show: (row: Campaign) =>
+				(row.status === 'draft' || row.status === 'scheduled' || row.status === 'sending') && canManageNewsletter
+		},
+		{
+			// sending → draft: resets a stuck/abandoned send — the send_id
+			// lease fences the old task (self-terminates at the next page
+			// check), and a re-send resumes from send_state pending rows.
+			label: t('app.newsletter.reset_send', 'Reset send'),
+			icon: RotateCcw,
+			onclick: (row) => resetCampaignSend(row.id),
+			show: (row: Campaign) => row.status === 'sending' && canManageNewsletter
 		}
 	]);
 
@@ -447,6 +457,16 @@
 		const result = await api(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body: { status: 'cancelled' } });
 		if (!result.ok) {
 			pageError = result.error ?? 'Failed to cancel campaign';
+			return;
+		}
+		campaignController?.reload();
+	}
+
+	async function resetCampaignSend(id: string) {
+		pageError = '';
+		const result = await api(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body: { status: 'draft' } });
+		if (!result.ok) {
+			pageError = result.error ?? 'Failed to reset campaign send';
 			return;
 		}
 		campaignController?.reload();
