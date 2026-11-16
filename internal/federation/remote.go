@@ -30,6 +30,10 @@ var (
 	ErrRemoteBlocked = errors.New("federation: remote instance blocked")
 	// ErrRemoteFetch is a transient fetch/resolution failure — retryable.
 	ErrRemoteFetch = errors.New("federation: remote fetch failed")
+	// ErrMoveNotConfirmed is a permanent Move rejection — the target
+	// actor's alsoKnownAs does not advertise the moving actor's URL, so
+	// the claimed migration is unendorsed (§126 M4).
+	ErrMoveNotConfirmed = errors.New("federation: move target does not confirm the migration")
 )
 
 // remoteActorDoc is the subset of a remote Person/Application/Service
@@ -52,6 +56,33 @@ type remoteActorDoc struct {
 	Icon struct {
 		URL string `json:"url"`
 	} `json:"icon"`
+	// alsoKnownAs is a string or string[] in the wild — RawMessage keeps
+	// both shapes parseable for the Move{actor→target} check (§126 M4).
+	AlsoKnownAs json.RawMessage `json:"alsoKnownAs"`
+}
+
+// advertisesAlsoKnownAs reports whether the document names actorURL in
+// its alsoKnownAs — the new-account half of an AP Move's bidirectional
+// consent (the signed Move itself is the old account's half). Accepts
+// both the scalar and array serializations remotes emit.
+func (d *remoteActorDoc) advertisesAlsoKnownAs(actorURL string) bool {
+	if len(d.AlsoKnownAs) == 0 {
+		return false
+	}
+	var one string
+	if err := json.Unmarshal(d.AlsoKnownAs, &one); err == nil {
+		return strings.EqualFold(one, actorURL)
+	}
+	var many []string
+	if err := json.Unmarshal(d.AlsoKnownAs, &many); err != nil {
+		return false
+	}
+	for _, v := range many {
+		if strings.EqualFold(v, actorURL) {
+			return true
+		}
+	}
+	return false
 }
 
 // remoteActorTypes are document types we accept as actors — Person is
@@ -223,6 +254,38 @@ func (s *Service) upsertRemoteActor(ctx context.Context, actorURL string, doc *r
 		return nil, err
 	}
 	return &row, nil
+}
+
+// verifyMoveTarget validates an inbound Move's target actor and upserts
+// its remote_actors row for the dispatch to repoint onto (§126 M4).
+// Consent is bidirectional: the signed Move is the old account's half;
+// the TARGET's own document must carry the old actor URL in alsoKnownAs
+// — otherwise anyone could redirect a victim's follower edges to an
+// account the victim never endorsed. Runs pre-tx (remote fetch); the
+// doc is fetched fresh rather than trusted from cache since it is the
+// sole evidence of endorsement. ErrRemoteFetch failures are retryable;
+// ErrMoveNotConfirmed / ErrRemoteBlocked reject permanently.
+func (s *Service) verifyMoveTarget(ctx context.Context, oldURL, targetURL string) (*gen.RemoteActor, error) {
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("%w: bad move target url %q", ErrMoveNotConfirmed, targetURL)
+	}
+	if !s.instanceAllowed(ctx, u.Hostname()) {
+		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
+	}
+	doc, err := s.fetchRemoteActorDoc(ctx, targetURL)
+	if err != nil {
+		return nil, err
+	}
+	if !doc.advertisesAlsoKnownAs(oldURL) {
+		return nil, fmt.Errorf("%w: %s does not list %s", ErrMoveNotConfirmed, targetURL, oldURL)
+	}
+	row, err := s.upsertRemoteActor(ctx, targetURL, doc)
+	if err != nil {
+		return nil, fmt.Errorf("%w: upsert: %v", ErrRemoteFetch, err)
+	}
+	s.cacheSetRemote(ctx, row)
+	return row, nil
 }
 
 // refreshRemoteKey re-pulls a known signer's actor document after a

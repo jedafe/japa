@@ -75,6 +75,10 @@ type Service struct {
 	// renames (§126). Implemented by *federation.Service; wired via
 	// SetFederationCache. Optional — nil-safe.
 	fedCache federationDocInvalidator
+	// fedFanout pushes Update{Person} to the member's remote followers when
+	// doc-rendered identity fields change (§126 M4). Implemented by
+	// *federation.Service; wired via SetFederationFanout. Optional — nil-safe.
+	fedFanout federationUpdateFanouter
 }
 
 // federationDocInvalidator drops cached WebFinger/actor docs for a
@@ -90,6 +94,18 @@ type federationDocInvalidator interface {
 // SetFederationCache wires the federation doc invalidator used on username
 // changes. Called once during server setup.
 func (s *Service) SetFederationCache(i federationDocInvalidator) { s.fedCache = i }
+
+// federationUpdateFanouter pushes Update{Person} fanout for a member —
+// remote followers learn the new profile proactively instead of on next
+// fetch. Implemented by *federation.Service; injected at server wiring so
+// users never imports the federation package.
+type federationUpdateFanouter interface {
+	FanoutActorUpdateForUser(ctx context.Context, userID pgtype.UUID)
+}
+
+// SetFederationFanout wires the identity-change fanout used on profile
+// edits. Called once during server setup.
+func (s *Service) SetFederationFanout(f federationUpdateFanouter) { s.fedFanout = f }
 
 // SetOwnerEmail wires the JC_OWNER_EMAIL designation. Called once during
 // server setup.
@@ -832,9 +848,15 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 
 	// §126: the Person actor doc renders display_name/avatar/bio — drop
 	// the cached WebFinger/actor docs on those edits so remote fetches
-	// see the new identity immediately rather than at the 5-min TTL.
-	if s.fedCache != nil && (req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil) {
+	// see the new identity immediately rather than at the 5-min TTL, and
+	// push Update{Person} to remote followers so they don't wait on a
+	// re-fetch at all (§126 M4).
+	docFieldsChanged := req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil
+	if s.fedCache != nil && docFieldsChanged {
 		s.fedCache.InvalidateActorIdentityForUser(ctx, userID)
+	}
+	if s.fedFanout != nil && docFieldsChanged {
+		s.fedFanout.FanoutActorUpdateForUser(ctx, userID)
 	}
 
 	return nil
@@ -2665,8 +2687,13 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 	// which an earlier rename may have stranded. The actor doc also
 	// renders display_name and the public identity fields, so those
 	// mutations drop the same caches.
-	if (result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged) && s.fedCache != nil {
+	identityChanged := result.UsernameChanged || result.DisplayNameChanged || result.PublicIdentityChanged
+	if identityChanged && s.fedCache != nil {
 		s.fedCache.InvalidateActorIdentityForUser(ctx, userID, result.OldUsername, result.NewUsername)
+	}
+	// Same trigger set pushes Update{Person} to remote followers (§126 M4).
+	if identityChanged && s.fedFanout != nil {
+		s.fedFanout.FanoutActorUpdateForUser(ctx, userID)
 	}
 
 	// §127 A2/A4: re-project app.bsky.actor.profile — this endpoint mutates

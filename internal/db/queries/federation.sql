@@ -265,6 +265,34 @@ WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
 UPDATE federation_follows SET status = 'undone', updated_at = now()
 WHERE remote_actor_id = @remote_actor_id AND status <> 'undone';
 
+-- name: RepointFederationFollowsToRemoteActor :execrows
+-- §126 M4 Move{actor→target}: every edge that does not already exist on
+-- the new actor rebinds to it. Colliding rows (the member was followed
+-- from BOTH accounts pre-move) stay on the old id — the caller undoes
+-- them via UndoFederationFollowsByRemoteActor so the new-actor edge wins.
+UPDATE federation_follows ff SET remote_actor_id = @new_remote_actor_id, updated_at = now()
+WHERE ff.remote_actor_id = @old_remote_actor_id
+  AND NOT EXISTS (SELECT 1 FROM federation_follows dup
+                  WHERE dup.local_actor_id = ff.local_actor_id
+                    AND dup.remote_actor_id = @new_remote_actor_id);
+
+-- name: RepointRemoteFollowsByActor :execrows
+-- follows provenance mirror of the repoint above — same collision rule
+-- on the partial-unique (follower_remote_actor_id, entity_type,
+-- entity_id) index; stragglers delete via DeleteDuplicateRemoteFollowsByActor.
+UPDATE follows f SET follower_remote_actor_id = @new_remote_actor_id
+WHERE f.follower_remote_actor_id = @old_remote_actor_id
+  AND NOT EXISTS (SELECT 1 FROM follows dup
+                  WHERE dup.follower_remote_actor_id = @new_remote_actor_id
+                    AND dup.entity_type = f.entity_type
+                    AND dup.entity_id = f.entity_id);
+
+-- name: DeleteDuplicateRemoteFollowsByActor :exec
+-- Mirror repoint cleanup: rows left after RepointRemoteFollowsByActor
+-- are duplicate edges the new actor already holds — removing them keeps
+-- follower counts honest without touching users.follower_count.
+DELETE FROM follows WHERE follower_remote_actor_id = @old_remote_actor_id;
+
 -- name: ListRemoteFollowerInboxesByActor :many
 -- Fanout expansion (§126): one delivery row per DISTINCT inbox —
 -- sharedInbox coalescing collapses same-instance followers into a
@@ -763,6 +791,44 @@ SELECT DISTINCT t.name, t.slug
 FROM content_tags ct
 JOIN tags t ON t.id = ct.tag_id
 WHERE ct.content_id = @content_id
+ORDER BY t.name;
+
+-- name: ListFeaturedFederatableContentByAuthor :many
+-- featured collection source rows (§126 M4): the member's pinned
+-- federatable contents — the outbox eligibility predicate plus is_pinned.
+-- Column list mirrors ListFederatableContentByAuthor so objectDocument
+-- renders both identically.
+SELECT c.id, c.content_type, c.title, c.slug, c.body_html, c.canonical_url,
+       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
+FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
+WHERE c.author_id = @author_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.is_pinned = true
+  AND c.content_type = ANY(@content_types::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT @page_limit;
+
+-- name: ListActorFederatedTags :many
+-- featuredTags collection source (§126 M4): the hashtags the member
+-- uses across their federatable contents — same eligibility predicate as
+-- the outbox, deduped by tag row.
+SELECT DISTINCT t.id, t.name, t.slug
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN contents c ON c.id = ct.content_id
+WHERE c.author_id = @author_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[])
 ORDER BY t.name;
 
 -- name: UpsertFederationRelay :one

@@ -153,12 +153,43 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		}
 	}
 
+	// §126 M4: Move{actor→target} needs the TARGET's actor document —
+	// its alsoKnownAs is the sole evidence the migration is endorsed.
+	// Fetch + verify pre-tx like the courier hoist: a remote fetch must
+	// not hold the dispatch transaction open. Verified moves hand the
+	// upserted target row to dispatch; rejected ones carry the reason.
+	var moveTarget *gen.RemoteActor
+	moveReject := ""
+	if apStr(act["type"]) == "Move" {
+		targetIRI := apID(act["target"])
+		switch {
+		case signer == nil:
+			moveReject = "unsigned move"
+		case !strings.EqualFold(apObjectID(act), apActorID(act)):
+			moveReject = "move object is not the moving actor"
+		case targetIRI == "" || strings.EqualFold(targetIRI, signer.ActorUrl):
+			moveReject = "move target missing or is the moving actor"
+		case sameURLHost(targetIRI, s.apiBase()):
+			moveReject = "move target is a local actor"
+		default:
+			mt, merr := s.verifyMoveTarget(ctx, signer.ActorUrl, targetIRI)
+			switch {
+			case merr == nil:
+				moveTarget = mt
+			case errors.Is(merr, ErrMoveNotConfirmed) || errors.Is(merr, ErrRemoteBlocked):
+				moveReject = merr.Error()
+			default:
+				return fmt.Errorf("move target resolve: %w", merr) // retryable
+			}
+		}
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("inbound tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	res := s.dispatch(ctx, gen.New(tx), row, act, signer)
+	res := s.dispatch(ctx, gen.New(tx), row, act, signer, moveTarget, moveReject)
 	// An internal write failure must not commit: the tx has partial
 	// mutations by definition, and stamping 'error' would strand the
 	// half-applied state with no retry (the status CHECK excludes
@@ -262,8 +293,9 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 // dispatch routes the activity. All writes run inside the caller's tx.
 // The inbound row id keys per-event response identity (Accept/Reject
 // dedup) — it is stable across retries of this row and unique across
-// Follow events.
-func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+// Follow events. moveTarget/moveReject carry the pre-tx Move verdict —
+// nil + "" for non-Move activities.
+func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor, moveTarget *gen.RemoteActor, moveReject string) dispatchResult {
 	typ := apStr(act["type"])
 	actorID := apActorID(act)
 	// The relay-courier swap ran pre-tx in ProcessInbound (a remote fetch
@@ -287,6 +319,8 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.Federati
 		return s.dispatchCreate(ctx, q, act, signer)
 	case "Update":
 		return s.dispatchUpdate(ctx, q, act, signer)
+	case "Move":
+		return s.dispatchMove(ctx, q, signer, moveTarget, moveReject)
 	case "Delete":
 		return s.dispatchDelete(ctx, q, act, signer)
 	default:
@@ -1042,6 +1076,55 @@ func (s *Service) dispatchUpdate(ctx context.Context, q *gen.Queries, act map[st
 		return dispatchResult{status: "ignored", reason: "updated object unknown"}
 	}
 	return dispatchResult{status: "processed"}
+}
+
+// dispatchMove applies a verified Move{actor→target} (§126 M4): the
+// mover's live edges rebind to the target actor row — federation_follows
+// keeps following them at their new inbox, the native follows mirror
+// keeps their follower edges/counts — then the old actor tombstones so
+// the dead URL stops resolving. Edges that already exist on the target
+// (the member was followed from both accounts) stay with the new row;
+// the old side's leftovers go 'undone'/delete as duplicates. Reactions,
+// shares and comments keep the OLD actor's attribution — that content
+// did come from the old account. Replays are idempotent: a second Move
+// finds no rows left to repoint.
+func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, moveTarget *gen.RemoteActor, moveReject string) dispatchResult {
+	if signer == nil {
+		return dispatchResult{status: "rejected", reason: "unsigned move"}
+	}
+	if moveReject != "" {
+		return dispatchResult{status: "rejected", reason: moveReject}
+	}
+	if moveTarget == nil || moveTarget.ID == signer.ID {
+		return dispatchResult{status: "ignored", reason: "move target did not verify"}
+	}
+	if err := q.SetRemoteActorStatus(ctx, gen.SetRemoteActorStatusParams{
+		ID: signer.ID, Status: "tombstone",
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "moved-actor tombstone: " + err.Error()}
+	}
+	if _, err := q.RepointFederationFollowsToRemoteActor(ctx, gen.RepointFederationFollowsToRemoteActorParams{
+		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "follow repoint: " + err.Error()}
+	}
+	// Edges already held by the new actor's account supersede the old
+	// row's leftovers — they go undone rather than dangling on a tombstone.
+	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: move leftover edge unwind failed", "error", err)
+	}
+	if _, err := q.RepointRemoteFollowsByActor(ctx, gen.RepointRemoteFollowsByActorParams{
+		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "follows mirror repoint: " + err.Error()}
+	}
+	if err := q.DeleteDuplicateRemoteFollowsByActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: move duplicate mirror cleanup failed", "error", err)
+	}
+	// A relay subscription under the old actor URL migrates to the new
+	// actor's inbox only if the admin re-subscribes — FEP-ae0c relays are
+	// Follow-based, and re-Following is the remote's job, not ours.
+	return dispatchResult{status: "processed", invalidateRemote: signer.ActorUrl}
 }
 
 // dispatchDelete handles Delete{actor} (full remote provenance unwind)

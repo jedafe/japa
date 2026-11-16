@@ -136,6 +136,18 @@ func (s *Service) profileURL(username string) string {
 	return s.siteBase() + "/u/" + username
 }
 
+// subscribeTemplateURL is the OStatus remote-follow template the JRD
+// advertises — the apex /authorize_interaction page bounces the visitor
+// to their own instance's remote-follow UI with our actor as the target.
+// The literal {uri} placeholder is the spec substitution point — it must
+// NOT be escaped.
+func (s *Service) subscribeTemplateURL() string {
+	if b := s.siteBase(); b != "" {
+		return b + "/authorize_interaction?uri={uri}"
+	}
+	return ""
+}
+
 func (s *Service) outboxPageSize(ctx context.Context) int32 {
 	const fallback = 20
 	if s.settings == nil {
@@ -211,7 +223,7 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 	}
 	doc := webfingerJRD(
 		profile.Username, canonical, profile.ActorUrl,
-		s.profileURL(profile.Username),
+		s.profileURL(profile.Username), s.subscribeTemplateURL(),
 	)
 	if cacheable {
 		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
@@ -249,7 +261,7 @@ func (s *Service) groupWebfinger(ctx context.Context, slug, domain string) (map[
 	// the live slug.
 	doc := webfingerJRD(
 		"!"+row.PreferredUsername, canonical, row.ActorUrl,
-		s.siteBase()+"/spaces/"+row.SpaceSlug,
+		s.siteBase()+"/spaces/"+row.SpaceSlug, s.subscribeTemplateURL(),
 	)
 	if cacheable {
 		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
@@ -278,7 +290,7 @@ func (s *Service) instanceWebfinger(ctx context.Context, domain string) (map[str
 	if canonical == "" {
 		canonical = domain
 	}
-	doc := webfingerJRD(canonical, canonical, actor.ActorUrl, s.siteBase())
+	doc := webfingerJRD(canonical, canonical, actor.ActorUrl, s.siteBase(), s.subscribeTemplateURL())
 	if cacheable {
 		s.cacheSet(ctx, cacheKey, doc, 5*time.Minute)
 	}
@@ -352,6 +364,74 @@ func (s *Service) Outbox(ctx context.Context, username string, page int) (map[st
 
 	return orderedCollectionPage(pageID(page), actor.OutboxUrl, items, total,
 		int64(page)*int64(size) < total, page > 1, pageID, page), nil
+}
+
+// Featured returns the §126 M4 featured collection — the member's pinned
+// federatable contents as an unpaginated OrderedCollection with the
+// object documents embedded (the Mastodon /collections/featured shape
+// remote profile surfaces walk). totalItems counts exactly the rows
+// listed: the collection is bounded by outbox_page_size and never
+// advertises items it does not show.
+func (s *Service) Featured(ctx context.Context, username string) (map[string]any, error) {
+	actor, err := s.store.actorByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("federation: featured actor: %w", err)
+	}
+
+	rows, err := s.store.featuredContent(ctx, actor.UserID, s.federatableTypesFor(ctx), s.outboxPageSize(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("federation: featured items: %w", err)
+	}
+
+	items := make([]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, s.objectFromFeaturedRow(ctx, row, actor))
+	}
+
+	return map[string]any{
+		"@context":     asContext[0],
+		"id":           actor.ActorUrl + "/collections/featured",
+		"type":         "OrderedCollection",
+		"totalItems":   len(items),
+		"orderedItems": items,
+	}, nil
+}
+
+// FeaturedTags returns the §126 M4 featuredTags collection — the hashtags
+// the member uses across their federatable contents as Hashtag items.
+func (s *Service) FeaturedTags(ctx context.Context, username string) (map[string]any, error) {
+	actor, err := s.store.actorByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("federation: featuredTags actor: %w", err)
+	}
+
+	tags, err := s.store.actorFederatedTags(ctx, actor.UserID, s.federatableTypesFor(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("federation: featuredTags items: %w", err)
+	}
+
+	items := make([]any, 0, len(tags))
+	for _, t := range tags {
+		items = append(items, map[string]any{
+			"type": "Hashtag",
+			"name": "#" + t.Name,
+			"href": s.siteBase() + "/tags/" + t.Slug,
+		})
+	}
+
+	return map[string]any{
+		"@context":     asContext[0],
+		"id":           actor.ActorUrl + "/collections/tags",
+		"type":         "OrderedCollection",
+		"totalItems":   len(items),
+		"orderedItems": items,
+	}, nil
 }
 
 // Followers returns the OrderedCollection(+Page) of follower actor URLs:
@@ -517,6 +597,27 @@ func (s *Service) objectFromGetRow(ctx context.Context, row gen.GetFederatableCo
 	obj := objectDocument(row, actor.ActorUrl, actor.FollowersUrl, s.siteBase(), s.pageURL(row.ContentType, row.Slug, row.CanonicalUrl))
 	s.decorateTags(ctx, obj, row.ID)
 	return obj
+}
+
+// objectFromFeaturedRow renders a pinned content row for the featured
+// collection — same objectDocument shape as the outbox items.
+func (s *Service) objectFromFeaturedRow(ctx context.Context, row gen.ListFeaturedFederatableContentByAuthorRow, actor gen.FederatedActor) map[string]any {
+	return s.objectFromGetRow(ctx, gen.GetFederatableContentByIDRow{
+		ID:             row.ID,
+		ContentType:    row.ContentType,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		BodyHtml:       row.BodyHtml,
+		CanonicalUrl:   row.CanonicalUrl,
+		PublishedAt:    row.PublishedAt,
+		UpdatedAt:      row.UpdatedAt,
+		FeaturedBucket: row.FeaturedBucket,
+		FeaturedPath:   row.FeaturedPath,
+		FeaturedMime:   row.FeaturedMime,
+		HeaderBucket:   row.HeaderBucket,
+		HeaderPath:     row.HeaderPath,
+		HeaderMime:     row.HeaderMime,
+	}, actor)
 }
 
 // pageURL resolves the human-facing URL for a contents row: the editorial
@@ -1140,6 +1241,24 @@ func (s *Service) InvalidateActorIdentityForUser(ctx context.Context, userID pgt
 	handles = append(handles, row.PreferredUsername, row.Username)
 	handles = append(handles, extraHandles...)
 	s.invalidateActorCache(ctx, handles...)
+}
+
+// FanoutActorUpdateForUser pushes Update{Person} to the member's remote
+// followers — the §126 M4 identity-change push. Called by the users
+// service after doc-rendered fields change (display_name/avatar/bio,
+// rename, public identity). No-ops for unfederated or non-active actors.
+// Satisfies users.federationUpdateFanouter.
+func (s *Service) FanoutActorUpdateForUser(ctx context.Context, userID pgtype.UUID) {
+	if s.store == nil {
+		return
+	}
+	actor, err := s.store.actorByUserID(ctx, userID)
+	if err != nil || actor.Status != ActorStatusActive {
+		return
+	}
+	if err := s.fanoutActorUpdate(ctx, actor.ID, true); err != nil {
+		slog.Warn("federation: identity-update fanout failed", "actor_id", actor.ID.String(), "error", err)
+	}
 }
 
 // RemoteCacheKey is the catalogued jc:fed:remote:{sha256(actor_url)} key.

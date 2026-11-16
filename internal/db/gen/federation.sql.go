@@ -431,6 +431,18 @@ func (q *Queries) DecrementContentShareCount(ctx context.Context, id pgtype.UUID
 	return err
 }
 
+const deleteDuplicateRemoteFollowsByActor = `-- name: DeleteDuplicateRemoteFollowsByActor :exec
+DELETE FROM follows WHERE follower_remote_actor_id = $1
+`
+
+// Mirror repoint cleanup: rows left after RepointRemoteFollowsByActor
+// are duplicate edges the new actor already holds — removing them keeps
+// follower counts honest without touching users.follower_count.
+func (q *Queries) DeleteDuplicateRemoteFollowsByActor(ctx context.Context, oldRemoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDuplicateRemoteFollowsByActor, oldRemoteActorID)
+	return err
+}
+
 const deleteFederationRelay = `-- name: DeleteFederationRelay :exec
 DELETE FROM federation_relays WHERE id = $1
 `
@@ -1738,6 +1750,54 @@ func (q *Queries) ListActiveRelayInboxes(ctx context.Context) ([]string, error) 
 	return items, nil
 }
 
+const listActorFederatedTags = `-- name: ListActorFederatedTags :many
+SELECT DISTINCT t.id, t.name, t.slug
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN contents c ON c.id = ct.content_id
+WHERE c.author_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY($2::text[])
+ORDER BY t.name
+`
+
+type ListActorFederatedTagsParams struct {
+	AuthorID     pgtype.UUID `json:"author_id"`
+	ContentTypes []string    `json:"content_types"`
+}
+
+type ListActorFederatedTagsRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+// featuredTags collection source (§126 M4): the hashtags the member
+// uses across their federatable contents — same eligibility predicate as
+// the outbox, deduped by tag row.
+func (q *Queries) ListActorFederatedTags(ctx context.Context, arg ListActorFederatedTagsParams) ([]ListActorFederatedTagsRow, error) {
+	rows, err := q.db.Query(ctx, listActorFederatedTags, arg.AuthorID, arg.ContentTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActorFederatedTagsRow
+	for rows.Next() {
+		var i ListActorFederatedTagsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllFederatableContent = `-- name: ListAllFederatableContent :many
 SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
        c.canonical_url, c.published_at, c.created_at
@@ -1872,6 +1932,93 @@ func (q *Queries) ListDueFederationDeliveries(ctx context.Context, pageLimit int
 			&i.LastError,
 			&i.CreatedAt,
 			&i.DeliveredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeaturedFederatableContentByAuthor = `-- name: ListFeaturedFederatableContentByAuthor :many
+SELECT c.id, c.content_type, c.title, c.slug, c.body_html, c.canonical_url,
+       c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
+FROM contents c
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
+WHERE c.author_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.is_pinned = true
+  AND c.content_type = ANY($2::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT $3
+`
+
+type ListFeaturedFederatableContentByAuthorParams struct {
+	AuthorID     pgtype.UUID `json:"author_id"`
+	ContentTypes []string    `json:"content_types"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+type ListFeaturedFederatableContentByAuthorRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	BodyHtml        string             `json:"body_html"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	FeaturedBucket  *string            `json:"featured_bucket"`
+	FeaturedPath    *string            `json:"featured_path"`
+	FeaturedMime    *string            `json:"featured_mime"`
+	HeaderBucket    *string            `json:"header_bucket"`
+	HeaderPath      *string            `json:"header_path"`
+	HeaderMime      *string            `json:"header_mime"`
+}
+
+// featured collection source rows (§126 M4): the member's pinned
+// federatable contents — the outbox eligibility predicate plus is_pinned.
+// Column list mirrors ListFederatableContentByAuthor so objectDocument
+// renders both identically.
+func (q *Queries) ListFeaturedFederatableContentByAuthor(ctx context.Context, arg ListFeaturedFederatableContentByAuthorParams) ([]ListFeaturedFederatableContentByAuthorRow, error) {
+	rows, err := q.db.Query(ctx, listFeaturedFederatableContentByAuthor, arg.AuthorID, arg.ContentTypes, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeaturedFederatableContentByAuthorRow
+	for rows.Next() {
+		var i ListFeaturedFederatableContentByAuthorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.BodyHtml,
+			&i.CanonicalUrl,
+			&i.FeaturedImageID,
+			&i.HeaderImageID,
+			&i.PublishedAt,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.FeaturedBucket,
+			&i.FeaturedPath,
+			&i.FeaturedMime,
+			&i.HeaderBucket,
+			&i.HeaderPath,
+			&i.HeaderMime,
 		); err != nil {
 			return nil, err
 		}
@@ -2631,6 +2778,56 @@ func (q *Queries) RemoveRemoteReaction(ctx context.Context, arg RemoveRemoteReac
 		arg.RemoteActorID,
 		arg.ReactionKey,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const repointFederationFollowsToRemoteActor = `-- name: RepointFederationFollowsToRemoteActor :execrows
+UPDATE federation_follows ff SET remote_actor_id = $1, updated_at = now()
+WHERE ff.remote_actor_id = $2
+  AND NOT EXISTS (SELECT 1 FROM federation_follows dup
+                  WHERE dup.local_actor_id = ff.local_actor_id
+                    AND dup.remote_actor_id = $1)
+`
+
+type RepointFederationFollowsToRemoteActorParams struct {
+	NewRemoteActorID pgtype.UUID `json:"new_remote_actor_id"`
+	OldRemoteActorID pgtype.UUID `json:"old_remote_actor_id"`
+}
+
+// §126 M4 Move{actor→target}: every edge that does not already exist on
+// the new actor rebinds to it. Colliding rows (the member was followed
+// from BOTH accounts pre-move) stay on the old id — the caller undoes
+// them via UndoFederationFollowsByRemoteActor so the new-actor edge wins.
+func (q *Queries) RepointFederationFollowsToRemoteActor(ctx context.Context, arg RepointFederationFollowsToRemoteActorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, repointFederationFollowsToRemoteActor, arg.NewRemoteActorID, arg.OldRemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const repointRemoteFollowsByActor = `-- name: RepointRemoteFollowsByActor :execrows
+UPDATE follows f SET follower_remote_actor_id = $1
+WHERE f.follower_remote_actor_id = $2
+  AND NOT EXISTS (SELECT 1 FROM follows dup
+                  WHERE dup.follower_remote_actor_id = $1
+                    AND dup.entity_type = f.entity_type
+                    AND dup.entity_id = f.entity_id)
+`
+
+type RepointRemoteFollowsByActorParams struct {
+	NewRemoteActorID pgtype.UUID `json:"new_remote_actor_id"`
+	OldRemoteActorID pgtype.UUID `json:"old_remote_actor_id"`
+}
+
+// follows provenance mirror of the repoint above — same collision rule
+// on the partial-unique (follower_remote_actor_id, entity_type,
+// entity_id) index; stragglers delete via DeleteDuplicateRemoteFollowsByActor.
+func (q *Queries) RepointRemoteFollowsByActor(ctx context.Context, arg RepointRemoteFollowsByActorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, repointRemoteFollowsByActor, arg.NewRemoteActorID, arg.OldRemoteActorID)
 	if err != nil {
 		return 0, err
 	}

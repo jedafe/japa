@@ -107,6 +107,25 @@ func (s *Store) countFederatableContent(ctx context.Context, authorID pgtype.UUI
 	})
 }
 
+// featuredContent is the is_pinned-gated slice of the outbox predicate —
+// the §126 M4 featured collection source.
+func (s *Store) featuredContent(ctx context.Context, authorID pgtype.UUID, types []string, limit int32) ([]gen.ListFeaturedFederatableContentByAuthorRow, error) {
+	return s.read.ListFeaturedFederatableContentByAuthor(ctx, gen.ListFeaturedFederatableContentByAuthorParams{
+		AuthorID:     authorID,
+		ContentTypes: types,
+		PageLimit:    limit,
+	})
+}
+
+// actorFederatedTags lists the hashtags a member uses across their
+// federatable contents — the §126 M4 featuredTags collection source.
+func (s *Store) actorFederatedTags(ctx context.Context, authorID pgtype.UUID, types []string) ([]gen.ListActorFederatedTagsRow, error) {
+	return s.read.ListActorFederatedTags(ctx, gen.ListActorFederatedTagsParams{
+		AuthorID:     authorID,
+		ContentTypes: types,
+	})
+}
+
 func (s *Store) federatableContentByID(ctx context.Context, id pgtype.UUID, types []string) (gen.GetFederatableContentByIDRow, error) {
 	return s.read.GetFederatableContentByID(ctx, gen.GetFederatableContentByIDParams{
 		ID:           id,

@@ -15,26 +15,31 @@ import (
 // remote implementations reject unexpected nulls.
 
 // webfingerJRD builds the WebFinger JRD for acct:{username}@{domain}.
-// The OStatus subscribe template is deliberately omitted until the apex
-// has an /authorize_interaction page (M2+) — emitting a template that
-// resolves to 404 is worse than none; remote follow still works via the
-// follower's own instance UI.
-func webfingerJRD(username, domain, actorURL, profileURL string) map[string]any {
+// subscribeTemplate is the OStatus remote-follow template link
+// ({site}/authorize_interaction?uri={uri}) — empty omits it.
+func webfingerJRD(username, domain, actorURL, profileURL, subscribeTemplate string) map[string]any {
+	links := []any{
+		map[string]any{
+			"rel":  "self",
+			"type": "application/activity+json",
+			"href": actorURL,
+		},
+		map[string]any{
+			"rel":  "http://webfinger.net/rel/profile-page",
+			"type": "text/html",
+			"href": profileURL,
+		},
+	}
+	if subscribeTemplate != "" {
+		links = append(links, map[string]any{
+			"rel":      "http://ostatus.org/schema/1.0/subscribe",
+			"template": subscribeTemplate,
+		})
+	}
 	return map[string]any{
 		"subject": fmt.Sprintf("acct:%s@%s", username, domain),
 		"aliases": []string{actorURL, profileURL},
-		"links": []any{
-			map[string]any{
-				"rel":  "self",
-				"type": "application/activity+json",
-				"href": actorURL,
-			},
-			map[string]any{
-				"rel":  "http://webfinger.net/rel/profile-page",
-				"type": "text/html",
-				"href": profileURL,
-			},
-		},
+		"links":   links,
 	}
 }
 
@@ -52,6 +57,10 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 		"outbox":                    p.OutboxUrl,
 		"followers":                 p.FollowersUrl,
 		"following":                 p.FollowingUrl,
+		// §126 M4: pinned-content + hashtag collections remote profile
+		// surfaces walk (Mastodon-compatible URLs).
+		"featured":     p.ActorUrl + "/collections/featured",
+		"featuredTags": p.ActorUrl + "/collections/tags",
 		"publicKey": map[string]any{
 			"id":           p.PublicKeyID,
 			"owner":        p.ActorUrl,

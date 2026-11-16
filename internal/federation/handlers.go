@@ -181,6 +181,34 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
 }
 
+// GetFeatured serves GET /federation/actors/{username}/collections/featured
+// — the member's pinned federatable contents (§126 M4).
+func (h *Handlers) GetFeatured(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.Featured(r.Context(), chi.URLParam(r, "username"))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetFeaturedTags serves GET /federation/actors/{username}/collections/tags
+// — the hashtags the member uses across their federatable contents (§126 M4).
+func (h *Handlers) GetFeaturedTags(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.FeaturedTags(r.Context(), chi.URLParam(r, "username"))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
 // GetObject serves GET /federation/objects/contents/{id}.
 func (h *Handlers) GetObject(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeFetch(w, r) {

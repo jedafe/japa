@@ -330,18 +330,31 @@ func TestParseSignatureHeaderQuotedCommas(t *testing.T) {
 func TestWebfingerJRD(t *testing.T) {
 	doc := webfingerJRD("alice", "japa.to",
 		"https://api.japa.to/federation/actors/alice",
-		"https://japa.to/u/alice")
+		"https://japa.to/u/alice",
+		"https://japa.to/authorize_interaction?uri={uri}")
 
 	if doc["subject"] != "acct:alice@japa.to" {
 		t.Errorf("subject: %v", doc["subject"])
 	}
 	links, ok := doc["links"].([]any)
-	if !ok || len(links) != 2 {
-		t.Fatalf("expected 2 links, got %v", doc["links"])
+	if !ok || len(links) != 3 {
+		t.Fatalf("expected 3 links, got %v", doc["links"])
 	}
 	self := links[0].(map[string]any)
 	if self["rel"] != "self" || self["type"] != "application/activity+json" {
 		t.Errorf("self link malformed: %v", self)
+	}
+	sub := links[2].(map[string]any)
+	if sub["rel"] != "http://ostatus.org/schema/1.0/subscribe" ||
+		sub["template"] != "https://japa.to/authorize_interaction?uri={uri}" {
+		t.Errorf("subscribe template malformed: %v", sub)
+	}
+
+	// Empty template omits the link — no dangling 404 when the apex
+	// page can't be addressed.
+	bare := webfingerJRD("alice", "japa.to", "u", "p", "")
+	if l := bare["links"].([]any); len(l) != 2 {
+		t.Errorf("empty template should emit 2 links, got %v", l)
 	}
 }
 
