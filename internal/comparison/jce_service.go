@@ -57,9 +57,9 @@ type CreateJCEComparisonInput struct {
 	// Sub-spec 6: dimension pool picks — mutually exclusive with Dimensions
 	// and with each other. FieldIDs selects individual custom_fields across
 	// the type's pool; GroupIDs selects whole pool groups.
-	FieldIDs   []string
-	GroupIDs   []string
-	Config     []byte // JSON metadata config
+	FieldIDs []string
+	GroupIDs []string
+	Config   []byte // JSON metadata config
 	// Optional journey targeting for the backing content row — describes the
 	// journey the comparison covers, not the author's (§14 Global Template
 	// Literals / §71).
@@ -241,10 +241,12 @@ func (s *Service) createJCEContentAndMetadata(
 		status = content.StatusDraft
 	}
 
-	var seoIndexable bool
-	if depth == DepthDetailed {
-		seoIndexable = visibility == content.VisibilityPublic && status == content.StatusPublished
-	}
+	// §43: seo_indexable is derived, not toggled — detailed depth +
+	// published + public + a body that meets the comparison word gate.
+	// Quick comparisons fail the depth check by construction.
+	seoIndexable := bots.ComparisonSeoIndexable(
+		depth, status, visibility,
+		len(strings.Fields(input.Body)), s.comparisonMinWords(ctx))
 
 	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, content.CreateContentInput{
 		AuthorID:      userID,
@@ -977,10 +979,17 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, userID pgtype.UUI
 		status = content.StatusDraft
 	}
 
-	// Quick comparisons are never indexable; detailed ones are indexable only when public and published.
-	indexable := metadata.Depth == DepthDetailed &&
-		visibility == content.VisibilityPublic &&
-		status == content.StatusPublished
+	// §43: quick comparisons are never indexable; detailed ones only when
+	// public + published with enough body words to pass the comparison word
+	// gate. An omitted body preserves the stored one — the word gate counts
+	// the effective body, not the empty PATCH payload.
+	body := input.Body
+	if body == "" {
+		body = existing.Body
+	}
+	indexable := bots.ComparisonSeoIndexable(
+		metadata.Depth, status, visibility,
+		len(strings.Fields(body)), s.comparisonMinWords(ctx))
 	seoIndexable := &indexable
 
 	_, uerr := s.contentSvc.UpdateContent(ctx, id, userID, content.UpdateContentInput{
@@ -1070,11 +1079,12 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, userID pgtype.UU
 
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
 		newContent, newMetadata, err := s.createJCEContentAndMetadata(ctx, q, userID, CreateJCEComparisonInput{
-			Title:   existing.Content.Title,
-			Body:    existing.Content.Body,
-			SpaceID: existing.Content.SpaceID,
-			TypeID:  typeID,
-			Depth:   DepthDetailed,
+			Title:      existing.Content.Title,
+			Body:       existing.Content.Body,
+			SpaceID:    existing.Content.SpaceID,
+			TypeID:     typeID,
+			Depth:      DepthDetailed,
+			Visibility: content.VisibilityPublic,
 		})
 		if err != nil {
 			return JCEComparisonResult{}, fmt.Errorf("creating detailed comparison: %w", err)
@@ -1388,6 +1398,17 @@ func (s *Service) GetJCEComparisonPage(ctx context.Context, idOrSlug string) (JC
 	return JCEComparisonPage{Comparison: cmp, Matrix: matrix, Indexable: s.comparisonIndexable(ctx, contentRow, metadata)}, nil
 }
 
+// comparisonMinWords reads the §43 comparison word-gate threshold from
+// seo.sitemap.comparison_min_words, falling back to the spec default when
+// the settings service is unwired.
+func (s *Service) comparisonMinWords(ctx context.Context) int {
+	def := bots.DefaultSitemapQualityConfig().ComparisonMinWords
+	if s.settingsSvc == nil {
+		return def
+	}
+	return s.settingsSvc.GetIntOr(ctx, "seo.sitemap.comparison_min_words", def)
+}
+
 // comparisonIndexable applies the §43 quality gate to a resolved comparison:
 // only promoted/detailed comparisons with published+public status,
 // seo_indexable=true, and enough body words qualify. Quick comparisons are
@@ -1398,9 +1419,7 @@ func (s *Service) comparisonIndexable(ctx context.Context, c gen.GetComparisonBy
 	}
 
 	cfg := bots.DefaultSitemapQualityConfig()
-	if s.settingsSvc != nil {
-		cfg.ComparisonMinWords = s.settingsSvc.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-	}
+	cfg.ComparisonMinWords = s.comparisonMinWords(ctx)
 
 	return bots.IsContentIndexableByType(bots.ContentIndexableInput{
 		ContentType:  "comparison",

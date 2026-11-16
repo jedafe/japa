@@ -676,6 +676,7 @@ RETURNING id, author_id, organization_id, space_id, content_type, title, slug, b
 -- name: UpdateContentStatus :one
 UPDATE contents
 SET status = @status, updated_at = now(),
+ seo_indexable = COALESCE(sqlc.narg(seo_indexable), seo_indexable),
  published_at = CASE WHEN @status = 'published' AND published_at IS NULL THEN now() ELSE published_at END
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,

@@ -262,6 +262,48 @@ func TestIsContentIndexableByType(t *testing.T) {
 	}
 }
 
+func TestComparisonSeoIndexable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		depth      string
+		status     string
+		visibility string
+		wordCount  int
+		minWords   int
+		want       bool
+	}{
+		{"detailed published public above gate", "detailed", "published", "public", 600, 500, true},
+		{"exact threshold counts", "detailed", "published", "public", 500, 500, true},
+		{"below word gate", "detailed", "published", "public", 499, 500, false},
+		{"zero words", "detailed", "published", "public", 0, 500, false},
+		{"quick depth never indexable", "quick", "published", "public", 1000, 500, false},
+		{"draft not indexable", "detailed", "draft", "public", 1000, 500, false},
+		{"private not indexable", "detailed", "published", "private", 1000, 500, false},
+		{"members not indexable", "detailed", "published", "members", 1000, 500, false},
+		{"in_review not indexable", "detailed", "in_review", "public", 1000, 500, false},
+		{"archived not indexable", "detailed", "archived", "public", 1000, 500, false},
+		{"zero min falls back to default 500", "detailed", "published", "public", 400, 0, false},
+		{"zero min falls back, above default", "detailed", "published", "public", 600, 0, true},
+		{"negative min falls back to default", "detailed", "published", "public", 600, -1, true},
+		{"custom threshold respected", "detailed", "published", "public", 300, 250, true},
+		{"custom threshold below", "detailed", "published", "public", 200, 250, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := ComparisonSeoIndexable(tt.depth, tt.status, tt.visibility, tt.wordCount, tt.minWords)
+			if got != tt.want {
+				t.Errorf("ComparisonSeoIndexable(%q, %q, %q, %d, %d) = %v, want %v",
+					tt.depth, tt.status, tt.visibility, tt.wordCount, tt.minWords, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultSitemapQualityConfig(t *testing.T) {
 	t.Parallel()
 

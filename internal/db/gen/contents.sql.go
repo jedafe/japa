@@ -5802,8 +5802,9 @@ func (q *Queries) UpdateContentIntelSourceID(ctx context.Context, arg UpdateCont
 const updateContentStatus = `-- name: UpdateContentStatus :one
 UPDATE contents
 SET status = $1, updated_at = now(),
+ seo_indexable = COALESCE($2, seo_indexable),
  published_at = CASE WHEN $1 = 'published' AND published_at IS NULL THEN now() ELSE published_at END
-WHERE id = $2 AND deleted_at IS NULL
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
  canonical_url, meta_title, meta_description, og_image_url, seo_indexable, federate_opt_out,
@@ -5814,8 +5815,9 @@ RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
 `
 
 type UpdateContentStatusParams struct {
-	Status string      `json:"status"`
-	ID     pgtype.UUID `json:"id"`
+	Status       string      `json:"status"`
+	SeoIndexable *bool       `json:"seo_indexable"`
+	ID           pgtype.UUID `json:"id"`
 }
 
 type UpdateContentStatusRow struct {
@@ -5859,7 +5861,7 @@ type UpdateContentStatusRow struct {
 }
 
 func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (UpdateContentStatusRow, error) {
-	row := q.db.QueryRow(ctx, updateContentStatus, arg.Status, arg.ID)
+	row := q.db.QueryRow(ctx, updateContentStatus, arg.Status, arg.SeoIndexable, arg.ID)
 	var i UpdateContentStatusRow
 	err := row.Scan(
 		&i.ID,

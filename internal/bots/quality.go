@@ -261,6 +261,24 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 	return true
 }
 
+// ComparisonSeoIndexable derives the stored contents.seo_indexable flag for
+// a comparison row: detailed depth + published + public + body word count
+// meeting seo.sitemap.comparison_min_words (§43 quality gate). Every write
+// path that can change one of those inputs derives the same value so the
+// stored flag always matches the page-level indexable verdict. A minWords
+// <= 0 falls back to the spec default, matching IsContentIndexableByType.
+func ComparisonSeoIndexable(depth, status, visibility string, wordCount, minWords int) bool {
+	if depth != "detailed" || status != "published" || visibility != "public" {
+		return false
+	}
+
+	if minWords <= 0 {
+		minWords = DefaultSitemapQualityConfig().ComparisonMinWords
+	}
+
+	return wordCount >= minWords
+}
+
 // intSettingsReader is the subset of *config.Settings needed to read the
 // seo.sitemap.* thresholds (GetIntOr). Declared locally so the bots package
 // does not import config — *config.Settings satisfies it structurally.

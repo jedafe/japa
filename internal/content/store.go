@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/atproto"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -1488,6 +1489,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		input.BodyHtml = SanitizeHTML(RenderBodyHTML(input.Body))
 	}
 
+	// §30/§43: comparison rows derive seo_indexable — detailed depth +
+	// published + public + enough body words to pass the comparison word
+	// gate. Deriving it here keeps the stored flag correct no matter which
+	// write path (JCE update, studio autosave PATCH) lands the row.
+	if existing.ContentType == TypeComparison {
+		input.SeoIndexable = s.comparisonSeoIndexable(ctx, id, input.Status, input.Visibility, input.Body)
+	}
+
 	// Post-as-org (ADR-062): attributing an org on this post requires the
 	// editor be an owner/admin/editor of that org. Symmetric with CreateContent.
 	// The guard only runs when the input sets an org — OrganizationID persists
@@ -2031,10 +2040,17 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		}
 	}
 
-	content, err := s.write.UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
-		Status: status,
-		ID:     id,
-	})
+	params := gen.UpdateContentStatusParams{Status: status, ID: id}
+
+	// §30/§43: comparison rows derive seo_indexable from depth + status +
+	// visibility + the body word gate. Status transitions (publish, archive)
+	// are inputs to that derivation, so the flag is recomputed here rather
+	// than left stale.
+	if row.ContentType == TypeComparison {
+		params.SeoIndexable = s.comparisonSeoIndexable(ctx, id, status, row.Visibility, row.Body)
+	}
+
+	content, err := s.write.UpdateContentStatus(ctx, params)
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("updating content status: %w", err)
 	}
@@ -2101,6 +2117,28 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 	}
 
 	return content, nil
+}
+
+// comparisonSeoIndexable derives the stored seo_indexable flag for a
+// comparison row: the JCE depth from comparison_content_metadata, the
+// effective status/visibility, and the body's word count against
+// seo.sitemap.comparison_min_words (§43). The same derivation runs on every
+// write path that can change one of its inputs so the flag cannot go stale.
+// A missing metadata row means the comparison was never JCE-registered —
+// treated as non-detailed (non-indexable), matching comparisonIndexable.
+func (s *Service) comparisonSeoIndexable(ctx context.Context, id pgtype.UUID, status, visibility, body string) *bool {
+	depth := ""
+	if meta, err := s.read.GetComparisonContentMetadata(ctx, id); err == nil {
+		depth = meta.Depth
+	}
+
+	minWords := bots.DefaultSitemapQualityConfig().ComparisonMinWords
+	if s.settings != nil {
+		minWords = s.settings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", minWords)
+	}
+
+	v := bots.ComparisonSeoIndexable(depth, status, visibility, len(strings.Fields(body)), minWords)
+	return &v
 }
 
 // emitAtprotoPublish enqueues the feed.post upsert for a publish/edit
