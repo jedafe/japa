@@ -2744,21 +2744,31 @@ func (q *Queries) SetFederationRelayStatusByActorURL(ctx context.Context, arg Se
 
 const setFederationRelayStatusByInbox = `-- name: SetFederationRelayStatusByInbox :exec
 UPDATE federation_relays SET status = $1, last_error = $2, updated_at = now()
-WHERE inbox_url = $3 AND status = 'accepted'
+WHERE inbox_url = $3
+  AND (status = 'accepted' OR (status = 'pending' AND follow_ap_id = $4))
 `
 
 type SetFederationRelayStatusByInboxParams struct {
-	Status    string  `json:"status"`
-	LastError *string `json:"last_error"`
-	InboxUrl  string  `json:"inbox_url"`
+	Status       string  `json:"status"`
+	LastError    *string `json:"last_error"`
+	InboxUrl     string  `json:"inbox_url"`
+	ActivityApID *string `json:"activity_ap_id"`
 }
 
 // Unreachable unwind — a delivery to the relay's inbox dead-lettered for
 // a remote-caused reason (inbox gone/refused, retry budget exhausted,
 // destination blocked). Fanout stops targeting it until an admin
-// resubscribes. Only live (accepted) rows transition.
+// resubscribes. Accepted rows unwind on ANY dead delivery to the
+// subscribed inbox; a pending row unwinds only when the dead delivery
+// is its own Follow — an unrelated sharedInbox refusal must not kill a
+// handshake whose Accept may still be in flight.
 func (q *Queries) SetFederationRelayStatusByInbox(ctx context.Context, arg SetFederationRelayStatusByInboxParams) error {
-	_, err := q.db.Exec(ctx, setFederationRelayStatusByInbox, arg.Status, arg.LastError, arg.InboxUrl)
+	_, err := q.db.Exec(ctx, setFederationRelayStatusByInbox,
+		arg.Status,
+		arg.LastError,
+		arg.InboxUrl,
+		arg.ActivityApID,
+	)
 	return err
 }
 

@@ -614,6 +614,14 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	if inbox == "" {
 		return gen.FederationRelay{}, fmt.Errorf("%w: relay actor advertises no inbox", ErrRemoteFetch)
 	}
+	// The inbox is remote-advertised data — an http/garbage URL can never
+	// take a signed delivery (deliverAP is https-only), so fail at
+	// subscribe rather than ledger a pending row that must dead-letter
+	// before an admin learns it can't work.
+	iu, ierr := url.Parse(inbox)
+	if ierr != nil || !strings.EqualFold(iu.Scheme, "https") || iu.Hostname() == "" {
+		return gen.FederationRelay{}, fmt.Errorf("%w: relay actor advertises unusable inbox", ErrRemoteFetch)
+	}
 	remote, err := s.upsertRemoteActor(ctx, actorURL, doc)
 	if err != nil {
 		return gen.FederationRelay{}, fmt.Errorf("federation: relay actor upsert: %w", err)
@@ -727,20 +735,23 @@ func (s *Service) isAcceptedRelay(ctx context.Context, actorURL string) bool {
 	return err == nil && relay.Status == "accepted"
 }
 
-// markRelayUnreachable unwinds an accepted relay whose inbox can no
-// longer be delivered to — the §126 "becomes unreachable" arm. Relay
+// markRelayUnreachable unwinds a live relay whose inbox can no longer
+// be delivered to — the §126 "becomes unreachable" arm. Relay
 // deliveries carry no remote_actor_id (reach expansion adds bare inbox
 // URLs), so the match is on the subscribed inbox_url — a sharedInbox
 // coalesces every subscription on a host anyway, so one dead inbox
-// means that host's relays are all unreachable. Best-effort: a missed
-// mark only means future fanout burns a few more retry budgets until an
-// admin resubscribes or a Delete{actor} lands.
-func (s *Service) markRelayUnreachable(ctx context.Context, inboxURL, reason string) {
-	if s.store == nil || inboxURL == "" {
+// means that host's relays are all unreachable. Pending rows unwind
+// only when the dead delivery is their own Follow (activityApID ==
+// follow_ap_id): a sharedInbox refusal on unrelated traffic must not
+// kill a handshake whose Accept may still be in flight. Best-effort: a
+// missed mark only means future fanout burns a few more retry budgets
+// until an admin resubscribes or a Delete{actor} lands.
+func (s *Service) markRelayUnreachable(ctx context.Context, row gen.FederationDelivery, reason string) {
+	if s.store == nil || row.InboxUrl == "" {
 		return
 	}
-	if err := s.store.markRelayFailedByInbox(ctx, inboxURL, reason); err != nil {
-		slog.Warn("federation: relay unreachable mark failed", "inbox", inboxURL, "error", err)
+	if err := s.store.markRelayFailedByInbox(ctx, row.InboxUrl, row.ActivityApID, reason); err != nil {
+		slog.Warn("federation: relay unreachable mark failed", "inbox", row.InboxUrl, "error", err)
 	}
 }
 

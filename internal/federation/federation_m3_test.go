@@ -510,8 +510,11 @@ func TestDBRelayInboxExpansion(t *testing.T) {
 }
 
 // TestDBRelayUnreachableMarksFailed — a delivery dead-lettered for a
-// remote-caused reason unwinds the accepted relay behind its inbox so
-// fanout stops targeting it (re-subscribe re-arms).
+// remote-caused reason unwinds the relay behind its inbox so fanout
+// stops targeting it (re-subscribe re-arms). Accepted rows unwind on
+// any dead delivery; a pending row unwinds only when the dead delivery
+// is its own Follow — unrelated sharedInbox traffic must not kill a
+// handshake in flight.
 func TestDBRelayUnreachableMarksFailed(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
@@ -529,64 +532,107 @@ func TestDBRelayUnreachableMarksFailed(t *testing.T) {
 	// An http inbox makes deliverAP's https-only guard fail the attempt
 	// at the transport layer — no remote needed to burn the budget.
 	inbox := "http://dead-relay.example/inbox"
-	followID := svc.apiBase() + "/federation/instance#relay-follow-dead"
-	relay, err := svc.store.upsertRelay(ctx, gen.UpsertFederationRelayParams{
-		ActorUrl:   "https://dead-relay.example/actor",
-		InboxUrl:   inbox,
-		Domain:     "dead-relay.example",
-		FollowApID: &followID,
-	})
-	if err != nil {
-		t.Fatalf("seed relay: %v", err)
+	seedRelay := func(actorURL, followID, status string) gen.FederationRelay {
+		relay, err := svc.store.upsertRelay(ctx, gen.UpsertFederationRelayParams{
+			ActorUrl: actorURL, InboxUrl: inbox, Domain: "dead-relay.example",
+			FollowApID: &followID,
+		})
+		if err != nil {
+			t.Fatalf("seed relay: %v", err)
+		}
+		if err := svc.store.write.SetFederationRelayStatus(ctx, gen.SetFederationRelayStatusParams{
+			ID: relay.ID, Status: status,
+		}); err != nil {
+			t.Fatalf("relay status: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_relays WHERE id = $1`, relay.ID)
+		})
+		return relay
 	}
-	if err := svc.store.write.SetFederationRelayStatus(ctx, gen.SetFederationRelayStatusParams{
-		ID: relay.ID, Status: "accepted",
-	}); err != nil {
-		t.Fatalf("relay status: %v", err)
+	seedDeadDelivery := func(apID string) pgtype.UUID {
+		row, err := svc.store.write.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+			ActivityApID: apID, ActivityType: "Create",
+			ActivityJson: []byte(`{"type":"Create"}`),
+			LocalActorID: signer.ID, InboxUrl: inbox,
+		})
+		if err != nil {
+			t.Fatalf("seed delivery: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE id = $1`, row.ID)
+		})
+		// One attempt shy of the retry ceiling — the next failure
+		// dead-letters the delivery AND runs the unwind check.
+		if _, err := d.Writer.Exec(ctx,
+			`UPDATE federation_deliveries SET attempts = 7 WHERE id = $1`, row.ID); err != nil {
+			t.Fatalf("attempts: %v", err)
+		}
+		return row.ID
 	}
-	t.Cleanup(func() {
-		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_relays WHERE id = $1`, relay.ID)
-	})
+	relayStatus := func(id pgtype.UUID) string {
+		var st string
+		if err := d.Reader.QueryRow(ctx,
+			`SELECT status FROM federation_relays WHERE id = $1`, id).Scan(&st); err != nil {
+			t.Fatalf("relay status: %v", err)
+		}
+		return st
+	}
+	ts := time.Now().UnixNano()
 
-	row, err := svc.store.write.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
-		ActivityApID: "https://api.test.dev/federation/objects/contents/dead-activity",
-		ActivityType: "Create",
-		ActivityJson: []byte(`{"type":"Create"}`),
-		LocalActorID: signer.ID,
-		InboxUrl:     inbox,
-	})
-	if err != nil {
-		t.Fatalf("seed delivery: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE id = $1`, row.ID)
-	})
-	// One attempt shy of the retry ceiling — the next failure must
-	// dead-letter the delivery AND unwind the subscription.
-	if _, err := d.Writer.Exec(ctx,
-		`UPDATE federation_deliveries SET attempts = 7 WHERE id = $1`, row.ID); err != nil {
-		t.Fatalf("attempts: %v", err)
-	}
-
-	if err := svc.Deliver(ctx, row.ID); err != nil {
+	// Accepted relay + dead fanout delivery → failed.
+	accepted := seedRelay(fmt.Sprintf("https://dead-relay.example/actor-%d", ts),
+		fmt.Sprintf("%s/federation/instance#relay-follow-%d", svc.apiBase(), ts), "accepted")
+	deliveryID := seedDeadDelivery(fmt.Sprintf("https://api.test.dev/federation/objects/contents/dead-%d", ts))
+	if err := svc.Deliver(ctx, deliveryID); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
-
 	var dst string
 	if err := d.Reader.QueryRow(ctx,
-		`SELECT status FROM federation_deliveries WHERE id = $1`, row.ID).Scan(&dst); err != nil {
+		`SELECT status FROM federation_deliveries WHERE id = $1`, deliveryID).Scan(&dst); err != nil {
 		t.Fatalf("delivery status: %v", err)
 	}
 	if dst != "dead" {
 		t.Fatalf("delivery status: %q", dst)
 	}
-	var rst string
-	if err := d.Reader.QueryRow(ctx,
-		`SELECT status FROM federation_relays WHERE id = $1`, relay.ID).Scan(&rst); err != nil {
-		t.Fatalf("relay status: %v", err)
+	if st := relayStatus(accepted.ID); st != "failed" {
+		t.Fatalf("accepted relay not unwound: %q", st)
 	}
-	if rst != "failed" {
-		t.Fatalf("relay not unwound: %q", rst)
+
+	// Pending relay + dead UNRELATED delivery → untouched (the Follow is
+	// still in flight — a sharedInbox refusal can't kill the handshake).
+	pending := seedRelay(fmt.Sprintf("https://dead-relay.example/actor-p%d", ts),
+		fmt.Sprintf("%s/federation/instance#relay-follow-p%d", svc.apiBase(), ts), "pending")
+	otherID := seedDeadDelivery(fmt.Sprintf("https://api.test.dev/federation/objects/contents/dead-p%d", ts))
+	if err := svc.Deliver(ctx, otherID); err != nil {
+		t.Fatalf("Deliver other: %v", err)
+	}
+	if st := relayStatus(pending.ID); st != "pending" {
+		t.Fatalf("pending relay unwound by unrelated delivery: %q", st)
+	}
+
+	// Pending relay + dead delivery of its OWN Follow → failed.
+	followID := fmt.Sprintf("%s/federation/instance#relay-follow-p%d", svc.apiBase(), ts)
+	followDelivery, err := svc.store.write.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+		ActivityApID: followID, ActivityType: "Follow",
+		ActivityJson: []byte(`{"type":"Follow"}`),
+		LocalActorID: signer.ID, InboxUrl: inbox,
+	})
+	if err != nil {
+		t.Fatalf("seed follow delivery: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_deliveries WHERE id = $1`, followDelivery.ID)
+	})
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE federation_deliveries SET attempts = 7 WHERE id = $1`, followDelivery.ID); err != nil {
+		t.Fatalf("attempts: %v", err)
+	}
+	if err := svc.Deliver(ctx, followDelivery.ID); err != nil {
+		t.Fatalf("Deliver follow: %v", err)
+	}
+	if st := relayStatus(pending.ID); st != "failed" {
+		t.Fatalf("pending relay not unwound by own dead Follow: %q", st)
 	}
 }
 

@@ -814,9 +814,13 @@ WHERE actor_url = @actor_url AND status = 'accepted';
 -- Unreachable unwind — a delivery to the relay's inbox dead-lettered for
 -- a remote-caused reason (inbox gone/refused, retry budget exhausted,
 -- destination blocked). Fanout stops targeting it until an admin
--- resubscribes. Only live (accepted) rows transition.
+-- resubscribes. Accepted rows unwind on ANY dead delivery to the
+-- subscribed inbox; a pending row unwinds only when the dead delivery
+-- is its own Follow — an unrelated sharedInbox refusal must not kill a
+-- handshake whose Accept may still be in flight.
 UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
-WHERE inbox_url = @inbox_url AND status = 'accepted';
+WHERE inbox_url = @inbox_url
+  AND (status = 'accepted' OR (status = 'pending' AND follow_ap_id = @activity_ap_id));
 
 -- name: DeleteFederationRelay :exec
 DELETE FROM federation_relays WHERE id = @id;
