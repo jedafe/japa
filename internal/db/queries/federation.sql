@@ -811,16 +811,19 @@ UPDATE federation_relays SET status = @status, last_error = @last_error, updated
 WHERE actor_url = @actor_url AND status = 'accepted';
 
 -- name: SetFederationRelayStatusByInbox :exec
--- Unreachable unwind — a delivery to the relay's inbox dead-lettered for
--- a remote-caused reason (inbox gone/refused, retry budget exhausted,
--- destination blocked). Fanout stops targeting it until an admin
--- resubscribes. Accepted rows unwind on ANY dead delivery to the
--- subscribed inbox; a pending row unwinds only when the dead delivery
--- is its own Follow — an unrelated sharedInbox refusal must not kill a
--- handshake whose Accept may still be in flight.
+-- Unreachable unwind — a delivery to the relay's inbox dead-lettered.
+-- Accepted rows unwind only on ENDPOINT-LEVEL causes (inbox 404/410,
+-- unusable advertised URL, retry budget exhausted, destination
+-- blocked): a remote that ANSWERED with a plain 4xx refused that
+-- particular POST — activity/signature-specific, not unreachable — so
+-- one malformed activity can't kill a live subscription. A pending row
+-- unwinds whenever its own Follow dead-letters (any definitive refusal
+-- is a failed handshake) but never on unrelated inbox traffic — a
+-- sharedInbox refusal must not kill a handshake in flight.
 UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()
 WHERE inbox_url = @inbox_url
-  AND (status = 'accepted' OR (status = 'pending' AND follow_ap_id = @activity_ap_id));
+  AND ((status = 'accepted' AND @endpoint_level::boolean)
+      OR (status = 'pending' AND follow_ap_id = @activity_ap_id));
 
 -- name: DeleteFederationRelay :exec
 DELETE FROM federation_relays WHERE id = @id;

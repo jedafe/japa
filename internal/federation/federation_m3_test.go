@@ -636,6 +636,77 @@ func TestDBRelayUnreachableMarksFailed(t *testing.T) {
 	}
 }
 
+// TestDBRelayUnwindEndpointGate — the mark query's cause gate:
+// accepted relays unwind only on endpoint-level dead letters (a plain
+// 4xx is the remote refusing one activity, not going away); pending
+// rows unwind whenever their own Follow dies but never on unrelated
+// inbox traffic.
+func TestDBRelayUnwindEndpointGate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := newFederationService(t, d)
+	ts := time.Now().UnixNano()
+
+	inbox := fmt.Sprintf("https://gate-relay-%d.example/inbox", ts)
+	followID := fmt.Sprintf("%s/federation/instance#relay-follow-g%d", svc.apiBase(), ts)
+	relay, err := svc.store.upsertRelay(ctx, gen.UpsertFederationRelayParams{
+		ActorUrl:   fmt.Sprintf("https://gate-relay-%d.example/actor", ts),
+		InboxUrl:   inbox,
+		Domain:     fmt.Sprintf("gate-relay-%d.example", ts),
+		FollowApID: &followID,
+	})
+	if err != nil {
+		t.Fatalf("seed relay: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM federation_relays WHERE id = $1`, relay.ID)
+	})
+	status := func() string {
+		var st string
+		if err := d.Reader.QueryRow(ctx,
+			`SELECT status FROM federation_relays WHERE id = $1`, relay.ID).Scan(&st); err != nil {
+			t.Fatalf("relay status: %v", err)
+		}
+		return st
+	}
+	setStatus := func(s string) {
+		if err := svc.store.write.SetFederationRelayStatus(ctx, gen.SetFederationRelayStatusParams{
+			ID: relay.ID, Status: s,
+		}); err != nil {
+			t.Fatalf("relay status: %v", err)
+		}
+	}
+	mark := func(apID, cause string, level bool) {
+		svc.markRelayUnreachable(ctx, gen.FederationDelivery{
+			InboxUrl: inbox, ActivityApID: apID,
+		}, cause, level)
+	}
+
+	// accepted + activity-level refusal (plain 4xx) → survives.
+	setStatus("accepted")
+	mark(fmt.Sprintf("https://api.test.dev/objects/%d", ts), "remote 422", false)
+	if st := status(); st != "accepted" {
+		t.Fatalf("accepted relay unwound by activity-level refusal: %q", st)
+	}
+	// accepted + endpoint-level dead letter → failed.
+	mark(fmt.Sprintf("https://api.test.dev/objects/%d", ts), "remote 410", true)
+	if st := status(); st != "failed" {
+		t.Fatalf("accepted relay not unwound by endpoint-level dead letter: %q", st)
+	}
+	// pending + unrelated dead delivery (even endpoint-level) → survives.
+	setStatus("pending")
+	mark(fmt.Sprintf("https://api.test.dev/objects/%d", ts), "remote 410", true)
+	if st := status(); st != "pending" {
+		t.Fatalf("pending relay unwound by unrelated inbox traffic: %q", st)
+	}
+	// pending + own Follow dead-letters — even a 4xx is a refused
+	// handshake → failed.
+	mark(followID, "remote 403", false)
+	if st := status(); st != "failed" {
+		t.Fatalf("pending relay not unwound by own refused Follow: %q", st)
+	}
+}
+
 func TestDBAuthorizedFetchGate(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

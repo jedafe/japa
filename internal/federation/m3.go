@@ -739,18 +739,22 @@ func (s *Service) isAcceptedRelay(ctx context.Context, actorURL string) bool {
 // be delivered to — the §126 "becomes unreachable" arm. Relay
 // deliveries carry no remote_actor_id (reach expansion adds bare inbox
 // URLs), so the match is on the subscribed inbox_url — a sharedInbox
-// coalesces every subscription on a host anyway, so one dead inbox
-// means that host's relays are all unreachable. Pending rows unwind
-// only when the dead delivery is their own Follow (activityApID ==
-// follow_ap_id): a sharedInbox refusal on unrelated traffic must not
-// kill a handshake whose Accept may still be in flight. Best-effort: a
-// missed mark only means future fanout burns a few more retry budgets
-// until an admin resubscribes or a Delete{actor} lands.
-func (s *Service) markRelayUnreachable(ctx context.Context, row gen.FederationDelivery, reason string) {
+// coalesces every subscription on a host anyway, so a dead shared
+// endpoint marks all of the host's relays (all are genuinely
+// undeliverable there). endpointLevel distinguishes causes: only
+// endpoint-level dead letters (inbox gone, unusable URL, exhausted
+// retries, blocked destination) unwind an accepted row — a plain 4xx
+// is the remote refusing THAT activity, not going away. Pending rows
+// unwind whenever their own Follow dead-letters (activityApID ==
+// follow_ap_id — a refused handshake is a failed handshake) but never
+// on unrelated inbox traffic. Best-effort: a missed mark only means
+// future fanout burns a few more retry budgets until an admin
+// resubscribes or a Delete{actor} lands.
+func (s *Service) markRelayUnreachable(ctx context.Context, row gen.FederationDelivery, reason string, endpointLevel bool) {
 	if s.store == nil || row.InboxUrl == "" {
 		return
 	}
-	if err := s.store.markRelayFailedByInbox(ctx, row.InboxUrl, row.ActivityApID, reason); err != nil {
+	if err := s.store.markRelayFailedByInbox(ctx, row.InboxUrl, row.ActivityApID, reason, endpointLevel); err != nil {
 		slog.Warn("federation: relay unreachable mark failed", "inbox", row.InboxUrl, "error", err)
 	}
 }

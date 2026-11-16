@@ -464,7 +464,7 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 	// Instance gate re-checked at send time — a domain blocked between
 	// fanout and delivery must not receive the POST.
 	if u, uerr := url.Parse(row.InboxUrl); uerr != nil || !s.instanceAllowed(ctx, u.Hostname()) {
-		s.markRelayUnreachable(ctx, row, "destination instance blocked")
+		s.markRelayUnreachable(ctx, row, "destination instance blocked", true)
 		return s.stampDelivery(ctx, row, "dead", "destination instance blocked")
 	}
 
@@ -485,7 +485,7 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 	if err != nil {
 		// The inbox URL is remote-advertised data — an inbox no signed
 		// request can even target is unreachable by definition.
-		s.markRelayUnreachable(ctx, row, "bad inbox url")
+		s.markRelayUnreachable(ctx, row, "bad inbox url", true)
 		return s.stampDelivery(ctx, row, "dead", "bad inbox url")
 	}
 	req.Header.Set("Content-Type", "application/activity+json")
@@ -505,15 +505,18 @@ func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDeliver
 		return s.stampDelivery(ctx, row, "delivered", "")
 	case resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound:
 		// Remote account/instance removed — retrying can never succeed.
-		s.markRelayUnreachable(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode))
+		s.markRelayUnreachable(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode), true)
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))
 	case resp.StatusCode == http.StatusTooManyRequests:
 		// A rate-limited inbox is transient — the ledger's backoff retries
 		// later rather than dead-lettering on one throttled attempt.
 		return s.failDelivery(ctx, row, "remote 429")
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
-		// 4xx is a refusal — dead-letter rather than burn the retry budget.
-		s.markRelayUnreachable(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode))
+		// 4xx is a refusal — dead-letter rather than burn the retry
+		// budget. NOT endpoint-level: the remote answered — it rejected
+		// this activity/signature, it didn't go away; a pending relay's
+		// own refused Follow still unwinds in the mark query.
+		s.markRelayUnreachable(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode), false)
 		return s.stampDelivery(ctx, row, "dead", fmt.Sprintf("remote %d", resp.StatusCode))
 	default:
 		return s.failDelivery(ctx, row, fmt.Sprintf("remote %d", resp.StatusCode))
@@ -530,7 +533,7 @@ func (s *Service) failDelivery(ctx context.Context, row gen.FederationDelivery, 
 	if int(attempts) >= s.deliveryMaxAttempts(ctx) {
 		// Retry budget exhausted — the remote was unreachable across the
 		// whole schedule; a relay subscription behind this inbox unwinds.
-		s.markRelayUnreachable(ctx, row, reason)
+		s.markRelayUnreachable(ctx, row, reason, true)
 		return s.stampDeliveryAttempts(ctx, row, "dead", reason, attempts, pgtype.Timestamptz{})
 	}
 	// Exponential backoff: 2m, 4m, 8m, … capped at 1h.

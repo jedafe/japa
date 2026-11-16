@@ -425,13 +425,15 @@ func (s *Store) relayByID(ctx context.Context, id pgtype.UUID) (gen.FederationRe
 }
 
 // markRelayFailedByInbox unwinds a live subscription whose delivery
-// target died — accepted rows on any dead delivery to the inbox,
-// pending rows only when the dead delivery is their own Follow
-// (activityApID == follow_ap_id) so a sharedInbox refusal on unrelated
-// traffic can't kill a handshake in flight.
-func (s *Store) markRelayFailedByInbox(ctx context.Context, inboxURL, activityApID, reason string) error {
+// target died — accepted rows only on endpoint-level causes (inbox
+// gone, unusable URL, exhausted retries, blocked destination); a plain
+// 4xx refusal is per-activity, not unreachability. Pending rows unwind
+// whenever their own Follow dead-letters (activityApID ==
+// follow_ap_id) but never on unrelated inbox traffic.
+func (s *Store) markRelayFailedByInbox(ctx context.Context, inboxURL, activityApID, reason string, endpointLevel bool) error {
 	return s.write.SetFederationRelayStatusByInbox(ctx, gen.SetFederationRelayStatusByInboxParams{
-		InboxUrl: inboxURL, ActivityApID: &activityApID, Status: "failed", LastError: &reason,
+		InboxUrl: inboxURL, ActivityApID: &activityApID,
+		Status: "failed", LastError: &reason, EndpointLevel: endpointLevel,
 	})
 }
 
