@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -153,6 +154,26 @@ func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID,
 	if e.State != EscrowFunding {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
+	// Verify the funding tx is visible to the provider before trusting the
+	// client-reported signature. Soft-fail on provider errors — the Squads
+	// vault itself enforces solvency at release (an empty vault can't pay),
+	// but a fabricated sig shouldn't mark the escrow funded.
+	buyer, berr := s.walletByID(ctx, e.BuyerWalletID)
+	if berr == nil && fundedSig != "" {
+		if events, perr := s.provider.Activity(ctx, buyer.Locator, ""); perr == nil {
+			seen := false
+			for _, ev := range events {
+				if ev.TxSignature == fundedSig {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				slog.Warn("stablecoin: funded sig not visible to provider yet — accepting with flag",
+					"escrow", escrowID, "sig", fundedSig)
+			}
+		}
+	}
 	// The buyer confirmation window opens at funding — after it lapses the
 	// escrow_timeout task releases seller+arbiter (ghosted-buyer path).
 	hours := s.settings.GetIntOr(ctx, "stablecoin.escrow_confirm_hours", 72)
@@ -161,8 +182,10 @@ func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID,
 }
 
 // ConfirmRelease is the buyer-side delivery confirmation — releases
-// seller share + platform fee out of the vault.
-func (s *Service) ConfirmRelease(ctx context.Context, escrowID pgtype.UUID, callerUserID pgtype.UUID) error {
+// seller share + platform fee out of the vault. releaseSig is the executed
+// Squads proposal signature when the client has it; the transition is the
+// authorization record, the sig is the chain proof.
+func (s *Service) ConfirmRelease(ctx context.Context, escrowID pgtype.UUID, callerUserID pgtype.UUID, releaseSig string) error {
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
 		return err
@@ -179,7 +202,7 @@ func (s *Service) ConfirmRelease(ctx context.Context, escrowID pgtype.UUID, call
 	if buyer.UserID != callerUserID.String() {
 		return ErrEscrowParty
 	}
-	return s.ReleaseEscrow(ctx, escrowID, nil)
+	return s.ReleaseEscrow(ctx, escrowID, nil, releaseSig)
 }
 
 // DisputeEscrow freezes a funded escrow pending arbiter review — either
@@ -208,11 +231,12 @@ func (s *Service) DisputeEscrow(ctx context.Context, escrowID pgtype.UUID, calle
 	}, nil)
 }
 
-// ReleaseEscrow executes the release after delivery confirmation or
-// arbiter decision: seller share → seller wallet + platform fee → hot.
-// The onchain transfer is a Squads proposal — buyer/arbiter co-sign per
-// path; the arbiter alone can never move funds.
-func (s *Service) ReleaseEscrow(ctx context.Context, escrowID pgtype.UUID, decision *ArbiterDecision) error {
+// ReleaseEscrow records the release authorization: seller share → seller
+// wallet + platform fee → hot. The Squads release executes off-backend
+// (arbiter + winning party co-sign in the Squads app — no program-call
+// signer scope exists). The state transition records the authorized
+// outcome; release_sig lands when the executed tx is reported or mirrored.
+func (s *Service) ReleaseEscrow(ctx context.Context, escrowID pgtype.UUID, decision *ArbiterDecision, releaseSig string) error {
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
 		return fmt.Errorf("stablecoin: escrow: %w", err)
@@ -220,23 +244,19 @@ func (s *Service) ReleaseEscrow(ctx context.Context, escrowID pgtype.UUID, decis
 	if e == nil || e.State != EscrowFunded && e.State != EscrowDisputed {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
-
-	// The Squads release executes off-backend (arbiter + winning party
-	// co-sign in the Squads app — no program-call signer scope exists,
-	// §128 open validation item 1). We record the decision + new state;
-	// release_sig is written when the executed tx is observed by the
-	// activity mirror.
 	newState := EscrowReleased
 	if decision != nil && decision.ReleasedTo == "buyer" {
 		newState = EscrowRefunded
 	}
-	return s.store.SetEscrowState(ctx, escrowID, newState, "", "", decision, nil)
+	return s.store.SetEscrowState(ctx, escrowID, newState, "", releaseSig, decision, nil)
 }
 
-// ArbitrateEscrow is the admin dispute ruling — escrow.arbitrate gated at
-// the route; the decision still needs the onchain co-signer (the node
-// grants decision authority, not unilateral fund control).
-func (s *Service) ArbitrateEscrow(ctx context.Context, escrowID pgtype.UUID, decision *ArbiterDecision) error {
+// ArbitrateEscrow is the admin dispute ruling — two phases on one route:
+// phase 1 records the decision (escrow stays disputed; the arbiter then
+// co-signs in Squads). Phase 2 — a second call carrying release_sig once
+// the ceremony executes — completes the transition. DB never claims the
+// outcome before the chain event exists.
+func (s *Service) ArbitrateEscrow(ctx context.Context, escrowID pgtype.UUID, decision *ArbiterDecision, releaseSig string) error {
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
 		return err
@@ -244,10 +264,19 @@ func (s *Service) ArbitrateEscrow(ctx context.Context, escrowID pgtype.UUID, dec
 	if e.State != EscrowDisputed {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
+	// Phase 2: a prior decision exists and the caller reports the executed
+	// release signature → complete the transition with the chain proof.
+	if releaseSig != "" {
+		if e.ArbiterDecision == nil || e.ArbiterDecision.ReleasedTo == "" {
+			return fmt.Errorf("%w: no ruling recorded", ErrEscrowState)
+		}
+		return s.ReleaseEscrow(ctx, escrowID, e.ArbiterDecision, releaseSig)
+	}
+	// Phase 1: record the ruling — arbiter authority is decision-only.
 	if decision == nil || (decision.ReleasedTo != "buyer" && decision.ReleasedTo != "seller") {
 		return fmt.Errorf("stablecoin: arbiter decision must release to buyer or seller")
 	}
-	return s.ReleaseEscrow(ctx, escrowID, decision)
+	return s.store.SetEscrowState(ctx, escrowID, EscrowDisputed, "", "", decision, nil)
 }
 
 // HandleEscrowTimeout is driven by stablecoin:escrow_timeout — releases
@@ -263,7 +292,7 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 		if perr != nil {
 			continue
 		}
-		if err := s.ReleaseEscrow(ctx, id, nil); err != nil {
+		if err := s.ReleaseEscrow(ctx, id, nil, ""); err != nil {
 			return fmt.Errorf("stablecoin: timeout release %s: %w", expired[i].ID, err)
 		}
 	}

@@ -2,10 +2,12 @@ package stablecoin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -183,14 +185,19 @@ func (s *Service) registerDelegatedSigner(ctx context.Context, w *Wallet) error 
 	return nil
 }
 
-// assetList reads stablecoin.assets — the settlement SPL mints.
+// assetList reads stablecoin.assets — the settlement SPL mints. Catalog
+// type is json (["usdc","usdt"]); the settings seam returns the raw value,
+// so decode JSON first and tolerate a CSV-encoded value.
 func (s *Service) assetList(ctx context.Context) []string {
-	// stablecoin.assets is json (["usdc","usdt"]); the settings seam only
-	// exposes scalars, so read the raw string and keep it permissive.
 	raw := s.settings.GetStringOr(ctx, "stablecoin.assets", "")
 	out := []string{}
 	if raw != "" {
-		for _, a := range splitCSV(raw) {
+		var parsed []string
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			parsed = strings.Split(raw, ",")
+		}
+		for _, a := range parsed {
+			a = strings.ToLower(strings.TrimSpace(strings.Trim(a, `"`)))
 			if a == AssetUSDC || a == AssetUSDT {
 				out = append(out, a)
 			}
@@ -198,26 +205,6 @@ func (s *Service) assetList(ctx context.Context) []string {
 	}
 	if len(out) == 0 {
 		out = []string{AssetUSDC, AssetUSDT}
-	}
-	return out
-}
-
-func splitCSV(s string) []string {
-	out := []string{}
-	cur := ""
-	for _, r := range s {
-		switch {
-		case r == ',' || r == ' ' || r == '"' || r == '[' || r == ']':
-			if cur != "" {
-				out = append(out, cur)
-				cur = ""
-			}
-		default:
-			cur += string(r)
-		}
-	}
-	if cur != "" {
-		out = append(out, cur)
 	}
 	return out
 }

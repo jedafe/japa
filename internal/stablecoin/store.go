@@ -298,6 +298,17 @@ func (st *Store) ListPendingActivity(ctx context.Context, limit int32) ([]Activi
 	return out, nil
 }
 
+// SumOutByAssetSince is the delegated-signer cap source — SQL aggregate
+// over confirmed+pending out-rows (pending counts: parallel ops race the
+// cap otherwise).
+func (st *Store) SumOutByAssetSince(ctx context.Context, walletID pgtype.UUID, asset string, since time.Time) (int64, error) {
+	return st.q.SumOutActivityByAssetSince(ctx, gen.SumOutActivityByAssetSinceParams{
+		WalletID: walletID,
+		Asset:    asset,
+		Since:    pgtype.Timestamptz{Time: since, Valid: true},
+	})
+}
+
 // SetActivityStatus flips a mirror row's status (pending → confirmed|failed).
 func (st *Store) SetActivityStatus(ctx context.Context, id pgtype.UUID, status string) error {
 	_, err := st.q.SetStablecoinActivityStatus(ctx, gen.SetStablecoinActivityStatusParams{Status: status, ID: id})

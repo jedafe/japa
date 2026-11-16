@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -99,26 +100,17 @@ func scopeCapFor(ds *DelegatedSigner, asset string) int64 {
 	return 0
 }
 
-// dailySettledMinor sums today's confirmed out-volume for the asset —
-// tips/purchases/withdrawals all count toward the scope window.
+// dailySettledMinor sums today's out-volume for the asset via SQL
+// aggregate — tips/purchases/withdrawals all count toward the scope
+// window. UTC-day truncation matches the provider's 24h spending-limit
+// interval closely enough for the UX pre-check (the chain enforces its
+// own window regardless).
 func (s *Service) dailySettledMinor(ctx context.Context, w *Wallet, asset string) (int64, error) {
 	wid, err := pgUUID(w.ID)
 	if err != nil {
 		return 0, err
 	}
-	rows, err := s.store.ListActivityByWallet(ctx, wid, 500, 0)
-	if err != nil {
-		return 0, err
-	}
-	cutoff := time.Now().UTC().Truncate(24 * time.Hour)
-	var sum int64
-	for _, a := range rows {
-		if a.Direction != "out" || a.Asset != asset || a.Status == "failed" || a.OccurredAt.Before(cutoff) {
-			continue
-		}
-		sum += a.AmountMinor
-	}
-	return sum, nil
+	return s.store.SumOutByAssetSince(ctx, wid, asset, time.Now().UTC().Truncate(24*time.Hour))
 }
 
 // BuildMemberWithdrawal returns the signable op for
@@ -141,6 +133,35 @@ func (s *Service) BuildMemberWithdrawal(ctx context.Context, userID pgtype.UUID,
 		in.FeeMinor = in.AmountMinor * int64(bps) / 10_000
 	}
 	return s.provider.BuildWithdrawal(ctx, w.Locator, in)
+}
+
+// collectWithdrawalFee settles the platform fee on a confirmed member
+// withdrawal. The member-signed send can't carry a second leg (only the
+// member signs), so the fee is collected via the delegated signer once the
+// withdrawal lands — scope-capped, counted toward the same daily cap.
+// Called by MirrorActivity on confirmed withdrawal rows.
+func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMinor int64, asset, txSig string) {
+	bps := s.settings.GetIntOr(ctx, "stablecoin.withdrawal_fee_bps", 100)
+	fee := amountMinor * int64(bps) / 10_000
+	if fee <= 0 || w.DelegatedSigner == nil {
+		return
+	}
+	hot, err := s.store.GetTreasuryWallet(ctx, w.Chain, TreasuryHot)
+	if err != nil {
+		slog.Warn("stablecoin: withdrawal fee — no hot treasury", "sig", txSig, "error", err)
+		return
+	}
+	if _, err := s.provider.Transfer(ctx, w.Locator, TransferInput{
+		Asset:         asset,
+		RecipientAddr: hot.Address,
+		AmountMinor:   fee,
+		Idempotency:   txSig + ":withdrawal_fee",
+		Reference:     "withdrawal_fee",
+	}); err != nil {
+		// Non-fatal: member funds already moved; reconcile surfaces the
+		// uncollected fee for recovery.
+		slog.Warn("stablecoin: withdrawal fee collection failed", "sig", txSig, "fee", fee, "error", err)
+	}
 }
 
 // RotateSignerScopes replaces an expiring delegated signer — scopes are

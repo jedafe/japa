@@ -286,7 +286,11 @@ func (h *Handlers) ConfirmRelease(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid escrow id")
 		return
 	}
-	if err := h.svc.ConfirmRelease(r.Context(), id, user.UserID); err != nil {
+	var req struct {
+		ReleaseSig string `json:"release_sig"` // executed Squads proposal sig, when known
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := h.svc.ConfirmRelease(r.Context(), id, user.UserID, req.ReleaseSig); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -411,8 +415,9 @@ func (h *Handlers) AdminDecideSweep(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminArbitrateEscrow handles POST /admin/escrows/{id}/arbitrate —
-// escrow.arbitrate gated. Decision authority only; execution needs an
-// onchain co-signer.
+// escrow.arbitrate gated. Two phases on one route: the ruling call records
+// the decision (escrow stays disputed), then a call carrying release_sig
+// completes the transition once the Squads ceremony executes.
 func (h *Handlers) AdminArbitrateEscrow(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -426,20 +431,28 @@ func (h *Handlers) AdminArbitrateEscrow(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		ReleasedTo string `json:"released_to"` // buyer | seller
 		Note       string `json:"note"`
+		ReleaseSig string `json:"release_sig"` // phase 2: executed Squads tx sig
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
-	decision := &ArbiterDecision{
-		ReleasedTo: req.ReleasedTo,
-		DecidedBy:  user.UserID.String(),
-		DecidedAt:  time.Now().UTC(),
-		Note:       req.Note,
+	var decision *ArbiterDecision
+	if req.ReleasedTo != "" {
+		decision = &ArbiterDecision{
+			ReleasedTo: req.ReleasedTo,
+			DecidedBy:  user.UserID.String(),
+			DecidedAt:  time.Now().UTC(),
+			Note:       req.Note,
+		}
 	}
-	if err := h.svc.ArbitrateEscrow(r.Context(), id, decision); err != nil {
+	if err := h.svc.ArbitrateEscrow(r.Context(), id, decision, req.ReleaseSig); err != nil {
 		handleError(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"released_to": req.ReleasedTo}})
+	state := EscrowDisputed
+	if req.ReleaseSig != "" {
+		state = EscrowReleased // or refunded — phase-2 completes the transition
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"released_to": req.ReleasedTo, "state": state}})
 }

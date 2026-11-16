@@ -82,6 +82,17 @@ SET status = @status
 WHERE id = @id
 RETURNING *;
 
+-- name: SumOutActivityByAssetSince :one
+-- Delegated-signer daily-cap check — confirmed+pending out-volume for one
+-- asset since a cutoff (pending counts: racing parallel ops must see the
+-- cap too).
+SELECT COALESCE(SUM(amount_minor), 0)::bigint FROM stablecoin_activity
+WHERE wallet_id = @wallet_id
+  AND direction = 'out'
+  AND asset = @asset
+  AND status != 'failed'
+  AND occurred_at >= @since;
+
 -- name: ListPendingStablecoinActivity :many
 -- Reconciliation sweep source — pending rows older than a webhook gap.
 SELECT * FROM stablecoin_activity

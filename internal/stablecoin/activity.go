@@ -139,7 +139,21 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		Status:             status,
 		OccurredAt:         occurred,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// Confirmed member-signed withdrawal → collect the platform fee via
+	// the delegated signer (the send couldn't carry a fee leg).
+	if status == "confirmed" && direction == "out" && kind == ActivityWithdrawal {
+		var w *Wallet
+		if wid, perr := pgUUID(walletID); perr == nil {
+			w, _ = s.store.GetWalletByID(ctx, wid)
+		}
+		if w != nil {
+			s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature)
+		}
+	}
+	return nil
 }
 
 // classifyEvent maps provider event types to mirror kind/direction.

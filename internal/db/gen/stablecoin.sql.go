@@ -1081,6 +1081,31 @@ func (q *Queries) SetStablecoinWalletStatus(ctx context.Context, arg SetStableco
 	return i, err
 }
 
+const sumOutActivityByAssetSince = `-- name: SumOutActivityByAssetSince :one
+SELECT COALESCE(SUM(amount_minor), 0)::bigint FROM stablecoin_activity
+WHERE wallet_id = $1
+  AND direction = 'out'
+  AND asset = $2
+  AND status != 'failed'
+  AND occurred_at >= $3
+`
+
+type SumOutActivityByAssetSinceParams struct {
+	WalletID pgtype.UUID        `json:"wallet_id"`
+	Asset    string             `json:"asset"`
+	Since    pgtype.Timestamptz `json:"since"`
+}
+
+// Delegated-signer daily-cap check — confirmed+pending out-volume for one
+// asset since a cutoff (pending counts: racing parallel ops must see the
+// cap too).
+func (q *Queries) SumOutActivityByAssetSince(ctx context.Context, arg SumOutActivityByAssetSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumOutActivityByAssetSince, arg.WalletID, arg.Asset, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const upsertTreasuryWallet = `-- name: UpsertTreasuryWallet :one
 
 INSERT INTO treasury_wallets (role, chain, address, locator, float_cap_minor)
