@@ -1509,7 +1509,20 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 		payload.TemplateSlug,
 	)
 	if err != nil {
-		slog.Warn("task:email:send: template not found, falling back to builtin/raw body", "template_slug", payload.TemplateSlug, "error", err)
+		return renderEmailTemplateRow(nil, err, payload, subject, body, isHTML)
+	}
+
+	return renderEmailTemplateRow(&tmpl, nil, payload, subject, body, isHTML)
+}
+
+// renderEmailTemplateRow renders a pre-fetched email_templates row (ADR-055).
+// Extracted from resolveEmailTemplate so bulk senders can fetch the template
+// row once instead of re-querying per recipient (audit NL-16).
+// fetchErr/tmpl mirror the GetEmailTemplateBySlug result: a nil row or an
+// error takes the builtin/raw fallback chain unchanged.
+func renderEmailTemplateRow(tmpl *gen.GetEmailTemplateBySlugRow, fetchErr error, payload emailSendPayload, subject, body string, isHTML bool) (string, string, bool) {
+	if fetchErr != nil || tmpl == nil {
+		slog.Warn("task:email:send: template not found, falling back to builtin/raw body", "template_slug", payload.TemplateSlug, "error", fetchErr)
 
 		// ADR-055 fallback chain: DB template → hardcoded constant →
 		// caller-supplied body. The builtin leg ensures known slugs
@@ -3982,7 +3995,21 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 	// When a specific user is targeted, send only to that user.
 	if payload.UserID != "" && payload.Email != "" {
-		return sendDigestToUser(ctx, payload.UserID, payload.Email, payload.Period)
+		period := payload.Period
+		if period == "" {
+			period = "daily"
+		}
+		slug := "daily_digest"
+		if period == "weekly" {
+			slug = "weekly_digest"
+		}
+		var tmpl *gen.GetEmailTemplateBySlugRow
+		tmplRow, tmplErr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, slug)
+		if tmplErr == nil {
+			tmpl = &tmplRow
+		}
+		r := digestRecipient{userID: payload.UserID, email: payload.Email}
+		return sendDigestToUser(ctx, r, period, tmpl, tmplErr, resolveBaseURL(ctx))
 	}
 
 	// Bulk cron path: when feature.newsletter is live, §62 owns digest
@@ -4011,10 +4038,25 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	// Hoist per-run constants out of the recipient loop (audit NL-16): the
+	// DB template row and site base URL are identical for every recipient —
+	// fetching them per user was 2 extra queries × N recipients.
+	slug := "daily_digest"
+	if period == "weekly" {
+		slug = "weekly_digest"
+	}
+
+	var tmpl *gen.GetEmailTemplateBySlugRow
+	tmplRow, tmplErr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, slug)
+	if tmplErr == nil {
+		tmpl = &tmplRow
+	}
+	siteBase := resolveBaseURL(ctx)
+
 	sentCount := 0
 
 	for _, u := range digestUsers {
-		if err := sendDigestToUser(ctx, u.userID, u.email, period); err != nil {
+		if err := sendDigestToUser(ctx, u, period, tmpl, tmplErr, siteBase); err != nil {
 			slog.Error("task:email:send_digest: failed for user", "user_id", u.userID, "error", err)
 			continue
 		}
@@ -4027,8 +4069,11 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// sendDigestToUser sends a digest email to a single user.
-func sendDigestToUser(ctx context.Context, userID, email, period string) error {
+// sendDigestToUser sends a digest email to a single user. tmpl/tmplErr are
+// the pre-fetched DB template row for the period (fetched once per bulk run);
+// siteBase is the platform base URL, likewise hoisted (audit NL-16).
+func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmpl *gen.GetEmailTemplateBySlugRow, tmplErr error, siteBase string) error {
+	userID, email := r.userID, r.email
 	if period == "" {
 		period = "daily"
 	}
@@ -4084,10 +4129,10 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 		return fmt.Errorf("rendering digest template: %w", err)
 	}
 
-	// ADR-055: resolve the daily_digest/weekly_digest DB template — the
-	// seeded layout wraps {{.DigestContent}} around the items list. The
-	// inline list above becomes the fallback body when the template is
-	// absent/inactive.
+	// ADR-055: render against the pre-fetched daily_digest/weekly_digest DB
+	// template — the seeded layout wraps {{.DigestContent}} around the items
+	// list. The inline list above becomes the fallback body when the
+	// template is absent/inactive. (Slug kept for fallback/builtin lookup.)
 	slug := "daily_digest"
 	if period == "weekly" {
 		slug = "weekly_digest"
@@ -4095,16 +4140,20 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 
 	templateVars := map[string]any{
 		"digest_content": body.String(),
-		"site_url":       resolveBaseURL(ctx),
+		"site_url":       siteBase,
 		"period":         period,
 	}
-	if uid, uerr := scanUUID(userID); uerr == nil && dbPool != nil {
+	// The bulk path supplies the username from the recipients join; a
+	// targeted single-user send may not — resolve lazily only then.
+	if r.username != "" {
+		templateVars["user_name"] = r.username
+	} else if dbPool != nil {
 		if u, gerr := gen.New(dbPool.Reader).GetUserByID(ctx, uid); gerr == nil {
 			templateVars["user_name"] = u.Username
 		}
 	}
 
-	subject, htmlBody, isHTML := resolveEmailTemplate(ctx, emailSendPayload{
+	subject, htmlBody, isHTML := renderEmailTemplateRow(tmpl, tmplErr, emailSendPayload{
 		TemplateSlug: slug,
 		TemplateData: templateVars,
 	}, fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)), body.String(), true)
@@ -5113,8 +5162,9 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 // digestRecipient pairs a user's ID with their email for personalized
 // digest delivery.
 type digestRecipient struct {
-	userID string
-	email  string
+	userID   string
+	email    string
+	username string
 }
 
 // listDigestSubscribedUsers returns verified, active users whose email is
@@ -5129,7 +5179,7 @@ func listDigestSubscribedUsers(ctx context.Context) ([]digestRecipient, error) {
 
 	out := make([]digestRecipient, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, digestRecipient{userID: r.UserID, email: r.Email})
+		out = append(out, digestRecipient{userID: r.UserID, email: r.Email, username: r.Username})
 	}
 
 	return out, nil

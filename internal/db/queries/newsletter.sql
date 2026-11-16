@@ -29,7 +29,7 @@ WHERE campaign_id = @campaign_id AND recipient = @recipient;
 -- raw SQL in internal/worker/handlers.go).
 
 -- name: ListDigestSubscribedUsers :many
-SELECT u.id::text AS user_id, u.email
+SELECT u.id::text AS user_id, u.email, u.username
 FROM users u
 JOIN newsletter_subscribers ns ON ns.email = u.email
 WHERE ns.status = 'subscribed' AND ns.digest_enabled = true

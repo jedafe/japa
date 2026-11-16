@@ -688,8 +688,7 @@ type DigestGenConfig struct {
 
 // AssembleDigestContent queries platform analytics and assembles the five
 // digest sections per §84 generation logic: top threads, new members,
-// upcoming events, and a featured story. The poll section is omitted (it
-// requires admin-seeded poll questions and is deferred to a future phase).
+// upcoming events, a featured story, and the most-voted open forum poll.
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // platform-wide digest is assembled.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
@@ -877,6 +876,52 @@ WHERE c.content_type = 'story'
 		}
 	}
 
+	// 5. Poll: the open forum poll with the most votes in the recent window
+	// (§84 item 5 — auto-suggested; admins can still hand-edit the content
+	// JSON to seed a different question). §42: skipped when the forum
+	// feature is off — polls live on forum threads.
+	if !gated["forum_thread"] {
+		var (
+			pollQ strings.Builder
+			pArgs []any
+		)
+
+		pollQ.WriteString(`
+SELECT p.question, ft.slug
+FROM forum_polls p
+JOIN forum_threads ft ON ft.id = p.thread_id
+LEFT JOIN forum_poll_votes v ON v.poll_id = p.id
+WHERE ft.deleted_at IS NULL
+  AND (p.close_at IS NULL OR p.close_at > now())
+  AND p.created_at >= now() - $1::interval
+`)
+		pArgs = append(pArgs, recent)
+
+		argIdx := 2
+		if spaceID.Valid {
+			pollQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
+
+			pArgs = append(pArgs, spaceID)
+			argIdx++
+		}
+
+		pollQ.WriteString(` GROUP BY p.id, p.question, ft.slug
+ORDER BY COUNT(v.id) DESC, p.created_at DESC
+LIMIT 1`)
+
+		var (
+			question string
+			slug     string
+		)
+
+		err := s.pool.Reader.QueryRow(ctx, pollQ.String(), pArgs...).Scan(&question, &slug)
+		if err == nil {
+			content.Poll = &DigestPoll{Question: question, URL: "/thread/" + slug}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("digest: assemble: poll: %w", err)
+		}
+	}
+
 	raw, err := json.Marshal(content)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: marshal content: %w", err)
@@ -885,41 +930,24 @@ WHERE c.content_type = 'story'
 	return raw, nil
 }
 
-// GetDigestSubscriberEmails returns the emails of all subscribers with
-// digest_enabled=true for the given platform. Used by SendEditionEmail to
-// dispatch the published digest (§84 email channel, reuses §62 Newsletter
-// subscriber infrastructure).
-func (s *Store) GetDigestSubscriberEmails(ctx context.Context) ([]string, error) {
+// GetDigestSubscriberEmailsPage returns one page of subscriber emails with
+// digest_enabled=true, ordered for stable pagination. SendEditionEmail
+// consumes pages directly so the full recipient list is never materialized
+// in memory (audit DG-11 — mirrors newsletter:send's paged fan-out).
+func (s *Store) GetDigestSubscriberEmailsPage(ctx context.Context, offset, limit int32) ([]string, error) {
 	q := gen.New(s.pool.Reader)
 
-	var emails []string
+	rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("digest: get subscribers page: %w", err)
+	}
 
-	page := int32(1)
-
-	const pageSize = int32(500)
-
-	for {
-		rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
-			PageOffset: (page - 1) * pageSize,
-			PageLimit:  pageSize,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("digest: get subscribers: %w", err)
-		}
-
-		if len(rows) == 0 {
-			break
-		}
-
-		for _, r := range rows {
-			emails = append(emails, r.Email)
-		}
-
-		if len(rows) < int(pageSize) {
-			break
-		}
-
-		page++
+	emails := make([]string, 0, len(rows))
+	for _, r := range rows {
+		emails = append(emails, r.Email)
 	}
 
 	return emails, nil

@@ -32,7 +32,7 @@ func (q *Queries) GetNewsletterCampaign(ctx context.Context, id pgtype.UUID) (Ge
 
 const listDigestSubscribedUsers = `-- name: ListDigestSubscribedUsers :many
 
-SELECT u.id::text AS user_id, u.email
+SELECT u.id::text AS user_id, u.email, u.username
 FROM users u
 JOIN newsletter_subscribers ns ON ns.email = u.email
 WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
@@ -40,8 +40,9 @@ WHERE ns.status = 'subscribed' AND ns.digest_enabled = true
 `
 
 type ListDigestSubscribedUsersRow struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID   string `json:"user_id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }
 
 // Digest subscriber population (§11 email:send_digest; BUG-028 — moved from
@@ -55,7 +56,7 @@ func (q *Queries) ListDigestSubscribedUsers(ctx context.Context) ([]ListDigestSu
 	var items []ListDigestSubscribedUsersRow
 	for rows.Next() {
 		var i ListDigestSubscribedUsersRow
-		if err := rows.Scan(&i.UserID, &i.Email); err != nil {
+		if err := rows.Scan(&i.UserID, &i.Email, &i.Username); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -146,17 +146,19 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 
 // Enabled reads the feature.newsletter flag (ADR-080, §62) — the same key the
 // route gate enforces. Falls back to the legacy newsletter.enabled
-// system_setting when no checker is injected; defaults to true.
+// system_setting when no checker is injected; the fallback defaults to
+// false — an unwired checker must fail closed (audit NL-I2), matching the
+// feature_flags registry default.
 func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
 		return s.checker.IsEnabled(ctx, "feature.newsletter")
 	}
 
 	if s.settings == nil {
-		return true
+		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, "newsletter.enabled", true)
+	return s.settings.GetBoolOr(ctx, "newsletter.enabled", false)
 }
 
 // SetValkey injects the Valkey client used for webhook idempotency keys

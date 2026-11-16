@@ -139,15 +139,9 @@
 		poll: t('digest.section_poll', 'Community poll')
 	});
 
-	/** Known section keys rendered in a stable order. */
-	const knownSections = ['top_threads', 'new_members', 'events', 'story', 'poll'] as const;
-
-	/** Extra unknown keys present in content (defensive — render generically). */
-	const extraSections = $derived(
-		content
-			? Object.keys(content).filter((k) => !knownSections.includes(k as (typeof knownSections)[number]))
-			: []
-	);
+	// Only the five §84 section keys render below — unknown content keys are
+	// dropped silently (audit DG-12): a public page must not dump arbitrary
+	// JSON payloads.
 </script>
 
 <svelte:head>
@@ -327,17 +321,8 @@
 					</section>
 				{/if}
 
-				{#each extraSections as key (key)}
-					{@const value = content[key]}
-					{#if value != null && !(Array.isArray(value) && value.length === 0)}
-						<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
-							<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-								{sectionTitles[key] ?? key}
-							</h2>
-							<pre class="overflow-x-auto text-xs text-[var(--color-text-subtle)]">{JSON.stringify(value, null, 2)}</pre>
-						</section>
-					{/if}
-				{/each}
+				<!-- Unknown content keys are dropped silently (audit DG-12) —
+				     only the five §84 sections render. -->
 			</div>
 		{/if}
 	{/if}

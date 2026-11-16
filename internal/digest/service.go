@@ -597,48 +597,63 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 			editionID, edition.Status)
 	}
 
-	subscribers, err := s.store.GetDigestSubscriberEmails(ctx)
-	if err != nil {
-		return fmt.Errorf("digest: send_email: list subscribers: %w", err)
-	}
-
-	if len(subscribers) == 0 {
-		slog.Info("task:digest:send_email: no subscribers, skipping")
-		return nil
-	}
-
 	baseURL := s.resolveBaseURL(ctx)
 	subject := s.emailSubject(ctx)
 	// §14: resolve {{...}} placeholders before HTML render so outbound
 	// email never contains raw literals.
 	htmlBody := renderDigestEmail(s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
 
-	sent, failed := 0, 0
+	// Page recipients like newsletter:send (audit DG-11) — the full
+	// digest-enabled list is never materialized at once.
+	const pageSize = int32(500)
+	sent, failed, total := 0, 0, 0
 
-	for _, recipient := range subscribers {
-		unsubURL, headers := s.unsubscribeLink(ctx, recipient, baseURL)
-		body := htmlBody
-
-		if unsubURL != "" {
-			body = appendUnsubscribeLinkToHTML(body, unsubURL)
+	for offset := int32(0); ; offset += pageSize {
+		page, err := s.store.GetDigestSubscriberEmailsPage(ctx, offset, pageSize)
+		if err != nil {
+			return fmt.Errorf("digest: send_email: list subscribers: %w", err)
 		}
 
-		if _, err := s.emailDispatcher.Dispatch(ctx, email.EmailRequest{
-			To:       recipient,
-			Subject:  subject,
-			Body:     body,
-			IsHTML:   true,
-			Category: "marketing",
-			Headers:  headers,
-		}); err != nil {
-			slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)
-
-			failed++
-
-			continue
+		if len(page) == 0 {
+			break
 		}
 
-		sent++
+		total += len(page)
+
+		for _, recipient := range page {
+			unsubURL, headers := s.unsubscribeLink(ctx, recipient, baseURL)
+			body := htmlBody
+
+			if unsubURL != "" {
+				body = appendUnsubscribeLinkToHTML(body, unsubURL)
+			}
+
+			if _, err := s.emailDispatcher.Dispatch(ctx, email.EmailRequest{
+				To:       recipient,
+				Subject:  subject,
+				Body:     body,
+				IsHTML:   true,
+				Category: "marketing",
+				Headers:  headers,
+			}); err != nil {
+				slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)
+
+				failed++
+
+				continue
+			}
+
+			sent++
+		}
+
+		if len(page) < int(pageSize) {
+			break
+		}
+	}
+
+	if total == 0 {
+		slog.Info("task:digest:send_email: no subscribers, skipping")
+		return nil
 	}
 
 	// Stamp email_sent only when at least one delivery succeeded — the admin
@@ -651,7 +666,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 		return fmt.Errorf("task:digest:send_email: all %d deliveries failed for edition %s", failed, editionID)
 	}
 
-	slog.Info("task:digest:send_email: complete", "edition_id", editionID, "subscribers", len(subscribers), "sent", sent, "failed", failed)
+	slog.Info("task:digest:send_email: complete", "edition_id", editionID, "subscribers", total, "sent", sent, "failed", failed)
 
 	return nil
 }
