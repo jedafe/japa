@@ -170,6 +170,8 @@ import (
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/stablecoin"
+	"github.com/jedafe/japa/internal/stablecoin/crossmint"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/webhooks"
@@ -1146,6 +1148,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Register wallet processor with worker for background tasks.
 	worker.RegisterWalletProcessor(walletService)
+
+	// Stablecoin wallet subsystem (Section 128 — non-custodial member
+	// USDC/USDT wallets on Solana). The Crossmint adapter is a stubbed
+	// seam pending commercial validations (§128 open items): every
+	// provider method returns ErrNotImplemented → 503 surfaces.
+	stablecoinService := stablecoin.NewService(
+		crossmint.NewClient(cfg.CrossmintAPIKey, cfg.CrossmintBaseURL, cfg.CrossmintWebhookSecret),
+		stablecoin.NewStore(gen.New(database.Writer)),
+		settingsService,
+		stablecoinVK{vk: vkClient.Redis()},
+	)
+	stablecoinHandlers := stablecoin.NewHandlers(stablecoinService)
+	worker.RegisterStablecoinProcessor(stablecoinService)
 
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
@@ -6130,6 +6145,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/tips/webhook/kofi/{secret}", tipsHandlers.HandleKofiWebhook)
 			})
 
+			// Stablecoin wallet routes (Section 128 — api-routes-catalog).
+			// Member surface is feature-gated + auth; the admin-side nodes
+			// (stablecoin.wallet.view, treasury.*, escrow.arbitrate) are
+			// registered in the catalog and mount when their handlers land.
+			// NOTE: the unified GET /me/wallet/activity feed merges into the
+			// existing walletHandlers.GetActivityEvents (§128.9) rather than
+			// mounting a second handler on the catalog path.
+			r.With(features.Gate(featureChecker, "feature.stablecoin_wallet")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet", stablecoinHandlers.GetWallet)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/me/funding/onramp-session", stablecoinHandlers.CreateOnrampSession)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/me/stablecoin-wallet/withdrawals", stablecoinHandlers.CreateWithdrawal)
+				r.With(mw.RateLimit(vkClient.Redis(), "webhook")).
+					Post("/webhooks/stablecoin/crossmint", stablecoinHandlers.ProviderWebhook)
+			})
+
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
@@ -10762,6 +10794,29 @@ type walletCacheInvalidator struct {
 func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context) error {
 	key := valkey.MustKey("wallet:currencies:")
 	return w.vk.Del(ctx, key).Err()
+}
+
+// stablecoinVK adapts valkeycompat.Cmdable to the stablecoin package's
+// narrow cache seam (killswitch flag, webhook dedupe, op idempotency).
+type stablecoinVK struct {
+	vk valkeycompat.Cmdable
+}
+
+func (s stablecoinVK) Exists(ctx context.Context, key string) (bool, error) {
+	n, err := s.vk.Exists(ctx, key).Result()
+	return n > 0, err
+}
+
+func (s stablecoinVK) SetNX(ctx context.Context, key, val string, ttlSeconds int) (bool, error) {
+	return s.vk.SetNX(ctx, key, val, time.Duration(ttlSeconds)*time.Second).Result()
+}
+
+func (s stablecoinVK) Get(ctx context.Context, key string) (string, error) {
+	return s.vk.Get(ctx, key).Result()
+}
+
+func (s stablecoinVK) Set(ctx context.Context, key, val string, ttlSeconds int) error {
+	return s.vk.Set(ctx, key, val, time.Duration(ttlSeconds)*time.Second).Err()
 }
 
 // achievementActivityEmitter adapts *wallet.Service to the

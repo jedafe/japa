@@ -98,6 +98,9 @@ type Config struct {
 	NOWPaymentsAPIKey            string // JC_NOWPAYMENTS_API_KEY — NOWPayments API key for invoice and payout calls
 	CircleAPIKey                 string // JC_CIRCLE_API_KEY — Circle business API key for USDC payouts (required idempotencyKey — SEC-W-009)
 	PaystackSecretKey            string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
+	CrossmintAPIKey              string // JC_CROSSMINT_API_KEY — Crossmint server-side API key for wallet/onramp/delegated-signer calls (§128 — SECRET)
+	CrossmintBaseURL             string // JC_CROSSMINT_BASE_URL — Crossmint API base (staging.crossmint.com vs production); empty = SDK default
+	CrossmintWebhookSecret       string // JC_CROSSMINT_WEBHOOK_SECRET — Crossmint inbound event signature secret (§128 webhook dedupe/verify)
 	XiaomiAPIKey                 string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
 	CORSOrigins                  string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
 	CookieDomain                 string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
@@ -210,6 +213,9 @@ func Load() (Config, error) {
 		NOWPaymentsAPIKey:            os.Getenv("JC_NOWPAYMENTS_API_KEY"),
 		CircleAPIKey:                 os.Getenv("JC_CIRCLE_API_KEY"),
 		PaystackSecretKey:            os.Getenv("JC_PAYSTACK_SECRET_KEY"),
+		CrossmintAPIKey:              os.Getenv("JC_CROSSMINT_API_KEY"),
+		CrossmintBaseURL:             os.Getenv("JC_CROSSMINT_BASE_URL"),
+		CrossmintWebhookSecret:       os.Getenv("JC_CROSSMINT_WEBHOOK_SECRET"),
 		XiaomiAPIKey:                 os.Getenv("JC_XIAOMI_API_KEY"),
 		CORSOrigins:                  os.Getenv("JC_CORS_ORIGINS"),
 		CookieDomain:                 os.Getenv("JC_COOKIE_DOMAIN"),
@@ -318,6 +324,16 @@ func applyDefaults(cfg *Config) error {
 
 		if cfg.NOWPaymentsIPNSecret != "" && cfg.NOWPaymentsAPIKey == "" {
 			return errors.New("JC_NOWPAYMENTS_API_KEY must be set in production when JC_NOWPAYMENTS_IPN_SECRET is set (separate credential, never substituted)")
+		}
+
+		// §128: Crossmint API key and webhook secret are a pair — an API key
+		// without the webhook secret leaves stablecoin event ingestion
+		// unverified (activity mirror would trust unsigned payloads).
+		if cfg.CrossmintAPIKey != "" && cfg.CrossmintWebhookSecret == "" {
+			return errors.New("JC_CROSSMINT_WEBHOOK_SECRET must be set in production when JC_CROSSMINT_API_KEY is set (webhooks cannot go unverified)")
+		}
+		if cfg.CrossmintWebhookSecret != "" && cfg.CrossmintAPIKey == "" {
+			return errors.New("JC_CROSSMINT_API_KEY must be set in production when JC_CROSSMINT_WEBHOOK_SECRET is set (separate credential, never substituted)")
 		}
 
 		if !paystackOK && !stripeOK && !nowOK {

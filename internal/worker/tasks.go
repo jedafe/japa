@@ -473,6 +473,15 @@ var handlerRegistry = []struct {
 	{TypeFederationProcessInbound, HandleFederationProcessInbound},
 	{TypeFederationResolveActor, HandleFederationResolveActor},
 	{TypeFederationPruneDeliveries, HandleFederationPruneDeliveries},
+	// §128 stablecoin wallets
+	{TypeStablecoinProvisionWallet, handleStablecoinProvisionWallet},
+	{TypeStablecoinSyncActivity, handleStablecoinSyncActivity},
+	{TypeStablecoinReconcileWallets, handleStablecoinReconcileWallets},
+	{TypeStablecoinSignerScopeRenew, handleStablecoinSignerScopeRenew},
+	{TypeStablecoinEscrowTimeout, handleStablecoinEscrowTimeout},
+	{TypeStablecoinTreasurySweep, handleStablecoinTreasurySweep},
+	{TypeStablecoinProcessOfframp, handleStablecoinProcessOfframp},
+	{TypeTipsSettleStablecoin, handleTipsSettleStablecoin},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.

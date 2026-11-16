@@ -65,6 +65,8 @@ var Registry = []Feature{
 	// on — unlike feature.wallet, which needs payment-provider setup (PTS-010).
 	{Key: "feature.points", Label: "Points & Reputation", Description: "Member points balance, ledger history, and wallet settings view", Default: true, Category: "Engagement"},
 	{Key: "feature.withdraw", Label: "Credit Withdrawals", Description: "Enable user credit withdrawals and payouts", Default: true, Category: "Commerce"},
+	{Key: "feature.stablecoin_wallet", Label: "Stablecoin Wallets", Description: "Non-custodial member USDC/USDT wallets on Solana — backed credits, onchain tips, delegated-signer spending (§128)", Default: false, Category: "Commerce"},
+	{Key: "feature.escrow_services", Label: "Service Escrow", Description: "Squads 2-of-3 multisig escrow for mentorship/service bookings (§128)", Default: false, Category: "Commerce"},
 	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: true, Category: "Commerce", SettingsCategory: "ads"},
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},
 	{Key: "tips.enabled", Label: "Tips & Donations", Description: "Creator/org/platform tipping — points, credits, fiat, and Open Collective (§125)", Default: false, Category: "Commerce", SettingsCategory: "tips"},
