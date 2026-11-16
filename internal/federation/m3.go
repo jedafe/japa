@@ -322,13 +322,14 @@ func (s *Service) fanoutActorDeleteErr(ctx context.Context, actorID pgtype.UUID)
 	return err
 }
 
-// ListGroupActors is the admin DataTable source for provisioned groups.
-func (s *Service) ListGroupActors(ctx context.Context, limit, offset int32) ([]gen.ListGroupActorsRow, int64, error) {
-	rows, err := s.store.read.ListGroupActors(ctx, gen.ListGroupActorsParams{PageLimit: limit, PageOffset: offset})
+// ListGroupActors is the admin DataTable source for provisioned groups —
+// `?q=` narrows on space slug/name or actor URL (ILIKE).
+func (s *Service) ListGroupActors(ctx context.Context, q string, limit, offset int32) ([]gen.ListGroupActorsRow, int64, error) {
+	rows, err := s.store.read.ListGroupActors(ctx, gen.ListGroupActorsParams{Q: q, PageLimit: limit, PageOffset: offset})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.read.CountGroupActors(ctx)
+	total, err := s.store.read.CountGroupActors(ctx, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -682,13 +683,14 @@ func (s *Service) UnsubscribeRelay(ctx context.Context, relayID pgtype.UUID) err
 }
 
 // ListRelays is the admin DataTable source for relay subscriptions —
-// `?status=` narrows to one subscription state (empty = all).
-func (s *Service) ListRelays(ctx context.Context, status string, limit, offset int32) ([]gen.FederationRelay, int64, error) {
-	rows, err := s.store.read.ListFederationRelays(ctx, gen.ListFederationRelaysParams{Status: status, PageLimit: limit, PageOffset: offset})
+// `?status=` narrows to one subscription state (empty = all), `?q=`
+// ILIKE-filters actor_url/domain.
+func (s *Service) ListRelays(ctx context.Context, q, status string, limit, offset int32) ([]gen.FederationRelay, int64, error) {
+	rows, err := s.store.read.ListFederationRelays(ctx, gen.ListFederationRelaysParams{Q: q, Status: status, PageLimit: limit, PageOffset: offset})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.read.CountFederationRelays(ctx, status)
+	total, err := s.store.read.CountFederationRelays(ctx, gen.CountFederationRelaysParams{Q: q, Status: status})
 	if err != nil {
 		return nil, 0, err
 	}

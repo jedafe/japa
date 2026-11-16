@@ -1,10 +1,33 @@
 <script lang="ts">
 	import { siteName } from '#lib/stores/site.svelte.js';
 	// /federation/relays — §126 M3 relay subscriptions (FEP-ae0c). EntityPage scaffold; create/delete only, relays are immutable.
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { federationAdminApi } from '#lib/api.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Eye, Trash2 } from 'lucide-svelte';
+
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pendingUnsub = $state<Relay | null>(null);
+	let showUnsubConfirm = $state(false);
+	let unsubscribing = $state(false);
+	let unsubError = $state('');
+
+	async function confirmUnsubscribe() {
+		if (!pendingUnsub) return;
+		unsubscribing = true;
+		unsubError = '';
+		const res = await federationAdminApi.deleteRelay(pendingUnsub.id);
+		unsubscribing = false;
+		if (!res.ok) {
+			unsubError = res.error ?? t('common.error', 'Unsubscribe failed');
+			return;
+		}
+		showUnsubConfirm = false;
+		pendingUnsub = null;
+		entityController?.reload();
+	}
 
 	type Relay = {
 		id: string;
@@ -81,15 +104,23 @@
 				label: t('federation.relays.unsubscribe', 'Unsubscribe'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: (row, ctx) => ctx?.openDelete(row)
+				onclick: (row: Relay) => {
+					pendingUnsub = row;
+					unsubError = '';
+					showUnsubConfirm = true;
+				}
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, filter }) => {
+		// Unsubscribe goes through the page-local confirm modal — the §126
+		// copy must note the remote relay is sent Undo{Follow}.
+		bulkDelete: false,
+		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
 				page: String(page + 1), // backend pages are 1-based
 				limit: String(pageSize)
 			});
+			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
 			const result = await federationAdminApi.listRelays(params.toString());
 			if (result.ok) {
@@ -102,10 +133,6 @@
 			const res = await federationAdminApi.createRelay({ actor_url: String(body.actor_url ?? '').trim() });
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
-		remove: async (id) => {
-			const res = await federationAdminApi.deleteRelay(id);
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
 		viewSnippet: RelayView
 	};
 </script>
@@ -114,7 +141,26 @@
 	<title>{t('federation.relays.title', 'Federation Relays')} — {siteName()} Admin</title>
 </svelte:head>
 
-<EntityPage {config} />
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- Unsubscribe confirm — §126: copy notes the Undo{Follow} send. -->
+<Modal bind:open={showUnsubConfirm} title={t('federation.relays.unsubscribe', 'Unsubscribe')}>
+	{#if pendingUnsub}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('federation.relays.unsubscribe_confirm', 'Unsubscribe from this relay? The remote relay is notified via an Undo{Follow} from the instance actor and its inbox stops receiving our public activities.')}
+		</p>
+		<p class="mt-2 break-all font-mono text-xs" style="color: var(--color-muted)">{pendingUnsub.actor_url}</p>
+	{/if}
+	{#if unsubError}
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{unsubError}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showUnsubConfirm = false)} disabled={unsubscribing}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmUnsubscribe} disabled={unsubscribing}>
+			{unsubscribing ? t('common.working', 'Working…') : t('federation.relays.unsubscribe', 'Unsubscribe')}
+		</Button>
+	</div>
+</Modal>
 
 {#snippet StatusCell({ value }: { value: any; row: Relay })}
 	{@const tones: Record<string, string> = {

@@ -762,7 +762,7 @@ func (h *Handlers) GetGroupFollowers(w http.ResponseWriter, r *http.Request) {
 // ListRelays serves GET /admin/federation/relays[?page=&limit=].
 func (h *Handlers) ListRelays(w http.ResponseWriter, r *http.Request) {
 	limit, offset, page := parseLimitOffset(r)
-	rows, total, err := h.service.ListRelays(r.Context(), r.URL.Query().Get("status"), limit, offset)
+	rows, total, err := h.service.ListRelays(r.Context(), r.URL.Query().Get("q"), r.URL.Query().Get("status"), limit, offset)
 	if err != nil {
 		handleServiceErr(w, err)
 		return
@@ -811,7 +811,7 @@ func (h *Handlers) DeleteRelay(w http.ResponseWriter, r *http.Request) {
 // ListGroups serves GET /admin/federation/groups[?page=&limit=].
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 	limit, offset, page := parseLimitOffset(r)
-	rows, total, err := h.service.ListGroupActors(r.Context(), limit, offset)
+	rows, total, err := h.service.ListGroupActors(r.Context(), r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleServiceErr(w, err)
 		return

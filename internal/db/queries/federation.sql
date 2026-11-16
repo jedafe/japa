@@ -683,11 +683,18 @@ SELECT fa.*, s.slug AS space_slug, s.name AS space_name
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
 WHERE fa.kind = 'group'
+  AND (@q::text = '' OR s.slug ILIKE '%' || @q || '%' OR s.name ILIKE '%' || @q || '%'
+       OR fa.actor_url ILIKE '%' || @q || '%')
 ORDER BY fa.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountGroupActors :one
-SELECT COUNT(*)::bigint FROM federated_actors WHERE kind = 'group';
+SELECT COUNT(*)::bigint
+FROM federated_actors fa
+JOIN spaces s ON s.id = fa.space_id
+WHERE fa.kind = 'group'
+  AND (@q::text = '' OR s.slug ILIKE '%' || @q || '%' OR s.name ILIKE '%' || @q || '%'
+       OR fa.actor_url ILIKE '%' || @q || '%');
 
 -- name: ListFederatableContentBySpace :many
 -- Group outbox items: the space's live, public, federatable content —
@@ -777,12 +784,14 @@ SELECT * FROM federation_relays WHERE actor_url = @actor_url;
 -- name: ListFederationRelays :many
 SELECT * FROM federation_relays
 WHERE (@status::text = '' OR status = @status)
+  AND (@q::text = '' OR actor_url ILIKE '%' || @q || '%' OR domain ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountFederationRelays :one
 SELECT COUNT(*)::bigint FROM federation_relays
-WHERE (@status::text = '' OR status = @status);
+WHERE (@status::text = '' OR status = @status)
+  AND (@q::text = '' OR actor_url ILIKE '%' || @q || '%' OR domain ILIKE '%' || @q || '%');
 
 -- name: SetFederationRelayStatus :exec
 UPDATE federation_relays SET status = @status, last_error = @last_error, updated_at = now()

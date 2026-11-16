@@ -2024,22 +2024,25 @@ export const sharePlatformsAdminApi = {
 
 // §126 ActivityPub federation admin API — M3 ops surface: relay
 // subscriptions, space Group actors, instance domain blocks.
+// List endpoints use apiRaw: the federation backends put rows + pagination
+// at the body top level ({relays, total} / {data, meta}) rather than inside
+// a `data` envelope — api() would drop everything.
 export const federationAdminApi = {
-	stats: () => api<unknown>('/admin/federation/stats'),
-	listActors: (params?: string) => api<unknown>(`/admin/federation/actors${params ? `?${params}` : ''}`),
+	stats: () => apiRaw<unknown>('/admin/federation/stats'),
+	listActors: (params?: string) => apiRaw<unknown>(`/admin/federation/actors${params ? `?${params}` : ''}`),
 	rotateActorKey: (id: string) =>
 		api(`/admin/federation/actors/${id}/rotate-key`, { method: 'POST' }),
-	listRelays: (params?: string) => api<unknown>(`/admin/federation/relays${params ? `?${params}` : ''}`),
+	listRelays: (params?: string) => apiRaw<unknown>(`/admin/federation/relays${params ? `?${params}` : ''}`),
 	createRelay: (body: { actor_url: string }) =>
 		api('/admin/federation/relays', { method: 'POST', body }),
 	deleteRelay: (id: string) =>
 		api(`/admin/federation/relays/${id}`, { method: 'DELETE' }),
-	listGroups: (params?: string) => api<unknown>(`/admin/federation/groups${params ? `?${params}` : ''}`),
+	listGroups: (params?: string) => apiRaw<unknown>(`/admin/federation/groups${params ? `?${params}` : ''}`),
 	createGroup: (body: { space_id: string }) =>
 		api('/admin/federation/groups', { method: 'POST', body }),
 	deleteGroup: (id: string) =>
 		api(`/admin/federation/groups/${id}`, { method: 'DELETE' }),
-	listInstances: (params?: string) => api<unknown>(`/admin/federation/instances${params ? `?${params}` : ''}`),
+	listInstances: (params?: string) => apiRaw<unknown>(`/admin/federation/instances${params ? `?${params}` : ''}`),
 	createInstance: (body: { domain: string; reason?: string }) =>
 		api('/admin/federation/instances', { method: 'POST', body }),
 	deleteInstance: (id: string) =>

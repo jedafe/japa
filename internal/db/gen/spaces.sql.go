@@ -114,38 +114,41 @@ WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
      END
+ -- §05 member_created predicate: custom-level spaces with a live creator.
+ AND ($6::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  -- ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
  -- pair produces non-NULL values, so each inactive key is a no-op and the
  -- final created_at DESC fallback keeps the default newest-first ordering.
 ORDER BY
- CASE WHEN $6::text = 'name'         AND $7::text = 'asc'  THEN s.name         END ASC,
- CASE WHEN $6::text = 'name'         AND $7::text = 'desc' THEN s.name         END DESC,
- CASE WHEN $6::text = 'owner'        AND $7::text = 'asc'  THEN u.username     END ASC,
- CASE WHEN $6::text = 'owner'        AND $7::text = 'desc' THEN u.username     END DESC,
- CASE WHEN $6::text = 'member_count' AND $7::text = 'asc'  THEN s.member_count END ASC,
- CASE WHEN $6::text = 'member_count' AND $7::text = 'desc' THEN s.member_count END DESC,
- CASE WHEN $6::text = 'visibility'   AND $7::text = 'asc'  THEN s.visibility   END ASC,
- CASE WHEN $6::text = 'visibility'   AND $7::text = 'desc' THEN s.visibility   END DESC,
- CASE WHEN $6::text = 'status'       AND $7::text = 'asc'  THEN s.status       END ASC,
- CASE WHEN $6::text = 'status'       AND $7::text = 'desc' THEN s.status       END DESC,
- CASE WHEN $6::text = 'space_type'   AND $7::text = 'asc'  THEN st.name        END ASC,
- CASE WHEN $6::text = 'space_type'   AND $7::text = 'desc' THEN st.name        END DESC,
- CASE WHEN $6::text = 'created_at'   AND $7::text = 'asc'  THEN s.created_at   END ASC,
- CASE WHEN $6::text = 'created_at'   AND $7::text = 'desc' THEN s.created_at   END DESC,
+ CASE WHEN $7::text = 'name'         AND $8::text = 'asc'  THEN s.name         END ASC,
+ CASE WHEN $7::text = 'name'         AND $8::text = 'desc' THEN s.name         END DESC,
+ CASE WHEN $7::text = 'owner'        AND $8::text = 'asc'  THEN u.username     END ASC,
+ CASE WHEN $7::text = 'owner'        AND $8::text = 'desc' THEN u.username     END DESC,
+ CASE WHEN $7::text = 'member_count' AND $8::text = 'asc'  THEN s.member_count END ASC,
+ CASE WHEN $7::text = 'member_count' AND $8::text = 'desc' THEN s.member_count END DESC,
+ CASE WHEN $7::text = 'visibility'   AND $8::text = 'asc'  THEN s.visibility   END ASC,
+ CASE WHEN $7::text = 'visibility'   AND $8::text = 'desc' THEN s.visibility   END DESC,
+ CASE WHEN $7::text = 'status'       AND $8::text = 'asc'  THEN s.status       END ASC,
+ CASE WHEN $7::text = 'status'       AND $8::text = 'desc' THEN s.status       END DESC,
+ CASE WHEN $7::text = 'space_type'   AND $8::text = 'asc'  THEN st.name        END ASC,
+ CASE WHEN $7::text = 'space_type'   AND $8::text = 'desc' THEN st.name        END DESC,
+ CASE WHEN $7::text = 'created_at'   AND $8::text = 'asc'  THEN s.created_at   END ASC,
+ CASE WHEN $7::text = 'created_at'   AND $8::text = 'desc' THEN s.created_at   END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $9 OFFSET $8
+LIMIT $10 OFFSET $9
 `
 
 type AdminListSpacesParams struct {
-	Search      string      `json:"search"`
-	Status      string      `json:"status"`
-	Visibility  string      `json:"visibility"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	Deleted     string      `json:"deleted"`
-	SortKey     string      `json:"sort_key"`
-	SortDir     string      `json:"sort_dir"`
-	OffsetVal   int32       `json:"offset_val"`
-	LimitVal    int32       `json:"limit_val"`
+	Search        string      `json:"search"`
+	Status        string      `json:"status"`
+	Visibility    string      `json:"visibility"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	Deleted       string      `json:"deleted"`
+	MemberCreated bool        `json:"member_created"`
+	SortKey       string      `json:"sort_key"`
+	SortDir       string      `json:"sort_dir"`
+	OffsetVal     int32       `json:"offset_val"`
+	LimitVal      int32       `json:"limit_val"`
 }
 
 type AdminListSpacesRow struct {
@@ -185,6 +188,7 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 		arg.Visibility,
 		arg.SpaceTypeID,
 		arg.Deleted,
+		arg.MemberCreated,
 		arg.SortKey,
 		arg.SortDir,
 		arg.OffsetVal,
@@ -248,14 +252,16 @@ WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
      END
+ AND ($6::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
 `
 
 type AdminListSpacesCountParams struct {
-	Search      string      `json:"search"`
-	Status      string      `json:"status"`
-	Visibility  string      `json:"visibility"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	Deleted     string      `json:"deleted"`
+	Search        string      `json:"search"`
+	Status        string      `json:"status"`
+	Visibility    string      `json:"visibility"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	Deleted       string      `json:"deleted"`
+	MemberCreated bool        `json:"member_created"`
 }
 
 func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesCountParams) (int64, error) {
@@ -265,6 +271,7 @@ func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesC
 		arg.Visibility,
 		arg.SpaceTypeID,
 		arg.Deleted,
+		arg.MemberCreated,
 	)
 	var total int64
 	err := row.Scan(&total)

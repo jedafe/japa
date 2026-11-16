@@ -138,21 +138,32 @@ func (q *Queries) CountFederatedActors(ctx context.Context, q_ string) (int64, e
 const countFederationRelays = `-- name: CountFederationRelays :one
 SELECT COUNT(*)::bigint FROM federation_relays
 WHERE ($1::text = '' OR status = $1)
+  AND ($2::text = '' OR actor_url ILIKE '%' || $2 || '%' OR domain ILIKE '%' || $2 || '%')
 `
 
-func (q *Queries) CountFederationRelays(ctx context.Context, status string) (int64, error) {
-	row := q.db.QueryRow(ctx, countFederationRelays, status)
+type CountFederationRelaysParams struct {
+	Status string `json:"status"`
+	Q      string `json:"q"`
+}
+
+func (q *Queries) CountFederationRelays(ctx context.Context, arg CountFederationRelaysParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFederationRelays, arg.Status, arg.Q)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
 const countGroupActors = `-- name: CountGroupActors :one
-SELECT COUNT(*)::bigint FROM federated_actors WHERE kind = 'group'
+SELECT COUNT(*)::bigint
+FROM federated_actors fa
+JOIN spaces s ON s.id = fa.space_id
+WHERE fa.kind = 'group'
+  AND ($1::text = '' OR s.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%'
+       OR fa.actor_url ILIKE '%' || $1 || '%')
 `
 
-func (q *Queries) CountGroupActors(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countGroupActors)
+func (q *Queries) CountGroupActors(ctx context.Context, q_ string) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupActors, q_)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -2130,18 +2141,25 @@ func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActo
 const listFederationRelays = `-- name: ListFederationRelays :many
 SELECT id, actor_url, inbox_url, domain, status, follow_ap_id, last_error, created_by, created_at, updated_at FROM federation_relays
 WHERE ($1::text = '' OR status = $1)
+  AND ($2::text = '' OR actor_url ILIKE '%' || $2 || '%' OR domain ILIKE '%' || $2 || '%')
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListFederationRelaysParams struct {
 	Status     string `json:"status"`
+	Q          string `json:"q"`
 	PageOffset int32  `json:"page_offset"`
 	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListFederationRelays(ctx context.Context, arg ListFederationRelaysParams) ([]FederationRelay, error) {
-	rows, err := q.db.Query(ctx, listFederationRelays, arg.Status, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listFederationRelays,
+		arg.Status,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2176,13 +2194,16 @@ SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
 WHERE fa.kind = 'group'
+  AND ($1::text = '' OR s.slug ILIKE '%' || $1 || '%' OR s.name ILIKE '%' || $1 || '%'
+       OR fa.actor_url ILIKE '%' || $1 || '%')
 ORDER BY fa.created_at DESC
-LIMIT $2 OFFSET $1
+LIMIT $3 OFFSET $2
 `
 
 type ListGroupActorsParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
+	Q          string `json:"q"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListGroupActorsRow struct {
@@ -2209,7 +2230,7 @@ type ListGroupActorsRow struct {
 }
 
 func (q *Queries) ListGroupActors(ctx context.Context, arg ListGroupActorsParams) ([]ListGroupActorsRow, error) {
-	rows, err := q.db.Query(ctx, listGroupActors, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listGroupActors, arg.Q, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

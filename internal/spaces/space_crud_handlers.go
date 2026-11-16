@@ -401,6 +401,9 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	deleted := r.URL.Query().Get("deleted")
 	sortKey := r.URL.Query().Get("sort")
 	sortDir := r.URL.Query().Get("dir")
+	// §126: the federation group-actor picker passes ?member_created=1 —
+	// the §05 predicate (custom level + live creator).
+	memberCreated := r.URL.Query().Get("member_created") == "1" || r.URL.Query().Get("member_created") == "true"
 
 	// Optional space-type filter — a zero UUID skips the filter at the SQL level.
 	var spaceTypeID pgtype.UUID
@@ -411,13 +414,13 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, deleted, spaceTypeID, sortKey, sortDir, limit, offset)
+	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, deleted, spaceTypeID, memberCreated, sortKey, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility, deleted, spaceTypeID)
+	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility, deleted, spaceTypeID, memberCreated)
 	if err != nil {
 		handleServiceError(w, err)
 		return

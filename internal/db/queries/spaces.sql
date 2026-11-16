@@ -661,6 +661,8 @@ WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE 
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
      END
+ -- §05 member_created predicate: custom-level spaces with a live creator.
+ AND (@member_created::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  -- ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
  -- pair produces non-NULL values, so each inactive key is a no-op and the
  -- final created_at DESC fallback keeps the default newest-first ordering.
@@ -693,7 +695,8 @@ WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE 
        WHEN 'only' THEN s.deleted_at IS NOT NULL
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
-     END;
+     END
+ AND (@member_created::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL));
 
 -- name: ListSpacesByMemberUser :many
 -- Returns the lean fields the main-app nav, composer, and dashboard need

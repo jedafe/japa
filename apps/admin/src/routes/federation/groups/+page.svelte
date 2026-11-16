@@ -1,10 +1,33 @@
 <script lang="ts">
 	import { siteName } from '#lib/stores/site.svelte.js';
 	// /federation/groups — §126 M3 space Group actors (FEP-1b12). Create provisions; delete tombstones + fans out Delete{Group}.
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { federationAdminApi, spacesAdminApi } from '#lib/api.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Eye, Trash2 } from 'lucide-svelte';
+
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pendingTombstone = $state<GroupActor | null>(null);
+	let showTombstoneConfirm = $state(false);
+	let tombstoning = $state(false);
+	let tombstoneError = $state('');
+
+	async function confirmTombstone() {
+		if (!pendingTombstone) return;
+		tombstoning = true;
+		tombstoneError = '';
+		const res = await federationAdminApi.deleteGroup(pendingTombstone.id);
+		tombstoning = false;
+		if (!res.ok) {
+			tombstoneError = res.error ?? t('common.error', 'Delete failed');
+			return;
+		}
+		showTombstoneConfirm = false;
+		pendingTombstone = null;
+		entityController?.reload();
+	}
 
 	type GroupActor = {
 		id: string;
@@ -28,8 +51,9 @@
 		if (q) params.set('q', q);
 		const res = await spacesAdminApi.list(params.toString());
 		if (!res.ok) return [];
-		const d = res.data as { data?: { items?: AdminSpace[] } };
-		return (d?.data?.items ?? []).map((s) => {
+		// api() already unwrapped body.data → res.data IS {items, total, ...}.
+		const d = res.data as { items?: AdminSpace[] };
+		return (d?.items ?? []).map((s) => {
 			const label = `${s.name} (${s.slug})`;
 			spaceLabel.set(s.id, label);
 			return { id: s.id, label, sublabel: s.slug };
@@ -92,16 +116,24 @@
 				icon: Trash2,
 				variant: 'destructive',
 				show: (row: GroupActor) => row.status === 'active',
-				onclick: (row, ctx) => ctx?.openDelete(row)
+				onclick: (row: GroupActor) => {
+					pendingTombstone = row;
+					tombstoneError = '';
+					showTombstoneConfirm = true;
+				}
 			}
 		],
 		fields,
 		isDeleted: (row: GroupActor) => row.status === 'tombstone',
-		load: async ({ page, pageSize }) => {
+		// Tombstone goes through the page-local confirm modal — the §126
+		// copy must warn that it fans out Delete{Tombstone} to remote followers.
+		bulkDelete: false,
+		load: async ({ page, pageSize, q }) => {
 			const params = new URLSearchParams({
 				page: String(page + 1), // backend pages are 1-based
 				limit: String(pageSize)
 			});
+			if (q) params.set('q', q);
 			const result = await federationAdminApi.listGroups(params.toString());
 			if (result.ok) {
 				const d = result.data as { groups?: GroupActor[]; total?: number; total_pages?: number };
@@ -113,10 +145,6 @@
 			const res = await federationAdminApi.createGroup({ space_id: String(body.space_id ?? '').trim() });
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
-		remove: async (id) => {
-			const res = await federationAdminApi.deleteGroup(id);
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
 		viewSnippet: GroupView
 	};
 </script>
@@ -125,7 +153,26 @@
 	<title>{t('federation.groups.title', 'Federation Group Actors')} — {siteName()} Admin</title>
 </svelte:head>
 
-<EntityPage {config} />
+<EntityPage {config} bind:controller={entityController} />
+
+<!-- Tombstone confirm — §126: must warn about the Delete{Tombstone} fanout. -->
+<Modal bind:open={showTombstoneConfirm} title={t('federation.groups.tombstone', 'Tombstone')}>
+	{#if pendingTombstone}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('federation.groups.tombstone_confirm', 'Tombstone this Group actor? Remote followers are notified via a Delete{Tombstone} fanout and the actor stops resolving. This cannot be undone — re-provisioning the space mints a new actor.')}
+		</p>
+		<p class="mt-2 break-all font-mono text-xs" style="color: var(--color-muted)">{pendingTombstone.actor_url}</p>
+	{/if}
+	{#if tombstoneError}
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{tombstoneError}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showTombstoneConfirm = false)} disabled={tombstoning}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmTombstone} disabled={tombstoning}>
+			{tombstoning ? t('common.working', 'Working…') : t('federation.groups.tombstone', 'Tombstone')}
+		</Button>
+	</div>
+</Modal>
 
 {#snippet StatusCell({ value }: { value: any; row: GroupActor })}
 	{@const tones: Record<string, string> = {

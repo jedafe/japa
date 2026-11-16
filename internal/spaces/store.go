@@ -280,7 +280,7 @@ func (s *Service) CountSpacesWithin(ctx context.Context, viewerUserID pgtype.UUI
 // space_type name resolved via JOINs. Search, status, and visibility filters
 // are applied at the SQL level — pass "" for no filter. sortKey/sortDir are
 // whitelisted at the SQL level — unknown values fall back to created_at DESC.
-func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID, sortKey, sortDir string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID, memberCreated bool, sortKey, sortDir string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
 	// An unset filter must reach SQL as a valid zero UUID — an invalid
 	// pgtype.UUID serializes as NULL, and "NULL = '00000000-…'" evaluates to
 	// NULL, silently filtering out every row.
@@ -289,15 +289,16 @@ func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibilit
 	}
 
 	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-		Search:      search,
-		Status:      status,
-		Visibility:  visibility,
-		SpaceTypeID: spaceTypeID,
-		Deleted:     deleted,
-		SortKey:     sortKey,
-		SortDir:     sortDir,
-		LimitVal:    limit,
-		OffsetVal:   offset,
+		Search:        search,
+		Status:        status,
+		Visibility:    visibility,
+		SpaceTypeID:   spaceTypeID,
+		Deleted:       deleted,
+		MemberCreated: memberCreated,
+		SortKey:       sortKey,
+		SortDir:       sortDir,
+		LimitVal:      limit,
+		OffsetVal:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("admin listing spaces: %w", err)
@@ -309,17 +310,18 @@ func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibilit
 // AdminListSpacesCount returns the total number of spaces for the platform,
 // respecting the same search/status/visibility/space-type/deleted filters as
 // AdminListSpaces.
-func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID) (int64, error) {
+func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID, memberCreated bool) (int64, error) {
 	if !spaceTypeID.Valid {
 		spaceTypeID = pgtype.UUID{Valid: true}
 	}
 
 	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
-		Search:      search,
-		Status:      status,
-		Visibility:  visibility,
-		SpaceTypeID: spaceTypeID,
-		Deleted:     deleted,
+		Search:        search,
+		Status:        status,
+		Visibility:    visibility,
+		SpaceTypeID:   spaceTypeID,
+		Deleted:       deleted,
+		MemberCreated: memberCreated,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("admin counting spaces: %w", err)
