@@ -24,7 +24,7 @@
 	const spaceLabel = new Map<string, string>();
 
 	async function fetchSpaceOptions(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const params = new URLSearchParams({ visibility: 'public', status: 'active', limit: '20' });
+		const params = new URLSearchParams({ visibility: 'public', status: 'active', member_created: '1', limit: '20' });
 		if (q) params.set('q', q);
 		const res = await spacesAdminApi.list(params.toString());
 		if (!res.ok) return [];

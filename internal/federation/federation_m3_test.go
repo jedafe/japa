@@ -36,15 +36,24 @@ func (s *settingsStub) GetSettingInt(ctx context.Context, key string) (int, erro
 	return n, nil
 }
 
-// newSpace seeds a minimal public space for group-actor tests.
+// newSpace seeds a minimal member-created space (level='custom' + a
+// creator — the §05 member_created predicate Group actors require).
 func newSpace(t *testing.T, ctx context.Context, d *db.DB, visibility string) (pgtype.UUID, string) {
+	t.Helper()
+	creatorID, _ := newFederationUser(t, ctx, d, "active")
+	return newSpaceLevel(t, ctx, d, creatorID, "custom", visibility)
+}
+
+// newSpaceLevel seeds a space at an arbitrary level — platform/geo
+// spaces (non-'custom' levels, no creator) must fail Group provisioning.
+func newSpaceLevel(t *testing.T, ctx context.Context, d *db.DB, creatorID pgtype.UUID, level, visibility string) (pgtype.UUID, string) {
 	t.Helper()
 	slug := fmt.Sprintf("fedspace-%d", time.Now().UnixNano())
 	var id pgtype.UUID
 	err := d.Writer.QueryRow(ctx, `
-		INSERT INTO spaces (space_type_id, name, slug, level, visibility, status)
-		VALUES ('00000000-0000-0000-0000-000000000060', 'Fed Space', $1, 'country', $2, 'active')
-		RETURNING id`, slug, visibility).Scan(&id)
+		INSERT INTO spaces (space_type_id, name, slug, level, visibility, status, creator_user_id)
+		VALUES ('00000000-0000-0000-0000-000000000060', 'Fed Space', $1, $2, $3, 'active', $4)
+		RETURNING id`, slug, level, visibility, creatorID).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert space: %v", err)
 	}
@@ -131,7 +140,7 @@ func TestDBInstanceActorLifecycle(t *testing.T) {
 	// Follow{instance} auto-accepts and ledgers the edge + Accept delivery.
 	remote, remoteURL := newRemoteActor(t, ctx, svc, "inst-follow.example")
 	followAct := map[string]any{
-		"id":     "https://inst-follow.example/activities/f1",
+		"id":     fmt.Sprintf("https://inst-follow.example/activities/%d", time.Now().UnixNano()),
 		"type":   "Follow",
 		"actor":  remoteURL,
 		"object": a1.ActorUrl,
@@ -209,7 +218,7 @@ func TestDBGroupActorLifecycle(t *testing.T) {
 	// Follow{group} auto-accepts (no profile approval for spaces).
 	remote, remoteURL := newRemoteActor(t, ctx, svc, "grp-follow.example")
 	row := runInbound(t, ctx, svc, map[string]any{
-		"id": "https://grp-follow.example/activities/f1", "type": "Follow",
+		"id": fmt.Sprintf("https://grp-follow.example/activities/%d", time.Now().UnixNano()), "type": "Follow",
 		"actor": remoteURL, "object": actor.ActorUrl,
 	})
 	if row.Status != "processed" {
@@ -240,14 +249,53 @@ func TestDBGroupActorLifecycle(t *testing.T) {
 	}
 }
 
-func TestDBGroupPrivateSpaceGate(t *testing.T) {
+func TestDBGroupSpaceEligibilityGates(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	svc := newFederationService(t, d)
-	spaceID, _ := newSpace(t, ctx, d, "private")
 	adminID, _ := newFederationUser(t, ctx, d, "active")
-	if _, err := svc.ProvisionGroupActor(ctx, spaceID, adminID); err != ErrConflict {
+
+	// Private member-created space — visibility gate.
+	privID, _ := newSpace(t, ctx, d, "private")
+	if _, err := svc.ProvisionGroupActor(ctx, privID, adminID); err != ErrConflict {
 		t.Fatalf("private space provision err: %v", err)
+	}
+
+	// Platform/geo space (level='country', no creator) — member-created gate.
+	var geoID pgtype.UUID
+	if err := d.Writer.QueryRow(ctx, `
+		INSERT INTO spaces (space_type_id, name, slug, level, visibility, status)
+		VALUES ('00000000-0000-0000-0000-000000000060', 'Geo Space', $1, 'country', 'public', 'active')
+		RETURNING id`, fmt.Sprintf("geospace-%d", time.Now().UnixNano())).Scan(&geoID); err != nil {
+		t.Fatalf("insert geo space: %v", err)
+	}
+	defer func() { _, _ = d.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, geoID) }()
+	if _, err := svc.ProvisionGroupActor(ctx, geoID, adminID); err != ErrConflict {
+		t.Fatalf("platform space provision err: %v", err)
+	}
+
+	// Custom-level space with NULL creator (creator erased) — also ineligible.
+	creatorlessID, _ := newSpaceLevel(t, ctx, d, pgtype.UUID{}, "custom", "public")
+	if _, err := svc.ProvisionGroupActor(ctx, creatorlessID, adminID); err != ErrConflict {
+		t.Fatalf("creatorless space provision err: %v", err)
+	}
+
+	// And a provisioned group actor stops resolving when its space leaves
+	// the envelope — erase the creator's provenance.
+	spaceID, slug := newSpace(t, ctx, d, "public")
+	actor, err := svc.ProvisionGroupActor(ctx, spaceID, adminID)
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if _, err := svc.GroupDocument(ctx, slug); err != nil {
+		t.Fatalf("doc before lapse: %v", err)
+	}
+	if _, err := d.Writer.Exec(ctx,
+		`UPDATE spaces SET creator_user_id = NULL WHERE id = $1`, spaceID); err != nil {
+		t.Fatalf("clear creator: %v", err)
+	}
+	if _, err := svc.GroupDocument(ctx, slug); err != ErrNotFound {
+		t.Fatalf("doc after creator lapse: %v (actor %s)", err, actor.ID)
 	}
 }
 
@@ -267,7 +315,7 @@ func TestDBRelayDispatchAndCourier(t *testing.T) {
 
 	// Accept{Follow{follow_ap_id}} from the relay flips pending→accepted.
 	row := runInbound(t, ctx, svc, map[string]any{
-		"id": "https://relay.example/activities/a1", "type": "Accept",
+		"id": fmt.Sprintf("https://relay.example/activities/%d", time.Now().UnixNano()), "type": "Accept",
 		"actor": relay.ActorUrl,
 		"object": map[string]any{
 			"id": *relayRow.FollowApID, "type": "Follow",
@@ -288,7 +336,7 @@ func TestDBRelayDispatchAndCourier(t *testing.T) {
 	// A third party embedding our follow id cannot flip state.
 	_, evilURL := newRemoteActor(t, ctx, svc, "evil-relay.example")
 	row = runInbound(t, ctx, svc, map[string]any{
-		"id": "https://evil-relay.example/activities/r1", "type": "Reject",
+		"id": fmt.Sprintf("https://evil-relay.example/activities/%d", time.Now().UnixNano()), "type": "Reject",
 		"actor": evilURL,
 		"object": map[string]any{
 			"id": *relayRow.FollowApID, "type": "Follow",
@@ -311,13 +359,14 @@ func TestDBRelayDispatchAndCourier(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 	contentID, objURL := newFederatedContent(t, ctx, svc, userID)
+	likeID := fmt.Sprintf("https://author.example/activities/%d", time.Now().UnixNano())
 	payload, _ := json.Marshal(map[string]any{
-		"id": "https://author.example/activities/l1", "type": "Like",
+		"id": likeID, "type": "Like",
 		"actor": authorURL, "object": objURL,
 	})
 	// row.ActorUrl = the SIGNER (relay) — postInbox records the keyId owner.
 	inRow, err := svc.store.insertInbound(ctx, gen.InsertFederationInboundParams{
-		ActivityApID:   strPtr("https://author.example/activities/l1"),
+		ActivityApID:   strPtr(likeID),
 		ActivityType:   "Like",
 		ActorUrl:       strPtr(relay.ActorUrl),
 		SignatureValid: true,
@@ -346,14 +395,15 @@ func TestDBRelayDispatchAndCourier(t *testing.T) {
 
 	// Same shape from a NON-relay signer is rejected at the door.
 	fakeRelay, _ := newRemoteActor(t, ctx, svc, "not-a-relay.example")
+	likeID2 := fmt.Sprintf("https://author.example/activities/%d-x", time.Now().UnixNano())
 	inRow2, err := svc.store.insertInbound(ctx, gen.InsertFederationInboundParams{
-		ActivityApID:   strPtr("https://author.example/activities/l2"),
+		ActivityApID:   strPtr(likeID2),
 		ActivityType:   "Like",
 		ActorUrl:       strPtr(fakeRelay.ActorUrl),
 		SignatureValid: true,
 		Payload: func() []byte {
 			p, _ := json.Marshal(map[string]any{
-				"id": "https://author.example/activities/l2", "type": "Like",
+				"id": likeID2, "type": "Like",
 				"actor": authorURL, "object": objURL,
 			})
 			return p

@@ -1219,6 +1219,7 @@ func (q *Queries) GetFederationStats(ctx context.Context) (GetFederationStatsRow
 const getGroupActorDocBySlug = `-- name: GetGroupActorDocBySlug :one
 SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
+       s.level AS space_level, s.creator_user_id AS space_creator_user_id,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
@@ -1251,6 +1252,8 @@ type GetGroupActorDocBySlugRow struct {
 	SpaceVisibility           string             `json:"space_visibility"`
 	SpaceStatus               string             `json:"space_status"`
 	SpaceDeletedAt            pgtype.Timestamptz `json:"space_deleted_at"`
+	SpaceLevel                string             `json:"space_level"`
+	SpaceCreatorUserID        pgtype.UUID        `json:"space_creator_user_id"`
 	LogoBucket                *string            `json:"logo_bucket"`
 	LogoPath                  *string            `json:"logo_path"`
 	LogoMime                  *string            `json:"logo_mime"`
@@ -1287,6 +1290,8 @@ func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, slug string) (GetG
 		&i.SpaceVisibility,
 		&i.SpaceStatus,
 		&i.SpaceDeletedAt,
+		&i.SpaceLevel,
+		&i.SpaceCreatorUserID,
 		&i.LogoBucket,
 		&i.LogoPath,
 		&i.LogoMime,
@@ -1449,6 +1454,7 @@ func (q *Queries) GetRemoteActorByURL(ctx context.Context, actorUrl string) (Rem
 const getSpaceForGroupActor = `-- name: GetSpaceForGroupActor :one
 SELECT s.id, s.slug, s.name FROM spaces s
 WHERE s.id = $1 AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL
+  AND s.level = 'custom' AND s.creator_user_id IS NOT NULL
 `
 
 type GetSpaceForGroupActorRow struct {
@@ -1457,7 +1463,9 @@ type GetSpaceForGroupActorRow struct {
 	Name string      `json:"name"`
 }
 
-// Provisioning gate: only a live, public space may mint a Group actor.
+// Provisioning gate: only a live, public, MEMBER-CREATED space (§05
+// member_created predicate — custom level with a live creator) may mint
+// a Group actor. Platform/geo spaces never federate as Groups.
 func (q *Queries) GetSpaceForGroupActor(ctx context.Context, id pgtype.UUID) (GetSpaceForGroupActorRow, error) {
 	row := q.db.QueryRow(ctx, getSpaceForGroupActor, id)
 	var i GetSpaceForGroupActorRow

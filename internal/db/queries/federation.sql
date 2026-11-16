@@ -663,6 +663,7 @@ RETURNING *;
 -- the space flipped private so callers distinguish 404 from 410.
 SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
+       s.level AS space_level, s.creator_user_id AS space_creator_user_id,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
@@ -670,9 +671,12 @@ LEFT JOIN media ml ON ml.id = s.logo_media_id AND ml.deleted_at IS NULL AND ml.c
 WHERE fa.kind = 'group' AND s.slug = @slug;
 
 -- name: GetSpaceForGroupActor :one
--- Provisioning gate: only a live, public space may mint a Group actor.
+-- Provisioning gate: only a live, public, MEMBER-CREATED space (§05
+-- member_created predicate — custom level with a live creator) may mint
+-- a Group actor. Platform/geo spaces never federate as Groups.
 SELECT s.id, s.slug, s.name FROM spaces s
-WHERE s.id = @id AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL;
+WHERE s.id = @id AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL
+  AND s.level = 'custom' AND s.creator_user_id IS NOT NULL;
 
 -- name: ListGroupActors :many
 SELECT fa.*, s.slug AS space_slug, s.name AS space_name

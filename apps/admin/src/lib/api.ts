@@ -2025,6 +2025,10 @@ export const sharePlatformsAdminApi = {
 // §126 ActivityPub federation admin API — M3 ops surface: relay
 // subscriptions, space Group actors, instance domain blocks.
 export const federationAdminApi = {
+	stats: () => api<unknown>('/admin/federation/stats'),
+	listActors: (params?: string) => api<unknown>(`/admin/federation/actors${params ? `?${params}` : ''}`),
+	rotateActorKey: (id: string) =>
+		api(`/admin/federation/actors/${id}/rotate-key`, { method: 'POST' }),
 	listRelays: (params?: string) => api<unknown>(`/admin/federation/relays${params ? `?${params}` : ''}`),
 	createRelay: (body: { actor_url: string }) =>
 		api('/admin/federation/relays', { method: 'POST', body }),

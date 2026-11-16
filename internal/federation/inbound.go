@@ -302,9 +302,10 @@ func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objec
 		if err != nil {
 			return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, err
 		}
-		// A flipped-private or inactive space stops being a follow
-		// target — its actor only answers while the space resolves.
-		if row.SpaceDeletedAt.Valid || row.SpaceStatus != "active" || row.SpaceVisibility != "public" {
+		// A flipped-private, inactive, or non-member-created space stops
+		// being a follow target — its actor only answers while the space
+		// resolves (same envelope as groupDocRow).
+		if !spaceGroupEligible(row) {
 			return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, pgx.ErrNoRows
 		}
 		return groupActorFromRow(row), gen.GetActorProfileByUsernameRow{}, nil

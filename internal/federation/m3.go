@@ -242,7 +242,7 @@ func (s *Service) ProvisionGroupActor(ctx context.Context, spaceID, adminID pgty
 	space, err := s.store.read.GetSpaceForGroupActor(ctx, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return gen.FederatedActor{}, ErrConflict // space missing or not public/active
+			return gen.FederatedActor{}, ErrConflict // space missing, not member-created, or not public/active
 		}
 		return gen.FederatedActor{}, err
 	}
@@ -349,8 +349,22 @@ func groupActorFromRow(r gen.GetGroupActorDocBySlugRow) gen.FederatedActor {
 	}
 }
 
-// groupDocRow resolves slug → the actor+space join row with the
-// space-liveness gates the public surface requires.
+// groupDocRow resolves slug → the actor+space join row gated by the
+// member-created/public/active envelope the public surface requires.
+// spaceGroupEligible is the §126 member-created/public/active envelope a
+// space must hold for its Group actor to resolve — doc-serving, collection
+// reads, and inbound Follow all share it. Mirrors the provisioning gate in
+// GetSpaceForGroupActor: an erased creator drops creator_user_id to NULL
+// and the space leaves the envelope, stopping resolution like a
+// flipped-private space.
+func spaceGroupEligible(row gen.GetGroupActorDocBySlugRow) bool {
+	return !row.SpaceDeletedAt.Valid &&
+		row.SpaceStatus == "active" &&
+		row.SpaceVisibility == "public" &&
+		row.SpaceLevel == "custom" &&
+		row.SpaceCreatorUserID.Valid
+}
+
 func (s *Service) groupDocRow(ctx context.Context, slug string) (gen.GetGroupActorDocBySlugRow, error) {
 	row, err := s.store.read.GetGroupActorDocBySlug(ctx, slug)
 	if err != nil {
@@ -359,8 +373,8 @@ func (s *Service) groupDocRow(ctx context.Context, slug string) (gen.GetGroupAct
 		}
 		return row, err
 	}
-	if row.SpaceDeletedAt.Valid || row.SpaceStatus != "active" || row.SpaceVisibility != "public" {
-		return row, ErrNotFound // space gone private/inactive — stop resolving
+	if !spaceGroupEligible(row) {
+		return row, ErrNotFound // space left the member-created/public/active envelope
 	}
 	return row, nil
 }
