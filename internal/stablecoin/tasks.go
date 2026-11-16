@@ -62,7 +62,9 @@ func (s *Service) ProcessReconcile(ctx context.Context, _ []byte) error {
 }
 
 // ProcessSignerScopeRenew handles stablecoin:signer_scope_renew (cron) —
-// renews delegated-signer scopes before expiresAt for active members.
+// rotates delegated-signer scopes before expiresAt: scopes are immutable,
+// so this registers a fresh scoped signer (member OTP approval) and
+// removes the old one.
 func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error {
 	var p SignerScopeRenewPayload
 	if err := json.Unmarshal(raw, &p); err != nil {

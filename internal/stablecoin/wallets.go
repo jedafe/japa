@@ -69,8 +69,10 @@ func (s *Service) ProvisionWallet(ctx context.Context, userID pgtype.UUID, membe
 
 	// Register the scoped delegated signer — powers in-app spending without
 	// per-action signatures. Scope values are the blast-radius ceiling.
+	// Registration itself needs member recovery approval (OTP ceremony);
+	// scopes are immutable — expiry forces rotation, not renewal (§128.2).
 	dailyCap := s.settings.GetIntOr(ctx, "stablecoin.signer_daily_cap_usd_minor", 5000)
-	scopeDays := s.settings.GetIntOr(ctx, "stablecoin.signer_scope_expiry_days", 90)
+	scopeDays := s.settings.GetIntOr(ctx, "stablecoin.signer_scope_expiry_days", 365)
 	// TODO(§128.2): provider.RegisterDelegatedSigner + persist signer state —
 	// registration requires the member's recovery approval ceremony.
 	_ = dailyCap
