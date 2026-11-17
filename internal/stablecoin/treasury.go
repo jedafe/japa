@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -14,8 +15,11 @@ import (
 // reconciliation and never holds its keys.
 
 // TreasuryView is the admin treasury surface (GET /admin/treasury/wallets).
+// KillswitchEngaged rides along so the admin panel can render the halt
+// state without a second route — same surface, same permission gate.
 type TreasuryView struct {
-	Wallets []TreasuryWallet `json:"wallets"`
+	Wallets           []TreasuryWallet `json:"wallets"`
+	KillswitchEngaged bool             `json:"killswitch_engaged"`
 }
 
 // ListTreasury returns the treasury registry for the admin surface.
@@ -24,7 +28,85 @@ func (s *Service) ListTreasury(ctx context.Context) (*TreasuryView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: treasury: %w", err)
 	}
-	return &TreasuryView{Wallets: wallets}, nil
+	engaged, kerr := s.killswitch(ctx)
+	if kerr != nil {
+		slog.Warn("stablecoin: killswitch read failed", "error", kerr)
+	}
+	return &TreasuryView{Wallets: wallets, KillswitchEngaged: engaged}, nil
+}
+
+// SettleTipBacked settles a fiat-denominated tip to the recipient's backed
+// balance — §128: real-money value lands onchain, never in the spend-only
+// bonus ledger. The donor's fiat sits in the payment provider's settlement;
+// this sends the equivalent USDC amount from the treasury hot wallet.
+//
+// Returns (false, nil) when the backed path doesn't apply — caller falls
+// back to the legacy credits settle (feature off, recipient unprovisioned
+// or suspended). Errors are retryable (killswitch engaged, provider
+// transient) — the caller must not fall back on error or the tip could
+// settle twice.
+func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pgtype.UUID, netCredits int64) (bool, error) {
+	if netCredits <= 0 || !recipientUserID.Valid {
+		return false, nil
+	}
+	w, err := s.store.GetWalletByUser(ctx, recipientUserID)
+	if err != nil {
+		if errors.Is(err, ErrWalletNotFound) {
+			return false, nil // unprovisioned — credits fallback
+		}
+		return false, fmt.Errorf("stablecoin: tip recipient wallet: %w", err)
+	}
+	if w.Status != WalletStatusActive && w.Status != WalletStatusProvisioned {
+		return false, nil // suspended — no money movement
+	}
+	if engaged, kerr := s.killswitch(ctx); kerr != nil {
+		return false, fmt.Errorf("stablecoin: killswitch check: %w", kerr)
+	} else if engaged {
+		// Retryable: the tip stays pending until the halt lifts rather
+		// than silently degrading a real-money gift into bonus credits.
+		return false, ErrKillswitch
+	}
+
+	hot, err := s.store.GetTreasuryWallet(ctx, w.Chain, TreasuryHot)
+	if err != nil {
+		return false, fmt.Errorf("stablecoin: hot treasury: %w", err)
+	}
+	if hot.Locator == "" {
+		return false, fmt.Errorf("stablecoin: hot treasury has no provider locator")
+	}
+
+	// §58 anchor: 100 credits = $1 → credits × 10_000 = token minor units.
+	minor := netCredits * 10_000
+	res, err := s.provider.Transfer(ctx, hot.Locator, TransferInput{
+		Asset:         AssetUSDC,
+		RecipientAddr: w.Address,
+		AmountMinor:   minor,
+		Idempotency:   "tip:fiat:" + tipID.String(),
+		Reference:     "tip:" + tipID.String(),
+		// Empty Signer — the treasury hot wallet is platform-custodial;
+		// the API key signs directly (no delegated scope needed).
+		Signer: "",
+	})
+	if err != nil {
+		return false, fmt.Errorf("stablecoin: treasury tip send: %w", err)
+	}
+
+	// Mirror the inbound leg now so the member's feed shows it immediately;
+	// the webhook/reconcile path confirms it onchain-side (dedupe by sig).
+	if _, err := s.store.InsertActivity(ctx, Activity{
+		WalletID:      w.ID,
+		Direction:     "in",
+		Kind:          ActivityTipIn,
+		Asset:         AssetUSDC,
+		AmountMinor:   minor,
+		CreditsAmount: netCredits,
+		TxSignature:   res.TxSignature,
+		Status:        "pending",
+		OccurredAt:    time.Now().UTC(),
+	}); err != nil {
+		slog.Warn("stablecoin: tip mirror insert failed", "tip_id", tipID, "sig", res.TxSignature, "error", err)
+	}
+	return true, nil
 }
 
 // ProposeSweep creates a hot→cold sweep proposal when the hot float

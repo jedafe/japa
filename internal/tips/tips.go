@@ -383,7 +383,24 @@ type Service struct {
 	affResolver AffiliateURLResolver
 	bmc         BMCClient
 	siteURL     string
+	// backedSettler routes fiat tip settlement to the recipient's backed
+	// (onchain) balance — §128: real-money value must not land as
+	// spend-only bonus credits. Satisfied by *stablecoin.Service when the
+	// feature is live; nil keeps the legacy credits settle.
+	backedSettler BackedSettler
 }
+
+// BackedSettler settles a fiat tip to the recipient's stablecoin wallet.
+// Returns (done true) when the onchain path applied; false → caller falls
+// back to the credits ledger (recipient unprovisioned/suspended). Errors
+// are retryable — callers must not fall back on error or a tip could
+// settle twice.
+type BackedSettler interface {
+	SettleTipBacked(ctx context.Context, tipID, recipientUserID pgtype.UUID, netCredits int64) (bool, error)
+}
+
+// SetBackedSettler injects the §128 backed-settle seam.
+func (s *Service) SetBackedSettler(b BackedSettler) { s.backedSettler = b }
 
 // BMCSupporter is one imported Buy Me a Coffee donation. The amount stays
 // in raw major units (Coffees × CoffeePrice, denominated in Currency) —

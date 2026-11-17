@@ -89,38 +89,38 @@ const (
 // secure enclave holds the operational signer; recovery is their email/phone
 // OTP. All this row records is metadata + our delegated-signer registration.
 type Wallet struct {
-	ID              string
-	UserID          string
-	Chain           string // "solana"
-	Address         string // smart wallet / PDA address
-	Locator         string // Crossmint wallet locator
-	Status          string
-	RecoveryMethods []string // "email", "phone"
-	DelegatedSigner *DelegatedSigner
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID              string            `json:"id"`
+	UserID          string            `json:"user_id"`
+	Chain           string            `json:"chain"` // "solana"
+	Address         string            `json:"address"` // smart wallet / PDA address
+	Locator         string            `json:"locator"` // Crossmint wallet locator
+	Status          string            `json:"status"`
+	RecoveryMethods []string          `json:"recovery_methods"` // "email", "phone"
+	DelegatedSigner *DelegatedSigner  `json:"delegated_signer"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
 // DelegatedSigner is Japa.to's scope-capped operational signer on a member
 // wallet. Scopes are enforced onchain — the platform cannot exceed them even
 // if fully compromised.
 type DelegatedSigner struct {
-	SignerRef    string // provider signer reference / public key
-	Scopes       []SignerScope
-	RegisteredAt time.Time
+	SignerRef    string        `json:"signer_ref"` // provider signer reference / public key
+	Scopes       []SignerScope `json:"scopes"`
+	RegisteredAt time.Time     `json:"registered_at"`
 }
 
 // SignerScope bounds one delegated-signer capability onchain.
 type SignerScope struct {
-	Asset         string    // usdc | usdt
-	DailyCapMinor int64     // USD minor units/day
-	ExpiresAt     time.Time // short-lived; renewed by stablecoin:signer_scope_renew
+	Asset         string    `json:"asset"`            // usdc | usdt
+	DailyCapMinor int64     `json:"daily_cap_minor"`  // USD minor units/day
+	ExpiresAt     time.Time `json:"expires_at"`       // short-lived; renewed by member ceremony
 	// Recipients is the chain-level destination whitelist (docs-confirmed:
 	// scope.recipients — addresses or wallet locators; empty = any). A
 	// treasury-allowlisted scope only adds value on a separate signer —
 	// scope matching is union-style, so it can't restrict alongside a
 	// broad scope on the same token.
-	Recipients []string
+	Recipients []string `json:"recipients"`
 }
 
 // Activity is one mirrored onchain event (stablecoin_activity). Chain is
@@ -172,12 +172,12 @@ type ArbiterDecision struct {
 // vault / revenue collection). This is OUR money — the only pool whose keys
 // the platform controls.
 type TreasuryWallet struct {
-	ID            string
-	Role          string // hot | cold | revenue
-	Chain         string
-	Address       string
-	Locator       string // provider locator; empty for Squads cold vault
-	FloatCapMinor int64  // hot only
+	ID            string `json:"id"`
+	Role          string `json:"role"` // hot | cold | revenue
+	Chain         string `json:"chain"`
+	Address       string `json:"address"`
+	Locator       string `json:"locator,omitempty"` // provider locator; empty for Squads cold vault
+	FloatCapMinor int64  `json:"float_cap_minor"`   // hot only
 }
 
 // BalanceSummary is what the wallet surface shows — credits-denominated.

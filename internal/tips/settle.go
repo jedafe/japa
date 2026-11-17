@@ -229,7 +229,7 @@ func (s *Store) settleFiatTip(ctx context.Context, tipID pgtype.UUID, netCredits
 		}
 	}
 
-	if err := qtx.SettleTip(ctx, gen.SettleTipParams{ID: tipID, NetCredits: netCredits}); err != nil {
+	if err := qtx.SettleTip(ctx, gen.SettleTipParams{ID: tipID, NetCredits: netCredits, SettledVia: "credits"}); err != nil {
 		return fmt.Errorf("marking tip completed: %w", err)
 	}
 
@@ -260,12 +260,19 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 		return ErrInvalidStatus
 	}
 
-	// Credits/fiat/OC tips credit the recipient's credits ledger
-	// (net_credits); historical 'points' tips (ADR-136 — method retired,
-	// points_amount column dropped) have net_credits=0, so their clawback
-	// correctly degenerates to a status flip with no ledger writes.
+	// Credits-settled tips (fiat fallback, credits-method, OC) put
+	// net_credits in the recipient's bonus ledger — reverse them there.
+	// Backed-settled tips moved real USDC onchain: nothing was minted to
+	// the credits ledger, so the clawback degenerates to a status flip
+	// (the donor's payment refund is the payments side; an onchain
+	// recovery is a treasury decision, not a ledger write). Historical
+	// 'points' tips (ADR-136 — method retired) have net_credits=0 and
+	// likewise flip status only.
 	clawLedger := "credits"
 	clawAmount := tip.NetCredits
+	if tip.SettledVia == "backed" {
+		clawAmount = 0
+	}
 
 	var lockIDs []pgtype.UUID
 	if clawAmount > 0 && walletOwnerID.Valid {

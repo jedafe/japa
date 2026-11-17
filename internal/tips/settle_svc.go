@@ -74,6 +74,32 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		}
 	}
 
+	// §128: when the stablecoin rail is live a fiat tip settles to the
+	// recipient's backed wallet — real money never mints bonus credits.
+	// Recipients without an active wallet (unprovisioned, suspended, or
+	// platform) keep the legacy credits settle. A backed-path error is
+	// retryable (killswitch, provider transient) — never fall back or the
+	// tip could settle twice.
+	if s.backedSettler != nil && s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
+		done, err := s.backedSettler.SettleTipBacked(ctx, tipID, walletOwner, net)
+		if err != nil {
+			return err
+		}
+		if done {
+			if err := s.store.settleTip(ctx, tipID, net, "backed"); err != nil {
+				return err
+			}
+			if !tip.PaymentID.Valid && paymentID.Valid {
+				if err := s.store.attachTipPayment(ctx, tipID, paymentID, ""); err != nil {
+					slog.Warn("tips: failed to repair payment link", "tip_id", tipID.String(), "error", err)
+				}
+			}
+			s.emitActivity(ctx, tip.SenderUserID, wallet.ActivityKeyTipSent, "tip:"+tipID.String())
+			s.notifyReceived(ctx, tipID)
+			return nil
+		}
+	}
+
 	if err := s.store.settleFiatTip(ctx, tipID, net, walletOwner); err != nil {
 		return err
 	}
@@ -109,7 +135,7 @@ func (s *Service) MarkStablecoinSettled(ctx context.Context, tipID pgtype.UUID, 
 	if tip.Status == StatusCompleted {
 		return nil // replay — already closed
 	}
-	return s.store.settleTip(ctx, tipID, tip.NetCredits)
+	return s.store.settleTip(ctx, tipID, tip.NetCredits, "backed")
 }
 
 // ClawbackTip reverses a settled tip's recipient credits and marks it

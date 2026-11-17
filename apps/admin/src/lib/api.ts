@@ -285,6 +285,25 @@ export const walletApi = {
 	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/currencies'),
 };
 
+// Stablecoin + treasury admin surface (Section 128 / ADR-140). Lists return
+// { data: [...] } with page_size/offset pagination; treasury wallets return
+// { data: { wallets, killswitch_engaged } }.
+export const stablecoinApi = {
+	listWallets: (params?: string) =>
+		api<any[]>(`/admin/stablecoin/wallets${params ? `?${params}` : ''}`),
+	setKillswitch: (engaged: boolean) =>
+		api<{ engaged: boolean }>('/admin/stablecoin/signer-killswitch', { method: 'POST', body: { engaged } }),
+};
+
+export const treasuryApi = {
+	getTreasury: () =>
+		api<{ wallets: any[]; killswitch_engaged: boolean }>('/admin/treasury/wallets'),
+	listSweeps: (params?: string) =>
+		api<any[]>(`/admin/treasury/sweeps${params ? `?${params}` : ''}`),
+	decideSweep: (id: string, body: { decision: 'approve' | 'reject'; squads_proposal_id?: string }) =>
+		api(`/admin/treasury/sweeps/${id}/approve`, { method: 'POST', body }),
+};
+
 export const authApi = {
 	// POST /auth/step-up (SEC-W-015) — mints a short-lived scoped "step_up"
 	// token from a fresh TOTP code or the account password. The response is

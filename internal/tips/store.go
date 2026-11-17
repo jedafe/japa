@@ -40,7 +40,7 @@ type tipStore interface {
 	insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error)
 	refundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error)
 	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error
-	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error
+	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64, settledVia string) error
 	// failTip marks a pending tip failed and releases its idempotency key.
 	failTip(ctx context.Context, id pgtype.UUID) error
 	// insertAuditLog writes a moderation audit trail row (admin refund).
@@ -257,8 +257,8 @@ func (s *Store) adminTipStatsByCurrency(ctx context.Context, since pgtype.Timest
 	return s.read.AdminTipStatsByCurrency(ctx, since)
 }
 
-func (s *Store) settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error {
-	return s.write.SettleTip(ctx, gen.SettleTipParams{ID: id, NetCredits: netCredits})
+func (s *Store) settleTip(ctx context.Context, id pgtype.UUID, netCredits int64, settledVia string) error {
+	return s.write.SettleTip(ctx, gen.SettleTipParams{ID: id, NetCredits: netCredits, SettledVia: settledVia})
 }
 
 func (s *Store) failTip(ctx context.Context, id pgtype.UUID) error {

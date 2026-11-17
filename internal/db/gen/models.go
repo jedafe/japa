@@ -4928,6 +4928,7 @@ type Tip struct {
 	CheckoutUrl             *string            `json:"checkout_url"`
 	RecipientSpaceID        pgtype.UUID        `json:"recipient_space_id"`
 	RecipientWalletUserID   pgtype.UUID        `json:"recipient_wallet_user_id"`
+	SettledVia              string             `json:"settled_via"`
 }
 
 type TipExternalLink struct {

@@ -147,17 +147,17 @@ type ServiceBooking struct {
 
 // TreasurySweep is one hot→cold sweep proposal (treasury_sweeps).
 type TreasurySweep struct {
-	ID               string
-	Chain            string
-	Asset            string
-	AmountMinor      int64
-	HotWalletID      string
-	ColdAddress      string
-	State            string // proposed | approved | executed | rejected | expired
-	ProposedBy       string
-	ApprovedBy       string
-	SquadsProposalID string
-	ExecutedSig      string
+	ID               string `json:"id"`
+	Chain            string `json:"chain"`
+	Asset            string `json:"asset"`
+	AmountMinor      int64  `json:"amount_minor"`
+	HotWalletID      string `json:"hot_wallet_id"`
+	ColdAddress      string `json:"cold_address"`
+	State            string `json:"state"` // proposed | approved | executed | rejected | expired
+	ProposedBy       string `json:"proposed_by"`
+	ApprovedBy       string `json:"approved_by"`
+	SquadsProposalID string `json:"squads_proposal_id"`
+	ExecutedSig      string `json:"executed_sig"`
 }
 
 // Service is the stablecoin domain entry point.

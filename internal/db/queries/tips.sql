@@ -114,7 +114,7 @@ WHERE id = @id;
 -- Conditional on pending/failed: a settle racing a refund still can't
 -- resurrect (refunded is excluded), but a swept-failed tip revives when its
 -- payment genuinely succeeds (manual_transfer, provider replay).
-UPDATE tips SET status = 'completed', net_credits = @net_credits, updated_at = now()
+UPDATE tips SET status = 'completed', net_credits = @net_credits, settled_via = @settled_via, updated_at = now()
 WHERE id = @id AND status IN ('pending', 'failed');
 
 -- name: ListTipsSent :many

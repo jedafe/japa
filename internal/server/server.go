@@ -1205,6 +1205,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetProviderLister(tipsPaymentAdapter{svc: paymentService})
 	tipsService.SetFeatureChecker(tipsFeatureAdapter{checker: featureChecker})
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
+	// §128: fiat tips settle to the recipient's backed wallet when the
+	// stablecoin rail is live — real money never mints bonus credits.
+	tipsService.SetBackedSettler(stablecoinService)
 	tipsService.SetSyncLocker(tipsSyncLockAdapter{rdb: vkClient.Redis()})
 	tipsService.SetClawbackNotifier(tipsNotifyDispatchAdapter{svc: notificationService})
 	tipsService.SetActivityEmitter(walletService) // ADR-136: tip.sent points for the sender

@@ -36,6 +36,10 @@ type fakeStore struct {
 	ocSecretOK     bool
 	getCalls       int
 	upsertParams   gen.UpsertTipSettingsParams
+	tip            gen.Tip
+	hasTip         bool
+	fiatSettled    bool
+	settledVia     []string
 }
 
 func newFakeStore() *fakeStore {
@@ -134,6 +138,9 @@ func (f *fakeStore) getLinkByID(_ context.Context, id pgtype.UUID) (gen.TipExter
 }
 
 func (f *fakeStore) getTip(context.Context, pgtype.UUID) (gen.Tip, error) {
+	if f.hasTip {
+		return f.tip, nil
+	}
 	return gen.Tip{}, ErrNotFound
 }
 func (f *fakeStore) getTipByIdempotencyKey(context.Context, pgtype.UUID, string) (gen.Tip, error) {
@@ -155,7 +162,10 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 func (f *fakeStore) refundPendingTip(context.Context, pgtype.UUID) (int64, error) {
 	return 1, nil
 }
-func (f *fakeStore) settleTip(context.Context, pgtype.UUID, int64) error { return nil }
+func (f *fakeStore) settleTip(_ context.Context, _ pgtype.UUID, _ int64, via string) error {
+	f.settledVia = append(f.settledVia, via)
+	return nil
+}
 func (f *fakeStore) attachTipPayment(context.Context, pgtype.UUID, pgtype.UUID, string) error {
 	return nil
 }
@@ -223,6 +233,7 @@ func (f *fakeStore) settleWalletTip(_ context.Context, p settleWalletParams) (ge
 	return gen.Tip{Method: p.method, Status: StatusCompleted}, nil
 }
 func (f *fakeStore) settleFiatTip(context.Context, pgtype.UUID, int64, pgtype.UUID) error {
+	f.fiatSettled = true
 	return nil
 }
 func (f *fakeStore) clawbackTip(context.Context, pgtype.UUID, pgtype.UUID) error { return nil }

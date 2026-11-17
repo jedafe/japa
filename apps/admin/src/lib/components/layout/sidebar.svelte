@@ -234,6 +234,8 @@
 			{ path: "/wallet/credit-packs", label: t("nav.credit_packs", "Credit Packs"), icon: Package, permission: "wallet.credit_pack.manage" },
 			{ path: "/wallet/purchases", label: t("nav.credit_purchases", "Credit Purchases"), icon: Receipt, permission: "wallet.purchases.view_any" },
 			{ path: "/wallet/withdrawals", label: t("nav.withdrawals", "Withdrawals"), icon: ArrowRightLeft, permission: "wallet.withdraw.approve" },
+			{ path: "/stablecoin-wallets", label: t("nav.stablecoin_wallets", "Stablecoin Wallets"), icon: Wallet, permission: "stablecoin.wallet.view" },
+			{ path: "/treasury", label: t("nav.treasury", "Treasury"), icon: PiggyBank, permission: "treasury.view" },
 			{ path: "/deals", label: t("nav.deals", "Deals"), icon: Tag, permission: "coupons.manage" },
 			{ path: "/coupon-feeds", label: t("nav.coupon_feeds", "Deal Feeds"), icon: Rss, permission: "coupons.manage" },
 			{ path: "/products", label: t("nav.products", "Products"), icon: Package, permission: "products.list" },
