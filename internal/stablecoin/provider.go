@@ -113,11 +113,13 @@ type OnrampInput struct {
 	Ref           string
 }
 
-// OnrampSession is a provider checkout handle.
+// OnrampSession is a provider checkout handle — URL is the hosted
+// checkout the member is sent to; Token is the embedded-flow client
+// secret; ID is the provider order reference.
 type OnrampSession struct {
-	URL   string
-	Token string
-	ID    string
+	URL   string `json:"url"`
+	Token string `json:"token"`
+	ID    string `json:"id"`
 }
 
 // ProviderWallet is the provider's view of a wallet.

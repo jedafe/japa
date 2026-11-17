@@ -112,6 +112,14 @@ export const listWithdrawalProviders = () => api.get<string[]>('/wallet/withdraw
 export const provisionStablecoinWallet = () =>
 	api.post<{ status?: string }>('/me/stablecoin-wallet/provision', {});
 
+// Fiat top-up — returns the Crossmint-hosted checkout URL; USDC/USDT is
+// delivered directly to the member's wallet address (§128, no custody).
+export const createStablecoinOnramp = (body: { asset: string; fiat_currency?: string }) =>
+	api.post<{ url?: string; token?: string; id?: string }>('/me/funding/onramp-session', body, {
+		// Rule 9: financial endpoints require an Idempotency-Key.
+		'Idempotency-Key': crypto.randomUUID()
+	});
+
 export const calculateWithdrawal = (body: { credit_amount: number; currency_code?: string }) =>
 	api.post<{
 		credit_amount: number;
