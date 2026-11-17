@@ -140,10 +140,10 @@ func (s *Service) instanceAllowed(ctx context.Context, domain string) bool {
 		return false
 	}
 	// Normalize to a bare lowercase hostname — the blocklist is keyed that
-	// way, so a caller passing 'host:port' or 'HOST' must not sail past an
-	// exact-match lookup that only stores 'host'.
+	// way, so a caller passing 'host:port', 'HOST', or 'host.' must not
+	// sail past an exact-match lookup that only stores 'host'.
 	if u, uerr := url.Parse("https://" + domain); uerr == nil && u.Hostname() != "" {
-		domain = strings.ToLower(u.Hostname())
+		domain = strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	}
 	mode := "open"
 	if s.settings != nil {
@@ -214,7 +214,8 @@ func sameURLHost(a, b string) bool {
 	if aerr != nil || berr != nil || au.Hostname() == "" || bu.Hostname() == "" {
 		return false
 	}
-	return strings.EqualFold(au.Hostname(), bu.Hostname())
+	norm := func(h string) string { return strings.TrimSuffix(strings.ToLower(h), ".") }
+	return norm(au.Hostname()) == norm(bu.Hostname())
 }
 
 // fetchRemoteActorDoc fetches and minimally parses an actor document.
