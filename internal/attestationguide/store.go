@@ -95,6 +95,49 @@ LIMIT 1
 	return name, nil
 }
 
+// GetSpaceNames returns id → name for a batch of spaces in one query. Used
+// by draft generation to resolve issuing + destination jurisdictions
+// without two round-trips.
+func (s *Store) GetSpaceNames(ctx context.Context, ids []pgtype.UUID) (map[pgtype.UUID]string, error) {
+	out := make(map[pgtype.UUID]string, len(ids))
+
+	uuids := make([]pgtype.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id.Valid {
+			uuids = append(uuids, id)
+		}
+	}
+
+	if len(uuids) == 0 {
+		return out, nil
+	}
+
+	const q = `
+SELECT id, name FROM spaces
+WHERE id = ANY($1) AND deleted_at IS NULL
+`
+
+	rows, err := s.pool.Reader.Query(ctx, q, uuids)
+	if err != nil {
+		return nil, fmt.Errorf("attestationguide: get space names: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id   pgtype.UUID
+			name string
+		)
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("attestationguide: scan space name: %w", err)
+		}
+
+		out[id] = name
+	}
+
+	return out, rows.Err()
+}
+
 // Pathway holds a single attestation_pathways row.
 type Pathway struct {
 	ID pgtype.UUID
@@ -129,6 +172,9 @@ type PathwayRow struct {
 }
 
 // CommunityUpdate holds a single attestation_community_updates row.
+// The Pathway*/UserDisplayName fields are populated only by
+// ListCommunityUpdates (the admin moderation queue needs pathway context to
+// review a submission without a second lookup).
 type CommunityUpdate struct {
 	ID             pgtype.UUID
 	PathwayID      pgtype.UUID
@@ -140,6 +186,12 @@ type CommunityUpdate struct {
 	Status         string
 	ReviewedBy     pgtype.UUID
 	CreatedAt      pgtype.Timestamptz
+
+	PathwayDocumentType   string
+	IssuingSpaceName      *string
+	DestinationSpaceName  *string
+	SubmitterName         *string
+	ReviewerName          *string
 }
 
 // ListPathwaysFilter holds the filter parameters for listing pathways.
@@ -472,6 +524,7 @@ SET hitl_reviewed_by        = $2,
     hitl_reviewed_at        = now(),
     hitl_review_notes      = $3,
     status                 = 'published',
+    is_active              = true,
     apostille_required     = $4,
     community_last_verified = COALESCE(community_last_verified, now()::date),
     updated_at             = now()
@@ -549,33 +602,52 @@ WHERE u.id = $1
 // to today (BUG-003 + BUG-004). If stepIndex is nil the steps are not patched
 // (general note update) but community_last_verified is still bumped.
 func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID pgtype.UUID, stepIndex *int32, feeEstimate *string, turnaroundDays *int32) error {
+	// Read-modify-write inside a writer transaction with FOR UPDATE so a
+	// concurrent approval cannot clobber an in-flight steps patch.
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("attestationguide: apply update: begin tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	// Load current pathway_steps so we can patch in Go (cleaner than nested
 	// jsonb_set SQL for conditional fields).
-	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1`
+	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1 FOR UPDATE`
 
 	var steps []byte
-	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID).Scan(&steps); err != nil {
+	if err := tx.QueryRow(ctx, loadQ, pathwayID).Scan(&steps); err != nil {
 		return fmt.Errorf("attestationguide: apply update: load steps: %w", err)
 	}
 
-	if stepIndex != nil && len(steps) > 0 && string(steps) != "[]" {
+	if stepIndex != nil {
 		var arr []map[string]any
-		if err := json.Unmarshal(steps, &arr); err == nil {
-			idx := int(*stepIndex)
-			if idx >= 0 && idx < len(arr) {
-				if feeEstimate != nil {
-					arr[idx]["fee_estimate"] = *feeEstimate
-				}
-
-				if turnaroundDays != nil {
-					arr[idx]["turnaround_days"] = *turnaroundDays
-				}
-			}
-
-			if patched, err := json.Marshal(arr); err == nil {
-				steps = patched
-			}
+		if err := json.Unmarshal(steps, &arr); err != nil {
+			return fmt.Errorf("attestationguide: apply update: decode steps: %w", err)
 		}
+
+		idx := int(*stepIndex)
+		if idx < 0 || idx >= len(arr) {
+			// Submit-side validation covers this, but a step list can shrink
+			// between submission and review — fail visibly rather than bump
+			// community_last_verified on a no-op patch.
+			return fmt.Errorf("attestationguide: apply update: step_index %d out of range (%d steps)", idx, len(arr))
+		}
+
+		if feeEstimate != nil {
+			arr[idx]["fee_estimate"] = *feeEstimate
+		}
+
+		if turnaroundDays != nil {
+			arr[idx]["turnaround_days"] = *turnaroundDays
+		}
+
+		patched, err := json.Marshal(arr)
+		if err != nil {
+			return fmt.Errorf("attestationguide: apply update: encode steps: %w", err)
+		}
+
+		steps = patched
 	}
 
 	const q = `
@@ -585,13 +657,17 @@ SET pathway_steps            = $2,
     updated_at              = now()
 WHERE id = $1`
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, steps)
+	cmd, err := tx.Exec(ctx, q, pathwayID, steps)
 	if err != nil {
 		return fmt.Errorf("attestationguide: apply update: %w", err)
 	}
 
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("attestationguide: apply update: commit: %w", err)
 	}
 
 	return nil
@@ -671,9 +747,18 @@ func (s *Store) ListCommunityUpdates(ctx context.Context, f ListCommunityUpdates
 
 	listQuery := fmt.Sprintf(`
 SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
-       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at,
+       p.document_type, iss.name, ds.name,
+       COALESCE(up.display_name, usr.username) AS submitter_name,
+       COALESCE(rp.display_name, rusr.username) AS reviewer_name
 FROM attestation_community_updates u
 JOIN attestation_pathways p ON p.id = u.pathway_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+LEFT JOIN spaces ds ON ds.id = p.destination_space_id
+LEFT JOIN users usr ON usr.id = u.user_id
+LEFT JOIN user_profiles up ON up.user_id = usr.id
+LEFT JOIN users rusr ON rusr.id = u.reviewed_by
+LEFT JOIN user_profiles rp ON rp.user_id = rusr.id
 WHERE %s
 ORDER BY u.created_at ASC
 LIMIT $%d OFFSET $%d
@@ -694,6 +779,8 @@ LIMIT $%d OFFSET $%d
 		if err := rows.Scan(
 			&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
 			&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
+			&u.PathwayDocumentType, &u.IssuingSpaceName, &u.DestinationSpaceName,
+			&u.SubmitterName, &u.ReviewerName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("attestationguide: scan community update row: %w", err)
 		}

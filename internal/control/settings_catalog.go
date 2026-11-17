@@ -654,8 +654,8 @@ var settingsCatalog = map[string]settingMeta{
 	// ten are registered here so the control-panel settings page exposes
 	// form fields and the /extensions Tools tab resolves their defaults.
 	"visa_routes.enabled":                     {Type: "bool", DefaultValue: "false", Description: "Global visa route comparison tool toggle.", Panel: "control"},
-	"visa_routes.subdomain":                   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"visa_routes.custom_domain":               {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"visa_routes.subdomain":                   {Type: "string", DefaultValue: "", Description: "RESERVED (ADR-086) — optional standalone subdomain; unread until platform per-tool host routing lands.", Panel: "control"},
+	"visa_routes.custom_domain":               {Type: "string", DefaultValue: "", Description: "RESERVED (ADR-086) — optional custom domain; unread until platform per-tool host routing lands.", Panel: "control"},
 	"appointment_alert.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global embassy appointment alerter toggle.", Panel: "control"},
 	"appointment_alert.premium_poll_interval": {Type: "int", DefaultValue: "300", Description: "Polling interval (seconds) for embassies with premium-tier alerts (5 min default vs 15 min standard). §91, ADR-099.", Panel: "control"},
 	"appointment_alert.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
@@ -788,7 +788,7 @@ var settingsCatalog = map[string]settingMeta{
 	"visa_timeline.min_account_age_days": {Type: "int", DefaultValue: "30", Min: 0, Description: "Min account age to contribute to processing time aggregate (§83).", Panel: "control"},
 	"visa_timeline.min_reputation":       {Type: "int", DefaultValue: "50", Min: 0, Description: "Min reputation to contribute to processing time aggregate (§83).", Panel: "control"},
 	"calendar.categories":                {Type: "json", DefaultValue: `[{"value":"visa_window","label":"Visa window"},{"value":"embassy_closure","label":"Embassy closure"},{"value":"application_deadline","label":"Application deadline"},{"value":"exam_window","label":"Exam window"},{"value":"immigration_office","label":"Immigration office"},{"value":"other","label":"Other"}]`, Description: "Allowed calendar entry categories (§86). Array of {value, label} objects.", Panel: "control"},
-	"attestation_guide.hague_members":    {Type: "json", DefaultValue: "[]", Description: "JSON array of destination space IDs that are Hague Convention members (§97).", Panel: "control"},
+	"attestation_guide.hague_members":    {Type: "json", DefaultValue: "[]", Description: "JSON array of country space IDs that are Hague Convention members (§97). An apostille pathway applies only when BOTH issuing and destination spaces appear here. Find IDs via Control → Spaces or GET /api/v1/geo/countries.", Panel: "control"},
 
 	// Claim Ownership (§07)
 	"claim_ownership.form_slug":   {Type: "string", DefaultValue: "claim-ownership", Description: "Slug of the Form Builder form used for ownership claims (§07).", Panel: "control", Public: true},

@@ -11,7 +11,7 @@
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
 	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
-	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type PathwayItem = {
@@ -35,7 +35,12 @@
 	type CommunityUpdateItem = {
 		id: string;
 		pathway_id: string;
+		pathway_document_type?: string | null;
+		issuing_space_name?: string | null;
+		destination_space_name?: string | null;
 		user_id: string;
+		submitter_name?: string | null;
+		reviewer_name?: string | null;
 		step_index?: number | null;
 		fee_estimate?: string | null;
 		turnaround_days?: number | null;
@@ -70,6 +75,11 @@
 	let generatePrompt = $state('');
 	let generating = $state(false);
 
+	// Approve modal state (HITL review notes — ADR-088)
+	let showApproveModal = $state(false);
+	let approveTarget = $state<PathwayItem | null>(null);
+	let approveNotes = $state('');
+
 	// Community updates list state
 	let updates = $state<CommunityUpdateItem[]>([]);
 	let loadingUpdates = $state(false);
@@ -100,15 +110,21 @@
 	}
 
 	async function approvePathway(item: PathwayItem) {
-		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
-		if (item.ai_generated && !item.hitl_reviewed_by) {
-			pageError = t('app.attestation_guide.hitl_required', 'Cannot approve AI-generated content without HITL review');
-			return;
-		}
+		// Approving IS the HITL act (ADR-088): it stamps hitl_reviewed_by/at
+		// server-side. Prompt for optional review notes first.
+		approveTarget = item;
+		approveNotes = '';
+		showApproveModal = true;
+	}
+
+	async function confirmApprove() {
+		const item = approveTarget;
+		if (!item) return;
+		showApproveModal = false;
 		acting = true;
 		pageError = '';
 		try {
-			const result = await attestationGuideAdminApi.approve(item.id);
+			const result = await attestationGuideAdminApi.approve(item.id, approveNotes.trim() || undefined);
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -118,6 +134,7 @@
 			pageError = t('common.error', 'An error occurred');
 		} finally {
 			acting = false;
+			approveTarget = null;
 		}
 	}
 
@@ -158,7 +175,9 @@
 		updatesPage = page;
 		try {
 			// api helpers prepend '?' themselves — pass a bare query string.
-			const statusParam = updateStatusFilter === 'all' ? '' : `status=${updateStatusFilter}&`;
+			// Backend sentinel: status=all returns every status; empty defaults
+			// to the pending queue.
+			const statusParam = `status=${updateStatusFilter}&`;
 			const result = await attestationGuideAdminApi.listUpdates(
 				`${statusParam}page_offset=${(page - 1) * updatesPageSize}&page_size=${updatesPageSize}`
 			);
@@ -217,25 +236,50 @@
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: PathwayItem, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
-			acts.push({
-				label: t('common.approve', 'Approve'),
-				icon: CheckCircle,
-				onclick: approvePathway,
-				show: (row: PathwayItem) => row.status === 'ai_draft' || row.status === 'pending'
-			});
+			acts.push(
+				{
+					label: t('common.approve', 'Approve'),
+					icon: CheckCircle,
+					onclick: approvePathway,
+					show: (row: PathwayItem) => row.status === 'ai_draft' || row.status === 'pending'
+				},
+				{
+					label: t('common.edit', 'Edit'),
+					icon: Pencil,
+					onclick: (_row: PathwayItem, ctx) => ctx?.openEdit(_row)
+				}
+			);
 		}
 		return acts;
 	});
 
-	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
+	// `fields` drives EntityForm for both create and edit — including the
+	// lifecycle fields (status/is_active) that PATCH /admin/attestation/:id
+	// accepts. doc_type/status are selects constrained to the §97 enums.
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
+			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'select', options: [
+				{ value: 'birth_certificate', label: t('app.tools.doc_birth_certificate', 'Birth certificate') },
+				{ value: 'degree', label: t('app.tools.doc_degree', 'Degree') },
+				{ value: 'marriage', label: t('app.tools.doc_marriage', 'Marriage certificate') },
+				{ value: 'police_clearance', label: t('app.tools.doc_police_clearance', 'Police clearance') },
+				{ value: 'professional_licence', label: t('app.tools.doc_professional_licence', 'Professional licence') },
+				{ value: 'other', label: t('common.other', 'Other') }
+			] },
 			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
-			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'json' }
+			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'json' },
+			{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: [
+				{ value: 'draft', label: t('common.status_draft', 'Draft') },
+				{ value: 'ai_draft', label: t('common.status_ai_draft', 'AI Draft') },
+				{ value: 'pending', label: t('common.status_pending', 'Pending') },
+				{ value: 'published', label: t('common.status_published', 'Published') },
+				{ value: 'rejected', label: t('common.status_rejected', 'Rejected') }
+			] },
+			{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox' },
+			{ key: 'community_last_verified', label: t('common.last_verified', 'Last Verified'), type: 'date' }
 		];
 	});
 
@@ -287,11 +331,27 @@
 		];
 	});
 
+	// pathway_steps is bound by JsonValueEditor as a JSON string — parse it
+	// before sending; empty means no steps yet.
+	function parseSteps(value: unknown): { ok: true; steps: unknown } | { ok: false } {
+		if (value === '' || value === undefined || value === null) return { ok: true, steps: [] };
+		if (typeof value === 'string') {
+			try {
+				return { ok: true, steps: JSON.parse(value) };
+			} catch {
+				return { ok: false };
+			}
+		}
+		return { ok: true, steps: value };
+	}
+
 	const config = $derived<EntityPageConfig>({
 		filters,
 		title: t('app.tools.attestation_guide_heading', 'Attestation Guide Review Queue'),
 		description: t('app.tools.attestation_guide_desc', 'Review and approve attestation guide entries'),
-		readonly: true,
+		createLabel: t('app.tools.create_pathway', 'Create pathway'),
+		createPermission: 'attestation_guide.manage',
+		bulkDelete: false,
 		pageSize: 25,
 		columns: [
 			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), sortable: true },
@@ -356,6 +416,31 @@
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+		},
+		create: async (body: Record<string, unknown>) => {
+			const steps = parseSteps(body.pathway_steps);
+			if (!steps.ok) return { ok: false, error: t('app.tools.invalid_steps_json', 'Pathway steps must be valid JSON') };
+			const payload: Record<string, unknown> = { ...body, pathway_steps: steps.steps };
+			// Empty select/date values mean "use the backend default"; an
+			// unchecked is_active also defers to the backend default (active),
+			// matching the pre-PATCH create behavior. Deactivation lives in
+			// the edit flow.
+			for (const k of ['status', 'community_last_verified']) {
+				if (!payload[k]) delete payload[k];
+			}
+			if (!payload.is_active) delete payload.is_active;
+			return attestationGuideAdminApi.create(payload);
+		},
+		update: async (id: string, body: Record<string, unknown>) => {
+			const steps = parseSteps(body.pathway_steps);
+			if (!steps.ok) return { ok: false, error: t('app.tools.invalid_steps_json', 'Pathway steps must be valid JSON') };
+			// PATCH semantics: empty strings mean "leave unchanged" — strip them.
+			const payload: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries({ ...body, pathway_steps: steps.steps })) {
+				if (v === '' || v === undefined || v === null) continue;
+				payload[k] = v;
+			}
+			return attestationGuideAdminApi.update(id, payload);
 		},
 		viewSnippet: PathwayView
 	});
@@ -461,11 +546,27 @@
 					<div class="flex items-center justify-between gap-2 flex-wrap">
 						<div>
 							<p class="text-sm font-medium" style="color: var(--color-foreground)">
-								{t('common.update', 'Update')} #{update.step_index ?? '—'}
+								{update.pathway_document_type
+									? update.pathway_document_type.replaceAll('_', ' ')
+									: t('common.update', 'Update')}
+								{#if update.step_index !== null && update.step_index !== undefined}
+									· {t('app.tools.step_n', 'Step {n}').replace('{n}', String(update.step_index + 1))}
+								{:else}
+									· {t('app.tools.general_note', 'General note')}
+								{/if}
 								<span class="ms-2 text-xs font-normal" style="color: var(--color-muted)">({update.status})</span>
 							</p>
 							<p class="text-xs" style="color: var(--color-muted)">
-								{update.fee_estimate ?? '—'} · {update.turnaround_days ?? '—'} days
+								{#if update.issuing_space_name || update.destination_space_name}
+									{update.issuing_space_name ?? '—'} → {update.destination_space_name ?? '—'} ·
+								{/if}
+								{update.submitter_name ?? update.user_id}
+							</p>
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('app.tools.fee', 'Fee')}: {update.fee_estimate ?? '—'} · {t('app.tools.turnaround', 'Turnaround')}: {update.turnaround_days ?? '—'} {t('app.tools.days', 'days')}
+								{#if update.reviewer_name}
+									· {t('app.tools.reviewed_by_name', 'Reviewed by {name}').replace('{name}', update.reviewer_name)}
+								{/if}
 							</p>
 						</div>
 						{#if update.status === 'pending'}
@@ -525,14 +626,20 @@
 	<div class="space-y-4">
 		<div>
 			<label for="gen-doc-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.doc_type', 'Document Type')}</label>
-			<input
+			<select
 				id="gen-doc-type"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateDocType}
-				placeholder={t('app.tools.doc_type_placeholder', 'e.g. birth_certificate')}
-			/>
+			>
+				<option value="">{t('app.tools.select_doc_type', 'Select a document type…')}</option>
+				<option value="birth_certificate">{t('app.tools.doc_birth_certificate', 'Birth certificate')}</option>
+				<option value="degree">{t('app.tools.doc_degree', 'Degree')}</option>
+				<option value="marriage">{t('app.tools.doc_marriage', 'Marriage certificate')}</option>
+				<option value="police_clearance">{t('app.tools.doc_police_clearance', 'Police clearance')}</option>
+				<option value="professional_licence">{t('app.tools.doc_professional_licence', 'Professional licence')}</option>
+				<option value="other">{t('common.other', 'Other')}</option>
+			</select>
 		</div>
 		<div>
 			<label for="gen-issuing" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.issuing_country', 'Issuing Country')}</label>
@@ -582,6 +689,37 @@
 	</div>
 </Modal>
 
+<!-- ── Approve modal (HITL review notes — ADR-088) ─────────────────────── -->
+<Modal bind:open={showApproveModal} title={t('app.tools.approve_pathway_title', 'Approve pathway')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t(
+				'app.tools.approve_pathway_desc',
+				'Approving publishes this pathway and stamps the HITL review fields. Optionally attach review notes.'
+			)}
+		</p>
+		<div>
+			<label for="approve-notes" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.tools.review_notes', 'Review notes (optional)')}
+			</label>
+			<textarea
+				id="approve-notes"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={approveNotes}
+				placeholder={t('app.tools.review_notes_placeholder', 'What did you verify?')}
+				rows="3"
+			></textarea>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showApproveModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmApprove} disabled={acting}>
+			{acting ? t('common.submitting', 'Submitting...') : t('common.approve', 'Approve')}
+		</Button>
+	</div>
+</Modal>
+
 <!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet PathwayView({ row }: { row: PathwayItem })}
 	<div class="space-y-4">
@@ -616,9 +754,30 @@
 		{#if row.pathway_steps && Array.isArray(row.pathway_steps) && row.pathway_steps.length > 0}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.pathway_steps', 'Pathway Steps')}</p>
-				<ol class="mt-1 list-decimal list-inside text-sm space-y-1" style="color: var(--color-foreground)">
-					{#each row.pathway_steps as step (step)}
-						<li>{JSON.stringify(step)}</li>
+				<ol class="mt-1 list-decimal list-inside text-sm space-y-2" style="color: var(--color-foreground)">
+					{#each row.pathway_steps as step, i (i)}
+						<li>
+							{#if step && typeof step === 'object'}
+								<span class="font-medium">
+									{typeof step.step === 'string' && step.step.trim()
+										? step.step
+										: t('app.tools.step_n', 'Step {n}').replace('{n}', String(i + 1))}
+								</span>
+								<span style="color: var(--color-muted)">
+									{[
+										step.agency,
+										step.fee_estimate ? `${t('app.tools.fee', 'Fee')}: ${step.fee_estimate}` : null,
+										step.turnaround_days != null
+											? `${step.turnaround_days} ${t('app.tools.days', 'days')}`
+											: null
+									]
+										.filter(Boolean)
+										.join(' · ')}
+								</span>
+							{:else}
+								{String(step)}
+							{/if}
+						</li>
 					{/each}
 				</ol>
 			</div>

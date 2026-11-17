@@ -2509,14 +2509,17 @@ export const cvFormatterAdminApi = {
 export const visaRoutesAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/visa-routes${params ? `?${params}` : ''}`),
 	listRaw: (params?: string) =>
-		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
-			`/admin/visa-routes${params ? `?${params}` : ''}`
-		),
+		apiRaw<{
+			data: unknown[];
+			meta?: { page: number; per_page: number; total: number; total_pages: number };
+			pagination?: { page: number; per_page: number; total: number; total_pages: number };
+		}>(`/admin/visa-routes${params ? `?${params}` : ''}`),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/visa-routes`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/visa-routes/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<unknown>(`/admin/visa-routes/${id}`, { method: 'DELETE' }),
-	approve: (id: string) => api<unknown>(`/admin/visa-routes/${id}/approve`, { method: 'PATCH', body: {} }),
+	approve: (id: string, notes?: string) =>
+		api<unknown>(`/admin/visa-routes/${id}/approve`, { method: 'PATCH', body: notes ? { notes } : {} }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/visa-routes/generate`, { method: 'POST', body }),
 };
@@ -2587,8 +2590,13 @@ export const attestationGuideAdminApi = {
 			`/admin/attestation/updates${params ? `?${params.replace(/^\?/, '')}` : ''}`
 		),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/attestation`, { method: 'POST', body }),
-	approve: (id: string) =>
-		api<unknown>(`/admin/attestation/${id}/approve`, { method: 'PATCH', body: {} }),
+	approve: (id: string, reviewNotes?: string) =>
+		api<unknown>(`/admin/attestation/${id}/approve`, {
+			method: 'PATCH',
+			body: reviewNotes ? { review_notes: reviewNotes } : {}
+		}),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/attestation/${id}`, { method: 'PATCH', body }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/attestation/generate`, { method: 'POST', body }),
 	reviewUpdate: (id: string, approve: boolean) =>

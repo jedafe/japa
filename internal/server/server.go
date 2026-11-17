@@ -9900,12 +9900,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/housing-guides/{id}/reject", housingGuideHandlers.HandleAdminReject)
 			})
 
-			// §97 — Attestation Guide (ADR-105)
+			// §97 — Attestation Guide (ADR-105). Public lookup is anonymous
+			// per §97; the seeded attestation_guide.view node is reserved for
+			// future member-only gating — today the feature flag is the gate.
 			r.With(features.Gate(featureChecker, "attestation_guide.enabled")).Group(func(r chi.Router) {
 				r.Get("/attestation", attestationGuideHandlers.HandleList)
 				r.Get("/attestation/{id}", attestationGuideHandlers.HandleGet)
 				r.Get("/attestation/{id}/export/pdf", attestationGuideHandlers.HandleExportPDF)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.update")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.update"), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Post("/attestation/{id}/updates", attestationGuideHandlers.HandleSubmitUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
 					Get("/admin/attestation", attestationGuideHandlers.HandleAdminList)
@@ -9913,6 +9915,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/attestation/updates", attestationGuideHandlers.HandleAdminListUpdates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
 					Post("/admin/attestation", attestationGuideHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Patch("/admin/attestation/{id}", attestationGuideHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
 					Post("/admin/attestation/generate", attestationGuideHandlers.HandleAdminGenerate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).

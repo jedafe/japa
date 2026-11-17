@@ -1,32 +1,85 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { Stamp, ArrowLeft, Download, Globe, AlertTriangle } from 'lucide-svelte';
-	import { PUBLIC_JC_API_URL } from '$app/env/public';
-	import { buildApiUrl } from '@japaconnect/api-url';
+	import { Stamp, ArrowLeft, Download, AlertTriangle, MessageSquarePlus } from 'lucide-svelte';
+	import { api } from '#lib/api/client.js';
+	import BodyField from '#lib/components/ui/BodyField.svelte';
+	import { docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
+	import type { AttestationCommunityUpdate } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	/**
 	 * Attestation Guide detail page — Section 97, ADR-105.
+	 * PDF export (§97 "exportable for in-person use") is delivered via the
+	 * browser's print pipeline: a print stylesheet renders a clean document
+	 * and ?print=1 auto-opens the print dialog so users can save as PDF.
 	 *
 	 * Ref: japaconnect-engineering/sections/97-attestation-guide.md
 	 */
 	let { data }: { data: PageData } = $props();
 
 	const pathway = $derived(data.pathway!);
+	const authed = $derived(data.authed);
 
-	const title = $derived(`${pathway.document_type} — ${t('attestation_guide.title', 'Attestation Guide')}`);
+	const title = $derived(`${docTypeLabel(pathway.document_type)} — ${t('attestation_guide.title', 'Attestation Guide')}`);
 	const description = $derived(t('attestation_guide.subtitle', 'Step-by-step document attestation pathways.'));
 
-	function pathwayStepEntries(step: unknown): [string, unknown][] {
-		if (!step || typeof step !== 'object') return [];
-		return Object.entries(step as Record<string, unknown>);
+	// ?print=1 — open the print dialog once content is mounted (invoked from
+	// the list page's "Export PDF" link).
+	onMount(() => {
+		if (page.url.searchParams.get('print') === '1') {
+			window.print();
+		}
+	});
+
+	// Community update form state
+	let showUpdateForm = $state(false);
+	let updateStepIndex = $state('');
+	let updateFeeEstimate = $state('');
+	let updateTurnaroundDays = $state('');
+	let updateNote = $state('');
+	let submittingUpdate = $state(false);
+	let updateError = $state<string | null>(null);
+	let updateSubmitted = $state(false);
+
+	function openUpdateForm() {
+		if (!authed) {
+			const next = encodeURIComponent(page.url.pathname);
+			window.location.href = `/login?next=${next}`;
+			return;
+		}
+		showUpdateForm = true;
+		updateError = null;
 	}
 
-	function isStepObject(step: unknown): step is Record<string, unknown> {
-		return step !== null && typeof step === 'object' && !Array.isArray(step);
+	async function submitUpdate() {
+		// Mirror of the backend rule: a submission must carry a fee,
+		// turnaround, or note (a step selection alone is a locator).
+		if (!updateFeeEstimate.trim() && !updateTurnaroundDays && !updateNote.trim()) {
+			updateError = t(
+				'attestation_guide.update_required',
+				'Add a fee, turnaround, or note before submitting.'
+			);
+			return;
+		}
+		submittingUpdate = true;
+		updateError = null;
+		const body: Record<string, unknown> = {};
+		if (updateStepIndex !== '') body.step_index = parseInt(updateStepIndex, 10);
+		if (updateFeeEstimate.trim()) body.fee_estimate = updateFeeEstimate.trim();
+		if (updateTurnaroundDays !== '') body.turnaround_days = parseInt(updateTurnaroundDays, 10);
+		if (updateNote.trim()) body.note = updateNote.trim();
+		const res = await api.post<AttestationCommunityUpdate>(`/attestation/${pathway.id}/updates`, body);
+		submittingUpdate = false;
+		if (res.error) {
+			updateError = res.error.message;
+			return;
+		}
+		showUpdateForm = false;
+		updateSubmitted = true;
 	}
 
 	function formatDate(iso?: string | null): string {
@@ -57,7 +110,7 @@
 />
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3 print:hidden">
 		<a
 			href={pathway.destination_space_id
 				? `/tools/attestation-guide?dest=${pathway.destination_space_id}`
@@ -76,7 +129,7 @@
 					<Stamp size={20} />
 				</div>
 				<div class="min-w-0 flex-1">
-					<h1 class="text-lg font-semibold text-[var(--color-text)] capitalize">{pathway.document_type}</h1>
+					<h1 class="text-lg font-semibold text-[var(--color-text)]">{docTypeLabel(pathway.document_type)}</h1>
 					<p class="text-sm text-[var(--color-text-subtle)]">
 						{pathway.issuing_space_name ?? t('attestation_guide.unknown_issuing', 'Unknown')}
 						→
@@ -132,25 +185,26 @@
 								class="min-w-0 flex-1 text-sm text-[var(--color-text)]"
 							>
 								{#if isStepObject(step)}
-									{#each pathwayStepEntries(step) as [key, val] (key)}
-										<div class="flex items-start gap-1.5">
-											<span class="font-medium">{key}:</span>
-											{#if key === 'url' && typeof val === 'string'}
+									<p class="font-medium">{stepHeadline(step, i)}</p>
+									{#each stepFields(step) as field (field.label)}
+										<div class="mt-0.5 flex items-start gap-1.5">
+											<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
+											{#if field.url}
 												<a
-													href={val}
+													href={field.url}
 													target="_blank"
 													rel="noopener noreferrer"
 													class="break-all text-[var(--color-primary-text)] hover:underline"
 												>
-													{val}
+													{field.value}
 												</a>
 											{:else}
-												<span class="text-[var(--color-text-subtle)]">{String(val)}</span>
+												<span class="text-[var(--color-text-subtle)]">{field.value}</span>
 											{/if}
 										</div>
 									{/each}
 								{:else}
-									<span class="text-[var(--color-text-subtle)]">{String(step)}</span>
+									<span class="text-[var(--color-text-subtle)]">{stepValueText(step)}</span>
 								{/if}
 							</div>
 						</li>
@@ -159,16 +213,122 @@
 			</div>
 		{/if}
 
-		<div class="flex flex-wrap items-center gap-3">
-			<a
-				href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
-				target="_blank"
-				rel="noopener noreferrer"
+		<div class="flex flex-wrap items-center gap-3 print:hidden">
+			<button
+				type="button"
+				onclick={() => window.print()}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<Download size={16} />
-				{t('attestation_guide.download_pdf', 'Export pathway')}
-			</a>
+				{t('attestation_guide.download_pdf', 'Export PDF')}
+			</button>
+			<button
+				type="button"
+				onclick={openUpdateForm}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+			>
+				<MessageSquarePlus size={16} />
+				{t('attestation_guide.add_update', 'Add community update')}
+			</button>
 		</div>
+
+		{#if updateSubmitted}
+			<p class="text-xs print:hidden" style="color: var(--color-success, #16a34a)">
+				{t(
+					'attestation_guide.update_submitted',
+					'Update submitted — it will appear after moderator review.'
+				)}
+			</p>
+		{/if}
+
+		{#if showUpdateForm}
+			<div class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4 print:hidden">
+				<h3 class="text-sm font-semibold text-[var(--color-text)]">
+					{t('attestation_guide.update_title', 'Submit a community update')}
+				</h3>
+				{#if updateError}
+					<p class="text-sm" style="color: var(--color-danger)">{updateError}</p>
+				{/if}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+					<div>
+						<label for="upd-step" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+							{t('attestation_guide.step_index', 'Which step?')}
+						</label>
+						<select
+							id="upd-step"
+							bind:value={updateStepIndex}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+						>
+							<option value="">{t('attestation_guide.step_general', 'General note')}</option>
+							{#each (Array.isArray(pathway.pathway_steps) ? pathway.pathway_steps : []) as _s, i (i)}
+								<option value={String(i)}>{t('attestation_guide.step_n', 'Step')} {i + 1}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="upd-fee" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+							{t('attestation_guide.fee_estimate', 'Fee estimate')}
+						</label>
+						<input
+							id="upd-fee"
+							type="text"
+							bind:value={updateFeeEstimate}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="upd-turnaround" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+							{t('attestation_guide.turnaround_days', 'Turnaround (days)')}
+						</label>
+						<input
+							id="upd-turnaround"
+							type="number"
+							bind:value={updateTurnaroundDays}
+							min="0"
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+						/>
+					</div>
+				</div>
+				<BodyField
+					id="upd-note"
+					label={t('attestation_guide.note', 'Note')}
+					body={updateNote}
+					onBody={(v) => (updateNote = v)}
+					placeholder={t('attestation_guide.note_placeholder', 'Share your experience with this step...')}
+					rows={3}
+				/>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						onclick={submitUpdate}
+						disabled={submittingUpdate}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						{submittingUpdate ? t('common.submitting', 'Submitting...') : t('common.submit', 'Submit')}
+					</button>
+					<button
+						type="button"
+						onclick={() => (showUpdateForm = false)}
+						class="px-4 py-2 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+					>
+						{t('common.cancel', 'Cancel')}
+					</button>
+				</div>
+			</div>
+		{/if}
 	</div>
 </div>
+
+<style>
+	/* §97 PDF export: print renders a clean black-on-white document —
+	 * nav/actions/form are hidden via print:hidden on their containers. */
+	@media print {
+		:global(body) {
+			background: #fff !important;
+			color: #111 !important;
+		}
+		:global(header), :global(nav), :global(footer), :global(aside) {
+			display: none !important;
+		}
+	}
+</style>

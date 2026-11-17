@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -47,6 +48,7 @@ type Handlers struct {
 // fields (§14). Implemented by *literals.Catalog; nil disables resolution.
 type literalResolver interface {
 	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+	ResolveJSON(ctx context.Context, raw json.RawMessage, rc literals.RenderContext) json.RawMessage
 }
 
 // SetLiteralResolver injects the template-literal catalog so user-facing
@@ -65,6 +67,24 @@ func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 	}
 
 	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+
+	// pathway_steps is json.RawMessage — ResolveFields cannot reach inside,
+	// so resolve each element's strings via ResolveJSON (§14 placeholders
+	// like {{geo.destination}} inside step text).
+	rc := literals.NewRequestContext(r, "")
+	resolveSteps := func(dto *PathwayDTO) {
+		if len(dto.PathwaySteps) > 0 && strings.Contains(string(dto.PathwaySteps), "{{") {
+			dto.PathwaySteps = h.lit.ResolveJSON(r.Context(), dto.PathwaySteps, rc)
+		}
+	}
+	switch vv := v.(type) {
+	case *PathwayDTO:
+		resolveSteps(vv)
+	case *[]PathwayDTO:
+		for i := range *vv {
+			resolveSteps(&(*vv)[i])
+		}
+	}
 }
 
 // NewHandlers creates attestation guide handlers bound to the provided
@@ -288,6 +308,11 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_update", err.Error())
+			return
+		}
+
 		slog.Error("attestationguide: submit update failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community update")
 
@@ -440,6 +465,11 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 
 	pathway, err := h.service.Create(r.Context(), input)
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+
 		slog.Error("attestationguide: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create attestation pathway")
 
@@ -447,6 +477,52 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pathway})
+}
+
+// HandleAdminUpdate handles PATCH /admin/attestation/:id — partial update of
+// a pathway (lifecycle management: edit fields/steps, reject, deactivate).
+// Admin-only (attestation_guide.manage permission checked at route
+// registration).
+func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		return
+	}
+
+	var input UpdatePathwayInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	pathway, err := h.service.Update(r.Context(), id, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_update", err.Error())
+			return
+		}
+
+		slog.Error("attestationguide: admin update failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update attestation pathway")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
 
 // HandleAdminGenerate handles POST /admin/attestation/generate — creates
@@ -511,16 +587,14 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// review_notes are optional; an empty or malformed body simply means
+	// no notes — approval itself is never blocked by the body.
+	notes := ""
+
 	var body struct {
 		ReviewNotes *string `json:"review_notes"`
 	}
-
-	if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.ReviewNotes != nil && *body.ReviewNotes != "" {
-		// notes captured below
-	}
-
-	notes := ""
-	if body.ReviewNotes != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.ReviewNotes != nil {
 		notes = *body.ReviewNotes
 	}
 

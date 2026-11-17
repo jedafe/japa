@@ -18,6 +18,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 	const pathwayId = event.params.id;
+	const authed = !!event.locals.user;
 
 	let pathway: AttestationPathwayWithAi | null = null;
 	try {
@@ -30,5 +31,5 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'attestation_not_found', message: 'Attestation pathway not found' });
 	}
 
-	return { pathway };
+	return { pathway, authed };
 };

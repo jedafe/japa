@@ -93,7 +93,7 @@ var toolCatalog = []toolCatalogDef{
 		label:    "Attestation Guides",
 		category: "immigration",
 		countSQL: "SELECT COUNT(*) FROM attestation_pathways",
-		readSQL:  "SELECT id, document_type, issuing_space_id, destination_space_id, status, is_active, created_at FROM attestation_pathways WHERE id = $1",
+		readSQL:  "SELECT id, document_type, issuing_space_id, destination_space_id, apostille_required, pathway_steps, status, is_active, created_at FROM attestation_pathways WHERE id = $1",
 	},
 	{
 		toolType: "arrival_checklist",

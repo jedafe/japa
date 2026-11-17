@@ -26,6 +26,21 @@ import (
 	"github.com/jedafe/japa/internal/config"
 )
 
+// ErrInvalidInput marks request-validation failures so handlers can map them
+// to 400 instead of 500.
+var ErrInvalidInput = errors.New("invalid input")
+
+// isValidDocumentType reports whether v is a §97 canonical document type.
+func isValidDocumentType(v string) bool {
+	switch v {
+	case DocumentTypeBirthCertificate, DocumentTypeDegree, DocumentTypeMarriage,
+		DocumentTypePoliceClearance, DocumentTypeProfessionalLicence, DocumentTypeOther:
+		return true
+	}
+
+	return false
+}
+
 // AIDispatcher is the subset of the AI Gateway the attestation guide
 // needs to generate draft pathways. *ai.Dispatcher satisfies this.
 type AIDispatcher interface {
@@ -66,17 +81,24 @@ type PathwayDTO struct {
 }
 
 // CommunityUpdateDTO is the API response shape for a community update.
+// The Pathway*/SubmitterName fields give the admin moderation queue enough
+// context to review a submission inline (populated by AdminListUpdates).
 type CommunityUpdateDTO struct {
-	ID             string `json:"id"`
-	PathwayID      string `json:"pathway_id"`
-	UserID         string `json:"user_id"`
-	StepIndex      *int32 `json:"step_index,omitempty"`
-	FeeEstimate    string `json:"fee_estimate,omitempty"`
-	TurnaroundDays *int32 `json:"turnaround_days,omitempty"`
-	Note           string `json:"note,omitempty"`
-	Status         string `json:"status"`
-	ReviewedBy     string `json:"reviewed_by,omitempty"`
-	CreatedAt      string `json:"created_at"`
+	ID                   string `json:"id"`
+	PathwayID            string `json:"pathway_id"`
+	PathwayDocumentType  string `json:"pathway_document_type,omitempty"`
+	IssuingSpaceName     string `json:"issuing_space_name,omitempty"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	UserID               string `json:"user_id"`
+	SubmitterName        string `json:"submitter_name,omitempty"`
+	ReviewerName         string `json:"reviewer_name,omitempty"`
+	StepIndex            *int32 `json:"step_index,omitempty"`
+	FeeEstimate          string `json:"fee_estimate,omitempty"`
+	TurnaroundDays       *int32 `json:"turnaround_days,omitempty"`
+	Note                 string `json:"note,omitempty"`
+	Status               string `json:"status"`
+	ReviewedBy           string `json:"reviewed_by,omitempty"`
+	CreatedAt            string `json:"created_at"`
 }
 
 // CreatePathwayInput is the request body for POST /admin/attestation.
@@ -84,11 +106,12 @@ type CreatePathwayInput struct {
 	DocumentType          string          `json:"document_type"`
 	IssuingSpaceID        string          `json:"issuing_space_id"`
 	DestinationSpaceID    string          `json:"destination_space_id"`
-	ApostilleRequired     bool            `json:"apostille_required"`
+	ApostilleRequired     *bool           `json:"apostille_required"`
 	PathwaySteps          json.RawMessage `json:"pathway_steps"`
 	CommunityLastVerified string          `json:"community_last_verified"`
 	Status                string          `json:"status"`
 	IsActive              *bool           `json:"is_active"`
+	AIGenerated           *bool           `json:"ai_generated"`
 	AIModel               string          `json:"ai_model"`
 	AIPromptHash          string          `json:"ai_prompt_hash"`
 	HITLReviewNotes       string          `json:"hitl_review_notes"`
@@ -111,6 +134,21 @@ type GeneratePathwayInput struct {
 	IssuingSpaceID     string `json:"issuing_space_id"`
 	DestinationSpaceID string `json:"destination_space_id"`
 	Prompt             string `json:"prompt"`
+}
+
+// UpdatePathwayInput carries optional PATCH fields for
+// PATCH /admin/attestation/{id}. Nil fields are left untouched; this is the
+// lifecycle-management surface (edit steps/fields, reject, deactivate) that
+// the approve-only flow cannot express.
+type UpdatePathwayInput struct {
+	DocumentType          *string         `json:"document_type"`
+	IssuingSpaceID        *string         `json:"issuing_space_id"`
+	DestinationSpaceID    *string         `json:"destination_space_id"`
+	ApostilleRequired     *bool           `json:"apostille_required"`
+	PathwaySteps          json.RawMessage `json:"pathway_steps"`
+	CommunityLastVerified *string         `json:"community_last_verified"`
+	Status                *string         `json:"status"`
+	IsActive              *bool           `json:"is_active"`
 }
 
 // Service holds the business logic for the Attestation Guide.
@@ -309,12 +347,12 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	return sb.String(), citations
 }
 
-// isHagueMember reports whether the destination space is a Hague Convention
-// member per the attestation_guide.hague_members system_setting (§97 Hague
-// Convention section). The setting is a JSON array of space IDs. Returns false
-// on any error (fail-safe: no apostille required if lookup fails).
-func (s *Service) isHagueMember(ctx context.Context, destSpaceID pgtype.UUID) bool {
-	if s.settings == nil || !destSpaceID.Valid {
+// isHagueMember reports whether a space is a Hague Convention member per the
+// attestation_guide.hague_members system_setting (§97 Hague Convention
+// section). The setting is a JSON array of space IDs. Returns false on any
+// error (fail-safe: no apostille required if lookup fails).
+func (s *Service) isHagueMember(ctx context.Context, spaceID pgtype.UUID) bool {
+	if s.settings == nil || !spaceID.Valid {
 		return false
 	}
 
@@ -326,9 +364,9 @@ func (s *Service) isHagueMember(ctx context.Context, destSpaceID pgtype.UUID) bo
 		return false
 	}
 
-	destID := destSpaceID.String()
+	id := spaceID.String()
 	for _, m := range members {
-		if m == destID {
+		if m == id {
 			return true
 		}
 	}
@@ -389,38 +427,56 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (PathwayDTO, erro
 // (attestation_guide.manage permission checked at route level).
 func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" {
-		return PathwayDTO{}, errors.New("document_type is required")
+		return PathwayDTO{}, fmt.Errorf("%w: document_type is required", ErrInvalidInput)
+	}
+
+	if !isValidDocumentType(input.DocumentType) {
+		return PathwayDTO{}, fmt.Errorf("%w: invalid document_type %q", ErrInvalidInput, input.DocumentType)
 	}
 
 	if input.IssuingSpaceID == "" {
-		return PathwayDTO{}, errors.New("issuing_space_id is required")
+		return PathwayDTO{}, fmt.Errorf("%w: issuing_space_id is required", ErrInvalidInput)
 	}
 
 	if input.DestinationSpaceID == "" {
-		return PathwayDTO{}, errors.New("destination_space_id is required")
+		return PathwayDTO{}, fmt.Errorf("%w: destination_space_id is required", ErrInvalidInput)
 	}
 
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(input.IssuingSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
 	}
 
 	steps := []byte(input.PathwaySteps)
 	if len(steps) == 0 {
 		steps = []byte("[]")
+	} else if !json.Valid(steps) {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be valid JSON", ErrInvalidInput)
 	}
 
-	// §97 Hague Convention: if apostille_required was not explicitly provided,
-	// derive it from the attestation_guide.hague_members system_setting based
-	// on the destination country. Fix BUG-002.
-	apostilleRequired := input.ApostilleRequired
-	if !apostilleRequired {
-		apostilleRequired = s.isHagueMember(ctx, destSpaceID)
+	// §97 Hague Convention: an apostille is only usable when BOTH the issuing
+	// and destination jurisdictions are Convention members — a member
+	// destination cannot accept an apostille from a non-member issuer, and a
+	// member issuer's apostille has no effect in a non-member destination.
+	// Note: §97's text keys the lookup on destination alone; the both-sides
+	// check is the correct semantic (flagged in the §97 audit).
+	apostilleRequired := s.isHagueMember(ctx, destSpaceID) && s.isHagueMember(ctx, issuingSpaceID)
+	if input.ApostilleRequired != nil {
+		apostilleRequired = *input.ApostilleRequired
+	}
+
+	if input.Status != "" {
+		switch input.Status {
+		case PathwayStatusDraft, PathwayStatusAIDraft, PathwayStatusPending,
+			PathwayStatusPublished, PathwayStatusRejected:
+		default:
+			return PathwayDTO{}, fmt.Errorf("%w: invalid status %s", ErrInvalidInput, input.Status)
+		}
 	}
 
 	p := Pathway{
@@ -434,6 +490,12 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 	}
 	if input.IsActive != nil {
 		p.IsActive = *input.IsActive
+	}
+
+	// ai_generated stamps provenance when the agent-tool create surface is
+	// used (ADR-088 clamp forces status='ai_draft' + is_active=false upstream).
+	if input.AIGenerated != nil {
+		p.AIGenerated = *input.AIGenerated
 	}
 
 	if input.AIModel != "" {
@@ -450,7 +512,7 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 
 	if input.CommunityLastVerified != "" {
 		if err := p.CommunityLastVerified.Scan(input.CommunityLastVerified); err != nil {
-			return PathwayDTO{}, fmt.Errorf("invalid community_last_verified: %w", err)
+			return PathwayDTO{}, fmt.Errorf("%w: invalid community_last_verified: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -481,19 +543,19 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(input.IssuingSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
 	}
 
 	// Look up the issuing and destination jurisdiction names so the prompt
 	// and research queries are human-readable. Missing names are non-fatal;
 	// we fall back to the supplied IDs.
-	issuingName, _ := s.store.GetSpaceName(ctx, issuingSpaceID)
-	destName, _ := s.store.GetSpaceName(ctx, destSpaceID)
+	names, _ := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingSpaceID, destSpaceID})
+	issuingName, destName := names[issuingSpaceID], names[destSpaceID]
 
 	issuing := issuingName
 	if issuing == "" {
@@ -629,7 +691,9 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: lookup: %w", err)
 	}
 
-	apostilleRequired := s.isHagueMember(ctx, row.DestinationSpaceID)
+	// Apostille is valid only when issuing AND destination are both Hague
+	// Convention members (see Create for the both-sides rationale).
+	apostilleRequired := s.isHagueMember(ctx, row.DestinationSpaceID) && s.isHagueMember(ctx, row.IssuingSpaceID)
 
 	var notesPtr *string
 	if notes != "" {
@@ -652,18 +716,149 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 	return pathwayRowToDTO(row), nil
 }
 
+// Update applies a partial admin patch to a pathway (PATCH
+// /admin/attestation/{id}). This is the lifecycle surface for editing steps,
+// correcting fields, rejecting, or deactivating a pathway — operations the
+// approve-only flow cannot express. Admin-only
+// (attestation_guide.manage permission checked at route level).
+func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) (PathwayDTO, error) {
+	row, err := s.store.GetPathwayByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PathwayDTO{}, pgx.ErrNoRows
+		}
+
+		return PathwayDTO{}, fmt.Errorf("attestationguide: update: lookup: %w", err)
+	}
+
+	p := row.Pathway
+
+	if input.DocumentType != nil {
+		if !isValidDocumentType(*input.DocumentType) {
+			return PathwayDTO{}, fmt.Errorf("%w: invalid document_type %q", ErrInvalidInput, *input.DocumentType)
+		}
+
+		p.DocumentType = *input.DocumentType
+	}
+
+	if input.IssuingSpaceID != nil {
+		var sid pgtype.UUID
+		if err := sid.Scan(*input.IssuingSpaceID); err != nil {
+			return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
+		}
+
+		p.IssuingSpaceID = sid
+	}
+
+	if input.DestinationSpaceID != nil {
+		var sid pgtype.UUID
+		if err := sid.Scan(*input.DestinationSpaceID); err != nil {
+			return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
+		}
+
+		p.DestinationSpaceID = sid
+	}
+
+	if input.ApostilleRequired != nil {
+		p.ApostilleRequired = *input.ApostilleRequired
+	}
+
+	if input.PathwaySteps != nil {
+		if !json.Valid(input.PathwaySteps) {
+			return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be valid JSON", ErrInvalidInput)
+		}
+
+		p.PathwaySteps = []byte(input.PathwaySteps)
+	}
+
+	if input.CommunityLastVerified != nil {
+		if *input.CommunityLastVerified == "" {
+			p.CommunityLastVerified = pgtype.Date{}
+		} else if err := p.CommunityLastVerified.Scan(*input.CommunityLastVerified); err != nil {
+			return PathwayDTO{}, fmt.Errorf("invalid community_last_verified: %w", err)
+		}
+	}
+
+	if input.Status != nil {
+		switch *input.Status {
+		case PathwayStatusDraft, PathwayStatusAIDraft, PathwayStatusPending,
+			PathwayStatusPublished, PathwayStatusRejected:
+			p.Status = *input.Status
+		default:
+			return PathwayDTO{}, fmt.Errorf("%w: invalid status %s", ErrInvalidInput, *input.Status)
+		}
+	}
+
+	if input.IsActive != nil {
+		p.IsActive = *input.IsActive
+	}
+
+	if err := s.store.UpdatePathway(ctx, id, p); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PathwayDTO{}, pgx.ErrNoRows
+		}
+
+		return PathwayDTO{}, fmt.Errorf("attestationguide: update: %w", err)
+	}
+
+	row, err = s.store.GetPathwayByID(ctx, id)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: update: reload: %w", err)
+	}
+
+	return pathwayRowToDTO(row), nil
+}
+
 // SubmitCommunityUpdate creates a pending community update for a
 // pathway. Auth required (attestation_guide.update permission). Only
 // published, active pathways accept community updates (BUG-002).
 func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, userID pgtype.UUID, input CreateCommunityUpdateInput) (CommunityUpdateDTO, error) {
 	// Verify the pathway exists, belongs to the platform, and is published +
 	// active (BUG-002: no updates on draft/ai_draft/pending/rejected pathways).
-	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID); err != nil {
+	pathway, err := s.store.GetPublishedPathwayByID(ctx, pathwayID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
 
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: submit update: lookup pathway: %w", err)
+	}
+
+	// Content validation: at least one substantive field is required, and
+	// free-text fields are capped so a submission always carries reviewable
+	// information without allowing unbounded payloads.
+	fee := strings.TrimSpace(input.FeeEstimate)
+	note := strings.TrimSpace(input.Note)
+
+	// step_index is a locator for the submission, not content by itself — a
+	// reviewable update always carries a fee, turnaround, or note.
+	if fee == "" && input.TurnaroundDays == nil && note == "" {
+		return CommunityUpdateDTO{}, fmt.Errorf("%w: at least one of fee_estimate, turnaround_days, or note is required", ErrInvalidInput)
+	}
+
+	if len(fee) > 100 {
+		return CommunityUpdateDTO{}, fmt.Errorf("%w: fee_estimate must be 100 characters or fewer", ErrInvalidInput)
+	}
+
+	if len(note) > 2000 {
+		return CommunityUpdateDTO{}, fmt.Errorf("%w: note must be 2000 characters or fewer", ErrInvalidInput)
+	}
+
+	if input.TurnaroundDays != nil && (*input.TurnaroundDays < 0 || *input.TurnaroundDays > 36500) {
+		return CommunityUpdateDTO{}, fmt.Errorf("%w: turnaround_days must be between 0 and 36500", ErrInvalidInput)
+	}
+
+	// step_index is 0-based into pathway_steps; validate it is in range so a
+	// later approval can always apply it.
+	if input.StepIndex != nil {
+		var steps []json.RawMessage
+		if len(pathway.PathwaySteps) > 0 {
+			_ = json.Unmarshal(pathway.PathwaySteps, &steps)
+		}
+
+		if *input.StepIndex < 0 || int(*input.StepIndex) >= len(steps) {
+			return CommunityUpdateDTO{}, fmt.Errorf("%w: step_index out of range (pathway has %d steps)", ErrInvalidInput, len(steps))
+		}
 	}
 
 	u := CommunityUpdate{
@@ -673,12 +868,12 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, userID p
 		TurnaroundDays: input.TurnaroundDays,
 		Status:         UpdateStatusPending,
 	}
-	if input.FeeEstimate != "" {
-		u.FeeEstimate = &input.FeeEstimate
+	if fee != "" {
+		u.FeeEstimate = &fee
 	}
 
-	if input.Note != "" {
-		u.Note = &input.Note
+	if note != "" {
+		u.Note = &note
 	}
 
 	created, err := s.store.CreateCommunityUpdate(ctx, u)
@@ -698,6 +893,37 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerI
 	status := UpdateStatusApproved
 	if !approve {
 		status = UpdateStatusRejected
+	}
+
+	// On approval, validate the step index is still in range BEFORE flipping
+	// the row to approved — the apply runs after the status write, so a
+	// stale index must fail here or the queue ends up with an "approved"
+	// update that never landed on the pathway.
+	if approve {
+		pending, err := s.store.GetCommunityUpdateByID(ctx, updateID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return CommunityUpdateDTO{}, pgx.ErrNoRows
+			}
+
+			return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: preload: %w", err)
+		}
+
+		if pending.StepIndex != nil && pending.PathwayID.Valid {
+			pw, err := s.store.GetPathwayByID(ctx, pending.PathwayID)
+			if err != nil {
+				return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: pathway lookup: %w", err)
+			}
+
+			var steps []json.RawMessage
+			if len(pw.Pathway.PathwaySteps) > 0 {
+				_ = json.Unmarshal(pw.Pathway.PathwaySteps, &steps)
+			}
+
+			if *pending.StepIndex < 0 || int(*pending.StepIndex) >= len(steps) {
+				return CommunityUpdateDTO{}, fmt.Errorf("%w: step_index out of range (pathway has %d steps)", ErrInvalidInput, len(steps))
+			}
+		}
 	}
 
 	if err := s.store.ReviewCommunityUpdate(ctx, updateID, reviewerID, status); err != nil {
@@ -778,8 +1004,12 @@ func (s *Service) AdminListUpdates(ctx context.Context, status string, page, lim
 
 	offset := (page - 1) * limit
 
+	// Default to the pending queue; the explicit "all" sentinel returns every
+	// status so admins can audit past decisions.
 	if status == "" {
 		status = UpdateStatusPending
+	} else if status == "all" {
+		status = ""
 	}
 
 	rows, total, err := s.store.ListCommunityUpdates(ctx, ListCommunityUpdatesFilter{
@@ -867,6 +1097,23 @@ func communityUpdateToDTO(u CommunityUpdate) CommunityUpdateDTO {
 	dto := CommunityUpdateDTO{
 		Status:    u.Status,
 		CreatedAt: formatTs(u.CreatedAt),
+
+		PathwayDocumentType: u.PathwayDocumentType,
+	}
+	if u.IssuingSpaceName != nil {
+		dto.IssuingSpaceName = *u.IssuingSpaceName
+	}
+
+	if u.DestinationSpaceName != nil {
+		dto.DestinationSpaceName = *u.DestinationSpaceName
+	}
+
+	if u.SubmitterName != nil {
+		dto.SubmitterName = *u.SubmitterName
+	}
+
+	if u.ReviewerName != nil {
+		dto.ReviewerName = *u.ReviewerName
 	}
 	if u.ID.Valid {
 		dto.ID = u.ID.String()

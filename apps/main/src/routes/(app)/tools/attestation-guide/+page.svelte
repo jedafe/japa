@@ -3,8 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
 	import BodyField from '#lib/components/ui/BodyField.svelte';
-	import { PUBLIC_JC_API_URL } from '$app/env/public';
-	import { buildApiUrl } from '@japaconnect/api-url';
 	import { t, siteName, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
@@ -18,6 +16,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
 	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '#lib/types/index.js';
+	import { DOC_TYPES, docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
 	import type { PageData } from './$types';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
@@ -68,6 +67,8 @@
 	let updateNote = $state<string>('');
 	let submittingUpdate = $state(false);
 	let updateError = $state<string | null>(null);
+	let updateSuccessId = $state<string | null>(null);
+	let loadFailed = $state(false);
 
 	function pathwaysQuery(pageNum: number): string {
 		const params = new URLSearchParams();
@@ -87,6 +88,7 @@
 			return;
 		}
 		loading = true;
+		loadFailed = false;
 		const res = await api.getEnvelope<AttestationPathwayWithAi[]>(
 			`/attestation?${pathwaysQuery(1)}`
 		);
@@ -98,6 +100,7 @@
 		} else {
 			pathways = [];
 			pathwaysTotal = 0;
+			loadFailed = true;
 		}
 	}
 
@@ -136,16 +139,9 @@
 		updateUrl();
 	}
 
-	let docTypeDebounce: ReturnType<typeof setTimeout> | null = null;
-
-	function onDocTypeInput() {
-		// Debounce the server-side filter so we don't fire a request per keystroke.
-		if (docTypeDebounce) clearTimeout(docTypeDebounce);
-		docTypeDebounce = setTimeout(() => {
-			loadPathways();
-			updateUrl();
-			docTypeDebounce = null;
-		}, 300);
+	function onDocTypeChange() {
+		loadPathways();
+		updateUrl();
 	}
 
 	function updateUrl() {
@@ -160,24 +156,6 @@
 
 	function toggleExpand(id: string) {
 		expandedId = expandedId === id ? null : id;
-	}
-
-	/** Render pathway_steps as an ordered list. Each step is a JSON object that
-	 *  may have title, description, url — rendered generically. */
-	function pathwayStepEntries(step: unknown): [string, unknown][] {
-		if (!step || typeof step !== 'object') return [];
-		return Object.entries(step as Record<string, unknown>);
-	}
-
-	function isStepObject(step: unknown): step is Record<string, unknown> {
-		return step !== null && typeof step === 'object' && !Array.isArray(step);
-	}
-
-	/** Render a step field value — objects/arrays would print as "[object Object]". */
-	function stepValueText(val: unknown): string {
-		if (val === null || val === undefined) return '';
-		if (typeof val === 'object') return JSON.stringify(val);
-		return String(val);
 	}
 
 	/** Format an ISO date string as a readable date. */
@@ -228,13 +206,22 @@
 
 	async function submitUpdate() {
 		if (!updatePathwayId) return;
+		// Client-side mirror of the backend rule: a submission must carry at
+		// least one substantive field (a step selection alone is a locator).
+		if (!updateFeeEstimate.trim() && !updateTurnaroundDays && !updateNote.trim()) {
+			updateError = t(
+				'attestation_guide.update_required',
+				'Add a fee, turnaround, or note before submitting.'
+			);
+			return;
+		}
 		submittingUpdate = true;
 		updateError = null;
 		const body: Record<string, unknown> = {};
-		if (updateStepIndex) body.step_index = parseInt(updateStepIndex, 10);
-		if (updateFeeEstimate) body.fee_estimate = updateFeeEstimate;
-		if (updateTurnaroundDays) body.turnaround_days = parseInt(updateTurnaroundDays, 10);
-		if (updateNote) body.note = updateNote;
+		if (updateStepIndex !== '') body.step_index = parseInt(updateStepIndex, 10);
+		if (updateFeeEstimate.trim()) body.fee_estimate = updateFeeEstimate.trim();
+		if (updateTurnaroundDays !== '') body.turnaround_days = parseInt(updateTurnaroundDays, 10);
+		if (updateNote.trim()) body.note = updateNote.trim();
 		const res = await api.post<AttestationCommunityUpdate>(
 			`/attestation/${updatePathwayId}/updates`,
 			body
@@ -244,6 +231,7 @@
 			updateError = res.error.message;
 			return;
 		}
+		updateSuccessId = updatePathwayId;
 		closeUpdateForm();
 	}
 
@@ -345,14 +333,17 @@
 					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)]">
 						{t('attestation_guide.doc_type', 'Document type:')}
 					</label>
-					<input
+					<select
 						id="doc-type"
-						type="text"
 						bind:value={docTypeFilter}
-						oninput={onDocTypeInput}
-						placeholder={t('attestation_guide.doc_type_placeholder', 'e.g. birth certificate')}
+						onchange={onDocTypeChange}
 						class="px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-					/>
+					>
+						<option value="">{t('attestation_guide.any_doc_type', 'Any')}</option>
+						{#each DOC_TYPES as dt (dt.value)}
+							<option value={dt.value}>{t(`attestation_guide.doc_type_${dt.value}`, dt.label)}</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 		{/if}
@@ -374,11 +365,15 @@
 			{:else if pathways.length === 0}
 				<EmptyState
 					icon={Stamp}
-					title={t('attestation_guide.no_pathways', 'No attestation pathways')}
-					body={t(
-						'attestation_guide.no_pathways_desc',
-						'No attestation pathways have been published for this destination yet.'
-					)}
+					title={loadFailed
+						? t('attestation_guide.load_failed', 'Couldn\u2019t load pathways')
+						: t('attestation_guide.no_pathways', 'No attestation pathways')}
+					body={loadFailed
+						? t('attestation_guide.load_failed_desc', 'Something went wrong fetching pathways — please try again.')
+						: t(
+							'attestation_guide.no_pathways_desc',
+							'No attestation pathways have been published for this destination yet.'
+						)}
 				/>
 			{:else}
 				<div class="space-y-3">
@@ -394,7 +389,7 @@
 								<div class="min-w-0">
 									<div class="flex items-center gap-2 flex-wrap">
 										<span class="text-sm font-semibold text-[var(--color-text)]">
-											{pathway.document_type}
+											{docTypeLabel(pathway.document_type)}
 										</span>
 										{#if pathway.apostille_required}
 											<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary-text)">
@@ -436,20 +431,23 @@
 														</span>
 														<div class="text-sm text-[var(--color-text)] min-w-0">
 															{#if isStepObject(step)}
-																{#each pathwayStepEntries(step) as [key, val] (key)}
-																	<div class="flex items-start gap-1.5">
-																		<span class="font-medium text-[var(--color-text)]">{key}:</span>
-																		{#if key === 'url' && typeof val === 'string'}
+																<p class="font-medium text-[var(--color-text)]">
+																	{stepHeadline(step, i)}
+																</p>
+																{#each stepFields(step) as field (field.label)}
+																	<div class="flex items-start gap-1.5 mt-0.5">
+																		<span class="text-xs font-medium text-[var(--color-muted)] uppercase tracking-wide">{field.label}:</span>
+																		{#if field.url}
 																			<a
-																				href={val}
+																				href={field.url}
 																				target="_blank"
 																				rel="noopener noreferrer"
 																				class="text-[var(--color-primary-text)] hover:underline break-all"
 																			>
-																				{val}
+																				{field.value}
 																			</a>
 																		{:else}
-																			<span class="text-[var(--color-text-subtle)]">{stepValueText(val)}</span>
+																			<span class="text-[var(--color-text-subtle)]">{field.value}</span>
 																		{/if}
 																	</div>
 																{/each}
@@ -491,13 +489,11 @@
 										{t('common.view_details', 'View details')}
 									</a>
 									<a
-										href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
-											target="_blank"
-											rel="noopener noreferrer"
+										href="/tools/attestation-guide/{pathway.id}?print=1"
 											class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors"
 										>
 											<Download size={16} />
-											{t('attestation_guide.download_pdf', 'Export pathway')}
+											{t('attestation_guide.download_pdf', 'Export PDF')}
 										</a>
 										<button
 											type="button"
@@ -508,6 +504,15 @@
 											{t('attestation_guide.add_update', 'Add community update')}
 										</button>
 									</div>
+
+									{#if updateSuccessId === pathway.id}
+										<p class="text-xs" style="color: var(--color-success, #16a34a)">
+											{t(
+												'attestation_guide.update_submitted',
+												'Update submitted — it will appear after moderator review.'
+											)}
+										</p>
+									{/if}
 
 									<!-- Community update form -->
 									{#if updatePathwayId === pathway.id}
@@ -521,15 +526,20 @@
 											<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 												<div>
 													<label for="upd-step" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
-														{t('attestation_guide.step_index', 'Step index')}
+														{t('attestation_guide.step_index', 'Which step?')}
 													</label>
-													<input
+													<select
 														id="upd-step"
-														type="number"
 														bind:value={updateStepIndex}
-														min="0"
 														class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
-													/>
+													>
+														<option value="">{t('attestation_guide.step_general', 'General note')}</option>
+														{#each (Array.isArray(pathway.pathway_steps) ? pathway.pathway_steps : []) as _s, i (i)}
+															<option value={String(i)}>
+																{t('attestation_guide.step_n', 'Step')} {i + 1}
+															</option>
+														{/each}
+													</select>
 												</div>
 												<div>
 													<label for="upd-fee" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
