@@ -43,31 +43,31 @@ import (
 
 // BookingDTO is the API response shape for one service_bookings row.
 type BookingDTO struct {
-	ID                string `json:"id"`
-	ListingMetaID     string `json:"listing_meta_id"`
-	ListingID         string `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
-	ListingTitle      string `json:"listing_title"`
-	ListingSlug       string `json:"listing_slug"`
-	ListingKind       string `json:"listing_kind"`
-	DepartureID       string `json:"departure_id,omitempty"`
-	DepartureStart    string `json:"departure_starts_on,omitempty"`
-	DepartureEnd      string `json:"departure_ends_on,omitempty"`
-	BookerUserID      string `json:"booker_user_id,omitempty"`
-	BookerUsername    string `json:"booker_username,omitempty"`
-	BookerDisplayName string `json:"booker_display_name,omitempty"`
-	BookerAvatar      string `json:"booker_avatar,omitempty"`
-	BookerVerified    bool   `json:"booker_verified,omitempty"`
+	ID                     string  `json:"id"`
+	ListingMetaID          string  `json:"listing_meta_id"`
+	ListingID              string  `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
+	ListingTitle           string  `json:"listing_title"`
+	ListingSlug            string  `json:"listing_slug"`
+	ListingKind            string  `json:"listing_kind"`
+	DepartureID            string  `json:"departure_id,omitempty"`
+	DepartureStart         string  `json:"departure_starts_on,omitempty"`
+	DepartureEnd           string  `json:"departure_ends_on,omitempty"`
+	BookerUserID           string  `json:"booker_user_id,omitempty"`
+	BookerUsername         string  `json:"booker_username,omitempty"`
+	BookerDisplayName      string  `json:"booker_display_name,omitempty"`
+	BookerAvatar           string  `json:"booker_avatar,omitempty"`
+	BookerVerified         bool    `json:"booker_verified,omitempty"`
 	BookerVerificationType *string `json:"booker_verification_type,omitempty"`
 	// Provider dimension (000824) — populated on user-provider
 	// (mentorship) bookings; org fields are empty on those rows.
-	ProviderUserID       string `json:"provider_user_id,omitempty"`
-	ProviderUsername     string `json:"provider_username,omitempty"`
-	ProviderDisplayName  string `json:"provider_display_name,omitempty"`
-	ProviderAvatar       string `json:"provider_avatar,omitempty"`
-	ProviderVerified     bool   `json:"provider_verified,omitempty"`
+	ProviderUserID           string  `json:"provider_user_id,omitempty"`
+	ProviderUsername         string  `json:"provider_username,omitempty"`
+	ProviderDisplayName      string  `json:"provider_display_name,omitempty"`
+	ProviderAvatar           string  `json:"provider_avatar,omitempty"`
+	ProviderVerified         bool    `json:"provider_verified,omitempty"`
 	ProviderVerificationType *string `json:"provider_verification_type,omitempty"`
-	DestinationSpaceID   string `json:"destination_space_id,omitempty"`
-	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	DestinationSpaceID       string  `json:"destination_space_id,omitempty"`
+	DestinationSpaceName     string  `json:"destination_space_name,omitempty"`
 	// Goals carries the mentorship request's goals verbatim — read from
 	// meta->>'goals' with the note column as the fallback (migrated
 	// connection rows predate the meta key).
@@ -76,19 +76,19 @@ type BookingDTO struct {
 	// the mentorship frontend still reads — populated only on
 	// mentorship-kind rows: confirmed→active, fulfilled→completed,
 	// everything else maps verbatim.
-	ConnectionStatus string               `json:"connection_status,omitempty"`
-	OrgID            string               `json:"org_id"`
-	OrgName          string               `json:"org_name,omitempty"`
-	OrgSlug          string               `json:"org_slug,omitempty"`
-	OrgVerified      bool                 `json:"org_verified,omitempty"`
-	OrgVerificationType *string           `json:"org_verification_type,omitempty"`
-	Intent           string               `json:"intent"`
-	PartySize        int32                `json:"party_size"`
-	PreferredDates   *PreferredDatesInput `json:"preferred_dates,omitempty"`
-	Note             string               `json:"note,omitempty"`
-	Status           string               `json:"status"`
-	PurchaseMode     string               `json:"purchase_mode"`
-	PaymentID        string               `json:"payment_id,omitempty"`
+	ConnectionStatus    string               `json:"connection_status,omitempty"`
+	OrgID               string               `json:"org_id"`
+	OrgName             string               `json:"org_name,omitempty"`
+	OrgSlug             string               `json:"org_slug,omitempty"`
+	OrgVerified         bool                 `json:"org_verified,omitempty"`
+	OrgVerificationType *string              `json:"org_verification_type,omitempty"`
+	Intent              string               `json:"intent"`
+	PartySize           int32                `json:"party_size"`
+	PreferredDates      *PreferredDatesInput `json:"preferred_dates,omitempty"`
+	Note                string               `json:"note,omitempty"`
+	Status              string               `json:"status"`
+	PurchaseMode        string               `json:"purchase_mode"`
+	PaymentID           string               `json:"payment_id,omitempty"`
 	// Joined payment row — lets the booker UI offer checkout resume on a
 	// pending fee. Empty when payment_id is unset (inquiries, zero fee).
 	PaymentStatus   string `json:"payment_status,omitempty"`

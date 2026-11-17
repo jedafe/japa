@@ -7,10 +7,10 @@
 package devices
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"time"
 

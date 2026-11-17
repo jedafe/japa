@@ -648,12 +648,12 @@ var providerSortColumns = map[string]string{
 // safe SQL expressions — anything not in the map falls back to
 // created_at DESC.
 var updateSortColumns = map[string]string{
-	"created_at":       "u.created_at",
-	"status":           "u.status",
-	"step_index":       "u.step_index",
-	"turnaround_days":  "u.turnaround_days",
-	"user_name":        "up.display_name",
-	"provider_name":    "p.name",
+	"created_at":             "u.created_at",
+	"status":                 "u.status",
+	"step_index":             "u.step_index",
+	"turnaround_days":        "u.turnaround_days",
+	"user_name":              "up.display_name",
+	"provider_name":          "p.name",
 	"destination_space_name": "s.name",
 }
 

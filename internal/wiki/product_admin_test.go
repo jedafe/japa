@@ -419,4 +419,3 @@ func TestSetProductDealUnlink(t *testing.T) {
 		t.Fatalf("deal link after unlink = %d err=%v, want 0", n, err)
 	}
 }
-

@@ -339,12 +339,6 @@ func (st *Store) SumPendingInCredits(ctx context.Context, walletID pgtype.UUID) 
 	return st.q.SumPendingInCreditsByWallet(ctx, walletID)
 }
 
-// SetActivityStatus flips a mirror row's status (pending → confirmed|failed).
-func (st *Store) SetActivityStatus(ctx context.Context, id pgtype.UUID, status string) error {
-	_, err := st.q.SetStablecoinActivityStatus(ctx, gen.SetStablecoinActivityStatusParams{Status: status, ID: id})
-	return err
-}
-
 // ConfirmActivity writes a terminal status plus the confirming event's
 // canonical fields onto a pending row — WHERE status='pending' guards the
 // transition so concurrent terminal deliveries can't double-fire hooks.
@@ -443,19 +437,6 @@ func (st *Store) GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) 
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: escrow by booking: %w", err)
-	}
-	return domainEscrow(row), nil
-}
-
-// GetLiveEscrowByWallet returns the newest open escrow touching a wallet —
-// the mirror's completion lookup for escrow_funding/escrow_release events.
-func (st *Store) GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error) {
-	row, err := st.q.GetLiveEscrowByWallet(ctx, walletID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrEscrowNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stablecoin: live escrow by wallet: %w", err)
 	}
 	return domainEscrow(row), nil
 }

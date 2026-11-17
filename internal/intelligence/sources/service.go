@@ -400,7 +400,7 @@ func (s *Service) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourc
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review — with the proposer's display name resolved. origin (''|'user'|
+// review — with the proposer's display name resolved. origin (”|'user'|
 // 'system') narrows by who proposed the row (audit BUG-007). Platform-scoped.
 func (s *Service) ListProposed(ctx context.Context, limit, offset int32, search, origin string) ([]ProposedSource, error) {
 	return s.store.ListProposed(ctx, limit, offset, search, origin)

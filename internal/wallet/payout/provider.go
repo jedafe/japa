@@ -33,9 +33,9 @@ type PayoutRequest struct {
 	// Metadata is the raw payout-method metadata blob (bank_code,
 	// account_name, memo/tag, chain hints) — providers read what they
 	// need without growing per-provider fields.
-	Metadata        []byte
-	ExtraID         string // Memo / destination tag (optional)
-	CallbackURL     string // Webhook URL for provider status updates
+	Metadata    []byte
+	ExtraID     string // Memo / destination tag (optional)
+	CallbackURL string // Webhook URL for provider status updates
 }
 
 // PayoutRejectedError marks a definitive provider-side rejection (HTTP 4xx —

@@ -7,7 +7,6 @@
 package rag
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -15,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"log/slog"
 	"math"
 	"sort"

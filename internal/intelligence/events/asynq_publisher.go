@@ -27,6 +27,7 @@ func NewAsynqEventPublisher(client *asynq.Client) *AsynqEventPublisher {
 //     notify_discoveries, so routing them back there would loop the task on
 //     itself indefinitely; the fan-out task is their terminal consumer.
 //   - everything else → intel:notify_discoveries.
+//
 // Events with no entity id resolve to nothing the handlers can fan out on.
 func (p *AsynqEventPublisher) Publish(ctx context.Context, evt DomainEvent) error {
 	if evt.EntityID == uuid.Nil {

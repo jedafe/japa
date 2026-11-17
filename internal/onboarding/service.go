@@ -15,9 +15,9 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/wallet"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // Follower is the subset of the follow-system service that onboarding needs

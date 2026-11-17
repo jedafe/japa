@@ -48,23 +48,23 @@ type ProductFieldValueInput struct {
 // and DealIDs are full-replace sets when non-nil (nil = untouched, [] = clear
 // all); CustomFields upserts only the fields sent, ClearFieldIDs deletes rows.
 type ProductInput struct {
-	TypeSlug      string                   `json:"type_slug"` // product_types.slug — slug, never uuid
-	Name          string                   `json:"name"`
-	Slug          string                   `json:"slug"`
-	Tagline       *string                  `json:"tagline"`
-	Description   *string                  `json:"description"`
-	LogoID        *string                  `json:"logo_id"` // "" on PATCH clears the logo
-	WebsiteURL    *string                  `json:"website_url"`
-	PricingModel  *string                  `json:"pricing_model"`
-	PriceFrom     *float64                 `json:"price_from"`
-	Providers     []ProductProviderInput   `json:"providers"`
-	DealIDs       []string                 `json:"deal_ids"`
-	GalleryMediaIDs []string               `json:"gallery_media_ids"` // nil = untouched on PATCH; [] clears
-	CustomFields  []ProductFieldValueInput `json:"custom_fields"`
-	ClearFieldIDs []string                 `json:"clear_field_ids"`
+	TypeSlug        string                   `json:"type_slug"` // product_types.slug — slug, never uuid
+	Name            string                   `json:"name"`
+	Slug            string                   `json:"slug"`
+	Tagline         *string                  `json:"tagline"`
+	Description     *string                  `json:"description"`
+	LogoID          *string                  `json:"logo_id"` // "" on PATCH clears the logo
+	WebsiteURL      *string                  `json:"website_url"`
+	PricingModel    *string                  `json:"pricing_model"`
+	PriceFrom       *float64                 `json:"price_from"`
+	Providers       []ProductProviderInput   `json:"providers"`
+	DealIDs         []string                 `json:"deal_ids"`
+	GalleryMediaIDs []string                 `json:"gallery_media_ids"` // nil = untouched on PATCH; [] clears
+	CustomFields    []ProductFieldValueInput `json:"custom_fields"`
+	ClearFieldIDs   []string                 `json:"clear_field_ids"`
 	// ClearFields passes explicit clear targets for COALESCE'd columns the
 	// typed fields can't distinguish ("" vs absent) — e.g. ["price_from"].
-	ClearFields   []string                 `json:"clear_fields"`
+	ClearFields []string `json:"clear_fields"`
 }
 
 // errInvalidSlug/errInvalidURL mark request-level validation failures so
@@ -488,12 +488,12 @@ func (s *Service) AdminListProducts(ctx context.Context, typeSlug, q, status, so
 // ProductDetail is the admin edit payload — core row + provider links +
 // explicit deal links + current custom field values.
 type ProductDetail struct {
-	Product   gen.AdminGetProductBySlugRow                 `json:"product"`
-	Providers []map[string]any                             `json:"providers"`
-	Deals     []gen.ListProductDealsRow                    `json:"deals"`
-	Gallery   []map[string]any                           `json:"gallery"`
-	LogoURL   string                                     `json:"logo_url"`
-	Fields    []gen.CustomFieldValue                      `json:"field_values"`
+	Product   gen.AdminGetProductBySlugRow `json:"product"`
+	Providers []map[string]any             `json:"providers"`
+	Deals     []gen.ListProductDealsRow    `json:"deals"`
+	Gallery   []map[string]any             `json:"gallery"`
+	LogoURL   string                       `json:"logo_url"`
+	Fields    []gen.CustomFieldValue       `json:"field_values"`
 }
 
 // AdminGetProduct returns the full product detail (deleted rows included so
@@ -567,7 +567,7 @@ func (s *Service) SetProductDeal(ctx context.Context, productSlug string, coupon
 // append-only — new categories provision group + assignment + pool row.
 type ProductTypeInput struct {
 	Label      *string               `json:"label"`
-	Icon       *string               `json:"icon"`      // "" clears
+	Icon       *string               `json:"icon"` // "" clears
 	IsEnabled  *bool                 `json:"is_enabled"`
 	Config     json.RawMessage       `json:"config"`
 	Categories []ProductTypeCategory `json:"categories"`

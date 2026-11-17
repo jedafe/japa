@@ -74,7 +74,7 @@ func Lookup(slug string) (Page, bool) {
 	return p, ok
 }
 
-// FlagFor returns the feature_flags key gating a tool page ('' when the
+// FlagFor returns the feature_flags key gating a tool page (” when the
 // page is always on or unknown).
 func FlagFor(slug string) string {
 	return bySlug[slug].Flag

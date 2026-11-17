@@ -226,19 +226,19 @@ type AdminJobListing struct {
 
 // ApplicationResult is a single application record in API responses.
 type ApplicationResult struct {
-	ID                string  `json:"id"`
-	JobID             string  `json:"job_id"`
-	JobTitle          string  `json:"job_title,omitempty"`
-	JobSlug           string  `json:"job_slug,omitempty"`
-	ApplicantID       string  `json:"applicant_id,omitempty"`
-	ApplicantUsername string  `json:"applicant_username,omitempty"`
-	ApplicantEmail    string  `json:"applicant_email,omitempty"`
-	ApplicantVerified bool    `json:"applicant_verified"`
+	ID                        string  `json:"id"`
+	JobID                     string  `json:"job_id"`
+	JobTitle                  string  `json:"job_title,omitempty"`
+	JobSlug                   string  `json:"job_slug,omitempty"`
+	ApplicantID               string  `json:"applicant_id,omitempty"`
+	ApplicantUsername         string  `json:"applicant_username,omitempty"`
+	ApplicantEmail            string  `json:"applicant_email,omitempty"`
+	ApplicantVerified         bool    `json:"applicant_verified"`
 	ApplicantVerificationType *string `json:"applicant_verification_type"`
-	Status            string  `json:"status"`
-	EmployerNotes     *string `json:"employer_notes,omitempty"`
-	AppliedAt         string  `json:"applied_at"`
-	StatusUpdatedAt   string  `json:"status_updated_at,omitempty"`
+	Status                    string  `json:"status"`
+	EmployerNotes             *string `json:"employer_notes,omitempty"`
+	AppliedAt                 string  `json:"applied_at"`
+	StatusUpdatedAt           string  `json:"status_updated_at,omitempty"`
 	// Submission carries the linked form_submissions.field_values bag
 	// (e.g. resume_url, cover_letter) for the employer view; null when the
 	// application has no linked submission.
@@ -2670,16 +2670,16 @@ func decodeSubmissionFields(raw []byte) map[string]any {
 // ApplicationResult.
 func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) ApplicationResult {
 	r := ApplicationResult{
-		ID:                row.ID.String(),
-		JobID:             row.JobID.String(),
-		ApplicantID:       row.ApplicantID.String(),
-		ApplicantUsername: row.ApplicantUsername,
-		ApplicantEmail:    row.ApplicantEmail,
-		ApplicantVerified: row.ApplicantVerified,
+		ID:                        row.ID.String(),
+		JobID:                     row.JobID.String(),
+		ApplicantID:               row.ApplicantID.String(),
+		ApplicantUsername:         row.ApplicantUsername,
+		ApplicantEmail:            row.ApplicantEmail,
+		ApplicantVerified:         row.ApplicantVerified,
 		ApplicantVerificationType: row.ApplicantVerificationType,
-		Status:            row.Status,
-		EmployerNotes:     row.EmployerNotes,
-		Submission:        decodeSubmissionFields(row.SubmissionFields),
+		Status:                    row.Status,
+		EmployerNotes:             row.EmployerNotes,
+		Submission:                decodeSubmissionFields(row.SubmissionFields),
 	}
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
@@ -2696,15 +2696,15 @@ func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) Applicatio
 // ApplicationResult.
 func applicationResultFromAdminRow(row gen.AdminListJobApplicationsRow) ApplicationResult {
 	r := ApplicationResult{
-		ID:                row.ID.String(),
-		JobID:             row.JobID.String(),
-		ApplicantID:       row.ApplicantID.String(),
-		ApplicantUsername: row.ApplicantUsername,
-		ApplicantVerified: row.ApplicantVerified,
+		ID:                        row.ID.String(),
+		JobID:                     row.JobID.String(),
+		ApplicantID:               row.ApplicantID.String(),
+		ApplicantUsername:         row.ApplicantUsername,
+		ApplicantVerified:         row.ApplicantVerified,
 		ApplicantVerificationType: row.ApplicantVerificationType,
-		JobTitle:          row.JobTitle,
-		Status:            row.Status,
-		EmployerNotes:     row.EmployerNotes,
+		JobTitle:                  row.JobTitle,
+		Status:                    row.Status,
+		EmployerNotes:             row.EmployerNotes,
 	}
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")

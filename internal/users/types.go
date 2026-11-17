@@ -16,26 +16,26 @@ import (
 // ADR-064a: origin_country and destination_country are saved as custom
 // field values (entity_type='user_profile') after the profile upsert.
 type UpdateProfileRequest struct {
-	DisplayName        *string `json:"display_name"`
-	AvatarURL          *string `json:"avatar_url"`
-	AvatarMediaID      *string `json:"avatar_media_id"`
-	CoverURL           *string `json:"cover_url"`
-	HeaderMediaID      *string `json:"header_media_id"`
-	Bio                *string `json:"bio"`
-	Timezone           *string `json:"timezone"`
-	WebsiteURL         *string `json:"website_url"`
-	Education          *string `json:"education"`
-	Profession         *string `json:"profession"`
-	MaritalStatus      *string `json:"marital_status"`
-	DateOfBirth        *string `json:"date_of_birth"`
-	Gender             *string `json:"gender"`
+	DisplayName   *string `json:"display_name"`
+	AvatarURL     *string `json:"avatar_url"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+	CoverURL      *string `json:"cover_url"`
+	HeaderMediaID *string `json:"header_media_id"`
+	Bio           *string `json:"bio"`
+	Timezone      *string `json:"timezone"`
+	WebsiteURL    *string `json:"website_url"`
+	Education     *string `json:"education"`
+	Profession    *string `json:"profession"`
+	MaritalStatus *string `json:"marital_status"`
+	DateOfBirth   *string `json:"date_of_birth"`
+	Gender        *string `json:"gender"`
 	// Interests: free-form interest/skill chips (§87) — nil leaves the
 	// stored list unchanged, [] clears it.
 	Interests          *[]string `json:"interests"`
-	OriginCountry      *string `json:"origin_country"`
-	OriginStateID      *string `json:"origin_state_id"`
-	OriginCityID       *string `json:"origin_city_id"`
-	DestinationCountry *string `json:"destination_country"`
+	OriginCountry      *string   `json:"origin_country"`
+	OriginStateID      *string   `json:"origin_state_id"`
+	OriginCityID       *string   `json:"origin_city_id"`
+	DestinationCountry *string   `json:"destination_country"`
 }
 
 // UpdateAccountRequest is the JSON body for PATCH /api/v1/me/account.
@@ -189,18 +189,18 @@ type UserActivityResponse struct {
 
 // UserListItem is a condensed user record for list endpoints.
 type UserListItem struct {
-	ID            string   `json:"id"`
-	Email         string   `json:"email"`
-	Username      string   `json:"username"`
-	ProfileType   string   `json:"profile_type"`
+	ID               string   `json:"id"`
+	Email            string   `json:"email"`
+	Username         string   `json:"username"`
+	ProfileType      string   `json:"profile_type"`
 	Status           string   `json:"status"`
 	Verified         bool     `json:"verified"`
 	VerificationType *string  `json:"verification_type,omitempty"`
 	FollowerCount    int32    `json:"follower_count"`
-	Groups        []string `json:"groups"`
-	IsOwner       bool     `json:"is_owner"`
-	CreatedAt     string   `json:"created_at"`
-	UpdatedAt     string   `json:"updated_at"`
+	Groups           []string `json:"groups"`
+	IsOwner          bool     `json:"is_owner"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
 }
 
 // GroupRef identifies one of a user's group memberships by id/name/slug —

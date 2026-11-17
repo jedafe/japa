@@ -537,19 +537,19 @@ type DMMessageContext struct {
 
 // MessageInfo is the API response for a message list item.
 type MessageInfo struct {
-	ID                string  `json:"id"`
-	SenderID          string  `json:"sender_id"`
-	SenderUsername    string  `json:"sender_username"`
-	SenderDisplayName string  `json:"sender_display_name"`
-	SenderVerified    bool    `json:"sender_verified,omitempty"`
+	ID                     string  `json:"id"`
+	SenderID               string  `json:"sender_id"`
+	SenderUsername         string  `json:"sender_username"`
+	SenderDisplayName      string  `json:"sender_display_name"`
+	SenderVerified         bool    `json:"sender_verified,omitempty"`
 	SenderVerificationType *string `json:"sender_verification_type,omitempty"`
-	Body              string  `json:"body"`
-	CreatedAt         string  `json:"created_at"`
-	ReadAt            *string `json:"read_at,omitempty"`
-	ContextType       *string `json:"context_type,omitempty"`
-	ContextID         *string `json:"context_id,omitempty"`
-	ContextLabel      *string `json:"context_label,omitempty"`
-	ContextSlug       *string `json:"context_slug,omitempty"`
+	Body                   string  `json:"body"`
+	CreatedAt              string  `json:"created_at"`
+	ReadAt                 *string `json:"read_at,omitempty"`
+	ContextType            *string `json:"context_type,omitempty"`
+	ContextID              *string `json:"context_id,omitempty"`
+	ContextLabel           *string `json:"context_label,omitempty"`
+	ContextSlug            *string `json:"context_slug,omitempty"`
 	// 000942 — sent by an org member on behalf of the org inbox.
 	SentAsOrg bool `json:"sent_as_org,omitempty"`
 }
@@ -1152,14 +1152,14 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 		}
 
 		msgs[i] = MessageInfo{
-			ID:                r.ID.String(),
-			SenderID:          r.SenderID.String(),
-			SenderUsername:    r.SenderUsername,
-			SenderDisplayName: displayName,
-			SenderVerified:    r.SenderVerified,
+			ID:                     r.ID.String(),
+			SenderID:               r.SenderID.String(),
+			SenderUsername:         r.SenderUsername,
+			SenderDisplayName:      displayName,
+			SenderVerified:         r.SenderVerified,
 			SenderVerificationType: r.SenderVerificationType,
-			Body:              r.Body,
-			CreatedAt:         r.CreatedAt.Time.Format(time.RFC3339),
+			Body:                   r.Body,
+			CreatedAt:              r.CreatedAt.Time.Format(time.RFC3339),
 		}
 
 		// 000941 — structured context snapshot on listing-initiated

@@ -30,20 +30,20 @@ import (
 //
 //nolint:revive // exported: stutter naming is intentional
 type AMAThreadDTO struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	Slug         string          `json:"slug"`
-	Body         []byte          `json:"body"`
-	AuthorUserID string          `json:"author_user_id,omitempty"`
-	AuthorName   string          `json:"author_name,omitempty"`
-	AuthorAvatar string          `json:"author_avatar,omitempty"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Slug         string `json:"slug"`
+	Body         []byte `json:"body"`
+	AuthorUserID string `json:"author_user_id,omitempty"`
+	AuthorName   string `json:"author_name,omitempty"`
+	AuthorAvatar string `json:"author_avatar,omitempty"`
 	// §07 author badge — false/"" when is_anonymous.
-	AuthorVerified         bool   `json:"author_verified,omitempty"`
-	AuthorVerificationType string `json:"author_verification_type,omitempty"`
-	IsAnonymous  bool            `json:"is_anonymous"`
-	AmaConfig    json.RawMessage `json:"ama_config"`
-	CreatedAt    string          `json:"created_at"`
-	UpdatedAt    string          `json:"updated_at"`
+	AuthorVerified         bool            `json:"author_verified,omitempty"`
+	AuthorVerificationType string          `json:"author_verification_type,omitempty"`
+	IsAnonymous            bool            `json:"is_anonymous"`
+	AmaConfig              json.RawMessage `json:"ama_config"`
+	CreatedAt              string          `json:"created_at"`
+	UpdatedAt              string          `json:"updated_at"`
 }
 
 // amaConfigShape is the JSONB structure stored in forum_threads.ama_config.
@@ -451,19 +451,19 @@ func (s *Service) clearActiveLock(ctx context.Context, userID pgtype.UUID) {
 // threadToDTO converts an AMAThread to an AMAThreadDTO.
 func threadToDTO(t AMAThread) AMAThreadDTO {
 	dto := AMAThreadDTO{
-		ID:           t.ID.String(),
-		Title:        t.Title,
-		Slug:         t.Slug,
-		Body:         t.Body,
-		AuthorUserID: t.AuthorUserID.String(),
-		AuthorName:   t.AuthorName,
-		AuthorAvatar: t.AuthorAvatar,
+		ID:                     t.ID.String(),
+		Title:                  t.Title,
+		Slug:                   t.Slug,
+		Body:                   t.Body,
+		AuthorUserID:           t.AuthorUserID.String(),
+		AuthorName:             t.AuthorName,
+		AuthorAvatar:           t.AuthorAvatar,
 		AuthorVerified:         t.AuthorVerified,
 		AuthorVerificationType: t.AuthorVerificationType,
-		IsAnonymous:  t.IsAnonymous,
-		AmaConfig:    json.RawMessage(t.AmaConfig),
-		CreatedAt:    formatTs(t.CreatedAt),
-		UpdatedAt:    formatTs(t.UpdatedAt),
+		IsAnonymous:            t.IsAnonymous,
+		AmaConfig:              json.RawMessage(t.AmaConfig),
+		CreatedAt:              formatTs(t.CreatedAt),
+		UpdatedAt:              formatTs(t.UpdatedAt),
 	}
 
 	return dto

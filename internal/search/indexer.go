@@ -560,13 +560,13 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 type userDocument struct {
 	ID string `json:"id"`
 
-	Username    string `json:"title"`
-	DisplayName string `json:"excerpt"`
-	Bio         string `json:"bio"`
-	AvatarURL   string `json:"avatar_url"` // §54 autocomplete type-specific field
-	Status      string `json:"status"`     // effective standing (GetUserProfile CASE)
-	URL         string `json:"url"`
-	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
+	Username         string `json:"title"`
+	DisplayName      string `json:"excerpt"`
+	Bio              string `json:"bio"`
+	AvatarURL        string `json:"avatar_url"` // §54 autocomplete type-specific field
+	Status           string `json:"status"`     // effective standing (GetUserProfile CASE)
+	URL              string `json:"url"`
+	CreatedAt        int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 	Verified         bool   `json:"verified"`
 	VerificationType string `json:"verification_type,omitempty"`
 }
@@ -812,17 +812,17 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error 
 type organizationDocument struct {
 	ID string `json:"id"`
 
-	Name        string `json:"title"`
-	Slug        string `json:"slug"`
-	Description string `json:"excerpt"`
-	OrgType     string `json:"org_type"`
-	Verified    bool   `json:"verified"`
+	Name             string `json:"title"`
+	Slug             string `json:"slug"`
+	Description      string `json:"excerpt"`
+	OrgType          string `json:"org_type"`
+	Verified         bool   `json:"verified"`
 	VerificationType string `json:"verification_type,omitempty"`
-	Status      string `json:"status"`
-	CountryCode string `json:"country_code"`
-	MemberCount int32  `json:"member_count"` // §54 autocomplete type-specific field
-	URL         string `json:"url"`
-	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
+	Status           string `json:"status"`
+	CountryCode      string `json:"country_code"`
+	MemberCount      int32  `json:"member_count"` // §54 autocomplete type-specific field
+	URL              string `json:"url"`
+	CreatedAt        int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexOrganization fetches an organization and upserts it into the
@@ -875,17 +875,17 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 	doc := organizationDocument{
 		ID: row.ID.String(),
 
-		Name:        row.Name,
-		Slug:        row.Slug,
-		Description: desc,
-		OrgType:     row.OrgType,
-		Verified:    row.Verified,
-		Status:      row.Status,
-		CountryCode: country,
+		Name:             row.Name,
+		Slug:             row.Slug,
+		Description:      desc,
+		OrgType:          row.OrgType,
+		Verified:         row.Verified,
+		Status:           row.Status,
+		CountryCode:      country,
 		VerificationType: vtype,
-		MemberCount: row.MemberCount,
-		URL:         "/org/" + row.Slug,
-		CreatedAt:   row.CreatedAt.Time.Unix(),
+		MemberCount:      row.MemberCount,
+		URL:              "/org/" + row.Slug,
+		CreatedAt:        row.CreatedAt.Time.Unix(),
 	}
 
 	if err := ix.engine.UpsertDocuments(ctx, IndexOrganizations, []organizationDocument{doc}); err != nil {

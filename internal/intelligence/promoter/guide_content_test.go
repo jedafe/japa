@@ -316,7 +316,7 @@ func TestGuideContentPromoter_UpdateFieldValuesDiffLogged(t *testing.T) {
 
 	contentID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	record := newGuideRecord(t, extractor.Extraction{
-		"title":   {Value: "Same"},
+		"title":    {Value: "Same"},
 		"deadline": {Value: "2027-01-01"},
 	}, contentID)
 

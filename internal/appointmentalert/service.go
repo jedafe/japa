@@ -8,11 +8,11 @@
 package appointmentalert
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
 	"io"
 	"log/slog"
 	"net/http"
@@ -546,7 +546,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string) error 
 		if channelsContainSMS(alert.NotificationChannels) {
 			if s.smsSender != nil {
 				smsBody := fmt.Sprintf("%s: appointment available at %s. Book quickly — slots can disappear fast. %s",
-				brand.Get(),
+					brand.Get(),
 					embassy.Name, embassy.BookingURL)
 				if err := s.smsSender.SendSMS(ctx, alert.UserID, smsBody, embassy.BookingURL); err != nil {
 					slog.Warn("appointmentalert: dispatch alerts: sms send failed", "alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)

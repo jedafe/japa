@@ -536,7 +536,6 @@ func nonNil[T any](rows []T) []T {
 	return rows
 }
 
-
 // requireAuthUser extracts the authenticated user from the request context
 // using the auth middleware's context key. Returns the AuthenticatedUser and
 // writes a 401 error + false if no authenticated user is present.

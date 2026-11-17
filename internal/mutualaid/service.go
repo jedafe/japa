@@ -27,22 +27,22 @@ const PostExpiry = 30 * 24 * time.Hour
 
 // PostDTO is the API response shape for a single mutual aid post.
 type PostDTO struct {
-	ID                 string `json:"id"`
-	PostType           string `json:"post_type"`
-	Category           string `json:"category,omitempty"`
-	Title              string `json:"title"`
-	Description        string `json:"description,omitempty"`
-	DestinationSpaceID string `json:"destination_space_id"`
-	DestSpaceName      string `json:"destination_space_name,omitempty"`
-	DestSpaceCode      string `json:"destination_space_code,omitempty"`
-	CitySpaceID        string `json:"city_space_id,omitempty"`
-	CitySpaceName      string `json:"city_space_name,omitempty"`
-	CitySpaceCode      string `json:"city_space_code,omitempty"`
-	IsFulfilled        bool   `json:"is_fulfilled"`
-	Status             string `json:"status"`
-	ExpiresAt          string `json:"expires_at"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                     string  `json:"id"`
+	PostType               string  `json:"post_type"`
+	Category               string  `json:"category,omitempty"`
+	Title                  string  `json:"title"`
+	Description            string  `json:"description,omitempty"`
+	DestinationSpaceID     string  `json:"destination_space_id"`
+	DestSpaceName          string  `json:"destination_space_name,omitempty"`
+	DestSpaceCode          string  `json:"destination_space_code,omitempty"`
+	CitySpaceID            string  `json:"city_space_id,omitempty"`
+	CitySpaceName          string  `json:"city_space_name,omitempty"`
+	CitySpaceCode          string  `json:"city_space_code,omitempty"`
+	IsFulfilled            bool    `json:"is_fulfilled"`
+	Status                 string  `json:"status"`
+	ExpiresAt              string  `json:"expires_at"`
+	CreatedAt              string  `json:"created_at"`
+	UpdatedAt              string  `json:"updated_at"`
 	AuthorID               string  `json:"author_id,omitempty"`
 	AuthorName             string  `json:"author_name,omitempty"`
 	AuthorAvatar           string  `json:"author_avatar,omitempty"`

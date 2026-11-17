@@ -8,9 +8,9 @@
 package wiki
 
 import (
-	"errors"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 

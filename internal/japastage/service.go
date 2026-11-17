@@ -55,23 +55,23 @@ type ProfileDTO struct {
 // The discovery-hub fields (bio/profession/interests/verified/cover_url/
 // last_active_at) populate only on the /members/by-stage directory view.
 type PublicProfileDTO struct {
-	UserID        string   `json:"user_id"`
-	Username      string   `json:"username,omitempty"`
-	DisplayName   string   `json:"display_name,omitempty"`
-	AvatarURL     string   `json:"avatar_url,omitempty"`
-	Stage         string   `json:"stage"`
-	Intent        string   `json:"intent,omitempty"`
-	DestSpaceID   string   `json:"destination_space_id,omitempty"`
-	DestSpaceName string   `json:"destination_space_name,omitempty"`
-	DestSpaceCode string   `json:"destination_space_code,omitempty"`
-	Bio           string   `json:"bio,omitempty"`
-	Profession    string   `json:"profession,omitempty"`
-	Interests     []string `json:"interests,omitempty"`
-	Verified      bool     `json:"verified"`
-	VerificationType string `json:"verification_type,omitempty"`
-	CoverURL      string   `json:"cover_url,omitempty"`
-	LastActiveAt  string   `json:"last_active_at,omitempty"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
+	UserID           string   `json:"user_id"`
+	Username         string   `json:"username,omitempty"`
+	DisplayName      string   `json:"display_name,omitempty"`
+	AvatarURL        string   `json:"avatar_url,omitempty"`
+	Stage            string   `json:"stage"`
+	Intent           string   `json:"intent,omitempty"`
+	DestSpaceID      string   `json:"destination_space_id,omitempty"`
+	DestSpaceName    string   `json:"destination_space_name,omitempty"`
+	DestSpaceCode    string   `json:"destination_space_code,omitempty"`
+	Bio              string   `json:"bio,omitempty"`
+	Profession       string   `json:"profession,omitempty"`
+	Interests        []string `json:"interests,omitempty"`
+	Verified         bool     `json:"verified"`
+	VerificationType string   `json:"verification_type,omitempty"`
+	CoverURL         string   `json:"cover_url,omitempty"`
+	LastActiveAt     string   `json:"last_active_at,omitempty"`
+	UpdatedAt        string   `json:"updated_at,omitempty"`
 }
 
 // StatsDTO is the discovery-hub aggregate payload (§87): per-stage member

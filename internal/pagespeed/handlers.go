@@ -474,4 +474,3 @@ func (h *Handlers) writeAccepted(w http.ResponseWriter, status string) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": status})
 }
-

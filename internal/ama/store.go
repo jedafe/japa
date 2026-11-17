@@ -55,9 +55,9 @@ type AMAThread struct {
 	// §07 author badge — false/"" when is_anonymous (SQL CASE redacts).
 	AuthorVerified         bool
 	AuthorVerificationType string
-	IsAnonymous  bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	IsAnonymous            bool
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
 }
 
 // CreateAMAParams holds the fields needed to insert an AMA thread.
@@ -290,16 +290,16 @@ func rowToAMAThread(
 	t := AMAThread{
 		ID: id,
 
-		Title:        title,
-		Slug:         slug,
-		Body:         body,
-		AmaConfig:    amaConfig,
-		AuthorUserID: authorUserID,
+		Title:                  title,
+		Slug:                   slug,
+		Body:                   body,
+		AmaConfig:              amaConfig,
+		AuthorUserID:           authorUserID,
 		AuthorVerified:         authorVerified,
 		AuthorVerificationType: authorVerificationType,
-		IsAnonymous:  isAnonymous,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		IsAnonymous:            isAnonymous,
+		CreatedAt:              createdAt,
+		UpdatedAt:              updatedAt,
 	}
 	if s, ok := authorUsername.(string); ok {
 		t.AuthorName = s

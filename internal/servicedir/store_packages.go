@@ -226,13 +226,13 @@ type BookingRow struct {
 	ListingContentID pgtype.UUID
 	// PackageCapacity is the package-level capacity a NULL departure
 	// capacity inherits (only populated by the detail query).
-	PackageCapacity   *int32
-	PaymentStatus     *string // joined payment row — nil when payment_id is unset
-	PaymentProvider   *string // joined payment row — nil when payment_id is unset
-	OrgName           *string
-	OrgSlug           *string
-	DepartureStartsOn pgtype.Date
-	DepartureEndsOn   pgtype.Date
+	PackageCapacity        *int32
+	PaymentStatus          *string // joined payment row — nil when payment_id is unset
+	PaymentProvider        *string // joined payment row — nil when payment_id is unset
+	OrgName                *string
+	OrgSlug                *string
+	DepartureStartsOn      pgtype.Date
+	DepartureEndsOn        pgtype.Date
 	BookerUsername         *string
 	BookerDisplayName      *string
 	BookerAvatar           *string
@@ -933,9 +933,9 @@ type BookingsAdminFilter struct {
 	// ?q= username/display-name search (booker + provider) and ?sort=
 	// (latest|oldest|status) — the admin list contract: filter + sort +
 	// paginate server-side (000824 fix pass).
-	Q     string
-	Sort  string
-	Limit int32
+	Q      string
+	Sort   string
+	Limit  int32
 	Offset int32
 }
 

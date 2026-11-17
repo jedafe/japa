@@ -1,13 +1,13 @@
 package literals
 
 import (
-	"strconv"
 	"bufio"
 	"bytes"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 

@@ -47,10 +47,11 @@ type DispatchResult struct {
 }
 
 // DispatchNotification handles the batch dedup logic for a notification event.
-// 1. Check for open batch window for (recipient, type, subject)
-// 2. If window exists and not dispatched: extend it (add actor)
-// 3. If no window: upsert a window — the UNIQUE constraint resets dispatched
-//    or expired windows into a fresh batch (BUG-002) instead of erroring.
+//  1. Check for open batch window for (recipient, type, subject)
+//  2. If window exists and not dispatched: extend it (add actor)
+//  3. If no window: upsert a window — the UNIQUE constraint resets dispatched
+//     or expired windows into a fresh batch (BUG-002) instead of erroring.
+//
 // subjectTitle/subjectURL ride on the window so DispatchBatch can build a
 // deep-linkable notification row (BUG-009).
 // Returns whether a new notification was created or batch was extended.

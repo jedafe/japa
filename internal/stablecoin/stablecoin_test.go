@@ -174,14 +174,6 @@ func (f *fakeStore) ListActivityByWallet(_ context.Context, wid pgtype.UUID, _, 
 func (f *fakeStore) ListPendingActivity(_ context.Context, _ int32) ([]Activity, error) {
 	return f.pending, nil
 }
-func (f *fakeStore) SetActivityStatus(_ context.Context, id pgtype.UUID, st string) error {
-	for _, a := range f.activities {
-		if a.ID == id.String() {
-			a.Status = st
-		}
-	}
-	return nil
-}
 func (f *fakeStore) ConfirmActivity(_ context.Context, id pgtype.UUID, a Activity) (bool, error) {
 	for _, ex := range f.activities {
 		if ex.ID == id.String() {
@@ -238,15 +230,6 @@ func (f *fakeStore) GetEscrowByBooking(_ context.Context, b pgtype.UUID) (*Escro
 func (f *fakeStore) GetEscrowByVault(_ context.Context, vault string) (*Escrow, error) {
 	for _, e := range f.escrows {
 		if e.VaultAddress == vault {
-			return e, nil
-		}
-	}
-	return nil, ErrEscrowNotFound
-}
-func (f *fakeStore) GetLiveEscrowByWallet(_ context.Context, w pgtype.UUID) (*Escrow, error) {
-	for _, e := range f.escrows {
-		if (e.BuyerWalletID == w.String() || e.SellerWalletID == w.String()) &&
-			(e.State == EscrowFunding || e.State == EscrowFunded || e.State == EscrowDisputed) {
 			return e, nil
 		}
 	}

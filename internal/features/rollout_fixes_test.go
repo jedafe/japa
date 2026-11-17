@@ -35,9 +35,9 @@ func TestConfigIsInternal(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name    string
-		config  []byte
-		want    bool
+		name   string
+		config []byte
+		want   bool
 	}{
 		{"nil config", nil, false},
 		{"empty config", []byte{}, false},
