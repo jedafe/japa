@@ -116,28 +116,44 @@ func (r *CurrencyResolver) isCurrencyActive(ctx context.Context, code string) (b
 	return c.IsActive, nil
 }
 
+// CurrencyExponent returns the ISO 4217 minor-unit exponent for a currency
+// code (2 for USD/NGN, 0 for JPY, 3 for KWD). Shared by wallet conversion
+// math and the §125 fiat-tip settle quote.
+func CurrencyExponent(code string) int {
+	switch code {
+	case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+		"PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF":
+		return 0
+	case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND":
+		return 3
+	default:
+		return 2
+	}
+}
+
 // FiatToCredits converts a fiat amount to credits using the currency's
 // credits_per_unit rate. fiatAmount is in the currency's minor units
 // (e.g. kobo for NGN, cents for USD).
 //
-//	credits = fiatAmount * credits_per_unit / 100
+//	credits = fiatAmount * credits_per_unit / 10^exponent
 //
-// (The /100 is because amounts are stored in minor units, but
-// credits_per_unit is per major unit: 1 USD = 100 credits, not 1 cent = 100.)
-// credits_per_unit is numeric (001185): weak currencies price below one
-// credit per major unit — round to the nearest credit.
+// (The divisor scales minor→major units: credits_per_unit is per major unit —
+// 1 USD = 100 credits, not 1 cent = 100.) credits_per_unit is numeric
+// (001185): weak currencies price below one credit per major unit — round
+// to the nearest credit.
 func FiatToCredits(fiatAmountMinor int64, currency gen.Currency) int {
 	if currency.CreditsPerUnit <= 0 {
 		return 0
 	}
 
-	return int(math.Round(float64(fiatAmountMinor) * currency.CreditsPerUnit / 100))
+	div := math.Pow10(CurrencyExponent(currency.Code))
+	return int(math.Round(float64(fiatAmountMinor) * currency.CreditsPerUnit / div))
 }
 
 // CreditsToFiat converts credits to a fiat amount in the currency's minor units
 // for display purposes.
 //
-//	fiatMinor = credits * 100 / credits_per_unit
+//	fiatMinor = credits * 10^exponent / credits_per_unit
 //
 // Round-half-up to the nearest minor unit — fractional rates (NGN and other
 // weak currencies below a cent per unit) would otherwise truncate.
@@ -146,12 +162,15 @@ func CreditsToFiat(credits int, currency gen.Currency) int64 {
 		return 0
 	}
 
-	return int64(math.Round(float64(credits) * 100 / currency.CreditsPerUnit))
+	div := math.Pow10(CurrencyExponent(currency.Code))
+	return int64(math.Round(float64(credits) * div / currency.CreditsPerUnit))
 }
 
 // FormatFiat formats a minor-unit amount as a major-unit string with the
-// currency symbol (e.g. 140000 minor → "₦1,400.00").
+// currency symbol at the currency's ISO exponent (e.g. 140000 kobo →
+// "₦1,400.00"; 15 yen → "¥15").
 func FormatFiat(fiatMinor int64, currency gen.Currency) string {
-	major := float64(fiatMinor) / 100.0
-	return fmt.Sprintf("%s%.2f", currency.Symbol, major)
+	exp := CurrencyExponent(currency.Code)
+	major := float64(fiatMinor) / math.Pow10(exp)
+	return fmt.Sprintf("%s%.*f", currency.Symbol, exp, major)
 }

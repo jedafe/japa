@@ -172,8 +172,8 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if input.CreditsPerUnit <= 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive")
+	if input.CreditsPerUnit <= 0 || input.CreditsPerUnit >= 1e12 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive and below 1e12 (numeric(20,8) bound)")
 		return
 	}
 

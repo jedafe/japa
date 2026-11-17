@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jedafe/japa/internal/wallet"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -279,8 +281,10 @@ func (s *Service) fiatToUsdMinor(ctx context.Context, fiatMinor int64, currency 
 		return 0, fmt.Errorf("stablecoin: unsupported booking currency %q", currency)
 	}
 	// fiat minor → units → credits → USD-token minor; single round at the end
-	// keeps fractional weak-currency rates (NGN) from truncating twice.
-	credits := float64(fiatMinor) * fiatPer / 100
+	// keeps fractional weak-currency rates (NGN) from truncating twice. The
+	// divisor is the ISO minor-unit exponent (JPY 0, KWD 3) — not a fixed 100.
+	div := math.Pow10(wallet.CurrencyExponent(code))
+	credits := float64(fiatMinor) * fiatPer / div
 	return int64(math.Round(credits * 1_000_000 / s.creditsPerUSD(ctx))), nil
 }
 

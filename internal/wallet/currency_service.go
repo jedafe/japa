@@ -79,8 +79,8 @@ func (s *Service) updateCurrency(ctx context.Context, p gen.UpdateCurrencyParams
 		return gen.Currency{}, errors.New("name is required")
 	}
 
-	if p.CreditsPerUnit <= 0 {
-		return gen.Currency{}, errors.New("credits_per_unit must be positive")
+	if p.CreditsPerUnit <= 0 || p.CreditsPerUnit >= 1e12 {
+		return gen.Currency{}, errors.New("credits_per_unit must be positive and below 1e12 (numeric(20,8) bound)")
 	}
 
 	c, err := s.store.updateCurrency(ctx, p)
@@ -286,10 +286,11 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 		}
 	}
 
-	// Compute fiat price in minor units.
-	// credits = fiatMinor * credits_per_unit / 100
-	// → fiatMinor = credits * 100 / credits_per_unit
-	fiatMinor := int64(math.Round(float64(creditsToGrant) * 100 / currency.CreditsPerUnit))
+	// Compute fiat price in minor units at the currency's ISO exponent.
+	// credits = fiatMinor * credits_per_unit / 10^exp
+	// → fiatMinor = credits * 10^exp / credits_per_unit
+	exp := CurrencyExponent(currency.Code)
+	fiatMinor := int64(math.Round(float64(creditsToGrant) * math.Pow10(exp) / currency.CreditsPerUnit))
 	if fiatMinor <= 0 {
 		fiatMinor = 1 // minimum 1 minor unit
 	}
