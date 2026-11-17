@@ -151,7 +151,7 @@ func (s *Service) registerDelegatedSigner(ctx context.Context, w *Wallet) error 
 	if signerRef == "" {
 		return fmt.Errorf("stablecoin.delegated_signer_ref unset")
 	}
-	dailyCap := s.settings.GetIntOr(ctx, "stablecoin.signer_daily_cap_usd_minor", 5000)
+	dailyCap := s.settings.GetIntOr(ctx, "stablecoin.signer_daily_cap_usd_minor", 50_000_000)
 	scopeDays := s.settings.GetIntOr(ctx, "stablecoin.signer_scope_expiry_days", 365)
 	expiresAt := time.Now().Add(time.Duration(scopeDays) * 24 * time.Hour)
 

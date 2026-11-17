@@ -17,16 +17,26 @@ import (
 // webhookEnvelope is the provider event wire shape — tolerant: Crossmint
 // activity payloads carry the transaction signature under a few keys.
 type webhookEnvelope struct {
-	Type        string          `json:"type"`
-	WalletAddr  string          `json:"wallet_address"`
-	TxSignature string          `json:"tx_signature"`
-	Signature   string          `json:"signature"` // alt sig field
-	TxHash      string          `json:"tx_hash"`   // EVM-style alt
-	Slot        int64           `json:"slot"`
-	Asset       string          `json:"asset"`
-	AmountMinor json.RawMessage `json:"amount"`
-	CounterAddr string          `json:"counterparty"`
-	OccurredAt  int64           `json:"occurred_at"`
+	Type            string          `json:"type"`
+	WalletAddr      string          `json:"wallet_address"`
+	WalletAddrCamel string          `json:"walletAddress"` // camelCase variant
+	TxSignature     string          `json:"tx_signature"`
+	Signature       string          `json:"signature"` // alt sig field
+	TxHash          string          `json:"tx_hash"`   // EVM-style alt
+	Slot            int64           `json:"slot"`
+	Asset           string          `json:"asset"`
+	AmountMinor     json.RawMessage `json:"amount"`
+	CounterAddr     string          `json:"counterparty"`
+	OccurredAt      int64           `json:"occurred_at"`
+}
+
+// walletRef returns the first non-empty wallet identifier — the provider's
+// key naming isn't stable across event types.
+func (e webhookEnvelope) walletRef() string {
+	if e.WalletAddr != "" {
+		return e.WalletAddr
+	}
+	return e.WalletAddrCamel
 }
 
 // IngestWebhook authenticates and queues one provider event. Deduped by
@@ -90,11 +100,11 @@ func (s *Service) SyncActivity(ctx context.Context, payload []byte) error {
 	}
 	ev := env.toProviderEvent()
 
-	w, err := s.store.GetWalletByAddress(ctx, env.WalletAddr)
+	w, err := s.store.GetWalletByAddress(ctx, env.walletRef())
 	if err != nil {
 		// Unknown wallet — external address interacting with our rails.
 		// Log and drop; the reconcile sweep is the safety net.
-		slog.Warn("stablecoin: activity for unknown wallet", "addr", env.WalletAddr, "type", env.Type)
+		slog.Warn("stablecoin: activity for unknown wallet", "addr", env.walletRef(), "type", env.Type)
 		return nil
 	}
 	return s.MirrorActivity(ctx, ev, w.ID)
@@ -446,6 +456,10 @@ func (e webhookEnvelope) toProviderEvent() ProviderEvent {
 			}
 		}
 	}
+	ts := e.OccurredAt
+	if ts > 1_000_000_000_000 { // provider may send ms — same guard as the poll path
+		ts /= 1000
+	}
 	return ProviderEvent{
 		Type:        e.Type,
 		TxSignature: sig,
@@ -453,7 +467,7 @@ func (e webhookEnvelope) toProviderEvent() ProviderEvent {
 		Asset:       e.Asset,
 		AmountMinor: amount,
 		CounterAddr: e.CounterAddr,
-		OccurredAt:  e.OccurredAt,
+		OccurredAt:  ts,
 		Raw:         nil,
 	}
 }

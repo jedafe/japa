@@ -42,7 +42,7 @@ func (s *Service) ProposeSweep(ctx context.Context) error {
 
 	capMinor := hot.FloatCapMinor
 	if capMinor <= 0 {
-		capMinor = int64(s.settings.GetIntOr(ctx, "stablecoin.hot_float_cap_minor", 2500000))
+		capMinor = int64(s.settings.GetIntOr(ctx, "stablecoin.hot_float_cap_minor", 5_000_000_000))
 	}
 
 	// Live hot balance from the provider — sweep the excess over cap.
