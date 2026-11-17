@@ -458,7 +458,7 @@ func TestSettleScopeCapEnforced(t *testing.T) {
 	}
 	st.walletByUser[uid.String()] = w
 	st.walletByAddr["dest"] = &Wallet{Address: "dest", Status: WalletStatusActive} // known recipient
-	st.outSum = 950 // today's settled volume per SQL aggregate
+	st.outSum = 950                                                                // today's settled volume per SQL aggregate
 	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
 
 	// Unknown recipients are rejected before any provider call.
