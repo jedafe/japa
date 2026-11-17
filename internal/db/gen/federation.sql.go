@@ -265,6 +265,18 @@ func (q *Queries) CountRemoteFollowingByActor(ctx context.Context, localActorID 
 	return column_1, err
 }
 
+const countTagSubscriptionsByUser = `-- name: CountTagSubscriptionsByUser :one
+SELECT count(*) FROM federation_tag_subscriptions
+WHERE user_id = $1 AND status = 'active'
+`
+
+func (q *Queries) CountTagSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTagSubscriptionsByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFederatedActor = `-- name: CreateFederatedActor :one
 INSERT INTO federated_actors (
     user_id, actor_url, preferred_username, public_key_pem, private_key_enc,
@@ -752,6 +764,23 @@ func (q *Queries) DeleteRemoteSharesByActor(ctx context.Context, remoteActorID p
 	return items, nil
 }
 
+const deleteTagSubscription = `-- name: DeleteTagSubscription :execrows
+DELETE FROM federation_tag_subscriptions WHERE id = $1 AND user_id = $2
+`
+
+type DeleteTagSubscriptionParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteTagSubscription(ctx context.Context, arg DeleteTagSubscriptionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTagSubscription, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const existsAcceptedOutboundFollowerOfRemote = `-- name: ExistsAcceptedOutboundFollowerOfRemote :one
 SELECT EXISTS(
     SELECT 1 FROM federation_follows ff
@@ -767,6 +796,30 @@ func (q *Queries) ExistsAcceptedOutboundFollowerOfRemote(ctx context.Context, re
 	var warrant bool
 	err := row.Scan(&warrant)
 	return warrant, err
+}
+
+const existsTagSubscriptionForPost = `-- name: ExistsTagSubscriptionForPost :one
+SELECT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower($1))
+      AND EXISTS (SELECT 1 FROM unnest($2::text[]) ht WHERE lower(ht) = ts.tag)
+) AS exists
+`
+
+type ExistsTagSubscriptionForPostParams struct {
+	Domain   string   `json:"domain"`
+	Hashtags []string `json:"hashtags"`
+}
+
+// Second ingest warrant (§126 tag discovery): a live subscription row
+// matches when its domain covers the signer's (” = any) and its tag is
+// among the object's hashtags.
+func (q *Queries) ExistsTagSubscriptionForPost(ctx context.Context, arg ExistsTagSubscriptionForPostParams) (bool, error) {
+	row := q.db.QueryRow(ctx, existsTagSubscriptionForPost, arg.Domain, arg.Hashtags)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
@@ -1755,6 +1808,30 @@ func (q *Queries) GetRemoteActorByURL(ctx context.Context, actorUrl string) (Rem
 	return i, err
 }
 
+const getSharedInboxByDomain = `-- name: GetSharedInboxByDomain :one
+SELECT id AS remote_actor_id,
+       COALESCE(NULLIF(shared_inbox_url, ''), inbox_url) AS inbox
+FROM remote_actors
+WHERE domain = $1 AND status = 'active'
+  AND (shared_inbox_url IS NOT NULL OR inbox_url IS NOT NULL)
+LIMIT 1
+`
+
+type GetSharedInboxByDomainRow struct {
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	Inbox         *string     `json:"inbox"`
+}
+
+// Delivery point for a domain-scoped tag Follow{Hashtag}: prefer the
+// shared inbox any known live actor on the domain advertises; the actor
+// id keys the delivery row's remote_actor provenance.
+func (q *Queries) GetSharedInboxByDomain(ctx context.Context, domain string) (GetSharedInboxByDomainRow, error) {
+	row := q.db.QueryRow(ctx, getSharedInboxByDomain, domain)
+	var i GetSharedInboxByDomainRow
+	err := row.Scan(&i.RemoteActorID, &i.Inbox)
+	return i, err
+}
+
 const getSpaceForGroupActor = `-- name: GetSpaceForGroupActor :one
 SELECT s.id, s.slug, s.name FROM spaces s
 WHERE s.id = $1 AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL
@@ -1774,6 +1851,32 @@ func (q *Queries) GetSpaceForGroupActor(ctx context.Context, id pgtype.UUID) (Ge
 	row := q.db.QueryRow(ctx, getSpaceForGroupActor, id)
 	var i GetSpaceForGroupActorRow
 	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
+}
+
+const getTagSubscriptionByID = `-- name: GetTagSubscriptionByID :one
+SELECT id, user_id, tag, domain, status, follow_ap_id, created_at, updated_at FROM federation_tag_subscriptions
+WHERE id = $1 AND user_id = $2
+`
+
+type GetTagSubscriptionByIDParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetTagSubscriptionByID(ctx context.Context, arg GetTagSubscriptionByIDParams) (FederationTagSubscription, error) {
+	row := q.db.QueryRow(ctx, getTagSubscriptionByID, arg.ID, arg.UserID)
+	var i FederationTagSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Tag,
+		&i.Domain,
+		&i.Status,
+		&i.FollowApID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
@@ -2114,6 +2217,50 @@ func (q *Queries) InsertRemoteShare(ctx context.Context, arg InsertRemoteSharePa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const insertTagSubscription = `-- name: InsertTagSubscription :one
+
+INSERT INTO federation_tag_subscriptions (user_id, tag, domain, follow_ap_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id, tag, domain) DO UPDATE
+   SET follow_ap_id = COALESCE(EXCLUDED.follow_ap_id, federation_tag_subscriptions.follow_ap_id),
+       status = 'active', updated_at = now()
+RETURNING id, user_id, tag, domain, status, follow_ap_id, created_at, updated_at
+`
+
+type InsertTagSubscriptionParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	Tag        string      `json:"tag"`
+	Domain     string      `json:"domain"`
+	FollowApID *string     `json:"follow_ap_id"`
+}
+
+// ---------------------------------------------------------------------------
+// M5 tag discovery (§126): subscription ingest warrants + live search
+// ---------------------------------------------------------------------------
+// Member tag subscription (§126 tag discovery): the row IS the ingest
+// warrant — domain ” means any domain (relay-wide). follow_ap_id carries
+// the ledgered Follow{Hashtag} id when a domain-scoped sub was delivered.
+func (q *Queries) InsertTagSubscription(ctx context.Context, arg InsertTagSubscriptionParams) (FederationTagSubscription, error) {
+	row := q.db.QueryRow(ctx, insertTagSubscription,
+		arg.UserID,
+		arg.Tag,
+		arg.Domain,
+		arg.FollowApID,
+	)
+	var i FederationTagSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Tag,
+		&i.Domain,
+		&i.Status,
+		&i.FollowApID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const listActiveRelayInboxes = `-- name: ListActiveRelayInboxes :many
@@ -3311,27 +3458,84 @@ func (q *Queries) ListRemoteFollowingURLsByActor(ctx context.Context, arg ListRe
 	return items, nil
 }
 
+const listRemoteSearchDomains = `-- name: ListRemoteSearchDomains :many
+SELECT DISTINCT d::text AS domain FROM (
+    SELECT NULLIF(ts.domain, '')::text AS d
+      FROM federation_tag_subscriptions ts
+     WHERE ts.user_id = $1 AND ts.status = 'active' AND ts.domain <> ''
+    UNION
+    SELECT ra.domain::text
+      FROM federation_follows ff
+      JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.user_id = $1 AND fa.status = 'active'
+      JOIN remote_actors ra ON ra.id = ff.remote_actor_id AND ra.status = 'active'
+     WHERE ff.direction = 'outbound' AND ff.status = 'accepted'
+    UNION
+    SELECT r.domain::text FROM federation_relays r WHERE r.status = 'accepted'
+) x
+WHERE d IS NOT NULL
+ORDER BY d
+LIMIT $2
+`
+
+type ListRemoteSearchDomainsParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	DomainLimit int32       `json:"domain_limit"`
+}
+
+// Candidate instances for the live tag-search fan-out: the member's
+// subscription domains, domains of remote actors the member follows, and
+// accepted relays — deduped, capped by setting.
+func (q *Queries) ListRemoteSearchDomains(ctx context.Context, arg ListRemoteSearchDomainsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listRemoteSearchDomains, arg.UserID, arg.DomainLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return nil, err
+		}
+		items = append(items, domain)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemoteTimelinePosts = `-- name: ListRemoteTimelinePosts :many
 SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
        rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned, rp.share_count,
        rp.published_at, rp.edited_at, rp.created_at,
-       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
+       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url,
+       ra.domain AS actor_domain
 FROM federation_remote_posts rp
-JOIN federation_follows ff
-  ON ff.remote_actor_id = rp.remote_actor_id
- AND ff.direction = 'outbound' AND ff.status = 'accepted'
-JOIN federated_actors fa
-  ON fa.id = ff.local_actor_id AND fa.user_id = $1 AND fa.status = 'active'
 JOIN remote_actors ra ON ra.id = rp.remote_actor_id AND ra.status = 'active'
 WHERE rp.deleted_at IS NULL
-  AND ($2::timestamptz IS NULL
+  AND ($1::text = ''
+       OR EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = lower($1)))
+  AND (
+    EXISTS (SELECT 1 FROM federation_follows ff
+            JOIN federated_actors fa
+              ON fa.id = ff.local_actor_id AND fa.user_id = $2 AND fa.status = 'active'
+            WHERE ff.remote_actor_id = rp.remote_actor_id
+              AND ff.direction = 'outbound' AND ff.status = 'accepted')
+    OR EXISTS (SELECT 1 FROM federation_tag_subscriptions ts
+               WHERE ts.user_id = $2 AND ts.status = 'active'
+                 AND (ts.domain = '' OR lower(ts.domain) = lower(ra.domain))
+                 AND EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = ts.tag))
+  )
+  AND ($3::timestamptz IS NULL
        OR (COALESCE(rp.published_at, rp.created_at), rp.id)
-          < ($2::timestamptz, $3::uuid))
+          < ($3::timestamptz, $4::uuid))
 ORDER BY COALESCE(rp.published_at, rp.created_at) DESC, rp.id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListRemoteTimelinePostsParams struct {
+	Tag       string             `json:"tag"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	CursorKey pgtype.Timestamptz `json:"cursor_key"`
 	CursorID  pgtype.UUID        `json:"cursor_id"`
@@ -3358,13 +3562,16 @@ type ListRemoteTimelinePostsRow struct {
 	PreferredUsername *string            `json:"preferred_username"`
 	DisplayName       *string            `json:"display_name"`
 	AvatarUrl         *string            `json:"avatar_url"`
+	ActorDomain       string             `json:"actor_domain"`
 }
 
 // Member remote timeline (§126 M5): pull-at-read — live posts by remote
-// actors the member currently outbound-follows, keyset on
-// COALESCE(published_at, created_at) DESC.
+// actors the member currently outbound-follows OR carrying a hashtag the
+// member subscribes to (domain match honored), keyset on
+// COALESCE(published_at, created_at) DESC. @tag narrows to one hashtag.
 func (q *Queries) ListRemoteTimelinePosts(ctx context.Context, arg ListRemoteTimelinePostsParams) ([]ListRemoteTimelinePostsRow, error) {
 	rows, err := q.db.Query(ctx, listRemoteTimelinePosts,
+		arg.Tag,
 		arg.UserID,
 		arg.CursorKey,
 		arg.CursorID,
@@ -3397,6 +3604,7 @@ func (q *Queries) ListRemoteTimelinePosts(ctx context.Context, arg ListRemoteTim
 			&i.PreferredUsername,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.ActorDomain,
 		); err != nil {
 			return nil, err
 		}
@@ -3479,6 +3687,41 @@ func (q *Queries) ListStaleFederationInbound(ctx context.Context, pageLimit int3
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTagSubscriptionsByUser = `-- name: ListTagSubscriptionsByUser :many
+SELECT id, user_id, tag, domain, status, follow_ap_id, created_at, updated_at FROM federation_tag_subscriptions
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTagSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]FederationTagSubscription, error) {
+	rows, err := q.db.Query(ctx, listTagSubscriptionsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FederationTagSubscription
+	for rows.Next() {
+		var i FederationTagSubscription
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Tag,
+			&i.Domain,
+			&i.Status,
+			&i.FollowApID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

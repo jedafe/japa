@@ -813,7 +813,7 @@ WHERE wl.ledger_type = 'points'
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $1::uuid
  AND sm.user_id = wl.user_id))
-GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type
+GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type, u.verified, u.verification_type
 ORDER BY points_balance DESC
 LIMIT $2
 `
@@ -898,7 +898,7 @@ WHERE wl.ledger_type = 'points'
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $2::uuid
  AND sm.user_id = wl.user_id))
-GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type
+GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type, u.verified, u.verification_type
 ORDER BY period_points DESC
 LIMIT $3
 `

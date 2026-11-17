@@ -74,6 +74,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_target", "Target does not resolve to a remote actor")
 	case errors.Is(err, ErrMoveTooSoon):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "move_too_soon", "A migration already ran inside the cooldown window")
+	case errors.Is(err, ErrTagSubscriptionLimit):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "tag_subscription_limit", "Tag subscription limit reached")
 	case errors.Is(err, ErrMoveNotConfirmed):
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "move_not_confirmed", "Target actor does not confirm the migration")
 	default:
@@ -425,12 +427,85 @@ func (h *Handlers) RemoteTimeline(w http.ResponseWriter, r *http.Request) {
 			limit = int32(v)
 		}
 	}
-	page, err := h.service.RemoteTimeline(r.Context(), user.UserID, r.URL.Query().Get("cursor"), limit)
+	page, err := h.service.RemoteTimeline(r.Context(), user.UserID, r.URL.Query().Get("cursor"), limit, r.URL.Query().Get("tag"))
 	if err != nil {
 		handleServiceErr(w, err)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// RemoteTagSearch serves GET /api/v1/me/federation/search?tag=&domain=
+// (§126 M5 tag discovery) — live fan-out to remote tag timelines.
+func (h *Handlers) RemoteTagSearch(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.service.RemoteTagSearch(r.Context(), user.UserID,
+		r.URL.Query().Get("tag"), r.URL.Query().Get("domain"))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+// ListTagSubscriptions serves GET /api/v1/me/federation/tag-subscriptions.
+func (h *Handlers) ListTagSubscriptions(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListTagSubscriptions(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscriptions": rows}})
+}
+
+// SubscribeTag serves POST /api/v1/me/federation/tag-subscriptions —
+// {tag, domain?}: row is the ingest warrant; a domain-scoped sub also
+// ledgers Follow{Hashtag} from the instance actor.
+func (h *Handlers) SubscribeTag(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Tag    string `json:"tag"`
+		Domain string `json:"domain"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "tag is required")
+		return
+	}
+	sub, err := h.service.SubscribeTag(r.Context(), user.UserID, body.Tag, body.Domain)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sub})
+}
+
+// UnsubscribeTag serves DELETE /api/v1/me/federation/tag-subscriptions/{id}
+// — Undo{Follow} for domain-scoped subs, then row delete.
+func (h *Handlers) UnsubscribeTag(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var subID pgtype.UUID
+	if err := subID.Scan(chi.URLParam(r, "id")); err != nil || !subID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription id")
+		return
+	}
+	if err := h.service.UnsubscribeTag(r.Context(), user.UserID, subID); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "unsubscribed"}})
 }
 
 // RequestMove serves POST /api/v1/me/federation/move (§126 M5) —

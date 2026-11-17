@@ -333,6 +333,10 @@ type RemoteTimelineItem struct {
 		DisplayName       *string `json:"display_name"`
 		AvatarURL         *string `json:"avatar_url"`
 	} `json:"actor"`
+	// ActorDomain + Live carry tag-discovery provenance (§126): timeline
+	// rows fill ActorDomain; live-search items set both.
+	ActorDomain string `json:"actor_domain,omitempty"`
+	Live        bool   `json:"live,omitempty"`
 }
 
 // RemoteTimelinePage wraps the item page with its keyset cursor.
@@ -343,7 +347,7 @@ type RemoteTimelinePage struct {
 
 // RemoteTimeline serves GET /me/federation/timeline — pull-at-read over
 // the member's accepted outbound edges, keyset on (published, id) DESC.
-func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor string, limit int32) (RemoteTimelinePage, error) {
+func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor string, limit int32, tag string) (RemoteTimelinePage, error) {
 	if _, err := s.memberActor(ctx, userID); err != nil {
 		return RemoteTimelinePage{}, err
 	}
@@ -382,6 +386,7 @@ func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor
 	// +1 row probes for a following page — same trick feeds use.
 	rows, err := s.store.read.ListRemoteTimelinePosts(ctx, gen.ListRemoteTimelinePostsParams{
 		UserID:    userID,
+		Tag:       normalizeTagParam(tag),
 		CursorKey: cursorKeyT,
 		CursorID:  cursorIDU,
 		PageLimit: limit + 1,
@@ -429,6 +434,7 @@ func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor
 		item.Actor.PreferredUsername = r.PreferredUsername
 		item.Actor.DisplayName = r.DisplayName
 		item.Actor.AvatarURL = r.AvatarUrl
+		item.ActorDomain = r.ActorDomain
 		page.Items = append(page.Items, item)
 	}
 	return page, nil

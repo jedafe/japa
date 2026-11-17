@@ -2390,6 +2390,17 @@ type FederationRemoteShare struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type FederationTagSubscription struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Tag        string             `json:"tag"`
+	Domain     string             `json:"domain"`
+	Status     string             `json:"status"`
+	FollowApID *string            `json:"follow_ap_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Feed struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

@@ -309,12 +309,31 @@ export interface RemoteTimelineItem {
 		display_name?: string | null;
 		avatar_url?: string | null;
 	};
+	/** Provenance domain (§126 tag discovery); live-search items also set live. */
+	actor_domain?: string;
+	live?: boolean;
 }
 
 /** {items, next_cursor} keyset page from GET /me/federation/timeline. */
 export interface RemoteTimelinePage {
 	items: RemoteTimelineItem[];
 	next_cursor?: string | null;
+}
+
+/** Member tag ingest warrant (§126 tag discovery) — domain '' = any. */
+export interface RemoteTagSubscription {
+	id: string;
+	tag: string;
+	domain: string;
+	created_at: string;
+}
+
+/** GET /me/federation/search payload — live remote tag timelines. */
+export interface RemoteTagSearchResult {
+	tag: string;
+	domains: string[];
+	items: RemoteTimelineItem[];
+	errors: { domain: string; message: string }[];
 }
 
 /* ------------------------------------------------------------------ *

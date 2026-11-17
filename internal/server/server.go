@@ -5035,6 +5035,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/following", federationHandlers.ListOutboundFollowing)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/federation/following/{remote_actor_id}", federationHandlers.UnfollowRemote)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/timeline", federationHandlers.RemoteTimeline)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/search", federationHandlers.RemoteTagSearch)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/tag-subscriptions", federationHandlers.ListTagSubscriptions)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/tag-subscriptions", federationHandlers.SubscribeTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/federation/tag-subscriptions/{id}", federationHandlers.UnsubscribeTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/move", federationHandlers.RequestMove)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/actors", federationHandlers.ListActors)

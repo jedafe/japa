@@ -1135,7 +1135,8 @@ LEFT JOIN LATERAL (
  LIMIT 1
 ) next_c ON true
 WHERE c.slug = $1 AND c.deleted_at IS NULL
-GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username,
+ u.verified, u.verification_type, s.name, s.slug,
  ap.disclosure_mode,
  sm.storage_bucket, sm.storage_path, o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
@@ -1410,7 +1411,8 @@ LEFT JOIN LATERAL (
  LIMIT 1
 ) next_c ON true
 WHERE c.slug = $1 AND c.content_type = $2 AND c.deleted_at IS NULL
-GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username,
+ u.verified, u.verification_type, s.name, s.slug,
  ap.disclosure_mode,
  sm.storage_bucket, sm.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
@@ -2467,7 +2469,7 @@ WHERE ct.tag_id = $1
  OR (c.created_at = $6::timestamptz AND c.id < $7::uuid)
  )
 GROUP BY c.id, u.username, u.public_username, up.display_name, up.avatar_url,
- s.name, s.slug, m.storage_bucket, m.storage_path
+ u.verified, u.verification_type, s.name, s.slug, m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT $8
 `

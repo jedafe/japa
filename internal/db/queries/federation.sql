@@ -1148,20 +1148,30 @@ WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
 
 -- name: ListRemoteTimelinePosts :many
 -- Member remote timeline (§126 M5): pull-at-read — live posts by remote
--- actors the member currently outbound-follows, keyset on
--- COALESCE(published_at, created_at) DESC.
+-- actors the member currently outbound-follows OR carrying a hashtag the
+-- member subscribes to (domain match honored), keyset on
+-- COALESCE(published_at, created_at) DESC. @tag narrows to one hashtag.
 SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
        rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned, rp.share_count,
        rp.published_at, rp.edited_at, rp.created_at,
-       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
+       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url,
+       ra.domain AS actor_domain
 FROM federation_remote_posts rp
-JOIN federation_follows ff
-  ON ff.remote_actor_id = rp.remote_actor_id
- AND ff.direction = 'outbound' AND ff.status = 'accepted'
-JOIN federated_actors fa
-  ON fa.id = ff.local_actor_id AND fa.user_id = @user_id AND fa.status = 'active'
 JOIN remote_actors ra ON ra.id = rp.remote_actor_id AND ra.status = 'active'
 WHERE rp.deleted_at IS NULL
+  AND (@tag::text = ''
+       OR EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = lower(@tag)))
+  AND (
+    EXISTS (SELECT 1 FROM federation_follows ff
+            JOIN federated_actors fa
+              ON fa.id = ff.local_actor_id AND fa.user_id = @user_id AND fa.status = 'active'
+            WHERE ff.remote_actor_id = rp.remote_actor_id
+              AND ff.direction = 'outbound' AND ff.status = 'accepted')
+    OR EXISTS (SELECT 1 FROM federation_tag_subscriptions ts
+               WHERE ts.user_id = @user_id AND ts.status = 'active'
+                 AND (ts.domain = '' OR lower(ts.domain) = lower(ra.domain))
+                 AND EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = ts.tag))
+  )
   AND (@cursor_key::timestamptz IS NULL
        OR (COALESCE(rp.published_at, rp.created_at), rp.id)
           < (@cursor_key::timestamptz, @cursor_id::uuid))
@@ -1230,3 +1240,77 @@ LIMIT @page_limit;
 UPDATE federated_actors SET moved_to_url = @moved_to_url, moved_at = now(), updated_at = now()
 WHERE id = @id
   AND (moved_at IS NULL OR moved_at <= now() - make_interval(secs => @cooldown_seconds));
+
+-- ---------------------------------------------------------------------------
+-- M5 tag discovery (§126): subscription ingest warrants + live search
+-- ---------------------------------------------------------------------------
+
+-- name: InsertTagSubscription :one
+-- Member tag subscription (§126 tag discovery): the row IS the ingest
+-- warrant — domain '' means any domain (relay-wide). follow_ap_id carries
+-- the ledgered Follow{Hashtag} id when a domain-scoped sub was delivered.
+INSERT INTO federation_tag_subscriptions (user_id, tag, domain, follow_ap_id)
+VALUES (@user_id, @tag, @domain, @follow_ap_id)
+ON CONFLICT (user_id, tag, domain) DO UPDATE
+   SET follow_ap_id = COALESCE(EXCLUDED.follow_ap_id, federation_tag_subscriptions.follow_ap_id),
+       status = 'active', updated_at = now()
+RETURNING *;
+
+-- name: ListTagSubscriptionsByUser :many
+SELECT * FROM federation_tag_subscriptions
+WHERE user_id = @user_id AND status = 'active'
+ORDER BY created_at DESC;
+
+-- name: GetTagSubscriptionByID :one
+SELECT * FROM federation_tag_subscriptions
+WHERE id = @id AND user_id = @user_id;
+
+-- name: DeleteTagSubscription :execrows
+DELETE FROM federation_tag_subscriptions WHERE id = @id AND user_id = @user_id;
+
+-- name: CountTagSubscriptionsByUser :one
+SELECT count(*) FROM federation_tag_subscriptions
+WHERE user_id = @user_id AND status = 'active';
+
+-- name: ExistsTagSubscriptionForPost :one
+-- Second ingest warrant (§126 tag discovery): a live subscription row
+-- matches when its domain covers the signer's ('' = any) and its tag is
+-- among the object's hashtags.
+SELECT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower(@domain))
+      AND EXISTS (SELECT 1 FROM unnest(@hashtags::text[]) ht WHERE lower(ht) = ts.tag)
+) AS exists;
+
+-- name: ListRemoteSearchDomains :many
+-- Candidate instances for the live tag-search fan-out: the member's
+-- subscription domains, domains of remote actors the member follows, and
+-- accepted relays — deduped, capped by setting.
+SELECT DISTINCT d::text AS domain FROM (
+    SELECT NULLIF(ts.domain, '')::text AS d
+      FROM federation_tag_subscriptions ts
+     WHERE ts.user_id = @user_id AND ts.status = 'active' AND ts.domain <> ''
+    UNION
+    SELECT ra.domain::text
+      FROM federation_follows ff
+      JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.user_id = @user_id AND fa.status = 'active'
+      JOIN remote_actors ra ON ra.id = ff.remote_actor_id AND ra.status = 'active'
+     WHERE ff.direction = 'outbound' AND ff.status = 'accepted'
+    UNION
+    SELECT r.domain::text FROM federation_relays r WHERE r.status = 'accepted'
+) x
+WHERE d IS NOT NULL
+ORDER BY d
+LIMIT @domain_limit;
+
+-- name: GetSharedInboxByDomain :one
+-- Delivery point for a domain-scoped tag Follow{Hashtag}: prefer the
+-- shared inbox any known live actor on the domain advertises; the actor
+-- id keys the delivery row's remote_actor provenance.
+SELECT id AS remote_actor_id,
+       COALESCE(NULLIF(shared_inbox_url, ''), inbox_url) AS inbox
+FROM remote_actors
+WHERE domain = @domain AND status = 'active'
+  AND (shared_inbox_url IS NOT NULL OR inbox_url IS NOT NULL)
+LIMIT 1;

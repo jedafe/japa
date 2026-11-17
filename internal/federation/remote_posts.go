@@ -109,17 +109,32 @@ func remotePostHashtags(obj map[string]any) []string {
 
 // storeRemotePost is the dispatchCreate arm for objects that anchor no
 // local thread — top-level posts and replies into remote threads. The
-// signer must have ≥1 accepted outbound follower (a member's follow is
-// the ingest warrant); everything else stays ignored.
+// ingest warrant is twofold (§126 tag discovery): the signer has ≥1
+// accepted outbound follower, OR the object's hashtags meet a member's
+// live tag subscription on the signer's domain. Everything else stays
+// ignored.
 func (s *Service) storeRemotePost(ctx context.Context, q *gen.Queries, obj map[string]any, remoteURI, replyTo, body string, signer *gen.RemoteActor) dispatchResult {
+	f := remotePostFieldsFromObject(obj)
 	warrant, err := q.ExistsAcceptedOutboundFollowerOfRemote(ctx, signer.ID)
 	if err != nil {
 		return dispatchResult{status: "error", reason: "ingest warrant: " + err.Error()}
 	}
 	if !warrant {
+		warrant, err = q.ExistsTagSubscriptionForPost(ctx, gen.ExistsTagSubscriptionForPostParams{
+			Domain:   signer.Domain,
+			Hashtags: f.Hashtags,
+		})
+		if err != nil {
+			return dispatchResult{status: "error", reason: "tag ingest warrant: " + err.Error()}
+		}
+		if warrant {
+			slog.Info("federation: remote post ingested via tag subscription",
+				"actor", signer.ActorUrl, "tags", f.Hashtags)
+		}
+	}
+	if !warrant {
 		return dispatchResult{status: "ignored", reason: "author not followed by any member"}
 	}
-	f := remotePostFieldsFromObject(obj)
 	if f.ContentText == "" && body != "" {
 		f.ContentText = body
 	}

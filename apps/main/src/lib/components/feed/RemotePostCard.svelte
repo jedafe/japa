@@ -15,7 +15,12 @@
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type { RemoteTimelineItem } from '#lib/types/index.js';
 
-	let { item }: { item: RemoteTimelineItem } = $props();
+	interface Props {
+		item: RemoteTimelineItem;
+		/** §126 tag discovery — clicking a hashtag narrows the Global feed. */
+		onTag?: (tag: string) => void;
+	}
+	let { item, onTag }: Props = $props();
 
 	const actor = $derived(item.actor);
 	const displayName = $derived(actor.display_name || actor.preferred_username || actor.acct || 'Remote user');
@@ -26,14 +31,17 @@
 	);
 	// Instance domain surfaced as provenance — pulled from the actor URL
 	// (always https); falls back to the acct's domain part.
-	const instance = $derived.by(() => {
-		try {
-			return new URL(actor.actor_url).hostname;
-		} catch {
-			const at = acct.lastIndexOf('@');
-			return at >= 0 ? acct.slice(at + 1) : '';
-		}
-	});
+	const instance = $derived(
+		item.actor_domain ||
+		(() => {
+			try {
+				return new URL(actor.actor_url).hostname;
+			} catch {
+				const at = acct.lastIndexOf('@');
+				return at >= 0 ? acct.slice(at + 1) : '';
+			}
+		})()
+	);
 
 	// CW / sensitive gate — remote `summary` is the content-warning label.
 	const hasCw = $derived(item.sensitive || !!item.summary);
@@ -66,6 +74,9 @@
 			{#if item.is_pinned}
 				<Pin size={13} aria-label={t('feed.global.pinned', 'Pinned')} />
 			{/if}
+			{#if item.live}
+				<span class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">{t('feed.global.live_badge', 'Live')}</span>
+			{/if}
 			{#if instance}
 				<span class="hidden rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[11px] sm:inline">{instance}</span>
 			{/if}
@@ -92,7 +103,15 @@
 	{#if item.hashtags?.length}
 		<div class="flex flex-wrap gap-1.5">
 			{#each item.hashtags.slice(0, 5) as tag, i (i)}
-				<span class="text-xs font-medium text-[var(--color-primary-text)]">#{tag}</span>
+				{#if onTag}
+					<button
+						type="button"
+						onclick={() => onTag(tag)}
+						class="text-xs font-medium text-[var(--color-primary-text)] hover:underline"
+					>#{tag}</button>
+				{:else}
+					<span class="text-xs font-medium text-[var(--color-primary-text)]">#{tag}</span>
+				{/if}
 			{/each}
 		</div>
 	{/if}

@@ -8,6 +8,7 @@ import type {
 	FeedItem,
 	GeoContext,
 	GeoCountry,
+	RemoteTagSubscription,
 	RemoteTimelineItem,
 	RemoteTimelinePage,
 } from '#lib/types/index.js';
@@ -44,17 +45,30 @@ export const load: PageServerLoad = async (event) => {
 
 		// §126 M5 — the Global tab is the consume-side fediverse timeline:
 		// keyset-paginated remote posts, not the offset-paginated local feeds.
+		// ?tag= narrows to one hashtag and also drives the live remote
+		// search + subscription UI client-side.
 		if (tab === 'global') {
+			const globalTag = (event.url.searchParams.get('tag') ?? '').replace(/^#/, '').trim();
+			// §126 tag discovery — ?domain= pins the live remote search to one
+			// instance (search input accepts tag@domain syntax).
+			const globalDomain = (event.url.searchParams.get('domain') ?? '').trim().toLowerCase();
+			const tagQs = globalTag ? `&tag=${encodeURIComponent(globalTag)}` : '';
+			const subsPromise = apiGet<{ subscriptions: RemoteTagSubscription[] }>(
+				ctx, '/me/federation/tag-subscriptions'
+			).then((r) => r?.subscriptions ?? []).catch(() => [] as RemoteTagSubscription[]);
 			try {
 				const page = await apiGet<RemoteTimelinePage>(
 					ctx,
-					`/me/federation/timeline?limit=${PAGE_SIZE}`
+					`/me/federation/timeline?limit=${PAGE_SIZE}${tagQs}`
 				);
 				return {
 					items: [] as FeedItem[],
 					globalItems: page?.items ?? [],
 					globalNextCursor: page?.next_cursor ?? null,
 					globalNotFederated: false,
+					globalTag,
+					globalDomain,
+					globalSubscriptions: await subsPromise,
 					tab,
 					sort,
 					authed,
@@ -77,6 +91,9 @@ export const load: PageServerLoad = async (event) => {
 					globalItems: [] as RemoteTimelineItem[],
 					globalNextCursor: null,
 					globalNotFederated: notFederated,
+					globalTag,
+					globalDomain,
+					globalSubscriptions: [] as RemoteTagSubscription[],
 					tab,
 					sort,
 					authed,

@@ -65,6 +65,9 @@
 				nextCursor={data.globalNextCursor ?? null}
 				notFederated={data.globalNotFederated ?? false}
 				loadError={data.loadError}
+				tag={data.globalTag ?? ''}
+				domain={data.globalDomain ?? ''}
+				subscriptions={data.globalSubscriptions ?? []}
 			/>
 		{:else}
 			<FeedList
