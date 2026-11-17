@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/ssrfguard"
 	"github.com/jedafe/japa/internal/timeparse"
 )
 
@@ -51,6 +54,20 @@ type RouteDTO struct {
 	HITLReviewedAt       string `json:"hitl_reviewed_at,omitempty"`
 	HITLReviewNotes      string `json:"hitl_review_notes,omitempty"`
 	IsJapabotIndexed     bool   `json:"is_japabot_indexed"`
+	// GuideID links to the §70 visa checklist content row, when one is
+	// curated for this route — the frontend builds the checklist deep
+	// link from it (/tools/visa-checklist?guide_id=).
+	GuideID string `json:"guide_id,omitempty"`
+	// TypicalProcessingDays / ProcessingSampleCount come from the latest
+	// visa_processing_stats bucket for (destination, visa_category) —
+	// the §83 "typical processing time" column (§90 Integration).
+	TypicalProcessingDays float64 `json:"typical_processing_days,omitempty"`
+	ProcessingSampleCount int32   `json:"processing_sample_count,omitempty"`
+	ProcessingPeriod      string  `json:"processing_period,omitempty"`
+	// HITLReviewerUsername resolves hitl_reviewed_by to a handle for
+	// admin views (populated on all reads; harmless to expose — the
+	// reviewed-by UUID is already public in this DTO).
+	HITLReviewerUsername string `json:"hitl_reviewed_by_username,omitempty"`
 	CreatedAt            string `json:"created_at"`
 	UpdatedAt            string `json:"updated_at"`
 }
@@ -168,23 +185,53 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "visa_routes.enabled", false)
 }
 
-// List returns a paginated, filtered list of published+active visa routes.
-func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
+// ListQueryParams carries the public ?dest=/?profession=/?education=/
+// ?experience_years=/?age=/?origin= filters plus pagination.
+type ListQueryParams struct {
+	DestSpaceID     pgtype.UUID
+	Profession      string
+	Education       string
+	ExperienceYears int32
+	Age             int32
+	Origin          string // raw ?origin= value — resolved to geo_code/name
+	Page            int32
+	Limit           int32
+}
+
+// ListFiltered returns a paginated, profile-filtered list of
+// published+active visa routes (§90 — "given a destination and user
+// profile attributes, presents all eligible visa routes").
+func (s *Service) ListFiltered(ctx context.Context, p ListQueryParams) ([]RouteDTO, int64, error) {
+	limit := p.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 
+	page := p.Page
 	if page <= 0 {
 		page = 1
 	}
 
 	offset := (page - 1) * limit
 
+	var originTerms []string
+
+	if p.Origin != "" {
+		terms, err := s.store.OriginTerms(ctx, p.Origin)
+		if err != nil {
+			return nil, 0, fmt.Errorf("visaroutes: list: %w", err)
+		}
+
+		originTerms = terms
+	}
+
 	rows, total, err := s.store.List(ctx, ListFilter{
-		DestinationSpaceID: destSpaceID,
-		Profession:         profession,
-		Education:          education,
-		ExperienceYears:    experienceYears,
+		DestinationSpaceID: p.DestSpaceID,
+		Profession:         p.Profession,
+		Education:          p.Education,
+		ExperienceYears:    p.ExperienceYears,
+		Age:                p.Age,
+		OriginTerms:        originTerms,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -200,6 +247,20 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession,
 	s.mergeRouteFieldValues(ctx, dtos)
 
 	return dtos, total, nil
+}
+
+// List returns a paginated, filtered list of published+active visa
+// routes. Kept for the public-api VisaRouteReader contract; the app API
+// handler uses ListFiltered for the full profile-attribute filter set.
+func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
+	return s.ListFiltered(ctx, ListQueryParams{
+		DestSpaceID:     destSpaceID,
+		Profession:      profession,
+		Education:       education,
+		ExperienceYears: experienceYears,
+		Page:            page,
+		Limit:           limit,
+	})
 }
 
 // CompareResult is the multi-status payload for the compare endpoint:
@@ -280,8 +341,10 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (RouteDTO, error)
 }
 
 // GetBySlug returns a single published, active visa route by its slug.
-func (s *Service) GetBySlug(ctx context.Context, slug string) (RouteDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug)
+// destSpaceID optionally scopes the lookup (slugs are only unique per
+// destination); pass an invalid UUID for unscoped deterministic lookup.
+func (s *Service) GetBySlug(ctx context.Context, slug string, destSpaceID pgtype.UUID) (RouteDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug, destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
@@ -295,6 +358,12 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (RouteDTO, error) 
 	}
 
 	return s.mergeRouteFieldValue(ctx, rowToDTO(row)), nil
+}
+
+// ResolveSpaceID resolves a ?dest=/?origin= value (space UUID, country
+// geo_code, or space slug) to a space ID. ErrNoRows when unmatched.
+func (s *Service) ResolveSpaceID(ctx context.Context, raw string) (pgtype.UUID, error) {
+	return s.store.ResolveSpaceID(ctx, raw)
 }
 
 // AdminList returns all visa routes (any status) for the admin view.
@@ -336,13 +405,17 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 }
 
 // ErrInvalidGovSourceURL is returned when gov_source_url is not an
-// absolute http(s) URL with a host.
+// absolute http(s) URL with a public host.
 var ErrInvalidGovSourceURL = errors.New("gov_source_url must be an absolute http(s) URL")
 
 // sanitizeVisaGovURL validates a government source URL. Only absolute
 // http(s) URLs with a host are accepted — javascript:, data:,
 // protocol-relative, and bare strings are rejected so the stored value is
-// safe to render as an outbound link.
+// safe to render as an outbound link. Hosts written as literal IPs must
+// be public (private/loopback/link-local ranges are rejected) so a stored
+// URL can't aim the weekly check_links fetch at internal infrastructure;
+// hostname-resolution checks happen at fetch time in the worker's
+// SSRF-safe client (dial-time private-IP block).
 func sanitizeVisaGovURL(raw string) (string, bool) {
 	v := strings.TrimSpace(raw)
 	if v == "" {
@@ -354,12 +427,23 @@ func sanitizeVisaGovURL(raw string) (string, bool) {
 		return "", false
 	}
 
-	host := v[strings.Index(v, "://")+3:]
-	if host == "" || strings.HasPrefix(host, "/") {
+	u, err := url.Parse(v)
+	if err != nil || u.Hostname() == "" {
+		return "", false
+	}
+
+	if ip := net.ParseIP(u.Hostname()); ip != nil && ssrfguard.IsPrivateIP(ip) {
 		return "", false
 	}
 
 	return v, true
+}
+
+// SanitizeGovSourceURL exposes sanitizeVisaGovURL for the non-admin write
+// paths (intel promoter, wiki entity create) so every gov_source_url
+// stored in the table meets the same validation the admin API enforces.
+func SanitizeGovSourceURL(raw string) (string, bool) {
+	return sanitizeVisaGovURL(raw)
 }
 
 // Create creates a new visa route (admin). New routes default to
@@ -382,9 +466,10 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		return RouteDTO{}, ErrInvalidGovSourceURL
 	}
 
-	var destSpaceID pgtype.UUID
-	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return RouteDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	// Resolve like ?dest= — UUID, country geo_code, or slug.
+	destSpaceID, err := s.store.ResolveSpaceID(ctx, input.DestinationSpaceID)
+	if err != nil || !destSpaceID.Valid {
+		return RouteDTO{}, fmt.Errorf("%w: %q did not resolve to a destination country", ErrInvalidDestination, input.DestinationSpaceID)
 	}
 
 	requirementsJSON, err := marshalRequirements(input.Requirements)
@@ -443,9 +528,16 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		isActive = *input.IsActive
 	}
 
+	// ADR-088 HITL gate: publishing is the Approve endpoint's job — a
+	// create may only seed draft/pending (rejected stays reserved for the
+	// review outcome; ai_draft is the generate path's marker).
 	status := input.Status
 	if status == "" {
 		status = StatusDraft
+	}
+
+	if status != StatusDraft && status != StatusPending {
+		return RouteDTO{}, fmt.Errorf("%w: create accepts only draft|pending — use the approve endpoint to publish", ErrInvalidStatus)
 	}
 
 	aiGenerated := false
@@ -484,9 +576,9 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	update := UpdateRoute{}
 
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
-		var dest pgtype.UUID
-		if err := dest.Scan(*input.DestinationSpaceID); err != nil {
-			return RouteDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		dest, err := s.store.ResolveSpaceID(ctx, *input.DestinationSpaceID)
+		if err != nil || !dest.Valid {
+			return RouteDTO{}, fmt.Errorf("%w: %q did not resolve to a destination country", ErrInvalidDestination, *input.DestinationSpaceID)
 		}
 
 		update.DestinationSpaceID = &dest
@@ -554,6 +646,18 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.Status != nil {
+		// ADR-088 HITL gate: 'published' is reserved for the approve
+		// endpoint — it stamps hitl_reviewed_by/at, the audit trail a
+		// direct PATCH would bypass. 'rejected' stays PATCH-able: the
+		// §90 lifecycle has no dedicated reject route.
+		if !IsValidStatus(*input.Status) {
+			return RouteDTO{}, fmt.Errorf("%w: %q is not a visa route status", ErrInvalidStatus, *input.Status)
+		}
+
+		if *input.Status == StatusPublished {
+			return RouteDTO{}, fmt.Errorf("%w: use the approve endpoint to publish", ErrInvalidStatus)
+		}
+
 		update.Status = input.Status
 	}
 
@@ -643,9 +747,14 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
 
-	var destSpaceID pgtype.UUID
-	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	// Resolve like ?dest= — UUID, country geo_code, or slug.
+	destSpaceID, err := s.store.ResolveSpaceID(ctx, input.DestinationSpaceID)
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("%w: %q did not resolve to a destination country", ErrInvalidDestination, input.DestinationSpaceID)
+	}
+
+	if !destSpaceID.Valid {
+		return GenerateDraftResponse{}, fmt.Errorf("%w: destination_space_id is required", ErrInvalidDestination)
 	}
 
 	visaCategory := input.VisaCategory
@@ -666,8 +775,11 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 	sum := sha256.Sum256([]byte(prompt))
 	promptHash := hex.EncodeToString(sum[:])
 
-	// Call the AI Gateway when a dispatcher is wired.
-	eligibilitySummary := prompt
+	// Call the AI Gateway when a dispatcher is wired. ADR-098: AI output is
+	// descriptive-only — it lands in path_to_pr (the "pathway summary"
+	// field ADR-098 permits), never in eligibility_summary or
+	// requirements_json, which carry rule-matched eligibility data.
+	var pathToPR *string
 
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
@@ -682,12 +794,17 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 			return GenerateDraftResponse{}, fmt.Errorf("visaroutes: AI generation failed: %w", aiErr)
 		}
 
+		var generated string
 		if text, ok := resp.Raw["text"].(string); ok {
-			eligibilitySummary = text
+			generated = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
-			eligibilitySummary = text
+			generated = text
 		} else if text, ok := resp.Raw["output"].(string); ok {
-			eligibilitySummary = text
+			generated = text
+		}
+
+		if generated != "" {
+			pathToPR = &generated
 		}
 
 		slog.Info("visaroutes: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "visa_category", visaCategory, "prompt_hash", promptHash)
@@ -704,7 +821,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 		VisaCategory:       visaCategory,
 		Name:               routeName,
 		Slug:               slug,
-		EligibilitySummary: &eligibilitySummary,
+		PathToPR:           pathToPR,
 		Status:             StatusAIDraft,
 		IsActive:           isActive,
 		AIGenerated:        aiGenerated,
@@ -853,6 +970,26 @@ func rowToDTO(r RouteRow) RouteDTO {
 	dto.HITLReviewedAt = formatTs(r.HITLReviewedAt)
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
+	}
+
+	if r.GuideID.Valid {
+		dto.GuideID = r.GuideID.String()
+	}
+
+	if f, err := r.ProcessingMedianDays.Float64Value(); err == nil && f.Valid {
+		dto.TypicalProcessingDays = f.Float64
+	}
+
+	if r.ProcessingSampleCnt.Valid {
+		dto.ProcessingSampleCount = r.ProcessingSampleCnt.Int32
+	}
+
+	if r.ProcessingPeriod.Valid {
+		dto.ProcessingPeriod = r.ProcessingPeriod.Time.Format("2006-01-02")
+	}
+
+	if r.HITLReviewerUsername != nil {
+		dto.HITLReviewerUsername = *r.HITLReviewerUsername
 	}
 
 	return dto

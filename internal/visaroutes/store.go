@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/customfields"
@@ -37,6 +38,37 @@ const (
 	StatusPublished = "published"
 	StatusRejected  = "rejected"
 )
+
+// ErrDuplicateSlug is returned when a create/update violates the
+// (destination_space_id, slug) unique constraint — mapped to a 409
+// conflict envelope by the handler (Rule 5).
+var ErrDuplicateSlug = errors.New("visa route slug already exists for this destination")
+
+// ErrInvalidStatus is returned when a create/update supplies a status
+// outside the §90 lifecycle enum, or 'published' through a write path
+// that bypasses the HITL approve endpoint (ADR-088).
+var ErrInvalidStatus = errors.New("invalid status")
+
+// ErrInvalidDestination is returned when a destination value doesn't
+// resolve to a country space (UUID, geo_code, or slug).
+var ErrInvalidDestination = errors.New("invalid destination")
+
+// IsValidStatus reports whether s is a lifecycle status in §90.
+func IsValidStatus(s string) bool {
+	switch s {
+	case StatusDraft, StatusAIDraft, StatusPending, StatusPublished, StatusRejected:
+		return true
+	}
+
+	return false
+}
+
+// isDuplicateKey reports whether err wraps a PG unique-constraint
+// violation (SQLSTATE 23505).
+func isDuplicateKey(err error) bool {
+	var pge *pgconn.PgError
+	return errors.As(err, &pge) && pge.Code == "23505"
+}
 
 // Store is the data-access layer for visa_routes. It uses direct pgx
 // queries because visa_routes is a new table without sqlc-generated
@@ -59,7 +91,9 @@ func (s *Store) ListFieldValuesByRouteIDs(ctx context.Context, ids []pgtype.UUID
 
 // RouteRow is the full row shape returned by list, get-by-id, and
 // admin-list queries. Joins spaces (destination) for the destination
-// name/geo_code.
+// name/geo_code, visa_processing_stats (latest bucket) for the §83
+// "typical processing time" column, and users for the HITL reviewer
+// handle on admin views.
 type RouteRow struct {
 	ID                   pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
@@ -85,6 +119,11 @@ type RouteRow struct {
 	HITLReviewedAt       pgtype.Timestamptz
 	HITLReviewNotes      *string
 	IsJapabotIndexed     bool
+	GuideID              pgtype.UUID
+	ProcessingMedianDays pgtype.Numeric
+	ProcessingSampleCnt  pgtype.Int4
+	ProcessingPeriod     pgtype.Date
+	HITLReviewerUsername *string
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
 }
@@ -92,17 +131,85 @@ type RouteRow struct {
 // ListFilter holds the filter parameters for public listing.
 type ListFilter struct {
 	DestinationSpaceID pgtype.UUID // optional
-	Profession         string      // optional: filter requirements_json
-	Education          string      // optional: filter requirements_json
-	ExperienceYears    int32       // optional: filter requirements_json
+	Profession         string      // optional: requirements_json.profession_groups match
+	Education          string      // optional: requirements_json.min_education ordinal match
+	ExperienceYears    int32       // optional: requirements_json.experience_years
+	Age                int32       // optional: requirements_json.age_range {min,max}
+	OriginTerms        []string    // optional: geo_code/name for eligible_* list match
 	Limit              int32
 	Offset             int32
 }
 
+// routeSelect is the shared SELECT for all route queries. It joins
+// spaces for the destination name/geo_code, the latest
+// visa_processing_stats bucket for the §83 "typical processing time"
+// column, contents guide_id for the §70 checklist deep link, and users
+// for the HITL reviewer handle.
+const routeSelect = `
+SELECT vr.id, vr.destination_space_id,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
+       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
+       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
+       vr.source_url_last_checked, vr.status, vr.is_active,
+       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
+       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
+       vr.is_japabot_indexed, vr.guide_id,
+       vps.median_days, vps.sample_count, vps.period_start,
+       rev.username AS hitl_reviewer_username,
+       vr.created_at, vr.updated_at
+FROM visa_routes vr
+LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+LEFT JOIN LATERAL (
+    SELECT median_days, sample_count, period_start
+    FROM visa_processing_stats vps
+    WHERE vps.destination_space_id = vr.destination_space_id
+      AND vps.visa_category = vr.visa_category
+    ORDER BY vps.period_start DESC, vps.sample_count DESC
+    LIMIT 1
+) vps ON true
+LEFT JOIN users rev ON rev.id = vr.hitl_reviewed_by
+`
+
+// routeScanDests returns the scan destinations matching routeSelect's
+// column order, for use with both QueryRow.Scan and Rows.Scan.
+func routeScanDests(r *RouteRow) []any {
+	return []any{
+		&r.ID, &r.DestinationSpaceID,
+		&r.DestSpaceName, &r.DestSpaceCode,
+		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
+		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
+		&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
+		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
+		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
+		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.IsJapabotIndexed, &r.GuideID,
+		&r.ProcessingMedianDays, &r.ProcessingSampleCnt, &r.ProcessingPeriod,
+		&r.HITLReviewerUsername,
+		&r.CreatedAt, &r.UpdatedAt,
+	}
+}
+
+// educationOrdinal maps a free-text education level to a rank so the
+// ?education= filter expresses "route's min_education <= user's level"
+// (rule-based matching, §90). Unknown route values rank 0 (no
+// constraint); an unrecognized user level ranks high (matches all).
+const educationOrdinalSQL = `
+CASE lower(COALESCE(%s, ''))
+    WHEN 'none' THEN 0 WHEN 'high_school' THEN 1 WHEN 'secondary' THEN 1
+    WHEN 'diploma' THEN 2 WHEN 'associate' THEN 2
+    WHEN 'bachelor' THEN 3 WHEN 'degree' THEN 3 WHEN 'bachelors' THEN 3
+    WHEN 'master' THEN 4 WHEN 'masters' THEN 4 WHEN 'mba' THEN 4
+    WHEN 'phd' THEN 5 WHEN 'doctorate' THEN 5
+    ELSE %d
+END`
+
 // List returns published, active visa routes for the public listing,
-// optionally filtered by destination space. Profession/education/
-// experience_years are matched against the requirements_json blob via
-// ILIKE when provided.
+// optionally filtered by destination space. Profile attributes are
+// matched against the spec'd requirements_json shape
+// {profession_groups, min_education, age_range, experience_years,
+// eligible_countries/eligible_nationalities/origin_countries} — legacy
+// flat keys ("profession"/"education") are honored as fallbacks.
 func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, error) {
 	var (
 		conditions []string
@@ -120,28 +227,85 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 	}
 
 	if f.Profession != "" {
-		conditions = append(conditions, fmt.Sprintf("requirements_json::text ILIKE $%d", argIdx))
-		args = append(args, "%\"profession\":\"%"+f.Profession+"%\"%")
+		conditions = append(conditions, fmt.Sprintf(`(
+  (jsonb_typeof(requirements_json->'profession_groups') = 'array'
+   AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(requirements_json->'profession_groups') AS pg
+               WHERE pg ILIKE '%%' || $%d || '%%'))
+  OR COALESCE(requirements_json->>'profession', '') ILIKE '%%' || $%d || '%%'
+)`, argIdx, argIdx))
+		args = append(args, f.Profession)
 		argIdx++
 	}
 
 	if f.Education != "" {
-		conditions = append(conditions, fmt.Sprintf("requirements_json::text ILIKE $%d", argIdx))
-		args = append(args, "%\"education\":\"%"+f.Education+"%\"%")
+		routeOrd := fmt.Sprintf(educationOrdinalSQL, "requirements_json->>'min_education'", 0)
+		userOrd := fmt.Sprintf(educationOrdinalSQL, "$"+fmt.Sprint(argIdx), 99)
+		conditions = append(conditions, fmt.Sprintf(`(
+  %s <= %s
+  OR COALESCE(requirements_json->>'education', '') ILIKE '%%' || $%d || '%%'
+  OR (jsonb_typeof(requirements_json->'education_levels') = 'array'
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(requirements_json->'education_levels') AS el
+                  WHERE el ILIKE '%%' || $%d || '%%'))
+)`, routeOrd, userOrd, argIdx, argIdx))
+		args = append(args, f.Education)
 		argIdx++
 	}
 
 	if f.ExperienceYears > 0 {
 		// Rows without an experience_years key should match (no minimum
-		// requirement). NULL::int <= N is NULL (false), so we explicitly
-		// include rows that don't carry the key.
+		// requirement). The ~ '^\d+$' guard keeps non-numeric stored
+		// values ("3-5", "5+") from erroring the whole list — malformed
+		// values are treated as "no constraint" rather than excluded.
 		conditions = append(conditions, fmt.Sprintf(
-			"(NOT requirements_json ? 'experience_years' OR (requirements_json->>'experience_years')::int <= $%d)",
+			"(NOT requirements_json ? 'experience_years' OR COALESCE(requirements_json->>'experience_years', '') !~ '^\\d+$' OR (requirements_json->>'experience_years')::int <= $%d)",
 			argIdx,
 		))
 
 		args = append(args, f.ExperienceYears)
 		argIdx++
+	}
+
+	if f.Age > 0 {
+		// age_range {min,max}: missing/malformed bound = unbounded.
+		conditions = append(conditions, fmt.Sprintf(`(NOT requirements_json ? 'age_range'
+  OR (
+    (requirements_json->'age_range'->>'min' IS NULL
+     OR requirements_json->'age_range'->>'min' !~ '^\d+$'
+     OR (requirements_json->'age_range'->>'min')::int <= $%d)
+    AND
+    (requirements_json->'age_range'->>'max' IS NULL
+     OR requirements_json->'age_range'->>'max' !~ '^\d+$'
+     OR (requirements_json->'age_range'->>'max')::int >= $%d)
+  ))`, argIdx, argIdx))
+		args = append(args, f.Age)
+		argIdx++
+	}
+
+	if len(f.OriginTerms) > 0 {
+		// Nationality-specific eligibility (§90 Geo Awareness): routes
+		// carrying an eligible_* origin restriction only match when the
+		// resolved origin geo_code or name appears in the restriction
+		// list (array or scalar); unrestricted routes always match.
+		ph1 := argIdx
+		ph2 := argIdx + 1
+		conditions = append(conditions, fmt.Sprintf(`(NOT (requirements_json ?| '{eligible_countries,eligible_nationalities,origin_countries}'::text[])
+  OR EXISTS (
+    SELECT 1 FROM jsonb_each(requirements_json) AS e(k, v)
+    WHERE e.k = ANY('{eligible_countries,eligible_nationalities,origin_countries}'::text[])
+      AND (
+        (jsonb_typeof(e.v) = 'array' AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(e.v) AS c
+           WHERE c ILIKE '%%' || $%d || '%%' OR c ILIKE '%%' || $%d || '%%'))
+        OR (jsonb_typeof(e.v) = 'string' AND (
+           e.v #>> '{}' ILIKE '%%' || $%d || '%%' OR e.v #>> '{}' ILIKE '%%' || $%d || '%%'))
+      )
+  ))`, ph1, ph2, ph1, ph2))
+		code, name := f.OriginTerms[0], f.OriginTerms[0]
+		if len(f.OriginTerms) > 1 {
+			name = f.OriginTerms[1]
+		}
+		args = append(args, code, name)
+		argIdx += 2
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
@@ -163,18 +327,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		offset = 0
 	}
 
-	listQuery := fmt.Sprintf(`
-SELECT vr.id, vr.destination_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
-       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
-       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
-       vr.source_url_last_checked, vr.status, vr.is_active,
-       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
-       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.created_at, vr.updated_at
-FROM visa_routes vr
-LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+	listQuery := routeSelect + fmt.Sprintf(`
 WHERE %s
 ORDER BY vr.name ASC
 LIMIT $%d OFFSET $%d
@@ -192,17 +345,7 @@ LIMIT $%d OFFSET $%d
 
 	for rows.Next() {
 		var r RouteRow
-		if err := rows.Scan(
-			&r.ID, &r.DestinationSpaceID,
-			&r.DestSpaceName, &r.DestSpaceCode,
-			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
-			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
-			&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
-			&r.SourceURLLastChecked, &r.Status, &r.IsActive,
-			&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
-			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-			&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(routeScanDests(&r)...); err != nil {
 			return nil, 0, fmt.Errorf("visaroutes: scan route row: %w", err)
 		}
 
@@ -230,35 +373,14 @@ SELECT COUNT(*) FROM visa_routes vr WHERE %s
 // GetByID returns a single visa route by its primary key. Public callers
 // should filter to published+active; admin callers may fetch any row.
 func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (RouteRow, error) {
-	const q = `
-SELECT vr.id, vr.destination_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
-       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
-       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
-       vr.source_url_last_checked, vr.status, vr.is_active,
-       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
-       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.created_at, vr.updated_at
-FROM visa_routes vr
-LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+	const q = routeSelect + `
 WHERE vr.id = $1
 LIMIT 1
 `
 
 	var r RouteRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
-		&r.ID, &r.DestinationSpaceID,
-		&r.DestSpaceName, &r.DestSpaceCode,
-		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
-		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
-		&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
-		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
-		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
-		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
-	)
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(routeScanDests(&r)...)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteRow{}, pgx.ErrNoRows
@@ -270,38 +392,31 @@ LIMIT 1
 	return r, nil
 }
 
-// GetBySlug returns a single visa route by its slug. Public callers should
-// filter to published+active; admin callers may fetch any row.
-func (s *Store) GetBySlug(ctx context.Context, slug string) (RouteRow, error) {
-	const q = `
-SELECT vr.id, vr.destination_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
-       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
-       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
-       vr.source_url_last_checked, vr.status, vr.is_active,
-       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
-       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.created_at, vr.updated_at
-FROM visa_routes vr
-LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
-WHERE vr.slug = $1
+// GetBySlug returns a single visa route by its slug. The slug is unique
+// per (destination_space_id, slug) — when destSpaceID is provided the
+// lookup is scoped to that destination; without one the oldest matching
+// route wins deterministically (same slug across destinations otherwise
+// resolves arbitrarily). Public callers should filter to
+// published+active; admin callers may fetch any row.
+func (s *Store) GetBySlug(ctx context.Context, slug string, destSpaceID pgtype.UUID) (RouteRow, error) {
+	var r RouteRow
+	var err error
+
+	if destSpaceID.Valid {
+		const q = routeSelect + `
+WHERE vr.slug = $1 AND vr.destination_space_id = $2
 LIMIT 1
 `
+		err = s.pool.Reader.QueryRow(ctx, q, slug, destSpaceID).Scan(routeScanDests(&r)...)
+	} else {
+		const q = routeSelect + `
+WHERE vr.slug = $1
+ORDER BY vr.created_at ASC
+LIMIT 1
+`
+		err = s.pool.Reader.QueryRow(ctx, q, slug).Scan(routeScanDests(&r)...)
+	}
 
-	var r RouteRow
-
-	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
-		&r.ID, &r.DestinationSpaceID,
-		&r.DestSpaceName, &r.DestSpaceCode,
-		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
-		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
-		&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
-		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
-		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
-		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
-	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteRow{}, pgx.ErrNoRows
@@ -328,18 +443,7 @@ func (s *Store) GetByIDs(ctx context.Context, ids []pgtype.UUID) ([]RouteRow, er
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
 
-	q := fmt.Sprintf(`
-SELECT vr.id, vr.destination_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
-       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
-       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
-       vr.source_url_last_checked, vr.status, vr.is_active,
-       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
-       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.created_at, vr.updated_at
-FROM visa_routes vr
-LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+	q := routeSelect + fmt.Sprintf(`
 WHERE vr.id IN (%s)
   AND vr.status = 'published' AND vr.is_active = true
 ORDER BY vr.name ASC
@@ -356,17 +460,7 @@ ORDER BY vr.name ASC
 
 	for rows.Next() {
 		var r RouteRow
-		if err := rows.Scan(
-			&r.ID, &r.DestinationSpaceID,
-			&r.DestSpaceName, &r.DestSpaceCode,
-			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
-			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
-			&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
-			&r.SourceURLLastChecked, &r.Status, &r.IsActive,
-			&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
-			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-			&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(routeScanDests(&r)...); err != nil {
 			return nil, fmt.Errorf("visaroutes: scan route row (by ids): %w", err)
 		}
 
@@ -465,18 +559,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 		orderClause = col + " " + dir
 	}
 
-	listQuery := fmt.Sprintf(`
-SELECT vr.id, vr.destination_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
-       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
-       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
-       vr.source_url_last_checked, vr.status, vr.is_active,
-       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
-       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.created_at, vr.updated_at
-FROM visa_routes vr
-LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+	listQuery := routeSelect + fmt.Sprintf(`
 WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
@@ -494,17 +577,7 @@ LIMIT $%d OFFSET $%d
 
 	for rows.Next() {
 		var r RouteRow
-		if err := rows.Scan(
-			&r.ID, &r.DestinationSpaceID,
-			&r.DestSpaceName, &r.DestSpaceCode,
-			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
-			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
-			&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
-			&r.SourceURLLastChecked, &r.Status, &r.IsActive,
-			&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
-			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-			&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(routeScanDests(&r)...); err != nil {
 			return nil, 0, fmt.Errorf("visaroutes: admin scan route row: %w", err)
 		}
 
@@ -586,6 +659,10 @@ RETURNING id
 		input.AIPromptHash,
 	).Scan(&id)
 	if err != nil {
+		if isDuplicateKey(err) {
+			return RouteRow{}, ErrDuplicateSlug
+		}
+
 		return RouteRow{}, fmt.Errorf("visaroutes: create: %w", err)
 	}
 
@@ -740,6 +817,10 @@ WHERE id = $%d
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
+		if isDuplicateKey(err) {
+			return RouteRow{}, ErrDuplicateSlug
+		}
+
 		return RouteRow{}, fmt.Errorf("visaroutes: update: %w", err)
 	}
 
@@ -751,8 +832,11 @@ WHERE id = $%d
 }
 
 // Approve sets the HITL review fields: hitl_reviewed_by, hitl_reviewed_at
-// = now(), status = 'published', and optional review notes. Returns the
-// updated row so the caller can return the full record per ADR-088.
+// = now(), status = 'published', is_active = true, and optional review
+// notes. Activating on approve is what actually publishes the route to
+// the public surface (list filters on status + is_active) and flips the
+// generated is_japabot_indexed column. Returns the updated row so the
+// caller can return the full record per ADR-088.
 func (s *Store) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) (RouteRow, error) {
 	const q = `
 UPDATE visa_routes
@@ -760,6 +844,7 @@ SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     hitl_review_notes = $3,
     status = 'published',
+    is_active = true,
     updated_at = now()
 WHERE id = $1
 `
@@ -794,6 +879,112 @@ WHERE id = $1
 	}
 
 	return nil
+}
+
+// ResolveSpaceID resolves a ?dest=/?origin= query value to a space ID.
+// Accepts a space UUID, a country geo_code ("CA", "NG"), or a space slug
+// ("canada") so public callers can address a destination without first
+// resolving space internals (geo-aware pattern — destination is the
+// primary axis). Returns an invalid pgtype.UUID when raw is empty.
+// ErrNoRows when the value matches nothing.
+func (s *Store) ResolveSpaceID(ctx context.Context, raw string) (pgtype.UUID, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return pgtype.UUID{}, nil
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(raw); err == nil && id.Valid {
+		return id, nil
+	}
+
+	const q = `
+SELECT id
+FROM spaces
+WHERE level = 'country'
+  AND status = 'active'
+  AND deleted_at IS NULL
+  AND (upper(geo_code) = upper($1) OR slug = $1)
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+	err := s.pool.Reader.QueryRow(ctx, q, raw).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, pgx.ErrNoRows
+		}
+
+		return pgtype.UUID{}, fmt.Errorf("visaroutes: resolve space: %w", err)
+	}
+
+	return id, nil
+}
+
+// OriginTerms resolves an ?origin= country value to the terms matched
+// against requirements_json eligible_* lists: the space geo_code and
+// display name. Returns nil when the origin doesn't resolve — callers
+// should then ignore the filter rather than match nothing.
+func (s *Store) OriginTerms(ctx context.Context, raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(raw); err == nil && id.Valid {
+		const q = `SELECT geo_code, name FROM spaces WHERE id = $1`
+
+		var code, name *string
+		if err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&code, &name); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+
+			return nil, fmt.Errorf("visaroutes: resolve origin: %w", err)
+		}
+
+		return originTerms(code, name), nil
+	}
+
+	const q = `
+SELECT geo_code, name
+FROM spaces
+WHERE level = 'country'
+  AND status = 'active'
+  AND deleted_at IS NULL
+  AND (upper(geo_code) = upper($1) OR slug = $1 OR name ILIKE $1)
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+	var code, name *string
+
+	err := s.pool.Reader.QueryRow(ctx, q, raw).Scan(&code, &name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return []string{raw}, nil // unmatched — match the raw term only
+		}
+
+		return nil, fmt.Errorf("visaroutes: resolve origin: %w", err)
+	}
+
+	return originTerms(code, name), nil
+}
+
+func originTerms(code, name *string) []string {
+	terms := make([]string, 0, 2)
+	if code != nil && *code != "" {
+		terms = append(terms, *code)
+	}
+
+	if name != nil && *name != "" {
+		if len(terms) == 0 || !strings.EqualFold(terms[0], *name) {
+			terms = append(terms, *name)
+		}
+	}
+
+	return terms
 }
 
 // adminSortColumn maps a user-supplied sort key to a qualified column

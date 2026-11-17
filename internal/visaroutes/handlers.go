@@ -111,13 +111,58 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 		}
 	}
 
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+	// ?per_page= is the canonical list param (geo-aware pattern);
+	// ?limit= stays accepted for back-compat.
+	perPage := r.URL.Query().Get("per_page")
+	if perPage == "" {
+		perPage = r.URL.Query().Get("limit")
+	}
+
+	if perPage != "" {
+		if n, err := strconv.Atoi(perPage); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
 		}
 	}
 
 	return page, limit
+}
+
+// resolveSpaceParam resolves a ?dest=/?origin=-style query value to a
+// space ID via the service (UUID, geo_code, or slug). Writes a 400 and
+// returns false when the value doesn't resolve.
+func (h *Handlers) resolveSpaceParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
+	v := r.URL.Query().Get(param)
+	if v == "" {
+		return pgtype.UUID{}, true
+	}
+
+	id, err := h.service.ResolveSpaceID(r.Context(), v)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+param+" value")
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// writeMutationError maps sentinel service errors to the standard error
+// envelope (Rule 5): validation → 400, duplicate slug → 409, anything
+// else → 500 with the generic code.
+func writeMutationError(w http.ResponseWriter, err error, code, message string, logKV ...any) {
+	switch {
+	case errors.Is(err, ErrInvalidGovSourceURL):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_gov_source_url", err.Error())
+	case errors.Is(err, ErrInvalidStatus):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", err.Error())
+	case errors.Is(err, ErrDuplicateSlug):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", err.Error())
+	case errors.Is(err, ErrInvalidDestination):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", err.Error())
+	default:
+		args := append([]any{"error", err}, logKV...)
+		slog.Error("visaroutes: mutation failed", args...)
+		errpkg.WriteError(w, http.StatusInternalServerError, code, message)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -132,18 +177,18 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("dest"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
-			return
-		}
+	// ?dest= accepts a space UUID, a country geo_code ("CA"), or a space
+	// slug (geo-aware pattern — destination is the primary axis).
+	destSpaceID, ok := h.resolveSpaceParam(w, r, "dest")
+	if !ok {
+		return
 	}
 
 	profession := r.URL.Query().Get("profession")
 	education := r.URL.Query().Get("education")
+	origin := r.URL.Query().Get("origin")
 
-	var experienceYears int32
+	var experienceYears, age int32
 
 	if v := r.URL.Query().Get("experience_years"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -151,9 +196,24 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if v := r.URL.Query().Get("age"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			age = int32(n) // #nosec
+		}
+	}
+
 	page, limit := parsePageParams(r)
 
-	routes, total, err := h.service.List(r.Context(), destSpaceID, profession, education, experienceYears, page, limit)
+	routes, total, err := h.service.ListFiltered(r.Context(), ListQueryParams{
+		DestSpaceID:     destSpaceID,
+		Profession:      profession,
+		Education:       education,
+		ExperienceYears: experienceYears,
+		Age:             age,
+		Origin:          origin,
+		Page:            page,
+		Limit:           limit,
+	})
 	if err != nil {
 		slog.Error("visaroutes: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa routes")
@@ -163,12 +223,13 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &routes)
 
-	// Standard list envelope: canonical `meta` plus a `pagination` alias
-	// for back-compat with older clients.
+	// Standard list envelope (geo-aware pattern): canonical `meta` plus a
+	// `pagination` alias for back-compat with older clients.
 	pageMeta := map[string]any{
-		"page":  page,
-		"limit": limit,
-		"total": total,
+		"page":        page,
+		"per_page":    limit,
+		"total":       total,
+		"total_pages": (total + int64(limit) - 1) / int64(limit),
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":       routes,
@@ -191,19 +252,19 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional ?dest= filter: when present, only routes for that
-	// destination space are returned (unknown dest → 400).
+	// Optional ?dest= filter (UUID, geo_code, or slug): when present,
+	// only routes for that destination space are returned.
 	var destFilter pgtype.UUID
 
-	var filterByDest bool
+	filterByDest := r.URL.Query().Get("dest") != ""
 
-	if v := r.URL.Query().Get("dest"); v != "" {
-		if err := destFilter.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+	if filterByDest {
+		id, ok := h.resolveSpaceParam(w, r, "dest")
+		if !ok {
 			return
 		}
 
-		filterByDest = true
+		destFilter = id
 	}
 
 	parts := strings.Split(idsParam, ",")
@@ -270,6 +331,12 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &routes)
 
+	// Nothing resolved at all → a real 404, not a 207 with empty data.
+	if len(routes) == 0 {
+		errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "None of the requested visa routes could be found")
+		return
+	}
+
 	if len(missing) > 0 {
 		// 207 Multi-Status: some requested IDs did not resolve.
 		errpkg.WriteJSON(w, http.StatusMultiStatus, map[string]any{"data": routes, "missing_ids": missing})
@@ -327,12 +394,9 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var destSpaceID pgtype.UUID
-	if v := r.URL.Query().Get("dest"); v != "" {
-		if err := destSpaceID.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
-			return
-		}
+	destSpaceID, ok := h.resolveSpaceParam(w, r, "dest")
+	if !ok {
+		return
 	}
 
 	status := r.URL.Query().Get("status")
@@ -363,13 +427,18 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Canonical `meta` envelope (per_page/total_pages) plus the legacy
+	// `pagination` alias — same dual shape as the public list.
+	pageMeta := map[string]any{
+		"page":        page,
+		"per_page":    limit,
+		"total":       total,
+		"total_pages": (total + int64(limit) - 1) / int64(limit),
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": routes,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
-		},
+		"data":       routes,
+		"meta":       pageMeta,
+		"pagination": pageMeta,
 	})
 }
 
@@ -414,9 +483,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 
 	route, err := h.service.Create(r.Context(), input)
 	if err != nil {
-		slog.Error("visaroutes: admin create failed", "error", err, "user_id", user.UserID)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create visa route")
-
+		writeMutationError(w, err, "create_failed", "Failed to create visa route", "user_id", user.UserID.String())
 		return
 	}
 
@@ -453,9 +520,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		slog.Error("visaroutes: admin update failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update visa route")
-
+		writeMutationError(w, err, "update_failed", "Failed to update visa route", "id", id.String())
 		return
 	}
 
@@ -491,9 +556,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		slog.Error("visaroutes: admin approve failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve visa route")
-
+		writeMutationError(w, err, "approve_failed", "Failed to approve visa route", "id", id.String())
 		return
 	}
 
@@ -530,9 +593,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GenerateDraft(r.Context(), input)
 	if err != nil {
-		slog.Error("visaroutes: admin generate failed", "error", err, "user_id", user.UserID)
-		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
-
+		writeMutationError(w, err, "generate_failed", "Failed to queue draft generation", "user_id", user.UserID.String())
 		return
 	}
 

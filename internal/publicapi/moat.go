@@ -143,6 +143,21 @@ func (s *Service) CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) ([]v
 	return s.moat.VisaRoutes.Compare(ctx, ids)
 }
 
+// ResolveSpaceByGeoCode resolves a country geo_code ("CA") to its space
+// ID via the spaces reader — lets ?dest= accept codes, not just UUIDs.
+func (s *Service) ResolveSpaceByGeoCode(ctx context.Context, geoCode string) (pgtype.UUID, error) {
+	if s.moat == nil || s.moat.Spaces == nil {
+		return pgtype.UUID{}, ErrReaderUnconfigured
+	}
+
+	row, err := s.moat.Spaces.GetPublicSpaceByGeoCode(ctx, geoCode)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return row.ID, nil
+}
+
 func (s *Service) GetVisaTimelineStats(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]visatimeline.ProcessingStatDTO, error) {
 	if s.moat == nil || s.moat.VisaTimeline == nil {
 		return nil, ErrReaderUnconfigured

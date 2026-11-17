@@ -34,15 +34,15 @@ func parseUUIDQuery(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 // ListVisaRoutes handles GET /public/visa-routes.
-// Params: dest, profession, education, experience_years, page_size, offset.
+// Params: dest (space UUID or country geo_code), profession, education,
+// experience_years, page_size, offset.
 func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
 	}
 
-	dest, err := parseUUIDQuery(r, "dest")
+	dest, err := h.resolveDestQuery(w, r)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest space ID")
 		return
 	}
 
@@ -62,6 +62,32 @@ func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes, "total": total, "limit": limit, "offset": offset,
 	})
+}
+
+// resolveDestQuery resolves a ?dest= value to a space UUID — UUIDs pass
+// through directly; anything else is treated as a country geo_code ("CA",
+// "NG") and resolved through the spaces reader (geo-aware pattern —
+// destination is the primary axis). Writes the error response on failure
+// and returns a non-nil error so the caller just returns.
+func (h *Handlers) resolveDestQuery(w http.ResponseWriter, r *http.Request) (pgtype.UUID, error) {
+	v := r.URL.Query().Get("dest")
+	if v == "" {
+		return pgtype.UUID{}, nil
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(v); err == nil && id.Valid {
+		return id, nil
+	}
+
+	// Non-UUID dest → geo_code lookup via the spaces reader.
+	space, err := h.Service.ResolveSpaceByGeoCode(r.Context(), v)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest value — pass a space UUID or country geo_code")
+		return pgtype.UUID{}, err
+	}
+
+	return space, nil
 }
 
 // GetVisaRoute handles GET /public/visa-routes/{id}.
@@ -98,8 +124,8 @@ func (h *Handlers) CompareVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parts := strings.Split(raw, ",")
-	if len(parts) > 5 {
-		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "At most 5 route IDs may be compared")
+	if len(parts) > 4 {
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "At most 4 route IDs may be compared")
 		return
 	}
 

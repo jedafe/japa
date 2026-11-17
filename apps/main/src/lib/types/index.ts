@@ -4981,6 +4981,12 @@ export interface VisaRoute {
 	source_url_last_checked?: string | null;
 	status: string;
 	is_active: boolean;
+	/** §70 checklist deep-link target (/tools/visa-checklist?guide_id=). */
+	guide_id?: string | null;
+	/** §83 "typical processing time" — median days for (dest, category). */
+	typical_processing_days?: number | null;
+	processing_sample_count?: number | null;
+	processing_period?: string | null;
 	created_at: string;
 	updated_at: string;
 }

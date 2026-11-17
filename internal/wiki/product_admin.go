@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/visaroutes"
 )
 
 // ProductProviderInput is one provider link in the create/update body.
@@ -1325,6 +1326,14 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "destination_not_found", "Destination country not found")
 			return
+		}
+		// Empty is allowed (link-check skips it); a provided URL must
+		// satisfy the same validation the admin API enforces.
+		if body.GovSourceURL != "" {
+			if _, ok := visaroutes.SanitizeGovSourceURL(body.GovSourceURL); !ok {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_gov_source_url", "gov_source_url must be an absolute http(s) URL with a public host")
+				return
+			}
 		}
 		if _, err := h.service.store.write.CreateVisaRouteForWiki(ctx, gen.CreateVisaRouteForWikiParams{
 			Name: name, Slug: body.Slug, DestinationSpaceID: dest,

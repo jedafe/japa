@@ -61,10 +61,19 @@ export const load: PageServerLoad = async (event) => {
 	const routes = await routesPromise;
 	const initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
 
+	// ?ids=a,b,c — shareable comparison selection (§90). Only ids present in
+	// the loaded route set are preselected; the client drops the rest.
+	const initialRouteIds = (event.url.searchParams.get('ids') ?? '')
+		.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean)
+		.slice(0, 4);
+
 	return {
 		destinations,
 		routes,
 		initialDestId,
+		initialRouteIds,
 		disabled,
 		authed
 	};
@@ -149,8 +158,14 @@ export const actions: Actions = {
 			return fail(500, { error: 'detail_failed', message });
 		}
 
+		// Match created items back to routes by item_ref.id — route names
+		// aren't unique across destinations, so title matching can collide.
+		// Falls back to title for items whose item_ref didn't round-trip.
+		const itemByRefId = new Map<string, ComparisonItem>();
 		const itemByTitle = new Map<string, ComparisonItem>();
 		for (const item of jce.items) {
+			const refId = typeof item.item_ref?.id === 'string' ? item.item_ref.id : null;
+			if (refId) itemByRefId.set(refId, item);
 			itemByTitle.set(item.title, item);
 		}
 		const dimByLabel = new Map(jce.dimensions.map((d) => [d.label, d]));
@@ -169,7 +184,7 @@ export const actions: Actions = {
 
 			const values = orderedRoutes
 				.map((route) => {
-					const item = itemByTitle.get(route.name);
+					const item = itemByRefId.get(route.id) ?? itemByTitle.get(route.name);
 					if (!item) return null;
 					const raw = route[field];
 					let value = '';

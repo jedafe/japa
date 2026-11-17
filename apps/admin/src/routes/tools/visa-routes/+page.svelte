@@ -9,7 +9,7 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
-	import { Eye, CheckCircle, Sparkles, Trash2 } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Trash2, XCircle, RotateCcw } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { visaRoutesAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
@@ -37,9 +37,14 @@
 		ai_model?: string;
 		ai_prompt_hash?: string;
 		hitl_reviewed_by?: string;
+		hitl_reviewed_by_username?: string;
 		hitl_reviewed_at?: string;
 		hitl_review_notes?: string;
 		is_japabot_indexed: boolean;
+		guide_id?: string;
+		typical_processing_days?: number;
+		processing_sample_count?: number;
+		processing_period?: string;
 		created_at: string;
 		updated_at: string;
 	};
@@ -79,10 +84,12 @@
 	let showGenerateModal = $state(false);
 	let generateDestSpaceId = $state('');
 	let generateVisaCategory = $state('');
+	let generatePrompt = $state('');
 
 	function openGenerate() {
 		generateDestSpaceId = '';
 		generateVisaCategory = '';
+		generatePrompt = '';
 		showGenerateModal = true;
 	}
 
@@ -96,7 +103,8 @@
 		try {
 			const result = await visaRoutesAdminApi.generate({
 				destination_space_id: generateDestSpaceId,
-				visa_category: generateVisaCategory || undefined
+				visa_category: generateVisaCategory || undefined,
+				prompt: generatePrompt || undefined
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -111,12 +119,26 @@
 		}
 	}
 
-	async function approveItem(item: VisaRoute) {
+	// ── Approve modal (HITL gate — optional review notes, ADR-088) ────────
+	let showApproveModal = $state(false);
+	let pendingApproveId = $state('');
+	let approveNotes = $state('');
+
+	function openApprove(row: VisaRoute) {
+		pendingApproveId = row.id;
+		approveNotes = '';
+		showApproveModal = true;
+	}
+
+	async function confirmApprove() {
+		if (!pendingApproveId || acting) return;
 		acting = true;
 		pageError = '';
 		try {
-			const result = await visaRoutesAdminApi.approve(item.id);
+			const result = await visaRoutesAdminApi.approve(pendingApproveId, approveNotes || undefined);
 			if (result.ok) {
+				showApproveModal = false;
+				pendingApproveId = '';
 				entityController?.reload();
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
@@ -126,6 +148,32 @@
 		} finally {
 			acting = false;
 		}
+	}
+
+	// ── Reject / reactivate (PATCH status/is_active — §90 lifecycle) ─────
+	async function patchRoute(id: string, body: Record<string, unknown>, failKey: string) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await visaRoutesAdminApi.update(id, body);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t(failKey, 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	function rejectItem(row: VisaRoute) {
+		return patchRoute(row.id, { status: 'rejected', is_active: false }, 'app.tools.reject_failed');
+	}
+
+	function reactivateItem(row: VisaRoute) {
+		return patchRoute(row.id, { is_active: true }, 'app.tools.reactivate_failed');
 	}
 
 	// ── Delete confirm modal ────────────────────────────────────────────────
@@ -166,8 +214,21 @@
 			acts.push({
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
-				onclick: approveItem,
+				onclick: openApprove,
 				show: (row: VisaRoute) => row.status !== 'published'
+			});
+			acts.push({
+				label: t('app.tools.reject', 'Reject'),
+				icon: XCircle,
+				onclick: rejectItem,
+				variant: 'destructive',
+				show: (row: VisaRoute) => row.status !== 'published' && row.status !== 'rejected'
+			});
+			acts.push({
+				label: t('app.tools.reactivate', 'Reactivate'),
+				icon: RotateCcw,
+				onclick: reactivateItem,
+				show: (row: VisaRoute) => !row.is_active && row.status === 'published'
 			});
 			acts.push({
 				label: t('common.deactivate', 'Deactivate'),
@@ -206,6 +267,10 @@
 			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
 			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
 			{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
+			// §90 structured requirements bag — {profession_groups, min_education,
+			// age_range, experience_years, eligible_*} — edited via the shared
+			// JsonValueEditor (FieldDef 'json' type).
+			{ key: 'requirements', label: t('app.tools.col_requirements', 'Requirements (JSON)'), type: 'json', help: t('app.tools.requirements_help', 'Rule-based matching fields: profession_groups, min_education, age_range {min,max}, experience_years, eligible_countries.') },
 			{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },
 			{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number' },
 			{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
@@ -215,11 +280,37 @@
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
 				type: 'select',
-				options: visaRouteStatusOptions
+				// HITL gate (ADR-088): 'published'/'ai_draft' are set by the
+				// approve/generate endpoints — the form only edits the
+				// reviewable states.
+				options: visaRouteStatusOptions.filter((o) => ['draft', 'pending', 'rejected'].includes(o.value)),
+				help: t('app.tools.status_gate_hint', 'Publishing happens through Approve — it stamps the reviewer fields.')
 			},
 			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
 		];
 	});
+
+	// prepareBody converts the JsonValueEditor's string bound to
+	// `requirements` into the parsed object the API expects. Returns an
+	// error string when the JSON is invalid so the operator can fix it
+	// rather than silently dropping the bag.
+	function prepareBody(body: Record<string, unknown>): { body: Record<string, unknown>; error?: string } {
+		const out = { ...body };
+		const raw = out.requirements;
+		if (typeof raw === 'string') {
+			const trimmed = raw.trim();
+			if (trimmed === '' || trimmed === 'null') {
+				delete out.requirements;
+			} else {
+				try {
+					out.requirements = JSON.parse(trimmed);
+				} catch {
+					return { body: out, error: t('app.tools.requirements_invalid', 'Requirements must be valid JSON') };
+				}
+			}
+		}
+		return { body: out };
+	}
 
 	// ── Filters ─────────────────────────────────────────────────────────────
 	const statusFilterOptions = $derived<CatalogOption[]>([
@@ -288,11 +379,11 @@
 		actions: rowActions,
 		fields,
 		load: async (params) => {
-			// Server-side pagination — pass page/limit/q/status to the backend.
+			// Server-side pagination — pass page/per_page/q/status to the backend.
 			// Ref: geo-aware-tool-pattern.md (admin list must filter+sort+paginate).
 			const queryParts: string[] = [];
 			queryParts.push(`page=${(params.page ?? 0) + 1}`);
-			queryParts.push(`limit=${params.pageSize ?? 25}`);
+			queryParts.push(`per_page=${params.pageSize ?? 25}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
 				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
@@ -308,19 +399,25 @@
 			const result = await visaRoutesAdminApi.listRaw(queryString);
 			if (result.ok) {
 				const data = (result.data.data as VisaRoute[]) ?? [];
-				const total = result.data.pagination?.total ?? data.length;
-				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				// Canonical `meta` envelope; `pagination` is the legacy alias.
+				const meta = result.data.meta ?? result.data.pagination;
+				const total = meta?.total ?? data.length;
+				const totalPages = meta?.total_pages ?? Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
 		create: async (body) => {
-			const result = await visaRoutesAdminApi.create(body);
+			const prepared = prepareBody(body);
+			if (prepared.error) return { ok: false, error: prepared.error };
+			const result = await visaRoutesAdminApi.create(prepared.body);
 			if (result.ok) return { ok: true };
 			return { ok: false, error: result.error };
 		},
 		update: async (id, body) => {
-			const result = await visaRoutesAdminApi.update(id, body);
+			const prepared = prepareBody(body);
+			if (prepared.error) return { ok: false, error: prepared.error };
+			const result = await visaRoutesAdminApi.update(id, prepared.body);
 			if (result.ok) return { ok: true };
 			return { ok: false, error: result.error };
 		},
@@ -384,11 +481,51 @@
 				placeholder={t('app.tools.visa_category_placeholder', 'e.g. work, student, family')}
 			/>
 		</div>
+		<div>
+			<label for="gen-prompt" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.generate_prompt', 'Prompt (optional)')}</label>
+			<textarea
+				id="gen-prompt"
+				class="w-full rounded-lg border p-3 text-sm"
+				rows="3"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generatePrompt}
+				placeholder={t('app.tools.generate_prompt_placeholder', 'Describe the route for the Content Agent to draft — eligibility notes, fee hints, official source…')}
+			></textarea>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.tools.generate_prompt_hint', 'AI output lands in descriptive fields only — eligibility rules stay manual (ADR-098).')}
+			</p>
+		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={confirmGenerate} disabled={acting || !generateDestSpaceId}>
 			{acting ? t('app.tools.generating', 'Generating...') : t('app.tools.generate', 'Generate')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Approve modal (HITL gate — notes optional, ADR-088) ────────────── -->
+<Modal bind:open={showApproveModal} title={t('app.tools.approve_route_title', 'Approve Visa Route')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.tools.approve_route_desc', 'Approving publishes this route and stamps your review. Optionally attach review notes.')}
+		</p>
+		<div>
+			<label for="approve-notes" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.review_notes', 'Review notes (optional)')}</label>
+			<textarea
+				id="approve-notes"
+				class="w-full rounded-lg border p-3 text-sm"
+				rows="3"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={approveNotes}
+				placeholder={t('app.tools.review_notes_placeholder', 'e.g. Verified against gov.ca — fee updated 2026-01')}
+			></textarea>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showApproveModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmApprove} disabled={acting}>
+			{acting ? t('app.tools.approving', 'Approving...') : t('common.approve', 'Approve')}
 		</Button>
 	</div>
 </Modal>
@@ -445,6 +582,29 @@
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.eligibility_summary}</p>
 			</div>
 		{/if}
+		{#if row.requirements && Object.keys(row.requirements).length > 0}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_requirements', 'Requirements')}</p>
+				<pre class="mt-1 overflow-x-auto rounded-lg p-2 text-xs" style="background: var(--color-surface-subtle); color: var(--color-foreground)">{JSON.stringify(row.requirements, null, 2)}</pre>
+			</div>
+		{/if}
+		{#if row.typical_processing_days != null}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_processing_time', 'Processing time (median)')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{Math.round(row.typical_processing_days)} {t('app.tools.days', 'days')}
+					{#if row.processing_sample_count != null && row.processing_sample_count > 0}
+						<span style="color: var(--color-muted)">({row.processing_sample_count} {t('app.tools.reports', 'reports')})</span>
+					{/if}
+				</p>
+			</div>
+		{/if}
+		{#if row.guide_id}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_guide', 'Checklist guide')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.guide_id}</p>
+			</div>
+		{/if}
 		{#if row.typical_fee_usd != null}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_typical_fee', 'Typical Fee')}</p>
@@ -478,7 +638,18 @@
 		{#if row.hitl_reviewed_by}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_reviewed_by', 'HITL Reviewed By')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.hitl_reviewed_by_username ?? row.hitl_reviewed_by}
+					{#if row.hitl_reviewed_by_username}
+						<span style="color: var(--color-muted)">({row.hitl_reviewed_by})</span>
+					{/if}
+				</p>
+			</div>
+		{/if}
+		{#if row.hitl_review_notes}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_review_notes', 'Review Notes')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.hitl_review_notes}</p>
 			</div>
 		{/if}
 		{#if row.hitl_reviewed_at}

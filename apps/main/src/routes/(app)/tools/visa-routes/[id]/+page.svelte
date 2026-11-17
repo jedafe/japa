@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
+	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare, Clock } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { toolOgCard } from '#lib/seo/og.js';
@@ -65,13 +65,23 @@
 			maximumFractionDigits: 0
 		}).format(fee);
 	}
+
+	function formatProcessingDays(days: number | null | undefined, sampleCount: number | null | undefined): string {
+		if (days == null) return '—';
+		const base = `${Math.round(days)} ${t('visa_routes.days', 'days')}`;
+		if (sampleCount != null && sampleCount > 0) {
+			return `${base} (${sampleCount} ${t('visa_routes.reports', 'reports')})`;
+		}
+		return base;
+	}
 </script>
 
+<!-- Canonical + JSON-LD mean this page is meant to rank — robots
+     noindex/nofollow would contradict that and waste the markup. -->
 <SeoHead
 	{title}
 	{description}
 	{canonical}
-	robots="noindex,nofollow"
 	jsonLd={visaJsonLd}
 	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
@@ -137,6 +147,14 @@
 						<p class="text-sm text-[var(--color-text)]">{route.restrictions || '—'}</p>
 					</div>
 				</div>
+				<!-- §83 typical processing time (median reported) -->
+				<div class="flex items-start gap-2">
+					<Clock size={16} class="mt-0.5 text-[var(--color-muted)]" />
+					<div>
+						<span class="text-xs text-[var(--color-muted)]">{t('visa_routes.processing_time', 'Processing time')}</span>
+						<p class="text-sm text-[var(--color-text)]">{formatProcessingDays(route.typical_processing_days, route.processing_sample_count)}</p>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -153,14 +171,16 @@
 				</a>
 			{/if}
 			<a
-				href="/compare?type=visa-types&preselect={encodeURIComponent(route.slug)}"
+				href="/compare?type=visa-types&preselect={encodeURIComponent(route.id)}"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<GitCompare size={16} />
 				{t('visa_routes.compare', 'Compare this route')}
 			</a>
+			<!-- §70 checklist deep link — guide_id lands on the curated
+			     checklist for this route when one exists. -->
 			<a
-				href="/tools/visa-checklist"
+				href={route.guide_id ? `/tools/visa-checklist?guide_id=${encodeURIComponent(route.guide_id)}` : '/tools/visa-checklist'}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<ClipboardCheck size={16} />

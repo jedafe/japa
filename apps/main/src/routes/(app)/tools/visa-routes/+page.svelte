@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock, Loader2 } from 'lucide-svelte';
+	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock, Loader2, Clock, ListChecks } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
 	import type { VisaRouteWithAi, GeoCountry } from '#lib/types/index.js';
@@ -17,9 +17,10 @@
 
 	/**
 	 * Visa Route Comparison tool — §90, ADR-088.
-	 * Destination selector → list of visa route cards with checkboxes →
-	 * side-by-side comparison table (up to 4 routes) fetched from
-	 * /visa-routes/compare?ids=...
+	 * Destination selector + profile filters → list of visa route cards with
+	 * checkboxes → side-by-side comparison table (up to 4 routes) fetched from
+	 * /visa-routes/compare?ids=... Selection state is shareable via
+	 * ?dest={id}&ids={a,b,c}.
 	 */
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -36,17 +37,53 @@
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
 	let loadingRoutes = $state(false);
 
-	// Comparison state
-	let selectedRouteIds = $state<Set<string>>(new Set());
+	// Comparison state — ?ids= preselects routes from the shared link.
+	let selectedRouteIds = $state<Set<string>>(
+		new Set(untrack(() => data.initialRouteIds ?? []).filter((id) => routes.some((r) => r.id === id)))
+	);
 	let comparisonData = $state<VisaRouteWithAi[]>([]);
 	let comparisonMissing = $state<string[]>([]);
 	let loadingComparison = $state(false);
 	let showComparison = $state(false);
 	let savingJCE = $state(false);
 
+	// Profile filters (§90 — rule-based eligibility matching against
+	// requirements_json). Empty = no constraint.
+	let profileProfession = $state('');
+	let profileEducation = $state('');
+	let profileExperience = $state('');
+	let profileAge = $state('');
+	let profileOriginId = $state('');
+
+	const educationLevels = [
+		{ value: 'high_school', key: 'visa_routes.edu_high_school', fallback: 'High school' },
+		{ value: 'diploma', key: 'visa_routes.edu_diploma', fallback: 'Diploma' },
+		{ value: 'bachelor', key: 'visa_routes.edu_bachelor', fallback: "Bachelor's degree" },
+		{ value: 'master', key: 'visa_routes.edu_master', fallback: "Master's degree" },
+		{ value: 'phd', key: 'visa_routes.edu_phd', fallback: 'Doctorate / PhD' }
+	];
+
+	const hasProfileFilters = $derived(
+		profileProfession.trim() !== '' ||
+			profileEducation !== '' ||
+			profileExperience.trim() !== '' ||
+			profileAge.trim() !== '' ||
+			profileOriginId !== ''
+	);
+
 	const selectedRoutes = $derived(routes.filter((r) => selectedRouteIds.has(r.id)));
 
 	const canCompare = $derived(selectedRouteIds.size >= 2 && selectedRouteIds.size <= 4);
+
+	// syncUrl writes ?dest=&ids= back so the comparison is shareable.
+	function syncUrl() {
+		const url = new URL(page.url.href);
+		if (selectedDestId) url.searchParams.set('dest', selectedDestId);
+		else url.searchParams.delete('dest');
+		if (selectedRouteIds.size > 0) url.searchParams.set('ids', Array.from(selectedRouteIds).join(','));
+		else url.searchParams.delete('ids');
+		goto(url, { shallow: true, replace: true });
+	}
 
 	async function loadRoutes() {
 		if (!selectedDestId) {
@@ -54,15 +91,21 @@
 			return;
 		}
 		loadingRoutes = true;
-		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes?dest=${selectedDestId}`);
-		void res.envelope?.meta;
+		const params = new URLSearchParams({ dest: selectedDestId });
+		if (profileProfession.trim()) params.set('profession', profileProfession.trim());
+		if (profileEducation) params.set('education', profileEducation);
+		if (profileExperience.trim()) params.set('experience_years', profileExperience.trim());
+		if (profileAge.trim()) params.set('age', profileAge.trim());
+		if (profileOriginId) params.set('origin', profileOriginId);
+		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes?${params}`);
 		loadingRoutes = false;
 		if (!res.error) routes = res.data ?? [];
 		else routes = [];
-		// Reset selection when destination changes
-		selectedRouteIds = new Set();
+		// Drop selections that no longer resolve against the filtered set.
+		selectedRouteIds = new Set([...selectedRouteIds].filter((id) => routes.some((r) => r.id === id)));
 		showComparison = false;
 		comparisonData = [];
+		syncUrl();
 	}
 
 	function toggleRouteSelection(id: string) {
@@ -77,6 +120,7 @@
 		// Hide stale comparison when selection changes
 		showComparison = false;
 		comparisonData = [];
+		syncUrl();
 	}
 
 	async function runComparison() {
@@ -87,7 +131,6 @@
 		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes/compare?dest=${selectedDestId}&ids=${ids}`);
 		// 207 multi-status: surface missing_ids instead of silently dropping routes.
 		const missing = res.envelope?.missing_ids as string[] | undefined ?? [];
-		if (missing.length > 0) console.warn('visa compare: missing routes', missing);
 		loadingComparison = false;
 		if (!res.error) comparisonData = res.data ?? [];
 		else comparisonData = [];
@@ -96,13 +139,18 @@
 
 	function onDestChange(id: string) {
 		selectedDestId = id;
-		// Update URL ?dest= for shareable state
-		const url = new URL(page.url.href);
-
-		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
-
-		goto(url, { shallow: true, replace: true });
+		selectedRouteIds = new Set();
 		loadRoutes();
+	}
+
+	function applyProfileFilters() {
+		loadRoutes();
+	}
+
+	function formatProcessingDays(route: VisaRouteWithAi): string {
+		if (route.typical_processing_days == null) return '—';
+		const days = Math.round(route.typical_processing_days);
+		return `${days} ${t('visa_routes.days', 'days')}`;
 	}
 
 	function formatFee(fee: number | null | undefined): string {
@@ -118,11 +166,10 @@
 		return value && value.trim() ? value : '—';
 	}
 
-	// On mount: if SSR already loaded routes for the initial dest, no need to
-	// re-fetch. If no dest was selected, do nothing (user picks one).
+	// Shared-link deep state: a ?ids= selection lands with the comparison
+	// already run so the recipient sees the table, not just checked boxes.
 	onMount(() => {
-		// Routes are already populated from SSR when initialDestId was set.
-		// Nothing to do here unless we want to sync URL — already handled.
+		if (canCompare) void runComparison();
 	});
 
 	// Autocomplete fetchers — filter the already-loaded destinations client-side.
@@ -138,6 +185,9 @@
 	}
 	const selectedDestLabel = $derived(
 		selectedDestId ? destinations.find((d) => d.id === selectedDestId)?.name ?? null : null
+	);
+	const selectedOriginLabel = $derived(
+		profileOriginId ? destinations.find((d) => d.id === profileOriginId)?.name ?? null : null
 	);
 </script>
 
@@ -188,6 +238,105 @@
 				/>
 			</div>
 		</div>
+
+		{#if selectedDestId}
+			<!-- Profile filters (§90 eligibility matching — rule-based,
+			     matched against requirements_json server-side) -->
+			<details class="border-b border-[var(--color-border)] px-4 py-3 group">
+				<summary class="flex items-center justify-between cursor-pointer text-xs font-medium uppercase tracking-wide text-[var(--color-muted)] select-none">
+					<span>{t('visa_routes.profile_filters', 'Your profile')}</span>
+					{#if hasProfileFilters}
+						<span class="normal-case px-2 py-0.5 bg-[var(--color-primary-soft)] text-[var(--color-primary-text)] rounded-full">
+							{t('visa_routes.filters_active', 'Filters active')}
+						</span>
+					{/if}
+				</summary>
+				<form
+					class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3"
+					onsubmit={(e) => { e.preventDefault(); applyProfileFilters(); }}
+				>
+					<div>
+						<label for="vr-prof" class="block text-xs text-[var(--color-muted)]">{t('visa_routes.profession', 'Profession')}</label>
+						<input
+							id="vr-prof"
+							type="text"
+							bind:value={profileProfession}
+							placeholder={t('visa_routes.profession_placeholder', 'e.g. Software engineer, nurse')}
+							class="mt-1 w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-text)]"
+						/>
+					</div>
+					<div>
+						<label for="vr-edu" class="block text-xs text-[var(--color-muted)]">{t('visa_routes.education', 'Education')}</label>
+						<select
+							id="vr-edu"
+							bind:value={profileEducation}
+							class="mt-1 w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-text)]"
+						>
+							<option value="">{t('visa_routes.any_education', 'Any level')}</option>
+							{#each educationLevels as lvl (lvl.value)}
+								<option value={lvl.value}>{t(lvl.key, lvl.fallback)}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="vr-exp" class="block text-xs text-[var(--color-muted)]">{t('visa_routes.experience_years', 'Years of experience')}</label>
+						<input
+							id="vr-exp"
+							type="number"
+							min="0"
+							max="60"
+							bind:value={profileExperience}
+							placeholder="5"
+							class="mt-1 w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-text)]"
+						/>
+					</div>
+					<div>
+						<label for="vr-age" class="block text-xs text-[var(--color-muted)]">{t('visa_routes.age', 'Age')}</label>
+						<input
+							id="vr-age"
+							type="number"
+							min="16"
+							max="99"
+							bind:value={profileAge}
+							placeholder="30"
+							class="mt-1 w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-text)]"
+						/>
+					</div>
+					<div class="sm:col-span-2">
+						<label for="vr-origin" class="block text-xs text-[var(--color-muted)]">{t('visa_routes.origin', 'Nationality / origin country')}</label>
+						<div class="mt-1">
+							<Autocomplete
+								placeholder={t('visa_routes.origin_placeholder', 'Your nationality (optional)')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={fetchDestinations}
+								initialFetcher={fetchDestinationsInitial}
+								selectedId={profileOriginId || null}
+								selectedLabel={selectedOriginLabel}
+								onSelect={(item) => { profileOriginId = item.id; }}
+								onClear={() => { profileOriginId = ''; }}
+							/>
+						</div>
+					</div>
+					<div class="sm:col-span-2 flex items-center gap-2">
+						<button
+							type="submit"
+							class="px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors"
+						>
+							{t('visa_routes.match_routes', 'Match my routes')}
+						</button>
+						{#if hasProfileFilters}
+							<button
+								type="button"
+								onclick={() => { profileProfession = ''; profileEducation = ''; profileExperience = ''; profileAge = ''; profileOriginId = ''; loadRoutes(); }}
+								class="px-3 py-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							>
+								{t('common.clear', 'Clear')}
+							</button>
+						{/if}
+					</div>
+				</form>
+			</details>
+		{/if}
 
 		{#if !selectedDestId}
 			<div class="p-4">
@@ -273,23 +422,27 @@
 					</div>
 				{/if}
 
-				<!-- Route cards -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+				<!-- Route cards: a <label> can't legally nest links, so the card
+				     is a div and the checkbox gets an explicit accessible label
+				     (a11y — the old markup silently broke click delegation). -->
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8" role="group" aria-label={t('visa_routes.routes_label', 'Available visa routes')}>
 					{#each routes as route (route.id)}
-						<label
-							class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] cursor-pointer transition-colors hover:border-[var(--color-primary)] {selectedRouteIds.has(route.id) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
+						<div
+							class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] transition-colors {selectedRouteIds.has(route.id) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
 						>
 							<div class="flex items-start gap-3">
 								<input
+									id="vr-select-{route.id}"
 									type="checkbox"
 									checked={selectedRouteIds.has(route.id)}
 									onchange={() => toggleRouteSelection(route.id)}
 									disabled={selectedRouteIds.size >= 4 && !selectedRouteIds.has(route.id)}
+									aria-label={t('visa_routes.select_route', 'Select {name} for comparison').replace('{name}', route.name)}
 									class="mt-1 accent-[var(--color-primary)]"
 								/>
 								<div class="min-w-0 flex-1">
 									<div class="flex items-center gap-2">
-										<h3 class="text-sm font-semibold text-[var(--color-text)]">{route.name}</h3>
+										<label for="vr-select-{route.id}" class="text-sm font-semibold text-[var(--color-text)] cursor-pointer">{route.name}</label>
 										<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-muted)] rounded-full">
 											{route.visa_category}
 										</span>
@@ -297,11 +450,17 @@
 									{#if route.eligibility_summary}
 										<p class="mt-1.5 text-sm text-[var(--color-text-subtle)] line-clamp-2">{route.eligibility_summary}</p>
 									{/if}
-									<div class="mt-3 flex items-center gap-4 text-xs text-[var(--color-muted)]">
+									<div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[var(--color-muted)]">
 										{#if route.typical_fee_usd != null}
 											<span class="flex items-center gap-1">
 												<DollarSign size={12} />
 												{formatFee(route.typical_fee_usd)}
+											</span>
+										{/if}
+										{#if route.typical_processing_days != null}
+											<span class="flex items-center gap-1" title={t('visa_routes.processing_hint', 'Median reported processing time')}>
+												<Clock size={12} />
+												{formatProcessingDays(route)}
 											</span>
 										{/if}
 										{#if route.path_to_pr}
@@ -316,22 +475,30 @@
 												target="_blank"
 												rel="noopener noreferrer"
 												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-												onclick={(e) => e.stopPropagation()}
 											>
 												<ExternalLink class="rtl:-scale-x-100" size={12} />
-												{t('visa_routes.source', 'Source')}</a>
-											<a
-												href="/tools/visa-routes/{route.id}"
-												class="text-[var(--color-primary-text)] hover:underline"
-												onclick={(e) => e.stopPropagation()}
-									>
-										{t('common.view', 'View')}
+												{t('visa_routes.source', 'Source')}
 											</a>
 										{/if}
+										{#if route.guide_id}
+											<a
+												href="/tools/visa-checklist?guide_id={route.guide_id}"
+												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+											>
+												<ListChecks size={12} />
+												{t('visa_routes.checklist', 'Checklist')}
+											</a>
+										{/if}
+										<a
+											href="/tools/visa-routes/{route.id}"
+											class="text-[var(--color-primary-text)] hover:underline"
+										>
+											{t('common.view', 'View')}
+										</a>
 									</div>
 								</div>
 							</div>
-						</label>
+						</div>
 					{/each}
 				</div>
 
@@ -378,6 +545,18 @@
 											<td class="p-3 font-medium text-[var(--color-muted)]">{t('visa_routes.fee', 'Typical fee')}</td>
 											{#each comparisonData as route (route.id)}
 												<td class="p-3 text-[var(--color-text)]">{formatFee(route.typical_fee_usd)}</td>
+											{/each}
+										</tr>
+										<tr>
+											<!-- §83 "typical processing time" column (median reported) -->
+											<td class="p-3 font-medium text-[var(--color-muted)]">{t('visa_routes.processing_time', 'Processing time')}</td>
+											{#each comparisonData as route (route.id)}
+												<td class="p-3 text-[var(--color-text)]">
+													{formatProcessingDays(route)}
+													{#if route.processing_sample_count != null && route.processing_sample_count > 0}
+														<span class="text-xs text-[var(--color-muted)]">({route.processing_sample_count} {t('visa_routes.reports', 'reports')})</span>
+													{/if}
+												</td>
 											{/each}
 										</tr>
 										<tr>

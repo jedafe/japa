@@ -958,7 +958,7 @@ const createVisaRouteForWiki = `-- name: CreateVisaRouteForWiki :one
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES ($1, $2, $3, $4,
-    COALESCE($5, ''), 'published', false, true)
+    COALESCE($5, ''), 'draft', false, false)
 RETURNING slug
 `
 
@@ -970,6 +970,9 @@ type CreateVisaRouteForWikiParams struct {
 	GovSourceUrl       interface{} `json:"gov_source_url"`
 }
 
+// ADR-088 HITL gate: a wiki-created route lands as draft+inactive — it
+// must pass through the visa_routes approve endpoint before the public
+// tool serves it (the old published+active insert bypassed review).
 func (q *Queries) CreateVisaRouteForWiki(ctx context.Context, arg CreateVisaRouteForWikiParams) (string, error) {
 	row := q.db.QueryRow(ctx, createVisaRouteForWiki,
 		arg.Name,

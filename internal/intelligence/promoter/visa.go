@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/visaroutes"
 )
 
 // VisaStore is the persistence surface the VisaPromoter needs.
@@ -217,8 +219,16 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 	}
 
 	govSourceURL := stringField(ext, "gov_source_url")
+	// Sanitize through the shared visa-routes validator — extraction output
+	// is untrusted and the weekly check_links sweep HEAD-fetches whatever
+	// lands in this column.
+	if _, ok := visaroutes.SanitizeGovSourceURL(govSourceURL); !ok {
+		govSourceURL = ""
+	}
 	if govSourceURL == "" {
-		govSourceURL = source.SourceUrl // satisfy NOT NULL via the crawled source URL
+		if v, ok := visaroutes.SanitizeGovSourceURL(source.SourceUrl); ok {
+			govSourceURL = v // satisfy NOT NULL via the crawled source URL
+		}
 	}
 
 	return gen.CreateVisaRouteIntelParams{
@@ -295,8 +305,13 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	applyStrPtrField(overrides, ext, "renewal_terms", &params.RenewalTerms, existing.RenewalTerms, &changed)
 	// restrictions
 	applyStrPtrField(overrides, ext, "restrictions", &params.Restrictions, existing.Restrictions, &changed)
-	// gov_source_url
+	// gov_source_url — same sanitize as the create path: an unsafe
+	// extracted value never overwrites a previously-valid one.
 	applyStrField(overrides, ext, "gov_source_url", &params.GovSourceUrl, existing.GovSourceUrl, &changed)
+	if _, ok := visaroutes.SanitizeGovSourceURL(params.GovSourceUrl); !ok {
+		params.GovSourceUrl = existing.GovSourceUrl
+		changed = slices.DeleteFunc(changed, func(c string) bool { return c == "gov_source_url" })
+	}
 
 	return params, changed
 }

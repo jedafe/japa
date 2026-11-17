@@ -5,30 +5,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/html"
 
+	"github.com/jedafe/japa/internal/ssrfguard"
 	"github.com/jedafe/japa/internal/valkey"
 )
-
-// maxRedirectDepth is the maximum number of redirects allowed per fetch.
-// Prevents infinite redirect loops and limits the attack surface for
-// redirect-based SSRF.
-const maxRedirectDepth = 5
-
-// errRedirectToPrivateIP is returned when a redirect target resolves to
-// a private or reserved IP address.
-var errRedirectToPrivateIP = errors.New("redirect target resolves to private IP")
 
 // Preview represents the metadata extracted from a URL.
 type Preview struct {
@@ -160,59 +149,12 @@ func ParseBlacklistJSON(raw string) []string {
 	return nil
 }
 
-// newSSRFSafeClient returns an http.Client configured with a Transport that
-// validates every redirect target for private IP ranges and caps redirect depth.
-// The per-request timeout is applied via context deadline in fetchAndParse
-// (SEC-013), so no fixed Client.Timeout is set here — settings can raise it
-// above the compiled-in default when wired.
-//
-// BUG-006: The Transport uses a custom net.Dialer with a Control function that
-// validates the resolved IP at TCP connection time, closing the TOCTOU/DNS
-// rebinding window between ValidateURL (DNS lookup at validation time) and the
-// actual connection.
+// newSSRFSafeClient returns the shared egress-guarded client from
+// internal/ssrfguard (dial-time private-IP blocking, per-hop redirect
+// revalidation, depth cap). The per-request timeout is applied via
+// context deadline in fetchAndParse (SEC-013).
 func newSSRFSafeClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-		Control: func(network, address string, c syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			ip := net.ParseIP(host)
-			if ip == nil {
-				return fmt.Errorf("unparseable IP at connection time: %s", host)
-			}
-			if IsPrivateIP(ip) {
-				return fmt.Errorf("connection to private IP blocked at dial time: %s", ip)
-			}
-			return nil
-		},
-	}
-
-	transport := &ssrfSafeTransport{
-		inner: &http.Transport{
-			DialContext:           dialer.DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-
-	return &http.Client{
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirectDepth {
-				return fmt.Errorf("stopped after %d redirects", maxRedirectDepth)
-			}
-			if err := ValidateRedirectURL(req.URL.String()); err != nil {
-				return errRedirectToPrivateIP
-			}
-			return nil
-		},
-	}
+	return ssrfguard.NewSafeHTTPClient()
 }
 
 // NewSafeHTTPClient returns the SSRF-safe *http.Client used by Fetch:
@@ -221,19 +163,7 @@ func newSSRFSafeClient() *http.Client {
 // user-triggered fetch paths — e.g. the agent's external.fetch tool —
 // share the same egress guard instead of rolling their own client.
 func NewSafeHTTPClient() *http.Client {
-	return newSSRFSafeClient()
-}
-
-// ssrfSafeTransport wraps an inner RoundTripper. The inner transport uses a
-// custom Dialer with a Control function that blocks connections to private IP
-// ranges at dial time (BUG-006 — DNS rebinding protection). CheckRedirect
-// validates each redirect hop's URL before following it.
-type ssrfSafeTransport struct {
-	inner http.RoundTripper
-}
-
-func (t *ssrfSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return t.inner.RoundTrip(req)
+	return ssrfguard.NewSafeHTTPClient()
 }
 
 // SetBlacklist sets the admin-configured domain blacklist.

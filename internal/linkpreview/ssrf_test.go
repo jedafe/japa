@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jedafe/japa/internal/ssrfguard"
 )
 
 func TestIsPrivateIP(t *testing.T) {
@@ -145,10 +147,10 @@ func TestSSRFRedirectBlocking(t *testing.T) {
 
 func TestMaxRedirectDepth(t *testing.T) {
 	t.Parallel()
-	// Create a chain of redirects that exceeds maxRedirectDepth.
+	// Create a chain of redirects that exceeds ssrfguard.MaxRedirectDepth.
 	var redirectChain []*httptest.Server
 
-	for i := range maxRedirectDepth + 2 {
+	for i := range ssrfguard.MaxRedirectDepth + 2 {
 		idx := i
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if idx < len(redirectChain)-1 {

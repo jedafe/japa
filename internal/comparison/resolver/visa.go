@@ -52,7 +52,15 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any) (Re
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
-		route, err := r.svc.GetBySlug(ctx, slug)
+		// Slugs are unique per (destination_space_id, slug) — when the
+		// item_ref carries a destination hint, scope the lookup so a
+		// same-named route in another country can't win the resolution.
+		var destSpaceID pgtype.UUID
+		if raw, ok := ref["destination_space_id"].(string); ok && raw != "" {
+			_ = destSpaceID.Scan(raw)
+		}
+
+		route, err := r.svc.GetBySlug(ctx, slug, destSpaceID)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil

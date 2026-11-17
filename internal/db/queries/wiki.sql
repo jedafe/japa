@@ -1148,10 +1148,13 @@ VALUES (@name, @slug, @geo_space_id, @country_code, true)
 RETURNING slug;
 
 -- name: CreateVisaRouteForWiki :one
+-- ADR-088 HITL gate: a wiki-created route lands as draft+inactive — it
+-- must pass through the visa_routes approve endpoint before the public
+-- tool serves it (the old published+active insert bypassed review).
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES (@name, @slug, @destination_space_id, @visa_category,
-    COALESCE(sqlc.narg(gov_source_url), ''), 'published', false, true)
+    COALESCE(sqlc.narg(gov_source_url), ''), 'draft', false, false)
 RETURNING slug;
 
 -- name: CreateScholarshipForWiki :one

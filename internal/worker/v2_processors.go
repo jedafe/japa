@@ -31,6 +31,9 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/ssrfguard"
 )
 
 // ---------------------------------------------------------------------------
@@ -1000,6 +1003,21 @@ type linkCheckSpec struct {
 	idLabel   string
 	urlColumn string
 	noun      string
+
+	// notifyPerm fans an in-app notification out to every holder of this
+	// permission node when a checked URL 404s (§90: "404 response → admin
+	// notification flagging a potential rule change"). Empty disables the
+	// notification path.
+	notifyPerm      string
+	notifyType      string // notification_types key — must be seeded
+	notifyTitle     string
+	notifyActionURL string
+}
+
+// checkedLink is one (entity id, URL) row scanned by checkBrokenLinks.
+type checkedLink struct {
+	id  pgtype.UUID
+	url string
 }
 
 // checkBrokenLinks runs a check_links sweep: HEAD-checks each URL returned by
@@ -1019,15 +1037,10 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 
 	defer rows.Close()
 
-	type linkRow struct {
-		id  pgtype.UUID
-		url string
-	}
-
-	var items []linkRow
+	var items []checkedLink
 
 	for rows.Next() {
-		var it linkRow
+		var it checkedLink
 
 		var urlPtr *string
 		if err := rows.Scan(&it.id, &urlPtr); err != nil {
@@ -1044,17 +1057,25 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 		return fmt.Errorf("task:%s: iterate rows: %w", taskName, err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// SSRF-safe client (linkpreview): dial-time private-IP block on every
+	// hop + redirect revalidation, so a stored URL can't be pointed at
+	// internal infrastructure. The per-request timeout rides the context.
+	client := ssrfguard.NewSafeHTTPClient()
 	broken := 0
 
+	var brokenItems []checkedLink
+
 	for _, it := range items {
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, it.url, nil)
+		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, it.url, nil)
 		if err != nil {
+			cancel()
 			slog.Warn("task:"+taskName+": invalid URL", spec.idLabel, it.id.String(), "url", it.url, "error", err)
 			continue
 		}
 
 		resp, err := client.Do(req)
+		cancel()
 		if err != nil {
 			slog.Warn("task:"+taskName+": request failed", spec.idLabel, it.id.String(), "url", it.url, "error", err)
 			continue
@@ -1064,6 +1085,7 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 
 		if resp.StatusCode == http.StatusNotFound {
 			broken++
+			brokenItems = append(brokenItems, it)
 
 			slog.Warn("task:"+taskName+": "+spec.urlColumn+" returns 404", spec.idLabel, it.id.String(), "url", it.url)
 		}
@@ -1078,7 +1100,57 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 
 	slog.Info("task:"+taskName+": checked "+spec.noun, "total", len(items), "broken", broken)
 
+	if len(brokenItems) > 0 && spec.notifyPerm != "" {
+		notifyBrokenLinks(ctx, taskName, spec, brokenItems)
+	}
+
 	return nil
+}
+
+// notifyBrokenLinks fans an in-app notification out to every holder of
+// spec.notifyPerm — §90 requires an admin notification (not just a log
+// line) when a gov source URL 404s, since a moved government page usually
+// signals a rule change. Best-effort: per-recipient failures are logged
+// and never fail the sweep.
+func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec, broken []checkedLink) {
+	q := gen.New(dbPool.Reader)
+
+	recipients, err := q.ListUserIDsByPermissionKey(ctx, spec.notifyPerm)
+	if err != nil {
+		slog.Error("task:"+taskName+": list notify recipients failed", "error", err)
+		return
+	}
+
+	if len(recipients) == 0 {
+		slog.Info("task:" + taskName + ": no recipients for broken-link notification, skipping")
+		return
+	}
+
+	wq := gen.New(dbPool.Writer)
+
+	for _, it := range broken {
+		title := spec.notifyTitle
+		body := fmt.Sprintf("%s %s returned 404 — possible rule change. URL: %s", spec.noun, it.id.String(), it.url)
+		subjectType := spec.noun
+		actorType := "system"
+
+		for _, recipientID := range recipients {
+			if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
+				RecipientID:      recipientID,
+				NotificationType: spec.notifyType,
+				ActorType:        &actorType,
+				ActorID:          pgtype.UUID{},
+				SubjectType:      &subjectType,
+				SubjectID:        it.id,
+				Title:            title,
+				Body:             &body,
+				ActionUrl:        &spec.notifyActionURL,
+			}); err != nil {
+				slog.Error("task:"+taskName+": broken-link notification insert failed", "error", err, "recipient_id", recipientID.String())
+				continue
+			}
+		}
+	}
 }
 
 // HandleCredentialsCheckLinks HEAD-checks regulatory_body_url on active
@@ -1133,6 +1205,12 @@ WHERE is_active = true
 		idLabel:   "route_id",
 		urlColumn: "gov_source_url",
 		noun:      "routes",
+		// §90 Data Maintenance: a 404 on a government source URL flags a
+		// potential rule change — notify every visa_routes.manage holder.
+		notifyPerm:      "visa_routes.manage",
+		notifyType:      "visa_route.broken_link",
+		notifyTitle:     "Visa route government source returned 404",
+		notifyActionURL: "/tools/visa-routes",
 	})
 }
 
