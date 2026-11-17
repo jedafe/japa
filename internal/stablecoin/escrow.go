@@ -390,6 +390,12 @@ func (s *Service) ArbitrateEscrow(ctx context.Context, escrowID pgtype.UUID, dec
 	if decision == nil || (decision.ReleasedTo != "buyer" && decision.ReleasedTo != "seller") {
 		return fmt.Errorf("stablecoin: arbiter decision must release to buyer or seller")
 	}
+	// Preserve the dispute context — the row's ArbiterDecision currently
+	// carries who opened the dispute and why; overwriting it outright
+	// would lose the only record of the complaint.
+	if e.ArbiterDecision != nil && e.ArbiterDecision.Note != "" {
+		decision.Note = e.ArbiterDecision.Note + " | ruling: " + decision.Note
+	}
 	return s.store.SetEscrowState(ctx, escrowID, EscrowDisputed, "", "", decision, nil)
 }
 
@@ -472,7 +478,10 @@ func (s *Service) escrowForEvent(ctx context.Context, walletID, counterAddr stri
 	if err != nil {
 		return nil
 	}
-	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
+	// The wallet heuristic may only resolve a single live escrow — two or
+	// more makes the join unsafe: a wrong vault must never transition off
+	// an ambiguous match (reconcile/the timeout task still recover it).
+	e, err := s.store.GetUnambiguousLiveEscrowByWallet(ctx, wid)
 	if err != nil {
 		return nil
 	}

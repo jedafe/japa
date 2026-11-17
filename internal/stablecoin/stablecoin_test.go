@@ -148,15 +148,16 @@ func (f *fakeStore) ListWallets(_ context.Context, _, _ string, _, _ int32) ([]W
 	return nil, nil
 }
 func (f *fakeStore) InsertActivity(_ context.Context, a Activity) (*Activity, error) {
-	if _, dup := f.activities[a.TxSignature]; dup {
+	key := a.WalletID + "|" + a.TxSignature // (wallet_id, tx_signature) UNIQUE
+	if _, dup := f.activities[key]; dup {
 		return nil, nil // ON CONFLICT DO NOTHING
 	}
-	f.activities[a.TxSignature] = &a
+	f.activities[key] = &a
 	f.inserted = append(f.inserted, a)
 	return &a, nil
 }
-func (f *fakeStore) GetActivityBySig(_ context.Context, sig string) (*Activity, error) {
-	if a, ok := f.activities[sig]; ok {
+func (f *fakeStore) GetActivityBySig(_ context.Context, walletID, sig string) (*Activity, error) {
+	if a, ok := f.activities[walletID+"|"+sig]; ok {
 		return a, nil
 	}
 	return nil, ErrActivityNotFound
@@ -181,8 +182,44 @@ func (f *fakeStore) SetActivityStatus(_ context.Context, id pgtype.UUID, st stri
 	}
 	return nil
 }
+func (f *fakeStore) ConfirmActivity(_ context.Context, id pgtype.UUID, a Activity) (bool, error) {
+	for _, ex := range f.activities {
+		if ex.ID == id.String() {
+			if ex.Status != "pending" {
+				return false, nil // guarded transition — concurrent confirm loses
+			}
+			ex.Status, ex.Kind, ex.Direction = a.Status, a.Kind, a.Direction
+			ex.CounterpartyUserID = a.CounterpartyUserID
+			ex.AmountMinor, ex.CreditsAmount = a.AmountMinor, a.CreditsAmount
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (f *fakeStore) SumOutByAssetSince(_ context.Context, _ pgtype.UUID, _ string, _ time.Time) (int64, error) {
 	return f.outSum, nil
+}
+func (f *fakeStore) SumBackedCredits(_ context.Context, wid pgtype.UUID) (int64, error) {
+	var n int64
+	for _, a := range f.activities {
+		if a.WalletID == wid.String() && a.Status == "confirmed" {
+			if a.Direction == "in" {
+				n += a.CreditsAmount
+			} else {
+				n -= a.CreditsAmount
+			}
+		}
+	}
+	return n, nil
+}
+func (f *fakeStore) SumPendingInCredits(_ context.Context, wid pgtype.UUID) (int64, error) {
+	var n int64
+	for _, a := range f.activities {
+		if a.WalletID == wid.String() && a.Status == "pending" && a.Direction == "in" {
+			n += a.CreditsAmount
+		}
+	}
+	return n, nil
 }
 func (f *fakeStore) GetEscrow(_ context.Context, id pgtype.UUID) (*Escrow, error) {
 	if e, ok := f.escrows[id.String()]; ok {
@@ -214,6 +251,22 @@ func (f *fakeStore) GetLiveEscrowByWallet(_ context.Context, w pgtype.UUID) (*Es
 		}
 	}
 	return nil, ErrEscrowNotFound
+}
+func (f *fakeStore) GetUnambiguousLiveEscrowByWallet(_ context.Context, w pgtype.UUID) (*Escrow, error) {
+	var found *Escrow
+	for _, e := range f.escrows {
+		if (e.BuyerWalletID == w.String() || e.SellerWalletID == w.String()) &&
+			(e.State == EscrowFunding || e.State == EscrowFunded || e.State == EscrowDisputed) {
+			if found != nil {
+				return nil, ErrEscrowNotFound // ambiguous — never pick
+			}
+			found = e
+		}
+	}
+	if found == nil {
+		return nil, ErrEscrowNotFound
+	}
+	return found, nil
 }
 func (f *fakeStore) InsertEscrow(_ context.Context, e Escrow) (*Escrow, error) {
 	if e.ID == "" {
@@ -301,6 +354,9 @@ func (f *fakeStore) ListSweepsByState(_ context.Context, st string, _, _ int32) 
 		}
 	}
 	return out, nil
+}
+func (f *fakeStore) ExpireStaleSweeps(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
 }
 func (f *fakeStore) GetTreasuryWalletByAddress(_ context.Context, chain, addr string) (*TreasuryWallet, error) {
 	for _, t := range f.treasury {

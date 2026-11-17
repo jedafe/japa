@@ -11,6 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const confirmStablecoinActivity = `-- name: ConfirmStablecoinActivity :execrows
+UPDATE stablecoin_activity
+SET status = $1, kind = $2, direction = $3,
+    asset = $4, amount_minor = $5, credits_amount = $6,
+    counterparty_user_id = $7,
+    tx_signature = $8, slot = $9,
+    occurred_at = $10, raw = $11
+WHERE id = $12 AND status = 'pending'
+`
+
+type ConfirmStablecoinActivityParams struct {
+	Status             string             `json:"status"`
+	Kind               string             `json:"kind"`
+	Direction          string             `json:"direction"`
+	Asset              string             `json:"asset"`
+	AmountMinor        int64              `json:"amount_minor"`
+	CreditsAmount      int64              `json:"credits_amount"`
+	CounterpartyUserID pgtype.UUID        `json:"counterparty_user_id"`
+	TxSignature        *string            `json:"tx_signature"`
+	Slot               *int64             `json:"slot"`
+	OccurredAt         pgtype.Timestamptz `json:"occurred_at"`
+	Raw                []byte             `json:"raw"`
+	ID                 pgtype.UUID        `json:"id"`
+}
+
+// Terminal transition carrying the confirming event's canonical fields —
+// a pending row inserted from a 'submitted' event is a placeholder: its
+// kind/direction/counterparty are provisional until the real event lands.
+// WHERE status='pending' guards the transition so concurrent terminal
+// deliveries can't double-fire post-confirm hooks (fee, escrow).
+func (q *Queries) ConfirmStablecoinActivity(ctx context.Context, arg ConfirmStablecoinActivityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmStablecoinActivity,
+		arg.Status,
+		arg.Kind,
+		arg.Direction,
+		arg.Asset,
+		arg.AmountMinor,
+		arg.CreditsAmount,
+		arg.CounterpartyUserID,
+		arg.TxSignature,
+		arg.Slot,
+		arg.OccurredAt,
+		arg.Raw,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const decideTreasurySweep = `-- name: DecideTreasurySweep :one
 UPDATE treasury_sweeps
 SET state = $1,
@@ -54,6 +105,23 @@ func (q *Queries) DecideTreasurySweep(ctx context.Context, arg DecideTreasurySwe
 		&i.ExecutedAt,
 	)
 	return i, err
+}
+
+const expireStaleTreasurySweeps = `-- name: ExpireStaleTreasurySweeps :execrows
+UPDATE treasury_sweeps
+SET state = 'expired'
+WHERE state IN ('proposed', 'approved') AND created_at < $1
+`
+
+// Sweep lifecycle: an open proposal (proposed/approved) that outlives its
+// window means the Squads ceremony stalled — expiring it lets the next
+// cron tick propose a fresh sweep instead of blocking the asset forever.
+func (q *Queries) ExpireStaleTreasurySweeps(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, expireStaleTreasurySweeps, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getApprovedSweepForTransfer = `-- name: GetApprovedSweepForTransfer :one
@@ -231,11 +299,18 @@ func (q *Queries) GetServiceEscrowByBooking(ctx context.Context, bookingID pgtyp
 
 const getStablecoinActivityByTxSignature = `-- name: GetStablecoinActivityByTxSignature :one
 SELECT id, wallet_id, direction, kind, asset, amount_minor, credits_amount, counterparty_user_id, tx_signature, slot, status, occurred_at, raw FROM stablecoin_activity
-WHERE tx_signature = $1
+WHERE wallet_id = $1 AND tx_signature = $2
 `
 
-func (q *Queries) GetStablecoinActivityByTxSignature(ctx context.Context, txSignature *string) (StablecoinActivity, error) {
-	row := q.db.QueryRow(ctx, getStablecoinActivityByTxSignature, txSignature)
+type GetStablecoinActivityByTxSignatureParams struct {
+	WalletID    pgtype.UUID `json:"wallet_id"`
+	TxSignature *string     `json:"tx_signature"`
+}
+
+// Per-wallet dedupe lookup — a member→member tx shares its signature
+// across both wallets' mirror rows.
+func (q *Queries) GetStablecoinActivityByTxSignature(ctx context.Context, arg GetStablecoinActivityByTxSignatureParams) (StablecoinActivity, error) {
+	row := q.db.QueryRow(ctx, getStablecoinActivityByTxSignature, arg.WalletID, arg.TxSignature)
 	var i StablecoinActivity
 	err := row.Scan(
 		&i.ID,
@@ -511,7 +586,7 @@ const insertStablecoinActivity = `-- name: InsertStablecoinActivity :one
 
 INSERT INTO stablecoin_activity (wallet_id, direction, kind, asset, amount_minor, credits_amount, counterparty_user_id, tx_signature, slot, status, occurred_at, raw)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-ON CONFLICT (tx_signature) DO NOTHING
+ON CONFLICT (wallet_id, tx_signature) DO NOTHING
 RETURNING id, wallet_id, direction, kind, asset, amount_minor, credits_amount, counterparty_user_id, tx_signature, slot, status, occurred_at, raw
 `
 
@@ -533,8 +608,9 @@ type InsertStablecoinActivityParams struct {
 // =====================
 // Activity mirror
 // =====================
-// tx_signature UNIQUE makes webhook replays idempotent — on conflict the
-// provider event is a dedupe hit, not a new row.
+// (wallet_id, tx_signature) UNIQUE makes webhook replays idempotent — on
+// conflict the provider event is a dedupe hit, not a new row. Per-wallet:
+// one member→member tx legitimately mirrors on both wallets.
 func (q *Queries) InsertStablecoinActivity(ctx context.Context, arg InsertStablecoinActivityParams) (StablecoinActivity, error) {
 	row := q.db.QueryRow(ctx, insertStablecoinActivity,
 		arg.WalletID,
@@ -716,6 +792,52 @@ LIMIT $1
 // Buyer-ghost timeout: funded vaults past confirmation deadline.
 func (q *Queries) ListExpiredFundedEscrows(ctx context.Context, limitCount int32) ([]ServiceEscrow, error) {
 	rows, err := q.db.Query(ctx, listExpiredFundedEscrows, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ServiceEscrow
+	for rows.Next() {
+		var i ServiceEscrow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BookingID,
+			&i.BuyerWalletID,
+			&i.SellerWalletID,
+			&i.VaultAddress,
+			&i.Asset,
+			&i.AmountMinor,
+			&i.FeeMinor,
+			&i.State,
+			&i.FundedSig,
+			&i.ReleaseSig,
+			&i.ConfirmationDeadline,
+			&i.ArbiterDecision,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveEscrowsByWallet = `-- name: ListLiveEscrowsByWallet :many
+SELECT id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at FROM service_escrows
+WHERE (buyer_wallet_id = $1 OR seller_wallet_id = $1)
+  AND state IN ('funding', 'funded', 'disputed')
+LIMIT 2
+`
+
+// Ambiguity check for the fallback path — the wallet heuristic may only
+// resolve an event when the wallet has exactly ONE live escrow; two or
+// more makes the join unsafe (a wrong escrow must never transition).
+func (q *Queries) ListLiveEscrowsByWallet(ctx context.Context, walletID pgtype.UUID) ([]ServiceEscrow, error) {
+	rows, err := q.db.Query(ctx, listLiveEscrowsByWallet, walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -1313,6 +1435,22 @@ func (q *Queries) SetStablecoinWalletStatus(ctx context.Context, arg SetStableco
 	return i, err
 }
 
+const sumBackedCreditsByWallet = `-- name: SumBackedCreditsByWallet :one
+SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN credits_amount ELSE -credits_amount END), 0)::bigint
+FROM stablecoin_activity
+WHERE wallet_id = $1 AND status = 'confirmed'
+`
+
+// Backed-balance derivation on mirror-cache miss: net confirmed in/out in
+// display credits. Row-by-row summation silently truncates past the page
+// cap — the aggregate never does.
+func (q *Queries) SumBackedCreditsByWallet(ctx context.Context, walletID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumBackedCreditsByWallet, walletID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const sumOutActivityByAssetSince = `-- name: SumOutActivityByAssetSince :one
 SELECT COALESCE(SUM(amount_minor), 0)::bigint FROM stablecoin_activity
 WHERE wallet_id = $1
@@ -1333,6 +1471,20 @@ type SumOutActivityByAssetSinceParams struct {
 // cap too).
 func (q *Queries) SumOutActivityByAssetSince(ctx context.Context, arg SumOutActivityByAssetSinceParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sumOutActivityByAssetSince, arg.WalletID, arg.Asset, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sumPendingInCreditsByWallet = `-- name: SumPendingInCreditsByWallet :one
+SELECT COALESCE(SUM(credits_amount), 0)::bigint
+FROM stablecoin_activity
+WHERE wallet_id = $1 AND status = 'pending' AND direction = 'in'
+`
+
+// Pending inbound credit display — unconfirmed deposits/tips-in only.
+func (q *Queries) SumPendingInCreditsByWallet(ctx context.Context, walletID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumPendingInCreditsByWallet, walletID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err

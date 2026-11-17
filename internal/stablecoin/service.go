@@ -55,15 +55,19 @@ type store interface {
 	ListWalletsByStatus(ctx context.Context, status string, limit, offset int32) ([]Wallet, error)
 	ListWallets(ctx context.Context, status, q string, limit, offset int32) ([]Wallet, error)
 	InsertActivity(ctx context.Context, a Activity) (*Activity, error)
-	GetActivityBySig(ctx context.Context, sig string) (*Activity, error)
+	GetActivityBySig(ctx context.Context, walletID, sig string) (*Activity, error)
 	ListActivityByWallet(ctx context.Context, walletID pgtype.UUID, limit, offset int32) ([]Activity, error)
 	GetWalletByID(ctx context.Context, id pgtype.UUID) (*Wallet, error)
 	ListPendingActivity(ctx context.Context, limit int32) ([]Activity, error)
 	SetActivityStatus(ctx context.Context, id pgtype.UUID, status string) error
+	ConfirmActivity(ctx context.Context, id pgtype.UUID, a Activity) (bool, error)
 	SumOutByAssetSince(ctx context.Context, walletID pgtype.UUID, asset string, since time.Time) (int64, error)
+	SumBackedCredits(ctx context.Context, walletID pgtype.UUID) (int64, error)
+	SumPendingInCredits(ctx context.Context, walletID pgtype.UUID) (int64, error)
 	GetEscrow(ctx context.Context, id pgtype.UUID) (*Escrow, error)
 	GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) (*Escrow, error)
 	GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error)
+	GetUnambiguousLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error)
 	GetEscrowByVault(ctx context.Context, vaultAddr string) (*Escrow, error)
 	InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error)
 	SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision, deadline *time.Time) error
@@ -77,6 +81,7 @@ type store interface {
 	GetTreasurySweep(ctx context.Context, id pgtype.UUID) (*TreasurySweep, error)
 	GetApprovedSweepForTransfer(ctx context.Context, chain, asset, hotWalletID string, amountMinor int64) (*TreasurySweep, error)
 	DecideTreasurySweep(ctx context.Context, id pgtype.UUID, state string, approvedBy pgtype.UUID, squadsProposalID string) error
+	ExpireStaleSweeps(ctx context.Context, cutoff time.Time) (int64, error)
 	MarkSweepExecuted(ctx context.Context, id pgtype.UUID, sig string) error
 	ListSweepsByState(ctx context.Context, state string, limit, offset int32) ([]TreasurySweep, error)
 }

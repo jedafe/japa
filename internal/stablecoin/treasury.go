@@ -175,6 +175,15 @@ func (s *Service) ProposeSweep(ctx context.Context) error {
 		}
 		return fmt.Errorf("stablecoin: hot balance: %w", err)
 	}
+	// Expire stalled proposals first — an abandoned Squads ceremony leaves
+	// the asset's proposal open forever, silently blocking every future
+	// sweep while the hot float grows unbounded.
+	expHrs := s.settings.GetIntOr(ctx, "stablecoin.sweep_expiry_hours", 72)
+	if expHrs > 0 {
+		if n, err := s.store.ExpireStaleSweeps(ctx, time.Now().Add(-time.Duration(expHrs)*time.Hour)); err == nil && n > 0 {
+			slog.Info("stablecoin: expired stalled sweep proposals", "count", n)
+		}
+	}
 	// Skip assets with an open proposal — a cron tick must not queue a
 	// second sweep while one awaits ceremony approval.
 	open := map[string]bool{}

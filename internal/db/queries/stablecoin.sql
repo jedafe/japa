@@ -59,11 +59,12 @@ LIMIT @limit_count OFFSET @offset_count;
 -- =====================
 
 -- name: InsertStablecoinActivity :one
--- tx_signature UNIQUE makes webhook replays idempotent — on conflict the
--- provider event is a dedupe hit, not a new row.
+-- (wallet_id, tx_signature) UNIQUE makes webhook replays idempotent — on
+-- conflict the provider event is a dedupe hit, not a new row. Per-wallet:
+-- one member→member tx legitimately mirrors on both wallets.
 INSERT INTO stablecoin_activity (wallet_id, direction, kind, asset, amount_minor, credits_amount, counterparty_user_id, tx_signature, slot, status, occurred_at, raw)
 VALUES (@wallet_id, @direction, @kind, @asset, @amount_minor, @credits_amount, sqlc.narg(counterparty_user_id), sqlc.narg(tx_signature), sqlc.narg(slot), @status, @occurred_at, sqlc.narg(raw))
-ON CONFLICT (tx_signature) DO NOTHING
+ON CONFLICT (wallet_id, tx_signature) DO NOTHING
 RETURNING *;
 
 -- name: ListStablecoinActivityByWallet :many
@@ -73,14 +74,30 @@ ORDER BY occurred_at DESC
 LIMIT @limit_count OFFSET @offset_count;
 
 -- name: GetStablecoinActivityByTxSignature :one
+-- Per-wallet dedupe lookup — a member→member tx shares its signature
+-- across both wallets' mirror rows.
 SELECT * FROM stablecoin_activity
-WHERE tx_signature = @tx_signature;
+WHERE wallet_id = @wallet_id AND tx_signature = @tx_signature;
 
 -- name: SetStablecoinActivityStatus :one
 UPDATE stablecoin_activity
 SET status = @status
 WHERE id = @id
 RETURNING *;
+
+-- name: ConfirmStablecoinActivity :execrows
+-- Terminal transition carrying the confirming event's canonical fields —
+-- a pending row inserted from a 'submitted' event is a placeholder: its
+-- kind/direction/counterparty are provisional until the real event lands.
+-- WHERE status='pending' guards the transition so concurrent terminal
+-- deliveries can't double-fire post-confirm hooks (fee, escrow).
+UPDATE stablecoin_activity
+SET status = @status, kind = @kind, direction = @direction,
+    asset = @asset, amount_minor = @amount_minor, credits_amount = @credits_amount,
+    counterparty_user_id = sqlc.narg(counterparty_user_id),
+    tx_signature = sqlc.narg(tx_signature), slot = sqlc.narg(slot),
+    occurred_at = @occurred_at, raw = sqlc.narg(raw)
+WHERE id = @id AND status = 'pending';
 
 -- name: SumOutActivityByAssetSince :one
 -- Delegated-signer daily-cap check — confirmed+pending out-volume for one
@@ -92,6 +109,20 @@ WHERE wallet_id = @wallet_id
   AND asset = @asset
   AND status != 'failed'
   AND occurred_at >= @since;
+
+-- name: SumBackedCreditsByWallet :one
+-- Backed-balance derivation on mirror-cache miss: net confirmed in/out in
+-- display credits. Row-by-row summation silently truncates past the page
+-- cap — the aggregate never does.
+SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN credits_amount ELSE -credits_amount END), 0)::bigint
+FROM stablecoin_activity
+WHERE wallet_id = @wallet_id AND status = 'confirmed';
+
+-- name: SumPendingInCreditsByWallet :one
+-- Pending inbound credit display — unconfirmed deposits/tips-in only.
+SELECT COALESCE(SUM(credits_amount), 0)::bigint
+FROM stablecoin_activity
+WHERE wallet_id = @wallet_id AND status = 'pending' AND direction = 'in';
 
 -- name: ListPendingStablecoinActivity :many
 -- Reconciliation sweep source — pending rows older than a webhook gap.
@@ -197,6 +228,14 @@ WHERE state = @state
 ORDER BY created_at DESC
 LIMIT @limit_count OFFSET @offset_count;
 
+-- name: ExpireStaleTreasurySweeps :execrows
+-- Sweep lifecycle: an open proposal (proposed/approved) that outlives its
+-- window means the Squads ceremony stalled — expiring it lets the next
+-- cron tick propose a fresh sweep instead of blocking the asset forever.
+UPDATE treasury_sweeps
+SET state = 'expired'
+WHERE state IN ('proposed', 'approved') AND created_at < @cutoff;
+
 -- name: DecideTreasurySweep :one
 -- Approve or reject — records the treasury.sweep_approve decision.
 UPDATE treasury_sweeps
@@ -228,6 +267,15 @@ WHERE (buyer_wallet_id = @wallet_id OR seller_wallet_id = @wallet_id)
   AND state IN ('funding', 'funded', 'disputed')
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
+
+-- name: ListLiveEscrowsByWallet :many
+-- Ambiguity check for the fallback path — the wallet heuristic may only
+-- resolve an event when the wallet has exactly ONE live escrow; two or
+-- more makes the join unsafe (a wrong escrow must never transition).
+SELECT * FROM service_escrows
+WHERE (buyer_wallet_id = @wallet_id OR seller_wallet_id = @wallet_id)
+  AND state IN ('funding', 'funded', 'disputed')
+LIMIT 2;
 
 -- name: GetEscrowByVault :one
 -- Precise mirror match: an escrow_funding/escrow_release event's

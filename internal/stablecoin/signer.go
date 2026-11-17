@@ -207,9 +207,11 @@ func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMin
 		return
 	}
 	// The killswitch gates every delegated-signer op — a direct provider
-	// call here would bypass the incident-response halt.
+	// call here would bypass the incident-response halt. A deferred fee
+	// is unrecovered (no retry queue) — error-level for alerting.
 	if halted, err := s.killswitch(ctx); err != nil || halted {
-		slog.Warn("stablecoin: withdrawal fee deferred (killswitch/error)", "sig", txSig, "fee", fee)
+		slog.Error("stablecoin: withdrawal fee deferred (killswitch/error) — uncollected",
+			"sig", txSig, "fee", fee, "idempotency", txSig+":withdrawal_fee")
 		return
 	}
 	hot, err := s.store.GetTreasuryWallet(ctx, w.Chain, TreasuryHot)
@@ -225,9 +227,11 @@ func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMin
 		Reference:     "withdrawal_fee",
 		Signer:        w.DelegatedSigner.SignerRef,
 	}); err != nil {
-		// Non-fatal: member funds already moved; reconcile surfaces the
-		// uncollected fee for recovery.
-		slog.Warn("stablecoin: withdrawal fee collection failed", "sig", txSig, "fee", fee, "error", err)
+		// Non-fatal but unrecovered: the member's send already landed, and
+		// no retry exists — the idempotency key makes manual recovery
+		// replay-safe. Error-level for alerting; ops replays per sig.
+		slog.Error("stablecoin: withdrawal fee collection failed — uncollected fee",
+			"sig", txSig, "fee", fee, "idempotency", txSig+":withdrawal_fee", "error", err)
 	}
 }
 

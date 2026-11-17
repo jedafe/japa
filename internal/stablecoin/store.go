@@ -136,9 +136,11 @@ func (st *Store) UpdateWalletStatus(ctx context.Context, id pgtype.UUID, status 
 	return err
 }
 
-// InsertActivity mirrors one onchain event. tx_signature UNIQUE +
-// ON CONFLICT DO NOTHING makes provider webhook replays idempotent —
-// a replay returns the zero row, callers treat it as a dedupe hit.
+// InsertActivity mirrors one onchain event. (wallet_id, tx_signature)
+// UNIQUE + ON CONFLICT DO NOTHING makes provider webhook replays
+// idempotent — a replay returns the zero row, callers treat it as a
+// dedupe hit. The unique is per-wallet because one member→member tx
+// legitimately mirrors on both wallets under the same signature.
 func (st *Store) InsertActivity(ctx context.Context, a Activity) (*Activity, error) {
 	wid, err := pgUUID(a.WalletID)
 	if err != nil {
@@ -164,6 +166,7 @@ func (st *Store) InsertActivity(ctx context.Context, a Activity) (*Activity, err
 		Slot:               slot,
 		Status:             a.Status,
 		OccurredAt:         pgtype.Timestamptz{Time: a.OccurredAt, Valid: !a.OccurredAt.IsZero()},
+		Raw:                a.Raw,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// ON CONFLICT DO NOTHING returns no row on a tx_signature replay —
@@ -176,9 +179,18 @@ func (st *Store) InsertActivity(ctx context.Context, a Activity) (*Activity, err
 	return domainActivity(row), nil
 }
 
-// GetActivityBySig finds a mirrored event by tx signature.
-func (st *Store) GetActivityBySig(ctx context.Context, sig string) (*Activity, error) {
-	row, err := st.q.GetStablecoinActivityByTxSignature(ctx, &sig)
+// GetActivityBySig finds a wallet's mirrored event by tx signature —
+// per-wallet because one member→member tx shares its signature across
+// both wallets' rows.
+func (st *Store) GetActivityBySig(ctx context.Context, walletID, sig string) (*Activity, error) {
+	wid, err := pgUUID(walletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: get activity: %w", err)
+	}
+	row, err := st.q.GetStablecoinActivityByTxSignature(ctx, gen.GetStablecoinActivityByTxSignatureParams{
+		WalletID:    wid,
+		TxSignature: &sig,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrActivityNotFound
 	}
@@ -199,6 +211,7 @@ func domainActivity(a gen.StablecoinActivity) *Activity {
 		CreditsAmount: a.CreditsAmount,
 		Status:        a.Status,
 		OccurredAt:    a.OccurredAt.Time,
+		Raw:           a.Raw,
 	}
 	if a.CounterpartyUserID.Valid {
 		s := uuidStr(a.CounterpartyUserID)
@@ -314,10 +327,55 @@ func (st *Store) SumOutByAssetSince(ctx context.Context, walletID pgtype.UUID, a
 	})
 }
 
+// SumBackedCredits nets confirmed in/out mirror rows — the cache-miss
+// balance derivation (never page-capped like row iteration).
+func (st *Store) SumBackedCredits(ctx context.Context, walletID pgtype.UUID) (int64, error) {
+	return st.q.SumBackedCreditsByWallet(ctx, walletID)
+}
+
+// SumPendingInCredits totals unconfirmed inbound credits for the pending
+// balance display.
+func (st *Store) SumPendingInCredits(ctx context.Context, walletID pgtype.UUID) (int64, error) {
+	return st.q.SumPendingInCreditsByWallet(ctx, walletID)
+}
+
 // SetActivityStatus flips a mirror row's status (pending → confirmed|failed).
 func (st *Store) SetActivityStatus(ctx context.Context, id pgtype.UUID, status string) error {
 	_, err := st.q.SetStablecoinActivityStatus(ctx, gen.SetStablecoinActivityStatusParams{Status: status, ID: id})
 	return err
+}
+
+// ConfirmActivity writes a terminal status plus the confirming event's
+// canonical fields onto a pending row — WHERE status='pending' guards the
+// transition so concurrent terminal deliveries can't double-fire hooks.
+// Returns true when the row actually transitioned.
+func (st *Store) ConfirmActivity(ctx context.Context, id pgtype.UUID, a Activity) (bool, error) {
+	var sig *string
+	if a.TxSignature != "" {
+		sig = &a.TxSignature
+	}
+	var slot *int64
+	if a.Slot != 0 {
+		slot = &a.Slot
+	}
+	n, err := st.q.ConfirmStablecoinActivity(ctx, gen.ConfirmStablecoinActivityParams{
+		ID:                 id,
+		Status:             a.Status,
+		Kind:               a.Kind,
+		Direction:          a.Direction,
+		Asset:              a.Asset,
+		AmountMinor:        a.AmountMinor,
+		CreditsAmount:      a.CreditsAmount,
+		CounterpartyUserID: pgUUIDPtr(a.CounterpartyUserID),
+		TxSignature:        sig,
+		Slot:               slot,
+		OccurredAt:         pgtype.Timestamptz{Time: a.OccurredAt, Valid: !a.OccurredAt.IsZero()},
+		Raw:                a.Raw,
+	})
+	if err != nil {
+		return false, fmt.Errorf("stablecoin: confirm activity: %w", err)
+	}
+	return n > 0, nil
 }
 
 // ListWallets pages the admin registry — status "" = all, q = address
@@ -400,6 +458,20 @@ func (st *Store) GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID
 		return nil, fmt.Errorf("stablecoin: live escrow by wallet: %w", err)
 	}
 	return domainEscrow(row), nil
+}
+
+// GetUnambiguousLiveEscrowByWallet returns the wallet's live escrow ONLY
+// when exactly one exists — the mirror's fallback join must never pick
+// between multiple live escrows or the wrong vault could transition.
+func (st *Store) GetUnambiguousLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error) {
+	rows, err := st.q.ListLiveEscrowsByWallet(ctx, walletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: live escrows by wallet: %w", err)
+	}
+	if len(rows) != 1 {
+		return nil, ErrEscrowNotFound
+	}
+	return domainEscrow(rows[0]), nil
 }
 
 // GetEscrowByVault returns the escrow whose Squads vault matches —
@@ -630,6 +702,13 @@ func (st *Store) ListSweepsByState(ctx context.Context, state string, limit, off
 		out = append(out, *domainSweep(r))
 	}
 	return out, nil
+}
+
+// ExpireStaleSweeps flips open proposals past the expiry window to
+// 'expired' — a stalled Squads ceremony must not block future sweeps for
+// that asset. Returns the expired count for logging.
+func (st *Store) ExpireStaleSweeps(ctx context.Context, cutoff time.Time) (int64, error) {
+	return st.q.ExpireStaleTreasurySweeps(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 }
 
 // DecideTreasurySweep records the approve/reject decision on a proposal.

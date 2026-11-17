@@ -138,6 +138,7 @@ type Activity struct {
 	Slot               int64
 	Status             string // pending | confirmed | failed
 	OccurredAt         time.Time
+	Raw                []byte // provider event payload — forensic/debug trail
 }
 
 // Escrow is a Squads 2-of-3 multisig vault settling one §111 service

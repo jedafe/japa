@@ -185,21 +185,25 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 		if failed {
 			continue
 		}
-		// Status per signature — a failed onchain event must fail the row,
-		// not confirm it. Terminal states are sticky in both directions: a
-		// provider page shouldn't let ordering noise regress a decided row.
-		landed := map[string]string{}
+		// Terminal event per signature — a failed onchain event must fail
+		// the row, not confirm it. Terminal states are sticky in both
+		// directions: a provider page shouldn't let ordering noise regress
+		// a decided row.
+		landed := map[string]ProviderEvent{}
+		terminal := map[string]string{}
 		for _, ev := range events {
 			switch ev.Type {
 			case "failed":
-				if landed[ev.TxSignature] != "confirmed" {
-					landed[ev.TxSignature] = "failed"
+				if terminal[ev.TxSignature] != "confirmed" {
+					terminal[ev.TxSignature] = "failed"
+					landed[ev.TxSignature] = ev
 				}
 			case "pending", "submitted":
 				// still in-flight — leave the row pending
 			default:
-				if landed[ev.TxSignature] != "failed" {
-					landed[ev.TxSignature] = "confirmed"
+				if terminal[ev.TxSignature] != "failed" {
+					terminal[ev.TxSignature] = "confirmed"
+					landed[ev.TxSignature] = ev
 				}
 			}
 		}
@@ -208,21 +212,15 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 			if err := id.Scan(a.ID); err != nil {
 				continue
 			}
-			st, ok := landed[a.TxSignature]
-			if !ok || st == "" {
+			ev, ok := landed[a.TxSignature]
+			if !ok {
 				continue
 			}
-			if err := s.store.SetActivityStatus(ctx, id, st); err != nil {
-				slog.Warn("stablecoin: settle activity failed", "id", a.ID, "status", st, "error", err)
-				continue
-			}
-			// Confirmed external send whose webhook was missed — collect
-			// the platform fee exactly like the fresh-insert mirror path.
-			// CounterpartyUserID != nil means the other side is a member
-			// wallet (internal op leg, already fee-paid via the batch).
-			if st == "confirmed" && a.Direction == "out" && a.Kind == ActivityWithdrawal && a.CounterpartyUserID == nil {
-				s.collectWithdrawalFee(ctx, w, a.AmountMinor, a.Asset, a.TxSignature, "")
-			}
+			// The confirm path writes the event's canonical kind/direction/
+			// counterparty (the pending row is a placeholder) and fires the
+			// same postConfirmHooks as the live webhook — withdrawal-fee
+			// collection and escrow transitions included.
+			s.confirmActivity(ctx, id, ev, walletIDStr)
 		}
 	}
 	return nil

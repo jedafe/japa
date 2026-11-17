@@ -2,6 +2,7 @@ package stablecoin
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,9 +74,13 @@ func (s *Service) IngestWebhook(ctx context.Context, payload []byte, signature s
 		return nil
 	}
 
-	// Fast-path dedupe: SET NX on the signature. DB unique on tx_signature
-	// is the authoritative backstop (InsertActivity ON CONFLICT DO NOTHING).
-	ok, err := s.vk.SetNX(ctx, "jc:stablecoin:webhook:dedupe:"+sig, "1", 86400)
+	// Fast-path dedupe: SET NX on the body hash — NOT the tx signature.
+	// One member→member tx fires a per-wallet event for each participant
+	// (tip_out + tip_in under the same signature); a sig-only key would
+	// drop the second wallet's event at ingest. Identical bodies are true
+	// replays; any distinct delivery processes. The (wallet_id, signature)
+	// DB unique is the authoritative backstop.
+	ok, err := s.vk.SetNX(ctx, "jc:stablecoin:webhook:dedupe:"+fmt.Sprintf("%x", sha256.Sum256(payload)), "1", 86400)
 	if err != nil {
 		return fmt.Errorf("stablecoin: webhook dedupe: %w", err)
 	}
@@ -105,6 +110,12 @@ func (s *Service) SyncActivity(ctx context.Context, payload []byte) error {
 
 	w, err := s.store.GetWalletByAddress(ctx, env.walletRef())
 	if err != nil {
+		if !errors.Is(err, ErrWalletNotFound) {
+			// A transient lookup failure must not drop a chain event —
+			// the webhook already ACKed, so return the error and let the
+			// task retry. Only a genuine not-found falls through.
+			return fmt.Errorf("stablecoin: wallet lookup: %w", err)
+		}
 		// Not a member wallet — check the treasury registry: hot→cold
 		// sweep executions and fee-leg landings are provider events too.
 		chain := s.settings.GetStringOr(ctx, "stablecoin.network", "solana")
@@ -115,6 +126,9 @@ func (s *Service) SyncActivity(ctx context.Context, payload []byte) error {
 		// Log and drop; the reconcile sweep is the safety net.
 		slog.Warn("stablecoin: activity for unknown wallet", "addr", env.walletRef(), "type", env.Type)
 		return nil
+	}
+	if w == nil {
+		return nil // nil,nil — unresolvable address, nothing to mirror
 	}
 	return s.MirrorActivity(ctx, ev, w.ID)
 }
@@ -132,46 +146,29 @@ func eventStatus(ev ProviderEvent) string {
 	}
 }
 
-// MirrorActivity persists one provider event into stablecoin_activity —
-// the render cache for the unified history feed. Called by
-// stablecoin:sync_activity. Idempotent on tx_signature.
-func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID string) error {
-	if existing, err := s.store.GetActivityBySig(ctx, ev.TxSignature); err == nil {
-		// Already mirrored — but a terminal event for a pending row is a
-		// status transition, not a replay: a webhook that arrives after the
-		// offramp-sweep inserted the row pending must still confirm it.
-		if existing.Status == "pending" {
-			if st := eventStatus(ev); st == "confirmed" || st == "failed" {
-				var id pgtype.UUID
-				if id.Scan(existing.ID) == nil {
-					if serr := s.store.SetActivityStatus(ctx, id, st); serr == nil {
-						s.postConfirmHooks(ctx, ev, walletID, existing.Direction, existing.Kind, st)
-					}
-				}
-			}
-		}
-		return nil
-	} else if !errors.Is(err, ErrActivityNotFound) {
-		return fmt.Errorf("stablecoin: activity lookup: %w", err)
-	}
-
+// activityFromEvent normalizes one provider event into the mirror row
+// shape — shared by fresh inserts and the pending→terminal confirm path
+// so both write identical canonical data.
+func (s *Service) activityFromEvent(ctx context.Context, ev ProviderEvent, walletID string) Activity {
 	kind, direction := classifyEvent(ev)
 	creditsPer := s.creditsPerUSD(ctx)
 	credits := int64(math.Round(float64(ev.AmountMinor) * creditsPer / 1_000_000)) // USD minor → display credits
 
 	// Counterparty resolution: member wallet ↔ internal transfer, else NULL.
+	// Re-resolved at confirm — a counterparty provisioned between the
+	// pending insert and the confirm (auto-provisioned recipient) must be
+	// linked, or internal transfers look external and get withdrawal-fee'd.
 	var cp *string
 	if cw, err := s.store.GetWalletByAddress(ctx, ev.CounterAddr); err == nil && cw != nil {
 		cp = &cw.UserID
 	}
 
-	status := eventStatus(ev)
-
 	occurred := time.Unix(ev.OccurredAt, 0).UTC()
 	if ev.OccurredAt <= 0 {
 		occurred = time.Now().UTC() // provider omitted the timestamp — don't sort to 1970
 	}
-	inserted, err := s.store.InsertActivity(ctx, Activity{
+	raw, _ := json.Marshal(ev)
+	return Activity{
 		WalletID:           walletID,
 		Direction:          direction,
 		Kind:               kind,
@@ -181,34 +178,86 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		CounterpartyUserID: cp,
 		TxSignature:        ev.TxSignature,
 		Slot:               ev.Slot,
-		Status:             status,
+		Status:             eventStatus(ev),
 		OccurredAt:         occurred,
-	})
+		Raw:                raw,
+	}
+}
+
+// confirmActivity lands a terminal status on a pending mirror row, writing
+// the confirming event's canonical fields (a 'submitted' insert is a
+// placeholder — its kind/direction/counterparty are provisional). The
+// guarded WHERE status='pending' means concurrent confirms can't
+// double-fire hooks: only the first transition returns true.
+func (s *Service) confirmActivity(ctx context.Context, id pgtype.UUID, ev ProviderEvent, walletID string) {
+	a := s.activityFromEvent(ctx, ev, walletID)
+	ok, err := s.store.ConfirmActivity(ctx, id, a)
+	if err != nil {
+		slog.Warn("stablecoin: confirm activity failed", "id", id.String(), "error", err)
+		return
+	}
+	if ok {
+		s.postConfirmHooks(ctx, ev, walletID, a.Direction, a.Kind, a.Status)
+	}
+}
+
+// MirrorActivity persists one provider event into stablecoin_activity —
+// the render cache for the unified history feed. Called by
+// stablecoin:sync_activity. Idempotent on (wallet_id, tx_signature).
+func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID string) error {
+	if existing, err := s.store.GetActivityBySig(ctx, walletID, ev.TxSignature); err == nil {
+		// Already mirrored — but a terminal event for a pending row is a
+		// status transition, not a replay: a webhook that arrives after a
+		// 'submitted' insert (or the offramp sweep) must still confirm it —
+		// and the confirming event's kind/direction/counterparty replace the
+		// placeholder values, or hooks fire on a stale kind and never run.
+		if existing.Status == "pending" {
+			if st := eventStatus(ev); st == "confirmed" || st == "failed" {
+				var id pgtype.UUID
+				if id.Scan(existing.ID) == nil {
+					s.confirmActivity(ctx, id, ev, walletID)
+				}
+			}
+		}
+		return nil
+	} else if !errors.Is(err, ErrActivityNotFound) {
+		return fmt.Errorf("stablecoin: activity lookup: %w", err)
+	}
+
+	a := s.activityFromEvent(ctx, ev, walletID)
+	inserted, err := s.store.InsertActivity(ctx, a)
 	if err != nil {
 		return err
 	}
 	if inserted == nil {
-		return nil // tx_signature dedupe hit — replay, nothing to do
+		return nil // (wallet_id, tx_signature) dedupe hit — replay, nothing to do
 	}
-	s.postConfirmHooks(ctx, ev, walletID, direction, kind, status)
+	s.postConfirmHooks(ctx, ev, walletID, a.Direction, a.Kind, a.Status)
 	return nil
 }
 
 // postConfirmHooks runs the side-effects a confirmed mirror row triggers —
-// withdrawal fee collection and onchain escrow transitions. Called on
-// fresh inserts and on dedupe-hit pending→confirmed transitions so the
-// outcome is identical regardless of which path confirmed the row.
+// balance-cache invalidation, withdrawal fee collection, and onchain
+// escrow transitions. Called on fresh inserts and on pending→confirmed
+// transitions so the outcome is identical regardless of which path
+// confirmed the row.
 func (s *Service) postConfirmHooks(ctx context.Context, ev ProviderEvent, walletID, direction, kind, status string) {
+	if status != "confirmed" {
+		return
+	}
+	// A confirmed event changes the rendered balance — bust the mirror
+	// cache or deposits/tips stay invisible until the reconcile TTL.
+	var w *Wallet
+	if wid, perr := pgUUID(walletID); perr == nil {
+		w, _ = s.store.GetWalletByID(ctx, wid)
+	}
+	if w != nil {
+		_ = s.vk.Del(ctx, "jc:stablecoin:mirror:"+w.UserID)
+	}
 	// Confirmed member-signed withdrawal → collect the platform fee via
 	// the delegated signer (the send couldn't carry a fee leg).
-	if status == "confirmed" && direction == "out" && kind == ActivityWithdrawal {
-		var w *Wallet
-		if wid, perr := pgUUID(walletID); perr == nil {
-			w, _ = s.store.GetWalletByID(ctx, wid)
-		}
-		if w != nil {
-			s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature, ev.CounterAddr)
-		}
+	if direction == "out" && kind == ActivityWithdrawal && w != nil {
+		s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature, ev.CounterAddr)
 	}
 	// Onchain escrow transitions — the chain event is the authoritative
 	// proof; the client-reported calls are the optimistic path. The event's
