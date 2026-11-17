@@ -784,7 +784,8 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 	// subscribe rather than ledger a pending row that must dead-letter
 	// before an admin learns it can't work.
 	iu, ierr := url.Parse(inbox)
-	if ierr != nil || !strings.EqualFold(iu.Scheme, "https") || iu.Hostname() == "" {
+	if ierr != nil || !strings.EqualFold(iu.Scheme, "https") || iu.Hostname() == "" ||
+		s.isLocalHost(iu.Hostname()) {
 		return gen.FederationRelay{}, fmt.Errorf("%w: relay actor advertises unusable inbox", ErrRemoteFetch)
 	}
 	remote, err := s.upsertRemoteActor(ctx, actorURL, doc)

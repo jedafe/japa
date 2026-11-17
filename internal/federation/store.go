@@ -357,8 +357,8 @@ func (s *Store) actorByID(ctx context.Context, id pgtype.UUID) (gen.FederatedAct
 }
 
 // latestDeliveredObjectType returns the newest DELIVERED activity type
-// carrying this object (” when none arrived) — the fanout decision's
-// input: 'Create'/'Update' → Update; ”/'Delete' → Create.
+// carrying this object ("" when none arrived) — the fanout decision's
+// input: 'Create'/'Update' → Update; ""/'Delete' → Create.
 func (s *Store) latestDeliveredObjectType(ctx context.Context, localActorID pgtype.UUID, objectID string) string {
 	t, err := s.read.GetLatestDeliveredObjectType(ctx, gen.GetLatestDeliveredObjectTypeParams{LocalActorID: localActorID, ObjectID: objectID})
 	if err != nil {

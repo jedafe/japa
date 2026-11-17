@@ -75,6 +75,10 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 	// render the account as migrated while the actor stays active.
 	if p.MovedToUrl != nil && *p.MovedToUrl != "" {
 		doc["movedTo"] = *p.MovedToUrl
+		// Mastodon also joins the new location into alsoKnownAs on the
+		// old actor — implementations verifying both directions of the
+		// Move consent need the old doc to name it too.
+		doc["alsoKnownAs"] = append(doc["alsoKnownAs"].([]string), *p.MovedToUrl)
 	}
 
 	if p.DisplayName != nil && *p.DisplayName != "" {

@@ -148,7 +148,7 @@ func (s *Service) throttleDomain(ctx context.Context, domain string) {
 	if s.vk == nil || domain == "" {
 		return
 	}
-	key := "jc:fed:fetch:" + strings.ToLower(domain)
+	key := "jc:fed:fetch:" + strings.TrimSuffix(strings.ToLower(domain), ".")
 	deadline := time.Now().Add(fetchMaxWait)
 	for {
 		ok, err := s.vk.SetNX(ctx, key, "1", fetchThrottleMS*time.Millisecond).Result()

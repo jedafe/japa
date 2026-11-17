@@ -250,12 +250,24 @@ func (s *Service) upsertRemoteActor(ctx context.Context, actorURL string, doc *r
 	if doc.PreferredUsername != "" {
 		acct = doc.PreferredUsername + "@" + domain
 	}
+	// Delivery endpoints are remote-advertised data: only an https URL on
+	// a non-local host may ride into the row. A doc pointing its inbox at
+	// ourselves (or a plaintext hop) must never produce a delivery row —
+	// the signature half of the actor still stores and verifies.
+	saneInbox := func(raw string) *string {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") ||
+			s.isLocalHost(u.Hostname()) {
+			return nil
+		}
+		return &raw
+	}
 	row, err := s.store.upsertRemoteActor(ctx, gen.UpsertRemoteActorParams{
 		ActorUrl:          actorURL,
 		Acct:              nz(acct),
 		Domain:            domain,
-		InboxUrl:          nz(doc.Inbox),
-		SharedInboxUrl:    nz(doc.Endpoints.SharedInbox),
+		InboxUrl:          saneInbox(doc.Inbox),
+		SharedInboxUrl:    saneInbox(doc.Endpoints.SharedInbox),
 		OutboxUrl:         nz(doc.Outbox),
 		PublicKeyPem:      nz(doc.PublicKey.PublicKeyPem),
 		PublicKeyID:       nz(doc.PublicKey.ID),

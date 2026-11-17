@@ -123,7 +123,7 @@ type announceIngest struct {
 // Follow{Hashtag}/Follow{Public} relays use; without it every relayed
 // post drops as "announce target is not a local object". Returns nil
 // when nothing should ingest: no domain-covering subscription (the
-// fetch gate — ” subs match every host), the object is already stored,
+// fetch gate — "" subs match every host), the object is already stored,
 // the doc won't resolve, or attributedTo can't produce an active
 // author actor.
 func (s *Service) resolveAnnounceTarget(ctx context.Context, act map[string]any) *announceIngest {
