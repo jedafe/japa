@@ -190,6 +190,12 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
   if (accentColor) {
     inline['--block-accent'] = accentColor;
     inline['--color-primary'] = accentColor;
+    // Derive the sibling tokens so hover states and accent-as-text usages
+    // track the block accent instead of snapping back to the page hue.
+    // Mixing toward --color-text darkens in light mode and lightens in
+    // dark mode — the same direction the theme's own tokens take.
+    inline['--color-primary-hover'] = `color-mix(in srgb, ${accentColor} 85%, var(--color-text))`;
+    inline['--color-primary-text'] = `color-mix(in srgb, ${accentColor} 55%, var(--color-text))`;
   }
 
   // Border
@@ -368,6 +374,8 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
   if (accentColor) {
     decls.push(`--block-accent: ${accentColor}`);
     decls.push(`--color-primary: ${accentColor}`);
+    decls.push(`--color-primary-hover: color-mix(in srgb, ${accentColor} 85%, var(--color-text))`);
+    decls.push(`--color-primary-text: color-mix(in srgb, ${accentColor} 55%, var(--color-text))`);
   }
 
   const b = style.border;

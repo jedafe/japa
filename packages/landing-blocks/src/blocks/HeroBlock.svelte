@@ -89,7 +89,7 @@
             style="font-family: var(--block-heading-family, var(--font-heading, var(--font-sans))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
           >
             {#if splitHeadline}
-              {splitHeadline.before}<span class="text-[var(--color-success)]">{splitHeadline.match}</span>{splitHeadline.after}
+              {splitHeadline.before}<span class="text-[var(--hero-accent)]">{splitHeadline.match}</span>{splitHeadline.after}
             {:else}
               {props.headline}
             {/if}
@@ -222,7 +222,7 @@
             style="font-family: var(--block-heading-family, var(--font-heading, var(--font-sans))); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
           >
             {#if splitHeadline}
-              {splitHeadline.before}<span class="text-[var(--color-success)]">{splitHeadline.match}</span>{splitHeadline.after}
+              {splitHeadline.before}<span class="text-[var(--hero-accent)]">{splitHeadline.match}</span>{splitHeadline.after}
             {:else}
               {props.headline}
             {/if}
@@ -298,18 +298,12 @@
   }
 
   .hero-arrow {
-    background: rgb(255 255 255 / 0.9);
-    color: #1e293b;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
   }
   .hero-arrow:hover {
-    background: #ffffff;
-  }
-  :global([data-theme='dark']) .hero-arrow {
-    background: rgb(30 41 59 / 0.9);
-    color: #f1f5f9;
-  }
-  :global([data-theme='dark']) .hero-arrow:hover {
-    background: #1e293b;
+    background: var(--color-surface-subtle);
   }
 
   /* Dark: invert+rereflect baked image media so the illustration tracks the

@@ -7,6 +7,7 @@
   import { getLucideIcon } from './guestIconMap';
   import { ArrowRight } from 'lucide-svelte';
   import { resolveGuestItems } from './guestChildren';
+  import { chipClass } from './chips';
 
   interface Props {
     props: GuestCategoriesProps;
@@ -47,21 +48,9 @@
   const title = $derived(props.title ?? 'Explore What Matters to You');
   const subtitle = $derived(props.subtitle ?? 'Everything you need to achieve your global dreams.');
 
+  // chip-tint classes (guest-legacy-styles.css) stay readable in both themes.
   function categoryColorClass(color: string): string {
-    switch (color) {
-      case 'green':
-        return 'text-green-600 bg-green-100';
-      case 'blue':
-        return 'text-blue-600 bg-blue-100';
-      case 'purple':
-        return 'text-purple-600 bg-purple-100';
-      case 'orange':
-        return 'text-orange-600 bg-orange-100';
-      case 'teal':
-        return 'text-teal-600 bg-teal-100';
-      default:
-        return 'text-[var(--color-primary)] bg-[var(--color-surface-subtle)]';
-    }
+    return chipClass(color);
   }
 </script>
 

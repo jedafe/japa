@@ -38,6 +38,10 @@
   const logoLightSrc = $derived(mediaSized(resolveAssetUrl(logo.light ?? logo.dark ?? ''), { h: 192 }));
   const logoDarkSrc = $derived(mediaSized(resolveAssetUrl(logo.dark ?? logo.light ?? ''), { h: 192 }));
 
+  // 'auto' theme-swaps both variants via CSS; 'light'/'dark' force one — for
+  // bands whose background doesn't follow the site theme.
+  const logoVariant = $derived(props.logo_variant ?? 'auto');
+
   // Emit intrinsic dims only when they're actually known — the bundled default
   // (794x384) or explicit width/height on a custom logo. For custom logos
   // without recorded dims, reserve the rendered slot box (height:6rem,
@@ -141,8 +145,16 @@
   <h2 id="guest-footer-heading-{id}" class="sr-only">Footer</h2>
   <div class="guest-footer-inner">
     <div class="guest-footer-brand">
-      <img src={logoLightSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-light" />
-      <img src={logoDarkSrc} alt="" aria-hidden="true" {...logoDims} class="footer-logo footer-logo-dark" />
+      {#if logoVariant === 'light'}
+        <img src={logoLightSrc} alt={siteName()} {...logoDims} class="footer-logo" />
+      {:else if logoVariant === 'dark'}
+        <img src={logoDarkSrc} alt={siteName()} {...logoDims} class="footer-logo" />
+      {:else}
+        <!-- display:none keeps the hidden variant out of the a11y tree, so
+             both carry the alt — whichever the theme shows is named. -->
+        <img src={logoLightSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-light" />
+        <img src={logoDarkSrc} alt={siteName()} {...logoDims} class="footer-logo footer-logo-dark" />
+      {/if}
       <p class="footer-tagline">{tagline}</p>
       {#if socialChildren.length > 0}
         <div class="footer-socials">

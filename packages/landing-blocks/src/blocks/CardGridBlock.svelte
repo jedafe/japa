@@ -58,23 +58,23 @@
           {@const waveColor = card.icon_background_color ?? 'var(--color-primary)'}
           <a
             href={card.cta?.href ?? '#'}
-            class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] bg-white shadow-md transition-all hover:shadow-xl no-underline"
+            class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-md transition-all hover:shadow-xl no-underline"
             style="--wave-color: {waveColor};"
           >
             <div class="p-6">
               {#if card.icon}
                 <div
                   class="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full shadow-sm"
-                  style="background-color: {card.icon_background_color ?? 'var(--color-primary)'}; color: {card.icon_color ?? 'white'}"
+                  style="background-color: {card.icon_background_color ?? 'var(--color-primary)'}; color: {card.icon_color ?? 'var(--color-primary-contrast, #fff)'}"
                 >
                   <LazyIcon name={card.icon} size={24} />
                 </div>
               {/if}
               {#if card.title}
-                <h3 class="text-2xl font-bold tracking-tight text-[#0f1e4e]">{card.title}</h3>
+                <h3 class="text-2xl font-bold tracking-tight text-[var(--color-text)]">{card.title}</h3>
               {/if}
               {#if card.description}
-                <p class="mt-2 text-sm leading-relaxed text-slate-600">{card.description}</p>
+                <p class="mt-2 text-sm leading-relaxed text-[var(--color-text-subtle)]">{card.description}</p>
               {/if}
             </div>
 
@@ -87,7 +87,7 @@
                   loading="lazy"
                 />
               {:else}
-                <div class="h-full w-full bg-gradient-to-br from-[#f4f8ff] to-[#e8f5ee]"></div>
+                <div class="h-full w-full bg-gradient-to-br from-[var(--color-surface-subtle)] to-[color-mix(in_srgb,var(--color-primary)_10%,var(--color-surface))]"></div>
               {/if}
 
               <!-- Wave overlay -->
@@ -100,7 +100,7 @@
                 <defs>
                   <linearGradient id="wg-{gridId}-{i}" x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0%" stop-color={waveColor} />
-                    <stop offset="100%" stop-color={waveColor === '#16a34a' ? '#2563eb' : '#16a34a'} />
+                    <stop offset="100%" stop-color="color-mix(in srgb, {waveColor} 55%, var(--color-secondary, #2563eb))" />
                   </linearGradient>
                 </defs>
                 <path
@@ -124,7 +124,7 @@
                     />
                   </svg>
                   <span class="text-sm font-semibold text-white drop-shadow-sm">
-                    Japa <span style="color: {card.icon_background_color === '#16a34a' ? '#bbf7d0' : '#bfdbfe'}">Connect</span>
+                    Japa <span style="color: color-mix(in srgb, {waveColor} 30%, #ffffff)">Connect</span>
                   </span>
                 </div>
                 {#if card.cta}

@@ -17,6 +17,7 @@
 		logoDarkWidth = 0,
 		logoDarkHeight = 0,
 		alt = '',
+		variant = 'auto',
 		class: className = ''
 	}: {
 		logoUrl?: string;
@@ -26,6 +27,10 @@
 		logoDarkWidth?: number;
 		logoDarkHeight?: number;
 		alt?: string;
+		/** 'auto' swaps on html[data-theme]; 'light'/'dark' force one variant —
+		 *  use when the logo sits on a surface whose brightness doesn't follow
+		 *  the site theme (e.g. a dark photo panel in light mode). */
+		variant?: 'auto' | 'light' | 'dark';
 		class?: string;
 	} = $props();
 
@@ -71,22 +76,28 @@
 	);
 </script>
 
-<img
-	src={lightSrc}
-	{alt}
-	class="{className} theme-logo-light"
-	loading="eager"
-	decoding="async"
-	{...lightDims}
-/>
-<img
-	src={darkSrc}
-	{alt}
-	class="{className} theme-logo-dark"
-	loading="eager"
-	decoding="async"
-	{...darkDims}
-/>
+{#if variant === 'light'}
+	<img src={lightSrc} {alt} class={className} loading="eager" decoding="async" {...lightDims} />
+{:else if variant === 'dark'}
+	<img src={darkSrc} {alt} class={className} loading="eager" decoding="async" {...darkDims} />
+{:else}
+	<img
+		src={lightSrc}
+		{alt}
+		class="{className} theme-logo-light"
+		loading="eager"
+		decoding="async"
+		{...lightDims}
+	/>
+	<img
+		src={darkSrc}
+		{alt}
+		class="{className} theme-logo-dark"
+		loading="eager"
+		decoding="async"
+		{...darkDims}
+	/>
+{/if}
 
 <style>
 	.theme-logo-light {

@@ -1114,6 +1114,11 @@ export interface GuestFooterLogo {
 /** Props for `guest_footer`. */
 export interface GuestFooterProps {
   logo?: GuestFooterLogo;
+  /** Which logo variant renders. 'auto' (default) swaps on the site theme;
+   *  'light'/'dark' force one variant — needed when the block's own
+   *  background doesn't follow the global theme (e.g. a style override
+   *  paints the band dark in light mode). */
+  logo_variant?: 'auto' | 'light' | 'dark';
   tagline?: string;
   /** Legacy socials array; superseded by `guest_footer_social` children. */
   socials?: Array<{ id?: string; icon: string; url: string; label: string }>;

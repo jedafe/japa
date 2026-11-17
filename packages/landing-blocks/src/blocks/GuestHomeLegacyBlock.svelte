@@ -13,6 +13,7 @@
   } from '../types';
   import type { FetchContext } from '../data/types';
   import { resolveAssetUrl } from '../assetBase';
+  import { chipClass, opportunityTypeChip, opportunityLogoChip } from './guest/chips';
   import defaultHeroImageUrl from '../assets/hero-community.webp';
     import {
       Briefcase,
@@ -161,39 +162,14 @@
       scroller.scrollBy({ left: direction * (width + 16), behavior: 'smooth' });
     }
 
+    // chip-tint classes (guest-legacy-styles.css, loaded for every guest_*
+    // block) stay readable in both themes — the old fixed pastel hex pairs
+    // washed out on dark surfaces.
     function categoryColorClass(color: string): string {
-      switch (color) {
-        case 'green':
-          return 'text-[#166534] bg-[#dcfce7]';
-        case 'blue':
-          return 'text-[#2563eb] bg-[#dbeafe]';
-        case 'purple':
-          return 'text-[#9333ea] bg-[#f3e8ff]';
-        case 'orange':
-          return 'text-[#ea580c] bg-[#ffedd5]';
-        case 'teal':
-          return 'text-[#0d9488] bg-[#ccfbf1]';
-        default:
-          return 'text-[var(--color-primary)] bg-[var(--color-surface-subtle)]';
-      }
+      return chipClass(color);
     }
 
-    function opportunityTagClasses(type: string): string {
-      switch (type) {
-        case 'job':
-          return 'bg-[#dcfce7] text-[#166534]';
-        case 'scholarship':
-          return 'bg-[#dbeafe] text-[#2563eb]';
-        case 'visa':
-          return 'bg-[#ffedd5] text-[#ea580c]';
-        case 'business':
-          return 'bg-[#ccfbf1] text-[#0d9488]';
-        case 'internship':
-          return 'bg-[#f3e8ff] text-[#9333ea]';
-        default:
-          return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-      }
-    }
+    const opportunityTagClasses = opportunityTypeChip;
 
     function opportunityIconName(name: string | undefined): string {
       if (!name) return 'Briefcase';
@@ -230,22 +206,7 @@
         .toUpperCase();
     }
 
-    function logoBg(type: string): string {
-      switch (type) {
-        case 'job':
-          return 'bg-[#f0f9ff] text-[#0ea5e9]';
-        case 'scholarship':
-          return 'bg-[#eff6ff] text-[#2563eb]';
-        case 'visa':
-          return 'bg-[#fff7ed] text-[#ea580c]';
-        case 'business':
-          return 'bg-[#f0fdf4] text-[#166534]';
-        case 'internship':
-          return 'bg-[#faf5ff] text-[#9333ea]';
-        default:
-          return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-      }
-    }
+    const logoBg = opportunityLogoChip;
 
     const communityStat = $derived<GuestHomeStat | undefined>(
       home.stats.find((s) => s.label.toLowerCase().includes('community'))
@@ -601,16 +562,18 @@
 
 <style>
   .guest-hero {
-    background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 50%, #ffffff 100%);
+    /* Primary-tinted wash — follows the site accent and dark mode through
+       color-mix instead of fixed green/navy gradients. */
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--color-primary) 10%, var(--color-bg)) 0%,
+      var(--color-bg) 50%,
+      var(--color-surface) 100%);
     padding: 2rem 1rem 3rem;
   }
   @container (min-width: 768px) {
     .guest-hero {
       padding: 3rem 1rem 4rem;
     }
-  }
-  :global([data-theme='dark'] .guest-hero) {
-    background: linear-gradient(135deg, #052e16 0%, #0f172a 50%, #000000 100%);
   }
 
   .guest-hero-grid {
@@ -646,14 +609,10 @@
     gap: 0.5rem;
     padding: 0.375rem 0.875rem;
     border-radius: 9999px;
-    background: #dcfce7;
-    color: #166534;
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+    color: var(--color-primary-text, var(--color-primary));
     font-size: 0.875rem;
     font-weight: 500;
-  }
-  :global([data-theme='dark'] .hero-eyebrow) {
-    background: #14532d;
-    color: #86efac;
   }
 
   .hero-headline {
@@ -664,11 +623,8 @@
     letter-spacing: -0.02em;
   }
   .hero-headline-accent {
-    color: #16a34a;
+    color: var(--color-primary-text, var(--color-primary));
     display: block;
-  }
-  :global([data-theme='dark'] .hero-headline-accent) {
-    color: #4ade80;
   }
 
   .hero-subhead {
@@ -708,22 +664,19 @@
     white-space: nowrap;
   }
   .hero-btn-primary {
-    background: #15803d;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #ffffff);
   }
   .hero-btn-primary:hover {
-    background: #166534;
+    background: var(--color-primary-hover, var(--color-primary));
   }
   .hero-btn-secondary {
-    background: white;
+    background: var(--color-surface);
     color: var(--color-text);
     border: 1px solid var(--color-border);
   }
   .hero-btn-secondary:hover {
     background: var(--color-surface-subtle);
-  }
-  :global([data-theme='dark'] .hero-btn-secondary) {
-    background: var(--color-surface);
   }
 
   .hero-stats {
@@ -753,7 +706,7 @@
     height: 2.5rem;
     border-radius: var(--radius);
     background: var(--color-surface);
-    color: var(--color-primary);
+    color: var(--color-primary-text, var(--color-primary));
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
   }
 
@@ -911,7 +864,7 @@
     margin-top: 0.75rem;
     font-size: 0.8125rem;
     font-weight: 500;
-    color: var(--color-primary);
+    color: var(--color-primary-text, var(--color-primary));
   }
 
   .community-avatars {
@@ -956,8 +909,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 9999px;
-    background: #16a34a;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #ffffff);
     flex-shrink: 0;
   }
 
@@ -1016,7 +969,7 @@
     gap: 0.25rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--color-primary);
+    color: var(--color-primary-text, var(--color-primary));
     white-space: nowrap;
   }
 
@@ -1088,7 +1041,7 @@
     gap: 0.25rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--color-primary);
+    color: var(--color-primary-text, var(--color-primary));
   }
 
   .carousel-wrap {
@@ -1182,8 +1135,11 @@
     font-weight: 600;
     padding: 0.25rem 0.5rem;
     border-radius: 9999px;
-    background: #dcfce7;
-    color: #166534;
+    background: color-mix(in srgb, var(--color-success, #16a34a) 16%, transparent);
+    color: var(--color-success, #166534);
+  }
+  :global([data-theme='dark'] .opportunity-badge) {
+    color: color-mix(in srgb, var(--color-success, #16a34a) 60%, #ffffff);
   }
 
   .opportunity-logo {
@@ -1239,7 +1195,7 @@
 
   .opportunity-value {
     font-weight: 600;
-    color: #15803d;
+    color: var(--color-primary-text, var(--color-primary));
   }
 
   .opportunity-footer {
@@ -1288,7 +1244,8 @@
     display: inline-block;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #86efac;
+    /* Always-dark band → accent needs a lightened mix, not the raw primary. */
+    color: color-mix(in srgb, var(--color-primary) 55%, #ffffff);
     margin-bottom: 0.75rem;
   }
 
@@ -1305,8 +1262,8 @@
     gap: 0.5rem;
     padding: 0.75rem 1.25rem;
     border-radius: var(--radius);
-    background: #15803d;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #ffffff);
     font-weight: 600;
     font-size: 0.9375rem;
   }
@@ -1422,7 +1379,8 @@
     cursor: pointer;
   }
   .story-dot-active {
-    background: #16a34a;
+    /* Always-dark band → lightened accent keeps the active dot visible. */
+    background: color-mix(in srgb, var(--color-primary) 55%, #ffffff);
     width: 1.25rem;
   }
 
@@ -1488,7 +1446,10 @@
   .newsletter-inner {
     max-width: 1200px;
     margin: 0 auto;
-    background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+    /* Primary-tinted card — follows the accent and dark mode via color-mix. */
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--color-primary) 10%, var(--color-surface)) 0%,
+      var(--color-surface) 100%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
     padding: 1.5rem;
@@ -1504,9 +1465,6 @@
       gap: 2rem;
     }
   }
-  :global([data-theme='dark'] .newsletter-inner) {
-    background: linear-gradient(135deg, #052e16 0%, #0f172a 100%);
-  }
 
   .newsletter-content {
     display: flex;
@@ -1519,8 +1477,8 @@
     width: 3.5rem;
     height: 3.5rem;
     border-radius: 9999px;
-    background: #16a34a;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #ffffff);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1574,8 +1532,8 @@
     gap: 0.5rem;
     padding: 0.875rem 1.5rem;
     border-radius: var(--radius);
-    background: #15803d;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #ffffff);
     font-weight: 600;
     font-size: 0.9375rem;
     white-space: nowrap;
@@ -1586,6 +1544,9 @@
     .newsletter-btn {
       flex: 0 0 auto;
     }
+  }
+  .newsletter-btn:hover {
+    background: var(--color-primary-hover, var(--color-primary));
   }
   .newsletter-btn:disabled {
     opacity: 0.7;
@@ -1598,10 +1559,10 @@
     margin-top: 0.75rem;
   }
   .newsletter-status-success {
-    color: #15803d;
+    color: var(--color-success);
   }
   .newsletter-status-error {
-    color: #dc2626;
+    color: var(--color-danger);
   }
 
   .initials-avatar {

@@ -350,9 +350,10 @@
 	{#if isPublishedPage && !publishedHasOwnFooter}
 		<!-- inline-size container matches LandingRenderer so the footer
 		     block's @container queries resolve against the page width.
-		     When the sidenav is PINNED open the band indents like the
-		     center column (classic reflow); collapsed rail and transient
-		     hover-expand leave it full-bleed underneath the nav. -->
+		     The band indents like the center column — collapsed rail
+		     (--nav-width-collapsed) or pinned (--nav-width-expanded) —
+		     so the centered 1200px inner never slides under the rail.
+		     Transient hover-expand is an overlay and doesn't reflow. -->
 		<div class="published-footer" class:published-footer--pinned={!shownCollapsed}>
 			<GuestBlockStyles />
 			<GuestFooterBlock props={sharedFooterProps} />
@@ -420,6 +421,9 @@
 		container-type: inline-size;
 	}
 	@media (min-width: 768px) {
+		.published-footer {
+			margin-inline-start: var(--nav-width-collapsed);
+		}
 		.published-footer--pinned {
 			margin-inline-start: var(--nav-width-expanded);
 		}

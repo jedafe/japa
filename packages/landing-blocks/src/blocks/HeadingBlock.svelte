@@ -48,10 +48,10 @@
       {#if props.eyebrow || props.icon}
         <div class="mb-3 flex items-center gap-2 {props.align === 'center' ? 'justify-center' : ''}">
           {#if props.icon}
-            <LazyIcon name={props.icon} size={16} class="text-[var(--color-primary)]" />
+            <LazyIcon name={props.icon} size={16} class="text-[var(--color-primary-text,var(--color-primary))]" />
           {/if}
           {#if props.eyebrow}
-            <span class="text-sm font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+            <span class="text-sm font-semibold uppercase tracking-wider text-[var(--color-primary-text,var(--color-primary))]">
               {props.eyebrow}
             </span>
           {/if}
@@ -76,7 +76,7 @@
         <div class="mt-4 {props.align === 'center' ? 'flex justify-center' : ''}">
           <a
             href={props.cta.href}
-            class="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline"
+            class="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary-text,var(--color-primary))] hover:underline"
           >
             {props.cta.label}
             <span aria-hidden="true">&#8594;</span>

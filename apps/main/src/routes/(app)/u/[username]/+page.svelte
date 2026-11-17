@@ -43,8 +43,9 @@
 	let { data }: { data: PageData } = $props();
 
 	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
-	// The profile page's posts all belong to the same user, so the author
-	// display name and avatar come from the profile header.
+	// The posts endpoint already emits per-post author_* fields — prefer
+	// them and fall back to the profile user so a null display_name never
+	// surfaces as "Unknown" (username is always present).
 	function toFeedItem(post: ProfilePost): FeedItem {
 		return {
 			id: post.id,
@@ -52,11 +53,11 @@
 			slug: post.slug,
 			content_type: post.content_type,
 			author_id: post.author_id,
-			author_name: data.user.display_name,
-			author_username: data.user.username,
-			author_avatar_url: data.user.avatar_url,
-			author_verified: data.user.verified,
-			author_verification_type: data.user.verification_type,
+			author_name: post.author_name || data.user.display_name || post.author_username || data.user.username,
+			author_username: post.author_username || data.user.username,
+			author_avatar_url: post.author_avatar_url || data.user.avatar_url,
+			author_verified: post.author_verified ?? data.user.verified,
+			author_verification_type: post.author_verification_type || data.user.verification_type,
 			created_at: post.published_at ?? post.created_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,

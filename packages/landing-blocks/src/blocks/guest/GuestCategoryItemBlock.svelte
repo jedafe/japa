@@ -5,6 +5,7 @@
   import type { GuestCategoryItemProps } from '../../types';
   import { ArrowRight } from 'lucide-svelte';
   import { getLucideIcon } from './guestIconMap';
+  import { chipClass } from './chips';
 
   interface Props {
     props: GuestCategoryItemProps;
@@ -18,14 +19,7 @@
   const href = $derived(props.href ?? '#');
 
   function categoryColorClass(color: string | undefined): string {
-    switch (color) {
-      case 'green': return 'text-green-600 bg-green-100';
-      case 'blue': return 'text-blue-600 bg-blue-100';
-      case 'purple': return 'text-purple-600 bg-purple-100';
-      case 'orange': return 'text-orange-600 bg-orange-100';
-      case 'teal': return 'text-teal-600 bg-teal-100';
-      default: return 'text-[var(--color-primary)] bg-[var(--color-surface-subtle)]';
-    }
+    return chipClass(color);
   }
 </script>
 

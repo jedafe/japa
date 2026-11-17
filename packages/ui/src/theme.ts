@@ -177,9 +177,12 @@ export function buildThemeOverrides(settings: ThemeSettings | null | undefined):
 	if (primary) {
 		light.push(`--color-primary: ${primary};`, `--color-primary-hover: color-mix(in oklab, ${primary} 82%, black);`, `--color-primary-contrast: ${contrastFor(primary)};`);
 		const dp = primaryDark || primary;
-		dark.push(`--color-primary: ${dp};`, `--color-primary-hover: color-mix(in oklab, ${dp} 82%, white);`, `--color-primary-contrast: ${contrastFor(dp)};`);
+		// --color-primary-text (accent rendered as text on surfaces) needs more
+		// lightness than the hover mix for WCAG AA on dark surfaces — the app.css
+		// default is a fixed indigo that never tracks the configured accent.
+		dark.push(`--color-primary: ${dp};`, `--color-primary-hover: color-mix(in oklab, ${dp} 82%, white);`, `--color-primary-text: color-mix(in oklab, ${dp} 55%, white);`, `--color-primary-contrast: ${contrastFor(dp)};`);
 	} else if (primaryDark) {
-		dark.push(`--color-primary: ${primaryDark};`, `--color-primary-hover: color-mix(in oklab, ${primaryDark} 82%, white);`, `--color-primary-contrast: ${contrastFor(primaryDark)};`);
+		dark.push(`--color-primary: ${primaryDark};`, `--color-primary-hover: color-mix(in oklab, ${primaryDark} 82%, white);`, `--color-primary-text: color-mix(in oklab, ${primaryDark} 55%, white);`, `--color-primary-contrast: ${contrastFor(primaryDark)};`);
 	}
 
 	// Secondary hover/contrast — same derivation so admin-chosen secondary

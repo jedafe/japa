@@ -5,6 +5,7 @@
   import { writable } from 'svelte/store';
   import { MapPin, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-svelte';
   import { resolveGuestItems } from './guestChildren';
+  import { opportunityTypeChip, opportunityLogoChip } from './chips';
   import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
@@ -62,39 +63,8 @@
     return '/explore';
   }
 
-  function opportunityTagClasses(type: string): string {
-    switch (type) {
-      case 'job':
-        return 'bg-green-100 text-green-600';
-      case 'scholarship':
-        return 'bg-blue-100 text-blue-600';
-      case 'visa':
-        return 'bg-orange-100 text-orange-600';
-      case 'business':
-        return 'bg-teal-100 text-teal-600';
-      case 'internship':
-        return 'bg-purple-100 text-purple-600';
-      default:
-        return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-    }
-  }
-
-  function logoBg(type: string): string {
-    switch (type) {
-      case 'job':
-        return 'bg-sky-50 text-sky-500';
-      case 'scholarship':
-        return 'bg-blue-50 text-blue-600';
-      case 'visa':
-        return 'bg-orange-50 text-orange-600';
-      case 'business':
-        return 'bg-green-50 text-green-600';
-      case 'internship':
-        return 'bg-purple-50 text-purple-600';
-      default:
-        return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-    }
-  }
+  const opportunityTagClasses = opportunityTypeChip;
+  const logoBg = opportunityLogoChip;
 
   function logoInitials(name: string): string {
     return name

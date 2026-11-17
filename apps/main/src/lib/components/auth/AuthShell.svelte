@@ -112,7 +112,7 @@
 					href="/"
 					class="flex items-center gap-2 text-base font-semibold tracking-tight text-white no-underline"
 				>
-					<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
+					<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} variant="dark" class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>
 				<a
 					href="/"

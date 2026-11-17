@@ -4,6 +4,7 @@
   // block so each card is selectable/editable in the page builder tree.
   import type { GuestOpportunityItemProps } from '../../types';
   import { MapPin } from 'lucide-svelte';
+  import { opportunityTypeChip, opportunityLogoChip } from './chips';
 
   interface Props {
     props: GuestOpportunityItemProps;
@@ -22,27 +23,8 @@
     return '/explore';
   }
 
-  function opportunityTagClasses(t: string): string {
-    switch (t) {
-      case 'job': return 'bg-green-100 text-green-600';
-      case 'scholarship': return 'bg-blue-100 text-blue-600';
-      case 'visa': return 'bg-orange-100 text-orange-600';
-      case 'business': return 'bg-teal-100 text-teal-600';
-      case 'internship': return 'bg-purple-100 text-purple-600';
-      default: return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-    }
-  }
-
-  function logoBg(t: string): string {
-    switch (t) {
-      case 'job': return 'bg-sky-50 text-sky-500';
-      case 'scholarship': return 'bg-blue-50 text-blue-600';
-      case 'visa': return 'bg-orange-50 text-orange-600';
-      case 'business': return 'bg-green-50 text-green-600';
-      case 'internship': return 'bg-purple-50 text-purple-600';
-      default: return 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]';
-    }
-  }
+  const opportunityTagClasses = opportunityTypeChip;
+  const logoBg = opportunityLogoChip;
 
   function logoInitials(name: string): string {
     return name

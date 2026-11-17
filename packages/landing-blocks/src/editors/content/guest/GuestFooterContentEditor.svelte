@@ -101,6 +101,19 @@
     </div>
   </div>
   <label class="block">
+    <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Logo variant</span>
+    <select
+      class={inputClass}
+      value={props.logo_variant ?? 'auto'}
+      onchange={(e) =>
+        update('logo_variant', e.currentTarget.value === 'auto' ? undefined : (e.currentTarget.value as 'light' | 'dark'))}
+    >
+      <option value="auto">Auto (follow site theme)</option>
+      <option value="light">Light — for light backgrounds</option>
+      <option value="dark">Dark — for dark backgrounds</option>
+    </select>
+  </label>
+  <label class="block">
     <span class="mb-1 block text-xs font-medium text-[var(--color-muted)]">Tagline</span>
     <input
       class={inputClass}

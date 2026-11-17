@@ -16,10 +16,10 @@
 
   const variantClass: Record<string, string> = {
     'primary': 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] shadow-sm hover:shadow-md',
-    'outline': 'border-2 border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]',
-    'ghost': 'text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]',
-    'link': 'text-[var(--color-primary)] hover:underline px-0 py-1',
-    'gradient': 'text-white shadow-sm hover:shadow-md hover:brightness-110',
+    'outline': 'border-2 border-[var(--color-primary)] text-[var(--color-primary-text,var(--color-primary))] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]',
+    'ghost': 'text-[var(--color-primary-text,var(--color-primary))] hover:bg-[var(--color-surface-subtle)]',
+    'link': 'text-[var(--color-primary-text,var(--color-primary))] hover:underline px-0 py-1',
+    'gradient': 'text-[var(--color-primary-contrast,#fff)] shadow-sm hover:shadow-md hover:brightness-110',
   };
 
   const alignClass: Record<string, string> = {
@@ -30,7 +30,7 @@
 
   const gradientStyle = $derived(
     props.variant === 'gradient'
-      ? `background: linear-gradient(135deg, ${props.gradient_from ?? 'var(--color-primary)'}, ${props.gradient_to ?? '#a855f7'})`
+      ? `background: linear-gradient(135deg, ${props.gradient_from ?? 'var(--color-primary)'}, ${props.gradient_to ?? 'var(--color-primary-hover)'})`
       : undefined
   );
 </script>
