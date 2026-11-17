@@ -37,6 +37,11 @@ const (
 	TaskTipSettleStablecoin = "tips:settle_stablecoin" // onchain tip settlement
 )
 
+// TipMethodStablecoin is the §125 tip method routed to onchain settlement
+// (tips.method). Kept here rather than importing tips — the dependency
+// arrow points tips→stablecoin for the settle seam.
+const TipMethodStablecoin = "stablecoin"
+
 // Wallet lifecycle states (stablecoin_wallets.status).
 const (
 	WalletStatusProvisioned = "provisioned"

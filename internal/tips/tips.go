@@ -30,12 +30,20 @@ const (
 // Settle methods (tips.method CHECK mirror — the CHECK still allows
 // 'points' for historical rows; it is never produced in code, ADR-136).
 const (
-	MethodPoints         = "points" // retired — historical rows only
-	MethodCredits        = "credits"
+	MethodPoints  = "points" // retired — historical rows only
+	MethodCredits = "credits"
+	// MethodStablecoin settles member→member onchain via the §128 delegated
+	// signer (tips:settle_stablecoin) — the §128 tip rail; credits-denominated
+	// at create time like MethodCredits.
+	MethodStablecoin     = "stablecoin"
 	MethodOpenCollective = "opencollective"
 	MethodKofi           = "kofi"
 	MethodBuyMeACoffee   = "buymeacoffee"
 )
+
+// taskSettleStablecoin enqueues onchain settlement for a pending tip —
+// registered in Section 11 (stablecoin package handles it).
+const taskSettleStablecoin = "tips:settle_stablecoin"
 
 // Tip statuses.
 const (
@@ -97,7 +105,7 @@ func IsFiatMethod(m string) bool { return fiatMethods[m] }
 // IsValidMethod reports whether m is a creatable tips.method value.
 // 'points' is deliberately excluded — retired (ADR-136).
 func IsValidMethod(m string) bool {
-	return m == MethodCredits || m == MethodOpenCollective || fiatMethods[m]
+	return m == MethodCredits || m == MethodStablecoin || m == MethodOpenCollective || fiatMethods[m]
 }
 
 // Owner identifies a tip_settings row's owner.

@@ -238,9 +238,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// balance-mirror refresh. JC_SCHEDULER_CRON_STABLECOIN_RECONCILE_WALLETS.
 	schedule("35 * * * *", TypeStablecoinReconcileWallets, 1*time.Hour)
 
-	// §128: daily delegated-signer rotation sweep — only wallets whose
-	// nearest scope expires inside stablecoin.signer_renew_window_days are
-	// touched (member-OTP ceremony stays rare).
+	// §128: daily delegated-signer expiry sweep — flags wallets whose
+	// nearest scope expires inside stablecoin.signer_renew_window_days via
+	// jc:stablecoin:signer_expiring:{user_id} so the client can drive the
+	// member-approval re-activation ceremony. The cron never rotates
+	// unattended — member auth is required (§128.2).
 	schedule("20 5 * * *", TypeStablecoinSignerScopeRenew, 24*time.Hour)
 
 	// §128: hourly release of funded escrows past their confirmation
@@ -254,6 +256,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// §128: pending-mirror settlement pass — confirms pending out rows
 	// (offramp sends, webhook misses) against provider activity.
 	schedule("*/15 * * * *", TypeStablecoinProcessOfframp, 15*time.Minute)
+
+	// §17/§58: credit payments stuck pending between ledger debit and
+	// status update — confirms rows whose debit exists (with sync-settlement
+	// fan-out replay) and fails the rest.
+	schedule("25 * * * *", TypePaymentReconcileCredit, 1*time.Hour)
 
 	// Affiliate link expiry — daily.
 	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)

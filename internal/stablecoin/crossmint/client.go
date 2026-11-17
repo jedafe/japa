@@ -67,6 +67,11 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 }
 
 func (c *Client) doHeaders(ctx context.Context, method, path string, body any, headers map[string]string, out any) error {
+	if c.apiKey == "" {
+		// Unconfigured deploy — fail closed as feature-unavailable rather
+		// than firing unauthenticated requests at the provider.
+		return stablecoin.ErrNotImplemented
+	}
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -219,6 +224,13 @@ func (c *Client) RegisterDelegatedSigner(ctx context.Context, locator string, in
 	}
 	if expiresAt != "" {
 		body["expiresAt"] = expiresAt
+	}
+	if in.MemberAuth != "" {
+		// Member recovery-approval proof for the registration ceremony —
+		// provisional field name pending the Crossmint contract validation
+		// (§128 open items); the provider ceremony is what actually binds
+		// the approval.
+		body["memberAuth"] = in.MemberAuth
 	}
 	return c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/signers", body, nil)
 }
@@ -444,8 +456,6 @@ func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([
 	}
 	events := make([]stablecoin.ProviderEvent, 0, len(out.Events))
 	for _, e := range out.Events {
-		var amt int64
-		amt, _ = strconv.ParseInt(e.Amount, 10, 64)
 		ts := e.Timestamp
 		if ts > 1_000_000_000_000 { // milliseconds, not seconds (secs < 4e10 until year 5138)
 			ts /= 1000
@@ -455,12 +465,29 @@ func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([
 			TxSignature: e.TxSignature,
 			Slot:        e.Slot,
 			Asset:       e.Token,
-			AmountMinor: amt,
+			AmountMinor: parseAmountMinor(e.Amount),
 			CounterAddr: e.CounterAddr,
 			OccurredAt:  ts,
 		})
 	}
 	return events, next, nil
+}
+
+// parseAmountMinor decodes an activity amount — defensive about units:
+// the transfers API takes display units while activity may report raw
+// minor. An integer decodes as minor; a decimal string is unambiguously
+// display ("9.5" → 9_500_000 minor).
+func parseAmountMinor(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return int64(f*1e6 + 0.5)
+	}
+	return 0
 }
 
 // ── Webhook verification ────────────────────────────────────────────────

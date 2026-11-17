@@ -1077,6 +1077,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	walletService.SetSettings(settingsService) // SETTING-007/008: global earn cap + currency settings
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
+	// §128: RBAC resolver for grant-gated member flows — lets
+	// wallet.credits.purchase grantees (staff/pilot) exercise credit
+	// purchases while the killswitch keeps them off for members.
+	walletService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
 
 	// Currency resolver for geo-aware currency resolution at checkout
 	// (Section 58, ADR-065). The default currency is read from
@@ -1162,12 +1166,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	stablecoinService.SetEnqueuer(taskEnqueuer)
 	stablecoinService.SetBonusLedger(stablecoinBonusLedger{svc: walletService})
 	stablecoinService.SetCreditRater(stablecoinCreditRater{q: gen.New(database.Reader)})
+	// §128: durable killswitch backing — the Valkey flag is mirrored into
+	// system_settings so a cache flush can't silently disengage the halt.
+	stablecoinService.SetSettingsWriter(settingsService)
 	stablecoinHandlers := stablecoin.NewHandlers(stablecoinService)
 	worker.RegisterStablecoinProcessor(stablecoinService)
 
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
 	paymentService.SetEnqueuer(taskEnqueuer)
+	// §58/§128: PayWithCredit requires the wallet.credits.spend grant.
+	paymentService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
 
 	// Wire the payments service back into the wallet so credit purchases can
 	// create payment rows (Section 58). The adapter converts between the
@@ -1354,6 +1363,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).
 	gdprService.SetStorage(gdpr.NewLocalStorage(""))
+	// §128: privileged money-movement controls (signer killswitch) write
+	// to audit_logs — injected here because gdprService is constructed
+	// after stablecoinService.
+	stablecoinService.SetAuditor(stablecoinAuditor{svc: gdprService})
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
 	// Register GDPR processor with worker for background tasks.
@@ -6177,27 +6190,44 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Stablecoin wallet routes (Section 128 — api-routes-catalog).
+			// Provider webhook lives OUTSIDE the member feature gate —
+			// flag flips must never drop chain events (webhook misses are
+			// the failure mode the mirror exists to survive). Verified by
+			// the provider signature inside the handler.
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).
+				Post("/webhooks/stablecoin/crossmint", stablecoinHandlers.ProviderWebhook)
+
 			// Member surface is feature-gated + auth; the unified
 			// /me/wallet/activity feed is dispatched in the wallet mount
 			// above (flag on → onchain+bonus merge; off → legacy feed).
+			// Mutating routes also require the stablecoin.wallet.use pilot
+			// grant so ops can stage rollout to a user group before GA.
 			r.With(features.Gate(featureChecker, "feature.stablecoin_wallet")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/stablecoin-wallet", stablecoinHandlers.GetWallet)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.use"),
+					mw.RateLimit(vkClient.Redis(), "tight")).
+					Post("/me/stablecoin-wallet/provision", stablecoinHandlers.Provision)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.use"),
+					mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/me/stablecoin-wallet/signer/activate", stablecoinHandlers.ActivateSigner)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.use"),
+					mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/funding/onramp-session", stablecoinHandlers.CreateOnrampSession)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.use"),
+					mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/stablecoin-wallet/withdrawals", stablecoinHandlers.CreateWithdrawal)
-				r.With(mw.RateLimit(vkClient.Redis(), "webhook")).
-					Post("/webhooks/stablecoin/crossmint", stablecoinHandlers.ProviderWebhook)
 			})
 
-			// Service escrow routes (§128.5 — Squads 2-of-3 vaults).
+			// Service escrow routes (§128.5 — Squads 2-of-3 vaults). The
+			// escrow.use pilot grant scopes create/confirm/release to the
+			// staged user group.
 			r.With(features.Gate(featureChecker, "feature.escrow_services")).Group(func(r chi.Router) {
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.use"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/escrows", stablecoinHandlers.PrepareEscrow)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/vault", stablecoinHandlers.RegisterVault)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/funded", stablecoinHandlers.ConfirmFunded)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/confirm-release", stablecoinHandlers.ConfirmRelease)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/escrows/{id}/dispute", stablecoinHandlers.DisputeEscrow)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.use")).Post("/me/escrows/{id}/vault", stablecoinHandlers.RegisterVault)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.use")).Post("/me/escrows/{id}/funded", stablecoinHandlers.ConfirmFunded)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.use")).Post("/me/escrows/{id}/confirm-release", stablecoinHandlers.ConfirmRelease)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "escrow.use")).Post("/me/escrows/{id}/dispute", stablecoinHandlers.DisputeEscrow)
 			})
 
 			// Admin stablecoin surface — catalog paths, seeded RBAC nodes
@@ -10878,6 +10908,27 @@ func (s stablecoinVK) Del(ctx context.Context, key string) error {
 	return s.vk.Del(ctx, key).Err()
 }
 
+// stablecoinAuditor adapts the gdpr audit sink to the stablecoin package's
+// narrow auditor seam (killswitch toggles are privileged money-movement
+// controls — Rule 10-style logging).
+type stablecoinAuditor struct {
+	svc *gdpr.Service
+}
+
+func (a stablecoinAuditor) LogAction(ctx context.Context, actorUserID pgtype.UUID, action, targetType string, metadata map[string]interface{}) {
+	if a.svc == nil {
+		return
+	}
+	if err := a.svc.LogAuditEvent(ctx, gdpr.LogAuditParams{
+		ActorUserID: actorUserID,
+		ActionType:  action,
+		TargetType:  targetType,
+		Metadata:    metadata,
+	}); err != nil {
+		slog.Warn("stablecoin: audit log failed", "action", action, "error", err)
+	}
+}
+
 // stablecoinTipReader adapts *tips.Service to the stablecoin package's
 // tip-reader seam — tips:settle_stablecoin resolves parties + legs this way.
 type stablecoinTipReader struct {
@@ -10895,6 +10946,7 @@ func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stabl
 		RecipientUserID: t.RecipientWalletUserID,
 		NetCredits:      t.NetCredits,
 		FeeAmount:       t.FeeAmount,
+		Method:          t.Method,
 		Status:          t.Status,
 	}, nil
 }

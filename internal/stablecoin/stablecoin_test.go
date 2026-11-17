@@ -302,6 +302,32 @@ func (f *fakeStore) ListSweepsByState(_ context.Context, st string, _, _ int32) 
 	}
 	return out, nil
 }
+func (f *fakeStore) GetTreasuryWalletByAddress(_ context.Context, chain, addr string) (*TreasuryWallet, error) {
+	for _, t := range f.treasury {
+		if t.Chain == chain && t.Address == addr {
+			return t, nil
+		}
+	}
+	return nil, ErrTreasuryNotFound
+}
+func (f *fakeStore) GetApprovedSweepForTransfer(_ context.Context, _, asset, hotID string, amt int64) (*TreasurySweep, error) {
+	for i := range f.sweeps {
+		if f.sweeps[i].State == "approved" && f.sweeps[i].Asset == asset &&
+			f.sweeps[i].HotWalletID == hotID && f.sweeps[i].AmountMinor <= amt {
+			return &f.sweeps[i], nil
+		}
+	}
+	return nil, ErrSweepNotFound
+}
+func (f *fakeStore) MarkSweepExecuted(_ context.Context, id pgtype.UUID, sig string) error {
+	for i := range f.sweeps {
+		if f.sweeps[i].ID == id.String() {
+			f.sweeps[i].State = "executed"
+			f.sweeps[i].ExecutedSig = sig
+		}
+	}
+	return nil
+}
 
 type fakeProvider struct {
 	transfers     []TransferInput
@@ -440,14 +466,14 @@ func TestKillswitchSettleBlock(t *testing.T) {
 	svc := newSvc(st, &fakeProvider{}, vk, &fakeSettings{})
 	uid := newUUID()
 
-	if err := svc.SetKillswitch(context.Background(), true); err != nil {
+	if err := svc.SetKillswitch(context.Background(), pgtype.UUID{}, true); err != nil {
 		t.Fatal(err)
 	}
 	_, err := svc.Settle(context.Background(), SettleInput{FromUserID: uid, Asset: AssetUSDC, AmountMinor: 100})
 	if !errors.Is(err, ErrKillswitch) {
 		t.Fatalf("settle under killswitch = %v, want ErrKillswitch", err)
 	}
-	if err := svc.SetKillswitch(context.Background(), false); err != nil {
+	if err := svc.SetKillswitch(context.Background(), pgtype.UUID{}, false); err != nil {
 		t.Fatal(err)
 	}
 	if halted, _ := svc.killswitch(context.Background()); halted {

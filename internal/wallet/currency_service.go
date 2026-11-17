@@ -195,12 +195,16 @@ func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurch
 // Asynq task after the payment webhook confirms success.
 // // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input PurchaseCreditsInput) (PurchaseCreditsResult, error) {
-	// Killswitch: wallet.credit_purchase_enabled (default true). When false,
-	// the endpoint returns 403 credit_purchase_disabled but spending existing
-	// credits continues to work (Section 58).
+	// Killswitch: wallet.credit_purchase_enabled (default false — §128
+	// retires member credit purchases permanently). When false the
+	// endpoint returns 403 credit_purchase_disabled — except for
+	// wallet.credits.purchase grantees, so staff can still exercise the
+	// flow in staging/pilot. Spending existing credits is unaffected.
 	if s.settings != nil {
-		if !s.settings.GetBoolOr(ctx, "wallet.credit_purchase_enabled", true) {
-			return PurchaseCreditsResult{}, errCreditPurchaseDisabled
+		if !s.settings.GetBoolOr(ctx, "wallet.credit_purchase_enabled", false) {
+			if s.perms == nil || !s.perms.Can(ctx, userID, "wallet.credits.purchase") {
+				return PurchaseCreditsResult{}, errCreditPurchaseDisabled
+			}
 		}
 	}
 

@@ -63,13 +63,33 @@ func (s *Service) ProcessReconcile(ctx context.Context, _ []byte) error {
 }
 
 // ProcessSignerScopeRenew handles stablecoin:signer_scope_renew (cron) —
-// rotates delegated-signer scopes before expiresAt: scopes are immutable,
-// so this registers a fresh scoped signer (member OTP approval) and
-// removes the old one.
+// flags wallets whose delegated-signer scope expires inside the renew
+// window (jc:stablecoin:signer_expiring:{user_id}). Rotation itself is a
+// member ceremony (ActivateSigner) — a cron can never drive it because it
+// cannot produce the member's recovery-approval proof. The wallet summary
+// derives the same cue from scope expiry; the flag marks the sweep's
+// sighting for ops/notification surfaces.
 func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error {
 	var p SignerScopeRenewPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("%s: unmarshal: %w", TaskSignerScopeRenew, err)
+	}
+	window := time.Duration(s.settings.GetIntOr(ctx, "stablecoin.signer_renew_window_days", 30)) * 24 * time.Hour
+	cutoff := time.Now().Add(window)
+	ttl := int(window.Seconds())
+	if ttl < 3600 {
+		ttl = 3600
+	}
+	mark := func(w *Wallet) error {
+		if !signerExpiringWithin(w, cutoff) {
+			return nil
+		}
+		if err := s.vk.Set(ctx, "jc:stablecoin:signer_expiring:"+w.UserID, "1", ttl); err != nil {
+			return err
+		}
+		slog.Info("stablecoin: delegated signer scope expiring — member rotation required",
+			"wallet_id", w.ID, "user_id", w.UserID)
+		return nil
 	}
 	if p.UserID != "" {
 		var uid pgtype.UUID
@@ -80,23 +100,15 @@ func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error
 		if err != nil {
 			return err
 		}
-		return s.RotateSignerScopes(ctx, w)
+		return mark(w)
 	}
-	// Sweep: rotate only active wallets whose nearest scope expires inside
-	// the renew window — registration needs member OTP, so an unconditional
-	// sweep would spam every member with a ceremony each cron tick.
-	window := time.Duration(s.settings.GetIntOr(ctx, "stablecoin.signer_renew_window_days", 30)) * 24 * time.Hour
-	cutoff := time.Now().Add(window)
 	active, err := s.listActiveWallets(ctx)
 	if err != nil {
 		return err
 	}
 	for i := range active {
-		if !signerExpiringWithin(&active[i], cutoff) {
-			continue
-		}
-		if err := s.RotateSignerScopes(ctx, &active[i]); err != nil {
-			return fmt.Errorf("%s: rotate %s: %w", TaskSignerScopeRenew, active[i].ID, err)
+		if err := mark(&active[i]); err != nil {
+			slog.Warn("stablecoin: signer-expiry mark failed", "wallet_id", active[i].ID, "error", err)
 		}
 	}
 	return nil
@@ -172,16 +184,21 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 			continue
 		}
 		// Status per signature — a failed onchain event must fail the row,
-		// not confirm it.
+		// not confirm it. Terminal states are sticky in both directions: a
+		// provider page shouldn't let ordering noise regress a decided row.
 		landed := map[string]string{}
 		for _, ev := range events {
 			switch ev.Type {
 			case "failed":
-				landed[ev.TxSignature] = "failed"
+				if landed[ev.TxSignature] != "confirmed" {
+					landed[ev.TxSignature] = "failed"
+				}
 			case "pending", "submitted":
 				// still in-flight — leave the row pending
 			default:
-				landed[ev.TxSignature] = "confirmed"
+				if landed[ev.TxSignature] != "failed" {
+					landed[ev.TxSignature] = "confirmed"
+				}
 			}
 		}
 		for _, a := range rows {
@@ -195,6 +212,14 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 			}
 			if err := s.store.SetActivityStatus(ctx, id, st); err != nil {
 				slog.Warn("stablecoin: settle activity failed", "id", a.ID, "status", st, "error", err)
+				continue
+			}
+			// Confirmed external send whose webhook was missed — collect
+			// the platform fee exactly like the fresh-insert mirror path.
+			// CounterpartyUserID != nil means the other side is a member
+			// wallet (internal op leg, already fee-paid via the batch).
+			if st == "confirmed" && a.Direction == "out" && a.Kind == ActivityWithdrawal && a.CounterpartyUserID == nil {
+				s.collectWithdrawalFee(ctx, w, a.AmountMinor, a.Asset, a.TxSignature, "")
 			}
 		}
 	}
@@ -219,7 +244,13 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	if tip.Status != "pending" && tip.Status != "settling" {
+	// Method gate: only onchain-method tips settle through this task — a
+	// credits-method tip settles in the §28 ledger synchronously at create
+	// time and must never double-settle here.
+	if tip.Method != "" && tip.Method != TipMethodStablecoin {
+		return nil
+	}
+	if tip.Status != "pending" && tip.Status != "settling" && tip.Status != "failed" {
 		return nil // already settled/cancelled — idempotent replay
 	}
 	// Resolve the recipient's wallet — tips settle member→member onchain.

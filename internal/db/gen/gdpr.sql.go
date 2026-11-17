@@ -1539,6 +1539,56 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUI
 	return data, err
 }
 
+const gdprExportServiceEscrows = `-- name: GdprExportServiceEscrows :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT e.id, e.booking_id, e.vault_address, e.asset, e.amount_minor,
+             e.fee_minor, e.state, e.created_at
+      FROM service_escrows e
+      JOIN stablecoin_wallets w ON w.id = e.buyer_wallet_id OR w.id = e.seller_wallet_id
+      WHERE w.user_id = $1
+      ORDER BY e.created_at DESC) t
+`
+
+func (q *Queries) GdprExportServiceEscrows(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportServiceEscrows, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportStablecoinActivity = `-- name: GdprExportStablecoinActivity :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT a.id, a.direction, a.kind, a.asset, a.amount_minor,
+             a.credits_amount, a.tx_signature, a.status, a.occurred_at
+      FROM stablecoin_activity a
+      JOIN stablecoin_wallets w ON w.id = a.wallet_id
+      WHERE w.user_id = $1
+      ORDER BY a.occurred_at DESC) t
+`
+
+func (q *Queries) GdprExportStablecoinActivity(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportStablecoinActivity, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportStablecoinWallet = `-- name: GdprExportStablecoinWallet :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, address, chain, status, created_at
+      FROM stablecoin_wallets WHERE user_id = $1) t
+`
+
+// §128: member stablecoin wallet + mirror activity + service escrows.
+// Mirrors are the member-visible copy of chain state — included in the
+// export; erasure cascades via the user_fk (migration 001188).
+func (q *Queries) GdprExportStablecoinWallet(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportStablecoinWallet, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportTipsReceived = `-- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id FROM tips WHERE recipient_user_id = $1

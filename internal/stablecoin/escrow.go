@@ -82,6 +82,11 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, call
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: seller wallet: %w", err)
 	}
+	// Compliance-held wallets can't escrow — a suspended party may not open
+	// new money movement (mirrors the settle-side recipient allowlist).
+	if buyer.Status == WalletStatusSuspended || seller.Status == WalletStatusSuspended {
+		return nil, ErrWalletSuspended
+	}
 	if asset == "" {
 		asset = AssetUSDC
 	}
@@ -396,6 +401,17 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 		if perr != nil {
 			continue
 		}
+		// Funding proof before authorization: ConfirmEscrowFunded soft-
+		// accepts client sigs on provider lag, so a fabricated sig could
+		// have flipped state. Re-verify the funded sig is visible onchain
+		// before auto-authorizing the seller release — an unfunded vault
+		// must never release (the Squads co-sign is the real backstop, but
+		// the registry must not claim a release it can't execute).
+		if !s.verifyEscrowFunding(ctx, &expired[i]) {
+			slog.Warn("stablecoin: escrow timeout — funding not proven onchain, deferring release",
+				"escrow", expired[i].ID, "funded_sig", expired[i].FundedSig)
+			continue
+		}
 		// Timeout auto-release: authorized to seller, audit-trailed like an
 		// arbiter ruling — the Squads release executes off-backend and the
 		// mirror lands the executed sig when the chain reports it.
@@ -410,6 +426,32 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// verifyEscrowFunding re-checks a funded escrow's signature against the
+// provider's activity for the buyer wallet — the timeout sweep's defense
+// against soft-accepted funding claims. Returns true when the sig is
+// found paying the vault, or when the provider lookup fails so a lagging
+// indexer doesn't stall a legitimately-funded escrow forever (the Squads
+// co-sign remains the authoritative gate on execution).
+func (s *Service) verifyEscrowFunding(ctx context.Context, e *Escrow) bool {
+	if e.FundedSig == "" {
+		return false // funded state with no sig at all — never release
+	}
+	buyer, err := s.walletByID(ctx, e.BuyerWalletID)
+	if err != nil {
+		return true // can't verify — defer to the Squads ceremony
+	}
+	events, _, err := s.provider.Activity(ctx, buyer.Locator, "")
+	if err != nil {
+		return true // provider lag — don't stall; Squads enforces anyway
+	}
+	for _, ev := range events {
+		if ev.TxSignature == e.FundedSig {
+			return true
+		}
+	}
+	return false
 }
 
 // escrowForEvent resolves which escrow a mirrored event belongs to: the
@@ -465,7 +507,28 @@ func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig, coun
 // everything else releases to the seller.
 func (s *Service) completeEscrowRelease(ctx context.Context, walletID, sig, counterAddr string) {
 	e := s.escrowForEvent(ctx, walletID, counterAddr)
-	if e == nil || (e.State != EscrowFunded && e.State != EscrowDisputed) {
+	if e == nil {
+		return
+	}
+	// Backfill path: the authorize-side transitions (timeout release,
+	// buyer release without a sig) move state to released/refunded with an
+	// empty release_sig — the executed Squads signature must still land
+	// when the chain reports it, or the registry claims "released" with no
+	// chain proof.
+	if e.State == EscrowReleased || e.State == EscrowRefunded {
+		if e.ReleaseSig != "" || sig == "" {
+			return
+		}
+		eid, err := pgUUID(e.ID)
+		if err != nil {
+			return
+		}
+		if err := s.store.SetEscrowState(ctx, eid, e.State, "", sig, nil, nil); err != nil {
+			slog.Warn("stablecoin: escrow release-sig backfill failed", "escrow", e.ID, "error", err)
+		}
+		return
+	}
+	if e.State != EscrowFunded && e.State != EscrowDisputed {
 		return
 	}
 	eid, err := pgUUID(e.ID)

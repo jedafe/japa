@@ -528,6 +528,48 @@ func (st *Store) GetServiceBooking(ctx context.Context, id pgtype.UUID) (*Servic
 	return out, nil
 }
 
+// GetTreasuryWalletByAddress resolves a treasury wallet by chain+address —
+// the mirror's lookup when a provider event matches no member wallet.
+func (st *Store) GetTreasuryWalletByAddress(ctx context.Context, chain, address string) (*TreasuryWallet, error) {
+	r, err := st.q.GetTreasuryWalletByAddress(ctx, gen.GetTreasuryWalletByAddressParams{Chain: chain, Address: address})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrTreasuryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: treasury by address: %w", err)
+	}
+	t := domainTreasuryWallet(r)
+	return &t, nil
+}
+
+// GetApprovedSweepForTransfer matches a mirrored hot→cold out-transfer to
+// the open approved sweep it executes.
+func (st *Store) GetApprovedSweepForTransfer(ctx context.Context, chain, asset, hotWalletID string, amountMinor int64) (*TreasurySweep, error) {
+	hot, err := pgUUID(hotWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: sweep hot wallet: %w", err)
+	}
+	r, err := st.q.GetApprovedSweepForTransfer(ctx, gen.GetApprovedSweepForTransferParams{
+		Chain:       chain,
+		Asset:       asset,
+		HotWalletID: hot,
+		AmountMinor: amountMinor,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrSweepNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: approved sweep: %w", err)
+	}
+	return domainSweep(r), nil
+}
+
+// MarkSweepExecuted records the executed Squads signature on an approved
+// sweep proposal — the mirror's completion write for treasury flow.
+func (st *Store) MarkSweepExecuted(ctx context.Context, id pgtype.UUID, sig string) error {
+	return st.q.MarkTreasurySweepExecuted(ctx, gen.MarkTreasurySweepExecutedParams{ID: id, ExecutedSig: &sig})
+}
+
 // GetTreasuryWallet returns one treasury wallet by chain+role.
 func (st *Store) GetTreasuryWallet(ctx context.Context, chain, role string) (*TreasuryWallet, error) {
 	r, err := st.q.GetTreasuryWallet(ctx, gen.GetTreasuryWalletParams{Chain: chain, Role: role})

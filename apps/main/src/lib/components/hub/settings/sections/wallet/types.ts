@@ -83,6 +83,7 @@ export interface WalletData {
 		settings?: { enable_earning?: boolean; daily_earning_cap?: number };
 		min_purchase_credits?: number;
 		min_withdrawal_credits?: number;
+		purchase_enabled?: boolean;
 	} | null;
 	/** Server-configured minimums; null when /me/wallet/settings is
 	 *  unavailable — tabs must treat null as "unknown" (no client-side
@@ -99,4 +100,24 @@ export interface WalletData {
 	/** feature.wallet — commerce endpoints (purchase/withdraw). Off means
 	 *  the section shows only the points surfaces (Details/History). */
 	walletEnabled: boolean;
+	/** §128 — caller may still buy credits (killswitch on, or
+	 *  wallet.credits.purchase grantee). The Purchase tab hides otherwise. */
+	purchaseEnabled: boolean;
+	/** §128 — feature.stablecoin_wallet flag for the member. */
+	stablecoinEnabled: boolean;
+	/** §128 — GET /me/stablecoin-wallet payload (null when unprovisioned
+	 *  or the flag is off). */
+	stablecoinWallet?: StablecoinWallet | null;
+}
+
+/** §128 member stablecoin wallet summary (GET /me/stablecoin-wallet). */
+export interface StablecoinWallet {
+	address?: string;
+	status?: 'provisioned' | 'active' | 'suspended';
+	recovery_methods?: string[];
+	balance?: { backed_credits?: number; bonus_credits?: number; pending?: number };
+	/** true when the delegated-signer scope is nearing expiry — the member
+	 *  re-activation ceremony should be surfaced. */
+	needs_signer_rotation?: boolean;
+	min_deposit_minor?: number;
 }

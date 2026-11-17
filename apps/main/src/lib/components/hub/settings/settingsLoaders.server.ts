@@ -137,6 +137,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			settings?: { enable_earning?: boolean; daily_earning_cap?: number };
 			min_purchase_credits?: number;
 			min_withdrawal_credits?: number;
+			purchase_enabled?: boolean;
 		}>(ctx, '/me/wallet/settings').catch(() => null);
 
 		const pointsRes = await apiGet<{ balance?: number; entries?: any[] }>(ctx, '/me/wallet/points?page_size=50').catch(() => null);
@@ -194,7 +195,17 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			// feature.wallet gates commerce endpoints (PTS-010); the section
 			// itself shows under feature.points, so purchase/withdraw tabs
 			// hide when commerce is off rather than rendering 404 states.
-			walletEnabled: flags['feature.wallet'] === true
+			walletEnabled: flags['feature.wallet'] === true,
+			// §128: credit purchases are permanently off for members — the
+			// Purchase tab only shows when the API reports the caller can
+			// still buy (killswitch on, or wallet.credits.purchase grantee).
+			purchaseEnabled: walletSettings?.purchase_enabled === true,
+			// §128: stablecoin wallet surface (USDC/USDT balance, deposit,
+			// member-signed withdrawal) — flag-gated for pilot rollout.
+			stablecoinEnabled: flags['feature.stablecoin_wallet'] === true,
+			stablecoinWallet: flags['feature.stablecoin_wallet'] === true
+				? await apiGet<unknown>(ctx, '/me/stablecoin-wallet').catch(() => null)
+				: null
 		};
 	},
 	subscription: async (ctx) => ({

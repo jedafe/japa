@@ -107,6 +107,11 @@ export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number
 
 export const listWithdrawalProviders = () => api.get<string[]>('/wallet/withdraw/providers');
 
+// §128 stablecoin wallet — provision is a member-driven bootstrap; the
+// delegated-signer activation ceremony is a separate member-auth step.
+export const provisionStablecoinWallet = () =>
+	api.post<{ status?: string }>('/me/stablecoin-wallet/provision', {});
+
 export const calculateWithdrawal = (body: { credit_amount: number; currency_code?: string }) =>
 	api.post<{
 		credit_amount: number;

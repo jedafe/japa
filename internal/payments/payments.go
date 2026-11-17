@@ -130,6 +130,7 @@ type Service struct {
 	settings    paymentSettingsReader
 	webhooks    webhookEmitter
 	tierManager TierManager
+	perms       permChecker
 	siteURL     string
 }
 
@@ -177,6 +178,10 @@ func (s *Service) SetSettings(sr paymentSettingsReader) {
 
 // SetWebhookEmitter injects the payment.* event fan-out (Section 12).
 func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
+
+// SetPermChecker injects the RBAC resolver — the wallet.credits.spend gate
+// on the credits payment rail (nil = ungated, e.g. unit tests).
+func (s *Service) SetPermChecker(p permChecker) { s.perms = p }
 
 // emitWebhook fires a payment.* event fire-and-forget (Rule 8). Errors are
 // logged but never returned to the caller — webhook delivery is async.

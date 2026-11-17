@@ -22,6 +22,9 @@ var ErrScopeExceeded = errors.New("stablecoin: transfer exceeds delegated-signer
 // signer (provisioned-but-unregistered or suspended).
 var ErrWalletNotSettleable = errors.New("stablecoin: sender wallet not settleable")
 
+// ErrWalletSuspended marks ops attempted on a compliance-held wallet.
+var ErrWalletSuspended = errors.New("stablecoin: wallet suspended")
+
 // ErrUnknownRecipient rejects a delegated transfer to an address that is
 // neither a member wallet nor a platform treasury — the application-level
 // allowlist standing in for chain recipients until a dedicated fee signer
@@ -230,19 +233,21 @@ func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMin
 
 // RotateSignerScopes replaces an expiring delegated signer — scopes are
 // immutable (§128.2), so renewal means registering a fresh scoped signer
-// (member OTP approval ceremony) and dropping the old reference locally.
-func (s *Service) RotateSignerScopes(ctx context.Context, w *Wallet) error {
+// and dropping the old reference locally. Member-initiated only: both
+// removal and registration carry the member's recovery-approval proof, so
+// the caller must be the member ceremony (ActivateSigner) — never a cron.
+// The prior registration is removed first (the signer ref is config-stable
+// across rotations — removing after re-registration would delete the new
+// scopes). A mid-rotation failure leaves delegation unregistered, which
+// the member can always repair by re-running ActivateSigner.
+func (s *Service) RotateSignerScopes(ctx context.Context, w *Wallet, memberAuth string) error {
 	if w == nil {
 		return fmt.Errorf("stablecoin: nil wallet")
 	}
-	// Drop the prior registration first — two live signers with the same
-	// scopes would double the blast radius during overlap. Removal needs
-	// member recovery approval like registration; if it fails the provider
-	// rejects re-registration as a duplicate and the error propagates.
 	if w.DelegatedSigner != nil && w.DelegatedSigner.SignerRef != "" {
 		if err := s.provider.RemoveDelegatedSigner(ctx, w.Locator, w.DelegatedSigner.SignerRef); err != nil {
 			return fmt.Errorf("stablecoin: remove prior signer: %w", err)
 		}
 	}
-	return s.registerDelegatedSigner(ctx, w)
+	return s.registerDelegatedSigner(ctx, w, memberAuth)
 }

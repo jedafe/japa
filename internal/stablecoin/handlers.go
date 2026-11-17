@@ -49,6 +49,10 @@ func handleError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_limit_reached", "Daily transfer limit reached")
 	case errors.Is(err, ErrWalletNotSettleable):
 		errpkg.WriteError(w, http.StatusConflict, "wallet_not_active", "Wallet is not fully set up yet")
+	case errors.Is(err, ErrWalletSuspended):
+		errpkg.WriteError(w, http.StatusForbidden, "wallet_suspended", "Wallet is suspended")
+	case errors.Is(err, ErrTreasuryNotFound):
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "feature_unavailable", "Treasury is not configured yet")
 	case errors.Is(err, ErrUnknownRecipient):
 		errpkg.WriteError(w, http.StatusBadRequest, "unknown_recipient", "Recipient is not a member wallet or treasury")
 	case errors.Is(err, ErrEscrowNotFound), errors.Is(err, ErrBookingNotFound), errors.Is(err, ErrSweepNotFound):
@@ -72,14 +76,21 @@ func parseLimit(r *http.Request) (int32, int32) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	// Accept both `offset` (stablecoin catalog) and `page_offset` (legacy
+	// wallet feed) — the unified feed is shared across both surfaces.
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if po := r.URL.Query().Get("page_offset"); offset == 0 && po != "" {
+		offset, _ = strconv.Atoi(po)
+	}
 	if offset < 0 {
 		offset = 0
 	}
 	return int32(limit), int32(offset)
 }
 
-// GetWallet handles GET /me/stablecoin-wallet.
+// GetWallet handles GET /me/stablecoin-wallet. Lazy provisioning: a member
+// with no wallet gets stablecoin:provision_wallet enqueued and an empty
+// 200 — the client re-reads until the wallet appears (§128 lazy bootstrap).
 func (h *Handlers) GetWallet(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -91,11 +102,55 @@ func (h *Handlers) GetWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sum == nil {
-		// Not provisioned — empty 200 so the client can offer activation.
+		if rerr := h.svc.RequestProvision(r.Context(), user.UserID, ""); rerr != nil {
+			// Provisioning failure is not a summary failure — still answer
+			// empty so the client can offer the explicit activate path.
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
+			return
+		}
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sum})
+}
+
+// Provision handles POST /me/stablecoin-wallet/provision — the explicit
+// activate-wallet path. Returns 202: provisioning fans out to the worker.
+func (h *Handlers) Provision(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		MemberAuth string `json:"member_auth"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req) // optional body
+	if err := h.svc.RequestProvision(r.Context(), user.UserID, req.MemberAuth); err != nil {
+		handleError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": WalletStatusProvisioned}})
+}
+
+// ActivateSigner handles POST /me/stablecoin-wallet/signer/activate — the
+// member ceremony that installs (or rotates) Japa.to's scope-capped
+// delegated signer. member_auth carries the member's recovery-approval
+// proof for the provider ceremony (§128.2).
+func (h *Handlers) ActivateSigner(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		MemberAuth string `json:"member_auth"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req) // optional body
+	wal, err := h.svc.ActivateSigner(r.Context(), user.UserID, req.MemberAuth)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": wal.Status}})
 }
 
 // ListActivity handles GET /me/stablecoin-wallet/activity — unified feed:
@@ -379,8 +434,13 @@ func (h *Handlers) AdminListSweeps(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminKillswitch handles POST /admin/stablecoin/signer-killswitch —
-// super_admin-gated per catalog; body {engaged: bool}.
+// super_admin-gated per catalog; body {engaged: bool}. The toggle writes
+// the durable setting + fast flag and lands in audit_logs via the actor.
 func (h *Handlers) AdminKillswitch(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Engaged bool `json:"engaged"`
 	}
@@ -388,7 +448,7 @@ func (h *Handlers) AdminKillswitch(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
-	if err := h.svc.SetKillswitch(r.Context(), req.Engaged); err != nil {
+	if err := h.svc.SetKillswitch(r.Context(), user.UserID, req.Engaged); err != nil {
 		handleError(w, err)
 		return
 	}

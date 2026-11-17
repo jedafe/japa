@@ -109,6 +109,32 @@ FROM payments
 WHERE user_id = @user_id
 ORDER BY created_at DESC;
 
+-- §128: member stablecoin wallet + mirror activity + service escrows.
+-- Mirrors are the member-visible copy of chain state — included in the
+-- export; erasure cascades via the user_fk (migration 001188).
+-- name: GdprExportStablecoinWallet :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, address, chain, status, created_at
+      FROM stablecoin_wallets WHERE user_id = @user_id) t;
+
+-- name: GdprExportStablecoinActivity :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT a.id, a.direction, a.kind, a.asset, a.amount_minor,
+             a.credits_amount, a.tx_signature, a.status, a.occurred_at
+      FROM stablecoin_activity a
+      JOIN stablecoin_wallets w ON w.id = a.wallet_id
+      WHERE w.user_id = @user_id
+      ORDER BY a.occurred_at DESC) t;
+
+-- name: GdprExportServiceEscrows :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT e.id, e.booking_id, e.vault_address, e.asset, e.amount_minor,
+             e.fee_minor, e.state, e.created_at
+      FROM service_escrows e
+      JOIN stablecoin_wallets w ON w.id = e.buyer_wallet_id OR w.id = e.seller_wallet_id
+      WHERE w.user_id = @user_id
+      ORDER BY e.created_at DESC) t;
+
 -- name: GdprExportUserNotifications :many
 SELECT id, notification_type, title, body, read_at, created_at
 FROM notifications

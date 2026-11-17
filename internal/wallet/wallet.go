@@ -199,11 +199,21 @@ const (
 	MaxPageSize     = 100
 )
 
+// PermChecker resolves an RBAC node for a member — the
+// wallet.credits.purchase grant that lets staff exercise credit purchases
+// while the §128 killswitch keeps them off for members (pilot pattern).
+type PermChecker interface {
+	Can(ctx context.Context, userID pgtype.UUID, node string) bool
+}
+
 // Service provides wallet operations with reader/writer pool separation.
 type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer walletEnqueuer
+	// perms is the optional RBAC resolver — injected for grant-gated
+	// member flows (credit purchases while the killswitch is off).
+	perms PermChecker
 	// settings is the optional global system_settings reader used for
 	// wallet.max_daily_earn_points and wallet.default_currency
 	// (AUDIT-BE2-SETTING-007/008). When nil, compiled-in defaults are used.
@@ -279,6 +289,9 @@ type PaymentCreateResult struct {
 
 // SetSettings injects the global system_settings reader (AUDIT-BE2-SETTING-007/008).
 func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
+
+// SetPermChecker injects the RBAC resolver for grant-gated member flows.
+func (s *Service) SetPermChecker(p PermChecker) { s.perms = p }
 
 // TierResolver resolves a user's membership tier — satisfied by
 // *tiers.Service. Optional (ADR-136: tier-scoped daily earn caps).

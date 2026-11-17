@@ -15,6 +15,20 @@ type settings interface {
 	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
+// settingsWriter is the optional write half — used only by the killswitch
+// so the halt flag survives a Valkey flush (incident controls must not
+// silently disengage on a cache restart). Nil in tests.
+type settingsWriter interface {
+	SetSetting(ctx context.Context, key, value string) error
+}
+
+// auditor records privileged money-movement control actions to
+// audit_logs (admin killswitch toggles). Nil in tests — logging is
+// best-effort and never blocks the control itself.
+type auditor interface {
+	LogAction(ctx context.Context, actorUserID pgtype.UUID, action, targetType string, metadata map[string]interface{})
+}
+
 // valkey is the cache/flag client. Keys used (all in the catalog):
 //
 //	jc:stablecoin:mirror:{user_id}          — display-balance cache
@@ -58,9 +72,12 @@ type store interface {
 	GetServiceBooking(ctx context.Context, id pgtype.UUID) (*ServiceBooking, error)
 	ListTreasuryWallets(ctx context.Context) ([]TreasuryWallet, error)
 	GetTreasuryWallet(ctx context.Context, chain, role string) (*TreasuryWallet, error)
+	GetTreasuryWalletByAddress(ctx context.Context, chain, address string) (*TreasuryWallet, error)
 	InsertTreasurySweep(ctx context.Context, sw TreasurySweep) (*TreasurySweep, error)
 	GetTreasurySweep(ctx context.Context, id pgtype.UUID) (*TreasurySweep, error)
+	GetApprovedSweepForTransfer(ctx context.Context, chain, asset, hotWalletID string, amountMinor int64) (*TreasurySweep, error)
 	DecideTreasurySweep(ctx context.Context, id pgtype.UUID, state string, approvedBy pgtype.UUID, squadsProposalID string) error
+	MarkSweepExecuted(ctx context.Context, id pgtype.UUID, sig string) error
 	ListSweepsByState(ctx context.Context, state string, limit, offset int32) ([]TreasurySweep, error)
 }
 
@@ -92,6 +109,7 @@ type Tip struct {
 	RecipientUserID pgtype.UUID
 	NetCredits      int64 // tip − platform fee → recipient leg
 	FeeAmount       int64 // platform fee → treasury hot leg
+	Method          string
 	Status          string
 }
 
@@ -147,11 +165,13 @@ type Service struct {
 	provider    Provider
 	store       store
 	settings    settings
+	settingsW   settingsWriter
 	vk          valkey
 	enq         enqueuer
 	bonusLedger bonusLedger
 	tipReader   tipReader
 	creditRater creditRater
+	auditor     auditor
 }
 
 // NewService wires the stablecoin module.
@@ -181,18 +201,56 @@ func (s *Service) SetCreditRater(r creditRater) {
 	s.creditRater = r
 }
 
+// SetSettingsWriter injects the system_settings write half so the
+// killswitch survives a Valkey flush.
+func (s *Service) SetSettingsWriter(w settingsWriter) {
+	s.settingsW = w
+}
+
+// SetAuditor injects the audit_logs sink for privileged control actions.
+func (s *Service) SetAuditor(a auditor) {
+	s.auditor = a
+}
+
 // killswitch reports whether delegated-signer ops are halted platform-wide
-// (jc:stablecoin:signer_killswitch — incident response for §128.10).
+// (jc:stablecoin:signer_killswitch — incident response for §128.10). The
+// Valkey flag is the fast path; the mirrored system_settings row is the
+// durable source consulted on cache miss so a flush can't silently
+// disengage a halt.
 func (s *Service) killswitch(ctx context.Context) (bool, error) {
-	return s.vk.Exists(ctx, "jc:stablecoin:signer_killswitch")
+	on, err := s.vk.Exists(ctx, "jc:stablecoin:signer_killswitch")
+	if err != nil || on {
+		return on, err
+	}
+	return s.settings.GetBoolOr(ctx, "stablecoin.signer_killswitch", false), nil
 }
 
 // SetKillswitch flips the delegated-signer halt flag (super_admin only,
 // api-routes-catalog). It never blocks self-custody — member passkey-signed
-// ops bypass the delegated path entirely.
-func (s *Service) SetKillswitch(ctx context.Context, engaged bool) error {
-	if engaged {
-		return s.vk.Set(ctx, "jc:stablecoin:signer_killswitch", "1", 0)
+// ops bypass the delegated path entirely. Writes the durable setting first,
+// then the Valkey fast flag; audits the toggle when an actor is provided.
+func (s *Service) SetKillswitch(ctx context.Context, actor pgtype.UUID, engaged bool) error {
+	if s.settingsW != nil {
+		v := "false"
+		if engaged {
+			v = "true"
+		}
+		if err := s.settingsW.SetSetting(ctx, "stablecoin.signer_killswitch", v); err != nil {
+			return err
+		}
 	}
-	return s.vk.Del(ctx, "jc:stablecoin:signer_killswitch")
+	var err error
+	if engaged {
+		err = s.vk.Set(ctx, "jc:stablecoin:signer_killswitch", "1", 0)
+	} else {
+		err = s.vk.Del(ctx, "jc:stablecoin:signer_killswitch")
+	}
+	if err != nil {
+		return err
+	}
+	if s.auditor != nil && actor.Valid {
+		s.auditor.LogAction(ctx, actor, "stablecoin.signer_killswitch", "system_settings",
+			map[string]interface{}{"engaged": engaged})
+	}
+	return nil
 }

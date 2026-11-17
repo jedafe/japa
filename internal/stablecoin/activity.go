@@ -105,6 +105,12 @@ func (s *Service) SyncActivity(ctx context.Context, payload []byte) error {
 
 	w, err := s.store.GetWalletByAddress(ctx, env.walletRef())
 	if err != nil {
+		// Not a member wallet — check the treasury registry: hot→cold
+		// sweep executions and fee-leg landings are provider events too.
+		chain := s.settings.GetStringOr(ctx, "stablecoin.network", "solana")
+		if terr := s.mirrorTreasuryEvent(ctx, chain, env.walletRef(), ev); terr == nil {
+			return nil
+		}
 		// Unknown wallet — external address interacting with our rails.
 		// Log and drop; the reconcile sweep is the safety net.
 		slog.Warn("stablecoin: activity for unknown wallet", "addr", env.walletRef(), "type", env.Type)
@@ -113,12 +119,38 @@ func (s *Service) SyncActivity(ctx context.Context, payload []byte) error {
 	return s.MirrorActivity(ctx, ev, w.ID)
 }
 
+// eventStatus maps a provider event type to the mirror status — the
+// shared mapping for fresh inserts and dedupe-hit transitions.
+func eventStatus(ev ProviderEvent) string {
+	switch ev.Type {
+	case "pending", "submitted":
+		return "pending"
+	case "failed":
+		return "failed"
+	default:
+		return "confirmed"
+	}
+}
+
 // MirrorActivity persists one provider event into stablecoin_activity —
 // the render cache for the unified history feed. Called by
 // stablecoin:sync_activity. Idempotent on tx_signature.
 func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID string) error {
-	if _, err := s.store.GetActivityBySig(ctx, ev.TxSignature); err == nil {
-		return nil // already mirrored — idempotent
+	if existing, err := s.store.GetActivityBySig(ctx, ev.TxSignature); err == nil {
+		// Already mirrored — but a terminal event for a pending row is a
+		// status transition, not a replay: a webhook that arrives after the
+		// offramp-sweep inserted the row pending must still confirm it.
+		if existing.Status == "pending" {
+			if st := eventStatus(ev); st == "confirmed" || st == "failed" {
+				var id pgtype.UUID
+				if id.Scan(existing.ID) == nil {
+					if serr := s.store.SetActivityStatus(ctx, id, st); serr == nil {
+						s.postConfirmHooks(ctx, ev, walletID, existing.Direction, existing.Kind, st)
+					}
+				}
+			}
+		}
+		return nil
 	} else if !errors.Is(err, ErrActivityNotFound) {
 		return fmt.Errorf("stablecoin: activity lookup: %w", err)
 	}
@@ -133,12 +165,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		cp = &cw.UserID
 	}
 
-	status := "confirmed"
-	if ev.Type == "pending" || ev.Type == "submitted" {
-		status = "pending"
-	} else if ev.Type == "failed" {
-		status = "failed"
-	}
+	status := eventStatus(ev)
 
 	occurred := time.Unix(ev.OccurredAt, 0).UTC()
 	if ev.OccurredAt <= 0 {
@@ -163,9 +190,17 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 	if inserted == nil {
 		return nil // tx_signature dedupe hit — replay, nothing to do
 	}
+	s.postConfirmHooks(ctx, ev, walletID, direction, kind, status)
+	return nil
+}
+
+// postConfirmHooks runs the side-effects a confirmed mirror row triggers —
+// withdrawal fee collection and onchain escrow transitions. Called on
+// fresh inserts and on dedupe-hit pending→confirmed transitions so the
+// outcome is identical regardless of which path confirmed the row.
+func (s *Service) postConfirmHooks(ctx context.Context, ev ProviderEvent, walletID, direction, kind, status string) {
 	// Confirmed member-signed withdrawal → collect the platform fee via
-	// the delegated signer (the send couldn't carry a fee leg). Only on a
-	// fresh insert — replays must not re-fire the collection.
+	// the delegated signer (the send couldn't carry a fee leg).
 	if status == "confirmed" && direction == "out" && kind == ActivityWithdrawal {
 		var w *Wallet
 		if wid, perr := pgUUID(walletID); perr == nil {
@@ -186,7 +221,6 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 	case ActivityEscrowRelease:
 		s.completeEscrowRelease(ctx, walletID, ev.TxSignature, ev.CounterAddr)
 	}
-	return nil
 }
 
 // classifyEvent maps provider event types to mirror kind/direction.
@@ -382,10 +416,11 @@ func (s *Service) Reconcile(ctx context.Context) error {
 
 func (s *Service) listActiveWallets(ctx context.Context) ([]Wallet, error) {
 	// Page the active set — a single 500-row fetch would silently drop
-	// every wallet past the cap on each cron tick.
+	// every wallet past the cap on each cron tick. Unbounded: the page loop
+	// ends on a short page, never on a wallet-count cap.
 	const pageSize = 500
 	var all []Wallet
-	for off := int32(0); off < 10_000; off += pageSize {
+	for off := int32(0); ; off += pageSize {
 		page, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, pageSize, off)
 		if err != nil {
 			return nil, err

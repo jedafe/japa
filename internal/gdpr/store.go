@@ -340,6 +340,20 @@ func (s *Store) gdprExportUserWalletLedger(ctx context.Context, userID pgtype.UU
 	return exportJSONSlice(ctx, s.read.GdprExportUserWalletLedger, userID)
 }
 
+// §128 stablecoin surfaces — wallet mirror, onchain activity mirror, and
+// service escrows the member is a party to.
+func (s *Store) gdprExportStablecoinWallet(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportStablecoinWallet, userID)
+}
+
+func (s *Store) gdprExportStablecoinActivity(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportStablecoinActivity, userID)
+}
+
+func (s *Store) gdprExportServiceEscrows(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportServiceEscrows, userID)
+}
+
 func (s *Store) gdprExportTipsSent(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportTipsSent, userID)
 }

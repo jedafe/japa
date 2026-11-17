@@ -270,6 +270,20 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	}
 	cfg.Enabled = true
 	cfg.Methods = s.acceptedMethods(owner, st)
+	// §128 rail: while the stablecoin wallet feature is live, the onchain
+	// method is the advertised credits-denominated rail — the transitional
+	// 'credits' method stays creatable for tips.credits grantees (pilot)
+	// but is not advertised publicly.
+	if owner.Type != RecipientPlatform && st.AcceptCredits &&
+		s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
+		methods := cfg.Methods[:0]
+		for _, m := range cfg.Methods {
+			if m != MethodCredits {
+				methods = append(methods, m)
+			}
+		}
+		cfg.Methods = append(methods, MethodStablecoin)
+	}
 	cfg.OCCollectiveSlug = st.OCCollectiveSlug
 	// Platform collective falls back to the control-panel setting when the
 	// platform tip_settings row carries no slug (§125 Open Collective).

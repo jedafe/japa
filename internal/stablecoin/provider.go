@@ -60,6 +60,11 @@ type CreateWalletInput struct {
 type DelegatedSignerInput struct {
 	SignerRef string
 	Scopes    []SignerScope
+	// MemberAuth carries the member's recovery-approval proof for the
+	// registration ceremony — the platform can never install a spend
+	// signer unilaterally (§128.2). Empty defers to the provider's own
+	// approval flow.
+	MemberAuth string
 }
 
 // TransferInput is one delegated-signer operation. RecipientLeg and FeeLeg

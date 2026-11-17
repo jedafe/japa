@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ErrInsufficientCredit is returned when a user lacks sufficient credits for a purchase.
@@ -30,6 +31,17 @@ type CreditSpender interface {
 		userID pgtype.UUID,
 		input CreditSpendInput,
 	) (int64, error)
+}
+
+// ErrSpendNotPermitted is returned when the caller lacks the
+// wallet.credits.spend grant — the RBAC gate for the credits payment rail
+// (pilot-group rollouts assign the node before opening the feature).
+var ErrSpendNotPermitted = errors.New("spending credits is not enabled for this account")
+
+// permChecker resolves the wallet.credits.spend RBAC gate — nil seam means
+// no gate (tests, internal callers that wire it explicitly).
+type permChecker interface {
+	Can(ctx context.Context, userID pgtype.UUID, node string) bool
 }
 
 // PayWithCredit spends credits and records the payment in a single logical flow.
@@ -56,6 +68,12 @@ func (s *Service) PayWithCredit(
 ) (int64, error) {
 	if s.wallet == nil {
 		return 0, errors.New("wallet service not configured")
+	}
+
+	// RBAC gate — the credits payment rail is a gated feature (§28);
+	// ops assigns wallet.credits.spend to member tiers / pilot groups.
+	if s.perms != nil && !s.perms.Can(ctx, userID, "wallet.credits.spend") {
+		return 0, ErrSpendNotPermitted
 	}
 
 	if amount <= 0 {
@@ -105,14 +123,15 @@ func (s *Service) PayWithCredit(
 		return 0, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
 
-	// Step 3: Mark the payment as succeeded — the debit committed successfully.
+	// Step 3: Mark the payment as succeeded — the debit committed
+	// successfully. Retry once: the only recoverable states are a
+	// committed debit with a pending row (transient update failure) —
+	// the payments:reconcile_credit sweep is the durable backstop.
 	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
 	if err != nil {
-		// The debit succeeded but the status update failed. This is a
-		// recoverable state — the payment row exists with status="pending"
-		// and the ledger entry exists. A background reconciliation task
-		// can detect this and update the status. Log the error but return
-		// success since the user's credits were correctly debited.
+		succeeded, err = s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
+	}
+	if err != nil {
 		slog.Error("payments: failed to mark credit payment as succeeded",
 			"payment_id", payment.ID, "error", err)
 	} else {
@@ -123,4 +142,44 @@ func (s *Service) PayWithCredit(
 	}
 
 	return newBalance, nil
+}
+
+// ReconcileStaleCreditPayments is the payments:reconcile_credit sweep —
+// closes credit payments left pending when the debit committed but the
+// status update failed (the create→debit→update flow is not one DB
+// transaction; §17 acknowledges the recoverable gap). The credits_ledger
+// spend row is the proof: debit found → mark succeeded + fan out the
+// settlement effects that were skipped; no debit → mark failed so the row
+// stops dangling.
+func (s *Service) ReconcileStaleCreditPayments(ctx context.Context, limit int32) error {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.store.read.ListStalePendingCreditPayments(ctx, limit)
+	if err != nil {
+		return err
+	}
+	for _, p := range rows {
+		reference := "payment:" + p.PurposeType + ":"
+		if p.PurposeID.Valid {
+			reference += p.PurposeID.String()
+		}
+		debited, derr := s.store.read.HasCreditDebitForReference(ctx, gen.HasCreditDebitForReferenceParams{
+			UserID:    p.UserID,
+			Reference: &reference,
+		})
+		status := PaymentStatusFailed
+		if derr == nil && debited {
+			status = PaymentStatusSucceeded
+		}
+		updated, uerr := s.store.updatePaymentStatus(ctx, p.ID, status)
+		if uerr != nil {
+			slog.Warn("payments: reconcile credit payment failed", "payment_id", p.ID, "error", uerr)
+			continue
+		}
+		if status == PaymentStatusSucceeded {
+			s.enqueueSyncSettlement(updated)
+		}
+	}
+	return nil
 }

@@ -27,18 +27,21 @@
 		})
 	);
 
-	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean; requiresWallet: boolean }[] = [
-		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false, requiresWallet: false },
-		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false, requiresWallet: true },
-		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true, requiresWallet: true },
-		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false, requiresWallet: false }
+	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean; requiresWallet: boolean; requiresPurchase: boolean }[] = [
+		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false, requiresWallet: false, requiresPurchase: false },
+		// §128: purchases are permanently off for members — the tab only
+		// renders for grantees (staff pilot) reported by the API.
+		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false, requiresWallet: true, requiresPurchase: true },
+		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true, requiresWallet: true, requiresPurchase: false },
+		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false, requiresWallet: false, requiresPurchase: false }
 	];
 
 	const tabs = $derived(
 		allTabs.filter(
 			(t) =>
 				(!t.requiresWallet || walletData?.walletEnabled === true) &&
-				(!t.requiresWithdraw || walletData?.withdrawEnabled === true)
+				(!t.requiresWithdraw || walletData?.withdrawEnabled === true) &&
+				(!t.requiresPurchase || walletData?.purchaseEnabled === true)
 		)
 	);
 

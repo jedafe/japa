@@ -88,6 +88,9 @@ var idempotentTasks = map[string]bool{
 	TypeServiceBookingStatusChanged:     true, // §111 — dedupe same-status transitions
 	TypeSpaceAutoPopulate:               true, // enrichment fan-out — collapse repeat enqueues for the same space_id
 	TypeTipsSettleFiat:                  true, // §125 — dedupe settle by tip_id payload
+	TypeTipsSettleStablecoin:            true, // §128 — dedupe onchain settle by tip_id payload
+	TypeStablecoinProvisionWallet:       true, // §128 — one provision task per user
+	TypeStablecoinSyncActivity:          true, // §128 — collapse duplicate mirror syncs per user
 	TypeTipsNotifyReceived:              true, // §125 — one receipt notification per tip
 	TypeTipsOCSync:                      true, // §125 — collapse duplicate sweep enqueues
 	TypeTipsStaleSweep:                  true, // §125 — collapse duplicate stale sweeps
@@ -228,8 +231,13 @@ var taskTier = func() map[string]string {
 		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
 		TypeTipsSettleFiat,            // §125 — credit grant on donation payment success
 		TypePaymentSyncSettlement,     // money-moving fan-out for synchronous settlements
-		TypeIntelInboundEmail,         // §INTEL Phase 3 — provider push deliveries are time-sensitive
-		TypeServiceBookingFeeSettle,   // §111 — platform-fee recognize/refund is money-moving (ADR-123)
+		TypePaymentReconcileCredit,    // §17 — credit-payment recovery sweep is money-moving
+		// §128 — money-moving / member-facing wallet tasks run critical-tier so a
+		// saturated default queue can't starve settlements or offramp confirms.
+		TypeStablecoinProvisionWallet, TypeStablecoinSyncActivity,
+		TypeTipsSettleStablecoin, TypeStablecoinProcessOfframp,
+		TypeIntelInboundEmail,       // §INTEL Phase 3 — provider push deliveries are time-sensitive
+		TypeServiceBookingFeeSettle, // §111 — platform-fee recognize/refund is money-moving (ADR-123)
 	} {
 		m[t] = QueueCritical
 	}

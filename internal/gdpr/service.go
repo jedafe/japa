@@ -2641,6 +2641,9 @@ type UserDataExport struct {
 	BadgeProgress               []map[string]interface{} `json:"badge_progress"`          // §64 v2
 	BadgeAwardEvents            []map[string]interface{} `json:"badge_award_events"`      // §64 v2
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
+	StablecoinWallet            []map[string]interface{} `json:"stablecoin_wallet"`   // §128
+	StablecoinActivity          []map[string]interface{} `json:"stablecoin_activity"` // §128
+	ServiceEscrows              []map[string]interface{} `json:"service_escrows"`     // §128
 	TipsSent                    []map[string]interface{} `json:"tips_sent"`
 	TipsReceived                []map[string]interface{} `json:"tips_received"`
 	ActivityEvents              []map[string]interface{} `json:"activity_events"`
@@ -3087,6 +3090,23 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.WalletLedger = rows
 	} else {
 		slog.Warn("failed to collect wallet_ledger for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §128: stablecoin wallet mirror + onchain activity + escrows.
+	if rows, err := s.store.gdprExportStablecoinWallet(ctx, userID); err == nil {
+		export.StablecoinWallet = rows
+	} else {
+		slog.Warn("failed to collect stablecoin_wallet for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportStablecoinActivity(ctx, userID); err == nil {
+		export.StablecoinActivity = rows
+	} else {
+		slog.Warn("failed to collect stablecoin_activity for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportServiceEscrows(ctx, userID); err == nil {
+		export.ServiceEscrows = rows
+	} else {
+		slog.Warn("failed to collect service_escrows for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §125 tip history (sent + received) — right-to-export coverage.

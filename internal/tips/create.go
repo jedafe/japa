@@ -5,7 +5,9 @@ package tips
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -91,13 +93,103 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 
 	switch in.Method {
 	case MethodCredits:
+		// Pilot gate: once the §128 rail is live, the transitional
+		// credits-ledger method needs the tips.credits grant — ops assigns
+		// it to the pilot group; tips.send alone no longer suffices.
+		if s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
+			if s.perms != nil && !s.perms.Can(ctx, senderID, "tips.credits") {
+				return CreateTipResult{}, ErrMethodNotAccepted
+			}
+		}
 		return s.createWalletTip(ctx, senderID, owner, walletOwner, sett, in, idempotencyKey)
+	case MethodStablecoin:
+		return s.createStablecoinTip(ctx, senderID, owner, walletOwner, sett, in, idempotencyKey)
 	default:
 		if IsFiatMethod(in.Method) {
 			return s.createFiatTip(ctx, senderID, owner, walletOwner, sett, in, idempotencyKey)
 		}
 		return CreateTipResult{}, ErrInvalidMethod
 	}
+}
+
+// createStablecoinTip runs the §128 onchain path — the tip row lands
+// pending and tips:settle_stablecoin executes the delegated transfer
+// (net → recipient wallet, fee → treasury hot). Credits-denominated like
+// the ledger path; the worker converts at the §58 USD rate.
+func (s *Service) createStablecoinTip(ctx context.Context, senderID pgtype.UUID, owner Owner, walletOwner pgtype.UUID, st Settings, in CreateTipInput, idemKey string) (CreateTipResult, error) {
+	// The onchain rail only exists while the wallet feature is live.
+	if s.features == nil || !s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
+		return CreateTipResult{}, ErrInvalidMethod
+	}
+	if s.perms != nil && !s.perms.Can(ctx, senderID, "tips.stablecoin") {
+		return CreateTipResult{}, ErrNotEligible
+	}
+	// Platform has no wallet — onchain tips to it are invalid.
+	if owner.Type == RecipientPlatform {
+		return CreateTipResult{}, ErrMethodNotAccepted
+	}
+	if !walletOwner.Valid {
+		return CreateTipResult{}, ErrInvalidRecipient
+	}
+
+	amount := in.CreditsAmount
+	if !st.AcceptCredits {
+		return CreateTipResult{}, ErrMethodNotAccepted
+	}
+	if amount <= 0 {
+		return CreateTipResult{}, ErrInvalidAmount
+	}
+	if amount < st.MinTipAmount {
+		return CreateTipResult{}, ErrBelowMinimum
+	}
+
+	fee := amount * int64(s.feePercent(ctx)) / 100
+	net := amount - fee
+
+	tip, err := s.store.insertTip(ctx, gen.InsertTipParams{
+		SenderUserID:            senderID,
+		RecipientType:           owner.Type,
+		RecipientUserID:         recipientUserSnapshot(owner, walletOwner),
+		RecipientWalletUserID:   walletOwner,
+		RecipientOrganizationID: nullableOwnerOrg(owner),
+		RecipientSpaceID:        nullableOwnerSpace(owner),
+		ContentID:               in.ContentID,
+		Method:                  MethodStablecoin,
+		CreditsAmount:           amount,
+		FeeAmount:               fee,
+		NetCredits:              net,
+		Message:                 strPtrOrNil(in.Message),
+		IsAnonymous:             in.IsAnonymous,
+		Status:                  StatusPending,
+		IdempotencyKey:          strPtrOrNil(idemKey),
+	})
+	if err != nil {
+		if errors.Is(err, ErrDuplicateKey) && idemKey != "" {
+			if existing, gerr := s.store.getTipByIdempotencyKey(ctx, senderID, idemKey); gerr == nil {
+				return CreateTipResult{Tip: tipFromRow(existing), Duplicate: true}, nil
+			}
+		}
+		return CreateTipResult{}, err
+	}
+
+	// Fan-out settlement (Rule 8) — the worker resolves wallets, enforces
+	// the killswitch/scope caps, executes the delegated transfer, and
+	// closes the tip via MarkStablecoinSettled.
+	if s.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]string{"tip_id": tip.ID.String()})
+		if err := s.enqueuer.Enqueue(taskSettleStablecoin, payload); err != nil {
+			// A pending tip with no settle task would hang forever — mark
+			// it failed so the idempotency key frees and the client can
+			// retry as a fresh attempt.
+			if ferr := s.store.failTip(ctx, tip.ID); ferr != nil {
+				slog.Warn("tips: failed to mark dead stablecoin tip failed", "tip_id", tip.ID.String(), "error", ferr)
+			}
+			return CreateTipResult{}, err
+		}
+	}
+
+	s.emitActivity(ctx, senderID, wallet.ActivityKeyTipSent, "tip:"+tip.ID.String())
+	return CreateTipResult{Tip: tipFromRow(tip)}, nil
 }
 
 // resolveRecipient maps the input recipient to a tip_settings owner plus the

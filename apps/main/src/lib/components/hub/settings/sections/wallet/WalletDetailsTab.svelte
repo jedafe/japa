@@ -4,6 +4,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { setCurrencyPreference } from '#lib/api/hub.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import StablecoinCard from './StablecoinCard.svelte';
 	import type { WalletData } from './types';
 
 	interface Props {
@@ -60,6 +61,12 @@
 		</div>
 	</div>
 
+
+	<!-- §128: stablecoin wallet surface — flag-gated, lazy-provisions on
+	     first render via the loader, explicit provision CTA when absent. -->
+	{#if data.stablecoinEnabled}
+		<StablecoinCard {data} />
+	{/if}
 
 	{#if data.currencies.length > 0}
 		<div>

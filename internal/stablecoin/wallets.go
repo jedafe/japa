@@ -16,10 +16,12 @@ import (
 // WalletSummary is the member-facing wallet view (GET /me/stablecoin-wallet).
 // Credits-denominated — members never see USDC/USDT/Solana terminology.
 type WalletSummary struct {
-	Address         string         `json:"address"`
-	Status          string         `json:"status"`
-	RecoveryMethods []string       `json:"recovery_methods"`
-	Balance         BalanceSummary `json:"balance"`
+	Address             string         `json:"address"`
+	Status              string         `json:"status"`
+	RecoveryMethods     []string       `json:"recovery_methods"`
+	Balance             BalanceSummary `json:"balance"`
+	NeedsSignerRotation bool           `json:"needs_signer_rotation"`
+	MinDepositMinor     int64          `json:"min_deposit_minor"`
 }
 
 // GetWalletSummary composes the member wallet view: backed tier from the
@@ -43,12 +45,16 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 	// Backed tier: the reconcile task maintains
 	// jc:stablecoin:mirror:{user_id} = backed-credits balance. Cache miss →
 	// derive from confirmed mirror rows (chain is truth; both are render).
+	// A cached zero is a real balance, not a miss — only fall back when the
+	// key is absent or unparseable.
+	cacheHit := false
 	if v, err := s.vk.Get(ctx, "jc:stablecoin:mirror:"+userID.String()); err == nil && v != "" {
 		if n, perr := strconv.ParseInt(v, 10, 64); perr == nil {
 			sum.Balance.BackedCredits = n
+			cacheHit = true
 		}
 	}
-	if sum.Balance.BackedCredits == 0 {
+	if !cacheHit {
 		if wid, perr := pgUUID(w.ID); perr == nil {
 			if rows, aerr := s.store.ListActivityByWallet(ctx, wid, 500, 0); aerr == nil {
 				for _, a := range rows {
@@ -82,7 +88,61 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 			sum.Balance.BonusCredits = rows[0].Balance
 		}
 	}
+	// Rotation cue: a scope inside the renew window means the member must
+	// re-run the signer ceremony before delegation halts (§128.2 — scopes
+	// are immutable; renewal is rotation, not extension).
+	window := time.Duration(s.settings.GetIntOr(ctx, "stablecoin.signer_renew_window_days", 30)) * 24 * time.Hour
+	sum.NeedsSignerRotation = signerExpiringWithin(w, time.Now().Add(window))
+	sum.MinDepositMinor = int64(s.settings.GetIntOr(ctx, "stablecoin.min_deposit_minor", 1_000_000))
 	return sum, nil
+}
+
+// RequestProvision enqueues stablecoin:provision_wallet — the lazy
+// bootstrap path used by GET /me/stablecoin-wallet (first wallet-surface
+// visit) and POST /me/stablecoin-wallet/provision. Fire-and-forget (Rule
+// 8): the client re-reads the summary until a wallet appears. MemberAuth
+// is optional — the worker provision creates the counterfactual wallet;
+// the delegated signer only registers when the member runs the explicit
+// activation ceremony (POST /me/stablecoin-wallet/signer).
+func (s *Service) RequestProvision(ctx context.Context, userID pgtype.UUID, memberAuth string) error {
+	if s.enq == nil {
+		return s.provisionInline(ctx, userID, memberAuth)
+	}
+	payload, _ := json.Marshal(ProvisionWalletPayload{UserID: userID.String(), MemberAuth: memberAuth})
+	if err := s.enq.Enqueue(TaskProvisionWallet, payload); err != nil {
+		slog.Warn("stablecoin: provision enqueue failed, provisioning inline", "error", err)
+		return s.provisionInline(ctx, userID, memberAuth)
+	}
+	return nil
+}
+
+// provisionInline is the enqueue-failure fallback — synchronous so the
+// caller still gets a wallet rather than a silent drop.
+func (s *Service) provisionInline(ctx context.Context, userID pgtype.UUID, memberAuth string) error {
+	_, err := s.ProvisionWallet(ctx, userID, memberAuth)
+	return err
+}
+
+// ActivateSigner runs the member's delegated-signer ceremony — registers
+// Japa.to's scope-capped operational signer (memberAuth carries the
+// member's recovery-approval proof), or rotates it when a prior
+// registration exists. Member-initiated only: the platform can never
+// install a spend signer unilaterally (§128.2).
+func (s *Service) ActivateSigner(ctx context.Context, userID pgtype.UUID, memberAuth string) (*Wallet, error) {
+	w, err := s.store.GetWalletByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: wallet: %w", err)
+	}
+	if w == nil {
+		return nil, ErrWalletNotFound
+	}
+	if w.Status == WalletStatusSuspended {
+		return nil, ErrWalletSuspended
+	}
+	if w.DelegatedSigner != nil && w.DelegatedSigner.SignerRef != "" {
+		return w, s.RotateSignerScopes(ctx, w, memberAuth)
+	}
+	return w, s.registerDelegatedSigner(ctx, w, memberAuth)
 }
 
 // ProvisionWallet lazily creates a member's smart wallet — called on signup
@@ -93,13 +153,6 @@ func (s *Service) ProvisionWallet(ctx context.Context, userID pgtype.UUID, membe
 	if existing, err := s.store.GetWalletByUser(ctx, userID); err != nil && !errors.Is(err, ErrWalletNotFound) {
 		return nil, fmt.Errorf("stablecoin: wallet lookup: %w", err)
 	} else if existing != nil {
-		// Idempotent — but a wallet stuck at provisioned with no signer
-		// retries registration here (the deferred path below).
-		if existing.Status == WalletStatusProvisioned && existing.DelegatedSigner == nil {
-			if rerr := s.registerDelegatedSigner(ctx, existing); rerr != nil {
-				slog.Warn("stablecoin: delegated signer retry deferred", "wallet_id", existing.ID, "error", rerr)
-			}
-		}
 		return existing, nil
 	}
 
@@ -131,22 +184,19 @@ func (s *Service) ProvisionWallet(ctx context.Context, userID pgtype.UUID, membe
 		return nil, fmt.Errorf("stablecoin: persist wallet: %w", err)
 	}
 
-	// Register the scoped delegated signer — powers in-app spending without
-	// per-action signatures. Scope values are the blast-radius ceiling.
-	// Registration itself needs member recovery approval (OTP ceremony);
-	// scopes are immutable — expiry forces rotation, not renewal (§128.2).
-	if err := s.registerDelegatedSigner(ctx, w); err != nil {
-		// Wallet exists; signer registration retries on the next provision
-		// pass — non-fatal, the member can still deposit/withdraw by passkey.
-		slog.Warn("stablecoin: delegated signer registration deferred",
-			"wallet_id", w.ID, "error", err)
-	}
+	// The delegated signer is NOT registered here — installation requires
+	// the member's recovery-approval ceremony, which only the member can
+	// initiate (POST /me/stablecoin-wallet/signer → ActivateSigner). The
+	// wallet stays `provisioned` until then; passkey-signed deposits and
+	// withdrawals work without it.
 	return w, nil
 }
 
 // registerDelegatedSigner registers Japa.to's scope-capped operational
-// signer and persists the registration state on the wallet row.
-func (s *Service) registerDelegatedSigner(ctx context.Context, w *Wallet) error {
+// signer and persists the registration state on the wallet row. memberAuth
+// carries the member's approval proof for the provider ceremony — an
+// empty value defers to the provider's own approval flow.
+func (s *Service) registerDelegatedSigner(ctx context.Context, w *Wallet, memberAuth string) error {
 	signerRef := s.settings.GetStringOr(ctx, "stablecoin.delegated_signer_ref", "")
 	if signerRef == "" {
 		return fmt.Errorf("stablecoin.delegated_signer_ref unset")
@@ -168,8 +218,9 @@ func (s *Service) registerDelegatedSigner(ctx context.Context, w *Wallet) error 
 	}
 
 	if err := s.provider.RegisterDelegatedSigner(ctx, w.Locator, DelegatedSignerInput{
-		SignerRef: signerRef,
-		Scopes:    ds.Scopes,
+		SignerRef:  signerRef,
+		Scopes:     ds.Scopes,
+		MemberAuth: memberAuth,
 	}); err != nil {
 		return err
 	}

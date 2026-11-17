@@ -2,7 +2,9 @@ package stablecoin
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -33,11 +35,25 @@ func (s *Service) ProposeSweep(ctx context.Context) error {
 	chain := s.settings.GetStringOr(ctx, "stablecoin.network", "solana")
 	hot, err := s.store.GetTreasuryWallet(ctx, chain, TreasuryHot)
 	if err != nil {
+		if errors.Is(err, ErrTreasuryNotFound) {
+			// Treasury not seeded yet (fresh deploy) — the cron must not
+			// deadletter every tick; the ops runbook seeds the registry.
+			slog.Info("stablecoin: treasury hot wallet unseeded — sweep skipped")
+			return nil
+		}
 		return fmt.Errorf("stablecoin: hot wallet: %w", err)
 	}
 	cold, err := s.store.GetTreasuryWallet(ctx, chain, TreasuryCold)
 	if err != nil {
+		if errors.Is(err, ErrTreasuryNotFound) {
+			slog.Info("stablecoin: treasury cold vault unseeded — sweep skipped")
+			return nil
+		}
 		return fmt.Errorf("stablecoin: cold vault: %w", err)
+	}
+	if hot.Locator == "" {
+		slog.Info("stablecoin: hot wallet has no provider locator — sweep skipped")
+		return nil
 	}
 
 	capMinor := hot.FloatCapMinor
@@ -48,6 +64,10 @@ func (s *Service) ProposeSweep(ctx context.Context) error {
 	// Live hot balance from the provider — sweep the excess over cap.
 	pw, err := s.provider.GetWallet(ctx, hot.Locator)
 	if err != nil {
+		if errors.Is(err, ErrNotImplemented) {
+			slog.Info("stablecoin: provider balance read unimplemented — sweep skipped")
+			return nil
+		}
 		return fmt.Errorf("stablecoin: hot balance: %w", err)
 	}
 	// Skip assets with an open proposal — a cron tick must not queue a
@@ -128,4 +148,48 @@ func (s *Service) ListSweeps(ctx context.Context, state string, limit, offset in
 // GET /admin/stablecoin/wallets — ?status + ?q filters per catalog.
 func (s *Service) ListWallets(ctx context.Context, status, q string, limit, offset int32) ([]Wallet, error) {
 	return s.store.ListWallets(ctx, status, q, limit, offset)
+}
+
+// mirrorTreasuryEvent handles provider activity addressed to a treasury
+// wallet — the authoritative completion write for approved sweeps: a
+// hot→cold out-transfer matching an open proposal marks it executed with
+// the real chain signature (§128.7 — the Squads ceremony executes
+// off-backend; the mirror is how the registry learns it landed).
+// Returns nil when the event was consumed (treasury-owned or recognized),
+// ErrTreasuryNotFound otherwise so the caller can fall through to the
+// unknown-wallet drop.
+func (s *Service) mirrorTreasuryEvent(ctx context.Context, chain, walletAddr string, ev ProviderEvent) error {
+	tw, err := s.store.GetTreasuryWalletByAddress(ctx, chain, walletAddr)
+	if err != nil {
+		return err
+	}
+	// Only the hot wallet's outbound transfers can execute a sweep.
+	if tw.Role != TreasuryHot || ev.Type == "failed" {
+		return nil
+	}
+	if st := eventStatus(ev); st != "confirmed" {
+		return nil
+	}
+	if ev.TxSignature == "" {
+		return nil
+	}
+	// Direction check: the event must be an out-transfer headed to the
+	// cold vault — in-events and cold-bound noise can't mark execution.
+	kind, direction := classifyEvent(ev)
+	if direction != "out" || kind == ActivityEscrowFunding {
+		return nil
+	}
+	sw, err := s.store.GetApprovedSweepForTransfer(ctx, chain, normalizeAsset(ev.Asset), tw.ID, ev.AmountMinor)
+	if err != nil {
+		return nil // no matching open proposal — ordinary treasury traffic
+	}
+	var id pgtype.UUID
+	if err := id.Scan(sw.ID); err != nil {
+		return nil
+	}
+	if err := s.store.MarkSweepExecuted(ctx, id, ev.TxSignature); err != nil {
+		return fmt.Errorf("stablecoin: mark sweep executed: %w", err)
+	}
+	slog.Info("stablecoin: treasury sweep executed", "sweep_id", sw.ID, "asset", sw.Asset, "sig", ev.TxSignature)
+	return nil
 }

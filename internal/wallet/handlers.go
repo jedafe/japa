@@ -311,7 +311,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 //
 // Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes).
 func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -343,11 +343,23 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), "wallet.min_withdrawal_credits", 1000)
 	}
 
+	// purchase_enabled: the §128 killswitch state plus the caller's grant —
+	// staff holding wallet.credits.purchase see the surface even while it
+	// stays off for members.
+	purchaseEnabled := false
+	if h.Service.settings != nil {
+		purchaseEnabled = h.Service.settings.GetBoolOr(r.Context(), "wallet.credit_purchase_enabled", false)
+	}
+	if !purchaseEnabled && h.Service.perms != nil {
+		purchaseEnabled = h.Service.perms.Can(r.Context(), user.UserID, "wallet.credits.purchase")
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"settings":               memberSettings,
 			"min_purchase_credits":   minPurchaseCredits,
 			"min_withdrawal_credits": minWithdrawalCredits,
+			"purchase_enabled":       purchaseEnabled,
 		},
 	})
 }

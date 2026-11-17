@@ -56,6 +56,54 @@ func (q *Queries) DecideTreasurySweep(ctx context.Context, arg DecideTreasurySwe
 	return i, err
 }
 
+const getApprovedSweepForTransfer = `-- name: GetApprovedSweepForTransfer :one
+SELECT id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at FROM treasury_sweeps
+WHERE chain = $1
+  AND asset = $2
+  AND hot_wallet_id = $3
+  AND state = 'approved'
+  AND amount_minor <= $4
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetApprovedSweepForTransferParams struct {
+	Chain       string      `json:"chain"`
+	Asset       string      `json:"asset"`
+	HotWalletID pgtype.UUID `json:"hot_wallet_id"`
+	AmountMinor int64       `json:"amount_minor"`
+}
+
+// Match a mirrored hot->cold out-transfer to the open approved sweep it
+// executes. Amount may exceed the proposal (batching) but never be below
+// it; newest first guards stacked approvals for the same asset.
+func (q *Queries) GetApprovedSweepForTransfer(ctx context.Context, arg GetApprovedSweepForTransferParams) (TreasurySweep, error) {
+	row := q.db.QueryRow(ctx, getApprovedSweepForTransfer,
+		arg.Chain,
+		arg.Asset,
+		arg.HotWalletID,
+		arg.AmountMinor,
+	)
+	var i TreasurySweep
+	err := row.Scan(
+		&i.ID,
+		&i.Chain,
+		&i.Asset,
+		&i.AmountMinor,
+		&i.HotWalletID,
+		&i.ColdAddress,
+		&i.State,
+		&i.ProposedBy,
+		&i.ApprovedBy,
+		&i.SquadsProposalID,
+		&i.ExecutedSig,
+		&i.CreatedAt,
+		&i.DecidedAt,
+		&i.ExecutedAt,
+	)
+	return i, err
+}
+
 const getEscrowByVault = `-- name: GetEscrowByVault :one
 SELECT id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at FROM service_escrows
 WHERE vault_address = $1
@@ -353,6 +401,57 @@ func (q *Queries) GetTreasuryWallet(ctx context.Context, arg GetTreasuryWalletPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getTreasuryWalletByAddress = `-- name: GetTreasuryWalletByAddress :one
+SELECT id, role, chain, address, locator, float_cap_minor, created_at FROM treasury_wallets
+WHERE chain = $1 AND address = $2
+`
+
+type GetTreasuryWalletByAddressParams struct {
+	Chain   string `json:"chain"`
+	Address string `json:"address"`
+}
+
+// Treasury mirror: resolve a provider event against the treasury registry
+// when no member wallet matches (sweep execution, revenue-leg watch).
+func (q *Queries) GetTreasuryWalletByAddress(ctx context.Context, arg GetTreasuryWalletByAddressParams) (TreasuryWallet, error) {
+	row := q.db.QueryRow(ctx, getTreasuryWalletByAddress, arg.Chain, arg.Address)
+	var i TreasuryWallet
+	err := row.Scan(
+		&i.ID,
+		&i.Role,
+		&i.Chain,
+		&i.Address,
+		&i.Locator,
+		&i.FloatCapMinor,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const hasCreditDebitForReference = `-- name: HasCreditDebitForReference :one
+SELECT EXISTS (
+    SELECT 1 FROM credits_ledger
+    WHERE user_id = $1
+      AND operation = 'spend'
+      AND reference = $2
+)::bool AS has_debit
+`
+
+type HasCreditDebitForReferenceParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	Reference *string     `json:"reference"`
+}
+
+// Reconcile proof for a stale pending credit payment: the paired
+// credits_ledger spend row (reference 'payment:{purpose}:{id}') is the
+// evidence the debit committed.
+func (q *Queries) HasCreditDebitForReference(ctx context.Context, arg HasCreditDebitForReferenceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasCreditDebitForReference, arg.UserID, arg.Reference)
+	var has_debit bool
+	err := row.Scan(&has_debit)
+	return has_debit, err
 }
 
 const insertServiceEscrow = `-- name: InsertServiceEscrow :one
@@ -886,6 +985,55 @@ func (q *Queries) ListStablecoinWalletsByStatus(ctx context.Context, arg ListSta
 	return items, nil
 }
 
+const listStalePendingCreditPayments = `-- name: ListStalePendingCreditPayments :many
+SELECT id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
+WHERE provider = 'credit'
+  AND status = 'pending'
+  AND created_at < now() - interval '15 minutes'
+ORDER BY created_at ASC
+LIMIT $1
+`
+
+// Reconcile: credit payments stuck pending while the wallet debit
+// committed (payment row insert -> debit -> status update is not one
+// transaction; a crash between debit and update leaves pending rows).
+func (q *Queries) ListStalePendingCreditPayments(ctx context.Context, limitCount int32) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listStalePendingCreditPayments, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderRef,
+			&i.PurposeType,
+			&i.PurposeID,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.Metadata,
+			&i.SubscriptionID,
+			&i.DiscountCodeID,
+			&i.DiscountAmount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IdempotencyKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTreasurySweepsByState = `-- name: ListTreasurySweepsByState :many
 SELECT id, chain, asset, amount_minor, hot_wallet_id, cold_address, state, proposed_by, approved_by, squads_proposal_id, executed_sig, created_at, decided_at, executed_at FROM treasury_sweeps
 WHERE state = $1
@@ -965,6 +1113,22 @@ func (q *Queries) ListTreasuryWallets(ctx context.Context) ([]TreasuryWallet, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const markPaymentStatusByID = `-- name: MarkPaymentStatusByID :exec
+UPDATE payments
+SET status = $1, updated_at = now()
+WHERE id = $2
+`
+
+type MarkPaymentStatusByIDParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) MarkPaymentStatusByID(ctx context.Context, arg MarkPaymentStatusByIDParams) error {
+	_, err := q.db.Exec(ctx, markPaymentStatusByID, arg.Status, arg.ID)
+	return err
 }
 
 const markTreasurySweepExecuted = `-- name: MarkTreasurySweepExecuted :exec

@@ -236,3 +236,49 @@ LIMIT 1;
 SELECT * FROM service_escrows
 WHERE vault_address = @vault_address
 LIMIT 1;
+
+-- name: GetTreasuryWalletByAddress :one
+-- Treasury mirror: resolve a provider event against the treasury registry
+-- when no member wallet matches (sweep execution, revenue-leg watch).
+SELECT * FROM treasury_wallets
+WHERE chain = @chain AND address = @address;
+
+-- name: GetApprovedSweepForTransfer :one
+-- Match a mirrored hot->cold out-transfer to the open approved sweep it
+-- executes. Amount may exceed the proposal (batching) but never be below
+-- it; newest first guards stacked approvals for the same asset.
+SELECT * FROM treasury_sweeps
+WHERE chain = @chain
+  AND asset = @asset
+  AND hot_wallet_id = @hot_wallet_id
+  AND state = 'approved'
+  AND amount_minor <= @amount_minor
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: ListStalePendingCreditPayments :many
+-- Reconcile: credit payments stuck pending while the wallet debit
+-- committed (payment row insert -> debit -> status update is not one
+-- transaction; a crash between debit and update leaves pending rows).
+SELECT * FROM payments
+WHERE provider = 'credit'
+  AND status = 'pending'
+  AND created_at < now() - interval '15 minutes'
+ORDER BY created_at ASC
+LIMIT @limit_count;
+
+-- name: MarkPaymentStatusByID :exec
+UPDATE payments
+SET status = @status, updated_at = now()
+WHERE id = @id;
+
+-- name: HasCreditDebitForReference :one
+-- Reconcile proof for a stale pending credit payment: the paired
+-- credits_ledger spend row (reference 'payment:{purpose}:{id}') is the
+-- evidence the debit committed.
+SELECT EXISTS (
+    SELECT 1 FROM credits_ledger
+    WHERE user_id = @user_id
+      AND operation = 'spend'
+      AND reference = @reference
+)::bool AS has_debit;

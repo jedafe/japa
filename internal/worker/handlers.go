@@ -774,6 +774,66 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment
 	}
 }
 
+// HandlePaymentReconcileCredit sweeps credit payments stuck `pending` — the
+// §17 create→debit→status-update path isn't atomic, so a crash between the
+// wallet debit and the status update leaves a row that never settles. For
+// each stale row we check whether the ledger debit landed:
+//   - debit exists → mark succeeded and replay the sync-settlement fan-out
+//     (payment_id-keyed, idempotent) so enrollment/credits/tips still fire.
+//   - no debit → mark failed; the member was never charged.
+//
+// §17 / §58.
+func HandlePaymentReconcileCredit(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:payments:reconcile_credit")
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:payments:reconcile_credit: no database, skipping", "error", err)
+		return nil
+	}
+
+	rows, err := queries.ListStalePendingCreditPayments(ctx, 50)
+	if err != nil {
+		return fmt.Errorf("task:payments:reconcile_credit: list stale: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	slog.Info("task:payments:reconcile_credit: sweeping", "stale", len(rows))
+
+	for _, p := range rows {
+		reference := "payment:" + p.PurposeType + ":" + p.PurposeID.String()
+		debited, derr := queries.HasCreditDebitForReference(ctx, gen.HasCreditDebitForReferenceParams{
+			UserID:    p.UserID,
+			Reference: &reference,
+		})
+		if derr != nil {
+			return fmt.Errorf("task:payments:reconcile_credit: debit check %s: %w", p.ID, derr)
+		}
+
+		status := "failed"
+		if debited {
+			status = "succeeded"
+		}
+		if err := queries.MarkPaymentStatusByID(ctx, gen.MarkPaymentStatusByIDParams{
+			ID:     p.ID,
+			Status: status,
+		}); err != nil {
+			return fmt.Errorf("task:payments:reconcile_credit: mark %s %s: %w", p.ID, status, err)
+		}
+
+		if debited && taskEnqueuer != nil {
+			payload, _ := json.Marshal(map[string]string{"payment_id": p.ID.String()})
+			if err := taskEnqueuer.Enqueue(TypePaymentSyncSettlement, payload); err != nil {
+				slog.Error("task:payments:reconcile_credit: settlement replay enqueue failed",
+					"payment_id", p.ID, "error", err)
+			}
+		}
+		slog.Info("task:payments:reconcile_credit: resolved", "payment_id", p.ID, "status", status)
+	}
+	return nil
+}
+
 // HandlePaymentSyncSettlement replays the full onPaymentSucceeded fan-out
 // for a payment that settled synchronously — credit-wallet debits and
 // zero-amount payments never traverse a provider webhook, so without this
