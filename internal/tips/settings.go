@@ -244,7 +244,7 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	}
 	cfg := PublicConfig{MinTipAmount: st.MinTipAmount}
 	if s.settings != nil {
-		cfg.FiatCurrency = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
+		cfg.FiatCurrency = s.settings.GetStringOr(ctx, "wallet.default_currency", "USD")
 	}
 	// A recipient whose tips.receive grant was revoked (or whose mentor
 	// profile went inactive) must not advertise an enabled config — the

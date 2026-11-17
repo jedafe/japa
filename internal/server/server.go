@@ -1084,7 +1084,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// platform ID is used because this read happens at boot time, outside any
 	// request context. The resolver also has SetDefaultCurrency for
 	// hot-reload when the setting changes.
-	defaultCurrency := settingsService.GetStringOr(context.Background(), "wallet.default_currency", "NGN")
+	defaultCurrency := settingsService.GetStringOr(context.Background(), "wallet.default_currency", "USD")
 	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
 	walletService.SetCurrencyResolver(currencyResolver)
 

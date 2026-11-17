@@ -41,10 +41,10 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 
 	currency := in.FiatCurrency
 	if currency == "" && s.settings != nil {
-		currency = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
+		currency = s.settings.GetStringOr(ctx, "wallet.default_currency", "USD")
 	}
 	if currency == "" {
-		currency = "NGN"
+		currency = "USD"
 	}
 	// Validate the currency up front — an unknown code would create a tip +
 	// payment that can never settle (getCurrencyByCode fails inside the
