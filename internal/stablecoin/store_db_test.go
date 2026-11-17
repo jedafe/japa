@@ -85,6 +85,9 @@ func TestDBSetEscrowStatePreservesFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertEscrow: %v", err)
 	}
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(context.Background(), `DELETE FROM service_escrows WHERE id = $1`, e.ID)
+	})
 	eid, _ := pgUUID(e.ID)
 	deadline := time.Now().Add(72 * time.Hour).UTC()
 

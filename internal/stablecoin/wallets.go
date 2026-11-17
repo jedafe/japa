@@ -53,7 +53,10 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 			if rows, aerr := s.store.ListActivityByWallet(ctx, wid, 500, 0); aerr == nil {
 				for _, a := range rows {
 					switch {
-					case a.Status == "pending":
+					case a.Status == "pending" && a.Direction == "in":
+						// Pending means incoming-unconfirmed — an outbound
+						// pending row is still the member's money, not a
+						// pending credit.
 						sum.Balance.Pending += a.CreditsAmount
 					case a.Status != "confirmed":
 						continue

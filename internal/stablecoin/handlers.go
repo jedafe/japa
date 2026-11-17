@@ -200,7 +200,7 @@ func (h *Handlers) ProviderWebhook(w http.ResponseWriter, r *http.Request) {
 // PrepareEscrow handles POST /me/escrows — resolves booking parties and
 // returns the Squads vault-creation parameters (client derives the PDA).
 func (h *Handlers) PrepareEscrow(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -217,7 +217,7 @@ func (h *Handlers) PrepareEscrow(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_booking", "Invalid booking id")
 		return
 	}
-	setup, err := h.svc.PrepareEscrow(r.Context(), bookingID, req.Asset)
+	setup, err := h.svc.PrepareEscrow(r.Context(), bookingID, user.UserID, req.Asset)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -228,7 +228,7 @@ func (h *Handlers) PrepareEscrow(w http.ResponseWriter, r *http.Request) {
 // RegisterVault handles POST /me/escrows/{id}/vault — records the
 // client-derived Squads PDA after onchain vault creation.
 func (h *Handlers) RegisterVault(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -244,7 +244,7 @@ func (h *Handlers) RegisterVault(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "vault_address is required")
 		return
 	}
-	if err := h.svc.RegisterEscrowVault(r.Context(), id, req.VaultAddress); err != nil {
+	if err := h.svc.RegisterEscrowVault(r.Context(), id, user.UserID, req.VaultAddress); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -254,7 +254,7 @@ func (h *Handlers) RegisterVault(w http.ResponseWriter, r *http.Request) {
 // ConfirmFunded handles POST /me/escrows/{id}/funded — marks the vault
 // funded after the buyer's passkey-signed funding tx lands.
 func (h *Handlers) ConfirmFunded(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -267,7 +267,7 @@ func (h *Handlers) ConfirmFunded(w http.ResponseWriter, r *http.Request) {
 		TxSignature string `json:"tx_signature"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	if err := h.svc.ConfirmEscrowFunded(r.Context(), id, req.TxSignature); err != nil {
+	if err := h.svc.ConfirmEscrowFunded(r.Context(), id, user.UserID, req.TxSignature); err != nil {
 		handleError(w, err)
 		return
 	}

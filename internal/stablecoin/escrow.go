@@ -41,7 +41,7 @@ type EscrowSetup struct {
 // PrepareEscrow resolves the booking parties into wallet addresses and
 // returns the vault-creation parameters. Idempotent per booking — a second
 // call returns the existing escrow's setup.
-func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, asset string) (*EscrowSetup, error) {
+func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, callerUserID pgtype.UUID, asset string) (*EscrowSetup, error) {
 	if existing, err := s.store.GetEscrowByBooking(ctx, bookingID); err == nil && existing != nil {
 		return s.setupFor(ctx, existing)
 	} else if err != nil && !errors.Is(err, ErrEscrowNotFound) {
@@ -51,6 +51,15 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, asse
 	b, err := s.store.GetServiceBooking(ctx, bookingID)
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: booking: %w", err)
+	}
+	// Only a booking party may open the escrow — and only once the provider
+	// has accepted (pending bookings have no committed counterparties;
+	// cancelled/declined/disputed/refunded are terminal for escrow).
+	if callerUserID.String() != b.BookerUserID && callerUserID.String() != b.ProviderUserID {
+		return nil, ErrEscrowParty
+	}
+	if b.Status != "confirmed" {
+		return nil, fmt.Errorf("%w: booking %s", ErrEscrowState, b.Status)
 	}
 	var buyerUID, sellerUID pgtype.UUID
 	if err := buyerUID.Scan(b.BookerUserID); err != nil {
@@ -70,11 +79,30 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, asse
 	if asset == "" {
 		asset = AssetUSDC
 	}
+	if ok := func() bool {
+		for _, a := range s.assetList(ctx) {
+			if a == asset {
+				return true
+			}
+		}
+		return false
+	}(); !ok {
+		return nil, fmt.Errorf("%w: unsupported asset %s", ErrEscrowState, asset)
+	}
+
+	// The arbiter must be a real key before any vault is created — an empty
+	// ref would build a 2-of-3 that can never resolve a dispute or timeout.
+	if s.arbiterAddress(ctx) == "" {
+		return nil, fmt.Errorf("stablecoin: escrow_arbiter_ref unset")
+	}
 
 	// Platform share on the release (§128.8) — computed at prepare-time so
 	// all parties see the split before funding.
 	shareBps := s.settings.GetIntOr(ctx, "stablecoin.platform_share_bps", 1500)
 	fee := b.TotalPrice * int64(shareBps) / 10_000
+	if b.TotalPrice <= 0 || fee < 0 || fee >= b.TotalPrice {
+		return nil, fmt.Errorf("%w: booking amount %d / fee %d", ErrEscrowState, b.TotalPrice, fee)
+	}
 
 	e, err := s.store.InsertEscrow(ctx, Escrow{
 		BookingID:      b.ID,
@@ -130,11 +158,31 @@ func (s *Service) arbiterAddress(ctx context.Context) string {
 	return s.settings.GetStringOr(ctx, "stablecoin.escrow_arbiter_ref", "")
 }
 
+// partyTo checks the caller is buyer or seller on the escrow — every
+// member-side escrow mutation goes through this gate.
+func (s *Service) partyTo(ctx context.Context, e *Escrow, callerUserID pgtype.UUID) error {
+	buyer, bErr := s.walletByID(ctx, e.BuyerWalletID)
+	seller, sErr := s.walletByID(ctx, e.SellerWalletID)
+	if bErr != nil || sErr != nil {
+		return ErrEscrowParty
+	}
+	if buyer.UserID != callerUserID.String() && seller.UserID != callerUserID.String() {
+		return ErrEscrowParty
+	}
+	return nil
+}
+
 // RegisterEscrowVault records the client-derived Squads PDA after the
-// vault exists onchain.
-func (s *Service) RegisterEscrowVault(ctx context.Context, escrowID pgtype.UUID, vaultAddr string) error {
+// vault exists onchain — caller must be a booking party.
+func (s *Service) RegisterEscrowVault(ctx context.Context, escrowID pgtype.UUID, callerUserID pgtype.UUID, vaultAddr string) error {
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
+		return err
+	}
+	if e == nil {
+		return ErrEscrowNotFound
+	}
+	if err := s.partyTo(ctx, e, callerUserID); err != nil {
 		return err
 	}
 	if e.State != EscrowFunding {
@@ -146,9 +194,15 @@ func (s *Service) RegisterEscrowVault(ctx context.Context, escrowID pgtype.UUID,
 // ConfirmEscrowFunded marks the vault funded — the buyer's passkey-signed
 // funding tx landed (verified via the mirrored onchain event / client sig).
 // Sets the buyer confirmation deadline.
-func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID, fundedSig string) error {
+func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID, callerUserID pgtype.UUID, fundedSig string) error {
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
+		return err
+	}
+	if e == nil {
+		return ErrEscrowNotFound
+	}
+	if err := s.partyTo(ctx, e, callerUserID); err != nil {
 		return err
 	}
 	if e.State != EscrowFunding {
@@ -190,6 +244,9 @@ func (s *Service) ConfirmRelease(ctx context.Context, escrowID pgtype.UUID, call
 	if err != nil {
 		return err
 	}
+	if e == nil {
+		return ErrEscrowNotFound
+	}
 	// Strict: a disputed escrow can only resolve through arbiter ruling —
 	// the buyer must not release unilaterally once a dispute is open.
 	if e.State != EscrowFunded {
@@ -212,16 +269,14 @@ func (s *Service) DisputeEscrow(ctx context.Context, escrowID pgtype.UUID, calle
 	if err != nil {
 		return err
 	}
+	if e == nil {
+		return ErrEscrowNotFound
+	}
 	if e.State != EscrowFunded {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
-	buyer, bErr := s.walletByID(ctx, e.BuyerWalletID)
-	seller, sErr := s.walletByID(ctx, e.SellerWalletID)
-	if bErr != nil || sErr != nil {
-		return ErrEscrowParty
-	}
-	if buyer.UserID != callerUserID.String() && seller.UserID != callerUserID.String() {
-		return ErrEscrowParty
+	if err := s.partyTo(ctx, e, callerUserID); err != nil {
+		return err
 	}
 	// Record who opened the dispute and why — the arbiter reads it.
 	return s.store.SetEscrowState(ctx, escrowID, EscrowDisputed, "", "", &ArbiterDecision{
@@ -241,7 +296,10 @@ func (s *Service) ReleaseEscrow(ctx context.Context, escrowID pgtype.UUID, decis
 	if err != nil {
 		return fmt.Errorf("stablecoin: escrow: %w", err)
 	}
-	if e == nil || e.State != EscrowFunded && e.State != EscrowDisputed {
+	if e == nil {
+		return ErrEscrowNotFound
+	}
+	if e.State != EscrowFunded && e.State != EscrowDisputed {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
 	newState := EscrowReleased
@@ -260,6 +318,9 @@ func (s *Service) ArbitrateEscrow(ctx context.Context, escrowID pgtype.UUID, dec
 	e, err := s.store.GetEscrow(ctx, escrowID)
 	if err != nil {
 		return err
+	}
+	if e == nil {
+		return ErrEscrowNotFound
 	}
 	if e.State != EscrowDisputed {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)

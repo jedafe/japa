@@ -820,3 +820,98 @@ func TestSignerExpiringWithin(t *testing.T) {
 		}
 	}
 }
+
+// ── Escrow party gates (member-side mutations) ──────────────────────────
+
+func TestEscrowPartyGates(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller, stranger := newUUID(), newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowFunding
+	eid := uuidOf(t, e.ID)
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	if err := svc.RegisterEscrowVault(context.Background(), eid, stranger, "vault-1"); !errors.Is(err, ErrEscrowParty) {
+		t.Fatalf("stranger vault registration = %v, want ErrEscrowParty", err)
+	}
+	if err := svc.ConfirmEscrowFunded(context.Background(), eid, stranger, "sig"); !errors.Is(err, ErrEscrowParty) {
+		t.Fatalf("stranger funded confirm = %v, want ErrEscrowParty", err)
+	}
+	// A party may proceed.
+	if err := svc.RegisterEscrowVault(context.Background(), eid, buyer, "vault-1"); err != nil {
+		t.Fatalf("buyer vault registration: %v", err)
+	}
+}
+
+func TestPrepareEscrowGates(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller, stranger := newUUID(), newUUID(), newUUID()
+	for _, u := range []pgtype.UUID{buyer, seller} {
+		w := &Wallet{
+			ID: newUUID().String(), UserID: u.String(), Address: "addr-" + u.String()[:8],
+		}
+		st.walletByUser[u.String()] = w
+		st.walletByID[w.ID] = w
+	}
+	bookingID := newUUID()
+	mk := func(status string) {
+		st.bookings[bookingID.String()] = &ServiceBooking{
+			ID: bookingID.String(), BookerUserID: buyer.String(), ProviderUserID: seller.String(),
+			TotalPrice: 1000, Status: status,
+		}
+	}
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{
+		strs: map[string]string{"stablecoin.escrow_arbiter_ref": "arb-key", "stablecoin.assets": `["usdc"]`},
+	})
+
+	mk("pending")
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, buyer, "usdc"); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("pending booking = %v, want ErrEscrowState", err)
+	}
+	mk("cancelled")
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, buyer, "usdc"); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("cancelled booking = %v, want ErrEscrowState", err)
+	}
+	mk("confirmed")
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, stranger, "usdc"); !errors.Is(err, ErrEscrowParty) {
+		t.Fatalf("stranger prepare = %v, want ErrEscrowParty", err)
+	}
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, buyer, "eurc"); err == nil {
+		t.Fatal("unsupported asset accepted")
+	}
+	setup, err := svc.PrepareEscrow(context.Background(), bookingID, buyer, "usdc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setup.ArbiterAddress != "arb-key" || setup.FeeMinor != 150 || setup.AmountMinor != 850 {
+		t.Fatalf("setup = %+v", setup)
+	}
+	// Idempotent per booking.
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, seller, "usdc"); err != nil {
+		t.Fatalf("idempotent re-prepare: %v", err)
+	}
+}
+
+func TestPrepareEscrowFailsWithoutArbiter(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	for _, u := range []pgtype.UUID{buyer, seller} {
+		w := &Wallet{ID: newUUID().String(), UserID: u.String()}
+		st.walletByUser[u.String()] = w
+		st.walletByID[w.ID] = w
+	}
+	bookingID := newUUID()
+	st.bookings[bookingID.String()] = &ServiceBooking{
+		ID: bookingID.String(), BookerUserID: buyer.String(), ProviderUserID: seller.String(),
+		TotalPrice: 1000, Status: "confirmed",
+	}
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{
+		strs: map[string]string{"stablecoin.escrow_arbiter_ref": ""},
+	})
+	if _, err := svc.PrepareEscrow(context.Background(), bookingID, buyer, ""); err == nil {
+		t.Fatal("escrow prepared with no arbiter key — 2-of-3 could never arbitrate")
+	}
+}
