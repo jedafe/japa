@@ -159,7 +159,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 			w, _ = s.store.GetWalletByID(ctx, wid)
 		}
 		if w != nil {
-			s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature)
+			s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature, ev.CounterAddr)
 		}
 	}
 	// Onchain escrow transitions — the chain event is the authoritative
@@ -169,7 +169,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 	// ambiguous).
 	switch kind {
 	case ActivityEscrowFunding:
-		s.completeEscrowFunding(ctx, walletID, ev.TxSignature, ev.CounterAddr)
+		s.completeEscrowFunding(ctx, walletID, ev.TxSignature, ev.CounterAddr, ev.AmountMinor)
 	case ActivityEscrowRelease:
 		s.completeEscrowRelease(ctx, walletID, ev.TxSignature, ev.CounterAddr)
 	}
@@ -205,15 +205,17 @@ func classifyEvent(ev ProviderEvent) (kind, direction string) {
 }
 
 func normalizeAsset(a string) string {
-	switch a {
-	case AssetUSDC, AssetUSDT, "solana:usdc", "solana:usdt":
-		if len(a) > 7 {
-			return a[7:]
-		}
-		return a
-	default:
+	a = strings.ToLower(strings.TrimSpace(a))
+	if a == "" {
 		return AssetUSDC
 	}
+	// Strip a "chain:" prefix ("solana:usdc" → "usdc") but keep unknown
+	// assets labeled as themselves — defaulting to usdc would mislabel
+	// foreign tokens and miscount them in balances/feeds.
+	if i := strings.Index(a, ":"); i >= 0 && i+1 < len(a) {
+		return a[i+1:]
+	}
+	return a
 }
 
 // creditsPerUnit resolves credits-per-whole-unit for a currency from the

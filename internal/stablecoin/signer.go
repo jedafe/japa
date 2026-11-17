@@ -82,6 +82,10 @@ func (s *Service) Settle(ctx context.Context, in SettleInput) (TransferResult, e
 		}
 	}
 
+	if in.AmountMinor <= 0 {
+		return TransferResult{}, fmt.Errorf("stablecoin: settle amount must be positive")
+	}
+
 	// The fee leg lands on the hot treasury wallet (§128.5 — batched
 	// atomically with the recipient leg).
 	feeAddr := ""
@@ -108,22 +112,31 @@ func (s *Service) Settle(ctx context.Context, in SettleInput) (TransferResult, e
 // assertKnownRecipient enforces the app-level destination allowlist:
 // a member wallet address or a platform treasury wallet on this chain.
 func (s *Service) assertKnownRecipient(ctx context.Context, chain, addr string) error {
-	if addr == "" {
+	if !s.isKnownAddress(ctx, chain, addr) {
 		return ErrUnknownRecipient
+	}
+	return nil
+}
+
+// isKnownAddress reports whether addr resolves to a receivable member
+// wallet or a platform treasury wallet on this chain.
+func (s *Service) isKnownAddress(ctx context.Context, chain, addr string) bool {
+	if addr == "" {
+		return false
 	}
 	// Member wallet — must be able to receive: active is fine, and a
 	// provisioned (counterfactual) address can receive on Solana (deploy is
 	// lazy); suspended is compliance-held and must reject.
 	if w, err := s.store.GetWalletByAddress(ctx, addr); err == nil && w != nil &&
 		(w.Status == WalletStatusActive || w.Status == WalletStatusProvisioned) {
-		return nil
+		return true
 	}
 	for _, role := range []string{TreasuryHot, TreasuryCold} {
 		if t, err := s.store.GetTreasuryWallet(ctx, chain, role); err == nil && t != nil && t.Address == addr {
-			return nil
+			return true
 		}
 	}
-	return ErrUnknownRecipient
+	return false
 }
 
 // scopeCapFor returns the registered daily cap for an asset (0 = no scope).
@@ -177,7 +190,14 @@ func (s *Service) BuildMemberWithdrawal(ctx context.Context, userID pgtype.UUID,
 // member signs), so the fee is collected via the delegated signer once the
 // withdrawal lands — scope-capped, counted toward the same daily cap.
 // Called by MirrorActivity on confirmed withdrawal rows.
-func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMinor int64, asset, txSig string) {
+func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMinor int64, asset, txSig, counterAddr string) {
+	// Only truly external sends incur the withdrawal fee. A counterparty
+	// that resolves to a member wallet or treasury is a delegated op's leg
+	// — it already paid (batched settle fee), and taxing the fee leg itself
+	// would recursively charge a fee on the fee.
+	if s.isKnownAddress(ctx, w.Chain, counterAddr) {
+		return
+	}
 	bps := s.settings.GetIntOr(ctx, "stablecoin.withdrawal_fee_bps", 100)
 	fee := amountMinor * int64(bps) / 10_000
 	if fee <= 0 || w.DelegatedSigner == nil {

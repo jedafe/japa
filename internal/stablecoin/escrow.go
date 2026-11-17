@@ -44,6 +44,11 @@ type EscrowSetup struct {
 // call returns the existing escrow's setup.
 func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, callerUserID pgtype.UUID, asset string) (*EscrowSetup, error) {
 	if existing, err := s.store.GetEscrowByBooking(ctx, bookingID); err == nil && existing != nil {
+		// Idempotent re-prepare — but the party gate still applies: the
+		// setup response leaks both parties' wallet addresses and amounts.
+		if err := s.partyTo(ctx, existing, callerUserID); err != nil {
+			return nil, err
+		}
 		return s.setupFor(ctx, existing)
 	} else if err != nil && !errors.Is(err, ErrEscrowNotFound) {
 		return nil, fmt.Errorf("stablecoin: escrow lookup: %w", err)
@@ -201,6 +206,16 @@ func (s *Service) RegisterEscrowVault(ctx context.Context, escrowID pgtype.UUID,
 	if strings.HasPrefix(vaultAddr, "pending:") || len(vaultAddr) < 32 || strings.ContainsAny(vaultAddr, " 	\n") {
 		return fmt.Errorf("%w: invalid vault address", ErrEscrowState)
 	}
+	// A real vault is already registered — same address is an idempotent
+	// no-op, a different one is rejected: the Squads PDA encodes the member
+	// set (buyer/seller/arbiter), so swapping it mid-flight could point
+	// funding at a vault without the platform arbiter.
+	if e.VaultAddress != "" && !strings.HasPrefix(e.VaultAddress, "pending:") {
+		if e.VaultAddress == vaultAddr {
+			return nil
+		}
+		return fmt.Errorf("%w: vault already registered", ErrEscrowState)
+	}
 	return s.store.SetEscrowVaultAddress(ctx, escrowID, vaultAddr)
 }
 
@@ -221,19 +236,34 @@ func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID,
 	if e.State != EscrowFunding {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
+	// A claim with no signature is no claim at all — and without a real
+	// vault there is nowhere for funding to have landed.
+	if fundedSig == "" {
+		return fmt.Errorf("%w: funding signature required", ErrEscrowState)
+	}
+	if strings.HasPrefix(e.VaultAddress, "pending:") {
+		return fmt.Errorf("%w: vault not registered", ErrEscrowState)
+	}
 	// Verify the funding tx is visible to the provider before trusting the
-	// client-reported signature. Soft-fail on provider errors — the Squads
-	// vault itself enforces solvency at release (an empty vault can't pay),
-	// but a fabricated sig shouldn't mark the escrow funded.
+	// client-reported signature. A found sig must pay THIS vault at the
+	// full amount — a mismatched sig is a fabricated claim (an old transfer
+	// replayed as proof). Not-found stays soft — provider indexing lags.
 	buyer, berr := s.walletByID(ctx, e.BuyerWalletID)
-	if berr == nil && fundedSig != "" {
+	if berr == nil {
 		if events, _, perr := s.provider.Activity(ctx, buyer.Locator, ""); perr == nil {
 			seen := false
 			for _, ev := range events {
-				if ev.TxSignature == fundedSig {
-					seen = true
-					break
+				if ev.TxSignature != fundedSig {
+					continue
 				}
+				seen = true
+				if ev.CounterAddr != "" && ev.CounterAddr != e.VaultAddress {
+					return fmt.Errorf("%w: funding sig pays %s, not vault %s", ErrEscrowState, ev.CounterAddr, e.VaultAddress)
+				}
+				if ev.AmountMinor > 0 && ev.AmountMinor < e.AmountMinor+e.FeeMinor {
+					return fmt.Errorf("%w: funding sig covers %d minor, vault needs %d", ErrEscrowState, ev.AmountMinor, e.AmountMinor+e.FeeMinor)
+				}
+				break
 			}
 			if !seen {
 				slog.Warn("stablecoin: funded sig not visible to provider yet — accepting with flag",
@@ -406,9 +436,16 @@ func (s *Service) escrowForEvent(ctx context.Context, walletID, counterAddr stri
 // escrow_funding event on a party wallet is chain proof — stronger than the
 // client-reported sig in ConfirmEscrowFunded. Called by MirrorActivity on a
 // fresh insert only.
-func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig, counterAddr string) {
+func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig, counterAddr string, amountMinor int64) {
 	e := s.escrowForEvent(ctx, walletID, counterAddr)
 	if e == nil || e.State != EscrowFunding {
+		return
+	}
+	// Partial funding must not flip state — the vault needs the full seller
+	// share + fee for the release to pay out.
+	if amountMinor > 0 && amountMinor < e.AmountMinor+e.FeeMinor {
+		slog.Warn("stablecoin: escrow funding below required amount — staying in funding",
+			"escrow", e.ID, "amount", amountMinor, "required", e.AmountMinor+e.FeeMinor)
 		return
 	}
 	hours := s.settings.GetIntOr(ctx, "stablecoin.escrow_confirm_hours", 72)

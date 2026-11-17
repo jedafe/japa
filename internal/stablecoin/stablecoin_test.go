@@ -958,3 +958,153 @@ func TestPrepareEscrowFailsWithoutArbiter(t *testing.T) {
 		t.Fatal("escrow prepared with no arbiter key — 2-of-3 could never arbitrate")
 	}
 }
+
+func TestPrepareEscrowHidesSetupFromNonParty(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller, stranger := newUUID(), newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	// An existing escrow's setup (both parties' addresses + amounts) must
+	// not be enumerable by a non-party who knows the booking id.
+	if _, err := svc.PrepareEscrow(context.Background(), uuidOf(t, e.BookingID), stranger, "usdc"); !errors.Is(err, ErrEscrowParty) {
+		t.Fatalf("stranger re-prepare = %v, want ErrEscrowParty", err)
+	}
+}
+
+func TestWithdrawalFeeSkippedForDelegatedLegs(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	p := &fakeProvider{}
+	sender := newUUID()
+	w := &Wallet{
+		ID: newUUID().String(), UserID: sender.String(), Status: WalletStatusActive,
+		Chain: "solana", Locator: "loc",
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref"},
+	}
+	st.walletByID[w.ID] = w
+	member := &Wallet{ID: newUUID().String(), Status: WalletStatusActive, Address: "member-addr-9999"}
+	st.walletByAddr[member.Address] = member
+	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{Role: TreasuryHot, Chain: "solana", Address: "hot-addr"}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{ints: map[string]int{"stablecoin.withdrawal_fee_bps": 100}})
+	ctx := context.Background()
+
+	// Tip-settle recipient leg pays a member wallet — already fee'd in the
+	// batched op; mirroring it must not collect the withdrawal fee again.
+	if err := svc.MirrorActivity(ctx, ProviderEvent{
+		Type: "transfer_out", TxSignature: "tip-leg-1", Asset: "usdc",
+		AmountMinor: 10_000, CounterAddr: member.Address,
+	}, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The fee leg itself pays the treasury — taxing it would recurse.
+	if err := svc.MirrorActivity(ctx, ProviderEvent{
+		Type: "transfer_out", TxSignature: "fee-leg-1", Asset: "usdc",
+		AmountMinor: 500, CounterAddr: "hot-addr",
+	}, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.transfers) != 0 {
+		t.Fatalf("delegated legs were double-charged: %+v", p.transfers)
+	}
+	// A genuinely external send still collects.
+	if err := svc.MirrorActivity(ctx, ProviderEvent{
+		Type: "transfer_out", TxSignature: "ext-wd-1", Asset: "usdc",
+		AmountMinor: 10_000, CounterAddr: "external-addr",
+	}, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("external withdrawal fee legs = %d, want 1", len(p.transfers))
+	}
+}
+
+func TestRegisterEscrowVaultRejectsSwap(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowFunding
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	eid := uuidOf(t, e.ID)
+	vaultA := "VaultAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	vaultB := "VaultBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	ctx := context.Background()
+
+	if err := svc.RegisterEscrowVault(ctx, eid, buyer, vaultA); err != nil {
+		t.Fatalf("initial registration: %v", err)
+	}
+	if err := svc.RegisterEscrowVault(ctx, eid, buyer, vaultA); err != nil {
+		t.Fatalf("same-address re-registration must be idempotent: %v", err)
+	}
+	if err := svc.RegisterEscrowVault(ctx, eid, buyer, vaultB); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("vault swap = %v, want ErrEscrowState — the PDA encodes the member set", err)
+	}
+}
+
+func TestConfirmEscrowFundedVerification(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowFunding
+	e.VaultAddress = "VaultCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+	e.AmountMinor, e.FeeMinor = 8_500_000, 1_500_000
+	eid := uuidOf(t, e.ID)
+	p := &fakeProvider{activity: []ProviderEvent{
+		{Type: "transfer_out", TxSignature: "good-sig", AmountMinor: 10_000_000, CounterAddr: e.VaultAddress},
+		{Type: "transfer_out", TxSignature: "other-payee", AmountMinor: 10_000_000, CounterAddr: "someone-else"},
+		{Type: "transfer_out", TxSignature: "short-pay", AmountMinor: 5_000_000, CounterAddr: e.VaultAddress},
+	}}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	ctx := context.Background()
+
+	if err := svc.ConfirmEscrowFunded(ctx, eid, buyer, ""); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("empty funding sig = %v, want ErrEscrowState", err)
+	}
+	if err := svc.ConfirmEscrowFunded(ctx, eid, buyer, "other-payee"); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("sig paying a different address = %v, want ErrEscrowState", err)
+	}
+	if err := svc.ConfirmEscrowFunded(ctx, eid, buyer, "short-pay"); !errors.Is(err, ErrEscrowState) {
+		t.Fatalf("under-funded sig = %v, want ErrEscrowState", err)
+	}
+	if err := svc.ConfirmEscrowFunded(ctx, eid, buyer, "good-sig"); err != nil {
+		t.Fatalf("valid funding confirm: %v", err)
+	}
+	if e.State != EscrowFunded {
+		t.Fatalf("state = %s, want funded", e.State)
+	}
+}
+
+func TestMirrorPartialEscrowFundingStaysFunding(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	buyer, seller := newUUID(), newUUID()
+	e := fundedEscrow(st, buyer.String(), seller.String())
+	e.State = EscrowFunding
+	e.VaultAddress = "VaultDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+	e.AmountMinor, e.FeeMinor = 8_500_000, 1_500_000
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+	ctx := context.Background()
+
+	// A partial transfer into the vault must not flip the escrow funded —
+	// the release would pay out short.
+	if err := svc.MirrorActivity(ctx, ProviderEvent{
+		Type: "escrow_funding", TxSignature: "partial-1", Asset: "usdc",
+		AmountMinor: 5_000_000, CounterAddr: e.VaultAddress,
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowFunding {
+		t.Fatalf("partial funding flipped state to %s", e.State)
+	}
+	if err := svc.MirrorActivity(ctx, ProviderEvent{
+		Type: "escrow_funding", TxSignature: "full-1", Asset: "usdc",
+		AmountMinor: 10_000_000, CounterAddr: e.VaultAddress,
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.State != EscrowFunded {
+		t.Fatalf("full funding state = %s, want funded", e.State)
+	}
+}
