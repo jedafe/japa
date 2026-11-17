@@ -472,3 +472,20 @@ func isSignerCollectionTarget(targetID, actorURL string) bool {
 	}
 	return sameURLHost(targetID, actorURL) && strings.Contains(tu.Path, "/collections/")
 }
+
+// reapOrphanRemotePosts hard-deletes stored remote posts no warrant
+// covers — best-effort GC run after warrant-lapsing member actions
+// (remote unfollow, tag unsubscribe, federation disable). Rows are
+// remote projections: anything still needed re-ingests on the next
+// Create; remote_post_shares cascade. Non-fatal by contract — a GC
+// failure must never fail the member's action.
+func (s *Service) reapOrphanRemotePosts(ctx context.Context) {
+	n, err := s.store.write.DeleteOrphanRemotePosts(ctx)
+	if err != nil {
+		slog.Warn("federation: remote post GC failed", "error", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("federation: remote post GC", "deleted", n)
+	}
+}

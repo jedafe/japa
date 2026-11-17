@@ -45,7 +45,7 @@ func (s *Service) ensureInstanceActor(ctx context.Context) (gen.FederatedActor, 
 		return gen.FederatedActor{}, fmt.Errorf("federation: store not configured")
 	}
 	if a, err := s.store.actorByKind(ctx, ActorKindApplication); err == nil {
-		return a, nil
+		return s.repairActorURLs(ctx, a)
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return gen.FederatedActor{}, err
 	}
@@ -79,11 +79,59 @@ func (s *Service) ensureInstanceActor(ctx context.Context) (gen.FederatedActor, 
 		// Lost a concurrent mint (unique on actor_url / kind) — the winner's
 		// row is the answer.
 		if a2, rerr := s.store.actorByKind(ctx, ActorKindApplication); rerr == nil {
-			return a2, nil
+			return s.repairActorURLs(ctx, a2)
 		}
 		return gen.FederatedActor{}, fmt.Errorf("federation: instance actor create: %w", err)
 	}
 	return a, nil
+}
+
+// repairActorURLs self-heals rows minted while the API base URL was
+// unconfigured (legacy dev data, base-url changes): a relative @id makes
+// every derived id — activity ap_ids, the key id — unresolvable to
+// remotes. Every relative URL column re-bases onto the configured API
+// base (path preserved, so application/person/group URL families all
+// heal — shared inboxes stay shared); a relative public_key_id re-bases
+// the same way keeping its fragment, so the RSA pair is untouched.
+// Rows pass through untouched when the actor_url is already absolute
+// or when no absolute base is configured to repair to (a rewrite that
+// changes nothing is a write per read). Cached docs drop so the repair
+// serves immediately.
+func (s *Service) repairActorURLs(ctx context.Context, a gen.FederatedActor) (gen.FederatedActor, error) {
+	base := s.apiBase()
+	absolute := func(u string) bool {
+		return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
+	}
+	if absolute(a.ActorUrl) || !absolute(base) {
+		return a, nil
+	}
+	rebase := func(u string) string {
+		if u == "" || absolute(u) {
+			return u
+		}
+		if !strings.HasPrefix(u, "/") {
+			u = "/" + u
+		}
+		return base + u
+	}
+	row, err := s.store.write.UpdateFederatedActorURLs(ctx, gen.UpdateFederatedActorURLsParams{
+		ID:           a.ID,
+		ActorUrl:     rebase(a.ActorUrl),
+		PublicKeyID:  rebase(a.PublicKeyID),
+		InboxUrl:     rebase(a.InboxUrl),
+		OutboxUrl:    rebase(a.OutboxUrl),
+		FollowersUrl: rebase(a.FollowersUrl),
+		FollowingUrl: rebase(a.FollowingUrl),
+	})
+	if err != nil {
+		return gen.FederatedActor{}, fmt.Errorf("federation: actor url repair: %w", err)
+	}
+	if a.Kind == ActorKindApplication && s.vk != nil {
+		_ = s.vk.Del(ctx, "jc:fed:instance:doc").Err()
+	}
+	s.invalidateActorCache(ctx, a.PreferredUsername)
+	slog.Info("federation: actor urls repaired", "kind", a.Kind, "actor_url", row.ActorUrl)
+	return row, nil
 }
 
 // InstanceDocument serves GET /federation/instance — the Application doc
@@ -251,7 +299,7 @@ func (s *Service) ProvisionGroupActor(ctx context.Context, spaceID, adminID pgty
 	if existing, err := s.store.actorBySpaceID(ctx, space.ID); err == nil {
 		switch existing.Status {
 		case ActorStatusActive:
-			return existing, nil // already provisioned — idempotent
+			return s.repairActorURLs(ctx, existing) // already provisioned — idempotent (lazy URL heal)
 		case ActorStatusDisabled:
 			if err := s.store.setActorStatus(ctx, existing.ID, ActorStatusActive); err != nil {
 				return gen.FederatedActor{}, err

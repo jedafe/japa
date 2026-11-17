@@ -1314,3 +1314,33 @@ FROM remote_actors
 WHERE domain = @domain AND status = 'active'
   AND (shared_inbox_url IS NOT NULL OR inbox_url IS NOT NULL)
 LIMIT 1;
+
+-- name: DeleteOrphanRemotePosts :execrows
+-- Orphan GC (§126 tag discovery): a stored remote post lives only while
+-- some warrant covers it — ≥1 active-actor accepted outbound follow on
+-- the author (the ingest predicate) or an active tag subscription whose
+-- domain+tag match. Runs best-effort after warrant-lapsing member
+-- actions; federation_remote_post_shares cascades.
+DELETE FROM federation_remote_posts rp
+WHERE NOT EXISTS (
+    SELECT 1 FROM federation_follows ff
+    JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+    WHERE ff.remote_actor_id = rp.remote_actor_id
+      AND ff.direction = 'outbound' AND ff.status = 'accepted')
+  AND NOT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    JOIN remote_actors ra ON ra.id = rp.remote_actor_id
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower(ra.domain))
+      AND EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = ts.tag));
+
+-- name: UpdateFederatedActorURLs :one
+-- Self-repair for legacy rows minted before actor_url was absolute —
+-- rewrites the URL family from configured base (§126 instance actor).
+UPDATE federated_actors
+SET actor_url = @actor_url, public_key_id = @public_key_id,
+    inbox_url = @inbox_url, outbox_url = @outbox_url,
+    followers_url = @followers_url, following_url = @following_url,
+    updated_at = now()
+WHERE id = @id
+RETURNING *;

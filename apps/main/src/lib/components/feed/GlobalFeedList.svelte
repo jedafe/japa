@@ -60,7 +60,7 @@
 	let sentinel = $state<HTMLElement | null>(null);
 	let clientError = $state<string | null>(null);
 
-	let tagInput = $state(untrack(() => tag));
+	let tagInput = $state(untrack(() => (domain ? `${tag}@${domain}` : tag)));
 	let liveItems = $state<RemoteTimelineItem[]>([]);
 	let liveErrors = $state<{ domain: string; message: string }[]>([]);
 	let liveApiError = $state<string | null>(null);
@@ -73,7 +73,7 @@
 	// Live results deduped against stored posts and themselves (two
 	// instances can surface the same boosted status under different ids —
 	// ap_id is the stable remote identity when present).
-	const storedIds = $derived(new Set(items.map((i) => i.ap_id || i.id)));
+	const storedIds = $derived(new Set(items.map((i) => i.ap_id || i.url || i.id)));
 	const liveDeduped = $derived.by(() => {
 		const seen = new Set(storedIds);
 		return liveItems.filter((i) => {
@@ -192,7 +192,7 @@
 	function applyTag(raw: string) {
 		const url = new URL(page.url.href);
 		url.searchParams.set('tab', 'global');
-		const clean = raw.trim().replace(/^#/, '');
+		const clean = raw.trim().replace(/^[#@]+/, '');
 		const at = clean.indexOf('@');
 		const q = at > 0 ? clean.slice(0, at) : clean;
 		const d = at > 0 ? clean.slice(at + 1).trim().toLowerCase() : '';

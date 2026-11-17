@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
 )
@@ -31,8 +32,14 @@ import (
 // ErrTagSubscriptionLimit — member is at federation.tag_subscription_limit.
 var ErrTagSubscriptionLimit = errors.New("federation: tag subscription limit reached")
 
-// tagRe bounds subscription tags — lowercase ASCII like our own tags.
-var tagRe = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
+// ErrInvalidTag rejects tag input failing tagRe (after normalization) —
+// distinct from ErrInvalidTarget which describes an unresolvable actor.
+var ErrInvalidTag = errors.New("federation: invalid tag")
+
+// tagRe bounds subscription tags — unicode letters/digits/underscore so
+// non-ASCII hashtags (#, #déménagement) subscribe and search like
+// ASCII ones; the row CHECK bounds char_length only (PG ~ lacks \p{}).
+var tagRe = regexp.MustCompile(`^[\p{L}\p{N}_]{1,64}$`)
 
 // normalizeTagParam strips '#' and lowercases a caller-supplied tag —
 // filter inputs need no strict validation (a non-tag just matches
@@ -76,7 +83,7 @@ func (s *Service) ListTagSubscriptions(ctx context.Context, userID pgtype.UUID) 
 func (s *Service) SubscribeTag(ctx context.Context, userID pgtype.UUID, rawTag, rawDomain string) (TagSubscription, error) {
 	tag := normalizeTagParam(rawTag)
 	if !tagRe.MatchString(tag) {
-		return TagSubscription{}, ErrInvalidTarget
+		return TagSubscription{}, ErrInvalidTag
 	}
 	domain := strings.ToLower(strings.TrimSpace(rawDomain))
 	if domain != "" {
@@ -91,7 +98,11 @@ func (s *Service) SubscribeTag(ctx context.Context, userID pgtype.UUID, rawTag, 
 		return TagSubscription{}, err
 	}
 	limit := s.intSetting(ctx, "federation.tag_subscription_limit", 25)
-	if n, err := s.store.read.CountTagSubscriptionsByUser(ctx, userID); err == nil && int(n) >= limit {
+	n, err := s.store.read.CountTagSubscriptionsByUser(ctx, userID)
+	if err != nil {
+		return TagSubscription{}, fmt.Errorf("federation: count tag subscriptions: %w", err)
+	}
+	if int(n) >= limit {
 		return TagSubscription{}, ErrTagSubscriptionLimit
 	}
 	// Domain-scoped subs deliver Follow{Hashtag} — mint the activity id
@@ -151,8 +162,11 @@ func (s *Service) UnsubscribeTag(ctx context.Context, userID, subID pgtype.UUID)
 	row, err := s.store.read.GetTagSubscriptionByID(ctx, gen.GetTagSubscriptionByIDParams{
 		ID: subID, UserID: userID,
 	})
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
+	}
+	if err != nil {
+		return err
 	}
 	if row.Domain != "" && row.FollowApID != nil && *row.FollowApID != "" {
 		inst, ierr := s.ensureInstanceActor(ctx)
@@ -199,6 +213,7 @@ func (s *Service) UnsubscribeTag(ctx context.Context, userID, subID pgtype.UUID)
 	if n == 0 {
 		return ErrNotFound
 	}
+	s.reapOrphanRemotePosts(ctx)
 	return nil
 }
 
@@ -236,7 +251,7 @@ type RemoteSearchError struct {
 func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTag, rawDomain string) (RemoteSearchResult, error) {
 	tag := normalizeTagParam(rawTag)
 	if !tagRe.MatchString(tag) {
-		return RemoteSearchResult{}, ErrInvalidTarget
+		return RemoteSearchResult{}, ErrInvalidTag
 	}
 	if _, err := s.memberActor(ctx, userID); err != nil {
 		return RemoteSearchResult{}, err
@@ -318,9 +333,43 @@ type mastodonStatus struct {
 	} `json:"account"`
 }
 
-// fetchTagTimeline GETs one instance's Mastodon-style public tag
-// timeline through the SSRF-guarded client and normalizes statuses.
+// fetchTagTimeline serves one instance's tag results through a short
+// per-(domain,tag) Valkey cache (jc:fed:tagsearch:*) — successes and
+// failures alike, a courtesy window for remote hosts. The fetch itself
+// is fetchTagTimelineRaw.
 func (s *Service) fetchTagTimeline(ctx context.Context, domain, tag string) ([]RemoteTimelineItem, error) {
+	ttl := time.Duration(s.intSetting(ctx, "federation.remote_search_cache_ttl_ms", 60000)) * time.Millisecond
+	key := "jc:fed:tagsearch:" + domain + ":" + tag
+	if s.vk != nil && ttl > 0 {
+		if raw, err := s.vk.Get(ctx, key).Bytes(); err == nil {
+			var cached struct {
+				Items   []RemoteTimelineItem `json:"items"`
+				Message string               `json:"message"`
+			}
+			if json.Unmarshal(raw, &cached) == nil {
+				if cached.Message != "" {
+					return nil, errors.New(cached.Message)
+				}
+				return cached.Items, nil
+			}
+		}
+	}
+	items, err := s.fetchTagTimelineRaw(ctx, domain, tag)
+	if s.vk != nil && ttl > 0 {
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		if raw, merr := json.Marshal(map[string]any{"items": items, "message": msg}); merr == nil {
+			_ = s.vk.Set(ctx, key, raw, ttl).Err()
+		}
+	}
+	return items, err
+}
+
+// fetchTagTimelineRaw GETs one instance's Mastodon-style public tag
+// timeline through the SSRF-guarded client and normalizes statuses.
+func (s *Service) fetchTagTimelineRaw(ctx context.Context, domain, tag string) ([]RemoteTimelineItem, error) {
 	raw := fmt.Sprintf("https://%s/api/v1/timelines/tag/%s?limit=10", domain, url.PathEscape(tag))
 	body, err := s.fetchAP(ctx, raw)
 	if err != nil {

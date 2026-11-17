@@ -951,6 +951,10 @@ func (s *Service) DisableFederation(ctx context.Context, userID pgtype.UUID) (Fe
 		slog.Warn("federation: actor delete fanout failed", "actor_id", actor.ID.String(), "error", delErr)
 	}
 
+	// Disable lapses every warrant this actor held — follows require an
+	// active local actor — so orphaned remote posts get reaped.
+	s.reapOrphanRemotePosts(ctx)
+
 	return s.statusFor(ctx, actor, user.Username), nil
 }
 

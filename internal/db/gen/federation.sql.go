@@ -559,6 +559,34 @@ func (q *Queries) DeleteInstanceBlock(ctx context.Context, id pgtype.UUID) error
 	return err
 }
 
+const deleteOrphanRemotePosts = `-- name: DeleteOrphanRemotePosts :execrows
+DELETE FROM federation_remote_posts rp
+WHERE NOT EXISTS (
+    SELECT 1 FROM federation_follows ff
+    JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+    WHERE ff.remote_actor_id = rp.remote_actor_id
+      AND ff.direction = 'outbound' AND ff.status = 'accepted')
+  AND NOT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    JOIN remote_actors ra ON ra.id = rp.remote_actor_id
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower(ra.domain))
+      AND EXISTS (SELECT 1 FROM unnest(rp.hashtags) ht WHERE lower(ht) = ts.tag))
+`
+
+// Orphan GC (§126 tag discovery): a stored remote post lives only while
+// some warrant covers it — ≥1 active-actor accepted outbound follow on
+// the author (the ingest predicate) or an active tag subscription whose
+// domain+tag match. Runs best-effort after warrant-lapsing member
+// actions; federation_remote_post_shares cascades.
+func (q *Queries) DeleteOrphanRemotePosts(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrphanRemotePosts)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOutboundFollowMirror = `-- name: DeleteOutboundFollowMirror :execrows
 DELETE FROM follows
 WHERE follower_id = $1
@@ -4288,6 +4316,64 @@ func (q *Queries) UpdateFederatedActorStatusFrom(ctx context.Context, arg Update
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateFederatedActorURLs = `-- name: UpdateFederatedActorURLs :one
+UPDATE federated_actors
+SET actor_url = $1, public_key_id = $2,
+    inbox_url = $3, outbox_url = $4,
+    followers_url = $5, following_url = $6,
+    updated_at = now()
+WHERE id = $7
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at
+`
+
+type UpdateFederatedActorURLsParams struct {
+	ActorUrl     string      `json:"actor_url"`
+	PublicKeyID  string      `json:"public_key_id"`
+	InboxUrl     string      `json:"inbox_url"`
+	OutboxUrl    string      `json:"outbox_url"`
+	FollowersUrl string      `json:"followers_url"`
+	FollowingUrl string      `json:"following_url"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+// Self-repair for legacy rows minted before actor_url was absolute —
+// rewrites the URL family from configured base (§126 instance actor).
+func (q *Queries) UpdateFederatedActorURLs(ctx context.Context, arg UpdateFederatedActorURLsParams) (FederatedActor, error) {
+	row := q.db.QueryRow(ctx, updateFederatedActorURLs,
+		arg.ActorUrl,
+		arg.PublicKeyID,
+		arg.InboxUrl,
+		arg.OutboxUrl,
+		arg.FollowersUrl,
+		arg.FollowingUrl,
+		arg.ID,
+	)
+	var i FederatedActor
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ActorUrl,
+		&i.PreferredUsername,
+		&i.PublicKeyPem,
+		&i.PrivateKeyEnc,
+		&i.PublicKeyID,
+		&i.Status,
+		&i.InboxUrl,
+		&i.OutboxUrl,
+		&i.FollowersUrl,
+		&i.FollowingUrl,
+		&i.ManuallyApprovesFollowers,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.KeyRotatedAt,
+		&i.Kind,
+		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
+	)
+	return i, err
 }
 
 const updateFederationDeliveryStatus = `-- name: UpdateFederationDeliveryStatus :exec

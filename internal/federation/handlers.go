@@ -74,6 +74,8 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_target", "Target does not resolve to a remote actor")
 	case errors.Is(err, ErrMoveTooSoon):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "move_too_soon", "A migration already ran inside the cooldown window")
+	case errors.Is(err, ErrInvalidTag):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_tag", "Tag must be 1-64 letters, digits or underscore")
 	case errors.Is(err, ErrTagSubscriptionLimit):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "tag_subscription_limit", "Tag subscription limit reached")
 	case errors.Is(err, ErrMoveNotConfirmed):

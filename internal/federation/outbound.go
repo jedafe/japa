@@ -58,7 +58,7 @@ func (s *Service) memberActor(ctx context.Context, userID pgtype.UUID) (gen.Fede
 	if actor.Status != ActorStatusActive {
 		return actor, ErrNotFederated
 	}
-	return actor, nil
+	return s.repairActorURLs(ctx, actor)
 }
 
 // resolveTargetURL turns the member's freeform target into an actor URL:
@@ -307,6 +307,7 @@ func (s *Service) UnfollowRemote(ctx context.Context, userID, remoteActorID pgty
 	}); err != nil {
 		slog.Warn("federation: unfollow mirror delete failed", "error", err)
 	}
+	s.reapOrphanRemotePosts(ctx)
 	return nil
 }
 
