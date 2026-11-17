@@ -319,7 +319,8 @@
 						<input
 							id="curr-rate"
 							type="number"
-							min="1"
+							min="0.00000001"
+							step="any"
 							bind:value={formData.credits_per_unit}
 							class="border-border-input bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						/>

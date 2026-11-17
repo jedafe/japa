@@ -65,13 +65,14 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 			div *= 10
 		}
 		gross := int64(math.Round(float64(amount) * cur.CreditsPerUnit / float64(div)))
-		if gross < 1 {
-			// Platform floor (§125): a tip must settle at least 1 credit —
-			// weak-currency amounts can round to zero (NGN 0.065/₦).
-			return CreateTipResult{}, ErrBelowMinimum
-		}
 		feeCredits = gross * int64(s.feePercent(ctx)) / 100
 		netCredits = gross - feeCredits
+		if netCredits < 1 {
+			// Platform floor (§125): the recipient must net at least 1 credit —
+			// weak-currency amounts can round to zero (NGN 0.065/₦), and a
+			// 100% fee config would zero the net on any amount.
+			return CreateTipResult{}, ErrBelowMinimum
+		}
 	}
 
 	tip, err := s.store.insertTip(ctx, gen.InsertTipParams{

@@ -310,10 +310,15 @@ func TestDBFiatTipOneCreditFloor(t *testing.T) {
 	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 	svc.payments = pay
 
-	// ₦7 (700 kobo) at ~0.065 → 0.46 credits → rounds to 0 → reject.
+	// Amounts are derived from the live rate so the test survives rate
+	// updates: ~0.4 credits → rounds to 0 → reject before any payment.
+	lowAmt := int64(0.4 * 100 / ngnCPU)
+	if lowAmt < 1 {
+		t.Skipf("NGN rate %v too high to craft a sub-credit tip in minor units", ngnCPU)
+	}
 	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
-		Method: "stripe", FiatAmount: 700, FiatCurrency: "NGN",
+		Method: "stripe", FiatAmount: lowAmt, FiatCurrency: "NGN",
 	}, "")
 	if !errors.Is(err, ErrBelowMinimum) {
 		t.Fatalf("sub-1-credit tip: got %v, want ErrBelowMinimum", err)
@@ -322,16 +327,17 @@ func TestDBFiatTipOneCreditFloor(t *testing.T) {
 		t.Fatalf("payment created for a tip that never converts to a credit")
 	}
 
-	// ₦20 (2000 kobo) → ~1.3 → 1 credit gross → allowed through to insert+pay.
+	// ~1.2 credits → rounds to ≥1 → allowed through to insert+pay.
+	okAmt := int64(math.Ceil(1.2 * 100 / ngnCPU))
 	res, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
-		Method: "stripe", FiatAmount: 2000, FiatCurrency: "NGN",
+		Method: "stripe", FiatAmount: okAmt, FiatCurrency: "NGN",
 	}, "")
 	if err != nil {
 		t.Fatalf("1-credit tip rejected: %v", err)
 	}
-	if res.Tip.NetCredits != 1 {
-		t.Fatalf("net: got %d, want 1", res.Tip.NetCredits)
+	if res.Tip.NetCredits < 1 {
+		t.Fatalf("net: got %d, want >= 1", res.Tip.NetCredits)
 	}
 	if pay.called != 1 {
 		t.Fatalf("payment not created for a valid tip")
