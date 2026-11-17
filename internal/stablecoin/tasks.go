@@ -211,6 +211,11 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return err
 	}
+	if rw == nil {
+		// Recipient never provisioned — retry lets a later-provisioned
+		// wallet still receive; deadletter after retry budget flags ops.
+		return fmt.Errorf("%s: recipient wallet not provisioned", TaskTipSettleStablecoin)
+	}
 	// Settle from the sender's wallet: net credits → recipient, fee leg →
 	// treasury hot. Settle enforces killswitch + per-wallet daily cap.
 	asset := "usdc"

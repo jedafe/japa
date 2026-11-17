@@ -226,5 +226,13 @@ ORDER BY created_at ASC;
 SELECT * FROM service_escrows
 WHERE (buyer_wallet_id = @wallet_id OR seller_wallet_id = @wallet_id)
   AND state IN ('funding', 'funded', 'disputed')
-ORDER BY id DESC
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetEscrowByVault :one
+-- Precise mirror match: an escrow_funding/escrow_release event's
+-- counterparty is the Squads vault — the authoritative join, unlike the
+-- live-by-wallet heuristic which is ambiguous on multi-escrow wallets.
+SELECT * FROM service_escrows
+WHERE vault_address = @vault_address
 LIMIT 1;

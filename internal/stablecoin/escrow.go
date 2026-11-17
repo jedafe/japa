@@ -375,17 +375,33 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 	return nil
 }
 
+// escrowForEvent resolves which escrow a mirrored event belongs to: the
+// Squads vault counterparty is the precise join; the live-by-wallet lookup
+// is the fallback when the provider omits a counterparty (tolerant decode).
+func (s *Service) escrowForEvent(ctx context.Context, walletID, counterAddr string) *Escrow {
+	if counterAddr != "" && !strings.HasPrefix(counterAddr, "pending:") {
+		if e, err := s.store.GetEscrowByVault(ctx, counterAddr); err == nil && e != nil {
+			return e
+		}
+	}
+	wid, err := pgUUID(walletID)
+	if err != nil {
+		return nil
+	}
+	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
+	if err != nil {
+		return nil
+	}
+	return e
+}
+
 // completeEscrowFunding is the mirror-driven funding transition: a mirrored
 // escrow_funding event on a party wallet is chain proof — stronger than the
 // client-reported sig in ConfirmEscrowFunded. Called by MirrorActivity on a
 // fresh insert only.
-func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig string) {
-	wid, err := pgUUID(walletID)
-	if err != nil {
-		return
-	}
-	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
-	if err != nil || e == nil || e.State != EscrowFunding {
+func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig, counterAddr string) {
+	e := s.escrowForEvent(ctx, walletID, counterAddr)
+	if e == nil || e.State != EscrowFunding {
 		return
 	}
 	hours := s.settings.GetIntOr(ctx, "stablecoin.escrow_confirm_hours", 72)
@@ -403,13 +419,9 @@ func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig strin
 // mirrored escrow_release event carries the executed Squads signature the
 // authorize-side calls can't supply. Arbiter rulings decide direction;
 // everything else releases to the seller.
-func (s *Service) completeEscrowRelease(ctx context.Context, walletID, sig string) {
-	wid, err := pgUUID(walletID)
-	if err != nil {
-		return
-	}
-	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
-	if err != nil || e == nil || (e.State != EscrowFunded && e.State != EscrowDisputed) {
+func (s *Service) completeEscrowRelease(ctx context.Context, walletID, sig, counterAddr string) {
+	e := s.escrowForEvent(ctx, walletID, counterAddr)
+	if e == nil || (e.State != EscrowFunded && e.State != EscrowDisputed) {
 		return
 	}
 	eid, err := pgUUID(e.ID)

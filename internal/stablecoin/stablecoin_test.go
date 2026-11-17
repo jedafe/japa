@@ -198,6 +198,14 @@ func (f *fakeStore) GetEscrowByBooking(_ context.Context, b pgtype.UUID) (*Escro
 	}
 	return nil, nil
 }
+func (f *fakeStore) GetEscrowByVault(_ context.Context, vault string) (*Escrow, error) {
+	for _, e := range f.escrows {
+		if e.VaultAddress == vault {
+			return e, nil
+		}
+	}
+	return nil, ErrEscrowNotFound
+}
 func (f *fakeStore) GetLiveEscrowByWallet(_ context.Context, w pgtype.UUID) (*Escrow, error) {
 	for _, e := range f.escrows {
 		if (e.BuyerWalletID == w.String() || e.SellerWalletID == w.String()) &&

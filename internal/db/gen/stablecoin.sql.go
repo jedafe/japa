@@ -56,11 +56,43 @@ func (q *Queries) DecideTreasurySweep(ctx context.Context, arg DecideTreasurySwe
 	return i, err
 }
 
+const getEscrowByVault = `-- name: GetEscrowByVault :one
+SELECT id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at FROM service_escrows
+WHERE vault_address = $1
+LIMIT 1
+`
+
+// Precise mirror match: an escrow_funding/escrow_release event's
+// counterparty is the Squads vault — the authoritative join, unlike the
+// live-by-wallet heuristic which is ambiguous on multi-escrow wallets.
+func (q *Queries) GetEscrowByVault(ctx context.Context, vaultAddress string) (ServiceEscrow, error) {
+	row := q.db.QueryRow(ctx, getEscrowByVault, vaultAddress)
+	var i ServiceEscrow
+	err := row.Scan(
+		&i.ID,
+		&i.BookingID,
+		&i.BuyerWalletID,
+		&i.SellerWalletID,
+		&i.VaultAddress,
+		&i.Asset,
+		&i.AmountMinor,
+		&i.FeeMinor,
+		&i.State,
+		&i.FundedSig,
+		&i.ReleaseSig,
+		&i.ConfirmationDeadline,
+		&i.ArbiterDecision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLiveEscrowByWallet = `-- name: GetLiveEscrowByWallet :one
 SELECT id, booking_id, buyer_wallet_id, seller_wallet_id, vault_address, asset, amount_minor, fee_minor, state, funded_sig, release_sig, confirmation_deadline, arbiter_decision, created_at, updated_at FROM service_escrows
 WHERE (buyer_wallet_id = $1 OR seller_wallet_id = $1)
   AND state IN ('funding', 'funded', 'disputed')
-ORDER BY id DESC
+ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
 

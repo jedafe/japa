@@ -162,12 +162,15 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		}
 	}
 	// Onchain escrow transitions — the chain event is the authoritative
-	// proof; the client-reported calls are the optimistic path.
+	// proof; the client-reported calls are the optimistic path. The event's
+	// counterparty is the Squads vault — match it before falling back to
+	// the wallet heuristic (multi-escrow wallets make wallet-only lookup
+	// ambiguous).
 	switch kind {
 	case ActivityEscrowFunding:
-		s.completeEscrowFunding(ctx, walletID, ev.TxSignature)
+		s.completeEscrowFunding(ctx, walletID, ev.TxSignature, ev.CounterAddr)
 	case ActivityEscrowRelease:
-		s.completeEscrowRelease(ctx, walletID, ev.TxSignature)
+		s.completeEscrowRelease(ctx, walletID, ev.TxSignature, ev.CounterAddr)
 	}
 	return nil
 }

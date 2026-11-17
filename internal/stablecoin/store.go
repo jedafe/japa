@@ -402,6 +402,20 @@ func (st *Store) GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID
 	return domainEscrow(row), nil
 }
 
+// GetEscrowByVault returns the escrow whose Squads vault matches —
+// the precise join for mirrored escrow_funding/escrow_release events
+// (the event counterparty IS the vault).
+func (st *Store) GetEscrowByVault(ctx context.Context, vaultAddr string) (*Escrow, error) {
+	row, err := st.q.GetEscrowByVault(ctx, vaultAddr)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrEscrowNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: escrow by vault: %w", err)
+	}
+	return domainEscrow(row), nil
+}
+
 // InsertEscrow persists a new escrow vault record (state=funding).
 func (st *Store) InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error) {
 	booking, err := pgUUID(e.BookingID)

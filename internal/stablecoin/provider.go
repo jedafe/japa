@@ -73,6 +73,10 @@ type TransferInput struct {
 	FeeMinor      int64
 	Idempotency   string // caller idempotency key (Rule 9)
 	Reference     string // internal correlation (tip id, booking id, ...)
+	// Signer is the delegated-signer address the op executes under —
+	// wired as signer "external-wallet:<addr>" so the provider applies
+	// that signer's scopes (cap, recipients, expiry).
+	Signer string
 }
 
 // WithdrawalInput requests a member-signable send.

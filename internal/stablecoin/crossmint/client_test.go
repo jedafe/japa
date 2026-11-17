@@ -20,6 +20,7 @@ type req struct {
 	method string
 	path   string
 	apiKey string
+	idem   string
 	body   map[string]any
 }
 
@@ -33,7 +34,7 @@ func server(t *testing.T, responses map[string]string, calls *[]req) *httptest.S
 		if len(data) > 0 {
 			_ = json.Unmarshal(data, &body)
 		}
-		*calls = append(*calls, req{method: r.Method, path: r.URL.Path, apiKey: r.Header.Get("X-API-KEY"), body: body})
+		*calls = append(*calls, req{method: r.Method, path: r.URL.Path, apiKey: r.Header.Get("X-API-KEY"), idem: r.Header.Get("x-idempotency-key"), body: body})
 		for suffix, resp := range responses {
 			if len(r.URL.Path) >= len(suffix) && r.URL.Path[len(r.URL.Path)-len(suffix):] == suffix {
 				w.Header().Set("Content-Type", "application/json")
@@ -119,14 +120,15 @@ func TestRegisterDelegatedSignerScopes(t *testing.T) {
 func TestTransferFeeLegSequencing(t *testing.T) {
 	var calls []req
 	srv := server(t, map[string]string{
-		"/transactions": `{"txSignature":"tx-abc","status":"submitted"}`,
+		"/transfers": `{"txSignature":"tx-abc","status":"submitted"}`,
 	}, &calls)
 	defer srv.Close()
 
 	c := NewClient("k", srv.URL, "")
 	res, err := c.Transfer(context.Background(), "loc-1", stablecoin.TransferInput{
-		Asset: "usdc", RecipientAddr: "dest-1", AmountMinor: 1000,
-		FeeAddr: "hot-1", FeeMinor: 50, Idempotency: "idem-1", Reference: "tip",
+		Asset: "usdc", RecipientAddr: "dest-1", AmountMinor: 1_000_000,
+		FeeAddr: "hot-1", FeeMinor: 50_000, Idempotency: "idem-1", Reference: "tip",
+		Signer: "signer-pubkey",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -137,13 +139,18 @@ func TestTransferFeeLegSequencing(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("transfers = %d, want principal+fee", len(calls))
 	}
-	p1 := calls[0].body["params"].(map[string]any)
-	p2 := calls[1].body["params"].(map[string]any)
-	if p1["destinationAddress"] != "dest-1" || p1["amount"] != "1000" || p1["idempotencyKey"] != "idem-1" {
-		t.Fatalf("principal = %+v", p1)
+	// Documented wire: /tokens/{tokenLocator}/transfers, display-unit amount,
+	// `recipient`, delegated signer as "external-wallet:<addr>", and the
+	// idempotency key on the x-idempotency-key HEADER — not the body.
+	if calls[0].path != walletsBase+"/loc-1/tokens/solana:usdc/transfers" {
+		t.Fatalf("path = %s", calls[0].path)
 	}
-	if p2["destinationAddress"] != "hot-1" || p2["amount"] != "50" || p2["idempotencyKey"] != "idem-1:fee" {
-		t.Fatalf("fee leg = %+v", p2)
+	if calls[0].body["recipient"] != "dest-1" || calls[0].body["amount"] != "1" ||
+		calls[0].body["signer"] != "external-wallet:signer-pubkey" || calls[0].idem != "idem-1" {
+		t.Fatalf("principal = %+v", calls[0])
+	}
+	if calls[1].body["recipient"] != "hot-1" || calls[1].body["amount"] != "0.05" || calls[1].idem != "idem-1:fee" {
+		t.Fatalf("fee leg = %+v", calls[1])
 	}
 }
 
@@ -177,13 +184,13 @@ func TestTransferFeeLegFailureKeepsPrincipalVisible(t *testing.T) {
 func TestBuildWithdrawalRequiresApproval(t *testing.T) {
 	var calls []req
 	srv := server(t, map[string]string{
-		"/transactions": `{"id":"op-1","status":"awaiting-approval"}`,
+		"/transfers": `{"id":"op-1","status":"awaiting-approval"}`,
 	}, &calls)
 	defer srv.Close()
 
 	c := NewClient("k", srv.URL, "")
 	op, err := c.BuildWithdrawal(context.Background(), "loc-1", stablecoin.WithdrawalInput{
-		Asset: "usdc", Destination: "ext-addr", AmountMinor: 2000, FeeMinor: 20,
+		Asset: "usdc", Destination: "ext-addr", AmountMinor: 2_000_000, FeeMinor: 20_000,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -191,8 +198,10 @@ func TestBuildWithdrawalRequiresApproval(t *testing.T) {
 	if op.Locator != "loc-1" || len(op.Payload) == 0 || op.ExpiresAt <= time.Now().Unix() {
 		t.Fatalf("op = %+v", op)
 	}
-	if calls[0].body["requiresApproval"] != true {
-		t.Fatalf("member-signed op not flagged: %+v", calls[0].body)
+	// Member-signed op: transfers endpoint, display units, no delegated
+	// signer field — the member's own approval flow is what signs.
+	if calls[0].body["amount"] != "2" || calls[0].body["recipient"] != "ext-addr" || calls[0].body["signer"] != nil {
+		t.Fatalf("member op = %+v", calls[0].body)
 	}
 }
 

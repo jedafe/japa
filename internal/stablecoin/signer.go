@@ -101,6 +101,7 @@ func (s *Service) Settle(ctx context.Context, in SettleInput) (TransferResult, e
 		FeeMinor:      in.FeeMinor,
 		Idempotency:   in.Idempotency,
 		Reference:     in.Reference,
+		Signer:        w.DelegatedSigner.SignerRef,
 	})
 }
 
@@ -199,6 +200,7 @@ func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMin
 		AmountMinor:   fee,
 		Idempotency:   txSig + ":withdrawal_fee",
 		Reference:     "withdrawal_fee",
+		Signer:        w.DelegatedSigner.SignerRef,
 	}); err != nil {
 		// Non-fatal: member funds already moved; reconcile surfaces the
 		// uncollected fee for recovery.

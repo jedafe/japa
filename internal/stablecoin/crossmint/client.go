@@ -62,6 +62,10 @@ func NewClient(apiKey, baseURL, webhookSecret string) *Client {
 var _ stablecoin.Provider = (*Client)(nil)
 
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
+	return c.doHeaders(ctx, method, path, body, nil, out)
+}
+
+func (c *Client) doHeaders(ctx context.Context, method, path string, body any, headers map[string]string, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -75,6 +79,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		return fmt.Errorf("crossmint: request: %w", err)
 	}
 	req.Header.Set("X-API-KEY", c.apiKey)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -239,7 +246,7 @@ type txResp struct {
 // on the same scope (same daily cap). If the fee leg fails the principal
 // has already moved — the reconcile mirror surfaces it for recovery.
 func (c *Client) Transfer(ctx context.Context, locator string, in stablecoin.TransferInput) (stablecoin.TransferResult, error) {
-	res, err := c.transferLeg(ctx, locator, in.Asset, in.RecipientAddr, in.AmountMinor, in.Idempotency, in.Reference)
+	res, err := c.transferLeg(ctx, locator, in.Signer, in.Asset, in.RecipientAddr, in.AmountMinor, in.Idempotency)
 	if err != nil {
 		return stablecoin.TransferResult{}, err
 	}
@@ -248,28 +255,34 @@ func (c *Client) Transfer(ctx context.Context, locator string, in stablecoin.Tra
 		if feeKey != "" {
 			feeKey += ":fee"
 		}
-		if _, err := c.transferLeg(ctx, locator, in.Asset, in.FeeAddr, in.FeeMinor, feeKey, in.Reference+":fee"); err != nil {
+		if _, err := c.transferLeg(ctx, locator, in.Signer, in.Asset, in.FeeAddr, in.FeeMinor, feeKey); err != nil {
 			return res, fmt.Errorf("crossmint: fee leg after principal %s: %w", res.TxSignature, err)
 		}
 	}
 	return res, nil
 }
 
-func (c *Client) transferLeg(ctx context.Context, locator, asset, dest string, amountMinor int64, idem, memo string) (stablecoin.TransferResult, error) {
-	params := map[string]any{
-		"tokenLocator":       "solana:" + asset,
-		"destinationAddress": dest,
-		"amount":             strconv.FormatInt(amountMinor, 10),
+// transferLeg uses the documented token-transfer endpoint —
+// POST /wallets/{locator}/tokens/{tokenLocator}/transfers. Per the OpenAPI
+// spec: amount is DISPLAY units ("10" = 10 USDC), the recipient field is
+// `recipient` (address or wallet locator), the delegated signer is
+// `signer: "external-wallet:<addr>"`, and idempotency rides the
+// x-idempotency-key header — not the body.
+func (c *Client) transferLeg(ctx context.Context, locator, signerRef, asset, dest string, amountMinor int64, idem string) (stablecoin.TransferResult, error) {
+	body := map[string]any{
+		"amount":    displayAmount(amountMinor),
+		"recipient": dest,
 	}
+	if signerRef != "" {
+		body["signer"] = "external-wallet:" + signerRef
+	}
+	headers := map[string]string{}
 	if idem != "" {
-		params["idempotencyKey"] = idem
-	}
-	if memo != "" {
-		params["memo"] = memo
+		headers["x-idempotency-key"] = idem
 	}
 	var out txResp
-	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/transactions",
-		map[string]any{"params": params}, &out); err != nil {
+	if err := c.doHeaders(ctx, http.MethodPost, walletsBase+"/"+locator+"/tokens/solana:"+asset+"/transfers",
+		body, headers, &out); err != nil {
 		return stablecoin.TransferResult{}, err
 	}
 	res := stablecoin.TransferResult{
@@ -282,13 +295,21 @@ func (c *Client) transferLeg(ctx context.Context, locator, asset, dest string, a
 	return res, nil
 }
 
-// BuildWithdrawal returns a member-signable op — the backend builds the
-// transaction; only the member's passkey can sign it.
+// displayAmount renders minor units as the API's decimal string
+// ("10500000" → "10.5") — the transfers endpoint and scope spending
+// limits both take display units per the documented examples.
+func displayAmount(minor int64) string {
+	return strconv.FormatFloat(float64(minor)/1e6, 'f', -1, 64)
+}
+
+// BuildWithdrawal returns a member-signable op — same documented transfers
+// endpoint; the created transaction enters the wallet's approval flow and
+// only the member's passkey can satisfy it (the delegated signer is NOT
+// passed — a member-signed send can't ride our scope).
 func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablecoin.WithdrawalInput) (stablecoin.SignableOp, error) {
-	params := map[string]any{
-		"tokenLocator":       "solana:" + in.Asset,
-		"destinationAddress": in.Destination,
-		"amount":             strconv.FormatInt(in.AmountMinor, 10),
+	body := map[string]any{
+		"amount":    displayAmount(in.AmountMinor),
+		"recipient": in.Destination,
 	}
 	var out struct {
 		txResp
@@ -297,8 +318,8 @@ func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablec
 		ExpiresAt  string `json:"expiresAt"`
 		ValidUntil string `json:"validUntil"`
 	}
-	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/transactions",
-		map[string]any{"params": params, "requiresApproval": true}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/tokens/solana:"+in.Asset+"/transfers",
+		body, &out); err != nil {
 		return stablecoin.SignableOp{}, err
 	}
 	payload, _ := json.Marshal(out.txResp)
