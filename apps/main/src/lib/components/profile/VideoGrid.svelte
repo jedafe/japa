@@ -9,6 +9,7 @@
 	import { relativeTime } from '#lib/feed/time.js';
 	import { formatDuration } from '#lib/utils/duration.js';
 	import type { VideoSource } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		videos: VideoSource[];
@@ -36,7 +37,7 @@
 			<span class="relative block aspect-video w-full bg-[var(--color-surface-subtle)]">
 				{#if video.thumbnail_url}
 					<img
-						src={video.thumbnail_url}
+						src={remoteImageUrl(video.thumbnail_url)}
 						alt={video.title ?? ''}
 						loading="lazy"
 						class="h-full w-full object-cover"

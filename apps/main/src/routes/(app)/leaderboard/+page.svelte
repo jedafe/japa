@@ -11,6 +11,7 @@
 	import type { PageData } from './$types';
 
 import { ogCardUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('leaderboard.title', 'Leaderboard — {site}'));
@@ -158,7 +159,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 											{#snippet trigger()}
 												{#if entry.avatar_url}
 													<img
-														src={entry.avatar_url}
+														src={remoteImageUrl(entry.avatar_url)}
 														alt=""
 														class="h-6 w-6 shrink-0 rounded-full object-cover"
 													/>

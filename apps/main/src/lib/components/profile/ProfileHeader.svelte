@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PublicUser } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import FollowListModal, { type FollowListItem } from '#lib/components/profile/FollowListModal.svelte';
 
 	interface Props {
@@ -40,7 +41,7 @@
 	<div class="relative">
 		{#if user.cover_url}
 			<div class="h-32 overflow-hidden sm:h-40">
-				<img src={user.cover_url} alt="" class="h-full w-full object-cover" />
+				<img src={remoteImageUrl(user.cover_url)} alt="" class="h-full w-full object-cover" />
 			</div>
 		{:else}
 			<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
@@ -85,7 +86,7 @@
 				<div class="flex min-w-0 items-end gap-3 sm:gap-4">
 					{#if user.avatar_url}
 						<img
-							src={user.avatar_url}
+							src={remoteImageUrl(user.avatar_url)}
 							alt={user.display_name ?? user.username}
 							class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
 						/>

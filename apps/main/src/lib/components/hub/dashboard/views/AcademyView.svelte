@@ -6,6 +6,7 @@
 	import { GraduationCap } from 'lucide-svelte';
 	import { academyUrl } from '#lib/appOrigins.js';
 	import type { AcademyEnrollment, LessonNavRef } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: unknown } = $props();
 	const academy_enrollments = $derived((data as AcademyEnrollment[] | null) ?? []);
@@ -157,7 +158,7 @@
 				{#each academy_enrollments as en (en.id)}
 					<li class="flex items-center gap-4 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 						{#if en.thumbnail_url}
-							<img src={en.thumbnail_url} alt="" class="h-12 w-12 rounded object-cover" />
+							<img src={remoteImageUrl(en.thumbnail_url)} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
 							<span class="grid h-12 w-12 shrink-0 place-items-center rounded bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 								<GraduationCap size={20} />

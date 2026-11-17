@@ -12,6 +12,7 @@
 		GuestHomeStat,
 		GuestHomeCategory
 	} from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import {
 		Briefcase,
 		GraduationCap,
@@ -301,7 +302,7 @@
 							<li class="destination-item">
 								<div class="destination-flag">
 									{#if dest.icon_url}
-										<img src={dest.icon_url} alt="" class="destination-flag-img" />
+										<img src={remoteImageUrl(dest.icon_url)} alt="" class="destination-flag-img" />
 									{:else}
 										<Globe size={16} />
 									{/if}
@@ -402,7 +403,7 @@
 						</div>
 						<div class="opportunity-logo">
 							{#if opp.logo_url}
-								<img src={opp.logo_url} alt="" class="opportunity-logo-img" />
+								<img src={remoteImageUrl(opp.logo_url)} alt="" class="opportunity-logo-img" />
 							{:else}
 								<div class="opportunity-logo-fallback {logoBg(opp.type)}">{logoInitials(opp.organization)}</div>
 							{/if}
@@ -473,7 +474,7 @@
 						<div class="story-author">
 							<div class="story-avatar">
 								{#if story.author_avatar_url}
-									<img src={story.author_avatar_url} alt="" class="story-avatar-img" />
+									<img src={remoteImageUrl(story.author_avatar_url)} alt="" class="story-avatar-img" />
 								{:else}
 									{@render UserInitials(story.author_name)}
 								{/if}

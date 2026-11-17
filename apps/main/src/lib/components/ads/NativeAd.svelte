@@ -10,6 +10,7 @@
 	import { page } from '$app/state';
 	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
 	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		/** Ad slot name (native_feed, native_discover, native_space_feed, native_forum). */
@@ -105,7 +106,7 @@
 		>
 			{#if campaign.content?.image_url}
 				<img
-					src={campaign.content.image_url}
+					src={remoteImageUrl(campaign.content.image_url)}
 					alt={campaign.content.headline ?? campaign.name}
 					class="aspect-video w-full object-cover"
 					loading="lazy"

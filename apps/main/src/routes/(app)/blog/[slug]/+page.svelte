@@ -30,6 +30,7 @@
 	import type { PageData } from './$types';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const article = $derived(data.article);
@@ -266,7 +267,7 @@
 		{/if}
 
 		{#if article.featured_image_url}
-			<img src={article.featured_image_url} alt={article.title} fetchpriority="high" class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
+			<img src={remoteImageUrl(article.featured_image_url)} alt={article.title} fetchpriority="high" class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
 		{/if}
 
 		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{article.title}</h1>
@@ -283,7 +284,7 @@
 				>
 					{#snippet trigger()}
 						{#if article.author_avatar_url}
-							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+							<img src={remoteImageUrl(article.author_avatar_url)} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
 							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
@@ -393,7 +394,7 @@
 							class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
 						>
 							{#if rel.featured_image_url}
-								<img src={rel.featured_image_url} alt="" loading="lazy" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+								<img src={remoteImageUrl(rel.featured_image_url)} alt="" loading="lazy" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
 							{/if}
 							<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
 							{#if rel.author_name}

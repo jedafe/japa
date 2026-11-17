@@ -32,6 +32,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
 import { ogCardUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('universities.title', 'Universities — {site}'));
@@ -648,7 +649,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 										>
 											{#if uni.logo_url}
 												<img
-													src={uni.logo_url}
+													src={remoteImageUrl(uni.logo_url)}
 													alt=""
 													class="h-7 w-7 shrink-0 rounded-[var(--radius)] object-cover"
 												/>

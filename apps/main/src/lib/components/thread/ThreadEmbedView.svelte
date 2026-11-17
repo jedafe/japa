@@ -32,6 +32,7 @@
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
 import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	export interface ThreadEmbed {
 		kind: 'entity' | 'parent' | 'self';
 		title: string;
@@ -409,7 +410,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					{#snippet trigger()}
 						{#if article.author_avatar_url}
 							<img
-								src={article.author_avatar_url}
+								src={remoteImageUrl(article.author_avatar_url)}
 								alt=""
 								class="h-10 w-10 shrink-0 rounded-full object-cover"
 								loading="lazy"

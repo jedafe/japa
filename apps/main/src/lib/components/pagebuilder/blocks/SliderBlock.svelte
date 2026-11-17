@@ -4,6 +4,7 @@
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { safeHref } from '#lib/utils/safeHtml.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { props }: { props: SliderProps } = $props();
 	let current = $state(0);
@@ -45,7 +46,7 @@
 				aria-hidden={i !== current}
 			>
 				{#if slide.image_url}
-					<img src={slide.image_url} alt={slide.title ?? ''} class="h-full w-full object-cover" />
+					<img src={remoteImageUrl(slide.image_url)} alt={slide.title ?? ''} class="h-full w-full object-cover" />
 				{/if}
 				<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 				<div class="absolute bottom-0 start-0 p-6 text-white">

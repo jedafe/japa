@@ -4,6 +4,7 @@
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { api } from '#lib/api/client.js';
 	import { X, UserCircle } from 'lucide-svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	// Ref: japaconnect-engineering/sections/31-follow-system.md
 	// Modal that lazy-loads GET /spaces/{space_id}/followers when opened.
@@ -146,7 +147,7 @@
 								>
 									{#if item.avatar_url}
 										<img
-											src={item.avatar_url}
+											src={remoteImageUrl(item.avatar_url)}
 											alt={item.display_name}
 											class="h-10 w-10 shrink-0 rounded-full object-cover"
 											loading="lazy"

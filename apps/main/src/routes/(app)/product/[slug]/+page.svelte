@@ -14,6 +14,7 @@
 	import type { ProductProvider } from './+page.server';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 	let product = $derived(data.product);
 
@@ -107,7 +108,7 @@
 	<div class="mx-auto mt-6 w-full max-w-3xl space-y-6 p-4" style="margin-inline: var(--page-gutter)">
 		<div class="flex flex-wrap items-center gap-2">
 			{#if product.logo_url}
-				<img src={product.logo_url} alt="" class="h-10 w-10 rounded-[var(--radius)] object-cover" />
+				<img src={remoteImageUrl(product.logo_url)} alt="" class="h-10 w-10 rounded-[var(--radius)] object-cover" />
 			{/if}
 			{#if safeHttpUrl(product.website_url)}
 				<a

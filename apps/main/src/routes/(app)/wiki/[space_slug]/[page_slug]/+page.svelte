@@ -33,6 +33,7 @@
 	import TocFloat from '#lib/components/toc/TocFloat.svelte';
 	import { extractToc, tocHidden, type TocItem } from '#lib/utils/toc.js';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -623,7 +624,7 @@
 					<div class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
 						{#if data.page.submitted_by_avatar_url}
 							<img
-								src={data.page.submitted_by_avatar_url}
+								src={remoteImageUrl(data.page.submitted_by_avatar_url)}
 								alt=""
 								class="h-5 w-5 rounded-full object-cover"
 								loading="lazy"

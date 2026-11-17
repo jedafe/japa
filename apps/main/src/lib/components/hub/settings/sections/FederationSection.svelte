@@ -17,6 +17,7 @@
 	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
 	import { AtSign, Users } from 'lucide-svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	type FederationStatus = {
 		enabled?: boolean;
@@ -222,7 +223,7 @@
 					{#each requests as req (req.remote_actor_id)}
 						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
 							{#if req.avatar_url}
-								<img src={req.avatar_url} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
+								<img src={remoteImageUrl(req.avatar_url)} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
 							{:else}
 								<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-subtle)]">
 									<AtSign size={14} class="text-[var(--color-muted)]" />
@@ -292,7 +293,7 @@
 						{#each following as f (f.remote_actor_id)}
 							<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
 								{#if f.avatar_url}
-									<img src={f.avatar_url} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
+									<img src={remoteImageUrl(f.avatar_url)} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
 								{:else}
 									<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-subtle)]">
 										<AtSign size={14} class="text-[var(--color-muted)]" />

@@ -31,6 +31,7 @@
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import ReplyItem from './ReplyItem.svelte';
 	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		reply: ForumReply;
@@ -367,7 +368,7 @@
 				{#snippet trigger()}
 					{#if reply.author_avatar_url}
 						<img
-							src={reply.author_avatar_url}
+							src={remoteImageUrl(reply.author_avatar_url)}
 							alt=""
 							class="h-10 w-10 shrink-0 rounded-full object-cover"
 							loading="lazy"

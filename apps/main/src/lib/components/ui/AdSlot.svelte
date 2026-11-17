@@ -6,6 +6,7 @@
 	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
 	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
 	import { railGate } from '#lib/components/shell/railVisibility.svelte.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
@@ -153,7 +154,7 @@
 			</span>
 			{#if campaign.content?.image_url}
 				<img
-					src={campaign.content.image_url}
+					src={remoteImageUrl(campaign.content.image_url)}
 					alt={campaign.content.headline ?? campaign.name}
 					class="h-full w-full object-cover"
 					loading="lazy"

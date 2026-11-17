@@ -17,6 +17,7 @@
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const university = $derived(data.university);
@@ -283,7 +284,7 @@
 		<div class="flex items-center gap-3">
 			{#if university.logo_url}
 				<img
-					src={university.logo_url}
+					src={remoteImageUrl(university.logo_url)}
 					alt={university.name}
 					class="h-12 w-12 shrink-0 rounded-[var(--radius)] object-cover"
 				/>
@@ -351,7 +352,7 @@
 		<div class="flex items-center gap-3">
 			{#if university.logo_url}
 				<img
-					src={university.logo_url}
+					src={remoteImageUrl(university.logo_url)}
 					alt={t('university.logo_alt', 'Logo of {name}').replace('{name}', university.name)}
 					class="h-14 w-14 shrink-0 rounded-[var(--radius-card)] object-cover"
 				/>
@@ -691,7 +692,7 @@
 							>
 								{#snippet trigger()}
 									{#if member.avatar_url}
-										<img src={member.avatar_url} alt={t('profile.avatar_alt', 'Avatar of {name}').replace('{name}', member.display_name ?? member.username)} class="h-10 w-10 rounded-full object-cover" />
+										<img src={remoteImageUrl(member.avatar_url)} alt={t('profile.avatar_alt', 'Avatar of {name}').replace('{name}', member.display_name ?? member.username)} class="h-10 w-10 rounded-full object-cover" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 											{member.display_name?.charAt(0)?.toUpperCase() ?? '?'}

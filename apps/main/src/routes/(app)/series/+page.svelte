@@ -13,6 +13,7 @@
 	} from '#lib/components/ui/index.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -203,7 +204,7 @@
 						<div class="flex items-start gap-3">
 							{#if series.cover_image_url}
 								<img
-									src={series.cover_image_url}
+									src={remoteImageUrl(series.cover_image_url)}
 									alt=""
 									class="h-10 w-10 shrink-0 rounded-[var(--radius)] object-cover"
 								/>

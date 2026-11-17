@@ -30,6 +30,7 @@
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
@@ -249,7 +250,7 @@
 					{#if item.image_url || flag}
 						<div class="mb-1 flex items-center">
 							{#if item.image_url}
-								<img src={item.image_url} alt="" class="h-9 w-9 rounded-full border border-[var(--color-border)] object-cover" />
+								<img src={remoteImageUrl(item.image_url)} alt="" class="h-9 w-9 rounded-full border border-[var(--color-border)] object-cover" />
 							{:else if flag}
 								<img src={flag} alt="" class="h-6 w-8 rounded-sm border border-[var(--color-border)] object-cover" />
 							{/if}

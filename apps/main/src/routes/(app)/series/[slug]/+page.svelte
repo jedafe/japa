@@ -8,6 +8,7 @@
 	import type { PageData } from './$types';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const series = $derived(data.series);
@@ -41,7 +42,7 @@
 		<div class="flex items-center gap-3">
 			{#if series.cover_image_url}
 				<img
-					src={series.cover_image_url}
+					src={remoteImageUrl(series.cover_image_url)}
 					alt=""
 					class="h-12 w-12 shrink-0 rounded-[var(--radius)] object-cover"
 				/>

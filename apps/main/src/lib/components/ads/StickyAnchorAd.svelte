@@ -11,6 +11,7 @@
 	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
 	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
 	import { X } from 'lucide-svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	const DISMISS_KEY = 'jc.ad.anchor.dismissed';
 
@@ -104,7 +105,7 @@
 		<div class="relative flex w-full max-w-3xl items-center gap-3 overflow-hidden rounded-t-[var(--radius-card)] border border-b-0 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-lg sm:rounded-[var(--radius-card)] sm:border-b">
 			{#if campaign.content?.image_url}
 				<img
-					src={campaign.content.image_url}
+					src={remoteImageUrl(campaign.content.image_url)}
 					alt=""
 					class="hidden h-12 w-12 shrink-0 rounded object-cover sm:block"
 					loading="lazy"

@@ -25,6 +25,7 @@
 	import { displayNumber, isEmptyHtml, serializeListBodyHtml } from './listSerialize';
 	import type { ListFieldValues, ListItem, ListMode, MediaAsset } from '#lib/types/index.js';
 	import type { ContentArticle, GuideListItem } from '#lib/types/content.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	type VisualTab = 'image' | 'content' | 'link' | 'video';
 
@@ -469,9 +470,9 @@
 						{#if row.item.media_id && mediaUrls[row.item.media_id]}
 							<img class="visual-thumb" src={mediaUrls[row.item.media_id]} alt="" />
 						{:else if row.item.embed?.kind === 'video' && row.item.embed.resolved?.image_url}
-							<img class="visual-thumb" src={row.item.embed.resolved.image_url} alt="" />
+							<img class="visual-thumb" src={remoteImageUrl(row.item.embed.resolved.image_url)} alt="" />
 						{:else if row.item.embed?.kind === 'content' && row.item.embed.snapshot?.image_url}
-							<img class="visual-thumb" src={row.item.embed.snapshot.image_url} alt="" />
+							<img class="visual-thumb" src={remoteImageUrl(row.item.embed.snapshot.image_url)} alt="" />
 						{:else}
 							<LinkIcon size={14} />
 						{/if}

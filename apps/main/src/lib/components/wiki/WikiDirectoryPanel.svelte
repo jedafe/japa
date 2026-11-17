@@ -12,6 +12,7 @@
 	import type { WikiDestination, WikiDirectory, WikiDirectoryChild } from '#lib/types/index.js';
 	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import { MapPin } from 'lucide-svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let {
 		directory,
@@ -157,7 +158,7 @@
 					>
 						{#if child.image_url}
 							<img
-								src={child.image_url}
+								src={remoteImageUrl(child.image_url)}
 								alt={child.name}
 								loading="lazy"
 								class="aspect-[16/9] w-full object-cover"

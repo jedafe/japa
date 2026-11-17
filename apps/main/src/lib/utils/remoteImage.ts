@@ -39,6 +39,13 @@ export function remoteImageUrl(url: string | null | undefined): string {
 	if (!url) return '';
 	if (/^\/api\/v1\//.test(url)) return `${apiBaseUrl}${url.slice('/api/v1'.length)}`;
 	if (!/^https?:\/\//i.test(url)) return url;
+	// Backend-emitted absolute API URLs (e.g. avatar/badge/cover fields like
+	// http://api.internal:8080/api/v1/media/serve/…) collapse onto the
+	// configured browser-facing base: same-origin when apiBaseUrl is relative
+	// (CSP img-src 'self' blocks the raw absolute URL), identical when it is
+	// already the absolute API origin.
+	const apiPath = url.match(/^https?:\/\/[^/]+(\/api\/v1\/.*)$/i)?.[1];
+	if (apiPath) return `${apiBaseUrl}${apiPath.slice('/api/v1'.length)}`;
 	if (isFirstParty(url)) return url;
 	return `${apiBaseUrl}/media/proxy?url=${encodeURIComponent(url)}`;
 }

@@ -43,6 +43,7 @@
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 	import { Modal } from '#lib/components/ui/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data } = $props();
 
@@ -774,7 +775,7 @@
 									/>
 									{#if selectedType?.badge_url}
 										<span class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
-											<img src={selectedType.badge_url} alt={selectedType.label} class="h-5 w-5" />
+											<img src={remoteImageUrl(selectedType.badge_url)} alt={selectedType.label} class="h-5 w-5" />
 											{selectedType.label}
 										</span>
 									{/if}

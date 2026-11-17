@@ -13,6 +13,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import type { PageData } from './$types';
 	import type { GeoCity, GeoState } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -526,7 +527,7 @@
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
 							{#if rec.avatar_url}
-								<img src={rec.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+								<img src={remoteImageUrl(rec.avatar_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{rec.name.charAt(0)}</span>
 							{/if}
@@ -557,7 +558,7 @@
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
 							{#if rec.avatar_url}
-								<img src={rec.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+								<img src={remoteImageUrl(rec.avatar_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{rec.name.charAt(0)}</span>
 							{/if}
@@ -588,7 +589,7 @@
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
 							{#if source.logo_url}
-								<img src={source.logo_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+								<img src={remoteImageUrl(source.logo_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{source.name.charAt(0)}</span>
 							{/if}

@@ -20,6 +20,7 @@
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import type { PageData } from './$types';
 	import type { TrendingWindow } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -265,7 +266,7 @@
 									<span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
 										{#if item.avatar_url}
 											<img
-												src={item.avatar_url}
+												src={remoteImageUrl(item.avatar_url)}
 												alt={item.username}
 												class="h-full w-full object-cover"
 												loading="lazy"

@@ -10,6 +10,7 @@
 	import SpaceFollowListModal from '#lib/components/spaces/SpaceFollowListModal.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { Space, SpaceMember, SpaceRule, Achievement } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		space: Space;
@@ -299,7 +300,7 @@
 					<li>
 						<a href="/u/{member.username}" class="flex items-center gap-2.5 transition-colors hover:text-[var(--color-primary-text)]">
 							{#if member.avatar_url}
-								<img src={member.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+								<img src={remoteImageUrl(member.avatar_url)} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
 									{(member.display_name ?? member.username).charAt(0).toUpperCase()}

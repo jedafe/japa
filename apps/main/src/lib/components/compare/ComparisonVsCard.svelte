@@ -13,6 +13,7 @@
 	import { excerptText } from '#lib/utils/comparison.js';
 	import type { JCEComparisonSummary, JCEPreviewItem } from '#lib/types/jce.js';
 	import type { CompareBadgeKind } from './compareBadge.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let {
 		summary,
@@ -92,9 +93,9 @@
 	     a tinted placeholder when previews/images are absent. -->
 	<div class="relative h-36 overflow-hidden bg-[var(--color-surface-subtle)]">
 		{#if previews[0]?.image_url && previews[1]?.image_url}
-			<img src={previews[0].image_url} alt="" class="absolute inset-0 h-full w-full object-cover" />
+			<img src={remoteImageUrl(previews[0].image_url)} alt="" class="absolute inset-0 h-full w-full object-cover" />
 			<img
-				src={previews[1].image_url}
+				src={remoteImageUrl(previews[1].image_url)}
 				alt=""
 				class="absolute inset-0 h-full w-full object-cover"
 				style="clip-path: polygon(58% 0, 100% 0, 100% 100%, 42% 100%)"
@@ -105,7 +106,7 @@
 				aria-hidden="true"
 			></div>
 		{:else if previews[0]?.image_url}
-			<img src={previews[0].image_url} alt="" class="absolute inset-0 h-full w-full object-cover" />
+			<img src={remoteImageUrl(previews[0].image_url)} alt="" class="absolute inset-0 h-full w-full object-cover" />
 		{/if}
 
 		{#if medallionPair}

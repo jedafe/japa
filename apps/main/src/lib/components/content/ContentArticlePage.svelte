@@ -39,6 +39,7 @@
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
 import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	// Mirrors the loadContentArticle() return shape ($lib/server/content-article.ts).
 	// Type-only imports from $lib/server are avoided so the component stays
 	// outside SvelteKit's server-module boundary.
@@ -379,7 +380,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				onclick={() => openLightbox([{ id: `hero-${article.id}`, url: article.featured_image_url!, alt_text: article.title }])}
 				aria-label={t('lightbox.view_image', 'View image')}
 			>
-				<img src={article.featured_image_url} alt={article.title} class="aspect-[16/9] w-full object-cover" />
+				<img src={remoteImageUrl(article.featured_image_url)} alt={article.title} class="aspect-[16/9] w-full object-cover" />
 				<span class="absolute end-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
 					<Maximize2 size={15} />
 				</span>
@@ -430,7 +431,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				>
 					{#snippet trigger()}
 						{#if article.author_avatar_url}
-							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+							<img src={remoteImageUrl(article.author_avatar_url)} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
 							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
@@ -625,7 +626,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
 						>
 							{#if rel.featured_image_url}
-								<img src={rel.featured_image_url} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+								<img src={remoteImageUrl(rel.featured_image_url)} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
 							{/if}
 							<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
 							{#if rel.author_name}

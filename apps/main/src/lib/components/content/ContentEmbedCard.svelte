@@ -12,6 +12,7 @@
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import { Loader2 } from 'lucide-svelte';
 	import type { ListEmbedSnapshot } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	// GET /content/{slug} detail DTO — the subset this card renders.
 	interface EmbedContentDTO {
@@ -80,7 +81,7 @@
 				{#if authorName}
 					<div class="ce-meta">
 						{#if content.author_avatar_url}
-							<img src={content.author_avatar_url} alt="" class="ce-avatar" loading="lazy" />
+							<img src={remoteImageUrl(content.author_avatar_url)} alt="" class="ce-avatar" loading="lazy" />
 						{/if}
 						<span class="ce-author">{authorName}</span>
 						{#if content?.author_verified}
@@ -96,7 +97,7 @@
 		<a href={snapshotHref} class="ce-live">
 			{#if initial.image_url}
 				<div class="ce-image">
-					<img src={initial.image_url} alt={initial.title ?? ''} loading="lazy" />
+					<img src={remoteImageUrl(initial.image_url)} alt={initial.title ?? ''} loading="lazy" />
 				</div>
 			{/if}
 			<div class="ce-text">

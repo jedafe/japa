@@ -18,6 +18,7 @@
 	import { Autocomplete, type AutocompleteItem } from '@japaconnect/ui';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	// The native <input type="color"> only understands #rrggbb — stored values
@@ -423,7 +424,7 @@
 		<div class="flex items-center gap-3">
 			{#if tag.logo_url}
 				<img
-					src={tag.logo_url}
+					src={remoteImageUrl(tag.logo_url)}
 					alt={tag.name}
 					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
 				/>
@@ -475,7 +476,7 @@
 	     has a color but no cover image. -->
 	{#if tag.cover_url}
 		<div class="relative mx-auto h-32 w-full max-w-3xl overflow-hidden border-b border-[var(--color-border)] sm:h-40">
-			<img src={tag.cover_url} alt={tag.name} class="h-full w-full object-cover" />
+			<img src={remoteImageUrl(tag.cover_url)} alt={tag.name} class="h-full w-full object-cover" />
 		</div>
 	{:else if tagColor}
 		<div
@@ -494,7 +495,7 @@
 		<div class="flex items-center gap-3">
 			{#if tag.logo_url}
 				<img
-					src={tag.logo_url}
+					src={remoteImageUrl(tag.logo_url)}
 					alt={tag.name}
 					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
 				/>
@@ -646,7 +647,7 @@
 							>
 								{#snippet trigger()}
 									{#if f.avatar_url}
-										<img src={f.avatar_url} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
+										<img src={remoteImageUrl(f.avatar_url)} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]">
 											{initials(f.display_name)}
@@ -678,7 +679,7 @@
 							>
 								{#snippet trigger()}
 									{#if m.avatar_url}
-										<img src={m.avatar_url} alt={m.display_name || m.username} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
+										<img src={remoteImageUrl(m.avatar_url)} alt={m.display_name || m.username} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]">
 											{initials(m.display_name || m.username)}

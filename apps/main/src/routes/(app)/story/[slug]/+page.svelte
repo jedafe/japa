@@ -35,6 +35,7 @@
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '#lib/types/index.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const story = $derived(data.story);
@@ -305,7 +306,7 @@
 					onclick={() => openLightbox([{ id: `hero-${story.id}`, url: story.featured_image_url!, alt_text: story.title }])}
 					aria-label={t('lightbox.view_image', 'View image')}
 				>
-					<img src={story.featured_image_url} alt={story.title} class="aspect-[16/9] w-full object-cover" />
+					<img src={remoteImageUrl(story.featured_image_url)} alt={story.title} class="aspect-[16/9] w-full object-cover" />
 					<span class="absolute end-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
 						<Maximize2 size={15} />
 					</span>
@@ -501,7 +502,7 @@
 								class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
 							>
 								{#if rel.featured_image_url}
-									<img src={rel.featured_image_url} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+									<img src={remoteImageUrl(rel.featured_image_url)} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
 								{/if}
 								<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
 								{#if rel.author_name}

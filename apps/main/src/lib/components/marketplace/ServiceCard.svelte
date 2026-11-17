@@ -150,7 +150,7 @@
 			</div>
 		{:else if listing.featured_image_url}
 			<img
-				src={listing.featured_image_url}
+				src={remoteImageUrl(listing.featured_image_url)}
 				alt={listing.title}
 				loading="lazy"
 				class="h-full w-full object-cover transition-transform duration-500 motion-safe:group-hover:scale-105"

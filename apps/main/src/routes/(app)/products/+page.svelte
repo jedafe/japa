@@ -36,6 +36,7 @@
 	import type { PageData } from './$types';
 
 import { ogCardUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	type ProductItem = PageData['items'][number];
 
 	let { data }: { data: PageData } = $props();
@@ -423,7 +424,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 							>
 								{#if it.logo_url}
 									<img
-										src={it.logo_url}
+										src={remoteImageUrl(it.logo_url)}
 										alt=""
 										loading="lazy"
 										decoding="async"
@@ -520,7 +521,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 												class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]"
 											>
 												{#if it.logo_url}
-													<img src={it.logo_url} alt="" loading="lazy" class="h-full w-full object-cover" />
+													<img src={remoteImageUrl(it.logo_url)} alt="" loading="lazy" class="h-full w-full object-cover" />
 												{:else}
 													<Package size={14} />
 												{/if}

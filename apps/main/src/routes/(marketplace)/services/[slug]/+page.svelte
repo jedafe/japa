@@ -999,7 +999,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					>
 						{#if service.featured_image_url}
 							<img
-								src={service.featured_image_url}
+								src={remoteImageUrl(service.featured_image_url)}
 								alt={service.title}
 								class="h-full w-full object-cover"
 							/>
@@ -1011,7 +1011,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							/>
 						{:else if mentor?.avatar_url}
 							<img
-								src={mentor.avatar_url}
+								src={remoteImageUrl(mentor.avatar_url)}
 								alt={mentorName}
 								class="h-full w-full object-cover object-top"
 							/>
@@ -1044,7 +1044,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 										{#snippet trigger()}
 											{#if mentor.avatar_url}
 												<img
-													src={mentor.avatar_url}
+													src={remoteImageUrl(mentor.avatar_url)}
 													alt={mentorName}
 													class="h-12 w-12 shrink-0 rounded-full object-cover"
 												/>
@@ -1082,7 +1082,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 								{:else}
 									{#if mentor.avatar_url}
 										<img
-											src={mentor.avatar_url}
+											src={remoteImageUrl(mentor.avatar_url)}
 											alt={mentorName}
 											class="h-12 w-12 shrink-0 rounded-full object-cover"
 										/>
@@ -1533,7 +1533,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						>
 							{#if service.featured_image_url}
 								<img
-									src={service.featured_image_url}
+									src={remoteImageUrl(service.featured_image_url)}
 									alt={service.title}
 									class="h-full w-full object-cover"
 								/>
@@ -1891,7 +1891,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							{#if item.featured_image_url}
 								<div class="aspect-[16/9] w-full overflow-hidden">
 									<img
-										src={item.featured_image_url}
+										src={remoteImageUrl(item.featured_image_url)}
 										alt=""
 										loading="lazy"
 										class="h-full w-full object-cover transition-transform duration-500 motion-safe:group-hover:scale-105"

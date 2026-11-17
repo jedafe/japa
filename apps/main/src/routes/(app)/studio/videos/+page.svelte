@@ -10,6 +10,7 @@
 	import { formatDuration } from '#lib/utils/duration.js';
 	import type { VideoImportJob } from '#lib/types/index.js';
 	import type { PageData } from './$types';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	const STUDIO_CACHE_TAG = 'app:studio';
 
@@ -318,7 +319,7 @@
 						<div class="mt-3 flex gap-3">
 							{#if preview.sample.thumbnail_url}
 								<img
-									src={preview.sample.thumbnail_url}
+									src={remoteImageUrl(preview.sample.thumbnail_url)}
 									alt={preview.sample.title ?? ''}
 									class="h-20 w-32 shrink-0 rounded-[var(--radius)] object-cover"
 									loading="lazy"

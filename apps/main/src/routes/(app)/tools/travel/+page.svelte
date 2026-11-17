@@ -59,6 +59,7 @@
 		TravelAirlineDirectoryResponse
 	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -1573,7 +1574,7 @@
 										<button type="button" class="stay-card stay-card-btn" onclick={() => openStayInDirectory(h.name)}>
 											{#if (h.star_rating ?? 0) >= 5}<span class="stay-badge">{t('travel.badge_luxury', 'Luxury')}</span>{/if}
 											{#if h.image_url}
-												<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
+												<img src={remoteImageUrl(h.image_url)} alt="" loading="lazy" class="stay-card-img" />
 											{/if}
 											<div class="stay-card-body">
 												<h4>{h.name}</h4>
@@ -1660,7 +1661,7 @@
 							{#each dirItems as h, i (i)}
 								<article class="stay-card">
 									{#if h.image_url}
-										<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
+										<img src={remoteImageUrl(h.image_url)} alt="" loading="lazy" class="stay-card-img" />
 									{:else}
 										<div class="stay-card-img stay-card-noimg"><Hotel size={22} /></div>
 									{/if}

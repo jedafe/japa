@@ -34,6 +34,7 @@
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 import { flagUrl } from '#lib/utils/flags.js';
 import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -906,7 +907,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 							>
 								{#snippet trigger()}
 									{#if member.avatar_url}
-										<img src={member.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+										<img src={remoteImageUrl(member.avatar_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 											{(member.display_name ?? member.username).charAt(0).toUpperCase()}
@@ -1124,7 +1125,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						{#each joinRequests as req (req.user_id)}
 							<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 								{#if req.avatar_url}
-									<img src={req.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+									<img src={remoteImageUrl(req.avatar_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 								{:else}
 									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 										{(req.display_name ?? req.username).charAt(0).toUpperCase()}

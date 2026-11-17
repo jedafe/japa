@@ -47,6 +47,7 @@
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
@@ -275,7 +276,7 @@
 
 		{#if comparison.content.featured_image_url}
 			<img
-				src={comparison.content.featured_image_url}
+				src={remoteImageUrl(comparison.content.featured_image_url)}
 				alt={comparison.content.title}
 				class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover"
 			/>
@@ -299,7 +300,7 @@
 				>
 					{#snippet trigger()}
 						{#if comparison.content.author_avatar_url}
-							<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+							<img src={remoteImageUrl(comparison.content.author_avatar_url)} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
 							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
@@ -343,7 +344,7 @@
 					{#if item.image_url || flag}
 						<div class="mb-1 flex items-center">
 							{#if item.image_url}
-								<img src={item.image_url} alt="" class="h-9 w-9 rounded-full border border-[var(--color-border)] object-cover" />
+								<img src={remoteImageUrl(item.image_url)} alt="" class="h-9 w-9 rounded-full border border-[var(--color-border)] object-cover" />
 							{:else if flag}
 								<img src={flag} alt="" class="h-6 w-8 rounded-sm border border-[var(--color-border)] object-cover" />
 							{/if}
@@ -483,7 +484,7 @@
 		<div class="flex items-center gap-3 py-1">
 			{#if item.avatar_url}
 				<img
-					src={item.avatar_url}
+					src={remoteImageUrl(item.avatar_url)}
 					alt=""
 					class="h-10 w-10 shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover"
 				/>

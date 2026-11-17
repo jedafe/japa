@@ -9,6 +9,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { Camera, Image as ImageIcon, Loader2 } from 'lucide-svelte';
 	import type { MeProfile, MediaAsset } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: unknown } = $props();
 	const profile = $derived(data as MeProfile | null);
@@ -170,7 +171,7 @@
 		<div class="flex items-center gap-4">
 			<div class="relative">
 				{#if form.values.avatar_url}
-					<img src={form.values.avatar_url} alt={t('settings.profile.avatar', 'Avatar')} class="h-16 w-16 rounded-full object-cover" />
+					<img src={remoteImageUrl(form.values.avatar_url)} alt={t('settings.profile.avatar', 'Avatar')} class="h-16 w-16 rounded-full object-cover" />
 				{:else}
 					<div class="grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
 						<ImageIcon size={24} />
@@ -195,7 +196,7 @@
 			<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.profile.cover', 'Cover photo')}</p>
 			<div class="relative h-24 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 				{#if form.values.cover_url}
-					<img src={form.values.cover_url} alt={t('settings.profile.cover', 'Cover photo')} class="h-full w-full object-cover" />
+					<img src={remoteImageUrl(form.values.cover_url)} alt={t('settings.profile.cover', 'Cover photo')} class="h-full w-full object-cover" />
 				{:else}
 					<div class="grid h-full place-items-center text-[var(--color-muted)]">
 						<ImageIcon size={28} />

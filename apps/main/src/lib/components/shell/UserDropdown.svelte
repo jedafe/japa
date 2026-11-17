@@ -12,6 +12,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import type { SessionUser } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		user: SessionUser | null;
@@ -36,7 +37,7 @@
 				aria-label={t('nav.account', 'Account')}
 			>
 				{#if user?.avatar_url}
-					<img src={user.avatar_url} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-6 w-6 rounded-full object-cover" />
+					<img src={remoteImageUrl(user.avatar_url)} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-6 w-6 rounded-full object-cover" />
 				{:else if user}
 					<span class="grid h-6 w-6 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[10px] font-semibold text-[var(--color-text-subtle)]">
 						{user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
@@ -54,7 +55,7 @@
 				aria-label={t('nav.account', 'Account')}
 			>
 				{#if user?.avatar_url}
-					<img src={user.avatar_url} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-9 w-9 rounded-full object-cover" />
+					<img src={remoteImageUrl(user.avatar_url)} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-9 w-9 rounded-full object-cover" />
 				{:else if user}
 					{user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
 				{:else}

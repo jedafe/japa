@@ -34,6 +34,7 @@
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import type { DMConversation, DMMessage, PublicUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -540,7 +541,7 @@
 							>
 								{#if conv.other_avatar_url}
 									<img
-										src={conv.other_avatar_url}
+										src={remoteImageUrl(conv.other_avatar_url)}
 										alt=""
 										class="h-10 w-10 shrink-0 rounded-full object-cover"
 									/>
@@ -627,7 +628,7 @@
 					</button>
 					{#if activeConversation?.other_avatar_url}
 						<img
-							src={activeConversation.other_avatar_url}
+							src={remoteImageUrl(activeConversation.other_avatar_url)}
 							alt=""
 							class="h-9 w-9 rounded-full object-cover"
 						/>

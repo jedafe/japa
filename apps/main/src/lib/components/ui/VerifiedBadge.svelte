@@ -7,6 +7,7 @@
 	 */
 	import { BadgeCheck } from 'lucide-svelte';
 	import { verificationBadgeUrl, verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
@@ -25,7 +26,7 @@
 {#if verified}
 	{#if url}
 		<img
-			src={url}
+			src={remoteImageUrl(url)}
 			alt={label}
 			title={label}
 			class="shrink-0 {className}"

@@ -12,6 +12,7 @@
 	import ReactionButton from '#lib/components/ui/ReactionButton.svelte';
 	import ShareButton from '#lib/components/ui/ShareButton.svelte';
 	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		item: FeedItem;
@@ -144,7 +145,7 @@
 	<div class="relative aspect-[4/3] w-full overflow-hidden">
 		{#if item.cover_image_url}
 			<img
-				src={item.cover_image_url}
+				src={remoteImageUrl(item.cover_image_url)}
 				alt={item.title}
 				loading="lazy"
 				class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"

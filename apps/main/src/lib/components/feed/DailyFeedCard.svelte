@@ -50,6 +50,7 @@
 	import { relativeTime } from '#lib/feed/time.js';
 	import { contentTypeMeta, readPostLabel } from '#lib/feed/contentTypeMeta.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import { formatDuration } from '#lib/utils/duration.js';
 	import { api } from '#lib/api/client.js';
 	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
@@ -360,7 +361,7 @@
 			<!-- Mobile cover image -->
 			{#if item.cover_image_url}
 				<div class="relative aspect-video w-full overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] sm:hidden">
-					<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
+					<img src={remoteImageUrl(item.cover_image_url)} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
 					{#if isVideo}
 						<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
 							<Play size={22} class="ms-0.5 text-white" />
@@ -441,7 +442,7 @@
 		<!-- Cover image (right on desktop) -->
 		{#if item.cover_image_url}
 			<div class="relative hidden aspect-video w-[220px] shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] sm:block">
-				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
+				<img src={remoteImageUrl(item.cover_image_url)} alt={item.title} loading="lazy" class="h-full w-full object-cover" />
 				{#if isVideo}
 					<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
 						<Play size={22} class="ms-0.5 text-white" />

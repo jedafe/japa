@@ -44,6 +44,7 @@
 	import type { PageData } from './$types';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const intentOpts = $derived(japaIntentOptions(t, data.intents));
@@ -307,7 +308,7 @@
 					<span class="flex -space-x-3.5">
 						{#each heroAvatars as m (m.user_id)}
 							<img
-								src={m.avatar_url}
+								src={remoteImageUrl(m.avatar_url)}
 								alt=""
 								class="h-8 w-8 rounded-full border-2 border-[var(--color-surface)] object-cover"
 								width="32"
@@ -758,7 +759,7 @@
 		<!-- Cover -->
 		<div class="relative h-24 w-full" style="background: {color ? `linear-gradient(120deg, color-mix(in srgb, ${color} 24%, transparent), color-mix(in srgb, ${color} 8%, transparent))` : 'var(--color-surface-subtle)'}">
 			{#if m.cover_url}
-				<img src={m.cover_url} alt="" class="h-full w-full object-cover" width="640" height="96" loading="lazy" decoding="async" />
+				<img src={remoteImageUrl(m.cover_url)} alt="" class="h-full w-full object-cover" width="640" height="96" loading="lazy" decoding="async" />
 			{/if}
 			{#if m.stage}
 				<span
@@ -782,7 +783,7 @@
 				{#snippet trigger()}
 					<span class="grid h-16 w-16 place-items-center overflow-hidden rounded-full border-[3px] border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] shadow-sm">
 						{#if m.avatar_url}
-							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" width="64" height="64" loading="lazy" decoding="async" />
+							<img src={remoteImageUrl(m.avatar_url)} alt={m.username} class="h-full w-full object-cover" width="64" height="64" loading="lazy" decoding="async" />
 						{:else}
 							<Users size={26} />
 						{/if}

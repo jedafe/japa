@@ -20,6 +20,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { CheckCircle2, GraduationCap, Loader2, Send } from 'lucide-svelte';
 	import type { GeoCountry, ServiceBookingResult, ServiceListing } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		service: ServiceListing;
@@ -216,7 +217,7 @@
 		<div class="mb-4 flex items-center gap-3">
 			{#if mentor?.avatar_url}
 				<img
-					src={mentor.avatar_url}
+					src={remoteImageUrl(mentor.avatar_url)}
 					alt=""
 					class="h-11 w-11 rounded-full object-cover"
 				/>

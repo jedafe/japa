@@ -12,6 +12,7 @@
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import type { DMRequest } from '#lib/types/index.js';
 	import type { PageData } from './$types';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -171,7 +172,7 @@
 					<li class="flex items-center gap-3 p-4">
 						{#if req.requester_avatar_url}
 							<img
-								src={req.requester_avatar_url}
+								src={remoteImageUrl(req.requester_avatar_url)}
 								alt=""
 								class="h-10 w-10 shrink-0 rounded-full object-cover"
 							/>

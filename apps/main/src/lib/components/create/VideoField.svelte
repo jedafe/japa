@@ -9,6 +9,7 @@
 	import { resolveVideo, uploadVideo, type VideoResolveResult } from '#lib/api/videos.js';
 	import { formatDuration } from '#lib/utils/duration.js';
 	import type { VideoSource } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		/** Bound composer fields, auto-filled from the resolved source. */
@@ -159,7 +160,7 @@
 		<div class="video-linked">
 			{#if linked.thumbnail_url}
 				<span class="video-thumb">
-					<img src={linked.thumbnail_url} alt="" />
+					<img src={remoteImageUrl(linked.thumbnail_url)} alt="" />
 					<span class="video-play"><Play size={16} /></span>
 				</span>
 			{/if}

@@ -1199,7 +1199,7 @@
 						<p class="mb-1 text-xs font-medium text-[var(--color-muted)]">{t('personas.avatar', 'Avatar')}</p>
 						<div class="flex items-center gap-2">
 							{#if personaAvatarUrl}
-								<img src={personaAvatarUrl} alt="" class="h-12 w-12 rounded-full border border-[var(--color-border)] object-cover" />
+								<img src={remoteImageUrl(personaAvatarUrl)} alt="" class="h-12 w-12 rounded-full border border-[var(--color-border)] object-cover" />
 							{:else}
 								<div class="grid h-12 w-12 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 									<Image class="h-5 w-5 text-[var(--color-muted)]" />
@@ -1217,7 +1217,7 @@
 						<p class="mb-1 text-xs font-medium text-[var(--color-muted)]">{t('personas.cover_photo', 'Cover Photo')}</p>
 						<div class="flex items-center gap-2">
 							{#if personaCoverUrl}
-								<img src={personaCoverUrl} alt="" class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+								<img src={remoteImageUrl(personaCoverUrl)} alt="" class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
 							{:else}
 								<div class="grid h-12 w-20 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]">
 									<Image class="h-5 w-5 text-[var(--color-muted)]" />
@@ -1694,7 +1694,7 @@ profile is private, or no stage is set. -->
 								class="block h-full w-full cursor-zoom-in"
 								onclick={() => openLightbox(mediaView.filtered, mediaView.filtered.indexOf(item))}
 							>
-								<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
+								<img src={remoteImageUrl(item.url)} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
 							</button>
 							{#if isOwnProfile}
 								<button
@@ -1718,7 +1718,7 @@ profile is private, or no stage is set. -->
 				<div class="mb-4 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#if user.banner_url}
 						<div class="h-28 overflow-hidden sm:h-36">
-							<img src={user.banner_url} alt="" class="h-full w-full object-cover" loading="lazy" />
+							<img src={remoteImageUrl(user.banner_url)} alt="" class="h-full w-full object-cover" loading="lazy" />
 						</div>
 					{/if}
 					<div class="flex flex-wrap items-center gap-3 p-3 text-sm text-[var(--color-muted)]">
@@ -1860,7 +1860,7 @@ profile is private, or no stage is set. -->
 						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 							<a href={href} class="flex min-w-0 flex-1 items-center gap-3">
 								{#if u.avatar_url}
-									<img src={u.avatar_url} alt={u.display_name ?? u.username} class="h-10 w-10 rounded-full object-cover" />
+									<img src={remoteImageUrl(u.avatar_url)} alt={u.display_name ?? u.username} class="h-10 w-10 rounded-full object-cover" />
 								{:else}
 									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 										{(u.display_name?.charAt(0) ?? u.username?.charAt(0) ?? '?').toUpperCase()}

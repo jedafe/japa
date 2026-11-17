@@ -19,6 +19,7 @@
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '#lib/types/index.js';
 	import { routeFeatureGateVisible } from '#lib/components/shell/routeFeatureFlags.js';
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import { theme } from '#lib/stores/theme.svelte.js';
 	import AdSlot from '#lib/components/ui/AdSlot.svelte';
 	import { provideRailGate, navRailVisible } from './railVisibility.svelte';
@@ -67,8 +68,8 @@
 	const collapsedFavicon = $derived(
 		((theme.resolved === 'dark'
 			? (page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url_dark']
-			: undefined) ??
-			(page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url'] ??
+			: undefined) ||
+			(page.data.siteSettings as Record<string, string> | undefined)?.['appearance.favicon_url'] ||
 			'/favicon.svg')
 	);
 
@@ -201,7 +202,7 @@
 			{#if showBrand}
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if collapsed}
-						<img src={collapsedFavicon} alt={t('app.name')} class="h-8 w-8 shrink-0 object-contain" />
+						<img src={remoteImageUrl(collapsedFavicon)} alt={t('app.name')} class="h-8 w-8 shrink-0 object-contain" />
 					{:else}
 						<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
 					{/if}

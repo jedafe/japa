@@ -19,6 +19,7 @@
 	import type { ProfilePost, FeedItem } from '#lib/types/index.js';
 
 	import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	let { data }: { data: PageData } = $props();
 
 	const mediaImages = $derived(data.media.filter((m) => m.mime_type.startsWith('image/')));
@@ -290,7 +291,7 @@
 							>
 								{#snippet trigger()}
 									{#if member.user.avatar_url}
-										<img src={member.user.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+										<img src={remoteImageUrl(member.user.avatar_url)} alt="" class="h-10 w-10 rounded-full object-cover" />
 									{:else}
 										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 											{(member.user.display_name ?? member.user.username).charAt(0).toUpperCase()}

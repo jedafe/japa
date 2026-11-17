@@ -18,6 +18,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import type { OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, ProfilePost } from '#lib/types/index.js';
 	import TipsSection from '#lib/components/hub/settings/sections/TipsSection.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data } = $props();
 	const org = $derived(data.org);
@@ -643,7 +644,7 @@
 					<li class="flex items-center justify-between gap-3 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 						<div class="flex min-w-0 items-center gap-3">
 							{#if m.user.avatar_url}
-								<img src={m.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
+								<img src={remoteImageUrl(m.user.avatar_url)} alt="" class="h-8 w-8 rounded-full object-cover" />
 							{:else}
 								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-medium text-[var(--color-primary-text)]">
 									{(m.user.display_name ?? m.user.username).slice(0, 1).toUpperCase()}

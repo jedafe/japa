@@ -28,6 +28,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 import { contentHref } from '#lib/utils/contentLink.js';
 
 import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	// /thread/{slug} forum-kind payload — identical to the former
 	// (app)/forum/[slug] page data (thread-rename spec: forum render
 	// unchanged).
@@ -525,7 +526,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					{#snippet trigger()}
 						{#if thread.author_avatar_url}
 							<img
-								src={thread.author_avatar_url}
+								src={remoteImageUrl(thread.author_avatar_url)}
 								alt=""
 								class="h-10 w-10 shrink-0 rounded-full object-cover"
 								loading="lazy"

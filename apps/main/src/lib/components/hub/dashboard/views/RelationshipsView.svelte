@@ -19,6 +19,7 @@
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Users, ChevronLeft, ChevronRight, Search } from 'lucide-svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	// The backend returns a uniform FollowingInfo shape for /me/following and
 	// /me/followed-tags: { id, entity_type, entity_id, entity_name, entity_slug,
@@ -583,7 +584,7 @@
 						<div class="flex min-w-0 items-center gap-3">
 							{#if item.entity_avatar_url}
 								<img
-									src={item.entity_avatar_url}
+									src={remoteImageUrl(item.entity_avatar_url)}
 									alt={displayName(item) || item.entity_name || item.entity_id}
 									class="h-10 w-10 shrink-0 rounded-full object-cover"
 								/>
@@ -634,7 +635,7 @@
 						<div class="flex min-w-0 items-center gap-3">
 							{#if user.avatar_url}
 								<img
-									src={user.avatar_url}
+									src={remoteImageUrl(user.avatar_url)}
 									alt={user.display_name || user.username || user.follower_id}
 									class="h-10 w-10 shrink-0 rounded-full object-cover"
 								/>
@@ -749,7 +750,7 @@
 						<div class="flex min-w-0 items-center gap-3">
 							{#if user.avatar_url}
 								<img
-									src={user.avatar_url}
+									src={remoteImageUrl(user.avatar_url)}
 									alt={user.display_name || user.username || user.blocked_id}
 									class="h-10 w-10 shrink-0 rounded-full object-cover"
 								/>
@@ -791,7 +792,7 @@
 						<div class="flex min-w-0 items-center gap-3">
 							{#if user.avatar_url}
 								<img
-									src={user.avatar_url}
+									src={remoteImageUrl(user.avatar_url)}
 									alt={user.display_name || user.username || user.muted_user_id}
 									class="h-10 w-10 shrink-0 rounded-full object-cover"
 								/>

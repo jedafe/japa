@@ -75,7 +75,7 @@
 		e.preventDefault();
 		e.stopPropagation();
 		if (item.cover_image_url) {
-			openLightbox([{ id: `cover-${item.id}`, url: item.cover_image_url, alt_text: item.title }]);
+			openLightbox([{ id: `cover-${item.id}`, url: remoteImageUrl(item.cover_image_url), alt_text: item.title }]);
 		}
 	}
 </script>
@@ -247,7 +247,7 @@
 	>
 		{#if item.cover_image_url}
 			<span class="group relative block">
-				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
+				<img src={remoteImageUrl(item.cover_image_url)} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
 				{@render coverZoom()}
 				{@render videoOverlay()}
 			</span>
@@ -346,7 +346,7 @@
 		{/if}
 		{#if item.cover_image_url}
 			<span class="group relative mb-3.5 block">
-				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+				<img src={remoteImageUrl(item.cover_image_url)} alt={item.title} loading="lazy" class="aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
 				{@render coverZoom()}
 				{@render videoOverlay()}
 			</span>
@@ -397,7 +397,7 @@
 		</span>
 		{#if item.cover_image_url}
 			<span class="group relative block h-[84px] w-[84px] shrink-0">
-				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full rounded-[var(--radius)] object-cover" />
+				<img src={remoteImageUrl(item.cover_image_url)} alt={item.title} loading="lazy" class="h-full w-full rounded-[var(--radius)] object-cover" />
 				{@render coverZoom(true)}
 				{#if isVideo}
 					<span class="pointer-events-none absolute inset-0 grid place-items-center rounded-[var(--radius)] bg-black/25">

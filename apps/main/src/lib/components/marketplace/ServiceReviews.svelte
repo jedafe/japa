@@ -8,6 +8,7 @@
 	import { ArrowRight, ChevronLeft, ChevronRight, Quote, Star } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import type { ServiceReview, ServiceReviewAggregate } from '#lib/types/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
 		reviews: ServiceReview[];
@@ -110,7 +111,7 @@
 						<div class="flex items-center gap-2.5">
 							{#if review.author_avatar_url}
 								<img
-									src={review.author_avatar_url}
+									src={remoteImageUrl(review.author_avatar_url)}
 									alt=""
 									class="h-9 w-9 rounded-full object-cover"
 								/>
