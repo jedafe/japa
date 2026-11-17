@@ -246,9 +246,11 @@ func (s *Service) FollowRemote(ctx context.Context, userID pgtype.UUID, target s
 // redriveFollow re-ledgers the member's original Follow for a pending
 // edge whose Accept/Reject never arrived. The wire activity keeps the
 // edge's ap_activity_id (or a fresh id when the row never recorded one,
-// which is written back through the same upsert); the delivery row
-// dedups on activity_ap_id + inbox, so the ledger key carries a resend
-// discriminator — one fresh row per explicit re-request.
+// which is written back through the same upsert); the delivery ledger
+// dedups on activity_ap_id + inbox, so the resend key carries a
+// 5-minute window discriminator — one fresh row per window rather than
+// per click, so a member hammering Resend can't balloon the ledger or
+// the remote's inbox while the in-flight attempt is still live.
 func (s *Service) redriveFollow(ctx context.Context, actor gen.FederatedActor, remote *gen.RemoteActor, edge gen.FederationFollow, actorURL, inbox string) error {
 	wireID := ""
 	if edge.ApActivityID != nil {
@@ -274,7 +276,7 @@ func (s *Service) redriveFollow(ctx context.Context, actor gen.FederatedActor, r
 		"object":   actorURL,
 		"to":       []string{actorURL},
 	}
-	ledgerKey := fmt.Sprintf("%s#resend/%s", wireID, uuid.NewString())
+	ledgerKey := fmt.Sprintf("%s#resend/%d", wireID, time.Now().Unix()/300)
 	row := gen.ListRemoteFollowerInboxesByActorRow{InboxUrl: &inbox, RemoteActorID: remote.ID}
 	if _, err := s.insertDeliveries(ctx, actor.ID, follow, ledgerKey,
 		[]gen.ListRemoteFollowerInboxesByActorRow{row}, true); err != nil {

@@ -264,7 +264,7 @@
 		</ul>
 
 		{#if fed.moved_to_url}
-			<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-warning,#f59e0b)]/40 bg-[var(--color-warning,#f59e0b)]/10 px-3 py-2 text-xs text-[var(--color-text)]">
+			<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-warning)]/10 px-3 py-2 text-xs text-[var(--color-text)]">
 				{t('settings.federation.moved_banner', 'This account has migrated. Remote servers now redirect your actor to the new account above.')}
 			</p>
 		{/if}

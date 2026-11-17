@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -633,10 +634,31 @@ func (s *Service) flushDeliveriesInline(ctx context.Context, ids []pgtype.UUID) 
 
 // ResolveRemoteActorTask is the worker seam for federation:resolve_actor —
 // a low-priority fetch+upsert for rows the inbound path couldn't resolve
-// inline (or scheduled refreshes).
+// inline (or scheduled refreshes). It force-refreshes rather than riding
+// resolveRemoteActor's cache/freshness fast-path: signature verification
+// just touched the row, so the Update{Person} caller that enqueues this
+// would otherwise be a no-op exactly when the remote claims it changed.
 func (s *Service) ResolveRemoteActorTask(ctx context.Context, actorURL string) error {
-	_, err := s.resolveRemoteActor(ctx, actorURL)
-	return err
+	u, err := url.Parse(actorURL)
+	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("%w: bad actor url %q", ErrRemoteFetch, actorURL)
+	}
+	if s.isLocalHost(u.Hostname()) {
+		return fmt.Errorf("%w: local actor %q", ErrRemoteBlocked, actorURL)
+	}
+	if !s.instanceAllowed(ctx, u.Hostname()) {
+		return fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
+	}
+	doc, err := s.fetchRemoteActorDoc(ctx, actorURL)
+	if err != nil {
+		return err
+	}
+	row, err := s.upsertRemoteActor(ctx, actorURL, doc)
+	if err != nil {
+		return fmt.Errorf("%w: upsert: %v", ErrRemoteFetch, err)
+	}
+	s.cacheSetRemote(ctx, row)
+	return nil
 }
 
 // PruneDeliveries is the daily ledger hygiene task (§126, §11). It first
