@@ -187,12 +187,21 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		}
 	}
 
+	// §126 tag discovery: a relay Announce{Note} is the Follow{Hashtag}
+	// delivery form — ingesting it needs the object doc + its author's
+	// actor resolved, remote fetches that hoist pre-tx like the Move
+	// target. Nil when no subscription warrant could cover the host.
+	var announced *announceIngest
+	if apStr(act["type"]) == "Announce" && signer != nil {
+		announced = s.resolveAnnounceTarget(ctx, act)
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("inbound tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	res := s.dispatch(ctx, gen.New(tx), row, act, signer, moveTarget, moveReject)
+	res := s.dispatch(ctx, gen.New(tx), row, act, signer, moveTarget, moveReject, announced)
 	// An internal write failure must not commit: the tx has partial
 	// mutations by definition, and stamping 'error' would strand the
 	// half-applied state with no retry (the status CHECK excludes
@@ -306,7 +315,7 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 // dedup) — it is stable across retries of this row and unique across
 // Follow events. moveTarget/moveReject carry the pre-tx Move verdict —
 // nil + "" for non-Move activities.
-func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor, moveTarget *gen.RemoteActor, moveReject string) dispatchResult {
+func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.FederationInbound, act map[string]any, signer *gen.RemoteActor, moveTarget *gen.RemoteActor, moveReject string, announced *announceIngest) dispatchResult {
 	typ := apStr(act["type"])
 	actorID := apActorID(act)
 	// The relay-courier swap ran pre-tx in ProcessInbound (a remote fetch
@@ -325,7 +334,7 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.Federati
 	case "Like":
 		return s.dispatchLike(ctx, q, act, signer)
 	case "Announce":
-		return s.dispatchAnnounce(ctx, q, act, signer)
+		return s.dispatchAnnounce(ctx, q, act, signer, announced)
 	case "Create":
 		return s.dispatchCreate(ctx, q, act, signer)
 	case "Update":
@@ -421,7 +430,7 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 	// re-send must not re-ping the member.
 	priorStatus := ""
 	if prior, perr := q.GetFederationFollowByPair(ctx, gen.GetFederationFollowByPairParams{
-		LocalActorID: actor.ID, RemoteActorID: signer.ID,
+		LocalActorID: actor.ID, RemoteActorID: signer.ID, Direction: "inbound",
 	}); perr == nil {
 		priorStatus = prior.Status
 	}
@@ -430,6 +439,7 @@ func (s *Service) dispatchFollow(ctx context.Context, q *gen.Queries, act map[st
 		RemoteActorID: signer.ID,
 		ApActivityID:  stringPtrOrNil(apStr(act["id"])),
 		Status:        status,
+		Direction:     "inbound",
 	})
 	if err != nil {
 		return dispatchResult{status: "error", reason: "follow upsert: " + err.Error()}
@@ -1052,12 +1062,26 @@ func (s *Service) remoteReaction(ctx context.Context, q *gen.Queries, act map[st
 
 // dispatchAnnounce lands a remote boost: the shares ledger gates the
 // share_count bump so replays and double-boosts can't drift the counter.
-func (s *Service) dispatchAnnounce(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+// A pre-resolved announceIngest takes the tag-discovery ingest arm
+// first — relay Announce{Note} is how Follow{Hashtag} deliveries arrive.
+func (s *Service) dispatchAnnounce(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor, announced *announceIngest) dispatchResult {
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned announce"}
 	}
 	content, ok := s.localContentForObject(ctx, q, apObjectID(act))
 	if !ok {
+		// §126 tag discovery — a relay Announce{Note} ingests under the
+		// same warrant as Create, authored by the resolved actor (the
+		// signer is the relay). The boost then ledgers via the share arm.
+		if announced != nil {
+			res := s.storeRemotePost(ctx, q, announced.obj, announced.objectID,
+				apID(announced.obj["inReplyTo"]), "", announced.author)
+			if res.status == "error" || res.status == "rejected" {
+				return res
+			}
+			// "processed" → the post exists for the share arm; "ignored"
+			// → the warrant raced away — the arm ignores likewise.
+		}
 		// M5: a boost of a stored remote post counts too — the
 		// remote-post share ledger mirrors federation_remote_shares.
 		return s.shareRemotePost(ctx, q, act, signer)

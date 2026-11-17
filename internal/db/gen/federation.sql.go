@@ -826,6 +826,24 @@ func (q *Queries) ExistsAcceptedOutboundFollowerOfRemote(ctx context.Context, re
 	return warrant, err
 }
 
+const existsTagSubscriptionForDomain = `-- name: ExistsTagSubscriptionForDomain :one
+SELECT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower($1))
+) AS exists
+`
+
+// Announce-ingest fetch gate (§126 tag discovery): an announce earns an
+// object fetch only when some live subscription's domain covers the
+// object's host — ” = any domain.
+func (q *Queries) ExistsTagSubscriptionForDomain(ctx context.Context, domain string) (bool, error) {
+	row := q.db.QueryRow(ctx, existsTagSubscriptionForDomain, domain)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const existsTagSubscriptionForPost = `-- name: ExistsTagSubscriptionForPost :one
 SELECT EXISTS (
     SELECT 1 FROM federation_tag_subscriptions ts

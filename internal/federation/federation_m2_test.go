@@ -737,7 +737,7 @@ func TestDBFanoutDeleteAfterLedgerPrune(t *testing.T) {
 		t.Fatalf("actor: %v", err)
 	}
 	if _, err := gen.New(d.Writer).UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
-		LocalActorID: actor.ID, RemoteActorID: remote.ID, Status: "accepted",
+		LocalActorID: actor.ID, RemoteActorID: remote.ID, Status: "accepted", Direction: "inbound",
 	}); err != nil {
 		t.Fatalf("follow: %v", err)
 	}

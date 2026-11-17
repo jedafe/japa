@@ -45,7 +45,7 @@ var tagRe = regexp.MustCompile(`^[\p{L}\p{N}_]{1,64}$`)
 // filter inputs need no strict validation (a non-tag just matches
 // nothing); subscription inputs must additionally pass tagRe.
 func normalizeTagParam(raw string) string {
-	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(raw), "#"))
+	return strings.ToLower(strings.TrimLeft(strings.TrimSpace(raw), "#"))
 }
 
 // TagSubscription is the member-facing view of one ingest-warrant row.
@@ -257,11 +257,13 @@ func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTa
 		return RemoteSearchResult{}, err
 	}
 	var domains []string
+	pinned := false
 	if d := strings.ToLower(strings.TrimSpace(rawDomain)); d != "" {
 		if !validHost(d) {
 			return RemoteSearchResult{}, ErrInvalidDomain
 		}
 		domains = []string{d}
+		pinned = true
 	} else {
 		rows, err := s.store.read.ListRemoteSearchDomains(ctx, gen.ListRemoteSearchDomainsParams{
 			UserID:      userID,
@@ -279,7 +281,7 @@ func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTa
 	for _, d := range domains {
 		if s.instanceAllowed(ctx, d) {
 			allowed = append(allowed, d)
-		} else if rawDomain != "" {
+		} else if pinned {
 			// A pinned domain that's blocked would otherwise degrade to an
 			// indistinguishable "no results" — surface it as a domain error.
 			res.Errors = append(res.Errors, RemoteSearchError{Domain: d, Message: "instance is blocked"})

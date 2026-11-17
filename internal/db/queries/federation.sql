@@ -1283,6 +1283,16 @@ SELECT EXISTS (
       AND EXISTS (SELECT 1 FROM unnest(@hashtags::text[]) ht WHERE lower(ht) = ts.tag)
 ) AS exists;
 
+-- name: ExistsTagSubscriptionForDomain :one
+-- Announce-ingest fetch gate (§126 tag discovery): an announce earns an
+-- object fetch only when some live subscription's domain covers the
+-- object's host — '' = any domain.
+SELECT EXISTS (
+    SELECT 1 FROM federation_tag_subscriptions ts
+    WHERE ts.status = 'active'
+      AND (ts.domain = '' OR lower(ts.domain) = lower(@domain))
+) AS exists;
+
 -- name: ListRemoteSearchDomains :many
 -- Candidate instances for the live tag-search fan-out: the member's
 -- subscription domains, domains of remote actors the member follows, and

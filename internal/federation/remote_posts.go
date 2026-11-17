@@ -9,6 +9,7 @@ package federation
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -105,6 +106,89 @@ func remotePostHashtags(obj map[string]any) []string {
 		return []string{}
 	}
 	return tags
+}
+
+// announceIngest carries a pre-resolved Announce target into the
+// dispatch tx — the object doc (embedded or fetched) plus its resolved
+// author actor. The relay signer is NOT the post's author.
+type announceIngest struct {
+	obj      map[string]any
+	objectID string
+	author   *gen.RemoteActor
+}
+
+// resolveAnnounceTarget pre-resolves a relay Announce{object} for tag-
+// warrant ingest — hoisted pre-tx like the Move target (remote fetches
+// must not hold the dispatch tx open). Announce is the delivery form
+// Follow{Hashtag}/Follow{Public} relays use; without it every relayed
+// post drops as "announce target is not a local object". Returns nil
+// when nothing should ingest: no domain-covering subscription (the
+// fetch gate — '' subs match every host), the object is already stored,
+// the doc won't resolve, or attributedTo can't produce an active
+// author actor.
+func (s *Service) resolveAnnounceTarget(ctx context.Context, act map[string]any) *announceIngest {
+	objectID := apObjectID(act)
+	if objectID == "" {
+		return nil
+	}
+	u, err := url.Parse(objectID)
+	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") {
+		return nil
+	}
+	// Our own objects take the local share arm — and a domainless sub
+	// covers every host including ours, so without this we'd fetch our
+	// own URL and could resolve our own actor as "remote".
+	if sameURLHost(objectID, s.apiBase()) {
+		return nil
+	}
+	// Cheap gate — the announce only earns a fetch when some live
+	// subscription's domain covers the object's host ('' = any domain).
+	// A domainless sub matches blocked instances too, so the instance
+	// allowlist re-checks here (fetchAP itself is only SSRF-guarded).
+	ok, err := s.store.read.ExistsTagSubscriptionForDomain(ctx, u.Hostname())
+	if err != nil || !ok || !s.instanceAllowed(ctx, u.Hostname()) {
+		return nil
+	}
+	// Already-stored objects take the share arm, never the ingest arm.
+	if _, err := s.store.read.GetFederationRemotePostByApID(ctx, objectID); err == nil {
+		return nil
+	}
+	obj := apObj(act["object"])
+	if obj == nil {
+		raw, err := s.fetchAP(ctx, objectID)
+		if err != nil {
+			return nil
+		}
+		var fetched map[string]any
+		if json.Unmarshal(raw, &fetched) != nil {
+			return nil
+		}
+		obj = fetched
+	}
+	// Activity-wrapped announces ({type:Create, object:{Note}}) — the
+	// content doc sits one level down; re-anchor on its id.
+	if apStr(obj["type"]) == "Create" {
+		if inner := apObj(obj["object"]); inner != nil && apID(inner["id"]) != "" {
+			obj = inner
+			objectID = apID(inner["id"])
+		}
+	}
+	authorIRI := apID(obj["attributedTo"])
+	if authorIRI == "" {
+		return nil
+	}
+	// The object id must live on its claimed author's host — the
+	// dispatchCreate signer↔object rule applied author↔object, since
+	// the signer here is the relay. Without it a relay could embed a
+	// doc minting an object id on a domain its attributedTo doesn't own.
+	if !sameURLHost(objectID, authorIRI) {
+		return nil
+	}
+	author, err := s.resolveRemoteActor(ctx, authorIRI)
+	if err != nil || author == nil || author.Status != "active" {
+		return nil
+	}
+	return &announceIngest{obj: obj, objectID: objectID, author: author}
 }
 
 // storeRemotePost is the dispatchCreate arm for objects that anchor no

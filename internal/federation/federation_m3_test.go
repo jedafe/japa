@@ -441,7 +441,7 @@ func TestDBGroupAnnounceFanout(t *testing.T) {
 	// A remote follower of the group.
 	remote, _ := newRemoteActor(t, ctx, svc, "grp-fanout.example")
 	if _, err := svc.store.write.UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
-		LocalActorID: group.ID, RemoteActorID: remote.ID, Status: "accepted",
+		LocalActorID: group.ID, RemoteActorID: remote.ID, Status: "accepted", Direction: "inbound",
 	}); err != nil {
 		t.Fatalf("group edge: %v", err)
 	}
@@ -944,7 +944,7 @@ func TestDBGroupAnnounceEnvelopeLapse(t *testing.T) {
 	}
 	remote, _ := newRemoteActor(t, ctx, svc, "grp-lapse.example")
 	if _, err := svc.store.write.UpsertFederationFollow(ctx, gen.UpsertFederationFollowParams{
-		LocalActorID: group.ID, RemoteActorID: remote.ID, Status: "accepted",
+		LocalActorID: group.ID, RemoteActorID: remote.ID, Status: "accepted", Direction: "inbound",
 	}); err != nil {
 		t.Fatalf("group edge: %v", err)
 	}

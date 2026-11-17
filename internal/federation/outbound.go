@@ -26,6 +26,10 @@ import (
 // remote actor — malformed handle, unsupported scheme, or a local URL.
 var ErrInvalidTarget = errors.New("federation: invalid remote target")
 
+// ErrInvalidCursor rejects a malformed timeline cursor — distinct from
+// ErrInvalidTarget which describes an unresolvable actor.
+var ErrInvalidCursor = errors.New("federation: invalid timeline cursor")
+
 // ErrMoveTooSoon marks an outbound Move inside the
 // federation.move.cooldown_days window — the handler maps it to 429.
 var ErrMoveTooSoon = errors.New("federation: move cooldown active")
@@ -58,7 +62,7 @@ func (s *Service) memberActor(ctx context.Context, userID pgtype.UUID) (gen.Fede
 	if actor.Status != ActorStatusActive {
 		return actor, ErrNotFederated
 	}
-	return s.repairActorURLs(ctx, actor)
+	return s.repairActorURLs(ctx, actor), nil
 }
 
 // resolveTargetURL turns the member's freeform target into an actor URL:
@@ -363,16 +367,16 @@ func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor
 	if cursor != "" {
 		raw, derr := base64.RawURLEncoding.DecodeString(cursor)
 		if derr != nil {
-			return RemoteTimelinePage{}, ErrInvalidTarget
+			return RemoteTimelinePage{}, ErrInvalidCursor
 		}
 		ts, idPart, ok := strings.Cut(string(raw), "|")
 		if !ok {
-			return RemoteTimelinePage{}, ErrInvalidTarget
+			return RemoteTimelinePage{}, ErrInvalidCursor
 		}
 		t, terr := time.Parse(time.RFC3339Nano, ts)
 		var id pgtype.UUID
 		if terr != nil || id.Scan(idPart) != nil || !id.Valid {
-			return RemoteTimelinePage{}, ErrInvalidTarget
+			return RemoteTimelinePage{}, ErrInvalidCursor
 		}
 		cursorKey, cursorID = &t, &id
 	}

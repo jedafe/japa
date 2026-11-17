@@ -8,6 +8,7 @@ package federation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -249,5 +250,85 @@ func TestResolveTargetURLAcctSyntax(t *testing.T) {
 		if _, err := s.resolveTargetURL(context.Background(), target); !errors.Is(err, ErrInvalidTarget) {
 			t.Errorf("resolveTargetURL(%q) err = %v, want ErrInvalidTarget", target, err)
 		}
+	}
+}
+
+// §126 tag discovery — a relay Announce{Note} is the Follow{Hashtag}
+// delivery form: the ingest arm resolves the embedded doc's author and
+// stores under them (not the relay signer), then the boost ledgers.
+// A announce with no covering subscription keeps the pre-arm behavior.
+func TestDBInboundAnnounceTagIngest(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newFederationUser(t, ctx, d, "active")
+	svc := newFederationService(t, d)
+	if _, err := svc.EnableFederation(ctx, userID); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	relay, relayURL := newRemoteActor(t, ctx, svc, "relay.example")
+	author, authorURL := newRemoteActor(t, ctx, svc, "orig.example")
+	if _, err := svc.store.write.InsertTagSubscription(ctx, gen.InsertTagSubscriptionParams{
+		UserID: userID, Tag: "golang", Domain: "orig.example",
+	}); err != nil {
+		t.Fatalf("insert tag sub: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = svc.db.Writer.Exec(context.Background(),
+			`DELETE FROM federation_remote_posts WHERE remote_actor_id IN ($1, $2)`, author.ID, relay.ID)
+	})
+
+	noteID := fmt.Sprintf("https://orig.example/objects/%d", time.Now().UnixNano())
+	act := map[string]any{
+		"id": relayURL + "#ann1", "type": "Announce", "actor": relayURL,
+		"object": map[string]any{
+			"id":           noteID,
+			"type":         "Note",
+			"attributedTo": authorURL,
+			"content":      "<p>hello #golang world</p>",
+			"tag":          []any{map[string]any{"type": "Hashtag", "name": "#golang"}},
+		},
+	}
+	row := runInbound(t, ctx, svc, act)
+	if row.Status != "processed" {
+		t.Fatalf("announce status %q (reason %v)", row.Status, row.Error)
+	}
+	var actorID pgtype.UUID
+	var shares int64
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT remote_actor_id FROM federation_remote_posts WHERE ap_id = $1`, noteID).Scan(&actorID); err != nil {
+		t.Fatalf("post lookup: %v", err)
+	}
+	if actorID != author.ID {
+		t.Fatalf("post attributed to %v, want author %v", actorID, author.ID)
+	}
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM federation_remote_post_shares s
+		 JOIN federation_remote_posts p ON p.id = s.post_id
+		 WHERE p.ap_id = $1 AND s.remote_actor_id = $2`, noteID, relay.ID).Scan(&shares); err != nil {
+		t.Fatalf("share lookup: %v", err)
+	}
+	if shares != 1 {
+		t.Fatalf("relay boost shares = %d, want 1", shares)
+	}
+
+	// No covering subscription — the announce drops exactly like before.
+	other, otherURL := newRemoteActor(t, ctx, svc, "other.example")
+	miss := map[string]any{
+		"id": relayURL + "#ann2", "type": "Announce", "actor": relayURL,
+		"object": map[string]any{
+			"id":           fmt.Sprintf("https://other.example/objects/%d", time.Now().UnixNano()),
+			"type":         "Note",
+			"attributedTo": otherURL,
+			"content":      "<p>nobody follows this #golang</p>",
+			"tag":          []any{map[string]any{"type": "Hashtag", "name": "#golang"}},
+		},
+	}
+	row = runInbound(t, ctx, svc, miss)
+	if row.Status != "ignored" {
+		t.Fatalf("uncovered announce status %q (reason %v)", row.Status, row.Error)
+	}
+	if n := countRows(t, ctx, svc,
+		`SELECT COUNT(*) FROM federation_remote_posts WHERE remote_actor_id = $1`, other.ID); n != 0 {
+		t.Fatalf("uncovered posts stored: %d", n)
 	}
 }
