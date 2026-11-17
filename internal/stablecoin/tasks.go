@@ -150,9 +150,25 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 		if err != nil {
 			continue
 		}
-		events, _, err := s.provider.Activity(ctx, w.Locator, "")
-		if err != nil {
-			slog.Warn("stablecoin: offramp poll failed", "wallet", w.Locator, "error", err)
+		// Page provider activity (bounded) — a busy wallet can push a
+		// pending signature off page 1.
+		var events []ProviderEvent
+		cursor := ""
+		failed := false
+		for page := 0; page < 5; page++ {
+			evs, next, err := s.provider.Activity(ctx, w.Locator, cursor)
+			if err != nil {
+				slog.Warn("stablecoin: offramp poll failed", "wallet", w.Locator, "error", err)
+				failed = true
+				break
+			}
+			events = append(events, evs...)
+			if next == "" || len(evs) == 0 {
+				break
+			}
+			cursor = next
+		}
+		if failed {
 			continue
 		}
 		// Status per signature — a failed onchain event must fail the row,
@@ -222,12 +238,14 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if assets := s.assetList(ctx); len(assets) > 0 {
 		asset = assets[0]
 	}
+	// Tip legs are credits-denominated; the onchain transfer is USD-token
+	// minor — convert at the seam (§58 credits_per_unit on the USD row).
 	res, err := s.Settle(ctx, SettleInput{
 		FromUserID:  tip.SenderUserID,
 		ToAddress:   rw.Address,
 		Asset:       asset,
-		AmountMinor: tip.NetCredits,
-		FeeMinor:    tip.FeeAmount,
+		AmountMinor: s.creditsToUsdMinor(ctx, tip.NetCredits),
+		FeeMinor:    s.creditsToUsdMinor(ctx, tip.FeeAmount),
 		Idempotency: "tip:" + tip.ID.String(),
 		Reference:   "tip",
 	})

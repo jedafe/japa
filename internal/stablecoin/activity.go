@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -215,16 +216,57 @@ func normalizeAsset(a string) string {
 	}
 }
 
-// creditsPerUSD resolves the display ratio from the currencies table
-// (credits_per_unit on the USD row, §58/ADR-065) — falls back to 1:1 in
-// minor units when the rate seam is unwired or the row is absent.
-func (s *Service) creditsPerUSD(ctx context.Context) int64 {
-	if s.creditRater != nil {
-		if n, err := s.creditRater.CreditsPerUSD(ctx); err == nil && n > 0 {
-			return n
-		}
+// creditsPerUnit resolves credits-per-whole-unit for a currency from the
+// currencies table (§58/ADR-065) — nil-safe: returns 0 when the rate seam
+// is unwired or the row is absent.
+func (s *Service) creditsPerUnit(ctx context.Context, code string) int64 {
+	if s.creditRater == nil {
+		return 0
 	}
-	return 100 // 1 credit per USD minor-unit display unit — neutral default
+	n, err := s.creditRater.CreditsPerUnit(ctx, code)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// creditsPerUSD resolves credits-per-USD — falls back to a neutral default
+// when the rate is unavailable (display math only; settlement callers must
+// not rely on the fallback).
+func (s *Service) creditsPerUSD(ctx context.Context) int64 {
+	if n := s.creditsPerUnit(ctx, "usd"); n > 0 {
+		return n
+	}
+	return 100 // neutral display default (real rate comes from the USD currencies row)
+}
+
+// creditsToUsdMinor converts platform credits to 6-decimal USD-token minor —
+// tips are credits-denominated; onchain ops are minor-denominated.
+func (s *Service) creditsToUsdMinor(ctx context.Context, credits int64) int64 {
+	return credits * 1_000_000 / s.creditsPerUSD(ctx)
+}
+
+// fiatToUsdMinor converts fiat minor (2-decimal convention, matching
+// payments.amount) to USD-token minor. USD-priced bookings are an exact
+// 2dp→6dp unit conversion; other currencies convert via the two-hop
+// credits rate (fiat minor→units→credits→USD minor) and fail closed when
+// the rate is missing — never settle escrow on a guessed rate.
+func (s *Service) fiatToUsdMinor(ctx context.Context, fiatMinor int64, currency string) (int64, error) {
+	code := strings.ToLower(strings.TrimSpace(currency))
+	switch code {
+	case "":
+		return 0, fmt.Errorf("stablecoin: booking has no price currency")
+	case "credits":
+		return s.creditsToUsdMinor(ctx, fiatMinor), nil
+	case "usd":
+		return fiatMinor * 10_000, nil
+	}
+	fiatPer := s.creditsPerUnit(ctx, code)
+	if fiatPer <= 0 {
+		return 0, fmt.Errorf("stablecoin: unsupported booking currency %q", currency)
+	}
+	credits := fiatMinor * fiatPer / 100 // fiat minor→units→credits (2dp minor convention)
+	return credits * 1_000_000 / s.creditsPerUSD(ctx), nil
 }
 
 // FeedEntry is one row of the unified member activity feed —

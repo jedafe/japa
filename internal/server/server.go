@@ -10905,8 +10905,8 @@ type stablecoinCreditRater struct {
 	q *gen.Queries
 }
 
-func (a stablecoinCreditRater) CreditsPerUSD(ctx context.Context) (int64, error) {
-	row, err := a.q.GetCurrencyByCode(ctx, "USD")
+func (a stablecoinCreditRater) CreditsPerUnit(ctx context.Context, code string) (int64, error) {
+	row, err := a.q.GetCurrencyByCode(ctx, strings.ToUpper(code))
 	if err != nil {
 		return 0, err
 	}

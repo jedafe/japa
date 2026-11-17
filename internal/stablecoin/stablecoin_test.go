@@ -354,7 +354,9 @@ func (f *fakeBonus) ListCreditEntries(_ context.Context, _ pgtype.UUID, _, _ int
 
 type fakeRater struct{ n int64 }
 
-func (f *fakeRater) CreditsPerUSD(_ context.Context) (int64, error) { return f.n, nil }
+func (f *fakeRater) CreditsPerUnit(_ context.Context, _ string) (int64, error) {
+	return f.n, nil
+}
 
 type fakeTips struct {
 	tips    map[string]*Tip
@@ -798,7 +800,7 @@ func TestProcessTipSettleLifecycle(t *testing.T) {
 			ID: newUUID().String(), UserID: u.String(), Status: WalletStatusActive,
 			Chain: "solana", Locator: "loc", Address: "addr-" + u.String()[:8],
 			DelegatedSigner: &DelegatedSigner{SignerRef: "ref", Scopes: []SignerScope{
-				{Asset: AssetUSDC, DailyCapMinor: 1_000_000},
+				{Asset: AssetUSDC, DailyCapMinor: 50_000_000}, // $50 — must cover the converted tip
 			}},
 		}
 		st.walletByUser[u.String()] = w
@@ -819,7 +821,9 @@ func TestProcessTipSettleLifecycle(t *testing.T) {
 	if len(p.transfers) != 1 {
 		t.Fatalf("settles = %d, want 1", len(p.transfers))
 	}
-	if p.transfers[0].AmountMinor != 950 || p.transfers[0].FeeMinor != 50 || p.transfers[0].Idempotency != "tip:"+tid.String() {
+	// Tip legs are credits — the onchain op is USD-token minor (§58 rate,
+	// fallback 100 credits/$): 950 credits → 9.5 USDC → 9_500_000 minor.
+	if p.transfers[0].AmountMinor != 9_500_000 || p.transfers[0].FeeMinor != 500_000 || p.transfers[0].Idempotency != "tip:"+tid.String() {
 		t.Fatalf("settle legs = %+v", p.transfers[0])
 	}
 	if tips.tips[tid.String()].Status != "completed" {
@@ -896,7 +900,7 @@ func TestPrepareEscrowGates(t *testing.T) {
 	mk := func(status string) {
 		st.bookings[bookingID.String()] = &ServiceBooking{
 			ID: bookingID.String(), BookerUserID: buyer.String(), ProviderUserID: seller.String(),
-			TotalPrice: 1000, Status: status,
+			TotalPrice: 1000, FeeCurrency: "usd", Status: status,
 		}
 	}
 	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{
@@ -922,7 +926,9 @@ func TestPrepareEscrowGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if setup.ArbiterAddress != "arb-key" || setup.FeeMinor != 150 || setup.AmountMinor != 850 {
+	// $10.00 booking (1000 fiat minor) → 10_000_000 USD-token minor;
+	// 15% platform share → 1_500_000 fee / 8_500_000 seller leg.
+	if setup.ArbiterAddress != "arb-key" || setup.FeeMinor != 1_500_000 || setup.AmountMinor != 8_500_000 {
 		t.Fatalf("setup = %+v", setup)
 	}
 	// Idempotent per booking.
@@ -943,7 +949,7 @@ func TestPrepareEscrowFailsWithoutArbiter(t *testing.T) {
 	bookingID := newUUID()
 	st.bookings[bookingID.String()] = &ServiceBooking{
 		ID: bookingID.String(), BookerUserID: buyer.String(), ProviderUserID: seller.String(),
-		TotalPrice: 1000, Status: "confirmed",
+		TotalPrice: 1000, FeeCurrency: "usd", Status: "confirmed",
 	}
 	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{
 		strs: map[string]string{"stablecoin.escrow_arbiter_ref": ""},

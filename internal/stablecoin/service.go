@@ -99,7 +99,9 @@ type Tip struct {
 // currencies table — credits_per_unit lives per-currency there, not in
 // system_settings.
 type creditRater interface {
-	CreditsPerUSD(ctx context.Context) (int64, error)
+	// CreditsPerUnit returns credits per ONE WHOLE unit of the currency
+	// (§58: e.g. USD row 1400 → $1 = 1400 credits).
+	CreditsPerUnit(ctx context.Context, currencyCode string) (int64, error)
 }
 
 // BonusEntry is one bonus-credit ledger row for the unified feed.
@@ -118,8 +120,9 @@ type ServiceBooking struct {
 	ID             string
 	BookerUserID   string
 	ProviderUserID string
-	TotalPrice     int64
+	TotalPrice     int64 // fiat minor units (payments.amount convention)
 	FeeAmount      int64
+	FeeCurrency    string // ISO code or 'credits'
 	Status         string
 }
 

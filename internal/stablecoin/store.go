@@ -522,6 +522,9 @@ func (st *Store) GetServiceBooking(ctx context.Context, id pgtype.UUID) (*Servic
 	if b.FeeAmount != nil {
 		out.FeeAmount = *b.FeeAmount
 	}
+	if b.FeeCurrency != nil {
+		out.FeeCurrency = *b.FeeCurrency
+	}
 	return out, nil
 }
 

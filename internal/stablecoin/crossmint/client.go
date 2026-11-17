@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -311,6 +312,13 @@ func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablec
 		"amount":    displayAmount(in.AmountMinor),
 		"recipient": in.Destination,
 	}
+	headers := map[string]string{}
+	if in.Idempotency != "" {
+		// Provider op idempotency — the HTTP middleware dedupes the API
+		// call, but a client retry after timeout would otherwise create a
+		// second transaction op at the provider.
+		headers["x-idempotency-key"] = in.Idempotency
+	}
 	var out struct {
 		txResp
 		// Tolerant expiry decode — surface the provider's real signing
@@ -318,8 +326,8 @@ func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablec
 		ExpiresAt  string `json:"expiresAt"`
 		ValidUntil string `json:"validUntil"`
 	}
-	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/tokens/solana:"+in.Asset+"/transfers",
-		body, &out); err != nil {
+	if err := c.doHeaders(ctx, http.MethodPost, walletsBase+"/"+locator+"/tokens/solana:"+in.Asset+"/transfers",
+		body, headers, &out); err != nil {
 		return stablecoin.SignableOp{}, err
 	}
 	payload, _ := json.Marshal(out.txResp)
@@ -341,6 +349,7 @@ func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablec
 		Locator:   locator,
 		Payload:   payload,
 		ExpiresAt: expires,
+		FeeMinor:  in.FeeMinor,
 	}, nil
 }
 
@@ -399,7 +408,9 @@ func (c *Client) CreateOnrampSession(ctx context.Context, in stablecoin.OnrampIn
 func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([]stablecoin.ProviderEvent, string, error) {
 	path := walletsBase + "/" + locator + "/activity"
 	if cursor != "" {
-		path += "?cursor=" + cursor
+		// Cursors can carry reserved chars (=, +, /) — escape or the
+		// provider may parse a different value than it issued.
+		path += "?cursor=" + url.QueryEscape(cursor)
 	}
 	var out struct {
 		Events []struct {

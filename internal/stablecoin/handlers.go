@@ -14,6 +14,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // Handlers exposes the §128 HTTP surface (routes per api-routes-catalog).
@@ -179,6 +180,10 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		Asset:       req.Asset,
 		Destination: req.Destination,
 		AmountMinor: req.AmountMinor,
+		// Propagate the request's Idempotency-Key to the provider op — the
+		// middleware dedupes the HTTP call, the header dedupes the created
+		// transaction on a client retry after timeout.
+		Idempotency: mw.IdempotencyKeyFromContext(r.Context()),
 	})
 	if err != nil {
 		handleError(w, err)

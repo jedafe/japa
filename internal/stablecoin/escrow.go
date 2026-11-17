@@ -98,11 +98,18 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, call
 	}
 
 	// Platform share on the release (§128.8) — computed at prepare-time so
-	// all parties see the split before funding.
+	// all parties see the split before funding. The booking prices in fiat
+	// minor (payments.amount convention); the escrow settles in USD-token
+	// minor — convert the total first, then split in minor so the legs
+	// stay proportional.
+	usdTotal, err := s.fiatToUsdMinor(ctx, b.TotalPrice, b.FeeCurrency)
+	if err != nil {
+		return nil, err
+	}
 	shareBps := s.settings.GetIntOr(ctx, "stablecoin.platform_share_bps", 1500)
-	fee := b.TotalPrice * int64(shareBps) / 10_000
-	if b.TotalPrice <= 0 || fee < 0 || fee >= b.TotalPrice {
-		return nil, fmt.Errorf("%w: booking amount %d / fee %d", ErrEscrowState, b.TotalPrice, fee)
+	fee := usdTotal * int64(shareBps) / 10_000
+	if usdTotal <= 0 || fee < 0 || fee >= usdTotal {
+		return nil, fmt.Errorf("%w: booking amount %d / fee %d", ErrEscrowState, usdTotal, fee)
 	}
 
 	e, err := s.store.InsertEscrow(ctx, Escrow{
@@ -111,7 +118,7 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, call
 		SellerWalletID: seller.ID,
 		VaultAddress:   "pending:" + bookingID.String(), // client derives real PDA
 		Asset:          asset,
-		AmountMinor:    b.TotalPrice - fee,
+		AmountMinor:    usdTotal - fee,
 		FeeMinor:       fee,
 	})
 	if err != nil {

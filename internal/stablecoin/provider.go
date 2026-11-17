@@ -84,16 +84,20 @@ type WithdrawalInput struct {
 	Asset       string
 	Destination string // external address or offramp deposit
 	AmountMinor int64
-	FeeMinor    int64 // batched: amount−fee → dest, fee → treasury
+	FeeMinor    int64  // disclosed to the member; collected post-landing (§128.6)
+	Idempotency string // provider op idempotency (x-idempotency-key)
 }
 
 // SignableOp is an unsigned smart-wallet operation returned to the client
 // for passkey signature (WebAuthn inside japa.to — the provider never sees
 // a Crossmint-branded surface).
 type SignableOp struct {
-	Locator   string
-	Payload   []byte // provider wire format — opaque to us
-	ExpiresAt int64
+	Locator   string `json:"locator"`
+	Payload   []byte `json:"payload"` // provider wire format — opaque to us
+	ExpiresAt int64  `json:"expires_at"`
+	// FeeMinor discloses the platform fee carved out of the signed amount
+	// so the member sees the real net before signing.
+	FeeMinor int64 `json:"fee_minor"`
 }
 
 // OnrampInput starts a funding session.
