@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"testing"
@@ -222,7 +223,7 @@ func TestDBFiatSettleConversion(t *testing.T) {
 
 	// Fixture currency rows are reused when present; USD/JPY are seeded in
 	// the currencies migration with credits_per_unit.
-	var usdCPU, jpyCPU int
+	var usdCPU, jpyCPU float64
 	if err := d.Reader.QueryRow(ctx, `SELECT credits_per_unit FROM currencies WHERE code='USD'`).Scan(&usdCPU); err != nil {
 		t.Skipf("USD currency row missing: %v", err)
 	}
@@ -247,9 +248,10 @@ func TestDBFiatSettleConversion(t *testing.T) {
 	if err := svc.SettleFiatTip(ctx, tip.ID, pgtype.UUID{}); err != nil {
 		t.Fatalf("SettleFiatTip: %v", err)
 	}
-	wantNet := int64(amt) * int64(usdCPU) / 100 * 90 / 100
+	usdGross := int64(math.Round(float64(amt) * usdCPU / 100))
+	wantNet := usdGross - usdGross*10/100
 	if got := balance(t, ctx, d, recip, "credits"); got != wantNet {
-		t.Fatalf("USD settle: got %d credits, want %d (cpu=%d)", got, wantNet, usdCPU)
+		t.Fatalf("USD settle: got %d credits, want %d (cpu=%v)", got, wantNet, usdCPU)
 	}
 	// Idempotent re-settle.
 	if err := svc.SettleFiatTip(ctx, tip.ID, pgtype.UUID{}); err != nil {
@@ -274,10 +276,65 @@ func TestDBFiatSettleConversion(t *testing.T) {
 		if err := svc.SettleFiatTip(ctx, tip2.ID, pgtype.UUID{}); err != nil {
 			t.Fatalf("JPY settle: %v", err)
 		}
-		wantTotal := wantNet + int64(amt2)*int64(jpyCPU)
+		wantTotal := wantNet + int64(math.Round(float64(amt2)*jpyCPU))
 		if got := balance(t, ctx, d, recip, "credits"); got != wantTotal {
 			t.Fatalf("JPY settle: got %d, want %d", got, wantTotal)
 		}
+	}
+}
+
+type fakePayments struct{ called int }
+
+func (f *fakePayments) CreatePayment(_ context.Context, _ pgtype.UUID, _ PaymentCreateInput) (PaymentCreateResult, error) {
+	f.called++
+	return PaymentCreateResult{ID: "pay_test", CheckoutURL: "https://pay.test/x"}, nil
+}
+
+// §125 floor: a fiat tip must convert to at least 1 credit — weak-currency
+// amounts (NGN ~0.065 credits/₦) that round to zero are rejected at create.
+func TestDBFiatTipOneCreditFloor(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	sender := newUser(t, ctx, d, "floor_s")
+	recip := newUser(t, ctx, d, "floor_r")
+	seedSettings(t, ctx, d, "user", recip)
+
+	var ngnCPU float64
+	if err := d.Reader.QueryRow(ctx, `SELECT credits_per_unit FROM currencies WHERE code='NGN'`).Scan(&ngnCPU); err != nil || ngnCPU <= 0 {
+		t.Skipf("NGN currency row missing/inactive: %v (cpu=%v)", err, ngnCPU)
+	}
+
+	pay := &fakePayments{}
+	svc := NewService(d)
+	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.min_fiat_minor": 1}}
+	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
+	svc.payments = pay
+
+	// ₦7 (700 kobo) at ~0.065 → 0.46 credits → rounds to 0 → reject.
+	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
+		RecipientType: RecipientUser, RecipientUserID: recip,
+		Method: "stripe", FiatAmount: 700, FiatCurrency: "NGN",
+	}, "")
+	if !errors.Is(err, ErrBelowMinimum) {
+		t.Fatalf("sub-1-credit tip: got %v, want ErrBelowMinimum", err)
+	}
+	if pay.called != 0 {
+		t.Fatalf("payment created for a tip that never converts to a credit")
+	}
+
+	// ₦20 (2000 kobo) → ~1.3 → 1 credit gross → allowed through to insert+pay.
+	res, err := svc.CreateTip(ctx, sender, CreateTipInput{
+		RecipientType: RecipientUser, RecipientUserID: recip,
+		Method: "stripe", FiatAmount: 2000, FiatCurrency: "NGN",
+	}, "")
+	if err != nil {
+		t.Fatalf("1-credit tip rejected: %v", err)
+	}
+	if res.Tip.NetCredits != 1 {
+		t.Fatalf("net: got %d, want 1", res.Tip.NetCredits)
+	}
+	if pay.called != 1 {
+		t.Fatalf("payment not created for a valid tip")
 	}
 }
 
