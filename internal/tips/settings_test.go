@@ -40,6 +40,8 @@ type fakeStore struct {
 	hasTip         bool
 	fiatSettled    bool
 	settledVia     []string
+	claimDenied    bool // simulate losing the claim race (terminal state reached)
+	claimCalls     int
 }
 
 func newFakeStore() *fakeStore {
@@ -161,6 +163,10 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 }
 func (f *fakeStore) refundPendingTip(context.Context, pgtype.UUID) (int64, error) {
 	return 1, nil
+}
+func (f *fakeStore) claimTipSettle(context.Context, pgtype.UUID) (bool, error) {
+	f.claimCalls++
+	return !f.claimDenied, nil
 }
 func (f *fakeStore) settleTip(_ context.Context, _ pgtype.UUID, _ int64, via string) error {
 	f.settledVia = append(f.settledVia, via)

@@ -199,8 +199,9 @@ func (s *Store) settleFiatTip(ctx context.Context, tipID pgtype.UUID, netCredits
 		return nil // already settled — idempotent
 	}
 	// 'failed' may revive on a genuine payment-success event — see the
-	// service-level guard comment in SettleFiatTip.
-	if tip.Status != StatusPending && tip.Status != StatusFailed {
+	// service-level guard comment in SettleFiatTip. 'settling' is the
+	// service's own claim state (SettleFiatTip claims before routing).
+	if tip.Status != StatusPending && tip.Status != StatusFailed && tip.Status != StatusSettling {
 		return ErrInvalidStatus
 	}
 

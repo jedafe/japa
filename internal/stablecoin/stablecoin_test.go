@@ -395,6 +395,16 @@ func (f *fakeTips) GetTip(_ context.Context, id pgtype.UUID) (*Tip, error) {
 	}
 	return nil, fmt.Errorf("tip not found")
 }
+func (f *fakeTips) ClaimTipSettle(_ context.Context, id pgtype.UUID) (bool, error) {
+	if t, ok := f.tips[id.String()]; ok {
+		if t.Status == "completed" || t.Status == "refunded" {
+			return false, nil
+		}
+		t.Status = "settling"
+		return true, nil
+	}
+	return false, fmt.Errorf("tip not found")
+}
 func (f *fakeTips) MarkSettled(_ context.Context, id pgtype.UUID, sig string) error {
 	f.settled = append(f.settled, id.String()+":"+sig)
 	if t, ok := f.tips[id.String()]; ok {

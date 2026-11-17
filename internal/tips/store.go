@@ -40,6 +40,9 @@ type tipStore interface {
 	insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error)
 	refundPendingTip(ctx context.Context, id pgtype.UUID) (int64, error)
 	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error
+	// claimTipSettle transitions pending/failed → settling before money
+	// moves; false means the tip already reached a terminal state.
+	claimTipSettle(ctx context.Context, id pgtype.UUID) (bool, error)
 	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64, settledVia string) error
 	// failTip marks a pending tip failed and releases its idempotency key.
 	failTip(ctx context.Context, id pgtype.UUID) error
@@ -255,6 +258,11 @@ func (s *Store) listStalePendingTips(ctx context.Context, hours int32, lim int32
 
 func (s *Store) adminTipStatsByCurrency(ctx context.Context, since pgtype.Timestamptz) ([]gen.AdminTipStatsByCurrencyRow, error) {
 	return s.read.AdminTipStatsByCurrency(ctx, since)
+}
+
+func (s *Store) claimTipSettle(ctx context.Context, id pgtype.UUID) (bool, error) {
+	n, err := s.write.ClaimTipSettle(ctx, id)
+	return n > 0, err
 }
 
 func (s *Store) settleTip(ctx context.Context, id pgtype.UUID, netCredits int64, settledVia string) error {

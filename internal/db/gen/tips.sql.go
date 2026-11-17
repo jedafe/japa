@@ -187,6 +187,23 @@ func (q *Queries) AttachTipPayment(ctx context.Context, arg AttachTipPaymentPara
 	return err
 }
 
+const claimTipSettle = `-- name: ClaimTipSettle :execrows
+UPDATE tips SET status = 'settling', updated_at = now()
+WHERE id = $1 AND status IN ('pending', 'failed', 'settling')
+`
+
+// Atomic pending/failed → 'settling' claim before money moves. 0 rows =
+// the tip already reached a terminal state (completed/refunded) — the
+// caller must NOT send. 'settling' re-claims are allowed so a retried
+// task recovers a claimed-but-unfinished settle.
+func (q *Queries) ClaimTipSettle(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimTipSettle, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearBMCCredentials = `-- name: ClearBMCCredentials :exec
 UPDATE tip_settings SET bmc_page_slug = NULL, bmc_api_token_encrypted = NULL, updated_at = now()
 WHERE owner_type = $1 AND owner_id = $2
@@ -1352,7 +1369,7 @@ func (q *Queries) SetOCCredentials(ctx context.Context, arg SetOCCredentialsPara
 
 const settleTip = `-- name: SettleTip :exec
 UPDATE tips SET status = 'completed', net_credits = $1, settled_via = $2, updated_at = now()
-WHERE id = $3 AND status IN ('pending', 'failed')
+WHERE id = $3 AND status IN ('pending', 'failed', 'settling')
 `
 
 type SettleTipParams struct {
@@ -1361,9 +1378,10 @@ type SettleTipParams struct {
 	ID         pgtype.UUID `json:"id"`
 }
 
-// Conditional on pending/failed: a settle racing a refund still can't
-// resurrect (refunded is excluded), but a swept-failed tip revives when its
-// payment genuinely succeeds (manual_transfer, provider replay).
+// Conditional on claim-held/revivable states: a settle racing a refund
+// still can't resurrect (refunded is excluded), but a swept-failed tip
+// revives when its payment genuinely succeeds (manual_transfer, provider
+// replay).
 func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
 	_, err := q.db.Exec(ctx, settleTip, arg.NetCredits, arg.SettledVia, arg.ID)
 	return err

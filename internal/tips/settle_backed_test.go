@@ -140,3 +140,44 @@ func TestSettleFiatTip_NilBackedSettler(t *testing.T) {
 		t.Fatal("expected credits-ledger settle")
 	}
 }
+
+// The claim is the money-movement gate: losing it (terminal state reached
+// between read and claim — e.g. a concurrent settle already completed)
+// must short-circuit before the provider send or the ledger write.
+func TestSettleFiatTip_ClaimLost_NoSend(t *testing.T) {
+	fs := newFakeStore()
+	fs.tip, fs.hasTip = fiatTip(), true
+	fs.claimDenied = true
+	settler := &fakeBackedSettler{done: true}
+	svc := backedSvc(fs, settler)
+
+	if err := svc.SettleFiatTip(context.Background(), fs.tip.ID, pgtype.UUID{}); err != nil {
+		t.Fatalf("claim-lost must be an idempotent no-op, got %v", err)
+	}
+	if settler.calls != 0 {
+		t.Fatal("provider send must not run after losing the claim")
+	}
+	if fs.fiatSettled || len(fs.settledVia) != 0 {
+		t.Fatal("no ledger/settle write may run after losing the claim")
+	}
+}
+
+// A 'settling' tip is a claim held by a prior attempt — a retried task
+// re-enters through the same claim path rather than ErrInvalidStatus.
+func TestSettleFiatTip_RetryFromSettling(t *testing.T) {
+	fs := newFakeStore()
+	fs.tip, fs.hasTip = fiatTip(), true
+	fs.tip.Status = StatusSettling
+	settler := &fakeBackedSettler{done: true}
+	svc := backedSvc(fs, settler)
+
+	if err := svc.SettleFiatTip(context.Background(), fs.tip.ID, pgtype.UUID{}); err != nil {
+		t.Fatalf("settling retry must proceed, got %v", err)
+	}
+	if settler.calls != 1 {
+		t.Fatalf("backed settler calls = %d, want 1", settler.calls)
+	}
+	if len(fs.settledVia) != 1 || fs.settledVia[0] != "backed" {
+		t.Fatalf("settledVia = %v, want [backed]", fs.settledVia)
+	}
+}

@@ -110,12 +110,21 @@ WHERE id = @id;
 UPDATE tips SET payment_id = @payment_id, checkout_url = @checkout_url, updated_at = now()
 WHERE id = @id;
 
+-- name: ClaimTipSettle :execrows
+-- Atomic pending/failed → 'settling' claim before money moves. 0 rows =
+-- the tip already reached a terminal state (completed/refunded) — the
+-- caller must NOT send. 'settling' re-claims are allowed so a retried
+-- task recovers a claimed-but-unfinished settle.
+UPDATE tips SET status = 'settling', updated_at = now()
+WHERE id = @id AND status IN ('pending', 'failed', 'settling');
+
 -- name: SettleTip :exec
--- Conditional on pending/failed: a settle racing a refund still can't
--- resurrect (refunded is excluded), but a swept-failed tip revives when its
--- payment genuinely succeeds (manual_transfer, provider replay).
+-- Conditional on claim-held/revivable states: a settle racing a refund
+-- still can't resurrect (refunded is excluded), but a swept-failed tip
+-- revives when its payment genuinely succeeds (manual_transfer, provider
+-- replay).
 UPDATE tips SET status = 'completed', net_credits = @net_credits, settled_via = @settled_via, updated_at = now()
-WHERE id = @id AND status IN ('pending', 'failed');
+WHERE id = @id AND status IN ('pending', 'failed', 'settling');
 
 -- name: ListTipsSent :many
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id

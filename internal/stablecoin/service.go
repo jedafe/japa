@@ -99,6 +99,9 @@ type bonusLedger interface {
 // settled tip can't be double-processed or swept as stale.
 type tipReader interface {
 	GetTip(ctx context.Context, id pgtype.UUID) (*Tip, error)
+	// ClaimTipSettle transitions pending/failed → settling before money
+	// moves; false means the tip already reached a terminal state.
+	ClaimTipSettle(ctx context.Context, id pgtype.UUID) (bool, error)
 	MarkSettled(ctx context.Context, id pgtype.UUID, txSig string) error
 }
 

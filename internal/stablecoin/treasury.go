@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -49,6 +50,13 @@ func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pg
 	if netCredits <= 0 || !recipientUserID.Valid {
 		return false, nil
 	}
+	if engaged, kerr := s.killswitch(ctx); kerr != nil {
+		return false, fmt.Errorf("stablecoin: killswitch check: %w", kerr)
+	} else if engaged {
+		// Retryable: the tip stays pending until the halt lifts rather
+		// than silently degrading a real-money gift into bonus credits.
+		return false, ErrKillswitch
+	}
 	w, err := s.store.GetWalletByUser(ctx, recipientUserID)
 	if err != nil {
 		if !errors.Is(err, ErrWalletNotFound) {
@@ -67,13 +75,6 @@ func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pg
 		// reactivates or the settle TTL fails it (donor payment refunds).
 		return false, ErrWalletSuspended
 	}
-	if engaged, kerr := s.killswitch(ctx); kerr != nil {
-		return false, fmt.Errorf("stablecoin: killswitch check: %w", kerr)
-	} else if engaged {
-		// Retryable: the tip stays pending until the halt lifts rather
-		// than silently degrading a real-money gift into bonus credits.
-		return false, ErrKillswitch
-	}
 
 	hot, err := s.store.GetTreasuryWallet(ctx, w.Chain, TreasuryHot)
 	if err != nil {
@@ -83,8 +84,13 @@ func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pg
 		return false, fmt.Errorf("stablecoin: hot treasury has no provider locator")
 	}
 
-	// §58 anchor: 100 credits = $1 → credits × 10_000 = token minor units.
-	minor := netCredits * 10_000
+	// Settlement math must fail closed on a missing rate — the
+	// creditsPerUSD fallback is display-only per its own contract.
+	rate := s.creditsPerUnit(ctx, "usd")
+	if rate <= 0 {
+		return false, fmt.Errorf("stablecoin: USD credits rate missing — cannot price backed settle")
+	}
+	minor := int64(math.Round(float64(netCredits) * 1_000_000 / rate))
 	res, err := s.provider.Transfer(ctx, hot.Locator, TransferInput{
 		Asset:         AssetUSDC,
 		RecipientAddr: w.Address,
@@ -101,6 +107,11 @@ func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pg
 
 	// Mirror the inbound leg now so the member's feed shows it immediately;
 	// the webhook/reconcile path confirms it onchain-side (dedupe by sig).
+	// A signature-less submission mirrors nothing — a NULL-sig row can
+	// never transition by sig and would duplicate the webhook's insert.
+	if res.TxSignature == "" {
+		return true, nil
+	}
 	if _, err := s.store.InsertActivity(ctx, Activity{
 		WalletID:      w.ID,
 		Direction:     "in",

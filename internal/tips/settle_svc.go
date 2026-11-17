@@ -39,9 +39,22 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 	// checkout TTL, but a payment can still succeed afterwards (manual
 	// transfer confirmed days late, provider webhook replay). The payment
 	// succeeded — the donor paid — so the tip must settle, not strand as
-	// failed with money taken and no credits issued.
-	if tip.Status != StatusPending && tip.Status != StatusFailed {
+	// failed with money taken and no credits issued. 'settling' is the
+	// claim state a retried task re-enters through.
+	if tip.Status != StatusPending && tip.Status != StatusFailed && tip.Status != StatusSettling {
 		return ErrInvalidStatus
+	}
+
+	// Claim before money moves: pending/failed → 'settling' atomically
+	// excludes racing refunds/sweeps (they only touch 'pending') while
+	// the onchain leg runs outside any DB tx. A terminal state (completed/
+	// refunded) means a prior attempt already finished — idempotent no-op.
+	claimed, err := s.store.claimTipSettle(ctx, tipID)
+	if err != nil {
+		return fmt.Errorf("claiming tip: %w", err)
+	}
+	if !claimed {
+		return nil
 	}
 
 	walletOwner, err := s.walletOwnerFor(ctx, tip)
@@ -138,6 +151,13 @@ func (s *Service) MarkStablecoinSettled(ctx context.Context, tipID pgtype.UUID, 
 		return nil // replay — already closed
 	}
 	return s.store.settleTip(ctx, tipID, tip.NetCredits, "backed")
+}
+
+// ClaimTipSettle exposes the pending/failed → settling claim to other
+// modules (the stablecoin settle task claims through tipReader) — false
+// means the tip already reached a terminal state and must not be sent.
+func (s *Service) ClaimTipSettle(ctx context.Context, tipID pgtype.UUID) (bool, error) {
+	return s.store.claimTipSettle(ctx, tipID)
 }
 
 // ClawbackTip reverses a settled tip's recipient credits and marks it

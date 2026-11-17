@@ -10954,6 +10954,10 @@ func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stabl
 	}, nil
 }
 
+func (a stablecoinTipReader) ClaimTipSettle(ctx context.Context, id pgtype.UUID) (bool, error) {
+	return a.svc.ClaimTipSettle(ctx, id)
+}
+
 func (a stablecoinTipReader) MarkSettled(ctx context.Context, id pgtype.UUID, txSig string) error {
 	return a.svc.MarkStablecoinSettled(ctx, id, txSig)
 }

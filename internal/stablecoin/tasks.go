@@ -253,6 +253,16 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if tip.Status != "pending" && tip.Status != "settling" && tip.Status != "failed" {
 		return nil // already settled/cancelled — idempotent replay
 	}
+	// Claim before money moves: pending/failed → 'settling' atomically
+	// excludes racing refunds/sweeps (they only touch 'pending') while
+	// the onchain legs run outside any DB tx.
+	claimed, err := s.tipReader.ClaimTipSettle(ctx, tipID)
+	if err != nil {
+		return fmt.Errorf("%s: claim tip: %w", TaskTipSettleStablecoin, err)
+	}
+	if !claimed {
+		return nil // terminal state reached between read and claim
+	}
 	// Resolve the recipient's wallet — tips settle member→member onchain.
 	rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
 	if err != nil {

@@ -48,6 +48,10 @@ const taskSettleStablecoin = "tips:settle_stablecoin"
 // Tip statuses.
 const (
 	StatusPending   = "pending"
+	// StatusSettling is the claim state: a settle worker holds it between
+	// claim and completion so a concurrent refund/sweep can't flip the row
+	// mid-send (the onchain leg can't sit inside the status-write tx).
+	StatusSettling  = "settling"
 	StatusCompleted = "completed"
 	StatusFailed    = "failed"
 	StatusRefunded  = "refunded"

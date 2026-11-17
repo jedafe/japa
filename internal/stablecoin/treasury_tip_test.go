@@ -11,6 +11,12 @@ import (
 // §128: a fiat tip settles to the recipient's backed wallet — treasury hot
 // sends the USDC equivalent, the credits ledger is never touched.
 
+func newBackedSvc(st *fakeStore, p *fakeProvider, vk *fakeVK) *Service {
+	svc := newSvc(st, p, vk, &fakeSettings{})
+	svc.SetCreditRater(&fakeRater{n: 100}) // §58 anchor for settlement math
+	return svc
+}
+
 func seedTipRecipient(t *testing.T, st *fakeStore, status string) pgtype.UUID {
 	t.Helper()
 	uid := newUUID()
@@ -32,7 +38,7 @@ func TestSettleTipBacked_TransfersFromTreasury(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
-	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	svc := newBackedSvc(st, p, newFakeVK())
 	uid := seedTipRecipient(t, st, WalletStatusActive)
 	tipID := newUUID()
 
@@ -67,7 +73,7 @@ func TestSettleTipBacked_UnprovisionedAutoProvisions(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
-	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	svc := newBackedSvc(st, p, newFakeVK())
 	uid := newUUID()
 	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{
 		ID: "tw-1", Role: TreasuryHot, Chain: "solana",
@@ -93,7 +99,7 @@ func TestSettleTipBacked_SuspendedIsRetryable(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
-	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	svc := newBackedSvc(st, p, newFakeVK())
 	uid := seedTipRecipient(t, st, WalletStatusSuspended)
 
 	done, err := svc.SettleTipBacked(context.Background(), newUUID(), uid, 950)
@@ -110,7 +116,7 @@ func TestSettleTipBacked_KillswitchIsRetryable(t *testing.T) {
 	st := newFakeStore()
 	p := &fakeProvider{}
 	vk := newFakeVK()
-	svc := newSvc(st, p, vk, &fakeSettings{})
+	svc := newBackedSvc(st, p, vk)
 	uid := seedTipRecipient(t, st, WalletStatusActive)
 
 	if err := svc.SetKillswitch(context.Background(), pgtype.UUID{}, true); err != nil {
@@ -129,7 +135,7 @@ func TestSettleTipBacked_ProvisionedWalletEligible(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
-	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	svc := newBackedSvc(st, p, newFakeVK())
 	uid := seedTipRecipient(t, st, WalletStatusProvisioned)
 
 	done, err := svc.SettleTipBacked(context.Background(), newUUID(), uid, 950)
@@ -142,7 +148,7 @@ func TestSettleTipBacked_ZeroNetSkips(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
-	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
+	svc := newBackedSvc(st, p, newFakeVK())
 	uid := seedTipRecipient(t, st, WalletStatusActive)
 
 	done, err := svc.SettleTipBacked(context.Background(), newUUID(), uid, 0)
