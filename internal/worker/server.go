@@ -234,6 +234,27 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Overridable via JC_SCHEDULER_CRON_SERVICE_BOOKING_EXPIRE_PENDING.
 	schedule("15 * * * *", TypeServiceBookingExpirePending, 1*time.Hour)
 
+	// §128: hourly mirror-vs-chain reconcile — webhook-gap backstop +
+	// balance-mirror refresh. JC_SCHEDULER_CRON_STABLECOIN_RECONCILE_WALLETS.
+	schedule("35 * * * *", TypeStablecoinReconcileWallets, 1*time.Hour)
+
+	// §128: daily delegated-signer rotation sweep — only wallets whose
+	// nearest scope expires inside stablecoin.signer_renew_window_days are
+	// touched (member-OTP ceremony stays rare).
+	schedule("20 5 * * *", TypeStablecoinSignerScopeRenew, 24*time.Hour)
+
+	// §128: hourly release of funded escrows past their confirmation
+	// deadline (ghosted buyers — seller+arbiter release).
+	schedule("45 * * * *", TypeStablecoinEscrowTimeout, 1*time.Hour)
+
+	// §128: daily hot-float check — propose a Squads sweep when the hot
+	// treasury balance exceeds stablecoin.hot_float_cap_minor.
+	schedule("30 6 * * *", TypeStablecoinTreasurySweep, 24*time.Hour)
+
+	// §128: pending-mirror settlement pass — confirms pending out rows
+	// (offramp sends, webhook misses) against provider activity.
+	schedule("*/15 * * * *", TypeStablecoinProcessOfframp, 15*time.Minute)
+
 	// Affiliate link expiry — daily.
 	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)
 

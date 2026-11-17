@@ -198,6 +198,15 @@ func (f *fakeStore) GetEscrowByBooking(_ context.Context, b pgtype.UUID) (*Escro
 	}
 	return nil, nil
 }
+func (f *fakeStore) GetLiveEscrowByWallet(_ context.Context, w pgtype.UUID) (*Escrow, error) {
+	for _, e := range f.escrows {
+		if (e.BuyerWalletID == w.String() || e.SellerWalletID == w.String()) &&
+			(e.State == EscrowFunding || e.State == EscrowFunded || e.State == EscrowDisputed) {
+			return e, nil
+		}
+	}
+	return nil, ErrEscrowNotFound
+}
 func (f *fakeStore) InsertEscrow(_ context.Context, e Escrow) (*Escrow, error) {
 	if e.ID == "" {
 		e.ID = newUUID().String()
@@ -835,11 +844,15 @@ func TestEscrowPartyGates(t *testing.T) {
 	if err := svc.RegisterEscrowVault(context.Background(), eid, stranger, "vault-1"); !errors.Is(err, ErrEscrowParty) {
 		t.Fatalf("stranger vault registration = %v, want ErrEscrowParty", err)
 	}
+	if err := svc.RegisterEscrowVault(context.Background(), eid, buyer, "pending:"+e.BookingID); err == nil {
+		t.Fatal("placeholder-shaped vault address must be rejected")
+	}
 	if err := svc.ConfirmEscrowFunded(context.Background(), eid, stranger, "sig"); !errors.Is(err, ErrEscrowParty) {
 		t.Fatalf("stranger funded confirm = %v, want ErrEscrowParty", err)
 	}
 	// A party may proceed.
-	if err := svc.RegisterEscrowVault(context.Background(), eid, buyer, "vault-1"); err != nil {
+	vault := "EscrowVau1t1111111111111111111111111111111" // ≥32-char plausible base58 shape
+	if err := svc.RegisterEscrowVault(context.Background(), eid, buyer, vault); err != nil {
 		t.Fatalf("buyer vault registration: %v", err)
 	}
 }

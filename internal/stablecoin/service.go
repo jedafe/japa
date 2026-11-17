@@ -49,6 +49,7 @@ type store interface {
 	SumOutByAssetSince(ctx context.Context, walletID pgtype.UUID, asset string, since time.Time) (int64, error)
 	GetEscrow(ctx context.Context, id pgtype.UUID) (*Escrow, error)
 	GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) (*Escrow, error)
+	GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error)
 	InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error)
 	SetEscrowState(ctx context.Context, id pgtype.UUID, state, fundedSig, releaseSig string, decision *ArbiterDecision, deadline *time.Time) error
 	SetEscrowVaultAddress(ctx context.Context, id pgtype.UUID, addr string) error

@@ -189,7 +189,13 @@ func (h *Handlers) ProviderWebhook(w http.ResponseWriter, r *http.Request) {
 		sig = r.Header.Get("Crossmint-Signature")
 	}
 	if err := h.svc.IngestWebhook(r.Context(), body, sig); err != nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Webhook signature verification failed")
+		if errors.Is(err, ErrWebhookAuth) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Webhook signature verification failed")
+			return
+		}
+		// Internal failure — 500 so the provider retries rather than
+		// treating the event as permanently rejected.
+		errpkg.WriteError(w, http.StatusInternalServerError, "ingest_failed", "Webhook ingestion failed")
 		return
 	}
 	w.WriteHeader(http.StatusOK)

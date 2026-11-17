@@ -32,9 +32,13 @@ type webhookEnvelope struct {
 // tx signature (jc:stablecoin:webhook:dedupe:{sig}) then handed to
 // stablecoin:sync_activity — fan-out, never blocking the webhook response
 // (Rule 8).
+// ErrWebhookAuth marks signature-verification failures — the handler maps
+// it to 401; internal errors stay 500 so the provider retries them.
+var ErrWebhookAuth = errors.New("stablecoin: webhook auth failed")
+
 func (s *Service) IngestWebhook(ctx context.Context, payload []byte, signature string) error {
 	if err := s.provider.VerifyWebhook(payload, signature); err != nil {
-		return fmt.Errorf("stablecoin: webhook auth: %w", err)
+		return fmt.Errorf("%w: %v", ErrWebhookAuth, err)
 	}
 
 	var env webhookEnvelope
@@ -156,6 +160,14 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 		if w != nil {
 			s.collectWithdrawalFee(ctx, w, ev.AmountMinor, normalizeAsset(ev.Asset), ev.TxSignature)
 		}
+	}
+	// Onchain escrow transitions — the chain event is the authoritative
+	// proof; the client-reported calls are the optimistic path.
+	switch kind {
+	case ActivityEscrowFunding:
+		s.completeEscrowFunding(ctx, walletID, ev.TxSignature)
+	case ActivityEscrowRelease:
+		s.completeEscrowRelease(ctx, walletID, ev.TxSignature)
 	}
 	return nil
 }

@@ -217,3 +217,14 @@ WHERE id = @id;
 SELECT * FROM treasury_sweeps
 WHERE state IN ('proposed', 'approved')
 ORDER BY created_at ASC;
+
+-- name: GetLiveEscrowByWallet :one
+-- Mirror-driven completion: find the open escrow touching this wallet —
+-- a mirrored escrow_funding/escrow_release event is the authoritative
+-- transition proof. Live states only; newest first guards a wallet
+-- reuse edge.
+SELECT * FROM service_escrows
+WHERE (buyer_wallet_id = @wallet_id OR seller_wallet_id = @wallet_id)
+  AND state IN ('funding', 'funded', 'disputed')
+ORDER BY id DESC
+LIMIT 1;

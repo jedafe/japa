@@ -388,6 +388,19 @@ func (st *Store) GetEscrowByBooking(ctx context.Context, bookingID pgtype.UUID) 
 	return domainEscrow(row), nil
 }
 
+// GetLiveEscrowByWallet returns the newest open escrow touching a wallet —
+// the mirror's completion lookup for escrow_funding/escrow_release events.
+func (st *Store) GetLiveEscrowByWallet(ctx context.Context, walletID pgtype.UUID) (*Escrow, error) {
+	row, err := st.q.GetLiveEscrowByWallet(ctx, walletID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrEscrowNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stablecoin: live escrow by wallet: %w", err)
+	}
+	return domainEscrow(row), nil
+}
+
 // InsertEscrow persists a new escrow vault record (state=funding).
 func (st *Store) InsertEscrow(ctx context.Context, e Escrow) (*Escrow, error) {
 	booking, err := pgUUID(e.BookingID)

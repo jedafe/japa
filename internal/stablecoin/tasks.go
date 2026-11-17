@@ -155,19 +155,30 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 			slog.Warn("stablecoin: offramp poll failed", "wallet", w.Locator, "error", err)
 			continue
 		}
-		landed := map[string]bool{}
+		// Status per signature — a failed onchain event must fail the row,
+		// not confirm it.
+		landed := map[string]string{}
 		for _, ev := range events {
-			landed[ev.TxSignature] = true
+			switch ev.Type {
+			case "failed":
+				landed[ev.TxSignature] = "failed"
+			case "pending", "submitted":
+				// still in-flight — leave the row pending
+			default:
+				landed[ev.TxSignature] = "confirmed"
+			}
 		}
 		for _, a := range rows {
 			var id pgtype.UUID
 			if err := id.Scan(a.ID); err != nil {
 				continue
 			}
-			if landed[a.TxSignature] {
-				if err := s.store.SetActivityStatus(ctx, id, "confirmed"); err != nil {
-					slog.Warn("stablecoin: confirm activity failed", "id", a.ID, "error", err)
-				}
+			st, ok := landed[a.TxSignature]
+			if !ok || st == "" {
+				continue
+			}
+			if err := s.store.SetActivityStatus(ctx, id, st); err != nil {
+				slog.Warn("stablecoin: settle activity failed", "id", a.ID, "status", st, "error", err)
 			}
 		}
 	}

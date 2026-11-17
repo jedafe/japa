@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -188,6 +189,11 @@ func (s *Service) RegisterEscrowVault(ctx context.Context, escrowID pgtype.UUID,
 	if e.State != EscrowFunding {
 		return fmt.Errorf("%w: %s", ErrEscrowState, e.State)
 	}
+	// Reject placeholder-shaped or implausibly short values — a malformed
+	// vault address would strand the funding flow later.
+	if strings.HasPrefix(vaultAddr, "pending:") || len(vaultAddr) < 32 || strings.ContainsAny(vaultAddr, " 	\n") {
+		return fmt.Errorf("%w: invalid vault address", ErrEscrowState)
+	}
 	return s.store.SetEscrowVaultAddress(ctx, escrowID, vaultAddr)
 }
 
@@ -367,4 +373,50 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// completeEscrowFunding is the mirror-driven funding transition: a mirrored
+// escrow_funding event on a party wallet is chain proof — stronger than the
+// client-reported sig in ConfirmEscrowFunded. Called by MirrorActivity on a
+// fresh insert only.
+func (s *Service) completeEscrowFunding(ctx context.Context, walletID, sig string) {
+	wid, err := pgUUID(walletID)
+	if err != nil {
+		return
+	}
+	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
+	if err != nil || e == nil || e.State != EscrowFunding {
+		return
+	}
+	hours := s.settings.GetIntOr(ctx, "stablecoin.escrow_confirm_hours", 72)
+	deadline := time.Now().Add(time.Duration(hours) * time.Hour)
+	eid, err := pgUUID(e.ID)
+	if err != nil {
+		return
+	}
+	if err := s.store.SetEscrowState(ctx, eid, EscrowFunded, sig, "", nil, &deadline); err != nil {
+		slog.Warn("stablecoin: mirror escrow-funding transition failed", "escrow", e.ID, "error", err)
+	}
+}
+
+// completeEscrowRelease is the mirror-driven release/refund transition — a
+// mirrored escrow_release event carries the executed Squads signature the
+// authorize-side calls can't supply. Arbiter rulings decide direction;
+// everything else releases to the seller.
+func (s *Service) completeEscrowRelease(ctx context.Context, walletID, sig string) {
+	wid, err := pgUUID(walletID)
+	if err != nil {
+		return
+	}
+	e, err := s.store.GetLiveEscrowByWallet(ctx, wid)
+	if err != nil || e == nil || (e.State != EscrowFunded && e.State != EscrowDisputed) {
+		return
+	}
+	eid, err := pgUUID(e.ID)
+	if err != nil {
+		return
+	}
+	if err := s.ReleaseEscrow(ctx, eid, e.ArbiterDecision, sig); err != nil {
+		slog.Warn("stablecoin: mirror escrow-release transition failed", "escrow", e.ID, "error", err)
+	}
 }
