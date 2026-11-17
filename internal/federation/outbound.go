@@ -168,6 +168,11 @@ func (s *Service) fetchTargetActor(ctx context.Context, actorURL string) (*gen.R
 	if ierr != nil || !strings.EqualFold(iu.Scheme, "https") || iu.Hostname() == "" {
 		return nil, "", fmt.Errorf("%w: actor advertises unusable inbox", ErrRemoteFetch)
 	}
+	if s.isLocalHost(iu.Hostname()) {
+		// A remote doc pointing its inbox at OUR endpoint would ledger
+		// deliveries POSTed back to ourselves — never legitimate.
+		return nil, "", fmt.Errorf("%w: actor advertises local inbox", ErrRemoteFetch)
+	}
 	remote, err := s.upsertRemoteActor(ctx, actorURL, doc)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: upsert: %v", ErrRemoteFetch, err)

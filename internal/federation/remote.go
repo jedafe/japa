@@ -139,6 +139,12 @@ func (s *Service) instanceAllowed(ctx context.Context, domain string) bool {
 	if s.store == nil || domain == "" {
 		return false
 	}
+	// Normalize to a bare lowercase hostname — the blocklist is keyed that
+	// way, so a caller passing 'host:port' or 'HOST' must not sail past an
+	// exact-match lookup that only stores 'host'.
+	if u, uerr := url.Parse("https://" + domain); uerr == nil && u.Hostname() != "" {
+		domain = strings.ToLower(u.Hostname())
+	}
 	mode := "open"
 	if s.settings != nil {
 		if v, err := s.settings.GetSetting(ctx, "federation.instances.mode"); err == nil && v != "" {
@@ -275,6 +281,9 @@ func (s *Service) verifyMoveTarget(ctx context.Context, oldURL, targetURL string
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") {
 		return nil, fmt.Errorf("%w: bad move target url %q", ErrMoveNotConfirmed, targetURL)
+	}
+	if s.isLocalHost(u.Hostname()) {
+		return nil, fmt.Errorf("%w: move target is local", ErrRemoteBlocked)
 	}
 	if !s.instanceAllowed(ctx, u.Hostname()) {
 		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
@@ -414,6 +423,9 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 	// The actor document's own id may point at a different host than the
 	// keyId URL did (redirected identities, key proxies) — the instance
 	// gate applies to the identity we actually cache, not only the hop.
+	if s.isLocalHost(au.Hostname()) {
+		return nil, fmt.Errorf("%w: claimed actor id is local: %q", ErrRemoteBlocked, actorURL)
+	}
 	if !s.instanceAllowed(ctx, au.Hostname()) {
 		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, au.Hostname())
 	}

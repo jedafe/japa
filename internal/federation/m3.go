@@ -757,6 +757,11 @@ func (s *Service) SubscribeRelay(ctx context.Context, actorURL string, adminID p
 		return gen.FederationRelay{}, ErrInvalidDomain
 	}
 	domain := strings.ToLower(u.Hostname())
+	if s.isLocalHost(domain) {
+		// Following our own instance actor as a "relay" would ledger
+		// deliveries POSTed right back at our own inbox.
+		return gen.FederationRelay{}, ErrInvalidDomain
+	}
 	if !s.instanceAllowed(ctx, domain) {
 		return gen.FederationRelay{}, ErrRemoteBlocked
 	}

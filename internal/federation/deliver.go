@@ -407,7 +407,8 @@ func (s *Service) insertDeliveries(ctx context.Context, localActorID pgtype.UUID
 		inboxURL := *inbox.InboxUrl
 		// Blocked/unpermitted instances get no delivery row at all — the
 		// worker would dead-letter it anyway; cheaper to skip here.
-		if u, uerr := url.Parse(inboxURL); uerr == nil && !s.instanceAllowed(ctx, u.Hostname()) {
+		if u, uerr := url.Parse(inboxURL); uerr == nil &&
+			(!s.instanceAllowed(ctx, u.Hostname()) || s.isLocalHost(u.Hostname())) {
 			continue
 		}
 		row, err := s.store.insertDelivery(ctx, gen.InsertFederationDeliveryParams{
@@ -478,8 +479,11 @@ func (s *Service) Deliver(ctx context.Context, deliveryID pgtype.UUID) error {
 // a schedule the actor row will not survive to honor.
 func (s *Service) attemptDelivery(ctx context.Context, row gen.FederationDelivery) error {
 	// Instance gate re-checked at send time — a domain blocked between
-	// fanout and delivery must not receive the POST.
-	if u, uerr := url.Parse(row.InboxUrl); uerr != nil || !s.instanceAllowed(ctx, u.Hostname()) {
+	// fanout and delivery must not receive the POST. A stored inbox on
+	// our own host is equally dead: POSTing ourselves back our own
+	// signed activities is never legitimate.
+	if u, uerr := url.Parse(row.InboxUrl); uerr != nil || !s.instanceAllowed(ctx, u.Hostname()) ||
+		s.isLocalHost(u.Hostname()) {
 		s.markRelayUnreachable(ctx, row, "destination instance blocked", true)
 		return s.stampDelivery(ctx, row, "dead", "destination instance blocked")
 	}
