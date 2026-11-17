@@ -61,22 +61,35 @@ func TestSettleTipBacked_TransfersFromTreasury(t *testing.T) {
 	}
 }
 
-func TestSettleTipBacked_UnprovisionedFallsBack(t *testing.T) {
+// Unprovisioned recipients are auto-provisioned — the counterfactual
+// wallet costs nothing dormant and the tip lands backed, never credits.
+func TestSettleTipBacked_UnprovisionedAutoProvisions(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
 	svc := newSvc(st, p, newFakeVK(), &fakeSettings{})
-
-	done, err := svc.SettleTipBacked(context.Background(), newUUID(), newUUID(), 950)
-	if err != nil || done {
-		t.Fatalf("done=%v err=%v — want clean fallback", done, err)
+	uid := newUUID()
+	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{
+		ID: "tw-1", Role: TreasuryHot, Chain: "solana",
+		Address: "hot-addr", Locator: "hot-loc",
 	}
-	if len(p.transfers) != 0 {
-		t.Fatal("no transfer may fire for an unprovisioned recipient")
+
+	done, err := svc.SettleTipBacked(context.Background(), newUUID(), uid, 950)
+	if err != nil || !done {
+		t.Fatalf("done=%v err=%v — auto-provision must settle", done, err)
+	}
+	if _, ok := st.walletByUser[uid.String()]; !ok {
+		t.Fatal("recipient wallet was not provisioned")
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("transfers = %d, want 1", len(p.transfers))
 	}
 }
 
-func TestSettleTipBacked_SuspendedFallsBack(t *testing.T) {
+// Suspended wallets are retryable — the tip stays pending until the
+// wallet reactivates or the settle TTL fails it (donor refunds). Never
+// degrade a suspended member's tip into spendable bonus credits.
+func TestSettleTipBacked_SuspendedIsRetryable(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	p := &fakeProvider{}
@@ -84,10 +97,10 @@ func TestSettleTipBacked_SuspendedFallsBack(t *testing.T) {
 	uid := seedTipRecipient(t, st, WalletStatusSuspended)
 
 	done, err := svc.SettleTipBacked(context.Background(), newUUID(), uid, 950)
-	if err != nil || done {
-		t.Fatalf("done=%v err=%v — want clean fallback", done, err)
+	if !errors.Is(err, ErrWalletSuspended) {
+		t.Fatalf("err = %v, want ErrWalletSuspended", err)
 	}
-	if len(p.transfers) != 0 {
+	if done || len(p.transfers) != 0 {
 		t.Fatal("no transfer may fire for a suspended wallet")
 	}
 }

@@ -40,24 +40,32 @@ func (s *Service) ListTreasury(ctx context.Context) (*TreasuryView, error) {
 // bonus ledger. The donor's fiat sits in the payment provider's settlement;
 // this sends the equivalent USDC amount from the treasury hot wallet.
 //
-// Returns (false, nil) when the backed path doesn't apply — caller falls
-// back to the legacy credits settle (feature off, recipient unprovisioned
-// or suspended). Errors are retryable (killswitch engaged, provider
-// transient) — the caller must not fall back on error or the tip could
-// settle twice.
+// Returns (false, nil) only when there is no member wallet to credit
+// (platform recipient / zero-value row) — the caller then runs the
+// bookkeeping settle. Errors are retryable (killswitch engaged, suspended
+// recipient, provider transient) — the caller must not fall back on
+// error or the tip could settle twice.
 func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pgtype.UUID, netCredits int64) (bool, error) {
 	if netCredits <= 0 || !recipientUserID.Valid {
 		return false, nil
 	}
 	w, err := s.store.GetWalletByUser(ctx, recipientUserID)
 	if err != nil {
-		if errors.Is(err, ErrWalletNotFound) {
-			return false, nil // unprovisioned — credits fallback
+		if !errors.Is(err, ErrWalletNotFound) {
+			return false, fmt.Errorf("stablecoin: tip recipient wallet: %w", err)
 		}
-		return false, fmt.Errorf("stablecoin: tip recipient wallet: %w", err)
+		// Unprovisioned → auto-provision: the wallet is counterfactual
+		// (deploys on first tx, costs nothing dormant) and receiving
+		// needs no signer — the member activates their passkey later
+		// via the §128.2 ceremony. No member-auth needed for create.
+		if w, err = s.ProvisionWallet(ctx, recipientUserID, ""); err != nil {
+			return false, fmt.Errorf("stablecoin: tip recipient provision: %w", err)
+		}
 	}
 	if w.Status != WalletStatusActive && w.Status != WalletStatusProvisioned {
-		return false, nil // suspended — no money movement
+		// Suspended — retryable: the tip stays pending until the wallet
+		// reactivates or the settle TTL fails it (donor payment refunds).
+		return false, ErrWalletSuspended
 	}
 	if engaged, kerr := s.killswitch(ctx); kerr != nil {
 		return false, fmt.Errorf("stablecoin: killswitch check: %w", kerr)

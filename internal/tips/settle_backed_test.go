@@ -68,8 +68,9 @@ func TestSettleFiatTip_BackedPath(t *testing.T) {
 	}
 }
 
-// Recipient without a usable wallet (unprovisioned/suspended) keeps the
-// legacy credits settle.
+// done=false means there is no member wallet at all (platform recipient /
+// zero-value row) — the bookkeeping settle marks the tip complete with no
+// ledger write.
 func TestSettleFiatTip_BackedFallbackToCredits(t *testing.T) {
 	fs := newFakeStore()
 	fs.tip, fs.hasTip = fiatTip(), true

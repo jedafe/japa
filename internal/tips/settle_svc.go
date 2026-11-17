@@ -76,10 +76,12 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 
 	// §128: when the stablecoin rail is live a fiat tip settles to the
 	// recipient's backed wallet — real money never mints bonus credits.
-	// Recipients without an active wallet (unprovisioned, suspended, or
-	// platform) keep the legacy credits settle. A backed-path error is
-	// retryable (killswitch, provider transient) — never fall back or the
-	// tip could settle twice.
+	// The settler auto-provisions an absent wallet (counterfactual,
+	// costs nothing dormant); done=false only means there is no member
+	// wallet at all (platform recipient / zero-value row), where the
+	// bookkeeping settle just marks the tip complete. A backed-path
+	// error is retryable (killswitch, suspended, provider transient) —
+	// never fall back or the tip could settle twice.
 	if s.backedSettler != nil && s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
 		done, err := s.backedSettler.SettleTipBacked(ctx, tipID, walletOwner, net)
 		if err != nil {
