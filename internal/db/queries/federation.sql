@@ -1125,9 +1125,11 @@ ON CONFLICT (post_id, remote_actor_id) DO NOTHING;
 DELETE FROM federation_remote_post_shares
 WHERE post_id = @post_id AND remote_actor_id = @remote_actor_id;
 
--- name: DeleteRemotePostSharesByActor :exec
--- Delete{actor} propagation for the remote-post share ledger.
-DELETE FROM federation_remote_post_shares WHERE remote_actor_id = @remote_actor_id;
+-- name: DeleteRemotePostSharesByActor :many
+-- Delete{actor} propagation for the remote-post share ledger — returns
+-- the affected post ids so callers can unwind share_count.
+DELETE FROM federation_remote_post_shares WHERE remote_actor_id = @remote_actor_id
+RETURNING post_id;
 
 -- name: AdjustRemotePostShareCount :exec
 -- Delta-bump with a floor of zero — undo of an already-absent share

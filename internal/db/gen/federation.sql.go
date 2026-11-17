@@ -647,14 +647,31 @@ func (q *Queries) DeleteRemotePostShare(ctx context.Context, arg DeleteRemotePos
 	return result.RowsAffected(), nil
 }
 
-const deleteRemotePostSharesByActor = `-- name: DeleteRemotePostSharesByActor :exec
+const deleteRemotePostSharesByActor = `-- name: DeleteRemotePostSharesByActor :many
 DELETE FROM federation_remote_post_shares WHERE remote_actor_id = $1
+RETURNING post_id
 `
 
-// Delete{actor} propagation for the remote-post share ledger.
-func (q *Queries) DeleteRemotePostSharesByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteRemotePostSharesByActor, remoteActorID)
-	return err
+// Delete{actor} propagation for the remote-post share ledger — returns
+// the affected post ids so callers can unwind share_count.
+func (q *Queries) DeleteRemotePostSharesByActor(ctx context.Context, remoteActorID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteRemotePostSharesByActor, remoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var post_id pgtype.UUID
+		if err := rows.Scan(&post_id); err != nil {
+			return nil, err
+		}
+		items = append(items, post_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteRemoteReactionsByActor = `-- name: DeleteRemoteReactionsByActor :many

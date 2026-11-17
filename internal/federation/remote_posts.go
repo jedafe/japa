@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
@@ -21,6 +20,10 @@ import (
 
 // maxRemotePostHashtags bounds the tag[] extraction on ingest.
 const maxRemotePostHashtags = 20
+
+// maxRemotePostField bounds a stored remote post's name/summary (runes) —
+// remote-advertised data gets a ceiling like every other bounded field.
+const maxRemotePostField = 2000
 
 // remotePostFields flattens an AP object doc into the columns
 // federation_remote_posts stores — shared by Create ingest and the
@@ -38,8 +41,8 @@ type remotePostFields struct {
 func remotePostFieldsFromObject(obj map[string]any) remotePostFields {
 	f := remotePostFields{
 		ContentText: htmlToText(apStr(obj["content"])),
-		Name:        stringPtrOrNil(apStr(obj["name"])),
-		Summary:     stringPtrOrNil(apStr(obj["summary"])),
+		Name:        stringPtrOrNil(runeCap(apStr(obj["name"]), maxRemotePostField)),
+		Summary:     stringPtrOrNil(runeCap(apStr(obj["summary"]), maxRemotePostField)),
 		Hashtags:    remotePostHashtags(obj),
 	}
 	if s, _ := obj["sensitive"].(bool); s {
@@ -57,9 +60,24 @@ func remotePostFieldsFromObject(obj map[string]any) remotePostFields {
 		f.URL = &u
 	}
 	if t, err := time.Parse(time.RFC3339, apStr(obj["published"])); err == nil {
+		// A remote can claim any published stamp — a far-future date
+		// would pin the post atop every follower's timeline (the
+		// keyset sorts on it). Clamp to receipt time.
+		if now := time.Now().UTC(); t.After(now) {
+			t = now
+		}
 		f.PublishedAt = pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 	}
 	return f
+}
+
+// runeCap truncates s at n runes — byte-slicing could split a multibyte
+// rune and make Postgres reject the insert.
+func runeCap(s string, n int) string {
+	if len([]rune(s)) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }
 
 // remotePostHashtags extracts "#tag" names from the object's tag[] —
@@ -206,11 +224,7 @@ func (s *Service) dispatchFlag(ctx context.Context, q *gen.Queries, act map[stri
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned flag"}
 	}
-	notes := apStr(act["content"])
-	if utf8.RuneCountInString(notes) > 2000 {
-		runes := []rune(notes)
-		notes = string(runes[:2000]) // byte-cut could split a rune → invalid UTF-8
-	}
+	notes := runeCap(apStr(act["content"]), 2000)
 	inserted := int64(0)
 	for _, targetID := range apIDList(act["object"]) {
 		entityType, entityID, ok := s.flagTargetEntity(ctx, q, targetID)

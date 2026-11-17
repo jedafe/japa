@@ -8,6 +8,7 @@ package federation
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,6 +195,43 @@ func TestIsSignerCollectionTarget(t *testing.T) {
 		if got := isSignerCollectionTarget(c.target, actor); got != c.want {
 			t.Errorf("isSignerCollectionTarget(%q) = %v, want %v", c.target, got, c.want)
 		}
+	}
+}
+
+func TestRemotePostFieldsClampAndCaps(t *testing.T) {
+	// A far-future published must not pin the post atop timelines — the
+	// keyset sorts on it, so ingest clamps to receipt time.
+	future := time.Now().Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	f := remotePostFieldsFromObject(map[string]any{
+		"content":   "hello",
+		"published": future,
+		"name":      strings.Repeat("n", maxRemotePostField+50),
+		"summary":   strings.Repeat("s", maxRemotePostField+50),
+	})
+	if !f.PublishedAt.Valid || f.PublishedAt.Time.After(time.Now().Add(time.Minute)) {
+		t.Errorf("future published not clamped: %v", f.PublishedAt.Time)
+	}
+	if got := len([]rune(*f.Name)); got != maxRemotePostField {
+		t.Errorf("name len %d want %d", got, maxRemotePostField)
+	}
+	if got := len([]rune(*f.Summary)); got != maxRemotePostField {
+		t.Errorf("summary len %d want %d", got, maxRemotePostField)
+	}
+	// An honest past stamp passes through untouched.
+	past := "2024-01-15T10:00:00Z"
+	f2 := remotePostFieldsFromObject(map[string]any{"content": "x", "published": past})
+	if !f2.PublishedAt.Valid || f2.PublishedAt.Time.Format(time.RFC3339) != past {
+		t.Errorf("past published altered: %v", f2.PublishedAt.Time)
+	}
+}
+
+func TestRuneCap(t *testing.T) {
+	s := strings.Repeat("é", 5) // multibyte runes
+	if got := runeCap(s, 3); got != "ééé" {
+		t.Errorf("runeCap split or miscounted: %q", got)
+	}
+	if got := runeCap("ab", 10); got != "ab" {
+		t.Errorf("runeCap under limit: %q", got)
 	}
 }
 

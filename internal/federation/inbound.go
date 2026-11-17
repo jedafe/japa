@@ -1427,12 +1427,24 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 	}
 	// M5: the dead actor's timeline posts tombstone too — the actor row
 	// itself only goes 'tombstone' so the FK cascade never fires. Their
-	// share rows on OTHER actors' posts unwind the same way.
+	// share rows on OTHER actors' posts unwind the same way, and each
+	// boosted post's share_count drops with the deleted rows.
 	if err := q.TombstoneFederationRemotePostsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: remote post tombstone failed", "error", err)
 	}
-	if err := q.DeleteRemotePostSharesByActor(ctx, signer.ID); err != nil {
+	if postIDs, err := q.DeleteRemotePostSharesByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: remote post share unwind failed", "error", err)
+	} else {
+		seen := map[pgtype.UUID]bool{}
+		for _, pid := range postIDs {
+			if seen[pid] {
+				continue
+			}
+			seen[pid] = true
+			s.bumpCounter(q.AdjustRemotePostShareCount(ctx, gen.AdjustRemotePostShareCountParams{
+				ID: pid, Delta: -1,
+			}))
+		}
 	}
 	if entities, err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follows unwind failed", "error", err)
