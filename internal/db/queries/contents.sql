@@ -153,7 +153,7 @@ LEFT JOIN LATERAL (
 WHERE c.slug = @slug AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
  ap.disclosure_mode,
- sm.storage_bucket, sm.storage_path, o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path, o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
  bs.id, bs.title, bs.slug, bsp.position,
  prev_c.slug, next_c.slug, c.video_source_id,
@@ -254,7 +254,7 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.
  ap.disclosure_mode,
  sm.storage_bucket, sm.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  bs.id, bs.title, bs.slug, bsp.position,
  prev_c.slug, next_c.slug, c.video_source_id,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url;

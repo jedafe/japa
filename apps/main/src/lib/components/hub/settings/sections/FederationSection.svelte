@@ -36,15 +36,28 @@
 		created_at?: string;
 	};
 
+	// §126 M5 — one outbound edge: pending until the remote inbox Accepts.
+	type RemoteFollow = RemoteFollowRequest & {
+		preferred_username?: string | null;
+		status?: string;
+	};
+
 	let { data }: { data: unknown } = $props();
 	const sectionData = $derived(
-		data as { status: FederationStatus | null; requests: RemoteFollowRequest[] } | null ?? null
+		data as {
+			status: FederationStatus | null;
+			requests: RemoteFollowRequest[];
+			following?: RemoteFollow[];
+		} | null ?? null
 	);
 	const fed = $derived(sectionData?.status ?? null);
 	const requests = $derived(sectionData?.requests ?? []);
+	const following = $derived(sectionData?.following ?? []);
 
 	let busy = $state(false);
 	let busyRequest = $state<string | null>(null);
+	let busyFollow = $state<string | null>(null);
+	let followTarget = $state('');
 	let message = $state<{ kind: 'success' | 'error'; text: string } | null>(null);
 	let disableOpen = $state(false);
 	let rotateOpen = $state(false);
@@ -96,6 +109,44 @@
 		}
 		disableOpen = false;
 		message = { kind: 'success', text: t('settings.federation.disabled_msg', 'Federation is now disabled. Remote servers will no longer see your actor.') };
+		await invalidateAll();
+	}
+
+	// §126 M5 — outbound follows: the member pastes an acct (user@domain)
+	// or actor URL; the backend WebFingers/fetches it and delivers a
+	// signed Follow. Accepted edges feed the Global home tab timeline.
+	async function handleFollow() {
+		const target = followTarget.trim();
+		if (busy || !target) return;
+		busy = true;
+		message = null;
+		const res = await api.post<RemoteFollow>('/me/federation/following', { target });
+		busy = false;
+		if (res.error) {
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		followTarget = '';
+		message = {
+			kind: 'success',
+			text: res.data?.status === 'accepted'
+				? t('settings.federation.follow_accepted_msg', 'Now following — their public posts will appear in your Global feed.')
+				: t('settings.federation.follow_pending_msg', 'Follow request sent. Their posts will appear in your Global feed once the remote server accepts.')
+		};
+		await invalidateAll();
+	}
+
+	async function handleUnfollow(f: RemoteFollow) {
+		if (busyFollow) return;
+		busyFollow = f.remote_actor_id;
+		message = null;
+		const res = await api.delete(`/me/federation/following/${f.remote_actor_id}`);
+		busyFollow = null;
+		if (res.error) {
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		message = { kind: 'success', text: t('settings.federation.unfollowed_msg', 'Unfollowed.') };
 		await invalidateAll();
 	}
 
@@ -206,6 +257,76 @@
 						</li>
 					{/each}
 				</ul>
+			</div>
+		{/if}
+
+		{#if fed.enabled}
+			<!-- §126 M5 — remote follows: accounts the member follows out to
+			     other servers. Accepted edges feed the Global home tab. -->
+			<div class="mt-4">
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{t('settings.federation.following_title', 'Remote accounts you follow')}</h2>
+				<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+					{t('settings.federation.following_desc', 'Follow fediverse accounts and their public posts appear in your Global feed on the home tab.')}
+					<a href="/?tab=global" class="font-medium text-[var(--color-primary)] hover:underline">{t('settings.federation.open_global', 'Open Global feed')}</a>
+				</p>
+				<form
+					class="mt-2 flex items-center gap-2"
+					onsubmit={(e) => { e.preventDefault(); handleFollow(); }}
+				>
+					<input
+						type="text"
+						bind:value={followTarget}
+						placeholder={t('settings.federation.follow_placeholder', 'user@server.social or https://server.social/users/name')}
+						class="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]"
+					/>
+					<button
+						type="submit"
+						disabled={busy || !followTarget.trim()}
+						class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+					>
+						{busy ? t('common.submitting', 'Submitting…') : t('settings.federation.follow_action', 'Follow')}
+					</button>
+				</form>
+				{#if following.length > 0}
+					<ul class="mt-2 space-y-2">
+						{#each following as f (f.remote_actor_id)}
+							<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+								{#if f.avatar_url}
+									<img src={f.avatar_url} alt="" class="size-8 shrink-0 rounded-full object-cover" loading="lazy" />
+								{:else}
+									<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-subtle)]">
+										<AtSign size={14} class="text-[var(--color-muted)]" />
+									</span>
+								{/if}
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-sm font-medium text-[var(--color-text)]">
+										{f.display_name || f.acct || f.actor_url}
+									</p>
+									{#if f.acct}
+										<p class="truncate text-xs text-[var(--color-muted)]">@{f.acct}</p>
+									{/if}
+								</div>
+								<span class="shrink-0 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+									{f.status === 'accepted'
+										? t('settings.federation.follow_status_accepted', 'Following')
+										: t('settings.federation.follow_status_pending', 'Pending')}
+								</span>
+								<button
+									type="button"
+									disabled={busyFollow === f.remote_actor_id}
+									onclick={() => handleUnfollow(f)}
+									class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								>
+									{f.status === 'pending'
+										? t('settings.federation.follow_withdraw', 'Withdraw')
+										: t('settings.federation.unfollow', 'Unfollow')}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="mt-2 text-xs text-[var(--color-muted)]">{t('settings.federation.following_empty', 'You are not following any remote accounts yet.')}</p>
+				{/if}
 			</div>
 		{/if}
 

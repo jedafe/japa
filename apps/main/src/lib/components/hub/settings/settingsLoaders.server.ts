@@ -245,6 +245,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		status: await apiGet<unknown>(ctx, '/me/federation').catch(() => null),
 		requests: await apiGet<{ requests: unknown[] }>(ctx, '/me/federation/follow-requests')
 			.then((r) => r.requests ?? [])
+			.catch(() => [] as unknown[]),
+		// §126 M5 — outbound remote follows; their accepted edges feed the
+		// Global home tab's remote timeline.
+		following: await apiGet<{ following: unknown[] }>(ctx, '/me/federation/following')
+			.then((r) => r.following ?? [])
 			.catch(() => [] as unknown[])
 	}),
 };

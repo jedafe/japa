@@ -100,7 +100,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
@@ -188,7 +188,7 @@ GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.read_time_minutes, m.storage_bucket, m.storage_path,
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.guide_category,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
@@ -271,7 +271,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
@@ -357,7 +357,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
@@ -456,7 +456,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.reaction_count DESC
@@ -545,7 +545,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC
@@ -783,7 +783,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  m.storage_bucket, m.storage_path,
  cg.geo_proximity,
  ap.points_balance,
- o.name, o.slug, om.storage_bucket, om.storage_path,
+ o.name, o.slug, o.verified, o.verification_type, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 LIMIT @candidate_cap;
