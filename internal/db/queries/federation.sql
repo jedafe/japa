@@ -215,7 +215,15 @@ UPDATE remote_actors SET status = @status, updated_at = now() WHERE id = @id;
 INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status, direction)
 VALUES (@local_actor_id, @remote_actor_id, @ap_activity_id, @status, @direction)
 ON CONFLICT (local_actor_id, remote_actor_id, direction) DO UPDATE SET
-    ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
+    -- Live outbound edges keep their minted Follow id on resend —
+    -- rotating it under a racing second request would orphan the first
+    -- delivered Follow's @id and strand the remote's Accept/Reject.
+    ap_activity_id = CASE
+        WHEN federation_follows.direction = 'outbound'
+             AND federation_follows.status IN ('pending', 'accepted')
+             AND federation_follows.ap_activity_id IS NOT NULL
+            THEN federation_follows.ap_activity_id
+        ELSE COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id) END,
     -- Sticky states: 'accepted' survives any resend (the edge exists —
     -- resends are re-affirmations). 'undone' only survives a REPLAY of
     -- the same Follow (same or absent ap_activity_id): an Undo followed
@@ -1104,6 +1112,30 @@ WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
 UPDATE federation_remote_posts SET deleted_at = now(), updated_at = now()
 WHERE remote_actor_id = @remote_actor_id AND deleted_at IS NULL;
 
+-- name: InsertRemotePostShare :execrows
+-- Announce{remote post}: one boost row per (post, remote actor) — rows
+-- affected is the ++ gate so replays can't double-count.
+INSERT INTO federation_remote_post_shares (post_id, remote_actor_id, ap_id)
+VALUES (@post_id, @remote_actor_id, @ap_id)
+ON CONFLICT (post_id, remote_actor_id) DO NOTHING;
+
+-- name: DeleteRemotePostShare :execrows
+-- Undo{Announce} of a remote-post boost — rows-affected gates the
+-- decrement so replays can't drive share_count negative.
+DELETE FROM federation_remote_post_shares
+WHERE post_id = @post_id AND remote_actor_id = @remote_actor_id;
+
+-- name: DeleteRemotePostSharesByActor :exec
+-- Delete{actor} propagation for the remote-post share ledger.
+DELETE FROM federation_remote_post_shares WHERE remote_actor_id = @remote_actor_id;
+
+-- name: AdjustRemotePostShareCount :exec
+-- Delta-bump with a floor of zero — undo of an already-absent share
+-- can't underflow.
+UPDATE federation_remote_posts
+SET share_count = GREATEST(0, share_count + @delta), updated_at = now()
+WHERE id = @id;
+
 -- name: SetFederationRemotePostPinned :execrows
 -- Add/Remove{object → signer-domain featured collection}: remote pin
 -- bookkeeping — provenance in the predicate.
@@ -1117,7 +1149,7 @@ WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
 -- actors the member currently outbound-follows, keyset on
 -- COALESCE(published_at, created_at) DESC.
 SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
-       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned,
+       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned, rp.share_count,
        rp.published_at, rp.edited_at, rp.created_at,
        ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
 FROM federation_remote_posts rp
@@ -1190,6 +1222,9 @@ ORDER BY t.name
 LIMIT @page_limit;
 
 -- name: SetFederatedActorMoved :execrows
--- M5 outbound Move: stamps the advisory redirect on the member's actor.
+-- M5 outbound Move: stamps the advisory redirect — the cooldown lives in
+-- the predicate so concurrent requests serialize on the row lock: the
+-- loser sees 0 rows (within-window), never a stampede of two Moves.
 UPDATE federated_actors SET moved_to_url = @moved_to_url, moved_at = now(), updated_at = now()
-WHERE id = @id;
+WHERE id = @id
+  AND (moved_at IS NULL OR moved_at <= now() - make_interval(secs => @cooldown_seconds));

@@ -17,6 +17,7 @@ DROP INDEX idx_reports_remote_reporter;
 ALTER TABLE content_reports
     DROP COLUMN reporter_remote_actor_id;
 
+DROP TABLE federation_remote_post_shares;
 DROP TABLE federation_remote_posts;
 
 DELETE FROM follows WHERE entity_type = 'remote_actor';

@@ -54,6 +54,7 @@ CREATE TABLE federation_remote_posts (
     sensitive       boolean NOT NULL DEFAULT false,
     hashtags        text[] NOT NULL DEFAULT '{}',
     is_pinned       boolean NOT NULL DEFAULT false,
+    share_count     int NOT NULL DEFAULT 0,
     published_at    timestamptz,
     edited_at       timestamptz,
     deleted_at      timestamptz,
@@ -63,6 +64,18 @@ CREATE TABLE federation_remote_posts (
 CREATE INDEX idx_fed_remote_posts_actor
     ON federation_remote_posts (remote_actor_id, published_at DESC)
     WHERE deleted_at IS NULL;
+
+-- Remote Announce ledger: one boost per remote actor per stored post —
+-- mirrors federation_remote_shares (content side) so Undo{Announce}
+-- decrements can trust rows-affected.
+CREATE TABLE federation_remote_post_shares (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id         uuid NOT NULL REFERENCES federation_remote_posts(id) ON DELETE CASCADE,
+    remote_actor_id uuid NOT NULL REFERENCES remote_actors(id) ON DELETE CASCADE,
+    ap_id           text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (post_id, remote_actor_id)
+);
 
 -- 4. Flag provenance ------------------------------------------------------------
 ALTER TABLE content_reports

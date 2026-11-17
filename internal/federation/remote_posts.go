@@ -278,6 +278,15 @@ func (s *Service) flagTargetEntity(ctx context.Context, q *gen.Queries, targetID
 	if c, err := q.GetAtprotoCommentByRemoteURI(ctx, &targetID); err == nil && c.ID.Valid && !c.DeletedAt.Valid {
 		return "comment", c.ID, true
 	}
+	// A Group actor URL flags the space itself.
+	if slug, ok := strings.CutPrefix(targetID, s.apiBase()+"/federation/groups/"); ok &&
+		slug != "" && !strings.Contains(slug, "/") {
+		row, err := s.store.read.GetGroupActorDocBySlug(ctx, slug)
+		if err != nil || !row.SpaceID.Valid {
+			return "", pgtype.UUID{}, false
+		}
+		return "space", row.SpaceID, true
+	}
 	return "", pgtype.UUID{}, false
 }
 
@@ -332,6 +341,55 @@ func (s *Service) dispatchBlock(ctx context.Context, q *gen.Queries, act map[str
 	return dispatchResult{status: "processed"}
 }
 
+// shareRemotePost is the dispatchAnnounce arm for stored remote posts —
+// one boost row per (post, remote actor), share_count riding rows-affected.
+func (s *Service) shareRemotePost(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+	post, err := q.GetFederationRemotePostByApID(ctx, apObjectID(act))
+	if err != nil || post.DeletedAt.Valid {
+		return dispatchResult{status: "ignored", reason: "announce target is not a local object"}
+	}
+	n, err := q.InsertRemotePostShare(ctx, gen.InsertRemotePostShareParams{
+		PostID:        post.ID,
+		RemoteActorID: signer.ID,
+		ApID:          stringPtrOrNil(apStr(act["id"])),
+	})
+	if err != nil {
+		return dispatchResult{status: "error", reason: "remote post share: " + err.Error()}
+	}
+	if n == 0 {
+		return dispatchResult{status: "ignored", reason: "announce replayed"}
+	}
+	if err := q.AdjustRemotePostShareCount(ctx, gen.AdjustRemotePostShareCountParams{
+		ID: post.ID, Delta: 1,
+	}); err != nil {
+		slog.Warn("federation: remote post share count failed", "error", err)
+	}
+	return dispatchResult{status: "processed"}
+}
+
+// unshareRemotePost is the Undo{Announce} arm — the delete's
+// rows-affected gates the decrement so replays can't underflow.
+func (s *Service) unshareRemotePost(ctx context.Context, q *gen.Queries, objectID string, signer *gen.RemoteActor) dispatchResult {
+	post, err := q.GetFederationRemotePostByApID(ctx, objectID)
+	if err != nil {
+		return dispatchResult{status: "ignored", reason: "unannounce target unknown"}
+	}
+	n, err := q.DeleteRemotePostShare(ctx, gen.DeleteRemotePostShareParams{
+		PostID: post.ID, RemoteActorID: signer.ID,
+	})
+	if err != nil {
+		return dispatchResult{status: "error", reason: "remote post unshare: " + err.Error()}
+	}
+	if n > 0 {
+		if err := q.AdjustRemotePostShareCount(ctx, gen.AdjustRemotePostShareCountParams{
+			ID: post.ID, Delta: -1,
+		}); err != nil {
+			slog.Warn("federation: remote post unshare count failed", "error", err)
+		}
+	}
+	return dispatchResult{status: "processed"}
+}
+
 // dispatchAddRemove is remote featured-pin bookkeeping (§126 M5): an
 // Add/Remove whose object is a stored remote post authored by the signer
 // and whose target collection lives on the signer's domain toggles
@@ -346,10 +404,8 @@ func (s *Service) dispatchAddRemove(ctx context.Context, q *gen.Queries, act map
 	if objectID == "" || targetID == "" {
 		return dispatchResult{status: "ignored", reason: "add/remove without object or target"}
 	}
-	// The curated collection must belong to the signer's own instance —
-	// our collections are not theirs to edit.
-	if !sameURLHost(targetID, signer.ActorUrl) {
-		return dispatchResult{status: "ignored", reason: "collection not on signer domain"}
+	if !isSignerCollectionTarget(targetID, signer.ActorUrl) {
+		return dispatchResult{status: "ignored", reason: "target is not a signer-domain collection"}
 	}
 	post, err := q.GetFederationRemotePostByApID(ctx, objectID)
 	if err != nil {
@@ -369,4 +425,21 @@ func (s *Service) dispatchAddRemove(ctx context.Context, q *gen.Queries, act map
 		return dispatchResult{status: "ignored", reason: "remote post tombstoned"}
 	}
 	return dispatchResult{status: "processed"}
+}
+
+// isSignerCollectionTarget gates Add/Remove curation: the target must be
+// a collection IRI on the signer's own domain — either the canonical
+// {actor}/collections/featured the fediverse pins into (Mastodon,
+// Misskey, Firefish convention) or any explicit /collections/* path
+// there. A bare host match would let a remote pin by pointing at any
+// URL it controls.
+func isSignerCollectionTarget(targetID, actorURL string) bool {
+	tu, err := url.Parse(targetID)
+	if err != nil || tu.Scheme == "" {
+		return false
+	}
+	if targetID == strings.TrimSuffix(actorURL, "/")+"/collections/featured" {
+		return true
+	}
+	return sameURLHost(targetID, actorURL) && strings.Contains(tu.Path, "/collections/")
 }

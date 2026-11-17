@@ -2366,11 +2366,20 @@ type FederationRemotePost struct {
 	Sensitive     bool               `json:"sensitive"`
 	Hashtags      []string           `json:"hashtags"`
 	IsPinned      bool               `json:"is_pinned"`
+	ShareCount    int32              `json:"share_count"`
 	PublishedAt   pgtype.Timestamptz `json:"published_at"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FederationRemotePostShare struct {
+	ID            pgtype.UUID        `json:"id"`
+	PostID        pgtype.UUID        `json:"post_id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ApID          *string            `json:"ap_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type FederationRemoteShare struct {

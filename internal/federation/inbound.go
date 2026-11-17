@@ -950,7 +950,8 @@ func (s *Service) undoLike(ctx context.Context, q *gen.Queries, targetID string,
 func (s *Service) undoAnnounce(ctx context.Context, q *gen.Queries, targetID string, signer *gen.RemoteActor) dispatchResult {
 	contentID, ok := s.contentIDForObject(targetID)
 	if !ok {
-		return dispatchResult{status: "ignored", reason: "unannounce target unknown"}
+		// M5: an unboost of a stored remote post reverses the same way.
+		return s.unshareRemotePost(ctx, q, targetID, signer)
 	}
 	n, err := q.DeleteRemoteShare(ctx, gen.DeleteRemoteShareParams{
 		RemoteActorID: signer.ID,
@@ -1057,7 +1058,9 @@ func (s *Service) dispatchAnnounce(ctx context.Context, q *gen.Queries, act map[
 	}
 	content, ok := s.localContentForObject(ctx, q, apObjectID(act))
 	if !ok {
-		return dispatchResult{status: "ignored", reason: "announce target is not a local object"}
+		// M5: a boost of a stored remote post counts too — the
+		// remote-post share ledger mirrors federation_remote_shares.
+		return s.shareRemotePost(ctx, q, act, signer)
 	}
 	n, err := q.InsertRemoteShare(ctx, gen.InsertRemoteShareParams{
 		RemoteActorID: signer.ID,
@@ -1423,9 +1426,13 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 		slog.Warn("federation: outbound mirror unwind failed", "error", err)
 	}
 	// M5: the dead actor's timeline posts tombstone too — the actor row
-	// itself only goes 'tombstone' so the FK cascade never fires.
+	// itself only goes 'tombstone' so the FK cascade never fires. Their
+	// share rows on OTHER actors' posts unwind the same way.
 	if err := q.TombstoneFederationRemotePostsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: remote post tombstone failed", "error", err)
+	}
+	if err := q.DeleteRemotePostSharesByActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: remote post share unwind failed", "error", err)
 	}
 	if entities, err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follows unwind failed", "error", err)

@@ -41,6 +41,24 @@ func (q *Queries) AddRemoteReaction(ctx context.Context, arg AddRemoteReactionPa
 	return result.RowsAffected(), nil
 }
 
+const adjustRemotePostShareCount = `-- name: AdjustRemotePostShareCount :exec
+UPDATE federation_remote_posts
+SET share_count = GREATEST(0, share_count + $1), updated_at = now()
+WHERE id = $2
+`
+
+type AdjustRemotePostShareCountParams struct {
+	Delta int32       `json:"delta"`
+	ID    pgtype.UUID `json:"id"`
+}
+
+// Delta-bump with a floor of zero — undo of an already-absent share
+// can't underflow.
+func (q *Queries) AdjustRemotePostShareCount(ctx context.Context, arg AdjustRemotePostShareCountParams) error {
+	_, err := q.db.Exec(ctx, adjustRemotePostShareCount, arg.Delta, arg.ID)
+	return err
+}
+
 const adjustUserFollowerCount = `-- name: AdjustUserFollowerCount :exec
 UPDATE users SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2
 `
@@ -607,6 +625,36 @@ func (q *Queries) DeleteRemoteFollowsByActor(ctx context.Context, remoteActorID 
 		return nil, err
 	}
 	return items, nil
+}
+
+const deleteRemotePostShare = `-- name: DeleteRemotePostShare :execrows
+DELETE FROM federation_remote_post_shares
+WHERE post_id = $1 AND remote_actor_id = $2
+`
+
+type DeleteRemotePostShareParams struct {
+	PostID        pgtype.UUID `json:"post_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Undo{Announce} of a remote-post boost — rows-affected gates the
+// decrement so replays can't drive share_count negative.
+func (q *Queries) DeleteRemotePostShare(ctx context.Context, arg DeleteRemotePostShareParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRemotePostShare, arg.PostID, arg.RemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRemotePostSharesByActor = `-- name: DeleteRemotePostSharesByActor :exec
+DELETE FROM federation_remote_post_shares WHERE remote_actor_id = $1
+`
+
+// Delete{actor} propagation for the remote-post share ledger.
+func (q *Queries) DeleteRemotePostSharesByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRemotePostSharesByActor, remoteActorID)
+	return err
 }
 
 const deleteRemoteReactionsByActor = `-- name: DeleteRemoteReactionsByActor :many
@@ -1341,7 +1389,7 @@ func (q *Queries) GetFederationRelayByID(ctx context.Context, id pgtype.UUID) (F
 }
 
 const getFederationRemotePostByApID = `-- name: GetFederationRemotePostByApID :one
-SELECT id, remote_actor_id, ap_id, in_reply_to_url, url, name, summary, content_text, sensitive, hashtags, is_pinned, published_at, edited_at, deleted_at, created_at, updated_at FROM federation_remote_posts WHERE ap_id = $1
+SELECT id, remote_actor_id, ap_id, in_reply_to_url, url, name, summary, content_text, sensitive, hashtags, is_pinned, share_count, published_at, edited_at, deleted_at, created_at, updated_at FROM federation_remote_posts WHERE ap_id = $1
 `
 
 func (q *Queries) GetFederationRemotePostByApID(ctx context.Context, apID string) (FederationRemotePost, error) {
@@ -1359,6 +1407,7 @@ func (q *Queries) GetFederationRemotePostByApID(ctx context.Context, apID string
 		&i.Sensitive,
 		&i.Hashtags,
 		&i.IsPinned,
+		&i.ShareCount,
 		&i.PublishedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
@@ -2000,6 +2049,28 @@ type InsertRemoteFollowParams struct {
 // notification side effects — a replay is a no-op.
 func (q *Queries) InsertRemoteFollow(ctx context.Context, arg InsertRemoteFollowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertRemoteFollow, arg.RemoteActorID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertRemotePostShare = `-- name: InsertRemotePostShare :execrows
+INSERT INTO federation_remote_post_shares (post_id, remote_actor_id, ap_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (post_id, remote_actor_id) DO NOTHING
+`
+
+type InsertRemotePostShareParams struct {
+	PostID        pgtype.UUID `json:"post_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	ApID          *string     `json:"ap_id"`
+}
+
+// Announce{remote post}: one boost row per (post, remote actor) — rows
+// affected is the ++ gate so replays can't double-count.
+func (q *Queries) InsertRemotePostShare(ctx context.Context, arg InsertRemotePostShareParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRemotePostShare, arg.PostID, arg.RemoteActorID, arg.ApID)
 	if err != nil {
 		return 0, err
 	}
@@ -3225,7 +3296,7 @@ func (q *Queries) ListRemoteFollowingURLsByActor(ctx context.Context, arg ListRe
 
 const listRemoteTimelinePosts = `-- name: ListRemoteTimelinePosts :many
 SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
-       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned,
+       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned, rp.share_count,
        rp.published_at, rp.edited_at, rp.created_at,
        ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
 FROM federation_remote_posts rp
@@ -3261,6 +3332,7 @@ type ListRemoteTimelinePostsRow struct {
 	Sensitive         bool               `json:"sensitive"`
 	Hashtags          []string           `json:"hashtags"`
 	IsPinned          bool               `json:"is_pinned"`
+	ShareCount        int32              `json:"share_count"`
 	PublishedAt       pgtype.Timestamptz `json:"published_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
@@ -3299,6 +3371,7 @@ func (q *Queries) ListRemoteTimelinePosts(ctx context.Context, arg ListRemoteTim
 			&i.Sensitive,
 			&i.Hashtags,
 			&i.IsPinned,
+			&i.ShareCount,
 			&i.PublishedAt,
 			&i.EditedAt,
 			&i.CreatedAt,
@@ -3711,16 +3784,20 @@ func (q *Queries) RotateFederatedActorKey(ctx context.Context, arg RotateFederat
 const setFederatedActorMoved = `-- name: SetFederatedActorMoved :execrows
 UPDATE federated_actors SET moved_to_url = $1, moved_at = now(), updated_at = now()
 WHERE id = $2
+  AND (moved_at IS NULL OR moved_at <= now() - make_interval(secs => $3))
 `
 
 type SetFederatedActorMovedParams struct {
-	MovedToUrl *string     `json:"moved_to_url"`
-	ID         pgtype.UUID `json:"id"`
+	MovedToUrl      *string     `json:"moved_to_url"`
+	ID              pgtype.UUID `json:"id"`
+	CooldownSeconds float64     `json:"cooldown_seconds"`
 }
 
-// M5 outbound Move: stamps the advisory redirect on the member's actor.
+// M5 outbound Move: stamps the advisory redirect — the cooldown lives in
+// the predicate so concurrent requests serialize on the row lock: the
+// loser sees 0 rows (within-window), never a stampede of two Moves.
 func (q *Queries) SetFederatedActorMoved(ctx context.Context, arg SetFederatedActorMovedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setFederatedActorMoved, arg.MovedToUrl, arg.ID)
+	result, err := q.db.Exec(ctx, setFederatedActorMoved, arg.MovedToUrl, arg.ID, arg.CooldownSeconds)
 	if err != nil {
 		return 0, err
 	}
@@ -4067,7 +4144,15 @@ const upsertFederationFollow = `-- name: UpsertFederationFollow :one
 INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status, direction)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (local_actor_id, remote_actor_id, direction) DO UPDATE SET
-    ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
+    -- Live outbound edges keep their minted Follow id on resend —
+    -- rotating it under a racing second request would orphan the first
+    -- delivered Follow's @id and strand the remote's Accept/Reject.
+    ap_activity_id = CASE
+        WHEN federation_follows.direction = 'outbound'
+             AND federation_follows.status IN ('pending', 'accepted')
+             AND federation_follows.ap_activity_id IS NOT NULL
+            THEN federation_follows.ap_activity_id
+        ELSE COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id) END,
     -- Sticky states: 'accepted' survives any resend (the edge exists —
     -- resends are re-affirmations). 'undone' only survives a REPLAY of
     -- the same Follow (same or absent ap_activity_id): an Undo followed

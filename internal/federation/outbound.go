@@ -80,9 +80,12 @@ func (s *Service) resolveTargetURL(ctx context.Context, target string) (string, 
 	if strings.Contains(t, "://") {
 		return "", ErrInvalidTarget // only https actor URLs resolve
 	}
-	// acct shape: user@domain
+	// acct shape: user@domain — both halves must be free of URL syntax,
+	// whitespace, and control chars before they ride into a remote
+	// WebFinger path.
 	local, domain, ok := strings.Cut(t, "@")
-	if !ok || local == "" || domain == "" || strings.ContainsAny(domain, "/?#") {
+	if !ok || local == "" || domain == "" ||
+		strings.ContainsAny(domain, " \t\r\n/?#@") || strings.ContainsAny(local, " \t\r\n/?#@") {
 		return "", ErrInvalidTarget
 	}
 	if !s.instanceAllowed(ctx, domain) {
@@ -286,9 +289,14 @@ func (s *Service) UnfollowRemote(ctx context.Context, userID, remoteActorID pgty
 	}
 	if inbox != nil && *inbox != "" {
 		row := gen.ListRemoteFollowerInboxesByActorRow{InboxUrl: inbox, RemoteActorID: remote.ID}
+		// The Undo must be ledgered BEFORE the edge closes — an
+		// unledgered unfollow leaves the remote believing the member
+		// still follows them (and leaves nothing for the sweeper to
+		// retry). A missing/dead inbox is the one case that skips this
+		// gate: there is nowhere to deliver anyway.
 		if _, derr := s.insertDeliveries(ctx, actor.ID, undo, undoID,
 			[]gen.ListRemoteFollowerInboxesByActorRow{row}, true); derr != nil {
-			slog.Warn("federation: unfollow delivery failed — edge still closes", "error", derr)
+			return fmt.Errorf("federation: unfollow delivery: %w", derr)
 		}
 	}
 	if err := s.store.setFollowStatus(ctx, actor.ID, remoteActorID, "outbound", "undone"); err != nil {
@@ -314,6 +322,7 @@ type RemoteTimelineItem struct {
 	ContentText  string      `json:"content_text"`
 	InReplyToURL *string     `json:"in_reply_to_url"`
 	IsPinned     bool        `json:"is_pinned"`
+	ShareCount   int32       `json:"share_count"`
 	Hashtags     []string    `json:"hashtags"`
 	PublishedAt  *time.Time  `json:"published_at"`
 	EditedAt     *time.Time  `json:"edited_at"`
@@ -404,6 +413,7 @@ func (s *Service) RemoteTimeline(ctx context.Context, userID pgtype.UUID, cursor
 			ContentText:  r.ContentText,
 			InReplyToURL: r.InReplyToUrl,
 			IsPinned:     r.IsPinned,
+			ShareCount:   r.ShareCount,
 			Hashtags:     r.Hashtags,
 		}
 		if r.PublishedAt.Valid {
@@ -453,9 +463,6 @@ func (s *Service) RequestMove(ctx context.Context, userID pgtype.UUID, targetURL
 	if err != nil {
 		return err
 	}
-	if actor.MovedAt.Valid && time.Since(actor.MovedAt.Time) < s.moveCooldown(ctx) {
-		return ErrMoveTooSoon
-	}
 	t := strings.TrimSpace(targetURL)
 	u, perr := url.Parse(t)
 	if perr != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") ||
@@ -472,12 +479,24 @@ func (s *Service) RequestMove(ctx context.Context, userID pgtype.UUID, targetURL
 	if !doc.advertisesAlsoKnownAs(actor.ActorUrl) {
 		return ErrMoveNotConfirmed
 	}
+	cooldown := s.moveCooldown(ctx)
 	if n, err := s.store.write.SetFederatedActorMoved(ctx, gen.SetFederatedActorMovedParams{
-		ID: actor.ID, MovedToUrl: &t,
+		ID:              actor.ID,
+		MovedToUrl:      &t,
+		CooldownSeconds: cooldown.Seconds(),
 	}); err != nil {
 		return fmt.Errorf("federation: move stamp: %w", err)
 	} else if n == 0 {
-		return ErrNotFound // actor row vanished between gate and stamp
+		// The UPDATE's own predicate holds the cooldown — a concurrent
+		// request that already stamped shows up here as within-window.
+		fresh, ferr := s.store.read.GetFederatedActorByID(ctx, actor.ID)
+		if ferr != nil {
+			return ErrNotFound // actor row vanished between gate and stamp
+		}
+		if fresh.MovedAt.Valid && time.Since(fresh.MovedAt.Time) < cooldown {
+			return ErrMoveTooSoon
+		}
+		return ErrNotFound
 	}
 	// The doc cache still serves the pre-move actor — the redirect must
 	// appear on the next read.

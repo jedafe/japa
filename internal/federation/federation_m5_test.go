@@ -6,6 +6,8 @@ package federation
 // DB-backed paths ride the JC_TEST_DATABASE_URL suite.
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -169,5 +171,45 @@ func TestRemoteTimelineCursorShape(t *testing.T) {
 	var rid pgtype.UUID
 	if err := rid.Scan(enc[len(enc)-36:]); err != nil || rid != id {
 		t.Errorf("cursor id parse: %v %v", rid, err)
+	}
+}
+
+func TestIsSignerCollectionTarget(t *testing.T) {
+	actor := "https://remote.example/users/alice"
+	cases := []struct {
+		target string
+		want   bool
+	}{
+		{actor + "/collections/featured", true},
+		{"https://remote.example/users/alice/collections/liked", true},
+		{"https://remote.example/collections/instance", true},
+		{"https://evil.remote.example/collections/featured", false},
+		{"https://other.example/users/alice/collections/featured", false},
+		{"https://remote.example/users/alice", false},
+		{"https://remote.example/posts/1", false},
+		{"not a url", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isSignerCollectionTarget(c.target, actor); got != c.want {
+			t.Errorf("isSignerCollectionTarget(%q) = %v, want %v", c.target, got, c.want)
+		}
+	}
+}
+
+func TestResolveTargetURLAcctSyntax(t *testing.T) {
+	// A zero Service suffices — every case must fail before the
+	// instanceAllowed/WebFinger path dereferences store state.
+	s := &Service{}
+	for _, target := range []string{
+		"", " ", "user @remote.example", "user@remote .example",
+		"us er@remote.example", "user@remote.example/x", "user@remote.example?x",
+		"user@remote.example#frag", "user@remote@example",
+		"acct:user @remote.example", "@us\ter@remote.example",
+		"http://remote.example/users/a", "ftp://remote.example/users/a",
+	} {
+		if _, err := s.resolveTargetURL(context.Background(), target); !errors.Is(err, ErrInvalidTarget) {
+			t.Errorf("resolveTargetURL(%q) err = %v, want ErrInvalidTarget", target, err)
+		}
 	}
 }
