@@ -716,12 +716,17 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 	return pathwayRowToDTO(row), nil
 }
 
-// Update applies a partial admin patch to a pathway (PATCH
+// AdminUpdatePathway applies a partial admin patch to a pathway (PATCH
 // /admin/attestation/{id}). This is the lifecycle surface for editing steps,
 // correcting fields, rejecting, or deactivating a pathway — operations the
 // approve-only flow cannot express. Admin-only
 // (attestation_guide.manage permission checked at route level).
-func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) (PathwayDTO, error) {
+//
+// Named AdminUpdatePathway (not Update) deliberately: the ai_tools writer
+// resolves an "Update" method reflectively, and the seeded
+// attestation_guide.update/.assign_geo agent tools are disabled (000788) —
+// a method named Update would silently light up a disabled op.
+func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) (PathwayDTO, error) {
 	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

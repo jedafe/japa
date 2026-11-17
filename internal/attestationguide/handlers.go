@@ -504,7 +504,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.Update(r.Context(), id, input)
+	pathway, err := h.service.AdminUpdatePathway(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
