@@ -457,8 +457,16 @@ func TestSettleScopeCapEnforced(t *testing.T) {
 		}},
 	}
 	st.walletByUser[uid.String()] = w
+	st.walletByAddr["dest"] = &Wallet{Address: "dest", Status: WalletStatusActive} // known recipient
 	st.outSum = 950 // today's settled volume per SQL aggregate
 	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	// Unknown recipients are rejected before any provider call.
+	if _, err := svc.Settle(context.Background(), SettleInput{
+		FromUserID: uid, ToAddress: "attacker-addr", Asset: AssetUSDC, AmountMinor: 100,
+	}); !errors.Is(err, ErrUnknownRecipient) {
+		t.Fatalf("unknown recipient = %v, want ErrUnknownRecipient", err)
+	}
 
 	_, err := svc.Settle(context.Background(), SettleInput{
 		FromUserID: uid, ToAddress: "dest", Asset: AssetUSDC, AmountMinor: 100,
@@ -779,6 +787,7 @@ func TestProcessTipSettleLifecycle(t *testing.T) {
 			}},
 		}
 		st.walletByUser[u.String()] = w
+		st.walletByAddr[w.Address] = w // real wallets resolve by address too
 	}
 	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{Role: TreasuryHot, Chain: "solana", Address: "hot"}
 	tid := newUUID()

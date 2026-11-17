@@ -22,6 +22,12 @@ var ErrScopeExceeded = errors.New("stablecoin: transfer exceeds delegated-signer
 // signer (provisioned-but-unregistered or suspended).
 var ErrWalletNotSettleable = errors.New("stablecoin: sender wallet not settleable")
 
+// ErrUnknownRecipient rejects a delegated transfer to an address that is
+// neither a member wallet nor a platform treasury — the application-level
+// allowlist standing in for chain recipients until a dedicated fee signer
+// warrants the chain-level scope (docs-confirmed: scope.recipients).
+var ErrUnknownRecipient = errors.New("stablecoin: recipient not recognized")
+
 // SettleInput is one in-app stablecoin spend (tip, purchase, creator share).
 // The fee leg batches atomically into the same operation (§128.5).
 type SettleInput struct {
@@ -52,6 +58,14 @@ func (s *Service) Settle(ctx context.Context, in SettleInput) (TransferResult, e
 	}
 	if w == nil || w.Status != WalletStatusActive || w.DelegatedSigner == nil {
 		return TransferResult{}, ErrWalletNotSettleable
+	}
+
+	// Application-level recipient allowlist — delegated ops may only reach
+	// member wallets or platform treasury addresses. The delegated signer
+	// could theoretically be pointed anywhere (no chain recipients on the
+	// ops scope), so our API must never originate an unknown destination.
+	if err := s.assertKnownRecipient(ctx, w.Chain, in.ToAddress); err != nil {
+		return TransferResult{}, err
 	}
 
 	// Scope pre-check: today's settled volume for this asset must stay
@@ -88,6 +102,23 @@ func (s *Service) Settle(ctx context.Context, in SettleInput) (TransferResult, e
 		Idempotency:   in.Idempotency,
 		Reference:     in.Reference,
 	})
+}
+
+// assertKnownRecipient enforces the app-level destination allowlist:
+// a member wallet address or a platform treasury wallet on this chain.
+func (s *Service) assertKnownRecipient(ctx context.Context, chain, addr string) error {
+	if addr == "" {
+		return ErrUnknownRecipient
+	}
+	if w, err := s.store.GetWalletByAddress(ctx, addr); err == nil && w != nil {
+		return nil
+	}
+	for _, role := range []string{TreasuryHot, TreasuryCold} {
+		if t, err := s.store.GetTreasuryWallet(ctx, chain, role); err == nil && t != nil && t.Address == addr {
+			return nil
+		}
+	}
+	return ErrUnknownRecipient
 }
 
 // scopeCapFor returns the registered daily cap for an asset (0 = no scope).

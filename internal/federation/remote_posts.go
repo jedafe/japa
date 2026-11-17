@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	gen "github.com/jedafe/japa/internal/db/gen"
@@ -206,8 +207,9 @@ func (s *Service) dispatchFlag(ctx context.Context, q *gen.Queries, act map[stri
 		return dispatchResult{status: "rejected", reason: "unsigned flag"}
 	}
 	notes := apStr(act["content"])
-	if len(notes) > 2000 {
-		notes = notes[:2000]
+	if utf8.RuneCountInString(notes) > 2000 {
+		runes := []rune(notes)
+		notes = string(runes[:2000]) // byte-cut could split a rune → invalid UTF-8
 	}
 	inserted := int64(0)
 	for _, targetID := range apIDList(act["object"]) {

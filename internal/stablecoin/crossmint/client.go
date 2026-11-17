@@ -191,6 +191,12 @@ func (c *Client) RegisterDelegatedSigner(ctx context.Context, locator string, in
 				"interval": 86400,
 			},
 		}
+		// Docs-confirmed: recipients is the chain-level destination
+		// whitelist (addresses or wallet locators). Emitted only when set —
+		// an empty array means "any recipient" like omission.
+		if len(sc.Recipients) > 0 {
+			scope["recipients"] = sc.Recipients
+		}
 		scopes = append(scopes, scope)
 		if !sc.ExpiresAt.IsZero() {
 			expiresAt = sc.ExpiresAt.UTC().Format(time.RFC3339)
@@ -284,16 +290,36 @@ func (c *Client) BuildWithdrawal(ctx context.Context, locator string, in stablec
 		"destinationAddress": in.Destination,
 		"amount":             strconv.FormatInt(in.AmountMinor, 10),
 	}
-	var out txResp
+	var out struct {
+		txResp
+		// Tolerant expiry decode — surface the provider's real signing
+		// deadline when it returns one rather than our guessed constant.
+		ExpiresAt  string `json:"expiresAt"`
+		ValidUntil string `json:"validUntil"`
+	}
 	if err := c.do(ctx, http.MethodPost, walletsBase+"/"+locator+"/transactions",
 		map[string]any{"params": params, "requiresApproval": true}, &out); err != nil {
 		return stablecoin.SignableOp{}, err
 	}
-	payload, _ := json.Marshal(out)
+	payload, _ := json.Marshal(out.txResp)
+	expires := time.Now().Add(10 * time.Minute).Unix()
+	for _, raw := range []string{out.ExpiresAt, out.ValidUntil} {
+		if raw == "" {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			expires = t.Unix()
+			break
+		}
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			expires = n
+			break
+		}
+	}
 	return stablecoin.SignableOp{
 		Locator:   locator,
 		Payload:   payload,
-		ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
+		ExpiresAt: expires,
 	}, nil
 }
 

@@ -3009,6 +3009,44 @@ func (q *Queries) ListOutboundFederationFollowsByUser(ctx context.Context, userI
 	return items, nil
 }
 
+const listOutboundFollowsForRefollow = `-- name: ListOutboundFollowsForRefollow :many
+SELECT ff.id, ff.local_actor_id, fa.actor_url
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+WHERE ff.remote_actor_id = $1
+  AND ff.direction = 'outbound' AND ff.status = 'pending'
+  AND ff.ap_activity_id IS NULL
+`
+
+type ListOutboundFollowsForRefollowRow struct {
+	ID           pgtype.UUID `json:"id"`
+	LocalActorID pgtype.UUID `json:"local_actor_id"`
+	ActorUrl     string      `json:"actor_url"`
+}
+
+// Move auto-refollow: outbound edges the repoint just landed on the new
+// actor are pending with a NULL ap id — the signature only repoints
+// produce (a genuine pending edge always carries its Follow @id).
+func (q *Queries) ListOutboundFollowsForRefollow(ctx context.Context, remoteActorID pgtype.UUID) ([]ListOutboundFollowsForRefollowRow, error) {
+	rows, err := q.db.Query(ctx, listOutboundFollowsForRefollow, remoteActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOutboundFollowsForRefollowRow
+	for rows.Next() {
+		var i ListOutboundFollowsForRefollowRow
+		if err := rows.Scan(&i.ID, &i.LocalActorID, &i.ActorUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingFederationFollowsByUser = `-- name: ListPendingFederationFollowsByUser :many
 SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
        ra.actor_url, ra.acct, ra.display_name, ra.avatar_url
@@ -3389,10 +3427,13 @@ func (q *Queries) ListUndeliveredFederationDeliveriesByActor(ctx context.Context
 const mergeFederationFollowsToRemoteActor = `-- name: MergeFederationFollowsToRemoteActor :execrows
 UPDATE federation_follows ff
 SET status = CASE
+        WHEN ff.direction = 'outbound' THEN ff.status
         WHEN ff.status = 'accepted' OR src.status = 'accepted' THEN 'accepted'
         WHEN ff.status = 'pending' OR src.status = 'pending' THEN 'pending'
         ELSE ff.status END,
-    ap_activity_id = COALESCE(src.ap_activity_id, ff.ap_activity_id),
+    ap_activity_id = CASE
+        WHEN ff.direction = 'outbound' THEN ff.ap_activity_id
+        ELSE COALESCE(src.ap_activity_id, ff.ap_activity_id) END,
     updated_at = now()
 FROM federation_follows src
 WHERE src.local_actor_id = ff.local_actor_id
@@ -3441,6 +3482,22 @@ func (q *Queries) PruneFederationInbound(ctx context.Context, retentionDays int3
 	return err
 }
 
+const rearmOutboundFollow = `-- name: RearmOutboundFollow :exec
+UPDATE federation_follows SET ap_activity_id = $1, updated_at = now()
+WHERE id = $2
+`
+
+type RearmOutboundFollowParams struct {
+	ApActivityID *string     `json:"ap_activity_id"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+// Stamps the fresh Follow @id a repointed edge delivers under.
+func (q *Queries) RearmOutboundFollow(ctx context.Context, arg RearmOutboundFollowParams) error {
+	_, err := q.db.Exec(ctx, rearmOutboundFollow, arg.ApActivityID, arg.ID)
+	return err
+}
+
 const removeRemoteReaction = `-- name: RemoveRemoteReaction :execrows
 DELETE FROM reactions
 WHERE entity_type = $1 AND entity_id = $2
@@ -3470,8 +3527,17 @@ func (q *Queries) RemoveRemoteReaction(ctx context.Context, arg RemoveRemoteReac
 }
 
 const repointFederationFollowsToRemoteActor = `-- name: RepointFederationFollowsToRemoteActor :execrows
-UPDATE federation_follows ff SET remote_actor_id = $1, updated_at = now()
+UPDATE federation_follows ff
+SET remote_actor_id = $1,
+    -- M5: outbound edges repoint as 'pending' with no ap id — the new
+    -- instance never saw our Follow, so dispatchMove re-requests it
+    -- (auto-refollow) rather than pretending the accept carried over.
+    -- Inbound edges keep status/id: the remote's identities merged.
+    status = CASE WHEN ff.direction = 'outbound' THEN 'pending' ELSE ff.status END,
+    ap_activity_id = CASE WHEN ff.direction = 'outbound' THEN NULL ELSE ff.ap_activity_id END,
+    updated_at = now()
 WHERE ff.remote_actor_id = $2
+  AND (ff.direction = 'inbound' OR ff.status IN ('pending', 'accepted'))
   AND NOT EXISTS (SELECT 1 FROM federation_follows dup
                   WHERE dup.local_actor_id = ff.local_actor_id
                     AND dup.remote_actor_id = $1
@@ -3823,6 +3889,19 @@ func (q *Queries) TombstoneFederationRemotePost(ctx context.Context, arg Tombsto
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const tombstoneFederationRemotePostsByActor = `-- name: TombstoneFederationRemotePostsByActor :exec
+UPDATE federation_remote_posts SET deleted_at = now(), updated_at = now()
+WHERE remote_actor_id = $1 AND deleted_at IS NULL
+`
+
+// Delete{actor} tombstones every stored post the dead actor authored —
+// the remote_actors row itself only goes 'tombstone' (never a hard
+// delete), so the FK cascade never fires and this sweeps instead.
+func (q *Queries) TombstoneFederationRemotePostsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, tombstoneFederationRemotePostsByActor, remoteActorID)
+	return err
 }
 
 const undoFederationFollowsByRemoteActor = `-- name: UndoFederationFollowsByRemoteActor :exec

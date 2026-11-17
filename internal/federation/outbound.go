@@ -472,10 +472,12 @@ func (s *Service) RequestMove(ctx context.Context, userID pgtype.UUID, targetURL
 	if !doc.advertisesAlsoKnownAs(actor.ActorUrl) {
 		return ErrMoveNotConfirmed
 	}
-	if _, err := s.store.write.SetFederatedActorMoved(ctx, gen.SetFederatedActorMovedParams{
+	if n, err := s.store.write.SetFederatedActorMoved(ctx, gen.SetFederatedActorMovedParams{
 		ID: actor.ID, MovedToUrl: &t,
 	}); err != nil {
 		return fmt.Errorf("federation: move stamp: %w", err)
+	} else if n == 0 {
+		return ErrNotFound // actor row vanished between gate and stamp
 	}
 	// The doc cache still serves the pre-move actor — the redirect must
 	// appear on the next read.

@@ -110,6 +110,12 @@ type SignerScope struct {
 	Asset         string    // usdc | usdt
 	DailyCapMinor int64     // USD minor units/day
 	ExpiresAt     time.Time // short-lived; renewed by stablecoin:signer_scope_renew
+	// Recipients is the chain-level destination whitelist (docs-confirmed:
+	// scope.recipients — addresses or wallet locators; empty = any). A
+	// treasury-allowlisted scope only adds value on a separate signer —
+	// scope matching is union-style, so it can't restrict alongside a
+	// broad scope on the same token.
+	Recipients []string
 }
 
 // Activity is one mirrored onchain event (stablecoin_activity). Chain is

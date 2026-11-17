@@ -48,6 +48,8 @@ func handleError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_limit_reached", "Daily transfer limit reached")
 	case errors.Is(err, ErrWalletNotSettleable):
 		errpkg.WriteError(w, http.StatusConflict, "wallet_not_active", "Wallet is not fully set up yet")
+	case errors.Is(err, ErrUnknownRecipient):
+		errpkg.WriteError(w, http.StatusBadRequest, "unknown_recipient", "Recipient is not a member wallet or treasury")
 	case errors.Is(err, ErrEscrowNotFound), errors.Is(err, ErrBookingNotFound), errors.Is(err, ErrSweepNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, ErrEscrowState):

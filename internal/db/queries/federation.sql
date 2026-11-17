@@ -275,12 +275,37 @@ WHERE remote_actor_id = @remote_actor_id AND status <> 'undone';
 -- §126 M4 Move{actor→target}: every edge that does not already exist on
 -- the new actor rebinds to it. Colliding pairs merge via
 -- MergeFederationFollowsToRemoteActor first so the live status wins.
-UPDATE federation_follows ff SET remote_actor_id = @new_remote_actor_id, updated_at = now()
+UPDATE federation_follows ff
+SET remote_actor_id = @new_remote_actor_id,
+    -- M5: outbound edges repoint as 'pending' with no ap id — the new
+    -- instance never saw our Follow, so dispatchMove re-requests it
+    -- (auto-refollow) rather than pretending the accept carried over.
+    -- Inbound edges keep status/id: the remote's identities merged.
+    status = CASE WHEN ff.direction = 'outbound' THEN 'pending' ELSE ff.status END,
+    ap_activity_id = CASE WHEN ff.direction = 'outbound' THEN NULL ELSE ff.ap_activity_id END,
+    updated_at = now()
 WHERE ff.remote_actor_id = @old_remote_actor_id
+  AND (ff.direction = 'inbound' OR ff.status IN ('pending', 'accepted'))
   AND NOT EXISTS (SELECT 1 FROM federation_follows dup
                   WHERE dup.local_actor_id = ff.local_actor_id
                     AND dup.remote_actor_id = @new_remote_actor_id
                     AND dup.direction = ff.direction);
+
+-- name: ListOutboundFollowsForRefollow :many
+-- Move auto-refollow: outbound edges the repoint just landed on the new
+-- actor are pending with a NULL ap id — the signature only repoints
+-- produce (a genuine pending edge always carries its Follow @id).
+SELECT ff.id, ff.local_actor_id, fa.actor_url
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+WHERE ff.remote_actor_id = @remote_actor_id
+  AND ff.direction = 'outbound' AND ff.status = 'pending'
+  AND ff.ap_activity_id IS NULL;
+
+-- name: RearmOutboundFollow :exec
+-- Stamps the fresh Follow @id a repointed edge delivers under.
+UPDATE federation_follows SET ap_activity_id = @ap_activity_id, updated_at = now()
+WHERE id = @id;
 
 -- name: MergeFederationFollowsToRemoteActor :execrows
 -- §126 M4 Move collision half: where an edge already exists on the new
@@ -289,10 +314,13 @@ WHERE ff.remote_actor_id = @old_remote_actor_id
 -- follow from the old (accepted beats pending, pending beats dead).
 UPDATE federation_follows ff
 SET status = CASE
+        WHEN ff.direction = 'outbound' THEN ff.status
         WHEN ff.status = 'accepted' OR src.status = 'accepted' THEN 'accepted'
         WHEN ff.status = 'pending' OR src.status = 'pending' THEN 'pending'
         ELSE ff.status END,
-    ap_activity_id = COALESCE(src.ap_activity_id, ff.ap_activity_id),
+    ap_activity_id = CASE
+        WHEN ff.direction = 'outbound' THEN ff.ap_activity_id
+        ELSE COALESCE(src.ap_activity_id, ff.ap_activity_id) END,
     updated_at = now()
 FROM federation_follows src
 WHERE src.local_actor_id = ff.local_actor_id
@@ -1068,6 +1096,13 @@ UPDATE federation_remote_posts
 SET deleted_at = now(), updated_at = now()
 WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
   AND deleted_at IS NULL;
+
+-- name: TombstoneFederationRemotePostsByActor :exec
+-- Delete{actor} tombstones every stored post the dead actor authored —
+-- the remote_actors row itself only goes 'tombstone' (never a hard
+-- delete), so the FK cascade never fires and this sweeps instead.
+UPDATE federation_remote_posts SET deleted_at = now(), updated_at = now()
+WHERE remote_actor_id = @remote_actor_id AND deleted_at IS NULL;
 
 -- name: SetFederationRemotePostPinned :execrows
 -- Add/Remove{object → signer-domain featured collection}: remote pin

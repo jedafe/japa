@@ -77,6 +77,9 @@ type dispatchResult struct {
 	reason    string
 	intents   []notifyIntent
 	deliverID pgtype.UUID // optional — a delivery row just created (Accept)
+	// deliverIDs carries the multi-row case (Move auto-refollow ledgers
+	// one Follow per repointed outbound edge).
+	deliverIDs []pgtype.UUID
 	// invalidateRemote is a remote-actor URL whose jc:fed:remote:* cache
 	// entry must drop post-commit — the dispatch tombstoned the row and a
 	// stale 'active' snapshot must not keep resolving it.
@@ -99,7 +102,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	}
 	var act map[string]any
 	if err := json.Unmarshal(row.Payload, &act); err != nil {
-		return s.finishInbound(ctx, row.ID, "rejected", "malformed activity json", nil, pgtype.UUID{})
+		return s.finishInbound(ctx, row.ID, "rejected", "malformed activity json", nil, pgtype.UUID{}, nil)
 	}
 
 	// The signer is the activity's author-of-record for state changes.
@@ -108,7 +111,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		signer, err = s.resolveRemoteActor(ctx, *row.ActorUrl)
 		if err != nil {
 			if errors.Is(err, ErrRemoteBlocked) {
-				return s.finishInbound(ctx, row.ID, "rejected", "signer instance blocked", nil, pgtype.UUID{})
+				return s.finishInbound(ctx, row.ID, "rejected", "signer instance blocked", nil, pgtype.UUID{}, nil)
 			}
 			// Freshness fetches are best-effort: the stale cached row still
 			// carries the identity dispatch needs — and a Delete{actor} from
@@ -119,7 +122,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 				return fmt.Errorf("resolve signer: %w", err) // retryable fetch failure
 			}
 			if stale.Status != "active" {
-				return s.finishInbound(ctx, row.ID, "rejected", "signer actor "+stale.Status, nil, pgtype.UUID{})
+				return s.finishInbound(ctx, row.ID, "rejected", "signer actor "+stale.Status, nil, pgtype.UUID{}, nil)
 			}
 			signer = &stale
 		}
@@ -129,7 +132,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	// Pre-tx on purpose — the AI layer can take seconds and must not hold
 	// a database transaction open.
 	if reason := s.spamCheckReply(ctx, act); reason != "" {
-		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{})
+		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{}, nil)
 	}
 
 	// M3: relay couriers carry activities whose actor is NOT the signer —
@@ -143,11 +146,11 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	if signer != nil {
 		if actorID := apActorID(act); actorID != "" && !strings.EqualFold(actorID, signer.ActorUrl) {
 			if !s.isAcceptedRelay(ctx, signer.ActorUrl) {
-				return s.finishInbound(ctx, row.ID, "rejected", "activity actor does not match signer", nil, pgtype.UUID{})
+				return s.finishInbound(ctx, row.ID, "rejected", "activity actor does not match signer", nil, pgtype.UUID{}, nil)
 			}
 			resolved, rerr := s.resolveRemoteActor(ctx, actorID)
 			if rerr != nil || resolved == nil || resolved.Status != "active" {
-				return s.finishInbound(ctx, row.ID, "rejected", "couriered actor unresolvable", nil, pgtype.UUID{})
+				return s.finishInbound(ctx, row.ID, "rejected", "couriered actor unresolvable", nil, pgtype.UUID{}, nil)
 			}
 			signer = resolved
 		}
@@ -208,7 +211,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	if res.invalidateRemote != "" {
 		s.cacheDelRemote(ctx, res.invalidateRemote)
 	}
-	return s.finishInbound(ctx, row.ID, res.status, res.reason, res.intents, res.deliverID)
+	return s.finishInbound(ctx, row.ID, res.status, res.reason, res.intents, res.deliverID, res.deliverIDs)
 }
 
 // spamCheckReply runs the §41 pipeline on inbound content bodies — the
@@ -265,7 +268,7 @@ func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string
 // finishInbound stamps the ledger row, fires deferred notifications, and
 // enqueues any delivery the dispatch produced. Notifications are
 // best-effort post-commit — a lost ping must not replay the activity.
-func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, reason string, intents []notifyIntent, deliverID pgtype.UUID) error {
+func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, reason string, intents []notifyIntent, deliverID pgtype.UUID, deliverIDs []pgtype.UUID) error {
 	var errPtr *string
 	if reason != "" {
 		errPtr = &reason
@@ -285,6 +288,14 @@ func (s *Service) finishInbound(ctx context.Context, id pgtype.UUID, status, rea
 	if deliverID.Valid {
 		if err := s.enqueueDelivery(ctx, deliverID); err != nil {
 			slog.Warn("federation: delivery enqueue failed — sweeper picks up pending rows", "delivery_id", deliverID, "error", err)
+		}
+	}
+	for _, did := range deliverIDs {
+		if !did.Valid {
+			continue
+		}
+		if err := s.enqueueDelivery(ctx, did); err != nil {
+			slog.Warn("federation: delivery enqueue failed — sweeper picks up pending rows", "delivery_id", did, "error", err)
 		}
 	}
 	return nil
@@ -764,6 +775,16 @@ func (s *Service) resolveOutboundFollowAnswer(ctx context.Context, q *gen.Querie
 		return dispatchResult{status: "processed"}
 	}
 	if newStatus != "accepted" {
+		// A Reject tears down any optimistic mirror (a Move-repointed
+		// edge carries one forward) — no edge, no following-graph row.
+		userID := followUserID(ctx, q, edge.LocalActorID)
+		if userID.Valid {
+			if _, derr := q.DeleteOutboundFollowMirror(ctx, gen.DeleteOutboundFollowMirrorParams{
+				FollowerID: userID, RemoteActorID: signer.ID,
+			}); derr != nil {
+				slog.Warn("federation: reject mirror delete failed", "error", derr)
+			}
+		}
 		return dispatchResult{status: "processed"}
 	}
 	userID := followUserID(ctx, q, edge.LocalActorID)
@@ -1265,6 +1286,52 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	if err := q.DeleteOutboundFollowMirrorsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: move outbound mirror cleanup failed", "error", err)
 	}
+	// M5 auto-refollow: the new instance never saw our members' Follows,
+	// so the repointed outbound edges are pending+id-less — each gets a
+	// fresh Follow activity and a ledgered delivery to the target's
+	// inbox. Without this the member's timeline silently dries up the
+	// moment the author migrates (Mastodon's MoveWorker semantics).
+	res := dispatchResult{status: "processed"}
+	moveInbox := moveTarget.InboxUrl
+	if moveTarget.SharedInboxUrl != nil && *moveTarget.SharedInboxUrl != "" {
+		moveInbox = moveTarget.SharedInboxUrl
+	}
+	if moveInbox != nil && *moveInbox != "" {
+		edges, rerr := q.ListOutboundFollowsForRefollow(ctx, moveTarget.ID)
+		if rerr != nil {
+			return dispatchResult{status: "error", reason: "refollow list: " + rerr.Error()}
+		}
+		for _, e := range edges {
+			followID := e.ActorUrl + "#follow/" + uuid.NewString()
+			if err := q.RearmOutboundFollow(ctx, gen.RearmOutboundFollowParams{
+				ID: e.ID, ApActivityID: &followID,
+			}); err != nil {
+				return dispatchResult{status: "error", reason: "refollow arm: " + err.Error()}
+			}
+			payload, _ := json.Marshal(map[string]any{
+				"@context": asContext,
+				"id":       followID,
+				"type":     "Follow",
+				"actor":    e.ActorUrl,
+				"object":   moveTarget.ActorUrl,
+				"to":       []string{moveTarget.ActorUrl},
+			})
+			row, derr := q.InsertFederationDelivery(ctx, gen.InsertFederationDeliveryParams{
+				ActivityApID:  followID,
+				ActivityType:  "Follow",
+				ActivityJson:  payload,
+				LocalActorID:  e.LocalActorID,
+				RemoteActorID: moveTarget.ID,
+				InboxUrl:      *moveInbox,
+			})
+			if derr != nil && !errors.Is(derr, pgx.ErrNoRows) {
+				return dispatchResult{status: "error", reason: "refollow ledger: " + derr.Error()}
+			}
+			if derr == nil {
+				res.deliverIDs = append(res.deliverIDs, row.ID)
+			}
+		}
+	}
 	// Deleted mirrors are follower edges that MERGED into the new
 	// actor's — each was counted at its own Follow, so each delete
 	// unwinds users.follower_count by one.
@@ -1285,7 +1352,8 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	}); err != nil {
 		slog.Warn("federation: moved-actor relay unwind failed", "error", err)
 	}
-	return dispatchResult{status: "processed", invalidateRemote: signer.ActorUrl}
+	res.invalidateRemote = signer.ActorUrl
+	return res
 }
 
 // dispatchDelete handles Delete{actor} (full remote provenance unwind)
@@ -1353,6 +1421,11 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 	// went 'undone' above; their remote_actor mirrors delete here.
 	if err := q.DeleteOutboundFollowMirrorsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: outbound mirror unwind failed", "error", err)
+	}
+	// M5: the dead actor's timeline posts tombstone too — the actor row
+	// itself only goes 'tombstone' so the FK cascade never fires.
+	if err := q.TombstoneFederationRemotePostsByActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: remote post tombstone failed", "error", err)
 	}
 	if entities, err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follows unwind failed", "error", err)
