@@ -699,13 +699,14 @@ func (s *Service) NodeInfo(ctx context.Context) (map[string]any, error) {
 
 // FederationStatus is the member-facing view of their actor state.
 type FederationStatus struct {
-	Enabled       bool   `json:"enabled"`
-	Status        string `json:"status"`
-	ActorURL      string `json:"actor_url,omitempty"`
-	Handle        string `json:"handle,omitempty"`
-	FollowerCount int64  `json:"follower_count"`
-	PublicKey     string `json:"-"`
-	CreatedAt     string `json:"created_at,omitempty"`
+	Enabled       bool    `json:"enabled"`
+	Status        string  `json:"status"`
+	ActorURL      string  `json:"actor_url,omitempty"`
+	Handle        string  `json:"handle,omitempty"`
+	FollowerCount int64   `json:"follower_count"`
+	MovedToURL    *string `json:"moved_to_url,omitempty"`
+	PublicKey     string  `json:"-"`
+	CreatedAt     string  `json:"created_at,omitempty"`
 }
 
 // GetMyFederation returns the caller's federation state.
@@ -740,6 +741,9 @@ func (s *Service) statusFor(ctx context.Context, actor gen.FederatedActor, usern
 		Status:   actor.Status,
 		ActorURL: actor.ActorUrl,
 		Handle:   username + "@" + s.handleDomain(),
+	}
+	if actor.MovedToUrl != nil && *actor.MovedToUrl != "" {
+		st.MovedToURL = actor.MovedToUrl
 	}
 	if s.store != nil {
 		if remote, err := s.store.countRemoteFollowers(ctx, actor.ID); err == nil {

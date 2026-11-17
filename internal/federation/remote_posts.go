@@ -123,7 +123,7 @@ type announceIngest struct {
 // Follow{Hashtag}/Follow{Public} relays use; without it every relayed
 // post drops as "announce target is not a local object". Returns nil
 // when nothing should ingest: no domain-covering subscription (the
-// fetch gate — '' subs match every host), the object is already stored,
+// fetch gate — ” subs match every host), the object is already stored,
 // the doc won't resolve, or attributedTo can't produce an active
 // author actor.
 func (s *Service) resolveAnnounceTarget(ctx context.Context, act map[string]any) *announceIngest {
@@ -268,10 +268,7 @@ func (s *Service) updateRemotePost(ctx context.Context, q *gen.Queries, objectID
 	if f.ContentText == "" || len(f.ContentText) > maxRemoteCommentText {
 		return dispatchResult{status: "rejected", reason: "bad updated text"}
 	}
-	edited := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-	if t, terr := time.Parse(time.RFC3339, apStr(obj["updated"])); terr == nil {
-		edited = pgtype.Timestamptz{Time: t.UTC(), Valid: true}
-	}
+	edited := remoteEditedAt(obj)
 	n, err := q.UpdateFederationRemotePost(ctx, gen.UpdateFederationRemotePostParams{
 		ApID:          objectID,
 		RemoteActorID: signer.ID,
@@ -290,6 +287,19 @@ func (s *Service) updateRemotePost(ctx context.Context, q *gen.Queries, objectID
 		return dispatchResult{status: "ignored", reason: "updated object tombstoned"}
 	}
 	return dispatchResult{status: "processed"}
+}
+
+// remoteEditedAt parses the remote object's `updated` stamp for the
+// update path — same far-future clamp as `published`: a remote-claimed
+// edit time must not wander ahead of receipt time.
+func remoteEditedAt(obj map[string]any) pgtype.Timestamptz {
+	if t, terr := time.Parse(time.RFC3339, apStr(obj["updated"])); terr == nil {
+		if now := time.Now().UTC(); t.After(now) {
+			t = now
+		}
+		return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
+	}
+	return pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 }
 
 // tombstoneRemotePost is the shared Delete{object}/Undo{Create} arm —
@@ -386,6 +396,12 @@ func (s *Service) flagTargetEntity(ctx context.Context, q *gen.Queries, targetID
 		if err != nil {
 			return "", pgtype.UUID{}, false
 		}
+		// The flag must name an actor we actually federate — a remote
+		// guessing the URL shape shouldn't pin reports on members whose
+		// actor URL was never advertised.
+		if _, err := q.GetFederatedActorByUserID(ctx, user.ID); err != nil {
+			return "", pgtype.UUID{}, false
+		}
 		return "user", user.ID, true
 	}
 	if c, err := q.GetAtprotoCommentByRemoteURI(ctx, &targetID); err == nil && c.ID.Valid && !c.DeletedAt.Valid {
@@ -450,6 +466,12 @@ func (s *Service) dispatchBlock(ctx context.Context, q *gen.Queries, act map[str
 		}); derr != nil {
 			slog.Warn("federation: block outbound mirror delete failed", "error", derr)
 		}
+	}
+	// The blocker severed the relationship — queued deliveries still
+	// aimed at their inbox (follow answers, fanout) stop retrying now
+	// instead of burning the schedule on a host that rejects the tie.
+	if _, err := q.DeadenDeliveriesByRemoteActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: block delivery deaden failed", "error", err)
 	}
 	return dispatchResult{status: "processed"}
 }

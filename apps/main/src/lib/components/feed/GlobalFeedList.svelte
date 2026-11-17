@@ -64,7 +64,10 @@
 	let liveItems = $state<RemoteTimelineItem[]>([]);
 	let liveErrors = $state<{ domain: string; message: string }[]>([]);
 	let liveApiError = $state<string | null>(null);
-	let liveLoading = $state(false);
+	// Seed true whenever a tag is already in the URL — SSR would
+	// otherwise flash the "no live results" empty state until the
+	// client-side $effect starts the remote fetch.
+	let liveLoading = $state(!!untrack(() => tag).trim());
 	let busySub = $state<string | null>(null);
 	let subMessage = $state<string | null>(null);
 

@@ -10,12 +10,13 @@ import type { PageLoad } from './$types';
  *
  * The uri param is shape-checked to acct:/https:// actor identifiers —
  * the visitor's own instance does the real resolution, but this page
- * refuses to forward malformed or non-web schemes downstream.
+ * refuses to forward malformed or non-web schemes downstream. Plain
+ * http:// actor IRIs are refused too: ActivityPub is https on the wire.
  *
  * Ref: japaconnect-engineering/sections/126-activitypub-federation.md
  */
 export const load: PageLoad = async ({ url }) => {
 	const raw = (url.searchParams.get('uri') ?? '').trim();
-	const uri = /^(acct:|https?:\/\/)/i.test(raw) ? raw : '';
+	const uri = /^(acct:|https:\/\/)/i.test(raw) ? raw : '';
 	return { uri };
 };

@@ -588,7 +588,7 @@ func (h *Handlers) RotateActorKey(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, res)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
 }
 
 // GetStats serves GET /api/v1/admin/federation/stats.
@@ -598,7 +598,7 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, stats)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // ListBlocks serves GET /api/v1/admin/federation/instances.
@@ -634,7 +634,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusCreated, block)
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
 // DeleteBlock serves DELETE /api/v1/admin/federation/instances/{id}.
@@ -1011,8 +1011,8 @@ func (h *Handlers) ListRelays(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"relays": rows, "total": total, "page": page, "limit": limit,
-		"total_pages": totalPages(total, limit),
+		"data": rows,
+		"meta": map[string]any{"total": total, "page": page, "total_pages": totalPages(total, limit)},
 	})
 }
 
@@ -1034,7 +1034,7 @@ func (h *Handlers) CreateRelay(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusCreated, relay)
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": relay})
 }
 
 // DeleteRelay serves DELETE /admin/federation/relays/{id} — Undo{Follow} + remove.
@@ -1060,8 +1060,8 @@ func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"groups": rows, "total": total, "page": page, "limit": limit,
-		"total_pages": totalPages(total, limit),
+		"data": rows,
+		"meta": map[string]any{"total": total, "page": page, "total_pages": totalPages(total, limit)},
 	})
 }
 
@@ -1088,7 +1088,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusCreated, actor)
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": actor})
 }
 
 // DeleteGroup serves DELETE /admin/federation/groups/{id} — tombstone +

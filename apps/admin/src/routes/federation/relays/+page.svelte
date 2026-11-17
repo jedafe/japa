@@ -124,8 +124,8 @@
 			if (filter.status) params.set('status', filter.status);
 			const result = await federationAdminApi.listRelays(params.toString());
 			if (result.ok) {
-				const d = result.data as { relays?: Relay[]; total?: number; total_pages?: number };
-				return { data: d.relays ?? [], total: d.total ?? 0, totalPages: d.total_pages ?? 1 };
+				const d = result.data as { data?: Relay[]; meta?: { total?: number; total_pages?: number } };
+				return { data: d.data ?? [], total: d.meta?.total ?? 0, totalPages: d.meta?.total_pages ?? 1 };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load relays'));
 		},

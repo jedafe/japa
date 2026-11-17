@@ -23,7 +23,7 @@
 	let { item, onTag }: Props = $props();
 
 	const actor = $derived(item.actor);
-	const displayName = $derived(actor.display_name || actor.preferred_username || actor.acct || 'Remote user');
+	const displayName = $derived(actor.display_name || actor.preferred_username || actor.acct || t('feed.global.remote_user', 'Remote user'));
 	const acct = $derived(actor.acct ?? '');
 	const initials = $derived(displayName.slice(0, 2).toUpperCase());
 	const time = $derived(

@@ -250,21 +250,6 @@ func EnqueueFederationFanout(ctx context.Context, contentID pgtype.UUID) {
 	}
 }
 
-// EnqueueFederationActorDelete fires federation:fanout for an actor tombstone
-// — disable/erasure paths propagate Delete{actor} to remote followers.
-func EnqueueFederationActorDelete(ctx context.Context, actorID pgtype.UUID) {
-	if taskEnqueuer == nil {
-		return
-	}
-	payload, err := json.Marshal(map[string]string{"actor_id": actorID.String()})
-	if err != nil {
-		return
-	}
-	if err := taskEnqueuer.Enqueue(TypeFederationFanout, payload); err != nil {
-		slog.Warn("worker: federation actor-delete enqueue failed", "actor_id", actorID.String(), "error", err)
-	}
-}
-
 // enqueueFederationDelivery kicks one delivery row — the production
 // TaskEnqueuer seam for *federation.Service.
 func enqueueFederationDelivery(ctx context.Context, deliveryID pgtype.UUID) error {
@@ -304,6 +289,21 @@ func enqueueFederationInbound(ctx context.Context, inboundID pgtype.UUID) error 
 	return taskEnqueuer.Enqueue(TypeFederationProcessInbound, payload)
 }
 
+// enqueueFederationResolveActor kicks federation:resolve_actor — the
+// low-tier re-fetch for remote actors whose Update events arrive signed
+// (dispatchUpdate's actor arm) or whose rows need a refresh the caller
+// can't wait on.
+func enqueueFederationResolveActor(ctx context.Context, actorURL string) error {
+	if taskEnqueuer == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{"actor_url": actorURL})
+	if err != nil {
+		return err
+	}
+	return taskEnqueuer.Enqueue(TypeFederationResolveActor, payload)
+}
+
 // federationTaskEnqueuer adapts the package enqueue helpers to
 // federation.Service's TaskEnqueuer seam — wired at server setup because
 // the federation package can't import worker.
@@ -320,6 +320,9 @@ func (federationTaskEnqueuer) EnqueueDeliveryAfter(ctx context.Context, id pgtyp
 }
 func (federationTaskEnqueuer) EnqueueInbound(ctx context.Context, id pgtype.UUID) error {
 	return enqueueFederationInbound(ctx, id)
+}
+func (federationTaskEnqueuer) EnqueueResolveActor(ctx context.Context, actorURL string) error {
+	return enqueueFederationResolveActor(ctx, actorURL)
 }
 
 // HandleFederationFanout processes federation:fanout — expands one

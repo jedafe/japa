@@ -580,7 +580,7 @@ func (s *Service) followIntent(actor gen.FederatedActor, profile gen.GetActorPro
 		subjectID:   actor.UserID,
 		title:       "New fediverse follower",
 		body:        remoteHandle(remote) + " followed you via the fediverse",
-		action:      "/@" + profile.Username,
+		action:      "/u/" + profile.Username,
 	}
 }
 
@@ -803,7 +803,16 @@ func (s *Service) resolveOutboundFollowAnswer(ctx context.Context, q *gen.Querie
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follows mirror: " + err.Error()}
 	}
-	return dispatchResult{status: "processed", intents: []notifyIntent{{
+	return dispatchResult{status: "processed", intents: []notifyIntent{
+		followAcceptIntent(userID, signer),
+	}}
+}
+
+// followAcceptIntent notifies the member that a remote instance accepted
+// their outbound Follow — deep-linked at their federation settings page
+// (the surface where the pending edge flipped to Following).
+func followAcceptIntent(userID pgtype.UUID, signer *gen.RemoteActor) notifyIntent {
+	return notifyIntent{
 		recipientID: userID,
 		nType:       notifications.TypeNewFollower,
 		actorID:     signer.ID,
@@ -811,8 +820,8 @@ func (s *Service) resolveOutboundFollowAnswer(ctx context.Context, q *gen.Querie
 		subjectID:   userID,
 		title:       "Follow request accepted",
 		body:        remoteHandle(*signer) + " accepted your follow request on the fediverse",
-		action:      "/me/federation",
-	}}}
+		action:      "/settings/federation",
+	}
 }
 
 // dispatchUndo reverses Follow / Like / Announce / Create by wrapping
@@ -1196,8 +1205,11 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 }
 
 // dispatchUpdate refreshes a remote comment body (object = prior remote
-// URI) — only when the signer is the actor that created it. Actor
-// self-updates need no work — the resolver cache TTL covers re-fetch.
+// URI) — only when the signer is the actor that created it. An actor
+// self-update (Update{Person} — profile edits federate this way) kicks
+// a low-tier resolve_actor task so the remote_actors row re-fetches its
+// display fields, inbox endpoints, and key instead of waiting out the
+// resolver cache TTL.
 func (s *Service) dispatchUpdate(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned update"}
@@ -1208,6 +1220,9 @@ func (s *Service) dispatchUpdate(ctx context.Context, q *gen.Queries, act map[st
 		return dispatchResult{status: "ignored", reason: "update without object"}
 	}
 	if strings.EqualFold(objectID, signer.ActorUrl) {
+		if err := s.enqueueResolveActor(ctx, signer.ActorUrl); err != nil {
+			slog.Warn("federation: actor-update resolve enqueue failed", "error", err)
+		}
 		return dispatchResult{status: "processed"}
 	}
 	objMap := apObj(obj)

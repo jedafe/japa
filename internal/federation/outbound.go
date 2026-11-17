@@ -65,6 +65,17 @@ func (s *Service) memberActor(ctx context.Context, userID pgtype.UUID) (gen.Fede
 	return s.repairActorURLs(ctx, actor), nil
 }
 
+// isLocalHost reports whether host names one of OUR surfaces — the API
+// host, the site host, or the acct handle domain. Local targets are not
+// remote federation: without this a member could follow (or move to) our
+// own actors through the remote-actor plumbing, minting remote_actors
+// rows for local identities and self-delivering signed Follows.
+func (s *Service) isLocalHost(host string) bool {
+	return sameURLHost("https://"+host, s.apiBase()) ||
+		sameURLHost("https://"+host, s.siteBase()) ||
+		strings.EqualFold(host, s.handleDomain())
+}
+
 // resolveTargetURL turns the member's freeform target into an actor URL:
 // acct shapes go through remote WebFinger, https URLs pass through.
 // Refused shapes and non-remote targets return ErrInvalidTarget.
@@ -76,7 +87,7 @@ func (s *Service) resolveTargetURL(ctx context.Context, target string) (string, 
 	t = strings.TrimPrefix(t, "@")
 	t = strings.TrimPrefix(t, "acct:")
 	if strings.HasPrefix(t, "https://") {
-		if sameURLHost(t, s.apiBase()) || sameURLHost(t, s.siteBase()) {
+		if u, perr := url.Parse(t); perr == nil && s.isLocalHost(u.Hostname()) {
 			return "", ErrInvalidTarget // self-follow is not remote federation
 		}
 		return t, nil
@@ -90,6 +101,11 @@ func (s *Service) resolveTargetURL(ctx context.Context, target string) (string, 
 	local, domain, ok := strings.Cut(t, "@")
 	if !ok || local == "" || domain == "" ||
 		strings.ContainsAny(domain, " \t\r\n/?#@") || strings.ContainsAny(local, " \t\r\n/?#@") {
+		return "", ErrInvalidTarget
+	}
+	// user@our-host never leaves the platform — the blocklist gate below
+	// only covers remote instances, so the local check has to come first.
+	if s.isLocalHost(domain) {
 		return "", ErrInvalidTarget
 	}
 	if !s.instanceAllowed(ctx, domain) {
@@ -114,6 +130,12 @@ func (s *Service) resolveTargetURL(ctx context.Context, target string) (string, 
 	for _, l := range jrd.Links {
 		if l.Rel == "self" && l.Href != "" &&
 			strings.Contains(l.Type, "activity+json") {
+			// A foreign WebFinger may still hand back our own actor URL —
+			// the resolved target is what must be remote, not the domain
+			// that answered.
+			if u, uerr := url.Parse(l.Href); uerr != nil || s.isLocalHost(u.Hostname()) {
+				return "", ErrInvalidTarget
+			}
 			return l.Href, nil
 		}
 	}
@@ -127,6 +149,9 @@ func (s *Service) fetchTargetActor(ctx context.Context, actorURL string) (*gen.R
 	u, err := url.Parse(actorURL)
 	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") {
 		return nil, "", ErrInvalidTarget
+	}
+	if s.isLocalHost(u.Hostname()) {
+		return nil, "", ErrInvalidTarget // local actors never ride remote_actors
 	}
 	if !s.instanceAllowed(ctx, u.Hostname()) {
 		return nil, "", fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
@@ -172,6 +197,17 @@ func (s *Service) FollowRemote(ctx context.Context, userID pgtype.UUID, target s
 	// fresh Follow id, mirroring relay resubscribe semantics.
 	if edge, eerr := s.store.followByPair(ctx, actor.ID, remote.ID, "outbound"); eerr == nil &&
 		(edge.Status == "pending" || edge.Status == "accepted") {
+		// A still-pending edge re-driven by the member re-ships the SAME
+		// Follow — the remote's answer may have dead-lettered, so the
+		// member's explicit re-request is the retry surface. The wire
+		// activity id stays stable (remotes dedup on it); the delivery
+		// ledger keys on a resend suffix since the (activity_ap_id,
+		// inbox) row already exists for the original send.
+		if edge.Status == "pending" {
+			if err := s.redriveFollow(ctx, actor, remote, edge, actorURL, inbox); err != nil {
+				return RemoteFollowResult{}, err
+			}
+		}
 		return remoteFollowResult(edge, remote), nil
 	}
 	followID := fmt.Sprintf("%s#follow/%s", actor.ActorUrl, uuid.NewString())
@@ -205,6 +241,46 @@ func (s *Service) FollowRemote(ctx context.Context, userID pgtype.UUID, target s
 		return RemoteFollowResult{}, err
 	}
 	return remoteFollowResult(edge, remote), nil
+}
+
+// redriveFollow re-ledgers the member's original Follow for a pending
+// edge whose Accept/Reject never arrived. The wire activity keeps the
+// edge's ap_activity_id (or a fresh id when the row never recorded one,
+// which is written back through the same upsert); the delivery row
+// dedups on activity_ap_id + inbox, so the ledger key carries a resend
+// discriminator — one fresh row per explicit re-request.
+func (s *Service) redriveFollow(ctx context.Context, actor gen.FederatedActor, remote *gen.RemoteActor, edge gen.FederationFollow, actorURL, inbox string) error {
+	wireID := ""
+	if edge.ApActivityID != nil {
+		wireID = *edge.ApActivityID
+	}
+	if wireID == "" {
+		wireID = fmt.Sprintf("%s#follow/%s", actor.ActorUrl, uuid.NewString())
+		if _, err := s.store.upsertFollow(ctx, gen.UpsertFederationFollowParams{
+			LocalActorID:  actor.ID,
+			RemoteActorID: remote.ID,
+			ApActivityID:  &wireID,
+			Status:        "pending",
+			Direction:     "outbound",
+		}); err != nil {
+			return fmt.Errorf("federation: follow edge repair: %w", err)
+		}
+	}
+	follow := map[string]any{
+		"@context": asContext,
+		"id":       wireID,
+		"type":     "Follow",
+		"actor":    actor.ActorUrl,
+		"object":   actorURL,
+		"to":       []string{actorURL},
+	}
+	ledgerKey := fmt.Sprintf("%s#resend/%s", wireID, uuid.NewString())
+	row := gen.ListRemoteFollowerInboxesByActorRow{InboxUrl: &inbox, RemoteActorID: remote.ID}
+	if _, err := s.insertDeliveries(ctx, actor.ID, follow, ledgerKey,
+		[]gen.ListRemoteFollowerInboxesByActorRow{row}, true); err != nil {
+		return fmt.Errorf("federation: follow resend: %w", err)
+	}
+	return nil
 }
 
 func remoteFollowResult(edge gen.FederationFollow, remote *gen.RemoteActor) RemoteFollowResult {
@@ -477,7 +553,7 @@ func (s *Service) RequestMove(ctx context.Context, userID pgtype.UUID, targetURL
 	t := strings.TrimSpace(targetURL)
 	u, perr := url.Parse(t)
 	if perr != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "https") ||
-		sameURLHost(t, s.apiBase()) || strings.EqualFold(t, actor.ActorUrl) {
+		s.isLocalHost(u.Hostname()) || strings.EqualFold(t, actor.ActorUrl) {
 		return ErrInvalidTarget
 	}
 	if !s.instanceAllowed(ctx, u.Hostname()) {
@@ -510,8 +586,11 @@ func (s *Service) RequestMove(ctx context.Context, userID pgtype.UUID, targetURL
 		return ErrNotFound
 	}
 	// The doc cache still serves the pre-move actor — the redirect must
-	// appear on the next read.
-	s.InvalidateActorIdentity(ctx, actor.PreferredUsername)
+	// appear on the next read. Both handles go: preferred_username keys
+	// the actor doc while a renamed member's WebFinger JRD lives under
+	// the LIVE username — dropping only the former leaves the renamed
+	// handle advertising a moved actor as live until TTL.
+	s.InvalidateActorIdentityForUser(ctx, userID)
 
 	// Advisory fanout: remote followers get Move{actor→target} signed by
 	// the member's key. Same inbox expansion as content fanout.

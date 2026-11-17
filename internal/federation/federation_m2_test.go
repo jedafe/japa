@@ -963,6 +963,7 @@ func TestDBKeyActorBlockedAfterCache(t *testing.T) {
 type recordingEnqueuer struct {
 	deliveries []pgtype.UUID
 	inbounds   []pgtype.UUID
+	resolves   []string
 }
 
 func (e *recordingEnqueuer) EnqueueDelivery(_ context.Context, id pgtype.UUID) error {
@@ -974,6 +975,10 @@ func (e *recordingEnqueuer) EnqueueDeliveryAfter(context.Context, pgtype.UUID, t
 }
 func (e *recordingEnqueuer) EnqueueInbound(_ context.Context, id pgtype.UUID) error {
 	e.inbounds = append(e.inbounds, id)
+	return nil
+}
+func (e *recordingEnqueuer) EnqueueResolveActor(_ context.Context, actorURL string) error {
+	e.resolves = append(e.resolves, actorURL)
 	return nil
 }
 

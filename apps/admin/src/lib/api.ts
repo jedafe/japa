@@ -2024,11 +2024,10 @@ export const sharePlatformsAdminApi = {
 
 // §126 ActivityPub federation admin API — M3 ops surface: relay
 // subscriptions, space Group actors, instance domain blocks.
-// List endpoints use apiRaw: the federation backends put rows + pagination
-// at the body top level ({relays, total} / {data, meta}) rather than inside
-// a `data` envelope — api() would drop everything.
+// List endpoints use apiRaw because pagination lives in a top-level `meta`
+// sibling of `data` — api() would unwrap the array and drop the counts.
 export const federationAdminApi = {
-	stats: () => apiRaw<unknown>('/admin/federation/stats'),
+	stats: () => api<unknown>('/admin/federation/stats'),
 	listActors: (params?: string) => apiRaw<unknown>(`/admin/federation/actors${params ? `?${params}` : ''}`),
 	rotateActorKey: (id: string) =>
 		api(`/admin/federation/actors/${id}/rotate-key`, { method: 'POST' }),

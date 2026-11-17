@@ -136,8 +136,8 @@
 			if (q) params.set('q', q);
 			const result = await federationAdminApi.listGroups(params.toString());
 			if (result.ok) {
-				const d = result.data as { groups?: GroupActor[]; total?: number; total_pages?: number };
-				return { data: d.groups ?? [], total: d.total ?? 0, totalPages: d.total_pages ?? 1 };
+				const d = result.data as { data?: GroupActor[]; meta?: { total?: number; total_pages?: number } };
+				return { data: d.data ?? [], total: d.meta?.total ?? 0, totalPages: d.meta?.total_pages ?? 1 };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load group actors'));
 		},

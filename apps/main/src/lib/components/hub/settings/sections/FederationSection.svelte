@@ -25,6 +25,7 @@
 		actor_url?: string;
 		handle?: string;
 		follower_count?: number;
+		moved_to_url?: string | null;
 		created_at?: string;
 	};
 
@@ -59,9 +60,11 @@
 	let busyRequest = $state<string | null>(null);
 	let busyFollow = $state<string | null>(null);
 	let followTarget = $state('');
+	let moveTarget = $state('');
 	let message = $state<{ kind: 'success' | 'error'; text: string } | null>(null);
 	let disableOpen = $state(false);
 	let rotateOpen = $state(false);
+	let moveOpen = $state(false);
 
 	async function handleEnable() {
 		if (busy) return;
@@ -151,6 +154,45 @@
 		await invalidateAll();
 	}
 
+	// §126 M5 — re-drive a pending outbound edge: re-ships the same
+	// signed Follow when the remote's Accept/Reject never arrived.
+	async function handleResend(f: RemoteFollow) {
+		if (busyFollow || !f.actor_url) return;
+		busyFollow = f.remote_actor_id;
+		message = null;
+		const res = await api.post<RemoteFollow>('/me/federation/following', { target: f.actor_url });
+		busyFollow = null;
+		if (res.error) {
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		message = { kind: 'success', text: t('settings.federation.follow_resent_msg', 'Follow request re-sent to the remote server.') };
+		await invalidateAll();
+	}
+
+	// §126 M5 — outbound Move: stamps movedTo on the actor document and
+	// fans a signed Move to remote followers. The target account must
+	// already list this actor in its alsoKnownAs — the backend rejects
+	// unconfirmed moves and cools repeat moves per
+	// federation.move.cooldown_days.
+	async function handleMove() {
+		const target = moveTarget.trim();
+		if (busy || !target) return;
+		busy = true;
+		message = null;
+		const res = await api.post('/me/federation/move', { target_actor_url: target });
+		busy = false;
+		if (res.error) {
+			moveOpen = false;
+			message = { kind: 'error', text: res.error.message ?? t('settings.federation.error', 'Something went wrong. Please try again.') };
+			return;
+		}
+		moveOpen = false;
+		moveTarget = '';
+		message = { kind: 'success', text: t('settings.federation.moved_msg', 'Account moved. Remote followers have been notified and your actor now redirects to the new account.') };
+		await invalidateAll();
+	}
+
 	// §126 M3a — signing-key rotation: replaces the actor's keypair and
 	// announces the new key to remote followers (Update{Person}).
 	async function handleRotate() {
@@ -211,9 +253,21 @@
 							<dd class="min-w-0 truncate font-mono text-[var(--color-text)]" title={fed.actor_url}>{fed.actor_url}</dd>
 						</div>
 					{/if}
+					{#if fed.moved_to_url}
+						<div class="flex items-center justify-between gap-3">
+							<dt class="text-[var(--color-muted)]">{t('settings.federation.moved_to', 'Moved to')}</dt>
+							<dd class="min-w-0 truncate font-mono text-[var(--color-text)]" title={fed.moved_to_url}>{fed.moved_to_url}</dd>
+						</div>
+					{/if}
 				</dl>
 			</li>
 		</ul>
+
+		{#if fed.moved_to_url}
+			<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-warning,#f59e0b)]/40 bg-[var(--color-warning,#f59e0b)]/10 px-3 py-2 text-xs text-[var(--color-text)]">
+				{t('settings.federation.moved_banner', 'This account has migrated. Remote servers now redirect your actor to the new account above.')}
+			</p>
+		{/if}
 
 		{#if fed.enabled && requests.length > 0}
 			<div class="mt-4">
@@ -234,7 +288,7 @@
 									{req.display_name || req.acct || req.actor_url}
 								</p>
 								{#if req.acct}
-									<p class="truncate text-xs text-[var(--color-muted)]">{req.acct}</p>
+									<p class="truncate text-xs text-[var(--color-muted)]">@{req.acct}</p>
 								{/if}
 							</div>
 							<div class="flex shrink-0 items-center gap-1.5">
@@ -312,6 +366,17 @@
 										? t('settings.federation.follow_status_accepted', 'Following')
 										: t('settings.federation.follow_status_pending', 'Pending')}
 								</span>
+								{#if f.status === 'pending'}
+									<button
+										type="button"
+										disabled={busyFollow === f.remote_actor_id}
+										onclick={() => handleResend(f)}
+										title={t('settings.federation.follow_resend_hint', 'The remote server has not answered yet — send the follow request again.')}
+										class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+									>
+										{t('settings.federation.follow_resend', 'Resend')}
+									</button>
+								{/if}
 								<button
 									type="button"
 									disabled={busyFollow === f.remote_actor_id}
@@ -329,6 +394,24 @@
 					<p class="mt-2 text-xs text-[var(--color-muted)]">{t('settings.federation.following_empty', 'You are not following any remote accounts yet.')}</p>
 				{/if}
 			</div>
+
+			<!-- §126 M5 — outbound Move: migrate this fediverse identity to
+			     an account on another server. The target must already list
+			     this actor in its alsoKnownAs (their setup step); our signed
+			     Move then redirects remote followers. -->
+			{#if !fed.moved_to_url}
+				<div class="mt-4">
+					<h2 class="text-sm font-medium text-[var(--color-text)]">{t('settings.federation.migrate_title', 'Move to another server')}</h2>
+					<p class="mt-0.5 text-xs text-[var(--color-muted)]">{t('settings.federation.migrate_desc', 'Redirect your fediverse identity to an account on another ActivityPub server. Remote followers are notified automatically.')}</p>
+					<button
+						type="button"
+						onclick={() => (moveOpen = true)}
+						class="mt-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('settings.federation.migrate_action', 'Move account…')}
+					</button>
+				</div>
+			{/if}
 		{/if}
 
 		<div class="mt-3 flex items-center justify-end gap-3">
@@ -402,6 +485,39 @@
 						{busy ? t('common.submitting', 'Submitting…') : t('settings.federation.rotate_key', 'Rotate signing key')}
 					</button>
 				</div>
+			{/snippet}
+		</Modal>
+
+		<Modal bind:open={moveOpen} title={t('settings.federation.migrate_confirm_title', 'Move to another server?')} description={t('settings.federation.migrate_confirm_desc', 'Your fediverse actor will redirect to the new account and remote followers will be sent a signed Move notice. On the target server you must first add this account’s handle to your new account’s aliases (alsoKnownAs) or the move is rejected. This cannot be undone from here.')} size="sm">
+			{#snippet children(close)}
+				<form
+					class="space-y-3"
+					onsubmit={(e) => { e.preventDefault(); handleMove(); }}
+				>
+					<input
+						type="text"
+						bind:value={moveTarget}
+						placeholder={t('settings.federation.migrate_placeholder', 'https://server.social/users/you')}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]"
+					/>
+					<div class="flex items-center justify-end gap-2">
+						<button
+							type="button"
+							disabled={busy}
+							onclick={close}
+							class="rounded-[var(--radius)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('settings.action.cancel', 'Cancel')}
+						</button>
+						<button
+							type="submit"
+							disabled={busy || !moveTarget.trim()}
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+						>
+							{busy ? t('common.submitting', 'Submitting…') : t('settings.federation.migrate_action', 'Move account…')}
+						</button>
+					</div>
+				</form>
 			{/snippet}
 		</Modal>
 	{:else}

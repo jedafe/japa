@@ -175,8 +175,8 @@ func (s *Service) UnsubscribeTag(ctx context.Context, userID, subID pgtype.UUID)
 		} else {
 			tagURI := fmt.Sprintf("https://%s/tags/%s", row.Domain, row.Tag)
 			follow := map[string]any{
-				"id":   *row.FollowApID,
-				"type": "Follow",
+				"id":    *row.FollowApID,
+				"type":  "Follow",
 				"actor": inst.ActorUrl,
 				"object": map[string]any{
 					"type": "Hashtag",
@@ -233,10 +233,10 @@ func validHost(s string) bool {
 // RemoteSearchResult is the GET /me/federation/search payload: live items
 // normalized to the timeline shape plus per-domain failures.
 type RemoteSearchResult struct {
-	Tag     string              `json:"tag"`
-	Domains []string            `json:"domains"`
+	Tag     string               `json:"tag"`
+	Domains []string             `json:"domains"`
 	Items   []RemoteTimelineItem `json:"items"`
-	Errors  []RemoteSearchError `json:"errors"`
+	Errors  []RemoteSearchError  `json:"errors"`
 }
 
 type RemoteSearchError struct {

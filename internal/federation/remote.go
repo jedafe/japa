@@ -161,6 +161,12 @@ func (s *Service) resolveRemoteActor(ctx context.Context, actorURL string) (*gen
 	if err != nil || u.Hostname() == "" {
 		return nil, fmt.Errorf("%w: bad actor url %q", ErrRemoteFetch, actorURL)
 	}
+	if s.isLocalHost(u.Hostname()) {
+		// Local actors resolve through federated_actors, never this
+		// table — a local URL here means a remote is quoting our own
+		// documents back at us, which must not mint remote rows.
+		return nil, fmt.Errorf("%w: local actor %q", ErrRemoteBlocked, actorURL)
+	}
 	if !s.instanceAllowed(ctx, u.Hostname()) {
 		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
 	}
@@ -354,8 +360,17 @@ func (s *Service) resolveKeyActor(ctx context.Context, keyID string) (*gen.Remot
 	if base == "" {
 		return nil, fmt.Errorf("%w: empty key id", ErrRemoteFetch)
 	}
-	if u, uerr := url.Parse(base); uerr == nil && !s.instanceAllowed(ctx, u.Hostname()) {
-		return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
+	if u, uerr := url.Parse(base); uerr == nil {
+		if s.isLocalHost(u.Hostname()) {
+			// Our own key ids never ride remote_actors — a request
+			// naming them can only have been signed by us anyway, and
+			// upserting a local identity as "remote" corrupts
+			// provenance (see resolveTargetURL's self-follow gate).
+			return nil, fmt.Errorf("%w: local key id %q", ErrRemoteFetch, keyID)
+		}
+		if !s.instanceAllowed(ctx, u.Hostname()) {
+			return nil, fmt.Errorf("%w: %s", ErrRemoteBlocked, u.Hostname())
+		}
 	}
 	doc, err := s.fetchRemoteActorDoc(ctx, base)
 	if err != nil {

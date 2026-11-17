@@ -34,6 +34,9 @@ type TaskEnqueuer interface {
 	// next_retry_at gate keeps premature arrivals honest.
 	EnqueueDeliveryAfter(ctx context.Context, deliveryID pgtype.UUID, delay time.Duration) error
 	EnqueueInbound(ctx context.Context, inboundID pgtype.UUID) error
+	// EnqueueResolveActor fires federation:resolve_actor — the low-tier
+	// fetch+upsert for remote actors we only need refreshed, not now.
+	EnqueueResolveActor(ctx context.Context, actorURL string) error
 }
 
 // SetEnqueuer wires the delivery/inbound enqueue seam (production: worker).
@@ -46,6 +49,16 @@ func (s *Service) enqueueDelivery(ctx context.Context, deliveryID pgtype.UUID) e
 		return nil
 	}
 	return s.enqueue.EnqueueDelivery(ctx, deliveryID)
+}
+
+// enqueueResolveActor kicks a remote-actor re-resolution — nil enqueuer
+// degrades to the cache-TTL refresh path (the row's fetched_at ages out
+// and the next synchronous resolve re-fetches).
+func (s *Service) enqueueResolveActor(ctx context.Context, actorURL string) error {
+	if s.enqueue == nil {
+		return nil
+	}
+	return s.enqueue.EnqueueResolveActor(ctx, actorURL)
 }
 
 // deliveryMaxAttempts reads the §126 retry ceiling (default 8).

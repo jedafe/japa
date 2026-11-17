@@ -49,16 +49,66 @@
 	</div>
 {/if}
 
-{#if stats}
+{#if !stats && !loadError}
 	<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-		<StatCard label={t('federation.overview.local_actors', 'Local actors')} value={stats.local_actors} />
-		<StatCard label={t('federation.overview.remote_actors', 'Remote actors')} value={stats.remote_actors} />
-		<StatCard label={t('federation.overview.remote_follows', 'Remote follows')} value={stats.remote_follows} />
-		<StatCard label={t('federation.overview.instance_blocks', 'Instance blocks')} value={stats.instance_blocks} />
+		{#each Array(4) as _}
+			<div class="h-24 animate-pulse rounded-lg" style="background: var(--color-surface-hover)"></div>
+		{/each}
+	</div>
+	<div class="mt-4 grid grid-cols-3 gap-4">
+		{#each Array(3) as _}
+			<div class="h-24 animate-pulse rounded-lg" style="background: var(--color-surface-hover)"></div>
+		{/each}
+	</div>
+{:else if stats}
+	<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+		<StatCard
+			label={t('federation.overview.local_actors', 'Local actors')}
+			value={stats.local_actors}
+			href="/federation/actors"
+		/>
+		<StatCard
+			label={t('federation.overview.remote_actors', 'Remote actors')}
+			value={stats.remote_actors}
+			href="/federation/actors"
+		/>
+		<StatCard
+			label={t('federation.overview.remote_follows', 'Remote follows')}
+			value={stats.remote_follows}
+			href="/federation/actors"
+		/>
+		<StatCard
+			label={t('federation.overview.instance_blocks', 'Instance blocks')}
+			value={stats.instance_blocks}
+			href="/federation/instances"
+		/>
 	</div>
 	<div class="mt-4 grid grid-cols-3 gap-4">
 		<StatCard label={t('federation.overview.deliveries_pending', 'Deliveries pending')} value={stats.deliveries_pending} />
 		<StatCard label={t('federation.overview.deliveries_delivered', 'Deliveries delivered')} value={stats.deliveries_delivered} />
 		<StatCard label={t('federation.overview.deliveries_dead', 'Deliveries dead')} value={stats.deliveries_dead} />
+	</div>
+
+	<div class="mt-6 flex flex-wrap gap-2">
+		<a
+			href="/federation/actors"
+			class="rounded-lg border px-3 py-1.5 text-sm font-medium hover:opacity-80"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+		>{t('federation.overview.manage_actors', 'Actors')} →</a>
+		<a
+			href="/federation/groups"
+			class="rounded-lg border px-3 py-1.5 text-sm font-medium hover:opacity-80"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+		>{t('federation.overview.manage_groups', 'Group actors')} →</a>
+		<a
+			href="/federation/relays"
+			class="rounded-lg border px-3 py-1.5 text-sm font-medium hover:opacity-80"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+		>{t('federation.overview.manage_relays', 'Relays')} →</a>
+		<a
+			href="/federation/instances"
+			class="rounded-lg border px-3 py-1.5 text-sm font-medium hover:opacity-80"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+		>{t('federation.overview.manage_instances', 'Instance blocks')} →</a>
 	</div>
 {/if}
