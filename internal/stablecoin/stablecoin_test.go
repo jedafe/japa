@@ -467,6 +467,13 @@ func TestSettleScopeCapEnforced(t *testing.T) {
 	}); !errors.Is(err, ErrUnknownRecipient) {
 		t.Fatalf("unknown recipient = %v, want ErrUnknownRecipient", err)
 	}
+	// Suspended member wallets reject too — known address, wrong status.
+	st.walletByAddr["susp-addr"] = &Wallet{Address: "susp-addr", Status: WalletStatusSuspended}
+	if _, err := svc.Settle(context.Background(), SettleInput{
+		FromUserID: uid, ToAddress: "susp-addr", Asset: AssetUSDC, AmountMinor: 100,
+	}); !errors.Is(err, ErrUnknownRecipient) {
+		t.Fatalf("suspended recipient = %v, want ErrUnknownRecipient", err)
+	}
 
 	_, err := svc.Settle(context.Background(), SettleInput{
 		FromUserID: uid, ToAddress: "dest", Asset: AssetUSDC, AmountMinor: 100,

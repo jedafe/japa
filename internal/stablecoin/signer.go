@@ -110,7 +110,11 @@ func (s *Service) assertKnownRecipient(ctx context.Context, chain, addr string) 
 	if addr == "" {
 		return ErrUnknownRecipient
 	}
-	if w, err := s.store.GetWalletByAddress(ctx, addr); err == nil && w != nil {
+	// Member wallet — must be able to receive: active is fine, and a
+	// provisioned (counterfactual) address can receive on Solana (deploy is
+	// lazy); suspended is compliance-held and must reject.
+	if w, err := s.store.GetWalletByAddress(ctx, addr); err == nil && w != nil &&
+		(w.Status == WalletStatusActive || w.Status == WalletStatusProvisioned) {
 		return nil
 	}
 	for _, role := range []string{TreasuryHot, TreasuryCold} {
