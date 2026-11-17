@@ -38,6 +38,7 @@
 	};
 
 	const canDecide = $derived(hasPermission('treasury.sweep_approve'));
+	const canKillswitch = $derived(hasPermission('treasury.killswitch'));
 
 	let treasuryWallets = $state<TreasuryWallet[]>([]);
 	let killswitchEngaged = $state(false);
@@ -257,7 +258,7 @@
 						</p>
 					</div>
 				</div>
-				{#if canDecide}
+				{#if canKillswitch}
 					<Button
 						variant={killswitchEngaged ? 'default' : 'destructive'}
 						onclick={() => (killswitchConfirm = true)}

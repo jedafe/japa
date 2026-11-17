@@ -434,8 +434,9 @@ func (h *Handlers) AdminListSweeps(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminKillswitch handles POST /admin/stablecoin/signer-killswitch —
-// super_admin-gated per catalog; body {engaged: bool}. The toggle writes
-// the durable setting + fast flag and lands in audit_logs via the actor.
+// treasury.killswitch-gated (001191, super_admin seed); body {engaged:
+// bool}. The toggle writes the durable setting + fast flag and lands in
+// audit_logs via the actor.
 func (h *Handlers) AdminKillswitch(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

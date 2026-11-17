@@ -6234,12 +6234,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Admin stablecoin surface — catalog paths, seeded RBAC nodes
-			// (001178). The killswitch is gated on treasury.sweep_approve —
-			// seeded super_admin-only, matching the catalog's
-			// [super_admin] guard.
+			// (001178/001191). The killswitch gets its own node — halting
+			// all delegated money movement is broader than one sweep
+			// approval; seeded super_admin-only.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "stablecoin.wallet.view")).
 				Get("/admin/stablecoin/wallets", stablecoinHandlers.AdminListWallets)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.sweep_approve")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.killswitch")).
 				Post("/admin/stablecoin/signer-killswitch", stablecoinHandlers.AdminKillswitch)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "treasury.view")).
 				Get("/admin/treasury/wallets", stablecoinHandlers.AdminListTreasury)
