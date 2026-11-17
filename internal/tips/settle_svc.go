@@ -63,7 +63,7 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		for i := 0; i < exp; i++ {
 			div *= 10
 		}
-		gross := *tip.FiatAmount * int64(cur.CreditsPerUnit) / div
+		gross := int64(math.Round(float64(*tip.FiatAmount) * cur.CreditsPerUnit / float64(div)))
 		fee := gross * int64(s.feePercent(ctx)) / 100
 		net = gross - fee
 	}

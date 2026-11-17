@@ -99,11 +99,11 @@ RETURNING code, name, symbol, credits_per_unit, is_active, position, created_at,
 `
 
 type CreateCurrencyParams struct {
-	Code           string `json:"code"`
-	Name           string `json:"name"`
-	Symbol         string `json:"symbol"`
-	CreditsPerUnit int32  `json:"credits_per_unit"`
-	Position       int32  `json:"position"`
+	Code           string  `json:"code"`
+	Name           string  `json:"name"`
+	Symbol         string  `json:"symbol"`
+	CreditsPerUnit float64 `json:"credits_per_unit"`
+	Position       int32   `json:"position"`
 }
 
 func (q *Queries) CreateCurrency(ctx context.Context, arg CreateCurrencyParams) (Currency, error) {
@@ -545,12 +545,12 @@ RETURNING code, name, symbol, credits_per_unit, is_active, position, created_at,
 `
 
 type UpdateCurrencyParams struct {
-	Name           string `json:"name"`
-	Symbol         string `json:"symbol"`
-	CreditsPerUnit int32  `json:"credits_per_unit"`
-	IsActive       bool   `json:"is_active"`
-	Position       int32  `json:"position"`
-	Code           string `json:"code"`
+	Name           string  `json:"name"`
+	Symbol         string  `json:"symbol"`
+	CreditsPerUnit float64 `json:"credits_per_unit"`
+	IsActive       bool    `json:"is_active"`
+	Position       int32   `json:"position"`
+	Code           string  `json:"code"`
 }
 
 func (q *Queries) UpdateCurrency(ctx context.Context, arg UpdateCurrencyParams) (Currency, error) {

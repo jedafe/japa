@@ -49,3 +49,14 @@ sql:
               type: "RawMessage"
               import: "encoding/json"
               pointer: true
+          # currencies.credits_per_unit is numeric(20,8) post-001185 —
+          # emit float64 so call sites stay arithmetic (NGN ≈ 0.065
+          # credits/₦ is unrepresentable as an integer).
+          - column: "currencies.credits_per_unit"
+            go_type:
+              type: "float64"
+          # wallet_withdrawals.credits_per_unit — same rate snapshot, same
+          # widening (001185).
+          - column: "wallet_withdrawals.credits_per_unit"
+            go_type:
+              type: "float64"

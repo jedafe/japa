@@ -10905,12 +10905,12 @@ type stablecoinCreditRater struct {
 	q *gen.Queries
 }
 
-func (a stablecoinCreditRater) CreditsPerUnit(ctx context.Context, code string) (int64, error) {
+func (a stablecoinCreditRater) CreditsPerUnit(ctx context.Context, code string) (float64, error) {
 	row, err := a.q.GetCurrencyByCode(ctx, strings.ToUpper(code))
 	if err != nil {
 		return 0, err
 	}
-	return int64(row.CreditsPerUnit), nil
+	return row.CreditsPerUnit, nil
 }
 
 // stablecoinBonusLedger adapts *wallet.Service to the stablecoin package's

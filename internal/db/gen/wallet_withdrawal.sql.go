@@ -389,7 +389,7 @@ type InsertWithdrawalParams struct {
 	UserID         pgtype.UUID        `json:"user_id"`
 	CreditAmount   int64              `json:"credit_amount"`
 	CurrencyCode   string             `json:"currency_code"`
-	CreditsPerUnit int32              `json:"credits_per_unit"`
+	CreditsPerUnit float64            `json:"credits_per_unit"`
 	FiatAmount     int64              `json:"fiat_amount"`
 	FeeAmount      int64              `json:"fee_amount"`
 	FeeBasis       string             `json:"fee_basis"`

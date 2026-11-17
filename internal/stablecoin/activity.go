@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -122,7 +123,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 
 	kind, direction := classifyEvent(ev)
 	creditsPer := s.creditsPerUSD(ctx)
-	credits := ev.AmountMinor * creditsPer / 1_000_000 // USD minor → display credits
+	credits := int64(math.Round(float64(ev.AmountMinor) * creditsPer / 1_000_000)) // USD minor → display credits
 
 	// Counterparty resolution: member wallet ↔ internal transfer, else NULL.
 	var cp *string
@@ -231,7 +232,7 @@ func normalizeAsset(a string) string {
 // creditsPerUnit resolves credits-per-whole-unit for a currency from the
 // currencies table (§58/ADR-065) — nil-safe: returns 0 when the rate seam
 // is unwired or the row is absent.
-func (s *Service) creditsPerUnit(ctx context.Context, code string) int64 {
+func (s *Service) creditsPerUnit(ctx context.Context, code string) float64 {
 	if s.creditRater == nil {
 		return 0
 	}
@@ -245,7 +246,7 @@ func (s *Service) creditsPerUnit(ctx context.Context, code string) int64 {
 // creditsPerUSD resolves credits-per-USD — falls back to a neutral default
 // when the rate is unavailable (display math only; settlement callers must
 // not rely on the fallback).
-func (s *Service) creditsPerUSD(ctx context.Context) int64 {
+func (s *Service) creditsPerUSD(ctx context.Context) float64 {
 	if n := s.creditsPerUnit(ctx, "usd"); n > 0 {
 		return n
 	}
@@ -255,7 +256,7 @@ func (s *Service) creditsPerUSD(ctx context.Context) int64 {
 // creditsToUsdMinor converts platform credits to 6-decimal USD-token minor —
 // tips are credits-denominated; onchain ops are minor-denominated.
 func (s *Service) creditsToUsdMinor(ctx context.Context, credits int64) int64 {
-	return credits * 1_000_000 / s.creditsPerUSD(ctx)
+	return int64(math.Round(float64(credits) * 1_000_000 / s.creditsPerUSD(ctx)))
 }
 
 // fiatToUsdMinor converts fiat minor (2-decimal convention, matching
@@ -277,8 +278,10 @@ func (s *Service) fiatToUsdMinor(ctx context.Context, fiatMinor int64, currency 
 	if fiatPer <= 0 {
 		return 0, fmt.Errorf("stablecoin: unsupported booking currency %q", currency)
 	}
-	credits := fiatMinor * fiatPer / 100 // fiat minor→units→credits (2dp minor convention)
-	return credits * 1_000_000 / s.creditsPerUSD(ctx), nil
+	// fiat minor → units → credits → USD-token minor; single round at the end
+	// keeps fractional weak-currency rates (NGN) from truncating twice.
+	credits := float64(fiatMinor) * fiatPer / 100
+	return int64(math.Round(credits * 1_000_000 / s.creditsPerUSD(ctx))), nil
 }
 
 // FeedEntry is one row of the unified member activity feed —
@@ -420,7 +423,7 @@ func (s *Service) reconcileWallet(ctx context.Context, w Wallet) error {
 			if asset != "usdc" && asset != "usdt" {
 				continue
 			}
-			bal += minor * creditsPer / 1_000_000
+			bal += int64(math.Round(float64(minor) * creditsPer / 1_000_000))
 		}
 		if err := s.vk.Set(ctx, "jc:stablecoin:mirror:"+w.UserID, strconv.FormatInt(bal, 10), 3600); err != nil {
 			return fmt.Errorf("mirror cache: %w", err)

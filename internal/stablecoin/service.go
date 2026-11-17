@@ -99,9 +99,10 @@ type Tip struct {
 // currencies table — credits_per_unit lives per-currency there, not in
 // system_settings.
 type creditRater interface {
-	// CreditsPerUnit returns credits per ONE WHOLE unit of the currency
-	// (§58: e.g. USD row 1400 → $1 = 1400 credits).
-	CreditsPerUnit(ctx context.Context, currencyCode string) (int64, error)
+	// CreditsPerUnit returns credits per ONE WHOLE unit of the currency —
+	// numeric: weak currencies may price below one credit per unit (§58/001185).
+	// (§58: USD row 100 → $1 = 100 credits = $0.01/credit.)
+	CreditsPerUnit(ctx context.Context, currencyCode string) (float64, error)
 }
 
 // BonusEntry is one bonus-credit ledger row for the unified feed.

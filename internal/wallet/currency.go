@@ -13,6 +13,7 @@ package wallet
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -44,7 +45,7 @@ type CurrencyResolver struct {
 // NewCurrencyResolver creates a resolver backed by the given store.
 func NewCurrencyResolver(store *Store, defaultCurrency string) *CurrencyResolver {
 	if defaultCurrency == "" {
-		defaultCurrency = "NGN"
+		defaultCurrency = "USD"
 	}
 
 	return &CurrencyResolver{
@@ -122,25 +123,30 @@ func (r *CurrencyResolver) isCurrencyActive(ctx context.Context, code string) (b
 //	credits = fiatAmount * credits_per_unit / 100
 //
 // (The /100 is because amounts are stored in minor units, but
-// credits_per_unit is per major unit: 1 USD = 1400 credits, not 1 cent = 1400.)
+// credits_per_unit is per major unit: 1 USD = 100 credits, not 1 cent = 100.)
+// credits_per_unit is numeric (001185): weak currencies price below one
+// credit per major unit — round to the nearest credit.
 func FiatToCredits(fiatAmountMinor int64, currency gen.Currency) int {
 	if currency.CreditsPerUnit <= 0 {
 		return 0
 	}
 
-	return int(fiatAmountMinor * int64(currency.CreditsPerUnit) / 100)
+	return int(math.Round(float64(fiatAmountMinor) * currency.CreditsPerUnit / 100))
 }
 
 // CreditsToFiat converts credits to a fiat amount in the currency's minor units
 // for display purposes.
 //
 //	fiatMinor = credits * 100 / credits_per_unit
+//
+// Round-half-up to the nearest minor unit — fractional rates (NGN and other
+// weak currencies below a cent per unit) would otherwise truncate.
 func CreditsToFiat(credits int, currency gen.Currency) int64 {
 	if currency.CreditsPerUnit <= 0 {
 		return 0
 	}
 
-	return int64(credits) * 100 / int64(currency.CreditsPerUnit)
+	return int64(math.Round(float64(credits) * 100 / currency.CreditsPerUnit))
 }
 
 // FormatFiat formats a minor-unit amount as a major-unit string with the

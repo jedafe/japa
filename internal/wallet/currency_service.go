@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -226,9 +227,9 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 	if currencyCode == "" {
 		// Final fallback: system default via settings, then compiled default.
 		if s.settings != nil {
-			currencyCode = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
+			currencyCode = s.settings.GetStringOr(ctx, "wallet.default_currency", "USD")
 		} else {
-			currencyCode = "NGN"
+			currencyCode = "USD"
 		}
 	}
 
@@ -288,7 +289,7 @@ func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input
 	// Compute fiat price in minor units.
 	// credits = fiatMinor * credits_per_unit / 100
 	// → fiatMinor = credits * 100 / credits_per_unit
-	fiatMinor := int64(creditsToGrant) * 100 / int64(currency.CreditsPerUnit)
+	fiatMinor := int64(math.Round(float64(creditsToGrant) * 100 / currency.CreditsPerUnit))
 	if fiatMinor <= 0 {
 		fiatMinor = 1 // minimum 1 minor unit
 	}

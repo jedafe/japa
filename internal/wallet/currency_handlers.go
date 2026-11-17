@@ -143,12 +143,12 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		Code           string `json:"code"`
-		Name           string `json:"name"`
-		Symbol         string `json:"symbol"`
-		CreditsPerUnit int    `json:"credits_per_unit"`
-		Position       int    `json:"position"`
-		Reason         string `json:"reason"`
+		Code           string  `json:"code"`
+		Name           string  `json:"name"`
+		Symbol         string  `json:"symbol"`
+		CreditsPerUnit float64 `json:"credits_per_unit"`
+		Position       int     `json:"position"`
+		Reason         string  `json:"reason"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -186,8 +186,8 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 		Code:           code,
 		Name:           input.Name,
 		Symbol:         input.Symbol,
-		CreditsPerUnit: int32(input.CreditsPerUnit), // #nosec
-		Position:       int32(input.Position),       // #nosec
+		CreditsPerUnit: input.CreditsPerUnit,
+		Position:       int32(input.Position), // #nosec
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -210,12 +210,12 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		Name           string `json:"name"`
-		Symbol         string `json:"symbol"`
-		CreditsPerUnit int    `json:"credits_per_unit"`
-		IsActive       *bool  `json:"is_active"`
-		Position       int    `json:"position"`
-		Reason         string `json:"reason"`
+		Name           string  `json:"name"`
+		Symbol         string  `json:"symbol"`
+		CreditsPerUnit float64 `json:"credits_per_unit"`
+		IsActive       *bool   `json:"is_active"`
+		Position       int     `json:"position"`
+		Reason         string  `json:"reason"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -237,7 +237,7 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 		Code:           code,
 		Name:           input.Name,
 		Symbol:         input.Symbol,
-		CreditsPerUnit: int32(input.CreditsPerUnit), // #nosec
+		CreditsPerUnit: input.CreditsPerUnit,
 		IsActive:       isActive,
 		Position:       int32(input.Position), // #nosec
 	})

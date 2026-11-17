@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -63,7 +64,7 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		for i := 0; i < exp; i++ {
 			div *= 10
 		}
-		gross := amount * int64(cur.CreditsPerUnit) / div
+		gross := int64(math.Round(float64(amount) * cur.CreditsPerUnit / float64(div)))
 		feeCredits = gross * int64(s.feePercent(ctx)) / 100
 		netCredits = gross - feeCredits
 	}

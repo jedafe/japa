@@ -352,9 +352,9 @@ func (f *fakeBonus) ListCreditEntries(_ context.Context, _ pgtype.UUID, _, _ int
 	return f.rows, nil
 }
 
-type fakeRater struct{ n int64 }
+type fakeRater struct{ n float64 }
 
-func (f *fakeRater) CreditsPerUnit(_ context.Context, _ string) (int64, error) {
+func (f *fakeRater) CreditsPerUnit(_ context.Context, _ string) (float64, error) {
 	return f.n, nil
 }
 
