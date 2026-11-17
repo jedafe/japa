@@ -96,11 +96,13 @@ func (s *Service) SubscribeTag(ctx context.Context, userID pgtype.UUID, rawTag, 
 	}
 	// Domain-scoped subs deliver Follow{Hashtag} — mint the activity id
 	// up front so the row ledgers it for the Undo on unsubscribe.
+	var inst gen.FederatedActor
 	var followID *string
 	var inbox string
 	var remoteID pgtype.UUID
 	if domain != "" {
-		inst, err := s.ensureInstanceActor(ctx)
+		var err error
+		inst, err = s.ensureInstanceActor(ctx)
 		if err != nil {
 			return TagSubscription{}, err
 		}
@@ -120,24 +122,21 @@ func (s *Service) SubscribeTag(ctx context.Context, userID pgtype.UUID, rawTag, 
 		return TagSubscription{}, fmt.Errorf("federation: tag subscription: %w", err)
 	}
 	if domain != "" && followID != nil {
-		inst, ierr := s.ensureInstanceActor(ctx)
-		if ierr == nil {
-			follow := map[string]any{
-				"@context": asContext,
-				"id":       *followID,
-				"type":     "Follow",
-				"actor":    inst.ActorUrl,
-				"object": map[string]any{
-					"type": "Hashtag",
-					"id":   fmt.Sprintf("https://%s/tags/%s", domain, tag),
-					"name": "#" + tag,
-				},
-				"to": []string{fmt.Sprintf("https://%s/tags/%s", domain, tag)},
-			}
-			rows := []gen.ListRemoteFollowerInboxesByActorRow{{InboxUrl: &inbox, RemoteActorID: remoteID}}
-			if _, derr := s.insertDeliveries(ctx, inst.ID, follow, *followID, rows, true); derr != nil {
-				slog.Warn("federation: tag follow delivery failed — row kept", "error", derr)
-			}
+		follow := map[string]any{
+			"@context": asContext,
+			"id":       *followID,
+			"type":     "Follow",
+			"actor":    inst.ActorUrl,
+			"object": map[string]any{
+				"type": "Hashtag",
+				"id":   fmt.Sprintf("https://%s/tags/%s", domain, tag),
+				"name": "#" + tag,
+			},
+			"to": []string{fmt.Sprintf("https://%s/tags/%s", domain, tag)},
+		}
+		rows := []gen.ListRemoteFollowerInboxesByActorRow{{InboxUrl: &inbox, RemoteActorID: remoteID}}
+		if _, derr := s.insertDeliveries(ctx, inst.ID, follow, *followID, rows, true); derr != nil {
+			slog.Warn("federation: tag follow delivery failed — row kept", "error", derr)
 		}
 	}
 	return tagSubView(row), nil
@@ -156,7 +155,10 @@ func (s *Service) UnsubscribeTag(ctx context.Context, userID, subID pgtype.UUID)
 		return ErrNotFound
 	}
 	if row.Domain != "" && row.FollowApID != nil && *row.FollowApID != "" {
-		if inst, ierr := s.ensureInstanceActor(ctx); ierr == nil {
+		inst, ierr := s.ensureInstanceActor(ctx)
+		if ierr != nil {
+			slog.Warn("federation: instance actor unavailable — tag Undo skipped", "error", ierr)
+		} else {
 			tagURI := fmt.Sprintf("https://%s/tags/%s", row.Domain, row.Tag)
 			follow := map[string]any{
 				"id":   *row.FollowApID,
@@ -262,6 +264,10 @@ func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTa
 	for _, d := range domains {
 		if s.instanceAllowed(ctx, d) {
 			allowed = append(allowed, d)
+		} else if rawDomain != "" {
+			// A pinned domain that's blocked would otherwise degrade to an
+			// indistinguishable "no results" — surface it as a domain error.
+			res.Errors = append(res.Errors, RemoteSearchError{Domain: d, Message: "instance is blocked"})
 		}
 	}
 	timeout := time.Duration(s.intSetting(ctx, "federation.remote_search_timeout_ms", 6000)) * time.Millisecond

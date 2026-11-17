@@ -63,6 +63,7 @@
 	let tagInput = $state(untrack(() => tag));
 	let liveItems = $state<RemoteTimelineItem[]>([]);
 	let liveErrors = $state<{ domain: string; message: string }[]>([]);
+	let liveApiError = $state<string | null>(null);
 	let liveLoading = $state(false);
 	let busySub = $state<string | null>(null);
 	let subMessage = $state<string | null>(null);
@@ -120,14 +121,22 @@
 		if (!q) {
 			liveItems = [];
 			liveErrors = [];
+			liveApiError = null;
 			return;
 		}
 		const run = ++liveRun;
 		liveLoading = true;
+		liveApiError = null;
 		const pin = domain ? `&domain=${encodeURIComponent(domain)}` : '';
 		api.get<RemoteTagSearchResult>(`/me/federation/search?tag=${encodeURIComponent(q)}${pin}`)
 			.then((res) => {
 				if (run !== liveRun) return;
+				if (res.error) {
+					liveItems = [];
+					liveErrors = [];
+					liveApiError = res.error.message ?? t('error.500_body');
+					return;
+				}
 				liveItems = res.data?.items ?? [];
 				liveErrors = res.data?.errors ?? [];
 			})
@@ -354,6 +363,8 @@
 					<LoaderCircle size={13} class="animate-spin" />
 					{t('feed.global.live_loading', 'Asking remote instances…')}
 				</div>
+			{:else if liveApiError}
+				<p class="mt-2 text-xs text-[var(--color-danger)]">{liveApiError}</p>
 			{:else if liveByDomain.length === 0}
 				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('feed.global.live_empty', 'No live results from reachable instances.')}</p>
 			{:else}
