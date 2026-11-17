@@ -9,6 +9,7 @@
 	import FeedGeoControl from '#lib/components/feed/FeedGeoControl.svelte';
 	import FeedSortBar from '#lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '#lib/components/feed/FeedList.svelte';
+	import GlobalFeedList from '#lib/components/feed/GlobalFeedList.svelte';
 	import FeedUpdatePill from '#lib/components/feed/FeedUpdatePill.svelte';
 	import OnboardingSetupCard from '#lib/components/onboarding/OnboardingSetupCard.svelte';
 	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
@@ -43,27 +44,39 @@
 			}}
 			class="border-b-0"
 		/>
-		{#if data.authed}
+		{#if data.authed && data.tab !== 'global'}
 			<div class="ms-auto pe-1">
 				<FeedGeoControl />
 			</div>
 		{/if}
 	</div>
-	<FeedSortBar tab={data.tab} sort={data.sort} stickyTop="var(--nav-height)" />
+	{#if data.tab !== 'global'}
+		<FeedSortBar tab={data.tab} sort={data.sort} stickyTop="var(--nav-height)" />
+	{/if}
 	<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
 	<FeedUpdatePill />
 	<div class="mx-auto w-full max-w-3xl p-4">
 		<!-- §09: finish-setup reminder — self-gating on page.data.onboardingCompleted -->
 		<OnboardingSetupCard />
-		<FeedList
-			items={data.items}
-			tab={data.tab}
-			sort={data.sort}
-			pageSize={data.pageSize}
-			{config}
-			loadError={data.loadError}
-			hasMore={data.hasMore}
-			adSlot="native_feed"
-		/>
+		{#if data.tab === 'global'}
+			<!-- §126 M5 — remote fediverse timeline (cursor infinite scroll) -->
+			<GlobalFeedList
+				items={data.globalItems ?? []}
+				nextCursor={data.globalNextCursor ?? null}
+				notFederated={data.globalNotFederated ?? false}
+				loadError={data.loadError}
+			/>
+		{:else}
+			<FeedList
+				items={data.items}
+				tab={data.tab}
+				sort={data.sort}
+				pageSize={data.pageSize}
+				{config}
+				loadError={data.loadError}
+				hasMore={data.hasMore}
+				adSlot="native_feed"
+			/>
+		{/if}
 	</div>
 </div>

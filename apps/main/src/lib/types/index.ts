@@ -281,6 +281,43 @@ export interface FeedItem {
 }
 
 /* ------------------------------------------------------------------ *
+ * Federation remote timeline (§126 M5) — GET /me/federation/timeline
+ * ------------------------------------------------------------------ */
+
+/** One remote fediverse post in the member's consume-side timeline.
+ *  Content arrives as plain text — remote markup is stripped on ingest. */
+export interface RemoteTimelineItem {
+	id: string;
+	ap_id: string;
+	/** Canonical remote URL (https only) — links out to the origin post. */
+	url?: string | null;
+	name?: string | null;
+	/** Content-warning text from the remote (shows as a CW disclosure). */
+	summary?: string | null;
+	sensitive: boolean;
+	content_text: string;
+	in_reply_to_url?: string | null;
+	is_pinned: boolean;
+	share_count: number;
+	hashtags?: string[];
+	published_at?: string | null;
+	edited_at?: string | null;
+	actor: {
+		acct?: string | null;
+		actor_url: string;
+		preferred_username?: string | null;
+		display_name?: string | null;
+		avatar_url?: string | null;
+	};
+}
+
+/** {items, next_cursor} keyset page from GET /me/federation/timeline. */
+export interface RemoteTimelinePage {
+	items: RemoteTimelineItem[];
+	next_cursor?: string | null;
+}
+
+/* ------------------------------------------------------------------ *
  * Composer (/create) — Section 14/24/30
  * ------------------------------------------------------------------ */
 

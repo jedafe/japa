@@ -16,12 +16,17 @@
 	// Tab bar values — labels match the old FeedTabs component. The active tab
 	// comes from the server load (data.tab); switching calls goto() so SvelteKit
 	// re-runs the load function for the new tab's per-tab feed data.
+	// The Global tab (§126 M5 remote timeline) only shows when the
+	// feature.federation flag is on — the backend 404s its surface otherwise.
 	const tabs = $derived<UrlTab[]>(
 		data.authed
 			? [
 					{ value: 'for_you', label: t('feed.tab.for_you') },
 					{ value: 'following', label: t('feed.tab.following') },
-					{ value: 'thread', label: t('feed.tab.thread', 'Thread') }
+					{ value: 'thread', label: t('feed.tab.thread', 'Thread') },
+					...(page.data.features?.['feature.federation']
+						? [{ value: 'global', label: t('feed.tab.global', 'Global') }]
+						: [])
 				]
 			: [{ value: 'explore', label: t('feed.tab.explore', 'Explore') }]
 	);

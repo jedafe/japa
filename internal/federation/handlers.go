@@ -264,7 +264,7 @@ func (h *Handlers) GetMyFederation(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // EnableMyFederation serves POST /api/v1/me/federation.
@@ -278,7 +278,7 @@ func (h *Handlers) EnableMyFederation(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // DisableMyFederation serves DELETE /api/v1/me/federation.
@@ -292,7 +292,7 @@ func (h *Handlers) DisableMyFederation(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // ListFollowRequests serves GET /api/v1/me/federation/follow-requests —
@@ -307,7 +307,7 @@ func (h *Handlers) ListFollowRequests(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"requests": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"requests": rows}})
 }
 
 // AcceptFollowRequest serves POST /api/v1/me/federation/follow-requests/{remote_actor_id}/accept.
@@ -338,7 +338,7 @@ func (h *Handlers) resolveFollowRequest(w http.ResponseWriter, r *http.Request, 
 	if accept {
 		status = "accepted"
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": status}})
 }
 
 // RotateMyFederationKey serves POST /api/v1/me/federation/rotate-key
@@ -354,7 +354,7 @@ func (h *Handlers) RotateMyFederationKey(w http.ResponseWriter, r *http.Request)
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, res)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
 }
 
 // FollowRemote serves POST /api/v1/me/federation/following (§126 M5) —
@@ -376,7 +376,7 @@ func (h *Handlers) FollowRemote(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, res)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
 }
 
 // ListOutboundFollowing serves GET /api/v1/me/federation/following (§126 M5).
@@ -390,7 +390,7 @@ func (h *Handlers) ListOutboundFollowing(w http.ResponseWriter, r *http.Request)
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"following": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": rows}})
 }
 
 // UnfollowRemote serves DELETE /api/v1/me/federation/following/{remote_actor_id}
@@ -409,7 +409,7 @@ func (h *Handlers) UnfollowRemote(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "undone"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "undone"}})
 }
 
 // RemoteTimeline serves GET /api/v1/me/federation/timeline (§126 M5) —
@@ -430,7 +430,7 @@ func (h *Handlers) RemoteTimeline(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, page)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // RequestMove serves POST /api/v1/me/federation/move (§126 M5) —
@@ -452,7 +452,7 @@ func (h *Handlers) RequestMove(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "moved"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "moved"}})
 }
 
 // ---------------------------------------------------------------------------

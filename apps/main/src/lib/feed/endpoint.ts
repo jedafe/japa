@@ -1,5 +1,7 @@
-/** Which feed a Home tab maps to. 'thread' lists all discussions via /explore. */
-export type FeedTab = 'following' | 'for_you' | 'explore' | 'thread';
+/** Which feed a Home tab maps to. 'thread' lists all discussions via /explore;
+ * 'global' is the §126 M5 remote fediverse timeline (cursor-paginated — it does
+ * not go through feedPath/feedQueryString). */
+export type FeedTab = 'following' | 'for_you' | 'explore' | 'thread' | 'global';
 
 /** Backend `sort` values (note: chip label "Popular" → value "top"). */
 export type SortValue = 'relevant' | 'latest' | 'top' | 'rising';
@@ -12,7 +14,10 @@ const TAB_PATH: Record<FeedTab, string> = {
 	explore: '/explore',
 	// Every contents row is a thread (unified-discussion spec) — the Thread
 	// tab lists the same /explore feed the /thread index page does.
-	thread: '/explore'
+	thread: '/explore',
+	// §126 M5 — kept for map completeness; the Global tab paginates by
+	// next_cursor through GlobalFeedList, not through feedPath offsets.
+	global: '/me/federation/timeline'
 };
 
 const SORTS: SortValue[] = ['relevant', 'latest', 'top', 'rising'];
@@ -54,7 +59,7 @@ export function feedPath(
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */
 export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	if (!authed) return 'explore';
-	if (raw === 'following' || raw === 'for_you' || raw === 'thread') return raw;
+	if (raw === 'following' || raw === 'for_you' || raw === 'thread' || raw === 'global') return raw;
 	return 'for_you';
 }
 

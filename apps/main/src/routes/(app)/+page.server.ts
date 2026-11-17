@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { apiList, apiGet, apiGetEnvelope, apiContext } from '#lib/server/api.js';
+import { apiList, apiGet, apiGetEnvelope, apiContext, ApiError } from '#lib/server/api.js';
 import { buildGuestHome, emptyGuestHome } from '#lib/server/guest-home.js';
 import { publishedPagePath } from '#lib/server/published-page.js';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
@@ -8,6 +8,8 @@ import type {
 	FeedItem,
 	GeoContext,
 	GeoCountry,
+	RemoteTimelineItem,
+	RemoteTimelinePage,
 } from '#lib/types/index.js';
 
 import {
@@ -39,6 +41,57 @@ export const load: PageServerLoad = async (event) => {
 	if (authed) {
 		const tab = resolveTab(event.url.searchParams.get('tab'), authed);
 		const sort = resolveSort(event.url.searchParams.get('sort'), tab);
+
+		// §126 M5 — the Global tab is the consume-side fediverse timeline:
+		// keyset-paginated remote posts, not the offset-paginated local feeds.
+		if (tab === 'global') {
+			try {
+				const page = await apiGet<RemoteTimelinePage>(
+					ctx,
+					`/me/federation/timeline?limit=${PAGE_SIZE}`
+				);
+				return {
+					items: [] as FeedItem[],
+					globalItems: page?.items ?? [],
+					globalNextCursor: page?.next_cursor ?? null,
+					globalNotFederated: false,
+					tab,
+					sort,
+					authed,
+					pageSize: PAGE_SIZE,
+					loadError: false,
+					landing: null,
+					guestHome: false,
+					hasGuestHomeBlock: false,
+					hasMore: false,
+					home: emptyGuestHome,
+					contentCountry: undefined
+				};
+			} catch (e) {
+				// 404 not_federated → member hasn't opted in (or the flag is
+				// off): the tab shows the enable CTA instead of an error.
+				const notFederated = e instanceof ApiError && e.status === 404;
+				if (!notFederated) console.error('[HOME GLOBAL FEED ERROR]', e);
+				return {
+					items: [] as FeedItem[],
+					globalItems: [] as RemoteTimelineItem[],
+					globalNextCursor: null,
+					globalNotFederated: notFederated,
+					tab,
+					sort,
+					authed,
+					pageSize: PAGE_SIZE,
+					loadError: !notFederated,
+					landing: null,
+					guestHome: false,
+					hasGuestHomeBlock: false,
+					hasMore: false,
+					home: emptyGuestHome,
+					contentCountry: undefined
+				};
+			}
+		}
+
 		const geo =
 			event.url.searchParams.get('geo') ??
 			event.locals.user?.content_country_preference ??
