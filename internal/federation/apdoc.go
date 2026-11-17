@@ -71,6 +71,11 @@ func actorDocument(p gen.GetActorProfileByUsernameRow, siteBase string) map[stri
 		},
 		"alsoKnownAs": []string{siteBase + "/u/" + p.Username},
 	}
+	// §126 M5: an outbound Move stamps the advisory redirect — remotes
+	// render the account as migrated while the actor stays active.
+	if p.MovedToUrl != nil && *p.MovedToUrl != "" {
+		doc["movedTo"] = *p.MovedToUrl
+	}
 
 	if p.DisplayName != nil && *p.DisplayName != "" {
 		doc["name"] = *p.DisplayName

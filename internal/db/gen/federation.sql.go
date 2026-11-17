@@ -218,12 +218,30 @@ SELECT COUNT(*)::bigint
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = $1
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active'
 `
 
 func (q *Queries) CountRemoteFollowersByActor(ctx context.Context, localActorID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countRemoteFollowersByActor, localActorID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countRemoteFollowingByActor = `-- name: CountRemoteFollowingByActor :one
+SELECT COUNT(*)::bigint
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = $1
+  AND ff.direction = 'outbound'
+  AND ff.status = 'accepted'
+  AND ra.status = 'active'
+`
+
+func (q *Queries) CountRemoteFollowingByActor(ctx context.Context, localActorID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRemoteFollowingByActor, localActorID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -246,7 +264,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     manually_approves_followers = EXCLUDED.manually_approves_followers,
     updated_at = now()
 WHERE federated_actors.status = 'disabled'
-RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at
 `
 
 type CreateFederatedActorParams struct {
@@ -300,6 +318,8 @@ func (q *Queries) CreateFederatedActor(ctx context.Context, arg CreateFederatedA
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
@@ -315,7 +335,7 @@ INSERT INTO federated_actors (
     $11, $12, $13
 )
 ON CONFLICT DO NOTHING
-RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at
 `
 
 type CreateFederatedActorOfKindParams struct {
@@ -373,6 +393,8 @@ func (q *Queries) CreateFederatedActorOfKind(ctx context.Context, arg CreateFede
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
@@ -507,6 +529,38 @@ func (q *Queries) DeleteInstanceBlock(ctx context.Context, id pgtype.UUID) error
 	return err
 }
 
+const deleteOutboundFollowMirror = `-- name: DeleteOutboundFollowMirror :execrows
+DELETE FROM follows
+WHERE follower_id = $1
+  AND entity_type = 'remote_actor' AND entity_id = $2
+`
+
+type DeleteOutboundFollowMirrorParams struct {
+	FollowerID    pgtype.UUID `json:"follower_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Member unfollow / remote withdrawal removes the native mirror — rows
+// affected says whether one existed to remove.
+func (q *Queries) DeleteOutboundFollowMirror(ctx context.Context, arg DeleteOutboundFollowMirrorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOutboundFollowMirror, arg.FollowerID, arg.RemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOutboundFollowMirrorsByActor = `-- name: DeleteOutboundFollowMirrorsByActor :exec
+DELETE FROM follows WHERE entity_type = 'remote_actor' AND entity_id = $1
+`
+
+// Delete{actor}/Block propagation: every member mirror pointing at the dead
+// remote actor goes (no counter unwind — following_count derives on demand).
+func (q *Queries) DeleteOutboundFollowMirrorsByActor(ctx context.Context, remoteActorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOutboundFollowMirrorsByActor, remoteActorID)
+	return err
+}
+
 const deleteRemoteFollow = `-- name: DeleteRemoteFollow :execrows
 DELETE FROM follows
 WHERE follower_remote_actor_id = $1
@@ -633,9 +687,26 @@ func (q *Queries) DeleteRemoteSharesByActor(ctx context.Context, remoteActorID p
 	return items, nil
 }
 
+const existsAcceptedOutboundFollowerOfRemote = `-- name: ExistsAcceptedOutboundFollowerOfRemote :one
+SELECT EXISTS(
+    SELECT 1 FROM federation_follows ff
+    JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+    WHERE ff.remote_actor_id = $1
+      AND ff.direction = 'outbound' AND ff.status = 'accepted') AS warrant
+`
+
+// Remote-post ingest warrant (§126 M5): a stored remote post requires ≥1
+// local member actively following the author — no follow, no storage.
+func (q *Queries) ExistsAcceptedOutboundFollowerOfRemote(ctx context.Context, remoteActorID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, existsAcceptedOutboundFollowerOfRemote, remoteActorID)
+	var warrant bool
+	err := row.Scan(&warrant)
+	return warrant, err
+}
+
 const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
-       fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
+       fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.moved_to_url,
        COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
        COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
@@ -662,6 +733,7 @@ type GetActorProfileByUsernameRow struct {
 	OutboxUrl                 string             `json:"outbox_url"`
 	FollowersUrl              string             `json:"followers_url"`
 	FollowingUrl              string             `json:"following_url"`
+	MovedToUrl                *string            `json:"moved_to_url"`
 	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
 	Discoverable              bool               `json:"discoverable"`
 	Status                    string             `json:"status"`
@@ -692,6 +764,7 @@ func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string
 		&i.OutboxUrl,
 		&i.FollowersUrl,
 		&i.FollowingUrl,
+		&i.MovedToUrl,
 		&i.ManuallyApprovesFollowers,
 		&i.Discoverable,
 		&i.Status,
@@ -826,7 +899,7 @@ func (q *Queries) GetFederatableContentByID(ctx context.Context, arg GetFederata
 }
 
 const getFederatedActorByID = `-- name: GetFederatedActorByID :one
-SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id FROM federated_actors WHERE id = $1
+SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at FROM federated_actors WHERE id = $1
 `
 
 func (q *Queries) GetFederatedActorByID(ctx context.Context, id pgtype.UUID) (FederatedActor, error) {
@@ -851,13 +924,15 @@ func (q *Queries) GetFederatedActorByID(ctx context.Context, id pgtype.UUID) (Fe
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByKind = `-- name: GetFederatedActorByKind :one
 
-SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id FROM federated_actors WHERE kind = $1 ORDER BY created_at ASC LIMIT 1
+SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at FROM federated_actors WHERE kind = $1 ORDER BY created_at ASC LIMIT 1
 `
 
 // ---------------------------------------------------------------------------
@@ -888,12 +963,14 @@ func (q *Queries) GetFederatedActorByKind(ctx context.Context, kind string) (Fed
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorBySpaceID = `-- name: GetFederatedActorBySpaceID :one
-SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id FROM federated_actors WHERE kind = 'group' AND space_id = $1
+SELECT id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at FROM federated_actors WHERE kind = 'group' AND space_id = $1
 `
 
 // Group-fanout lookup: content.space_id → the space's Group actor row.
@@ -919,12 +996,14 @@ func (q *Queries) GetFederatedActorBySpaceID(ctx context.Context, spaceID pgtype
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUserID = `-- name: GetFederatedActorByUserID :one
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE fa.user_id = $1
@@ -955,13 +1034,15 @@ func (q *Queries) GetFederatedActorByUserID(ctx context.Context, userID pgtype.U
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUsername = `-- name: GetFederatedActorByUsername :one
 
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
@@ -1003,12 +1084,14 @@ func (q *Queries) GetFederatedActorByUsername(ctx context.Context, username stri
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
 
 const getFederatedActorByUsernameAnyStatus = `-- name: GetFederatedActorByUsernameAnyStatus :one
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
@@ -1043,6 +1126,8 @@ func (q *Queries) GetFederatedActorByUsernameAnyStatus(ctx context.Context, user
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
 }
@@ -1096,7 +1181,7 @@ func (q *Queries) GetFederationDeliveryByID(ctx context.Context, id pgtype.UUID)
 }
 
 const getFederationFollowByActivityID = `-- name: GetFederationFollowByActivityID :one
-SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at FROM federation_follows WHERE ap_activity_id = $1
+SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at, direction FROM federation_follows WHERE ap_activity_id = $1
 `
 
 func (q *Queries) GetFederationFollowByActivityID(ctx context.Context, apActivityID *string) (FederationFollow, error) {
@@ -1110,24 +1195,27 @@ func (q *Queries) GetFederationFollowByActivityID(ctx context.Context, apActivit
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Direction,
 	)
 	return i, err
 }
 
 const getFederationFollowByPair = `-- name: GetFederationFollowByPair :one
-SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at FROM federation_follows
+SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at, direction FROM federation_follows
 WHERE local_actor_id = $1 AND remote_actor_id = $2
+  AND direction = $3
 `
 
 type GetFederationFollowByPairParams struct {
 	LocalActorID  pgtype.UUID `json:"local_actor_id"`
 	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	Direction     string      `json:"direction"`
 }
 
 // Undo{Follow} may embed the Follow object without its @id — the
-// (local, remote) pair is the fallback match.
+// (local, remote, direction) triple is the fallback match.
 func (q *Queries) GetFederationFollowByPair(ctx context.Context, arg GetFederationFollowByPairParams) (FederationFollow, error) {
-	row := q.db.QueryRow(ctx, getFederationFollowByPair, arg.LocalActorID, arg.RemoteActorID)
+	row := q.db.QueryRow(ctx, getFederationFollowByPair, arg.LocalActorID, arg.RemoteActorID, arg.Direction)
 	var i FederationFollow
 	err := row.Scan(
 		&i.ID,
@@ -1137,6 +1225,7 @@ func (q *Queries) GetFederationFollowByPair(ctx context.Context, arg GetFederati
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Direction,
 	)
 	return i, err
 }
@@ -1251,6 +1340,34 @@ func (q *Queries) GetFederationRelayByID(ctx context.Context, id pgtype.UUID) (F
 	return i, err
 }
 
+const getFederationRemotePostByApID = `-- name: GetFederationRemotePostByApID :one
+SELECT id, remote_actor_id, ap_id, in_reply_to_url, url, name, summary, content_text, sensitive, hashtags, is_pinned, published_at, edited_at, deleted_at, created_at, updated_at FROM federation_remote_posts WHERE ap_id = $1
+`
+
+func (q *Queries) GetFederationRemotePostByApID(ctx context.Context, apID string) (FederationRemotePost, error) {
+	row := q.db.QueryRow(ctx, getFederationRemotePostByApID, apID)
+	var i FederationRemotePost
+	err := row.Scan(
+		&i.ID,
+		&i.RemoteActorID,
+		&i.ApID,
+		&i.InReplyToUrl,
+		&i.Url,
+		&i.Name,
+		&i.Summary,
+		&i.ContentText,
+		&i.Sensitive,
+		&i.Hashtags,
+		&i.IsPinned,
+		&i.PublishedAt,
+		&i.EditedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getFederationStats = `-- name: GetFederationStats :one
 SELECT
     (SELECT COUNT(*) FROM federated_actors WHERE status = 'active')::bigint AS local_actors,
@@ -1288,7 +1405,7 @@ func (q *Queries) GetFederationStats(ctx context.Context) (GetFederationStatsRow
 }
 
 const getGroupActorDocBySlug = `-- name: GetGroupActorDocBySlug :one
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
@@ -1317,6 +1434,8 @@ type GetGroupActorDocBySlugRow struct {
 	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 	Kind                      string             `json:"kind"`
 	SpaceID                   pgtype.UUID        `json:"space_id"`
+	MovedToUrl                *string            `json:"moved_to_url"`
+	MovedAt                   pgtype.Timestamptz `json:"moved_at"`
 	SpaceSlug                 string             `json:"space_slug"`
 	SpaceName                 string             `json:"space_name"`
 	SpaceDescription          *string            `json:"space_description"`
@@ -1360,6 +1479,8 @@ func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, slug string) (GetG
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 		&i.SpaceSlug,
 		&i.SpaceName,
 		&i.SpaceDescription,
@@ -1439,6 +1560,47 @@ func (q *Queries) GetNodeInfoUsage(ctx context.Context) (GetNodeInfoUsageRow, er
 	var i GetNodeInfoUsageRow
 	err := row.Scan(&i.TotalUsers, &i.LocalPosts, &i.LocalComments)
 	return i, err
+}
+
+const getOutboundFederationFollowByActivityID = `-- name: GetOutboundFederationFollowByActivityID :one
+
+SELECT id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at, direction FROM federation_follows
+WHERE ap_activity_id = $1 AND direction = 'outbound'
+`
+
+// ============================================================================
+// M5 consume-side federation (§126): outbound follows, remote timeline,
+// outbound Move, unscoped verbs, group featured.
+// ============================================================================
+// Accept/Reject{Follow} answers to OUR outbound Follow match on the ap id we
+// minted ({actor_url}#follow/{uuid}).
+func (q *Queries) GetOutboundFederationFollowByActivityID(ctx context.Context, apActivityID *string) (FederationFollow, error) {
+	row := q.db.QueryRow(ctx, getOutboundFederationFollowByActivityID, apActivityID)
+	var i FederationFollow
+	err := row.Scan(
+		&i.ID,
+		&i.LocalActorID,
+		&i.RemoteActorID,
+		&i.ApActivityID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Direction,
+	)
+	return i, err
+}
+
+const getReactionKeyByEmoji = `-- name: GetReactionKeyByEmoji :one
+SELECT key FROM reaction_types WHERE emoji = $1 AND enabled = true LIMIT 1
+`
+
+// EmojiReact mapping: the activity's `content` emoji resolves to a
+// reaction_types key; unknown emoji fall back to 'like' in the dispatcher.
+func (q *Queries) GetReactionKeyByEmoji(ctx context.Context, emoji string) (string, error) {
+	row := q.db.QueryRow(ctx, getReactionKeyByEmoji, emoji)
+	var key string
+	err := row.Scan(&key)
+	return key, err
 }
 
 const getRemoteActorByID = `-- name: GetRemoteActorByID :one
@@ -1719,6 +1881,101 @@ func (q *Queries) InsertFederationInbound(ctx context.Context, arg InsertFederat
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertFederationRemotePost = `-- name: InsertFederationRemotePost :execrows
+INSERT INTO federation_remote_posts
+    (remote_actor_id, ap_id, in_reply_to_url, url, name, summary,
+     content_text, sensitive, hashtags, published_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10)
+ON CONFLICT (ap_id) DO NOTHING
+`
+
+type InsertFederationRemotePostParams struct {
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ApID          string             `json:"ap_id"`
+	InReplyToUrl  *string            `json:"in_reply_to_url"`
+	Url           *string            `json:"url"`
+	Name          *string            `json:"name"`
+	Summary       *string            `json:"summary"`
+	ContentText   string             `json:"content_text"`
+	Sensitive     bool               `json:"sensitive"`
+	Hashtags      []string           `json:"hashtags"`
+	PublishedAt   pgtype.Timestamptz `json:"published_at"`
+}
+
+// Timeline ingest — ap_id unique dedupes replays; rows affected says
+// whether this was a fresh store.
+func (q *Queries) InsertFederationRemotePost(ctx context.Context, arg InsertFederationRemotePostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertFederationRemotePost,
+		arg.RemoteActorID,
+		arg.ApID,
+		arg.InReplyToUrl,
+		arg.Url,
+		arg.Name,
+		arg.Summary,
+		arg.ContentText,
+		arg.Sensitive,
+		arg.Hashtags,
+		arg.PublishedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertOutboundFollowMirror = `-- name: InsertOutboundFollowMirror :execrows
+INSERT INTO follows (follower_id, entity_type, entity_id)
+VALUES ($1, 'remote_actor', $2)
+ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING
+`
+
+type InsertOutboundFollowMirrorParams struct {
+	FollowerID    pgtype.UUID `json:"follower_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Remote Accept mirrors the follow into the member's native graph —
+// entity_type='remote_actor' + entity_id=remote_actors.id carries the
+// provenance (follower_id = the member).
+func (q *Queries) InsertOutboundFollowMirror(ctx context.Context, arg InsertOutboundFollowMirrorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertOutboundFollowMirror, arg.FollowerID, arg.RemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertRemoteContentReport = `-- name: InsertRemoteContentReport :execrows
+INSERT INTO content_reports
+    (reporter_remote_actor_id, entity_type, entity_id, reason, notes, status)
+VALUES ($1, $2, $3, 'other', $4, 'pending')
+ON CONFLICT (reporter_remote_actor_id, entity_type, entity_id)
+    WHERE reporter_remote_actor_id IS NOT NULL DO NOTHING
+`
+
+type InsertRemoteContentReportParams struct {
+	ReporterRemoteActorID pgtype.UUID `json:"reporter_remote_actor_id"`
+	EntityType            string      `json:"entity_type"`
+	EntityID              pgtype.UUID `json:"entity_id"`
+	Notes                 *string     `json:"notes"`
+}
+
+// Flag{object(s)} moderation intake — the partial-unique dedupes replays;
+// rows affected distinguishes a fresh report from a replay.
+func (q *Queries) InsertRemoteContentReport(ctx context.Context, arg InsertRemoteContentReportParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRemoteContentReport,
+		arg.ReporterRemoteActorID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Notes,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertRemoteFollow = `-- name: InsertRemoteFollow :execrows
@@ -2078,6 +2335,101 @@ func (q *Queries) ListFeaturedFederatableContentByAuthor(ctx context.Context, ar
 	return items, nil
 }
 
+const listFeaturedFederatableContentBySpace = `-- name: ListFeaturedFederatableContentBySpace :many
+SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
+       c.canonical_url, c.featured_image_id, c.header_image_id,
+       c.published_at, c.updated_at, c.created_at,
+       fa.actor_url AS author_actor_url, fa.followers_url AS author_followers_url,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
+FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
+WHERE c.space_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.is_pinned = true
+  AND c.content_type = ANY($2::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT $3
+`
+
+type ListFeaturedFederatableContentBySpaceParams struct {
+	SpaceID      pgtype.UUID `json:"space_id"`
+	ContentTypes []string    `json:"content_types"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+type ListFeaturedFederatableContentBySpaceRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	ContentType        string             `json:"content_type"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	BodyHtml           string             `json:"body_html"`
+	CanonicalUrl       *string            `json:"canonical_url"`
+	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
+	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
+	PublishedAt        pgtype.Timestamptz `json:"published_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	AuthorActorUrl     string             `json:"author_actor_url"`
+	AuthorFollowersUrl string             `json:"author_followers_url"`
+	FeaturedBucket     *string            `json:"featured_bucket"`
+	FeaturedPath       *string            `json:"featured_path"`
+	FeaturedMime       *string            `json:"featured_mime"`
+	HeaderBucket       *string            `json:"header_bucket"`
+	HeaderPath         *string            `json:"header_path"`
+	HeaderMime         *string            `json:"header_mime"`
+}
+
+// Group featured collection (§126 M5): the space's pinned federatable
+// contents — the group outbox predicate (author-actor gate) plus is_pinned.
+// Column list mirrors ListFeaturedFederatableContentByAuthor.
+func (q *Queries) ListFeaturedFederatableContentBySpace(ctx context.Context, arg ListFeaturedFederatableContentBySpaceParams) ([]ListFeaturedFederatableContentBySpaceRow, error) {
+	rows, err := q.db.Query(ctx, listFeaturedFederatableContentBySpace, arg.SpaceID, arg.ContentTypes, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeaturedFederatableContentBySpaceRow
+	for rows.Next() {
+		var i ListFeaturedFederatableContentBySpaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.BodyHtml,
+			&i.CanonicalUrl,
+			&i.FeaturedImageID,
+			&i.HeaderImageID,
+			&i.PublishedAt,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.AuthorActorUrl,
+			&i.AuthorFollowersUrl,
+			&i.FeaturedBucket,
+			&i.FeaturedPath,
+			&i.FeaturedMime,
+			&i.HeaderBucket,
+			&i.HeaderPath,
+			&i.HeaderMime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFederatableContentByAuthor = `-- name: ListFederatableContentByAuthor :many
 SELECT c.id, c.content_type, c.title, c.slug, c.body_html, c.canonical_url,
        c.featured_image_id, c.header_image_id, c.published_at, c.updated_at, c.created_at,
@@ -2244,7 +2596,7 @@ func (q *Queries) ListFederatableContentBySpace(ctx context.Context, arg ListFed
 }
 
 const listFederatedActors = `-- name: ListFederatedActors :many
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, u.username, up.display_name, up.avatar_url
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at, u.username, up.display_name, up.avatar_url
 FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -2288,6 +2640,8 @@ type ListFederatedActorsRow struct {
 	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 	Kind                      string             `json:"kind"`
 	SpaceID                   pgtype.UUID        `json:"space_id"`
+	MovedToUrl                *string            `json:"moved_to_url"`
+	MovedAt                   pgtype.Timestamptz `json:"moved_at"`
 	Username                  string             `json:"username"`
 	DisplayName               *string            `json:"display_name"`
 	AvatarUrl                 *string            `json:"avatar_url"`
@@ -2331,6 +2685,8 @@ func (q *Queries) ListFederatedActors(ctx context.Context, arg ListFederatedActo
 			&i.KeyRotatedAt,
 			&i.Kind,
 			&i.SpaceID,
+			&i.MovedToUrl,
+			&i.MovedAt,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -2397,7 +2753,7 @@ func (q *Queries) ListFederationRelays(ctx context.Context, arg ListFederationRe
 }
 
 const listGroupActors = `-- name: ListGroupActors :many
-SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, s.slug AS space_slug, s.name AS space_name
+SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at, s.slug AS space_slug, s.name AS space_name
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
 WHERE fa.kind = 'group'
@@ -2432,6 +2788,8 @@ type ListGroupActorsRow struct {
 	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 	Kind                      string             `json:"kind"`
 	SpaceID                   pgtype.UUID        `json:"space_id"`
+	MovedToUrl                *string            `json:"moved_to_url"`
+	MovedAt                   pgtype.Timestamptz `json:"moved_at"`
 	SpaceSlug                 string             `json:"space_slug"`
 	SpaceName                 string             `json:"space_name"`
 }
@@ -2464,6 +2822,8 @@ func (q *Queries) ListGroupActors(ctx context.Context, arg ListGroupActorsParams
 			&i.KeyRotatedAt,
 			&i.Kind,
 			&i.SpaceID,
+			&i.MovedToUrl,
+			&i.MovedAt,
 			&i.SpaceSlug,
 			&i.SpaceName,
 		); err != nil {
@@ -2592,6 +2952,63 @@ func (q *Queries) ListLocalFederatedFollowingURLs(ctx context.Context, arg ListL
 	return items, nil
 }
 
+const listOutboundFederationFollowsByUser = `-- name: ListOutboundFederationFollowsByUser :many
+SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
+       ra.actor_url, ra.acct, ra.display_name, ra.avatar_url, ra.preferred_username
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE fa.user_id = $1 AND fa.status = 'active'
+  AND ff.direction = 'outbound' AND ff.status <> 'undone'
+ORDER BY ff.created_at DESC
+`
+
+type ListOutboundFederationFollowsByUserRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	RemoteActorID     pgtype.UUID        `json:"remote_actor_id"`
+	ApActivityID      *string            `json:"ap_activity_id"`
+	Status            string             `json:"status"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ActorUrl          string             `json:"actor_url"`
+	Acct              *string            `json:"acct"`
+	DisplayName       *string            `json:"display_name"`
+	AvatarUrl         *string            `json:"avatar_url"`
+	PreferredUsername *string            `json:"preferred_username"`
+}
+
+// Member "following remote" surface: the caller's outbound edges with the
+// remote actor's display fields.
+func (q *Queries) ListOutboundFederationFollowsByUser(ctx context.Context, userID pgtype.UUID) ([]ListOutboundFederationFollowsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listOutboundFederationFollowsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOutboundFederationFollowsByUserRow
+	for rows.Next() {
+		var i ListOutboundFederationFollowsByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RemoteActorID,
+			&i.ApActivityID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ActorUrl,
+			&i.Acct,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.PreferredUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingFederationFollowsByUser = `-- name: ListPendingFederationFollowsByUser :many
 SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
        ra.actor_url, ra.acct, ra.display_name, ra.avatar_url
@@ -2599,6 +3016,7 @@ FROM federation_follows ff
 JOIN federated_actors fa ON fa.id = ff.local_actor_id
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE fa.user_id = $1 AND fa.status = 'active' AND ff.status = 'pending'
+  AND ff.direction = 'inbound'
 ORDER BY ff.created_at DESC
 `
 
@@ -2652,6 +3070,7 @@ SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = $1
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active'
   AND COALESCE(ra.shared_inbox_url, ra.inbox_url) IS NOT NULL
@@ -2692,6 +3111,7 @@ SELECT ra.actor_url
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = $1
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active'
 ORDER BY ff.created_at DESC
@@ -2718,6 +3138,191 @@ func (q *Queries) ListRemoteFollowerURLsByActor(ctx context.Context, arg ListRem
 			return nil, err
 		}
 		items = append(items, actor_url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRemoteFollowingURLsByActor = `-- name: ListRemoteFollowingURLsByActor :many
+SELECT ra.actor_url
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = $1
+  AND ff.direction = 'outbound'
+  AND ff.status = 'accepted'
+  AND ra.status = 'active'
+ORDER BY ff.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListRemoteFollowingURLsByActorParams struct {
+	LocalActorID pgtype.UUID `json:"local_actor_id"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+// Following collection remote half: accepted outbound edges (remote actor
+// URLs) — pages before the local-federated set.
+func (q *Queries) ListRemoteFollowingURLsByActor(ctx context.Context, arg ListRemoteFollowingURLsByActorParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listRemoteFollowingURLsByActor, arg.LocalActorID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var actor_url string
+		if err := rows.Scan(&actor_url); err != nil {
+			return nil, err
+		}
+		items = append(items, actor_url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRemoteTimelinePosts = `-- name: ListRemoteTimelinePosts :many
+SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
+       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned,
+       rp.published_at, rp.edited_at, rp.created_at,
+       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
+FROM federation_remote_posts rp
+JOIN federation_follows ff
+  ON ff.remote_actor_id = rp.remote_actor_id
+ AND ff.direction = 'outbound' AND ff.status = 'accepted'
+JOIN federated_actors fa
+  ON fa.id = ff.local_actor_id AND fa.user_id = $1 AND fa.status = 'active'
+JOIN remote_actors ra ON ra.id = rp.remote_actor_id AND ra.status = 'active'
+WHERE rp.deleted_at IS NULL
+  AND ($2::timestamptz IS NULL
+       OR (COALESCE(rp.published_at, rp.created_at), rp.id)
+          < ($2::timestamptz, $3::uuid))
+ORDER BY COALESCE(rp.published_at, rp.created_at) DESC, rp.id DESC
+LIMIT $4
+`
+
+type ListRemoteTimelinePostsParams struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	CursorKey pgtype.Timestamptz `json:"cursor_key"`
+	CursorID  pgtype.UUID        `json:"cursor_id"`
+	PageLimit int32              `json:"page_limit"`
+}
+
+type ListRemoteTimelinePostsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	ApID              string             `json:"ap_id"`
+	InReplyToUrl      *string            `json:"in_reply_to_url"`
+	Url               *string            `json:"url"`
+	Name              *string            `json:"name"`
+	Summary           *string            `json:"summary"`
+	ContentText       string             `json:"content_text"`
+	Sensitive         bool               `json:"sensitive"`
+	Hashtags          []string           `json:"hashtags"`
+	IsPinned          bool               `json:"is_pinned"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	EditedAt          pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Acct              *string            `json:"acct"`
+	ActorUrl          string             `json:"actor_url"`
+	PreferredUsername *string            `json:"preferred_username"`
+	DisplayName       *string            `json:"display_name"`
+	AvatarUrl         *string            `json:"avatar_url"`
+}
+
+// Member remote timeline (§126 M5): pull-at-read — live posts by remote
+// actors the member currently outbound-follows, keyset on
+// COALESCE(published_at, created_at) DESC.
+func (q *Queries) ListRemoteTimelinePosts(ctx context.Context, arg ListRemoteTimelinePostsParams) ([]ListRemoteTimelinePostsRow, error) {
+	rows, err := q.db.Query(ctx, listRemoteTimelinePosts,
+		arg.UserID,
+		arg.CursorKey,
+		arg.CursorID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRemoteTimelinePostsRow
+	for rows.Next() {
+		var i ListRemoteTimelinePostsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApID,
+			&i.InReplyToUrl,
+			&i.Url,
+			&i.Name,
+			&i.Summary,
+			&i.ContentText,
+			&i.Sensitive,
+			&i.Hashtags,
+			&i.IsPinned,
+			&i.PublishedAt,
+			&i.EditedAt,
+			&i.CreatedAt,
+			&i.Acct,
+			&i.ActorUrl,
+			&i.PreferredUsername,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceFederatedTags = `-- name: ListSpaceFederatedTags :many
+SELECT DISTINCT t.id, t.name, t.slug
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN contents c ON c.id = ct.content_id
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
+WHERE c.space_id = $1
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY($2::text[])
+ORDER BY t.name
+LIMIT $3
+`
+
+type ListSpaceFederatedTagsParams struct {
+	SpaceID      pgtype.UUID `json:"space_id"`
+	ContentTypes []string    `json:"content_types"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+type ListSpaceFederatedTagsRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+// Group featuredTags (§126 M5): hashtags across the space's eligible set —
+// the group outbox predicate including the author-actor gate.
+func (q *Queries) ListSpaceFederatedTags(ctx context.Context, arg ListSpaceFederatedTagsParams) ([]ListSpaceFederatedTagsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceFederatedTags, arg.SpaceID, arg.ContentTypes, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceFederatedTagsRow
+	for rows.Next() {
+		var i ListSpaceFederatedTagsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2793,6 +3398,7 @@ FROM federation_follows src
 WHERE src.local_actor_id = ff.local_actor_id
   AND src.remote_actor_id = $1
   AND ff.remote_actor_id = $2
+  AND src.direction = ff.direction
 `
 
 type MergeFederationFollowsToRemoteActorParams struct {
@@ -2868,7 +3474,8 @@ UPDATE federation_follows ff SET remote_actor_id = $1, updated_at = now()
 WHERE ff.remote_actor_id = $2
   AND NOT EXISTS (SELECT 1 FROM federation_follows dup
                   WHERE dup.local_actor_id = ff.local_actor_id
-                    AND dup.remote_actor_id = $1)
+                    AND dup.remote_actor_id = $1
+                    AND dup.direction = ff.direction)
 `
 
 type RepointFederationFollowsToRemoteActorParams struct {
@@ -2881,6 +3488,30 @@ type RepointFederationFollowsToRemoteActorParams struct {
 // MergeFederationFollowsToRemoteActor first so the live status wins.
 func (q *Queries) RepointFederationFollowsToRemoteActor(ctx context.Context, arg RepointFederationFollowsToRemoteActorParams) (int64, error) {
 	result, err := q.db.Exec(ctx, repointFederationFollowsToRemoteActor, arg.NewRemoteActorID, arg.OldRemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const repointOutboundFollowMirrorsByActor = `-- name: RepointOutboundFollowMirrorsByActor :execrows
+UPDATE follows f SET entity_id = $1
+WHERE f.entity_type = 'remote_actor' AND f.entity_id = $2
+  AND NOT EXISTS (SELECT 1 FROM follows dup
+                  WHERE dup.entity_type = 'remote_actor'
+                    AND dup.entity_id = $1
+                    AND dup.follower_id = f.follower_id)
+`
+
+type RepointOutboundFollowMirrorsByActorParams struct {
+	NewRemoteActorID pgtype.UUID `json:"new_remote_actor_id"`
+	OldRemoteActorID pgtype.UUID `json:"old_remote_actor_id"`
+}
+
+// Move{actor→target}: member mirrors rebind to the new remote actor row;
+// the NOT EXISTS dedupes on the (follower_id, entity_type, entity_id) unique.
+func (q *Queries) RepointOutboundFollowMirrorsByActor(ctx context.Context, arg RepointOutboundFollowMirrorsByActorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, repointOutboundFollowMirrorsByActor, arg.NewRemoteActorID, arg.OldRemoteActorID)
 	if err != nil {
 		return 0, err
 	}
@@ -2915,7 +3546,7 @@ func (q *Queries) RepointRemoteFollowsByActor(ctx context.Context, arg RepointRe
 const resolveFederationFollow = `-- name: ResolveFederationFollow :execrows
 UPDATE federation_follows SET status = $1, updated_at = now()
 WHERE local_actor_id = $2 AND remote_actor_id = $3
-  AND status = 'pending'
+  AND direction = 'inbound' AND status = 'pending'
 `
 
 type ResolveFederationFollowParams struct {
@@ -2935,6 +3566,27 @@ func (q *Queries) ResolveFederationFollow(ctx context.Context, arg ResolveFedera
 	return result.RowsAffected(), nil
 }
 
+const resolveOutboundFederationFollow = `-- name: ResolveOutboundFederationFollow :execrows
+UPDATE federation_follows SET status = $1, updated_at = now()
+WHERE id = $2 AND direction = 'outbound' AND status = 'pending'
+`
+
+type ResolveOutboundFederationFollowParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// Remote Accept/Reject of our outbound Follow — the status='pending'
+// predicate makes the transition conditional: first answer wins, and a
+// Reject answering an already-accepted edge is ignored.
+func (q *Queries) ResolveOutboundFederationFollow(ctx context.Context, arg ResolveOutboundFederationFollowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveOutboundFederationFollow, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const rotateFederatedActorKey = `-- name: RotateFederatedActorKey :one
 UPDATE federated_actors SET
     public_key_pem = $1,
@@ -2943,7 +3595,7 @@ UPDATE federated_actors SET
     key_rotated_at = now(),
     updated_at = now()
 WHERE id = $4 AND status = 'active'
-RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id
+RETURNING id, user_id, actor_url, preferred_username, public_key_pem, private_key_enc, public_key_id, status, inbox_url, outbox_url, followers_url, following_url, manually_approves_followers, created_at, updated_at, key_rotated_at, kind, space_id, moved_to_url, moved_at
 `
 
 type RotateFederatedActorKeyParams struct {
@@ -2984,8 +3636,29 @@ func (q *Queries) RotateFederatedActorKey(ctx context.Context, arg RotateFederat
 		&i.KeyRotatedAt,
 		&i.Kind,
 		&i.SpaceID,
+		&i.MovedToUrl,
+		&i.MovedAt,
 	)
 	return i, err
+}
+
+const setFederatedActorMoved = `-- name: SetFederatedActorMoved :execrows
+UPDATE federated_actors SET moved_to_url = $1, moved_at = now(), updated_at = now()
+WHERE id = $2
+`
+
+type SetFederatedActorMovedParams struct {
+	MovedToUrl *string     `json:"moved_to_url"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// M5 outbound Move: stamps the advisory redirect on the member's actor.
+func (q *Queries) SetFederatedActorMoved(ctx context.Context, arg SetFederatedActorMovedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setFederatedActorMoved, arg.MovedToUrl, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setFederationRelayStatus = `-- name: SetFederationRelayStatus :exec
@@ -3057,6 +3730,29 @@ func (q *Queries) SetFederationRelayStatusByInbox(ctx context.Context, arg SetFe
 	return err
 }
 
+const setFederationRemotePostPinned = `-- name: SetFederationRemotePostPinned :execrows
+UPDATE federation_remote_posts
+SET is_pinned = $1, updated_at = now()
+WHERE ap_id = $2 AND remote_actor_id = $3
+  AND deleted_at IS NULL
+`
+
+type SetFederationRemotePostPinnedParams struct {
+	IsPinned      bool        `json:"is_pinned"`
+	ApID          string      `json:"ap_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Add/Remove{object → signer-domain featured collection}: remote pin
+// bookkeeping — provenance in the predicate.
+func (q *Queries) SetFederationRemotePostPinned(ctx context.Context, arg SetFederationRemotePostPinnedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setFederationRemotePostPinned, arg.IsPinned, arg.ApID, arg.RemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setRemoteActorStatus = `-- name: SetRemoteActorStatus :exec
 UPDATE remote_actors SET status = $1, updated_at = now() WHERE id = $2
 `
@@ -3105,6 +3801,28 @@ func (q *Queries) SoftDeleteAPCommentsByActor(ctx context.Context, remoteApActor
 		return nil, err
 	}
 	return items, nil
+}
+
+const tombstoneFederationRemotePost = `-- name: TombstoneFederationRemotePost :execrows
+UPDATE federation_remote_posts
+SET deleted_at = now(), updated_at = now()
+WHERE ap_id = $1 AND remote_actor_id = $2
+  AND deleted_at IS NULL
+`
+
+type TombstoneFederationRemotePostParams struct {
+	ApID          string      `json:"ap_id"`
+	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+}
+
+// Delete{object}/Undo{Create} tombstones the stored post — provenance in
+// the predicate, idempotent under replay.
+func (q *Queries) TombstoneFederationRemotePost(ctx context.Context, arg TombstoneFederationRemotePostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, tombstoneFederationRemotePost, arg.ApID, arg.RemoteActorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const undoFederationFollowsByRemoteActor = `-- name: UndoFederationFollowsByRemoteActor :exec
@@ -3190,16 +3908,23 @@ func (q *Queries) UpdateFederationDeliveryStatus(ctx context.Context, arg Update
 const updateFederationFollowStatus = `-- name: UpdateFederationFollowStatus :exec
 UPDATE federation_follows SET status = $1, updated_at = now()
 WHERE local_actor_id = $2 AND remote_actor_id = $3
+  AND direction = $4
 `
 
 type UpdateFederationFollowStatusParams struct {
 	Status        string      `json:"status"`
 	LocalActorID  pgtype.UUID `json:"local_actor_id"`
 	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
+	Direction     string      `json:"direction"`
 }
 
 func (q *Queries) UpdateFederationFollowStatus(ctx context.Context, arg UpdateFederationFollowStatusParams) error {
-	_, err := q.db.Exec(ctx, updateFederationFollowStatus, arg.Status, arg.LocalActorID, arg.RemoteActorID)
+	_, err := q.db.Exec(ctx, updateFederationFollowStatus,
+		arg.Status,
+		arg.LocalActorID,
+		arg.RemoteActorID,
+		arg.Direction,
+	)
 	return err
 }
 
@@ -3218,10 +3943,51 @@ func (q *Queries) UpdateFederationInboundStatus(ctx context.Context, arg UpdateF
 	return err
 }
 
+const updateFederationRemotePost = `-- name: UpdateFederationRemotePost :execrows
+UPDATE federation_remote_posts
+SET name = $1, summary = $2, content_text = $3,
+    sensitive = $4, hashtags = $5,
+    url = COALESCE($6, url), edited_at = $7, updated_at = now()
+WHERE ap_id = $8 AND remote_actor_id = $9
+  AND deleted_at IS NULL
+`
+
+type UpdateFederationRemotePostParams struct {
+	Name          *string            `json:"name"`
+	Summary       *string            `json:"summary"`
+	ContentText   string             `json:"content_text"`
+	Sensitive     bool               `json:"sensitive"`
+	Hashtags      []string           `json:"hashtags"`
+	Url           *string            `json:"url"`
+	EditedAt      pgtype.Timestamptz `json:"edited_at"`
+	ApID          string             `json:"ap_id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+}
+
+// Remote edit refreshes the stored copy — provenance (remote_actor_id)
+// lives in the predicate so only the author can rewrite their post.
+func (q *Queries) UpdateFederationRemotePost(ctx context.Context, arg UpdateFederationRemotePostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateFederationRemotePost,
+		arg.Name,
+		arg.Summary,
+		arg.ContentText,
+		arg.Sensitive,
+		arg.Hashtags,
+		arg.Url,
+		arg.EditedAt,
+		arg.ApID,
+		arg.RemoteActorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertFederationFollow = `-- name: UpsertFederationFollow :one
-INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
+INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status, direction)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (local_actor_id, remote_actor_id, direction) DO UPDATE SET
     ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
     -- Sticky states: 'accepted' survives any resend (the edge exists —
     -- resends are re-affirmations). 'undone' only survives a REPLAY of
@@ -3235,7 +4001,7 @@ ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
                        THEN 'undone'
                   ELSE EXCLUDED.status END,
     updated_at = now()
-RETURNING id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at
+RETURNING id, local_actor_id, remote_actor_id, ap_activity_id, status, created_at, updated_at, direction
 `
 
 type UpsertFederationFollowParams struct {
@@ -3243,14 +4009,19 @@ type UpsertFederationFollowParams struct {
 	RemoteActorID pgtype.UUID `json:"remote_actor_id"`
 	ApActivityID  *string     `json:"ap_activity_id"`
 	Status        string      `json:"status"`
+	Direction     string      `json:"direction"`
 }
 
+// M5: direction keys the edge — inbound resends keep their sticky rules;
+// an outbound re-request rides the same upsert with direction='outbound',
+// a fresh ap_id, and status='pending' (the CASE resurrects rejected/undone).
 func (q *Queries) UpsertFederationFollow(ctx context.Context, arg UpsertFederationFollowParams) (FederationFollow, error) {
 	row := q.db.QueryRow(ctx, upsertFederationFollow,
 		arg.LocalActorID,
 		arg.RemoteActorID,
 		arg.ApActivityID,
 		arg.Status,
+		arg.Direction,
 	)
 	var i FederationFollow
 	err := row.Scan(
@@ -3261,6 +4032,7 @@ func (q *Queries) UpsertFederationFollow(ctx context.Context, arg UpsertFederati
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Direction,
 	)
 	return i, err
 }

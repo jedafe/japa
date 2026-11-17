@@ -229,17 +229,19 @@ func (s *Store) followByActivityID(ctx context.Context, apID string) (gen.Federa
 	return s.read.GetFederationFollowByActivityID(ctx, &apID)
 }
 
-func (s *Store) followByPair(ctx context.Context, localActorID, remoteActorID pgtype.UUID) (gen.FederationFollow, error) {
+func (s *Store) followByPair(ctx context.Context, localActorID, remoteActorID pgtype.UUID, direction string) (gen.FederationFollow, error) {
 	return s.read.GetFederationFollowByPair(ctx, gen.GetFederationFollowByPairParams{
 		LocalActorID:  localActorID,
 		RemoteActorID: remoteActorID,
+		Direction:     direction,
 	})
 }
 
-func (s *Store) setFollowStatus(ctx context.Context, localActorID, remoteActorID pgtype.UUID, status string) error {
+func (s *Store) setFollowStatus(ctx context.Context, localActorID, remoteActorID pgtype.UUID, direction, status string) error {
 	return s.write.UpdateFederationFollowStatus(ctx, gen.UpdateFederationFollowStatusParams{
 		LocalActorID:  localActorID,
 		RemoteActorID: remoteActorID,
+		Direction:     direction,
 		Status:        status,
 	})
 }

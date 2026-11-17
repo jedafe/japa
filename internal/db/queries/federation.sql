@@ -34,7 +34,7 @@ WHERE fa.user_id = @user_id
 -- member's profile_visibility ('followers' → true) so privacy changes
 -- apply without touching the actor row.
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
-       fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url,
+       fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.moved_to_url,
        COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
        COALESCE(ups.search_indexable, true) AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
@@ -209,9 +209,12 @@ SELECT * FROM remote_actors WHERE public_key_id = @key_id AND status = 'active';
 UPDATE remote_actors SET status = @status, updated_at = now() WHERE id = @id;
 
 -- name: UpsertFederationFollow :one
-INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status)
-VALUES (@local_actor_id, @remote_actor_id, @ap_activity_id, @status)
-ON CONFLICT (local_actor_id, remote_actor_id) DO UPDATE SET
+-- M5: direction keys the edge — inbound resends keep their sticky rules;
+-- an outbound re-request rides the same upsert with direction='outbound',
+-- a fresh ap_id, and status='pending' (the CASE resurrects rejected/undone).
+INSERT INTO federation_follows (local_actor_id, remote_actor_id, ap_activity_id, status, direction)
+VALUES (@local_actor_id, @remote_actor_id, @ap_activity_id, @status, @direction)
+ON CONFLICT (local_actor_id, remote_actor_id, direction) DO UPDATE SET
     ap_activity_id = COALESCE(EXCLUDED.ap_activity_id, federation_follows.ap_activity_id),
     -- Sticky states: 'accepted' survives any resend (the edge exists —
     -- resends are re-affirmations). 'undone' only survives a REPLAY of
@@ -232,9 +235,10 @@ SELECT * FROM federation_follows WHERE ap_activity_id = @ap_activity_id;
 
 -- name: GetFederationFollowByPair :one
 -- Undo{Follow} may embed the Follow object without its @id — the
--- (local, remote) pair is the fallback match.
+-- (local, remote, direction) triple is the fallback match.
 SELECT * FROM federation_follows
-WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
+WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id
+  AND direction = @direction;
 
 -- name: ListPendingFederationFollowsByUser :many
 -- Member follow-request surface (§126): pending remote Follows for the
@@ -245,6 +249,7 @@ FROM federation_follows ff
 JOIN federated_actors fa ON fa.id = ff.local_actor_id
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE fa.user_id = @user_id AND fa.status = 'active' AND ff.status = 'pending'
+  AND ff.direction = 'inbound'
 ORDER BY ff.created_at DESC;
 
 -- name: ResolveFederationFollow :execrows
@@ -253,11 +258,12 @@ ORDER BY ff.created_at DESC;
 -- be re-answered (idempotent under double-clicks and replays).
 UPDATE federation_follows SET status = @status, updated_at = now()
 WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id
-  AND status = 'pending';
+  AND direction = 'inbound' AND status = 'pending';
 
 -- name: UpdateFederationFollowStatus :exec
 UPDATE federation_follows SET status = @status, updated_at = now()
-WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id;
+WHERE local_actor_id = @local_actor_id AND remote_actor_id = @remote_actor_id
+  AND direction = @direction;
 
 -- name: UndoFederationFollowsByRemoteActor :exec
 -- Remote-actor tombstone propagation: every live/pending follow undoes
@@ -273,7 +279,8 @@ UPDATE federation_follows ff SET remote_actor_id = @new_remote_actor_id, updated
 WHERE ff.remote_actor_id = @old_remote_actor_id
   AND NOT EXISTS (SELECT 1 FROM federation_follows dup
                   WHERE dup.local_actor_id = ff.local_actor_id
-                    AND dup.remote_actor_id = @new_remote_actor_id);
+                    AND dup.remote_actor_id = @new_remote_actor_id
+                    AND dup.direction = ff.direction);
 
 -- name: MergeFederationFollowsToRemoteActor :execrows
 -- §126 M4 Move collision half: where an edge already exists on the new
@@ -290,7 +297,8 @@ SET status = CASE
 FROM federation_follows src
 WHERE src.local_actor_id = ff.local_actor_id
   AND src.remote_actor_id = @old_remote_actor_id
-  AND ff.remote_actor_id = @new_remote_actor_id;
+  AND ff.remote_actor_id = @new_remote_actor_id
+  AND src.direction = ff.direction;
 
 -- name: DeleteFederationFollowsByRemoteActor :exec
 -- Move{actor→target} tail: after merge+repoint every remaining old-actor
@@ -335,6 +343,7 @@ SELECT COALESCE(ra.shared_inbox_url, ra.inbox_url) AS inbox_url,
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = @local_actor_id
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active'
   AND COALESCE(ra.shared_inbox_url, ra.inbox_url) IS NOT NULL
@@ -346,6 +355,7 @@ SELECT ra.actor_url
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = @local_actor_id
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active'
 ORDER BY ff.created_at DESC
@@ -356,6 +366,7 @@ SELECT COUNT(*)::bigint
 FROM federation_follows ff
 JOIN remote_actors ra ON ra.id = ff.remote_actor_id
 WHERE ff.local_actor_id = @local_actor_id
+  AND ff.direction = 'inbound'
   AND ff.status = 'accepted'
   AND ra.status = 'active';
 
@@ -935,3 +946,215 @@ DELETE FROM federation_relays WHERE id = @id;
 -- name: ListActiveRelayInboxes :many
 -- Fanout expansion: every accepted relay's delivery target.
 SELECT inbox_url FROM federation_relays WHERE status = 'accepted';
+
+-- ============================================================================
+-- M5 consume-side federation (§126): outbound follows, remote timeline,
+-- outbound Move, unscoped verbs, group featured.
+-- ============================================================================
+
+-- name: GetOutboundFederationFollowByActivityID :one
+-- Accept/Reject{Follow} answers to OUR outbound Follow match on the ap id we
+-- minted ({actor_url}#follow/{uuid}).
+SELECT * FROM federation_follows
+WHERE ap_activity_id = @ap_activity_id AND direction = 'outbound';
+
+-- name: ListOutboundFederationFollowsByUser :many
+-- Member "following remote" surface: the caller's outbound edges with the
+-- remote actor's display fields.
+SELECT ff.id, ff.remote_actor_id, ff.ap_activity_id, ff.status, ff.created_at,
+       ra.actor_url, ra.acct, ra.display_name, ra.avatar_url, ra.preferred_username
+FROM federation_follows ff
+JOIN federated_actors fa ON fa.id = ff.local_actor_id
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE fa.user_id = @user_id AND fa.status = 'active'
+  AND ff.direction = 'outbound' AND ff.status <> 'undone'
+ORDER BY ff.created_at DESC;
+
+-- name: ResolveOutboundFederationFollow :execrows
+-- Remote Accept/Reject of our outbound Follow — the status='pending'
+-- predicate makes the transition conditional: first answer wins, and a
+-- Reject answering an already-accepted edge is ignored.
+UPDATE federation_follows SET status = @status, updated_at = now()
+WHERE id = @id AND direction = 'outbound' AND status = 'pending';
+
+-- name: InsertOutboundFollowMirror :execrows
+-- Remote Accept mirrors the follow into the member's native graph —
+-- entity_type='remote_actor' + entity_id=remote_actors.id carries the
+-- provenance (follower_id = the member).
+INSERT INTO follows (follower_id, entity_type, entity_id)
+VALUES (@follower_id, 'remote_actor', @remote_actor_id)
+ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING;
+
+-- name: DeleteOutboundFollowMirror :execrows
+-- Member unfollow / remote withdrawal removes the native mirror — rows
+-- affected says whether one existed to remove.
+DELETE FROM follows
+WHERE follower_id = @follower_id
+  AND entity_type = 'remote_actor' AND entity_id = @remote_actor_id;
+
+-- name: DeleteOutboundFollowMirrorsByActor :exec
+-- Delete{actor}/Block propagation: every member mirror pointing at the dead
+-- remote actor goes (no counter unwind — following_count derives on demand).
+DELETE FROM follows WHERE entity_type = 'remote_actor' AND entity_id = @remote_actor_id;
+
+-- name: RepointOutboundFollowMirrorsByActor :execrows
+-- Move{actor→target}: member mirrors rebind to the new remote actor row;
+-- the NOT EXISTS dedupes on the (follower_id, entity_type, entity_id) unique.
+UPDATE follows f SET entity_id = @new_remote_actor_id
+WHERE f.entity_type = 'remote_actor' AND f.entity_id = @old_remote_actor_id
+  AND NOT EXISTS (SELECT 1 FROM follows dup
+                  WHERE dup.entity_type = 'remote_actor'
+                    AND dup.entity_id = @new_remote_actor_id
+                    AND dup.follower_id = f.follower_id);
+
+-- name: ListRemoteFollowingURLsByActor :many
+-- Following collection remote half: accepted outbound edges (remote actor
+-- URLs) — pages before the local-federated set.
+SELECT ra.actor_url
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = @local_actor_id
+  AND ff.direction = 'outbound'
+  AND ff.status = 'accepted'
+  AND ra.status = 'active'
+ORDER BY ff.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountRemoteFollowingByActor :one
+SELECT COUNT(*)::bigint
+FROM federation_follows ff
+JOIN remote_actors ra ON ra.id = ff.remote_actor_id
+WHERE ff.local_actor_id = @local_actor_id
+  AND ff.direction = 'outbound'
+  AND ff.status = 'accepted'
+  AND ra.status = 'active';
+
+-- name: ExistsAcceptedOutboundFollowerOfRemote :one
+-- Remote-post ingest warrant (§126 M5): a stored remote post requires ≥1
+-- local member actively following the author — no follow, no storage.
+SELECT EXISTS(
+    SELECT 1 FROM federation_follows ff
+    JOIN federated_actors fa ON fa.id = ff.local_actor_id AND fa.status = 'active'
+    WHERE ff.remote_actor_id = @remote_actor_id
+      AND ff.direction = 'outbound' AND ff.status = 'accepted') AS warrant;
+
+-- name: InsertFederationRemotePost :execrows
+-- Timeline ingest — ap_id unique dedupes replays; rows affected says
+-- whether this was a fresh store.
+INSERT INTO federation_remote_posts
+    (remote_actor_id, ap_id, in_reply_to_url, url, name, summary,
+     content_text, sensitive, hashtags, published_at)
+VALUES (@remote_actor_id, @ap_id, @in_reply_to_url, @url, @name, @summary,
+        @content_text, @sensitive, @hashtags, @published_at)
+ON CONFLICT (ap_id) DO NOTHING;
+
+-- name: GetFederationRemotePostByApID :one
+SELECT * FROM federation_remote_posts WHERE ap_id = @ap_id;
+
+-- name: UpdateFederationRemotePost :execrows
+-- Remote edit refreshes the stored copy — provenance (remote_actor_id)
+-- lives in the predicate so only the author can rewrite their post.
+UPDATE federation_remote_posts
+SET name = @name, summary = @summary, content_text = @content_text,
+    sensitive = @sensitive, hashtags = @hashtags,
+    url = COALESCE(@url, url), edited_at = @edited_at, updated_at = now()
+WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
+  AND deleted_at IS NULL;
+
+-- name: TombstoneFederationRemotePost :execrows
+-- Delete{object}/Undo{Create} tombstones the stored post — provenance in
+-- the predicate, idempotent under replay.
+UPDATE federation_remote_posts
+SET deleted_at = now(), updated_at = now()
+WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
+  AND deleted_at IS NULL;
+
+-- name: SetFederationRemotePostPinned :execrows
+-- Add/Remove{object → signer-domain featured collection}: remote pin
+-- bookkeeping — provenance in the predicate.
+UPDATE federation_remote_posts
+SET is_pinned = @is_pinned, updated_at = now()
+WHERE ap_id = @ap_id AND remote_actor_id = @remote_actor_id
+  AND deleted_at IS NULL;
+
+-- name: ListRemoteTimelinePosts :many
+-- Member remote timeline (§126 M5): pull-at-read — live posts by remote
+-- actors the member currently outbound-follows, keyset on
+-- COALESCE(published_at, created_at) DESC.
+SELECT rp.id, rp.ap_id, rp.in_reply_to_url, rp.url, rp.name, rp.summary,
+       rp.content_text, rp.sensitive, rp.hashtags, rp.is_pinned,
+       rp.published_at, rp.edited_at, rp.created_at,
+       ra.acct, ra.actor_url, ra.preferred_username, ra.display_name, ra.avatar_url
+FROM federation_remote_posts rp
+JOIN federation_follows ff
+  ON ff.remote_actor_id = rp.remote_actor_id
+ AND ff.direction = 'outbound' AND ff.status = 'accepted'
+JOIN federated_actors fa
+  ON fa.id = ff.local_actor_id AND fa.user_id = @user_id AND fa.status = 'active'
+JOIN remote_actors ra ON ra.id = rp.remote_actor_id AND ra.status = 'active'
+WHERE rp.deleted_at IS NULL
+  AND (@cursor_key::timestamptz IS NULL
+       OR (COALESCE(rp.published_at, rp.created_at), rp.id)
+          < (@cursor_key::timestamptz, @cursor_id::uuid))
+ORDER BY COALESCE(rp.published_at, rp.created_at) DESC, rp.id DESC
+LIMIT @page_limit;
+
+-- name: InsertRemoteContentReport :execrows
+-- Flag{object(s)} moderation intake — the partial-unique dedupes replays;
+-- rows affected distinguishes a fresh report from a replay.
+INSERT INTO content_reports
+    (reporter_remote_actor_id, entity_type, entity_id, reason, notes, status)
+VALUES (@reporter_remote_actor_id, @entity_type, @entity_id, 'other', @notes, 'pending')
+ON CONFLICT (reporter_remote_actor_id, entity_type, entity_id)
+    WHERE reporter_remote_actor_id IS NOT NULL DO NOTHING;
+
+-- name: GetReactionKeyByEmoji :one
+-- EmojiReact mapping: the activity's `content` emoji resolves to a
+-- reaction_types key; unknown emoji fall back to 'like' in the dispatcher.
+SELECT key FROM reaction_types WHERE emoji = @emoji AND enabled = true LIMIT 1;
+
+-- name: ListFeaturedFederatableContentBySpace :many
+-- Group featured collection (§126 M5): the space's pinned federatable
+-- contents — the group outbox predicate (author-actor gate) plus is_pinned.
+-- Column list mirrors ListFeaturedFederatableContentByAuthor.
+SELECT c.id, c.author_id, c.content_type, c.title, c.slug, c.body_html,
+       c.canonical_url, c.featured_image_id, c.header_image_id,
+       c.published_at, c.updated_at, c.created_at,
+       fa.actor_url AS author_actor_url, fa.followers_url AS author_followers_url,
+       mf.storage_bucket AS featured_bucket, mf.storage_path AS featured_path, mf.mime_type AS featured_mime,
+       mh.storage_bucket AS header_bucket, mh.storage_path AS header_path, mh.mime_type AS header_mime
+FROM contents c
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
+LEFT JOIN media mf ON mf.id = c.featured_image_id AND mf.deleted_at IS NULL AND mf.confirmed = true
+LEFT JOIN media mh ON mh.id = c.header_image_id AND mh.deleted_at IS NULL AND mh.confirmed = true
+WHERE c.space_id = @space_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.is_pinned = true
+  AND c.content_type = ANY(@content_types::text[])
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT @page_limit;
+
+-- name: ListSpaceFederatedTags :many
+-- Group featuredTags (§126 M5): hashtags across the space's eligible set —
+-- the group outbox predicate including the author-actor gate.
+SELECT DISTINCT t.id, t.name, t.slug
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+JOIN contents c ON c.id = ct.content_id
+JOIN federated_actors fa ON fa.user_id = c.author_id AND fa.status = 'active'
+WHERE c.space_id = @space_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.federate_opt_out = false
+  AND c.content_type = ANY(@content_types::text[])
+ORDER BY t.name
+LIMIT @page_limit;
+
+-- name: SetFederatedActorMoved :execrows
+-- M5 outbound Move: stamps the advisory redirect on the member's actor.
+UPDATE federated_actors SET moved_to_url = @moved_to_url, moved_at = now(), updated_at = now()
+WHERE id = @id;

@@ -323,6 +323,14 @@ func (s *Service) dispatch(ctx context.Context, q *gen.Queries, row gen.Federati
 		return s.dispatchMove(ctx, q, signer, moveTarget, moveReject)
 	case "Delete":
 		return s.dispatchDelete(ctx, q, act, signer)
+	case "Flag":
+		return s.dispatchFlag(ctx, q, act, signer)
+	case "Block":
+		return s.dispatchBlock(ctx, q, act, signer)
+	case "EmojiReact":
+		return s.dispatchEmojiReact(ctx, q, act, signer)
+	case "Add", "Remove":
+		return s.dispatchAddRemove(ctx, q, act, signer)
 	default:
 		return dispatchResult{status: "ignored", reason: "unsupported activity type " + typ}
 	}
@@ -600,7 +608,7 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 		}
 		return err
 	}
-	follow, err := s.store.followByPair(ctx, actor.ID, remoteActorID)
+	follow, err := s.store.followByPair(ctx, actor.ID, remoteActorID, "inbound")
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
@@ -686,12 +694,11 @@ func (s *Service) ResolveFollowRequest(ctx context.Context, userID, remoteActorI
 	return nil
 }
 
-// dispatchAcceptReject answers outbound Follows — in M3 the only
-// outbound Follow is the instance actor's Follow{Public} to a relay, so
-// the match keys on federation_relays.follow_ap_id and only the relay
-// actor itself may flip the subscription state. No match keeps the M2
-// posture: member outbound Follows don't exist, so an unmatched
-// Accept/Reject is protocol-inert and ignored.
+// dispatchAcceptReject answers outbound Follows. Two arms: relay
+// subscriptions (M3 — federation_relays.follow_ap_id, the relay actor
+// answers), and member outbound follows (M5 — the followed remote actor
+// answers its own request). Both enforce "signer IS the answering party":
+// a third party embedding our Follow id must not flip either state.
 func (s *Service) dispatchAcceptReject(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned accept/reject"}
@@ -707,7 +714,7 @@ func (s *Service) dispatchAcceptReject(ctx context.Context, q *gen.Queries, act 
 	}
 	relay, err := q.GetFederationRelayByFollowApID(ctx, &followID)
 	if err != nil {
-		return dispatchResult{status: "ignored", reason: "accept/reject answers an unknown follow"}
+		return s.resolveOutboundFollowAnswer(ctx, q, act, signer, followID)
 	}
 	// Only the relay actor may resolve its own subscription — a third
 	// party embedding our Follow id must not flip state.
@@ -728,6 +735,55 @@ func (s *Service) dispatchAcceptReject(ctx context.Context, q *gen.Queries, act 
 	return dispatchResult{status: "processed"}
 }
 
+// resolveOutboundFollowAnswer — M5 member-follow arm of
+// dispatchAcceptReject: the Follow @id matches an outbound edge and the
+// signer must BE the followed actor. First answer wins (the conditional
+// update only fires from 'pending'); an Accept mirrors the follow into
+// the member's native graph (entity_type='remote_actor') and notifies.
+func (s *Service) resolveOutboundFollowAnswer(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor, followID string) dispatchResult {
+	edge, err := q.GetOutboundFederationFollowByActivityID(ctx, &followID)
+	if err != nil {
+		return dispatchResult{status: "ignored", reason: "accept/reject answers an unknown follow"}
+	}
+	if edge.RemoteActorID != signer.ID {
+		return dispatchResult{status: "rejected", reason: "accept/reject from non-target signer"}
+	}
+	newStatus := "accepted"
+	if apStr(act["type"]) == "Reject" {
+		newStatus = "rejected"
+	}
+	n, err := q.ResolveOutboundFederationFollow(ctx, gen.ResolveOutboundFederationFollowParams{
+		ID: edge.ID, Status: newStatus,
+	})
+	if err != nil {
+		return dispatchResult{status: "error", reason: "outbound follow resolve: " + err.Error()}
+	}
+	if n == 0 {
+		// Sticky: the edge already got its answer — a later Reject must
+		// not bury a live Accept (withdrawal is Block/Undo business).
+		return dispatchResult{status: "processed"}
+	}
+	if newStatus != "accepted" {
+		return dispatchResult{status: "processed"}
+	}
+	userID := followUserID(ctx, q, edge.LocalActorID)
+	if _, err := q.InsertOutboundFollowMirror(ctx, gen.InsertOutboundFollowMirrorParams{
+		FollowerID: userID, RemoteActorID: signer.ID,
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "follows mirror: " + err.Error()}
+	}
+	return dispatchResult{status: "processed", intents: []notifyIntent{{
+		recipientID: userID,
+		nType:       notifications.TypeNewFollower,
+		actorID:     signer.ID,
+		subjectType: "user",
+		subjectID:   userID,
+		title:       "Follow request accepted",
+		body:        remoteHandle(*signer) + " accepted your follow request on the fediverse",
+		action:      "/me/federation",
+	}}}
+}
+
 // dispatchUndo reverses Follow / Like / Announce / Create by wrapping
 // activity. The inner object is usually a full or partial copy of the
 // original; bare-IRI undos resolve against the follow ledger.
@@ -745,7 +801,9 @@ func (s *Service) dispatchUndo(ctx context.Context, q *gen.Queries, act map[stri
 	target := apID(apObj(inner)["object"])
 	switch innerType {
 	case "Like":
-		return s.undoLike(ctx, q, target, signer)
+		return s.undoLike(ctx, q, target, signer, "like")
+	case "EmojiReact":
+		return s.undoLike(ctx, q, target, signer, s.emojiReactionKey(ctx, q, apStr(apObj(inner)["content"])))
 	case "Announce":
 		return s.undoAnnounce(ctx, q, target, signer)
 	case "Create":
@@ -757,6 +815,10 @@ func (s *Service) dispatchUndo(ctx context.Context, q *gen.Queries, act map[stri
 
 // undoFollow undoes the edge identified by the original Follow's ap id,
 // falling back to the local/remote pair when the remote omits the id.
+// M5 direction-aware: an Undo quoting back OUR outbound Follow (the
+// signer is the followed actor) is a withdrawal of prior acceptance —
+// the edge dies and the remote_actor mirror deletes; an Undo of the
+// remote's own inbound Follow runs the original mirror+count unwind.
 func (s *Service) undoFollow(ctx context.Context, q *gen.Queries, innerID string, inner any, signer *gen.RemoteActor) dispatchResult {
 	var follow gen.FederationFollow
 	var err error
@@ -775,7 +837,7 @@ func (s *Service) undoFollow(ctx context.Context, q *gen.Queries, innerID string
 			return dispatchResult{status: "ignored", reason: "undo follow target unknown"}
 		}
 		follow, err = q.GetFederationFollowByPair(ctx, gen.GetFederationFollowByPairParams{
-			LocalActorID: actor.ID, RemoteActorID: signer.ID,
+			LocalActorID: actor.ID, RemoteActorID: signer.ID, Direction: "inbound",
 		})
 		if err != nil {
 			return dispatchResult{status: "ignored", reason: "no matching follow"}
@@ -785,11 +847,22 @@ func (s *Service) undoFollow(ctx context.Context, q *gen.Queries, innerID string
 		return dispatchResult{status: "rejected", reason: "undo from non-follower"}
 	}
 	if err := q.UpdateFederationFollowStatus(ctx, gen.UpdateFederationFollowStatusParams{
-		LocalActorID: follow.LocalActorID, RemoteActorID: follow.RemoteActorID, Status: "undone",
+		LocalActorID: follow.LocalActorID, RemoteActorID: follow.RemoteActorID,
+		Direction: follow.Direction, Status: "undone",
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follow undo: " + err.Error()}
 	}
 	userID := followUserID(ctx, q, follow.LocalActorID)
+	if follow.Direction == "outbound" {
+		// Withdrawal of our outbound follow — the remote_actor mirror
+		// goes; no counter unwind (following_count derives on demand).
+		if _, err := q.DeleteOutboundFollowMirror(ctx, gen.DeleteOutboundFollowMirrorParams{
+			FollowerID: userID, RemoteActorID: signer.ID,
+		}); err != nil {
+			slog.Warn("federation: outbound mirror delete failed", "error", err)
+		}
+		return dispatchResult{status: "processed"}
+	}
 	n, err := q.DeleteRemoteFollow(ctx, gen.DeleteRemoteFollowParams{
 		RemoteActorID: signer.ID, UserID: userID,
 	})
@@ -831,15 +904,17 @@ func (s *Service) contentIDForObject(objectID string) (pgtype.UUID, bool) {
 	return id, true
 }
 
-// undoLike removes a remote Like reaction and refreshes the score.
-func (s *Service) undoLike(ctx context.Context, q *gen.Queries, targetID string, signer *gen.RemoteActor) dispatchResult {
+// undoLike removes a remote Like/EmojiReact reaction and refreshes the
+// score — the reaction key travels with the inner activity's content so
+// an EmojiReact undo targets the same key its insert minted.
+func (s *Service) undoLike(ctx context.Context, q *gen.Queries, targetID string, signer *gen.RemoteActor, reactionKey string) dispatchResult {
 	contentID, ok := s.contentIDForObject(targetID)
 	if !ok {
 		return dispatchResult{status: "ignored", reason: "unlike target unknown"}
 	}
 	n, err := q.RemoveRemoteReaction(ctx, gen.RemoveRemoteReactionParams{
 		EntityType: "content", EntityID: contentID,
-		RemoteActorID: signer.ID, ReactionKey: "like",
+		RemoteActorID: signer.ID, ReactionKey: reactionKey,
 	})
 	if err != nil {
 		return dispatchResult{status: "error", reason: "reaction delete: " + err.Error()}
@@ -875,7 +950,8 @@ func (s *Service) undoAnnounce(ctx context.Context, q *gen.Queries, targetID str
 func (s *Service) undoCreate(ctx context.Context, q *gen.Queries, objectID string, signer *gen.RemoteActor) dispatchResult {
 	c, err := q.GetAtprotoCommentByRemoteURI(ctx, &objectID)
 	if err != nil || !c.ContentID.Valid {
-		return dispatchResult{status: "ignored", reason: "undo target unknown"}
+		// M5: an undo of a stored remote post tombstones it.
+		return s.tombstoneRemotePost(ctx, q, objectID, signer)
 	}
 	if c.RemoteApActorID != signer.ID {
 		return dispatchResult{status: "rejected", reason: "undo of another actor's object"}
@@ -897,23 +973,56 @@ func (s *Service) dispatchLike(ctx context.Context, q *gen.Queries, act map[stri
 	if signer == nil {
 		return dispatchResult{status: "rejected", reason: "unsigned like"}
 	}
+	return s.remoteReaction(ctx, q, act, signer, "like",
+		"liked your post on the fediverse", "like replayed")
+}
+
+// dispatchEmojiReact is the Misskey-family reaction verb (§126 M5): the
+// activity's `content` emoji maps through reaction_types.emoji → key;
+// unknown glyphs and tag-carried custom emoji fall back to 'like' (a
+// remote custom emoji can't render here anyway — it still counts as
+// appreciation rather than dropping on the floor).
+func (s *Service) dispatchEmojiReact(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor) dispatchResult {
+	if signer == nil {
+		return dispatchResult{status: "rejected", reason: "unsigned emojireact"}
+	}
+	return s.remoteReaction(ctx, q, act, signer, s.emojiReactionKey(ctx, q, apStr(act["content"])),
+		"reacted to your post on the fediverse", "emojireact replayed")
+}
+
+// emojiReactionKey resolves an EmojiReact content glyph to a seeded
+// reaction_types key — deterministic, so Undo{EmojiReact} maps to the
+// same row the insert wrote.
+func (s *Service) emojiReactionKey(ctx context.Context, q *gen.Queries, content string) string {
+	if content != "" {
+		if key, err := q.GetReactionKeyByEmoji(ctx, content); err == nil && key != "" {
+			return key
+		}
+	}
+	return "like"
+}
+
+// remoteReaction is the shared Like/EmojiReact insert path — one
+// reaction row per (entity, remote actor, key), deduped by the partial
+// unique.
+func (s *Service) remoteReaction(ctx context.Context, q *gen.Queries, act map[string]any, signer *gen.RemoteActor, reactionKey, verb, replayReason string) dispatchResult {
 	content, ok := s.localContentForObject(ctx, q, apObjectID(act))
 	if !ok {
-		return dispatchResult{status: "ignored", reason: "like target is not a local object"}
+		return dispatchResult{status: "ignored", reason: "reaction target is not a local object"}
 	}
 	n, err := q.AddRemoteReaction(ctx, gen.AddRemoteReactionParams{
 		EntityType: "content", EntityID: content.ID,
-		RemoteActorID: signer.ID, ReactionKey: "like",
+		RemoteActorID: signer.ID, ReactionKey: reactionKey,
 	})
 	if err != nil {
 		return dispatchResult{status: "error", reason: "reaction insert: " + err.Error()}
 	}
 	if n == 0 {
-		return dispatchResult{status: "ignored", reason: "like replayed"}
+		return dispatchResult{status: "ignored", reason: replayReason}
 	}
 	s.refreshReactionCount(ctx, q, content.ID)
 	if in := s.contentIntent(ctx, q, content.ID, *signer, notifications.TypeContentReaction,
-		"Fediverse like", "liked your post on the fediverse"); in != nil {
+		"Fediverse reaction", verb); in != nil {
 		return dispatchResult{status: "processed", intents: []notifyIntent{*in}}
 	}
 	return dispatchResult{status: "processed"}
@@ -960,9 +1069,6 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 		return dispatchResult{status: "ignored", reason: "create without object"}
 	}
 	replyTo := apID(obj["inReplyTo"])
-	if replyTo == "" {
-		return dispatchResult{status: "ignored", reason: "create is not a reply"}
-	}
 	remoteURI := apStr(obj["id"])
 	if remoteURI == "" {
 		return dispatchResult{status: "rejected", reason: "remote object missing id"}
@@ -985,20 +1091,28 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 	}
 
 	// inReplyTo resolves either to a local object URL (top-level reply)
-	// or to a remote comment already ingested (nested reply).
+	// or to a remote comment already ingested (nested reply). Everything
+	// else — top-level posts, replies into remote threads — is timeline
+	// material, gated on a member actually following the author (M5).
 	var contentID pgtype.UUID
 	var parentID pgtype.UUID
 	depth := int32(0)
-	if content, ok := s.localContentForObject(ctx, q, replyTo); ok {
-		contentID = content.ID
-	} else if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &replyTo); perr == nil && !pc.DeletedAt.Valid {
-		contentID = pc.ContentID
-		if pc.Depth < int32(maxCommentDepth) {
-			parentID = pc.ID
-			depth = pc.Depth + 1
+	isLocalReply := false
+	if replyTo != "" {
+		if content, ok := s.localContentForObject(ctx, q, replyTo); ok {
+			contentID = content.ID
+			isLocalReply = true
+		} else if pc, perr := q.GetAtprotoCommentByRemoteURI(ctx, &replyTo); perr == nil && !pc.DeletedAt.Valid {
+			contentID = pc.ContentID
+			if pc.Depth < int32(maxCommentDepth) {
+				parentID = pc.ID
+				depth = pc.Depth + 1
+			}
+			isLocalReply = true
 		}
-	} else {
-		return dispatchResult{status: "ignored", reason: "reply target unknown"}
+	}
+	if !isLocalReply {
+		return s.storeRemotePost(ctx, q, obj, remoteURI, replyTo, body, signer)
 	}
 
 	// §49: a locked or deleted thread takes no new comments — the remote
@@ -1054,7 +1168,9 @@ func (s *Service) dispatchUpdate(ctx context.Context, q *gen.Queries, act map[st
 	}
 	c, err := q.GetAtprotoCommentByRemoteURI(ctx, &objectID)
 	if err != nil || !c.ContentID.Valid {
-		return dispatchResult{status: "ignored", reason: "updated object unknown"}
+		// M5: stored remote posts refresh the same way — provenance is
+		// bound inside the arm.
+		return s.updateRemotePost(ctx, q, objectID, objMap, signer)
 	}
 	// Provenance gate: an Update may only rewrite a comment this same
 	// actor created — otherwise any instance could edit another's replies.
@@ -1137,6 +1253,18 @@ func (s *Service) dispatchMove(ctx context.Context, q *gen.Queries, signer, move
 	}); err != nil {
 		return dispatchResult{status: "error", reason: "follows mirror repoint: " + err.Error()}
 	}
+	// M5: members' follows OF the mover ride the migration too — outbound
+	// edges repointed above keep their remote_actor mirrors pointing at a
+	// live row; dup leftovers (member already followed the new account)
+	// delete like the inbound side.
+	if _, err := q.RepointOutboundFollowMirrorsByActor(ctx, gen.RepointOutboundFollowMirrorsByActorParams{
+		OldRemoteActorID: signer.ID, NewRemoteActorID: moveTarget.ID,
+	}); err != nil {
+		return dispatchResult{status: "error", reason: "outbound mirror repoint: " + err.Error()}
+	}
+	if err := q.DeleteOutboundFollowMirrorsByActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: move outbound mirror cleanup failed", "error", err)
+	}
 	// Deleted mirrors are follower edges that MERGED into the new
 	// actor's — each was counted at its own Follow, so each delete
 	// unwinds users.follower_count by one.
@@ -1178,7 +1306,8 @@ func (s *Service) dispatchDelete(ctx context.Context, q *gen.Queries, act map[st
 	}
 	c, err := q.GetAtprotoCommentByRemoteURI(ctx, &objectID)
 	if err != nil || !c.ContentID.Valid {
-		return dispatchResult{status: "ignored", reason: "delete target unknown"}
+		// M5: a stored remote post tombstones the same way.
+		return s.tombstoneRemotePost(ctx, q, objectID, signer)
 	}
 	// Provenance gate: Delete may only tombstone a comment this same actor
 	// created — a foreign Delete{object} must never remove another
@@ -1219,6 +1348,11 @@ func (s *Service) deleteRemoteActor(ctx context.Context, q *gen.Queries, signer 
 	}
 	if err := q.UndoFederationFollowsByRemoteActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follow unwind failed", "error", err)
+	}
+	// M5: members' follows OF the dead actor die with it — outbound edges
+	// went 'undone' above; their remote_actor mirrors delete here.
+	if err := q.DeleteOutboundFollowMirrorsByActor(ctx, signer.ID); err != nil {
+		slog.Warn("federation: outbound mirror unwind failed", "error", err)
 	}
 	if entities, err := q.DeleteRemoteFollowsByActor(ctx, signer.ID); err != nil {
 		slog.Warn("federation: follows unwind failed", "error", err)

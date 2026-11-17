@@ -3,11 +3,13 @@ INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, n
 
 ON CONFLICT (reporter_user_id, entity_type, entity_id) WHERE reporter_user_id IS NOT NULL DO NOTHING
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at,
+ reporter_remote_actor_id;
 
 -- name: GetReport :one
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at,
+ reporter_remote_actor_id
 FROM content_reports
 WHERE id = @id;
 
@@ -120,7 +122,8 @@ SET status = @status, reviewed_by = @reviewed_by, resolution_note = @resolution_
  updated_at = now()
 WHERE id = @id
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at,
+ reporter_remote_actor_id;
 
 -- name: CountPendingReportsForEntity :one
 SELECT COUNT(*)::int FROM content_reports
@@ -190,7 +193,8 @@ SET status = @status, reviewed_by = @reviewed_by, resolution_note = @resolution_
  updated_at = now()
 WHERE id = @id AND status IN ('pending', 'reviewing')
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at,
+ reporter_remote_actor_id;
 
 -- name: ListModerationQueue :many
 WITH scoped AS (

@@ -1531,19 +1531,20 @@ type ContentMediaField struct {
 }
 
 type ContentReport struct {
-	ID             pgtype.UUID        `json:"id"`
-	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	Reason         string             `json:"reason"`
-	Notes          *string            `json:"notes"`
-	EvidenceUrls   []string           `json:"evidence_urls"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	ReporterUserID        pgtype.UUID        `json:"reporter_user_id"`
+	EntityType            string             `json:"entity_type"`
+	EntityID              pgtype.UUID        `json:"entity_id"`
+	Reason                string             `json:"reason"`
+	Notes                 *string            `json:"notes"`
+	EvidenceUrls          []string           `json:"evidence_urls"`
+	Status                string             `json:"status"`
+	ReviewedBy            pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote        *string            `json:"resolution_note"`
+	ResolvedAt            pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	ReporterRemoteActorID pgtype.UUID        `json:"reporter_remote_actor_id"`
 }
 
 type ContentReview struct {
@@ -2288,6 +2289,8 @@ type FederatedActor struct {
 	KeyRotatedAt              pgtype.Timestamptz `json:"key_rotated_at"`
 	Kind                      string             `json:"kind"`
 	SpaceID                   pgtype.UUID        `json:"space_id"`
+	MovedToUrl                *string            `json:"moved_to_url"`
+	MovedAt                   pgtype.Timestamptz `json:"moved_at"`
 }
 
 type FederationDelivery struct {
@@ -2314,6 +2317,7 @@ type FederationFollow struct {
 	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Direction     string             `json:"direction"`
 }
 
 type FederationInbound struct {
@@ -2348,6 +2352,25 @@ type FederationRelay struct {
 	CreatedBy  pgtype.UUID        `json:"created_by"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type FederationRemotePost struct {
+	ID            pgtype.UUID        `json:"id"`
+	RemoteActorID pgtype.UUID        `json:"remote_actor_id"`
+	ApID          string             `json:"ap_id"`
+	InReplyToUrl  *string            `json:"in_reply_to_url"`
+	Url           *string            `json:"url"`
+	Name          *string            `json:"name"`
+	Summary       *string            `json:"summary"`
+	ContentText   string             `json:"content_text"`
+	Sensitive     bool               `json:"sensitive"`
+	Hashtags      []string           `json:"hashtags"`
+	IsPinned      bool               `json:"is_pinned"`
+	PublishedAt   pgtype.Timestamptz `json:"published_at"`
+	EditedAt      pgtype.Timestamptz `json:"edited_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type FederationRemoteShare struct {

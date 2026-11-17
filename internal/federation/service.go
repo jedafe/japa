@@ -507,10 +507,18 @@ func (s *Service) Following(ctx context.Context, username string, page int) (map
 		return nil, fmt.Errorf("federation: following actor: %w", err)
 	}
 
-	total, err := s.store.countLocalFollowing(ctx, actor.UserID)
+	// M5: the collection unions remote accepted outbound edges (remote
+	// actor URLs first — mirrors the followers collection's remote→local
+	// ordering) with the local-federated following set.
+	remoteTotal, err := s.store.read.CountRemoteFollowingByActor(ctx, actor.ID)
+	if err != nil {
+		return nil, fmt.Errorf("federation: remote following count: %w", err)
+	}
+	localTotal, err := s.store.countLocalFollowing(ctx, actor.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("federation: following count: %w", err)
 	}
+	total := remoteTotal + localTotal
 
 	if page <= 0 {
 		return orderedCollection(actor.FollowingUrl, total, actor.FollowingUrl+"?page=1"), nil
@@ -524,9 +532,30 @@ func (s *Service) Following(ctx context.Context, username string, page int) (map
 		return orderedCollectionPage(pageID(page), actor.FollowingUrl, []any{}, total, false, page > 1, pageID, page), nil
 	}
 
-	urls, err := s.store.localFollowingURLs(ctx, actor.UserID, size, offset)
-	if err != nil {
-		return nil, fmt.Errorf("federation: following page: %w", err)
+	var urls []string
+	if int64(offset) < remoteTotal {
+		take := int64(size)
+		if rem := remoteTotal - int64(offset); rem < take {
+			take = rem
+		}
+		urls, err = s.store.read.ListRemoteFollowingURLsByActor(ctx, gen.ListRemoteFollowingURLsByActorParams{
+			LocalActorID: actor.ID, PageLimit: int32(take), PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("federation: remote following page: %w", err)
+		}
+		if rem := int64(size) - int64(len(urls)); rem > 0 {
+			local, lerr := s.store.localFollowingURLs(ctx, actor.UserID, int32(rem), 0)
+			if lerr != nil {
+				return nil, fmt.Errorf("federation: following page: %w", lerr)
+			}
+			urls = append(urls, local...)
+		}
+	} else {
+		urls, err = s.store.localFollowingURLs(ctx, actor.UserID, size, offset-int32(remoteTotal))
+		if err != nil {
+			return nil, fmt.Errorf("federation: following page: %w", err)
+		}
 	}
 	items := make([]any, 0, len(urls))
 	for _, u := range urls {

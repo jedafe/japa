@@ -465,6 +465,10 @@ func groupDocument(row gen.GetGroupActorDocBySlugRow, siteBase string) map[strin
 			"publicKeyPem": row.PublicKeyPem,
 		},
 		"endpoints": map[string]any{"sharedInbox": row.InboxUrl},
+		// §126 M5: pinned-content + hashtag collections, same shape the
+		// Person doc advertises.
+		"featured":     row.ActorUrl + "/collections/featured",
+		"featuredTags": row.ActorUrl + "/collections/tags",
 	}
 	if row.SpaceDescription != nil && *row.SpaceDescription != "" {
 		doc["summary"] = *row.SpaceDescription
@@ -541,6 +545,79 @@ func (s *Service) GroupOutbox(ctx context.Context, slug string, page int) (map[s
 	}
 	return orderedCollectionPage(pageID(page), row.OutboxUrl, items, total,
 		int64(page)*int64(size) < total, page > 1, pageID, page), nil
+}
+
+// GroupFeatured serves the space's pinned-content collection (§126 M5):
+// the group outbox eligibility predicate plus is_pinned, rendered as
+// embedded object documents under the author's Person actor.
+func (s *Service) GroupFeatured(ctx context.Context, slug string) (map[string]any, error) {
+	row, err := s.groupActorForCollection(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.store.read.ListFeaturedFederatableContentBySpace(ctx,
+		gen.ListFeaturedFederatableContentBySpaceParams{
+			SpaceID: row.SpaceID, ContentTypes: s.federatableTypesFor(ctx), PageLimit: s.outboxPageSize(ctx),
+		})
+	if err != nil {
+		return nil, fmt.Errorf("federation: group featured items: %w", err)
+	}
+	items := make([]any, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, s.objectFromGetRow(ctx, gen.GetFederatableContentByIDRow{
+			ID:             r.ID,
+			ContentType:    r.ContentType,
+			Title:          r.Title,
+			Slug:           r.Slug,
+			BodyHtml:       r.BodyHtml,
+			CanonicalUrl:   r.CanonicalUrl,
+			PublishedAt:    r.PublishedAt,
+			UpdatedAt:      r.UpdatedAt,
+			FeaturedBucket: r.FeaturedBucket,
+			FeaturedPath:   r.FeaturedPath,
+			FeaturedMime:   r.FeaturedMime,
+			HeaderBucket:   r.HeaderBucket,
+			HeaderPath:     r.HeaderPath,
+			HeaderMime:     r.HeaderMime,
+		}, gen.FederatedActor{ActorUrl: r.AuthorActorUrl, FollowersUrl: r.AuthorFollowersUrl}))
+	}
+	return map[string]any{
+		"@context":     asContext[0],
+		"id":           row.ActorUrl + "/collections/featured",
+		"type":         "OrderedCollection",
+		"totalItems":   len(items),
+		"orderedItems": items,
+	}, nil
+}
+
+// GroupFeaturedTags serves the space's hashtag collection (§126 M5) —
+// tags used across the space's eligible content set.
+func (s *Service) GroupFeaturedTags(ctx context.Context, slug string) (map[string]any, error) {
+	row, err := s.groupActorForCollection(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.store.read.ListSpaceFederatedTags(ctx, gen.ListSpaceFederatedTagsParams{
+		SpaceID: row.SpaceID, ContentTypes: s.federatableTypesFor(ctx), PageLimit: s.outboxPageSize(ctx),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("federation: group featuredTags items: %w", err)
+	}
+	items := make([]any, 0, len(tags))
+	for _, t := range tags {
+		items = append(items, map[string]any{
+			"type": "Hashtag",
+			"name": "#" + t.Name,
+			"href": s.siteBase() + "/tags/" + t.Slug,
+		})
+	}
+	return map[string]any{
+		"@context":     asContext[0],
+		"id":           row.ActorUrl + "/collections/tags",
+		"type":         "OrderedCollection",
+		"totalItems":   len(items),
+		"orderedItems": items,
+	}, nil
 }
 
 // GroupFollowers serves the OrderedCollection of the group's remote

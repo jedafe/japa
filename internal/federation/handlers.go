@@ -70,6 +70,12 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 		// Upstream AP doc unreachable — a remote-side condition, not
 		// our internal error (relay subscribe hits this path).
 		errpkg.WriteError(w, http.StatusBadGateway, "remote_fetch_failed", "Remote actor document could not be fetched")
+	case errors.Is(err, ErrInvalidTarget):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_target", "Target does not resolve to a remote actor")
+	case errors.Is(err, ErrMoveTooSoon):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "move_too_soon", "A migration already ran inside the cooldown window")
+	case errors.Is(err, ErrMoveNotConfirmed):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "move_not_confirmed", "Target actor does not confirm the migration")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error")
 	}
@@ -349,6 +355,104 @@ func (h *Handlers) RotateMyFederationKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, res)
+}
+
+// FollowRemote serves POST /api/v1/me/federation/following (§126 M5) —
+// resolves the target and delivers the signed Follow.
+func (h *Handlers) FollowRemote(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Target string `json:"target"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil || strings.TrimSpace(body.Target) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "target is required")
+		return
+	}
+	res, err := h.service.FollowRemote(r.Context(), user.UserID, body.Target)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, res)
+}
+
+// ListOutboundFollowing serves GET /api/v1/me/federation/following (§126 M5).
+func (h *Handlers) ListOutboundFollowing(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListOutboundFollowing(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"following": rows})
+}
+
+// UnfollowRemote serves DELETE /api/v1/me/federation/following/{remote_actor_id}
+// (§126 M5) — delivers Undo{Follow} and tears the edge down.
+func (h *Handlers) UnfollowRemote(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var remoteID pgtype.UUID
+	if err := remoteID.Scan(chi.URLParam(r, "remote_actor_id")); err != nil || !remoteID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid remote actor id")
+		return
+	}
+	if err := h.service.UnfollowRemote(r.Context(), user.UserID, remoteID); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "undone"})
+}
+
+// RemoteTimeline serves GET /api/v1/me/federation/timeline (§126 M5) —
+// keyset-paginated remote posts from actors the member follows.
+func (h *Handlers) RemoteTimeline(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var limit int32
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 32); err == nil && v > 0 {
+			limit = int32(v)
+		}
+	}
+	page, err := h.service.RemoteTimeline(r.Context(), user.UserID, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, page)
+}
+
+// RequestMove serves POST /api/v1/me/federation/move (§126 M5) —
+// verifies the target's alsoKnownAs, stamps moved_to_url, fans the
+// signed Move out to remote followers.
+func (h *Handlers) RequestMove(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		TargetActorURL string `json:"target_actor_url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil || strings.TrimSpace(body.TargetActorURL) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "target_actor_url is required")
+		return
+	}
+	if err := h.service.RequestMove(r.Context(), user.UserID, body.TargetActorURL); err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "moved"})
 }
 
 // ---------------------------------------------------------------------------
@@ -767,6 +871,34 @@ func (h *Handlers) GetGroupOutbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, err := h.service.GroupOutbox(r.Context(), chi.URLParam(r, "slug"), parsePage(r))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetGroupFeatured serves GET /federation/groups/{slug}/collections/featured
+// (§126 M5).
+func (h *Handlers) GetGroupFeatured(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.GroupFeatured(r.Context(), chi.URLParam(r, "slug"))
+	if err != nil {
+		handleServiceErr(w, err)
+		return
+	}
+	writeTypedJSON(w, http.StatusOK, ContentTypeActivity, doc)
+}
+
+// GetGroupFeaturedTags serves GET /federation/groups/{slug}/collections/tags
+// (§126 M5).
+func (h *Handlers) GetGroupFeaturedTags(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeFetch(w, r) {
+		return
+	}
+	doc, err := h.service.GroupFeaturedTags(r.Context(), chi.URLParam(r, "slug"))
 	if err != nil {
 		handleServiceErr(w, err)
 		return

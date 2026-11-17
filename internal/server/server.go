@@ -4125,6 +4125,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/federation/groups/{slug}", federationHandlers.GetGroup)
 		r.Get("/federation/groups/{slug}/outbox", federationHandlers.GetGroupOutbox)
 		r.Get("/federation/groups/{slug}/followers", federationHandlers.GetGroupFollowers)
+		r.Get("/federation/groups/{slug}/collections/featured", federationHandlers.GetGroupFeatured)
+		r.Get("/federation/groups/{slug}/collections/tags", federationHandlers.GetGroupFeaturedTags)
 		// §126 M2 — ActivityPub delivery targets.
 		r.Post("/federation/inbox", federationHandlers.PostInbox)
 		r.Post("/federation/actors/{username}/inbox", federationHandlers.PostActorInbox)
@@ -5026,6 +5028,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/follow-requests/{remote_actor_id}/reject", federationHandlers.RejectFollowRequest)
 				// §126 M3a: member key rotation (cooldown-gated service-side)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/rotate-key", federationHandlers.RotateMyFederationKey)
+
+				// §126 M5 — consume-side surface: outbound remote follows,
+				// the remote timeline, and outbound account migration.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/following", federationHandlers.FollowRemote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/following", federationHandlers.ListOutboundFollowing)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/federation/following/{remote_actor_id}", federationHandlers.UnfollowRemote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use")).Get("/me/federation/timeline", federationHandlers.RemoteTimeline)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.use"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/federation/move", federationHandlers.RequestMove)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "federation.actors.view")).Get("/admin/federation/actors", federationHandlers.ListActors)
 				// §126 M3a: admin rotation for incident response — bypasses the cooldown
