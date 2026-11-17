@@ -6,8 +6,10 @@ import { load } from './+page';
 // and bare handles are all refused before the visitor's instance is
 // asked to resolve them.
 describe('authorize_interaction uri filter', () => {
-	const at = (q: string) =>
-		load({ url: new URL(`https://japa.to/authorize_interaction${q}`) } as never);
+	const at = async (q: string) =>
+		(await load({ url: new URL(`https://japa.to/authorize_interaction${q}`) } as never)) as {
+			uri: string;
+		};
 
 	it('accepts acct: and https: actor identifiers', async () => {
 		expect((await at('?uri=acct:alice@japa.to')).uri).toBe('acct:alice@japa.to');
