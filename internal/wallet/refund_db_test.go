@@ -155,19 +155,24 @@ func TestDBPointsReversalStillWorks(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(d)
 	user := newRefundUser(t, ctx, d)
-	entry := seedPointsEntry(t, ctx, d, user, -50, -50)
 
-	// Undoing a penalty on a negative points balance is an upward move.
+	// The points-floor trigger clamps negative inserts at zero: a -50
+	// penalty on a +10 balance stores as -10/0 — the real production shape
+	// of a spam penalty that hits the floor. Reversing it must restore the
+	// pre-penalty balance.
+	seedPointsEntry(t, ctx, d, user, 10, 10)
+	entry := seedPointsEntry(t, ctx, d, user, -50, -40) // floor-clamped to -10 → 0
+
 	bal, err := svc.AdminReverseLedgerEntry(ctx, user, entry, AdminReverseInput{Reason: "undo"})
 	if err != nil {
 		t.Fatalf("points reversal: %v", err)
 	}
-	if bal != 0 {
-		t.Fatalf("points balance after reversal = %d, want 0", bal)
+	if bal != 10 {
+		t.Fatalf("points balance after reversal = %d, want 10", bal)
 	}
 
 	// Points stay full-reversal only.
-	entry2 := seedPointsEntry(t, ctx, d, user, 10, 10)
+	entry2 := seedPointsEntry(t, ctx, d, user, 10, 20)
 	if _, err := svc.AdminReverseLedgerEntry(ctx, user, entry2, AdminReverseInput{
 		Amount: ptrI64(5), Reason: "partial",
 	}); !errors.Is(err, errpkg.ErrInvalid) {

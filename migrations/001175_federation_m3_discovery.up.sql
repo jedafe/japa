@@ -14,12 +14,19 @@ ALTER TABLE federated_actors
     ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'person';
 ALTER TABLE federated_actors
     ADD COLUMN IF NOT EXISTS space_id uuid REFERENCES spaces(id) ON DELETE CASCADE;
-ALTER TABLE federated_actors
-    ADD CONSTRAINT federated_actors_kind_check
-    CHECK (kind IN ('person','application','group'));
-ALTER TABLE federated_actors
-    ADD CONSTRAINT federated_actors_kind_user_match
-    CHECK ((kind = 'person') = (user_id IS NOT NULL));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'federated_actors_kind_check') THEN
+        ALTER TABLE federated_actors
+            ADD CONSTRAINT federated_actors_kind_check
+            CHECK (kind IN ('person','application','group'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'federated_actors_kind_user_match') THEN
+        ALTER TABLE federated_actors
+            ADD CONSTRAINT federated_actors_kind_user_match
+            CHECK ((kind = 'person') = (user_id IS NOT NULL));
+    END IF;
+END $$;
 
 -- singleton instance actor (one 'application' row ever)
 CREATE UNIQUE INDEX IF NOT EXISTS federated_actors_application_uidx
