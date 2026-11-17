@@ -126,7 +126,7 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 	if ev.OccurredAt <= 0 {
 		occurred = time.Now().UTC() // provider omitted the timestamp — don't sort to 1970
 	}
-	_, err := s.store.InsertActivity(ctx, Activity{
+	inserted, err := s.store.InsertActivity(ctx, Activity{
 		WalletID:           walletID,
 		Direction:          direction,
 		Kind:               kind,
@@ -142,8 +142,12 @@ func (s *Service) MirrorActivity(ctx context.Context, ev ProviderEvent, walletID
 	if err != nil {
 		return err
 	}
+	if inserted == nil {
+		return nil // tx_signature dedupe hit — replay, nothing to do
+	}
 	// Confirmed member-signed withdrawal → collect the platform fee via
-	// the delegated signer (the send couldn't carry a fee leg).
+	// the delegated signer (the send couldn't carry a fee leg). Only on a
+	// fresh insert — replays must not re-fire the collection.
 	if status == "confirmed" && direction == "out" && kind == ActivityWithdrawal {
 		var w *Wallet
 		if wid, perr := pgUUID(walletID); perr == nil {

@@ -89,6 +89,23 @@ func (s *Service) FailTip(ctx context.Context, tipID pgtype.UUID) error {
 	return s.store.failTip(ctx, tipID)
 }
 
+// MarkStablecoinSettled closes an onchain-settled tip — called by the
+// stablecoin worker after tips:settle_stablecoin lands the delegated-signer
+// transfer. Reuses the conditional settleTip update (pending/failed →
+// completed) so a refund racing the settle can't be resurrected. txSig is
+// the executed signature — kept in the seam for a future settlement-trail
+// column; the stablecoin mirror already records it onchain-side.
+func (s *Service) MarkStablecoinSettled(ctx context.Context, tipID pgtype.UUID, _ string) error {
+	tip, err := s.store.getTip(ctx, tipID)
+	if err != nil {
+		return err
+	}
+	if tip.Status == StatusCompleted {
+		return nil // replay — already closed
+	}
+	return s.store.settleTip(ctx, tipID, tip.NetCredits)
+}
+
 // ClawbackTip reverses a settled tip's recipient credits and marks it
 // refunded — the §125 refund path (payment refunded upstream or admin).
 func (s *Service) ClawbackTip(ctx context.Context, tipID pgtype.UUID) error {

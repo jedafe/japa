@@ -292,7 +292,16 @@ func (s *Service) HandleEscrowTimeout(ctx context.Context) error {
 		if perr != nil {
 			continue
 		}
-		if err := s.ReleaseEscrow(ctx, id, nil, ""); err != nil {
+		// Timeout auto-release: authorized to seller, audit-trailed like an
+		// arbiter ruling — the Squads release executes off-backend and the
+		// mirror lands the executed sig when the chain reports it.
+		decision := &ArbiterDecision{
+			ReleasedTo: "seller",
+			DecidedBy:  "system:escrow_timeout",
+			DecidedAt:  time.Now().UTC(),
+			Note:       "confirmation window lapsed — auto-release authorized",
+		}
+		if err := s.ReleaseEscrow(ctx, id, decision, ""); err != nil {
 			return fmt.Errorf("stablecoin: timeout release %s: %w", expired[i].ID, err)
 		}
 	}

@@ -10885,6 +10885,10 @@ func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stabl
 	}, nil
 }
 
+func (a stablecoinTipReader) MarkSettled(ctx context.Context, id pgtype.UUID, txSig string) error {
+	return a.svc.MarkStablecoinSettled(ctx, id, txSig)
+}
+
 // stablecoinCreditRater resolves the USD→credits display rate from the
 // §58 currencies table (credits_per_unit on the USD row).
 type stablecoinCreditRater struct {

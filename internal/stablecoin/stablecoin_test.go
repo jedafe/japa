@@ -2,6 +2,7 @@ package stablecoin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -337,6 +338,25 @@ func (f *fakeBonus) ListCreditEntries(_ context.Context, _ pgtype.UUID, _, _ int
 type fakeRater struct{ n int64 }
 
 func (f *fakeRater) CreditsPerUSD(_ context.Context) (int64, error) { return f.n, nil }
+
+type fakeTips struct {
+	tips    map[string]*Tip
+	settled []string
+}
+
+func (f *fakeTips) GetTip(_ context.Context, id pgtype.UUID) (*Tip, error) {
+	if t, ok := f.tips[id.String()]; ok {
+		return t, nil
+	}
+	return nil, fmt.Errorf("tip not found")
+}
+func (f *fakeTips) MarkSettled(_ context.Context, id pgtype.UUID, sig string) error {
+	f.settled = append(f.settled, id.String()+":"+sig)
+	if t, ok := f.tips[id.String()]; ok {
+		t.Status = "completed"
+	}
+	return nil
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -731,5 +751,72 @@ func TestProposeSweepSkipsOpenProposal(t *testing.T) {
 	}
 	if len(st.sweeps) != 1 {
 		t.Fatalf("duplicate sweep proposed: %d rows", len(st.sweeps))
+	}
+}
+
+// ── tips:settle_stablecoin ───────────────────────────────────────────────
+
+func TestProcessTipSettleLifecycle(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	p := &fakeProvider{}
+	sender, recip := newUUID(), newUUID()
+	for _, u := range []pgtype.UUID{sender, recip} {
+		w := &Wallet{
+			ID: newUUID().String(), UserID: u.String(), Status: WalletStatusActive,
+			Chain: "solana", Locator: "loc", Address: "addr-" + u.String()[:8],
+			DelegatedSigner: &DelegatedSigner{SignerRef: "ref", Scopes: []SignerScope{
+				{Asset: AssetUSDC, DailyCapMinor: 1_000_000},
+			}},
+		}
+		st.walletByUser[u.String()] = w
+	}
+	st.treasury["solana:"+TreasuryHot] = &TreasuryWallet{Role: TreasuryHot, Chain: "solana", Address: "hot"}
+	tid := newUUID()
+	tips := &fakeTips{tips: map[string]*Tip{
+		tid.String(): {ID: tid, SenderUserID: sender, RecipientUserID: recip, NetCredits: 950, FeeAmount: 50, Status: "pending"},
+	}}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{strs: map[string]string{"stablecoin.assets": `["usdc"]`}})
+	svc.SetTipReader(tips)
+
+	payload, _ := json.Marshal(TipSettlePayload{TipID: tid.String()})
+	if err := svc.ProcessTipSettle(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("settles = %d, want 1", len(p.transfers))
+	}
+	if p.transfers[0].AmountMinor != 950 || p.transfers[0].FeeMinor != 50 || p.transfers[0].Idempotency != "tip:"+tid.String() {
+		t.Fatalf("settle legs = %+v", p.transfers[0])
+	}
+	if tips.tips[tid.String()].Status != "completed" {
+		t.Fatalf("tip status = %s — lifecycle not closed", tips.tips[tid.String()].Status)
+	}
+	if len(tips.settled) != 1 {
+		t.Fatalf("MarkSettled calls = %d", len(tips.settled))
+	}
+}
+
+func TestSignerExpiringWithin(t *testing.T) {
+	t.Parallel()
+	cutoff := time.Now().Add(30 * 24 * time.Hour)
+	cases := []struct {
+		name string
+		w    *Wallet
+		want bool
+	}{
+		{"no signer", &Wallet{}, false},
+		{"expires in 10d", &Wallet{DelegatedSigner: &DelegatedSigner{Scopes: []SignerScope{
+			{Asset: "usdc", ExpiresAt: time.Now().Add(10 * 24 * time.Hour)}}}}, true},
+		{"expires in 300d", &Wallet{DelegatedSigner: &DelegatedSigner{Scopes: []SignerScope{
+			{Asset: "usdc", ExpiresAt: time.Now().Add(300 * 24 * time.Hour)}}}}, false},
+		{"nearest scope wins", &Wallet{DelegatedSigner: &DelegatedSigner{Scopes: []SignerScope{
+			{Asset: "usdt", ExpiresAt: time.Now().Add(300 * 24 * time.Hour)},
+			{Asset: "usdc", ExpiresAt: time.Now().Add(5 * 24 * time.Hour)}}}}, true},
+	}
+	for _, c := range cases {
+		if got := signerExpiringWithin(c.w, cutoff); got != c.want {
+			t.Errorf("%s: signerExpiringWithin = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

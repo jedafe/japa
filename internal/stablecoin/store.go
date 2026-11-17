@@ -165,6 +165,11 @@ func (st *Store) InsertActivity(ctx context.Context, a Activity) (*Activity, err
 		Status:             a.Status,
 		OccurredAt:         pgtype.Timestamptz{Time: a.OccurredAt, Valid: !a.OccurredAt.IsZero()},
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// ON CONFLICT DO NOTHING returns no row on a tx_signature replay —
+		// idempotent dedupe hit, not a failure (webhook replays, task retries).
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: insert activity: %w", err)
 	}

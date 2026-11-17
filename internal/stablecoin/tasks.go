@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -81,19 +82,39 @@ func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error
 		}
 		return s.RotateSignerScopes(ctx, w)
 	}
-	// Sweep: rotate every active wallet whose nearest scope expires inside
-	// the renew window — registration needs member OTP, so expiry is a
-	// blast-radius control (§128.2).
+	// Sweep: rotate only active wallets whose nearest scope expires inside
+	// the renew window — registration needs member OTP, so an unconditional
+	// sweep would spam every member with a ceremony each cron tick.
+	window := time.Duration(s.settings.GetIntOr(ctx, "stablecoin.signer_renew_window_days", 30)) * 24 * time.Hour
+	cutoff := time.Now().Add(window)
 	active, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, 500)
 	if err != nil {
 		return err
 	}
 	for i := range active {
+		if !signerExpiringWithin(&active[i], cutoff) {
+			continue
+		}
 		if err := s.RotateSignerScopes(ctx, &active[i]); err != nil {
 			return fmt.Errorf("%s: rotate %s: %w", TaskSignerScopeRenew, active[i].ID, err)
 		}
 	}
 	return nil
+}
+
+// signerExpiringWithin reports whether the wallet's nearest delegated-signer
+// scope expires before the cutoff — the sweep's rotation eligibility check.
+func signerExpiringWithin(w *Wallet, cutoff time.Time) bool {
+	if w.DelegatedSigner == nil || len(w.DelegatedSigner.Scopes) == 0 {
+		return false // nothing registered — provisioning retries registration
+	}
+	nearest := time.Time{}
+	for _, sc := range w.DelegatedSigner.Scopes {
+		if nearest.IsZero() || sc.ExpiresAt.Before(nearest) {
+			nearest = sc.ExpiresAt
+		}
+	}
+	return !nearest.IsZero() && nearest.Before(cutoff)
 }
 
 // ProcessEscrowTimeout handles stablecoin:escrow_timeout (cron).
@@ -185,7 +206,7 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if assets := s.assetList(ctx); len(assets) > 0 {
 		asset = assets[0]
 	}
-	_, err = s.Settle(ctx, SettleInput{
+	res, err := s.Settle(ctx, SettleInput{
 		FromUserID:  tip.SenderUserID,
 		ToAddress:   rw.Address,
 		Asset:       asset,
@@ -194,5 +215,14 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 		Idempotency: "tip:" + tip.ID.String(),
 		Reference:   "tip",
 	})
-	return err
+	if err != nil {
+		return err // task retries — the sweep catches permanently-stuck tips
+	}
+	// Lifecycle: the onchain op is submitted — close the tip out so it isn't
+	// swept as stale-pending or double-settled on replay.
+	if err := s.tipReader.MarkSettled(ctx, tipID, res.TxSignature); err != nil {
+		return fmt.Errorf("%s: tip settled onchain but status update failed (sig %s): %w",
+			TaskTipSettleStablecoin, res.TxSignature, err)
+	}
+	return nil
 }
