@@ -90,6 +90,12 @@ func (s *Service) SubscribeTag(ctx context.Context, userID pgtype.UUID, rawTag, 
 		if strings.ContainsAny(domain, " \t\r\n/?#@") || !validHost(domain) {
 			return TagSubscription{}, ErrInvalidDomain
 		}
+		if s.isLocalHost(domain) {
+			// Local tags work natively — a "remote" sub on our own host
+			// could never deliver Follow{Hashtag} and its warrant can
+			// never match a remote_actors row.
+			return TagSubscription{}, ErrInvalidDomain
+		}
 		if !s.instanceAllowed(ctx, domain) {
 			return TagSubscription{}, ErrRemoteBlocked
 		}
@@ -259,7 +265,7 @@ func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTa
 	var domains []string
 	pinned := false
 	if d := strings.ToLower(strings.TrimSpace(rawDomain)); d != "" {
-		if !validHost(d) {
+		if !validHost(d) || s.isLocalHost(d) {
 			return RemoteSearchResult{}, ErrInvalidDomain
 		}
 		domains = []string{d}
@@ -279,6 +285,9 @@ func (s *Service) RemoteTagSearch(ctx context.Context, userID pgtype.UUID, rawTa
 	res := RemoteSearchResult{Tag: tag, Domains: []string{}, Items: []RemoteTimelineItem{}, Errors: []RemoteSearchError{}}
 	allowed := make([]string, 0, len(domains))
 	for _, d := range domains {
+		if s.isLocalHost(d) {
+			continue // legacy rows pre-dating the local-domain guards
+		}
 		if s.instanceAllowed(ctx, d) {
 			allowed = append(allowed, d)
 		} else if pinned {
