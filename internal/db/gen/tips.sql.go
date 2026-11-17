@@ -830,11 +830,11 @@ const insertTip = `-- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
     recipient_wallet_user_id, recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
     fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id,
-    message, is_anonymous, status, idempotency_key)
+    message, is_anonymous, status, idempotency_key, settled_via)
 VALUES ($1, $2, $3, $4,
     $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16,
-    $17, $18, $19, $20)
+    $17, $18, $19, $20, $21)
 RETURNING id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url, recipient_space_id, recipient_wallet_user_id, settled_via
 `
 
@@ -859,6 +859,7 @@ type InsertTipParams struct {
 	IsAnonymous             bool        `json:"is_anonymous"`
 	Status                  string      `json:"status"`
 	IdempotencyKey          *string     `json:"idempotency_key"`
+	SettledVia              string      `json:"settled_via"`
 }
 
 func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, error) {
@@ -883,6 +884,7 @@ func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, erro
 		arg.IsAnonymous,
 		arg.Status,
 		arg.IdempotencyKey,
+		arg.SettledVia,
 	)
 	var i Tip
 	err := row.Scan(

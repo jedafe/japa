@@ -91,8 +91,12 @@ func (s *Service) SettleTipBacked(ctx context.Context, tipID, recipientUserID pg
 		return false, fmt.Errorf("stablecoin: USD credits rate missing — cannot price backed settle")
 	}
 	minor := int64(math.Round(float64(netCredits) * 1_000_000 / rate))
+	asset := AssetUSDC
+	if assets := s.assetList(ctx); len(assets) > 0 {
+		asset = assets[0] // configured rail asset — the hot wallet must hold it
+	}
 	res, err := s.provider.Transfer(ctx, hot.Locator, TransferInput{
-		Asset:         AssetUSDC,
+		Asset:         asset,
 		RecipientAddr: w.Address,
 		AmountMinor:   minor,
 		Idempotency:   "tip:fiat:" + tipID.String(),

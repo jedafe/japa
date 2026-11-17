@@ -82,6 +82,11 @@ func (s *Service) PrepareEscrow(ctx context.Context, bookingID pgtype.UUID, call
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: seller wallet: %w", err)
 	}
+	// Unprovisioned parties can't escrow — booking doesn't require a wallet,
+	// so either side may have never opened the wallet surface.
+	if buyer == nil || seller == nil {
+		return nil, ErrWalletNotFound
+	}
 	// Compliance-held wallets can't escrow — a suspended party may not open
 	// new money movement (mirrors the settle-side recipient allowlist).
 	if buyer.Status == WalletStatusSuspended || seller.Status == WalletStatusSuspended {

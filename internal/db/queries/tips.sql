@@ -73,11 +73,11 @@ UPDATE tip_external_links SET click_count = click_count + 1 WHERE id = @id;
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
     recipient_wallet_user_id, recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
     fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id,
-    message, is_anonymous, status, idempotency_key)
+    message, is_anonymous, status, idempotency_key, settled_via)
 VALUES (@sender_user_id, @external_sender_name, @recipient_type, @recipient_user_id,
     @recipient_wallet_user_id, @recipient_organization_id, @recipient_space_id, @content_id, @method, @credits_amount,
     @fiat_amount, @fiat_currency, @fee_amount, @net_credits, @payment_id, @oc_contribution_id,
-    @message, @is_anonymous, @status, @idempotency_key)
+    @message, @is_anonymous, @status, @idempotency_key, @settled_via)
 RETURNING *;
 
 -- name: GetTip :one

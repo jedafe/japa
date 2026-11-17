@@ -105,6 +105,7 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		IsAnonymous:             in.IsAnonymous,
 		Status:                  StatusPending,
 		IdempotencyKey:          strPtrOrNil(idemKey),
+		SettledVia:              "credits", // provisional — SettleTip overwrites with the real rail
 	})
 	if err != nil {
 		// tips_idem_unique (000949): concurrent same-key replay.

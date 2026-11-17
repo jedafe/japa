@@ -104,6 +104,7 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		IsAnonymous:             p.isAnonymous,
 		Status:                  StatusCompleted,
 		IdempotencyKey:          strPtrOrNil(p.idempotencyKey),
+		SettledVia:              p.ledgerType, // 'credits' — minted into the §28 ledger
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError

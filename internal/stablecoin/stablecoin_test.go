@@ -849,6 +849,7 @@ func TestProcessTipSettleLifecycle(t *testing.T) {
 	}}
 	svc := newSvc(st, p, newFakeVK(), &fakeSettings{strs: map[string]string{"stablecoin.assets": `["usdc"]`}})
 	svc.SetTipReader(tips)
+	svc.SetCreditRater(&fakeRater{n: 100}) // §58 rate — settle math fails closed without it
 
 	payload, _ := json.Marshal(TipSettlePayload{TipID: tid.String()})
 	if err := svc.ProcessTipSettle(context.Background(), payload); err != nil {

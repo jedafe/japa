@@ -162,6 +162,7 @@ func (s *Service) createStablecoinTip(ctx context.Context, senderID pgtype.UUID,
 		IsAnonymous:             in.IsAnonymous,
 		Status:                  StatusPending,
 		IdempotencyKey:          strPtrOrNil(idemKey),
+		SettledVia:              "backed", // pending — the onchain rail is the only settle path
 	})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateKey) && idemKey != "" {
@@ -188,7 +189,9 @@ func (s *Service) createStablecoinTip(ctx context.Context, senderID pgtype.UUID,
 		}
 	}
 
-	s.emitActivity(ctx, senderID, wallet.ActivityKeyTipSent, "tip:"+tip.ID.String())
+	// tip.sent points fire on settle (MarkStablecoinSettled) like every
+	// other rail — emitting here would award points for a tip that may
+	// never land.
 	return CreateTipResult{Tip: tipFromRow(tip)}, nil
 }
 
@@ -365,6 +368,7 @@ func tipFromRow(t gen.Tip) Tip {
 		Message:               t.Message,
 		IsAnonymous:           t.IsAnonymous,
 		Status:                t.Status,
+		SettledVia:            t.SettledVia,
 		CreatedAt:             t.CreatedAt,
 		UpdatedAt:             t.UpdatedAt,
 	}

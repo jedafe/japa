@@ -164,6 +164,7 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 		OcContributionID:   &c.ID,
 		ExternalSenderName: strPtrOrNil(c.FromName),
 		Status:             StatusCompleted,
+		SettledVia:         "external", // settled off-platform — no ledger rail involved
 	}
 	if owner.Type == RecipientUser {
 		params.RecipientUserID = owner.ID

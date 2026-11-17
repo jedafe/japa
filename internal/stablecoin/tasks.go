@@ -3,8 +3,10 @@ package stablecoin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -81,7 +83,7 @@ func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error
 		ttl = 3600
 	}
 	mark := func(w *Wallet) error {
-		if !signerExpiringWithin(w, cutoff) {
+		if w == nil || !signerExpiringWithin(w, cutoff) {
 			return nil
 		}
 		if err := s.vk.Set(ctx, "jc:stablecoin:signer_expiring:"+w.UserID, "1", ttl); err != nil {
@@ -253,25 +255,36 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if tip.Status != "pending" && tip.Status != "settling" && tip.Status != "failed" {
 		return nil // already settled/cancelled — idempotent replay
 	}
-	// Claim before money moves: pending/failed → 'settling' atomically
-	// excludes racing refunds/sweeps (they only touch 'pending') while
-	// the onchain legs run outside any DB tx.
+	// Resolve the recipient's wallet BEFORE claiming — tips settle
+	// member→member onchain. Unprovisioned → auto-provision: the wallet is
+	// counterfactual (deploys on first tx, costs nothing dormant) and
+	// receiving needs no signer — same rule as SettleTipBacked's fiat path.
+	// A permanently-unprovisionable recipient must leave the tip 'pending'
+	// so the TTL sweep fails it and the sender isn't charged for nothing.
+	rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
+	if err != nil {
+		if !errors.Is(err, ErrWalletNotFound) {
+			return err
+		}
+		if rw, err = s.ProvisionWallet(ctx, tip.RecipientUserID, ""); err != nil {
+			return fmt.Errorf("%s: recipient provision: %w", TaskTipSettleStablecoin, err)
+		}
+	}
+	if rw == nil {
+		return fmt.Errorf("%s: recipient wallet not provisioned", TaskTipSettleStablecoin)
+	}
+	if rw.Status == WalletStatusSuspended {
+		return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
+	}
+	// Claim last, immediately before the send: pending/failed → 'settling'
+	// atomically excludes racing refunds/sweeps (they only touch 'pending')
+	// while the onchain legs run outside any DB tx.
 	claimed, err := s.tipReader.ClaimTipSettle(ctx, tipID)
 	if err != nil {
 		return fmt.Errorf("%s: claim tip: %w", TaskTipSettleStablecoin, err)
 	}
 	if !claimed {
 		return nil // terminal state reached between read and claim
-	}
-	// Resolve the recipient's wallet — tips settle member→member onchain.
-	rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
-	if err != nil {
-		return err
-	}
-	if rw == nil {
-		// Recipient never provisioned — retry lets a later-provisioned
-		// wallet still receive; deadletter after retry budget flags ops.
-		return fmt.Errorf("%s: recipient wallet not provisioned", TaskTipSettleStablecoin)
 	}
 	// Settle from the sender's wallet: net credits → recipient, fee leg →
 	// treasury hot. Settle enforces killswitch + per-wallet daily cap.
@@ -280,18 +293,30 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 		asset = assets[0]
 	}
 	// Tip legs are credits-denominated; the onchain transfer is USD-token
-	// minor — convert at the seam (§58 credits_per_unit on the USD row).
+	// minor. Settlement math fails closed on a missing rate — the
+	// creditsPerUSD fallback is display-only per its own contract.
+	rate := s.creditsPerUnit(ctx, "usd")
+	if rate <= 0 {
+		return fmt.Errorf("%s: USD credits rate missing — cannot price settle", TaskTipSettleStablecoin)
+	}
+	toMinor := func(credits int64) int64 {
+		return int64(math.Round(float64(credits) * 1_000_000 / rate))
+	}
 	res, err := s.Settle(ctx, SettleInput{
 		FromUserID:  tip.SenderUserID,
 		ToAddress:   rw.Address,
 		Asset:       asset,
-		AmountMinor: s.creditsToUsdMinor(ctx, tip.NetCredits),
-		FeeMinor:    s.creditsToUsdMinor(ctx, tip.FeeAmount),
+		AmountMinor: toMinor(tip.NetCredits),
+		FeeMinor:    toMinor(tip.FeeAmount),
 		Idempotency: "tip:" + tip.ID.String(),
 		Reference:   "tip",
 	})
 	if err != nil {
-		return err // task retries — the sweep catches permanently-stuck tips
+		// Task retries — the idempotency key dedupes the resend. A tip that
+		// deadletters stays 'settling' for ops: the stale sweep is
+		// pending-only by design, since a claimed tip may have a send in
+		// flight and must never be auto-refunded.
+		return err
 	}
 	// Lifecycle: the onchain op is submitted — close the tip out so it isn't
 	// swept as stale-pending or double-settled on replay.

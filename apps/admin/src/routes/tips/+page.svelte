@@ -120,6 +120,7 @@
 			{ label: t('tips.field.fee', 'Fee (credits)'), value: str('fee_amount') || '0' },
 			{ label: t('tips.field.net', 'Net credits'), value: str('net_credits') || '0' },
 			{ label: t('tips.status', 'Status'), value: str('status') || '—' },
+			{ label: t('tips.field.settled_via', 'Settled via'), value: str('settled_via') || '—' },
 			{
 				label: t('tips.field.anonymous', 'Anonymous'),
 				value: d.is_anonymous ? t('common.yes', 'Yes') : t('common.no', 'No')
@@ -179,6 +180,7 @@
 				type: 'select',
 				options: [
 					{ value: 'pending', label: t('tips.status.pending', 'Pending') },
+					{ value: 'settling', label: t('tips.status.settling', 'Settling') },
 					{ value: 'completed', label: t('tips.status.completed', 'Completed') },
 					{ value: 'failed', label: t('tips.status.failed', 'Failed') },
 					{ value: 'refunded', label: t('tips.status.refunded', 'Refunded') }
@@ -202,11 +204,14 @@
 				options: [
 					{ value: 'points', label: t('tips.method.points', 'Points') },
 					{ value: 'credits', label: t('tips.method.credits', 'Credits') },
+					{ value: 'stablecoin', label: t('tips.method.stablecoin', 'Stablecoin') },
 					{ value: 'stripe', label: 'Stripe' },
 					{ value: 'paystack', label: 'Paystack' },
 					{ value: 'nowpayments', label: 'NOWPayments' },
 					{ value: 'manual_transfer', label: t('tips.method.manual_transfer', 'Manual transfer') },
-					{ value: 'opencollective', label: 'Open Collective' }
+					{ value: 'opencollective', label: 'Open Collective' },
+					{ value: 'kofi', label: 'Ko-fi' },
+					{ value: 'buymeacoffee', label: 'Buy Me a Coffee' }
 				]
 			}
 		],

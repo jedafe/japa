@@ -193,6 +193,10 @@ func (h *Handlers) CreateOnrampSession(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "wallet_not_found", "Stablecoin wallet not provisioned")
 		return
 	}
+	if wallet.Status == WalletStatusSuspended {
+		handleError(w, ErrWalletSuspended)
+		return
+	}
 	if req.Asset != "" && !slices.Contains(h.svc.assetList(r.Context()), req.Asset) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_asset", "Asset not supported")
 		return

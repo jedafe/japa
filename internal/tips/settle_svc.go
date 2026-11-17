@@ -45,18 +45,6 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		return ErrInvalidStatus
 	}
 
-	// Claim before money moves: pending/failed → 'settling' atomically
-	// excludes racing refunds/sweeps (they only touch 'pending') while
-	// the onchain leg runs outside any DB tx. A terminal state (completed/
-	// refunded) means a prior attempt already finished — idempotent no-op.
-	claimed, err := s.store.claimTipSettle(ctx, tipID)
-	if err != nil {
-		return fmt.Errorf("claiming tip: %w", err)
-	}
-	if !claimed {
-		return nil
-	}
-
 	walletOwner, err := s.walletOwnerFor(ctx, tip)
 	if err != nil {
 		return err
@@ -85,6 +73,21 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 			// rather than a zero-credit tip.
 			net = 1
 		}
+	}
+
+	// Claim last, immediately before the settle route: pending/failed →
+	// 'settling' atomically excludes racing refunds/sweeps (they only touch
+	// 'pending') while the onchain leg runs outside any DB tx. Resolvable
+	// failures above (owner lookup, rate resolution) keep the tip 'pending'
+	// for the TTL sweep rather than parking it in 'settling'. A terminal
+	// state (completed/refunded) means a prior attempt already finished —
+	// idempotent no-op.
+	claimed, err := s.store.claimTipSettle(ctx, tipID)
+	if err != nil {
+		return fmt.Errorf("claiming tip: %w", err)
+	}
+	if !claimed {
+		return nil
 	}
 
 	// §128: when the stablecoin rail is live a fiat tip settles to the
@@ -138,8 +141,9 @@ func (s *Service) FailTip(ctx context.Context, tipID pgtype.UUID) error {
 
 // MarkStablecoinSettled closes an onchain-settled tip — called by the
 // stablecoin worker after tips:settle_stablecoin lands the delegated-signer
-// transfer. Reuses the conditional settleTip update (pending/failed →
-// completed) so a refund racing the settle can't be resurrected. txSig is
+// transfer. Reuses the conditional settleTip update (pending/failed/
+// settling → completed) so a refund racing the settle can't be
+// resurrected. txSig is
 // the executed signature — kept in the seam for a future settlement-trail
 // column; the stablecoin mirror already records it onchain-side.
 func (s *Service) MarkStablecoinSettled(ctx context.Context, tipID pgtype.UUID, _ string) error {
@@ -150,7 +154,15 @@ func (s *Service) MarkStablecoinSettled(ctx context.Context, tipID pgtype.UUID, 
 	if tip.Status == StatusCompleted {
 		return nil // replay — already closed
 	}
-	return s.store.settleTip(ctx, tipID, tip.NetCredits, "backed")
+	if err := s.store.settleTip(ctx, tipID, tip.NetCredits, "backed"); err != nil {
+		return err
+	}
+	// The recipient's money actually arrived — same tip.sent points +
+	// tip.received notify the credits/fiat settle paths emit
+	// (fire-and-forget).
+	s.emitActivity(ctx, tip.SenderUserID, wallet.ActivityKeyTipSent, "tip:"+tipID.String())
+	s.notifyReceived(ctx, tipID)
+	return nil
 }
 
 // ClaimTipSettle exposes the pending/failed → settling claim to other

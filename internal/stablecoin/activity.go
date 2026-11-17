@@ -305,10 +305,17 @@ func (s *Service) fiatToUsdMinor(ctx context.Context, fiatMinor int64, currency 
 	switch code {
 	case "":
 		return 0, fmt.Errorf("stablecoin: booking has no price currency")
-	case "credits":
-		return s.creditsToUsdMinor(ctx, fiatMinor), nil
 	case "usd":
 		return fiatMinor * 10_000, nil
+	}
+	// Both remaining paths convert through the USD credits rate — fail
+	// closed when it is missing (escrow settlement must never guess).
+	usdPer := s.creditsPerUnit(ctx, "usd")
+	if usdPer <= 0 {
+		return 0, fmt.Errorf("stablecoin: USD credits rate missing — cannot price escrow")
+	}
+	if code == "credits" {
+		return int64(math.Round(float64(fiatMinor) * 1_000_000 / usdPer)), nil
 	}
 	fiatPer := s.creditsPerUnit(ctx, code)
 	if fiatPer <= 0 {
@@ -319,7 +326,7 @@ func (s *Service) fiatToUsdMinor(ctx context.Context, fiatMinor int64, currency 
 	// divisor is the ISO minor-unit exponent (JPY 0, KWD 3) — not a fixed 100.
 	div := math.Pow10(wallet.CurrencyExponent(code))
 	credits := float64(fiatMinor) * fiatPer / div
-	return int64(math.Round(credits * 1_000_000 / s.creditsPerUSD(ctx))), nil
+	return int64(math.Round(credits * 1_000_000 / usdPer)), nil
 }
 
 // FeedEntry is one row of the unified member activity feed —

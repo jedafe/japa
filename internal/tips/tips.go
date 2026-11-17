@@ -226,6 +226,9 @@ type Tip struct {
 	Message               *string            `json:"message,omitempty"`
 	IsAnonymous           bool               `json:"is_anonymous"`
 	Status                string             `json:"status"`
+	// SettledVia records which rail landed the tip — credits (bonus
+	// ledger), backed (onchain wallet), or external (off-platform).
+	SettledVia            string             `json:"settled_via,omitempty"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at,omitempty"`
 }
