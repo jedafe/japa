@@ -306,7 +306,7 @@ func TestDBFiatTipOneCreditFloor(t *testing.T) {
 
 	pay := &fakePayments{}
 	svc := NewService(d)
-	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.min_fiat_minor": 1}}
+	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.min_fiat_minor": 1, "tips.min_fiat_credits": 1}}
 	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 	svc.payments = pay
 
@@ -341,6 +341,25 @@ func TestDBFiatTipOneCreditFloor(t *testing.T) {
 	}
 	if pay.called != 1 {
 		t.Fatalf("payment not created for a valid tip")
+	}
+
+	// Currency-aware bound: with the default-ish 100-credit floor, the same
+	// ~1.2-credit tip is below the platform minimum.
+	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.min_fiat_minor": 1, "tips.min_fiat_credits": 100}}
+	if _, err := svc.CreateTip(ctx, sender, CreateTipInput{
+		RecipientType: RecipientUser, RecipientUserID: recip,
+		Method: "stripe", FiatAmount: okAmt, FiatCurrency: "NGN",
+	}, ""); !errors.Is(err, ErrBelowMinimum) {
+		t.Fatalf("100-credit floor: got %v, want ErrBelowMinimum", err)
+	}
+
+	// Credit cap: ~200-credit tip against max_fiat_credits=2 → above_maximum.
+	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.min_fiat_minor": 1, "tips.min_fiat_credits": 1, "tips.max_fiat_credits": 2}}
+	if _, err := svc.CreateTip(ctx, sender, CreateTipInput{
+		RecipientType: RecipientUser, RecipientUserID: recip,
+		Method: "stripe", FiatAmount: okAmt * 200, FiatCurrency: "NGN",
+	}, ""); !errors.Is(err, ErrAboveMaximum) {
+		t.Fatalf("credit cap: got %v, want ErrAboveMaximum", err)
 	}
 }
 

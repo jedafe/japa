@@ -7,6 +7,10 @@
 -- Rates re-anchored from the NGN-anchored table to approximate USD FX
 -- (ops should refresh periodically — see §58). Position puts USD first.
 --
+-- Deploy order: roll app binaries with float64 consumers FIRST, then run
+-- this migration — the numeric column is unreadable by pre-change code
+-- (int32 scans fail on numeric even for integral values like 100.00000000).
+--
 -- Ref: .jeos/sections/58-credit-currency-system.md
 
 BEGIN;

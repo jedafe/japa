@@ -210,12 +210,12 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		Name           string  `json:"name"`
-		Symbol         string  `json:"symbol"`
-		CreditsPerUnit float64 `json:"credits_per_unit"`
-		IsActive       *bool   `json:"is_active"`
-		Position       int     `json:"position"`
-		Reason         string  `json:"reason"`
+		Name           *string  `json:"name"`
+		Symbol         *string  `json:"symbol"`
+		CreditsPerUnit *float64 `json:"credits_per_unit"`
+		IsActive       *bool    `json:"is_active"`
+		Position       *int     `json:"position"`
+		Reason         string   `json:"reason"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -228,18 +228,43 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	isActive := true
+	// PATCH semantics: merge onto the existing row — omitted fields keep
+	// their values (a rate update must not reset is_active/position).
+	existing, err := h.Service.getCurrencyByCode(r.Context(), code)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	name, symbol := existing.Name, existing.Symbol
+	cpu, isActive, position := existing.CreditsPerUnit, existing.IsActive, existing.Position
+	if input.Name != nil {
+		name = *input.Name
+	}
+	if input.Symbol != nil {
+		symbol = *input.Symbol
+	}
+	if input.CreditsPerUnit != nil {
+		if *input.CreditsPerUnit <= 0 || *input.CreditsPerUnit >= 1e12 {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive and below 1e12 (numeric(20,8) bound)")
+			return
+		}
+		cpu = *input.CreditsPerUnit
+	}
 	if input.IsActive != nil {
 		isActive = *input.IsActive
+	}
+	if input.Position != nil {
+		position = int32(*input.Position) // #nosec
 	}
 
 	currency, err := h.Service.updateCurrency(r.Context(), gen.UpdateCurrencyParams{
 		Code:           code,
-		Name:           input.Name,
-		Symbol:         input.Symbol,
-		CreditsPerUnit: input.CreditsPerUnit,
+		Name:           name,
+		Symbol:         symbol,
+		CreditsPerUnit: cpu,
 		IsActive:       isActive,
-		Position:       int32(input.Position), // #nosec
+		Position:       position,
 	})
 	if err != nil {
 		handleServiceError(w, err)

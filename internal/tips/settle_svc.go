@@ -66,6 +66,12 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		gross := int64(math.Round(float64(*tip.FiatAmount) * cur.CreditsPerUnit / float64(div)))
 		fee := gross * int64(s.feePercent(ctx)) / 100
 		net = gross - fee
+		if net < 1 {
+			// Legacy rows only reach here when the stored quote is 0 —
+			// the donor paid real money, so settle the 1-credit floor
+			// rather than a zero-credit tip.
+			net = 1
+		}
 	}
 
 	if err := s.store.settleFiatTip(ctx, tipID, net, walletOwner); err != nil {

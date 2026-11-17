@@ -67,10 +67,23 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		gross := int64(math.Round(float64(amount) * cur.CreditsPerUnit / float64(div)))
 		feeCredits = gross * int64(s.feePercent(ctx)) / 100
 		netCredits = gross - feeCredits
-		if netCredits < 1 {
-			// Platform floor (§125): the recipient must net at least 1 credit —
-			// weak-currency amounts can round to zero (NGN 0.065/₦), and a
-			// 100% fee config would zero the net on any amount.
+		if s.settings != nil {
+			if max := int64(s.settings.GetIntOr(ctx, "tips.max_fiat_credits", 1_000_000)); gross > max {
+				return CreateTipResult{}, ErrAboveMaximum
+			}
+		}
+		// Currency-aware floor (§125): the recipient must net at least
+		// tips.min_fiat_credits (default 100 ≈ $1), clamped to ≥1 — weak-
+		// currency amounts can round to zero (NGN 0.065/₦), and a 100%
+		// fee config would zero the net on any amount.
+		minCredits := int64(100)
+		if s.settings != nil {
+			minCredits = int64(s.settings.GetIntOr(ctx, "tips.min_fiat_credits", 100))
+		}
+		if minCredits < 1 {
+			minCredits = 1
+		}
+		if netCredits < minCredits {
 			return CreateTipResult{}, ErrBelowMinimum
 		}
 	}
