@@ -344,10 +344,11 @@ func (st *Store) ListWallets(ctx context.Context, status, q string, limit, offse
 }
 
 // ListWalletsByStatus feeds the reconcile sweep — active wallets only.
-func (st *Store) ListWalletsByStatus(ctx context.Context, status string, limit int32) ([]Wallet, error) {
+func (st *Store) ListWalletsByStatus(ctx context.Context, status string, limit, offset int32) ([]Wallet, error) {
 	rows, err := st.q.ListStablecoinWalletsByStatus(ctx, gen.ListStablecoinWalletsByStatusParams{
-		Status:     status,
-		LimitCount: limit,
+		Status:      status,
+		LimitCount:  limit,
+		OffsetCount: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stablecoin: list wallets: %w", err)

@@ -220,7 +220,7 @@ func (s *Service) ConfirmEscrowFunded(ctx context.Context, escrowID pgtype.UUID,
 	// but a fabricated sig shouldn't mark the escrow funded.
 	buyer, berr := s.walletByID(ctx, e.BuyerWalletID)
 	if berr == nil && fundedSig != "" {
-		if events, perr := s.provider.Activity(ctx, buyer.Locator, ""); perr == nil {
+		if events, _, perr := s.provider.Activity(ctx, buyer.Locator, ""); perr == nil {
 			seen := false
 			for _, ev := range events {
 				if ev.TxSignature == fundedSig {

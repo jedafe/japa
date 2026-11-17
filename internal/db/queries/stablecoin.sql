@@ -43,7 +43,7 @@ WHERE id = @id;
 SELECT * FROM stablecoin_wallets
 WHERE status = @status
 ORDER BY created_at ASC
-LIMIT @limit_count;
+LIMIT @limit_count OFFSET @offset_count;
 
 -- name: ListStablecoinWallets :many
 -- Admin wallet registry — optional status filter ('' = all), address/user

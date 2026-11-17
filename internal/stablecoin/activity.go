@@ -317,42 +317,56 @@ func (s *Service) Reconcile(ctx context.Context) error {
 }
 
 func (s *Service) listActiveWallets(ctx context.Context) ([]Wallet, error) {
-	return s.store.ListWalletsByStatus(ctx, WalletStatusActive, 500)
-}
-
-// reconcileWallet pulls provider activity for one wallet, mirrors gaps,
-// and rewrites the balance mirror cache.
-func (s *Service) reconcileWallet(ctx context.Context, w Wallet) error {
-	events, err := s.provider.Activity(ctx, w.Locator, "")
-	if err != nil {
-		return fmt.Errorf("provider activity: %w", err)
-	}
-	for _, ev := range events {
-		if err := s.MirrorActivity(ctx, ev, w.ID); err != nil {
-			slog.Warn("stablecoin: reconcile mirror failed", "wallet_id", w.ID, "sig", ev.TxSignature, "error", err)
+	// Page the active set — a single 500-row fetch would silently drop
+	// every wallet past the cap on each cron tick.
+	const pageSize = 500
+	var all []Wallet
+	for off := int32(0); off < 10_000; off += pageSize {
+		page, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, pageSize, off)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < pageSize {
+			break
 		}
 	}
+	return all, nil
+}
 
-	// Recompute the backed-credits mirror from confirmed rows.
-	if wid, perr := pgUUID(w.ID); perr == nil {
-		if rows, aerr := s.store.ListActivityByWallet(ctx, wid, 1000, 0); aerr == nil {
-			var bal int64
-			for _, a := range rows {
-				if a.Status != "confirmed" {
-					continue
-				}
-				if a.Direction == "in" {
-					bal += a.CreditsAmount
-				} else {
-					bal -= a.CreditsAmount
-				}
+// reconcileWallet pulls provider activity for one wallet (paged), mirrors
+// gaps, and rewrites the balance mirror cache from chain-reported balances.
+func (s *Service) reconcileWallet(ctx context.Context, w Wallet) error {
+	cursor := ""
+	for page := 0; page < 10; page++ { // bounded — a runaway cursor loop can't wedge the cron tick
+		events, next, err := s.provider.Activity(ctx, w.Locator, cursor)
+		if err != nil {
+			return fmt.Errorf("provider activity: %w", err)
+		}
+		for _, ev := range events {
+			if err := s.MirrorActivity(ctx, ev, w.ID); err != nil {
+				slog.Warn("stablecoin: reconcile mirror failed", "wallet_id", w.ID, "sig", ev.TxSignature, "error", err)
 			}
-			if bal < 0 {
-				bal = 0
+		}
+		if next == "" || len(events) == 0 {
+			break
+		}
+		cursor = next
+	}
+
+	// Balance mirror: chain balances are truth (the activity mirror can
+	// lag). Convert raw minor to display credits via the currencies rate.
+	if pw, err := s.provider.GetWallet(ctx, w.Locator); err == nil && len(pw.Balances) > 0 {
+		creditsPer := s.creditsPerUSD(ctx)
+		var bal int64
+		for asset, minor := range pw.Balances {
+			if asset != "usdc" && asset != "usdt" {
+				continue
 			}
-			if err := s.vk.Set(ctx, "jc:stablecoin:mirror:"+w.UserID, strconv.FormatInt(bal, 10), 3600); err != nil {
-				return fmt.Errorf("mirror cache: %w", err)
-			}
+			bal += minor * creditsPer / 1_000_000
+		}
+		if err := s.vk.Set(ctx, "jc:stablecoin:mirror:"+w.UserID, strconv.FormatInt(bal, 10), 3600); err != nil {
+			return fmt.Errorf("mirror cache: %w", err)
 		}
 	}
 	return nil

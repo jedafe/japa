@@ -87,7 +87,7 @@ func (s *Service) ProcessSignerScopeRenew(ctx context.Context, raw []byte) error
 	// sweep would spam every member with a ceremony each cron tick.
 	window := time.Duration(s.settings.GetIntOr(ctx, "stablecoin.signer_renew_window_days", 30)) * 24 * time.Hour
 	cutoff := time.Now().Add(window)
-	active, err := s.store.ListWalletsByStatus(ctx, WalletStatusActive, 500)
+	active, err := s.listActiveWallets(ctx)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (s *Service) ProcessOfframp(ctx context.Context, _ []byte) error {
 		if err != nil {
 			continue
 		}
-		events, err := s.provider.Activity(ctx, w.Locator, "")
+		events, _, err := s.provider.Activity(ctx, w.Locator, "")
 		if err != nil {
 			slog.Warn("stablecoin: offramp poll failed", "wallet", w.Locator, "error", err)
 			continue

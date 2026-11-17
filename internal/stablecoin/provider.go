@@ -38,7 +38,9 @@ type Provider interface {
 
 	// Activity returns onchain events for a wallet (fallback when webhooks
 	// miss; reconcile sweep consumes this).
-	Activity(ctx context.Context, locator string, cursor string) ([]ProviderEvent, error)
+	// Activity returns one page of wallet events; nextCursor is empty when
+	// the page is last. Callers page until nextCursor=="".
+	Activity(ctx context.Context, locator string, cursor string) (events []ProviderEvent, nextCursor string, err error)
 
 	// VerifyWebhook authenticates an inbound provider event.
 	VerifyWebhook(payload []byte, signature string) error

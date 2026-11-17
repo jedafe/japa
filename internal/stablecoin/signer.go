@@ -116,7 +116,8 @@ func (s *Service) dailySettledMinor(ctx context.Context, w *Wallet, asset string
 // BuildMemberWithdrawal returns the signable op for
 // POST /me/stablecoin-wallet/withdrawals. Japa.to cannot execute member
 // withdrawals — the member's passkey signs; we only build and relay.
-// The platform fee batches into the signed send (§128.6).
+// The platform fee is collected post-confirmation by collectWithdrawalFee —
+// a member-signed send can't carry a second delegated leg (§128.6).
 func (s *Service) BuildMemberWithdrawal(ctx context.Context, userID pgtype.UUID, in WithdrawalInput) (SignableOp, error) {
 	w, err := s.store.GetWalletByUser(ctx, userID)
 	if err != nil {
@@ -144,6 +145,12 @@ func (s *Service) collectWithdrawalFee(ctx context.Context, w *Wallet, amountMin
 	bps := s.settings.GetIntOr(ctx, "stablecoin.withdrawal_fee_bps", 100)
 	fee := amountMinor * int64(bps) / 10_000
 	if fee <= 0 || w.DelegatedSigner == nil {
+		return
+	}
+	// The killswitch gates every delegated-signer op — a direct provider
+	// call here would bypass the incident-response halt.
+	if halted, err := s.killswitch(ctx); err != nil || halted {
+		slog.Warn("stablecoin: withdrawal fee deferred (killswitch/error)", "sig", txSig, "fee", fee)
 		return
 	}
 	hot, err := s.store.GetTreasuryWallet(ctx, w.Chain, TreasuryHot)

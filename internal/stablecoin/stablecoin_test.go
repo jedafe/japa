@@ -135,7 +135,7 @@ func (f *fakeStore) UpdateDelegatedSigner(_ context.Context, id pgtype.UUID, ds 
 	}
 	return nil
 }
-func (f *fakeStore) ListWalletsByStatus(_ context.Context, st string, _ int32) ([]Wallet, error) {
+func (f *fakeStore) ListWalletsByStatus(_ context.Context, st string, _, _ int32) ([]Wallet, error) {
 	var out []Wallet
 	for _, w := range f.walletByID {
 		if w.Status == st {
@@ -326,8 +326,8 @@ func (f *fakeProvider) BuildWithdrawal(_ context.Context, _ string, _ Withdrawal
 func (f *fakeProvider) CreateOnrampSession(_ context.Context, _ OnrampInput) (OnrampSession, error) {
 	return OnrampSession{URL: "https://checkout"}, nil
 }
-func (f *fakeProvider) Activity(_ context.Context, _ string, _ string) ([]ProviderEvent, error) {
-	return f.activity, nil
+func (f *fakeProvider) Activity(_ context.Context, _ string, _ string) ([]ProviderEvent, string, error) {
+	return f.activity, "", nil
 }
 func (f *fakeProvider) VerifyWebhook(_ []byte, _ string) error { return f.verifyErr }
 

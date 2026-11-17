@@ -814,16 +814,17 @@ const listStablecoinWalletsByStatus = `-- name: ListStablecoinWalletsByStatus :m
 SELECT id, user_id, chain, address, locator, status, recovery_methods, delegated_signer, created_at, updated_at FROM stablecoin_wallets
 WHERE status = $1
 ORDER BY created_at ASC
-LIMIT $2
+LIMIT $3 OFFSET $2
 `
 
 type ListStablecoinWalletsByStatusParams struct {
-	Status     string `json:"status"`
-	LimitCount int32  `json:"limit_count"`
+	Status      string `json:"status"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
 }
 
 func (q *Queries) ListStablecoinWalletsByStatus(ctx context.Context, arg ListStablecoinWalletsByStatusParams) ([]StablecoinWallet, error) {
-	rows, err := q.db.Query(ctx, listStablecoinWalletsByStatus, arg.Status, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listStablecoinWalletsByStatus, arg.Status, arg.OffsetCount, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}

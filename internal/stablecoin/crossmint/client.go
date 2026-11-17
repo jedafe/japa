@@ -184,8 +184,10 @@ func (c *Client) RegisterDelegatedSigner(ctx context.Context, locator string, in
 			"type":         "transfer",
 			"tokenLocator": "solana:" + sc.Asset,
 			"spendingLimit": map[string]any{
-				// Display units per docs ("10" = 10 USDC); minor → display.
-				"amount":   strconv.FormatInt(sc.DailyCapMinor, 10),
+				// Display units per docs ("10" = 10 USDC) — minor→display
+				// via 6-decimal SPL scale. Sending raw minor here would
+				// inflate the onchain cap by 10^6.
+				"amount":   strconv.FormatFloat(float64(sc.DailyCapMinor)/1e6, 'f', -1, 64),
 				"interval": 86400,
 			},
 		}
@@ -347,7 +349,7 @@ func (c *Client) CreateOnrampSession(ctx context.Context, in stablecoin.OnrampIn
 // Activity polls onchain events for the reconcile sweep (webhook-gap
 // backstop). The wallet activity endpoint is versioned under the wallets
 // base.
-func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([]stablecoin.ProviderEvent, error) {
+func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([]stablecoin.ProviderEvent, string, error) {
 	path := walletsBase + "/" + locator + "/activity"
 	if cursor != "" {
 		path += "?cursor=" + cursor
@@ -362,14 +364,34 @@ func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([
 			CounterAddr string `json:"counterparty"`
 			Timestamp   int64  `json:"timestamp"`
 		} `json:"events"`
+		// Tolerant across likely cursor shapes (docs-unverified).
+		NextCursor string `json:"nextCursor"`
+		Cursor     string `json:"cursor"`
+		Page       struct {
+			Next string `json:"next"`
+		} `json:"page"`
 	}
 	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	next := out.NextCursor
+	if next == "" {
+		next = out.Page.Next
+	}
+	if next == "" {
+		next = out.Cursor
+	}
+	if next == cursor { // provider echoed the request cursor — no more pages
+		next = ""
 	}
 	events := make([]stablecoin.ProviderEvent, 0, len(out.Events))
 	for _, e := range out.Events {
 		var amt int64
 		amt, _ = strconv.ParseInt(e.Amount, 10, 64)
+		ts := e.Timestamp
+		if ts > 1_000_000_000_000 { // milliseconds, not seconds (secs < 4e10 until year 5138)
+			ts /= 1000
+		}
 		events = append(events, stablecoin.ProviderEvent{
 			Type:        e.Type,
 			TxSignature: e.TxSignature,
@@ -377,10 +399,10 @@ func (c *Client) Activity(ctx context.Context, locator string, cursor string) ([
 			Asset:       e.Token,
 			AmountMinor: amt,
 			CounterAddr: e.CounterAddr,
-			OccurredAt:  e.Timestamp,
+			OccurredAt:  ts,
 		})
 	}
-	return events, nil
+	return events, next, nil
 }
 
 // ── Webhook verification ────────────────────────────────────────────────

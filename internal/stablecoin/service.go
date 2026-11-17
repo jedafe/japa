@@ -38,7 +38,7 @@ type store interface {
 	InsertWallet(ctx context.Context, w Wallet) (*Wallet, error)
 	UpdateWalletStatus(ctx context.Context, id pgtype.UUID, status string) error
 	UpdateDelegatedSigner(ctx context.Context, id pgtype.UUID, ds *DelegatedSigner) error
-	ListWalletsByStatus(ctx context.Context, status string, limit int32) ([]Wallet, error)
+	ListWalletsByStatus(ctx context.Context, status string, limit, offset int32) ([]Wallet, error)
 	ListWallets(ctx context.Context, status, q string, limit, offset int32) ([]Wallet, error)
 	InsertActivity(ctx context.Context, a Activity) (*Activity, error)
 	GetActivityBySig(ctx context.Context, sig string) (*Activity, error)

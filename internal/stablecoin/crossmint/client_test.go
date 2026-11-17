@@ -84,7 +84,7 @@ func TestRegisterDelegatedSignerScopes(t *testing.T) {
 	err := c.RegisterDelegatedSigner(context.Background(), "loc-1", stablecoin.DelegatedSignerInput{
 		SignerRef: "platform-signer-pubkey",
 		Scopes: []stablecoin.SignerScope{
-			{Asset: "usdc", DailyCapMinor: 5000, ExpiresAt: exp},
+			{Asset: "usdc", DailyCapMinor: 5_000_000, ExpiresAt: exp},
 		},
 	})
 	if err != nil {
@@ -102,7 +102,9 @@ func TestRegisterDelegatedSignerScopes(t *testing.T) {
 		t.Fatalf("scope = %+v", scope)
 	}
 	limit := scope["spendingLimit"].(map[string]any)
-	if limit["amount"] != "5000" || limit["interval"] != float64(86400) {
+	// Display units per documented API — 5_000_000 minor must wire as "5",
+	// not "5000000" (raw minor would inflate the onchain cap by 10^6).
+	if limit["amount"] != "5" || limit["interval"] != float64(86400) {
 		t.Fatalf("spendingLimit = %+v", limit)
 	}
 	if calls[0].body["expiresAt"] == nil {
@@ -219,12 +221,35 @@ func TestActivityDecoding(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient("k", srv.URL, "")
-	events, err := c.Activity(context.Background(), "loc-1", "")
+	events, next, err := c.Activity(context.Background(), "loc-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if next != "" {
+		t.Fatalf("next = %q, want terminal page", next)
+	}
 	if len(events) != 1 || events[0].TxSignature != "s1" || events[0].AmountMinor != 500 || events[0].OccurredAt != 1700000000 {
 		t.Fatalf("events = %+v", events)
+	}
+}
+
+func TestActivityPaginationAndMsTimestamp(t *testing.T) {
+	var calls []req
+	srv := server(t, map[string]string{
+		"/activity": `{"events":[{"type":"transfer_in","txSignature":"s2","token":"usdc","amount":"1","timestamp":1700000000000}],"nextCursor":"c-2"}`,
+	}, &calls)
+	defer srv.Close()
+
+	c := NewClient("k", srv.URL, "")
+	events, next, err := c.Activity(context.Background(), "loc-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "c-2" {
+		t.Fatalf("next = %q, want c-2", next)
+	}
+	if events[0].OccurredAt != 1700000000 { // ms timestamp must normalize to seconds
+		t.Fatalf("occurred = %d, want 1700000000", events[0].OccurredAt)
 	}
 }
 
