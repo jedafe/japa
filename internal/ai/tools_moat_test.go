@@ -16,7 +16,7 @@ import (
 
 // stubAgentData implements AgentDataReader; populate only what a test needs.
 type stubAgentData struct {
-	listVisaFn    func(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) (any, int64, error)
+	listVisaFn    func(ctx context.Context, dest pgtype.UUID, prof, edu, origin string, yrs, age, page, limit int32) (any, int64, error)
 	exploreFeedFn func(ctx context.Context, name, sort string, limit, offset int32) (any, error)
 	tagFeedFn     func(ctx context.Context, tagSlug, cursor string, limit int32) (any, error)
 	spaceFeedFn   func(ctx context.Context, viewerID pgtype.UUID, slug, sort string, limit, offset int32) (any, error)
@@ -26,8 +26,8 @@ type stubAgentData struct {
 	semanticFn    func(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error)
 }
 
-func (s stubAgentData) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu string, yrs, page, limit int32) (any, int64, error) {
-	return s.listVisaFn(ctx, dest, prof, edu, yrs, page, limit)
+func (s stubAgentData) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, prof, edu, origin string, yrs, age, page, limit int32) (any, int64, error) {
+	return s.listVisaFn(ctx, dest, prof, edu, origin, yrs, age, page, limit)
 }
 
 func (s stubAgentData) GetVisaRoute(_ context.Context, _ pgtype.UUID) (any, error) {
@@ -104,7 +104,7 @@ func (s stubAgentData) SemanticSearch(ctx context.Context, viewerID pgtype.UUID,
 
 func TestVisaSearchTool(t *testing.T) {
 	h := VisaSearchHandler(&ToolDeps{AgentData: stubAgentData{
-		listVisaFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) (any, int64, error) {
+		listVisaFn: func(_ context.Context, _ pgtype.UUID, _, _, _ string, _, _, _, _ int32) (any, int64, error) {
 			return []map[string]any{{"id": "r1"}}, 1, nil
 		},
 	}})

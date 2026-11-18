@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -237,6 +238,11 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO, req map[string]any) map[str
 
 	income := visaNumber(req, "income", "minimum_income", "min_income", "annual_income")
 	speed := visaNumber(req, "speed", "processing_months", "processing_time", "duration_months")
+	if speed == nil && route.TypicalProcessingDays > 0 {
+		// §83 processing stats are measured in days; the requirements keys
+		// above are month-named, so convert for the same "speed" semantic.
+		speed = math.Round(route.TypicalProcessingDays/30.4375*10) / 10
+	}
 	minimumFunds := visaNumber(req, "minimum_funds", "funds", "min_funds", "proof_of_funds")
 	ageMin := visaNumber(req, "age_min", "minimum_age")
 	ageMax := visaNumber(req, "age_max", "maximum_age")
@@ -286,6 +292,8 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO, req map[string]any) map[str
 		"pr_eligible":              prEligible,
 		"family_included":          familyIncluded,
 		"language":                 language,
+		"processing_days":          processingDaysInput(route),
+		"processing_reports":       processingReportsInput(route),
 		"age_min":                  ageMin,
 		"age_max":                  ageMax,
 		"occupation_eligible":      occupations,
@@ -295,6 +303,26 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO, req map[string]any) map[str
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// processingDaysInput / processingReportsInput expose the §83
+// visa_processing_stats bucket as raw score inputs — "speed" keeps the
+// months semantic for scorer compatibility, these give dimensions honest
+// day-unit values.
+func processingDaysInput(route visaroutes.RouteDTO) any {
+	if route.TypicalProcessingDays <= 0 {
+		return nil
+	}
+
+	return route.TypicalProcessingDays
+}
+
+func processingReportsInput(route visaroutes.RouteDTO) any {
+	if route.ProcessingSampleCount <= 0 {
+		return nil
+	}
+
+	return float64(route.ProcessingSampleCount)
+}
 
 // visaRequirementsMap normalises a visa-route requirements value (already parsed
 // JSON, a JSON string, or raw bytes) into a map for key-based extraction. A

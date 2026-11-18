@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -162,6 +163,27 @@ func (s *Service) ResolveSpaceByGeoCode(ctx context.Context, geoCode string) (pg
 	row, err := s.moat.Spaces.GetPublicSpaceByGeoCode(ctx, geoCode)
 	if err != nil {
 		return pgtype.UUID{}, err
+	}
+
+	return row.ID, nil
+}
+
+// ResolveSpaceBySlug resolves a country-level space slug ("canada") to its
+// space ID via the spaces reader — the ?dest= slug fallback mirroring the
+// app API's ResolveSpaceID. Non-country spaces resolve to pgx.ErrNoRows:
+// visa destinations are always level='country'.
+func (s *Service) ResolveSpaceBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	if s.moat == nil || s.moat.Spaces == nil {
+		return pgtype.UUID{}, ErrReaderUnconfigured
+	}
+
+	row, err := s.moat.Spaces.GetPublicSpaceBySlug(ctx, slug)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	if row.Level != "country" {
+		return pgtype.UUID{}, pgx.ErrNoRows
 	}
 
 	return row.ID, nil

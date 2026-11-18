@@ -280,7 +280,7 @@ func TestResolveScoreInputs(t *testing.T) {
 		{
 			name:     "visa_route",
 			item:     routeToResolvedItem(visaroutes.RouteDTO{ID: id.String(), Name: "Work", Slug: "work", DestinationSpaceID: geoID.String()}, nil),
-			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id", "geo_space_id"},
+			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "processing_days", "processing_reports", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id", "geo_space_id"},
 		},
 		{
 			name:     "col_city",

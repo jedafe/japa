@@ -458,11 +458,13 @@ func withRequiredTier(op map[string]any, tier string) map[string]any {
 
 func visaRoutesPath() map[string]any {
 	return map[string]any{
-		"get": operation("listVisaRoutes", "List visa routes", "Retrieve visa route pathways for a destination space. Filter by profession, education level, and years of experience. Gated by the visa_routes.enabled feature flag.", visaTag, "api.read.visa", []any{
-			uuidQueryParam("dest", "Destination space ID filter"),
+		"get": operation("listVisaRoutes", "List visa routes", "Retrieve visa route pathways for a destination space. Filter by profession, education level, years of experience, age, and origin country. Gated by the visa_routes.enabled feature flag.", visaTag, "api.read.visa", []any{
+			queryParam("dest", "Destination filter — space UUID, country geo_code (CA), or country slug"),
 			queryParam("profession", "Profession filter"),
 			queryParam("education", "Education level filter"),
 			intQueryParam("experience_years", "Years of experience filter"),
+			intQueryParam("age", "Applicant age filter"),
+			queryParam("origin", "Origin country filter — geo_code or country name"),
 			pageSizeParam(20, 100),
 			offsetParam(),
 		}, map[string]any{

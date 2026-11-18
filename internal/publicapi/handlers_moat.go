@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/scholarships"
@@ -66,8 +67,9 @@ func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveDestQuery resolves a ?dest= value to a space UUID — UUIDs pass
-// through directly; anything else is treated as a country geo_code ("CA",
-// "NG") and resolved through the spaces reader (geo-aware pattern —
+// through directly; anything else is tried as a country geo_code ("CA",
+// "NG") then a country slug ("canada") through the spaces reader — the
+// same resolution set as the app API's ?dest= (geo-aware pattern —
 // destination is the primary axis). Writes the error response on failure
 // and returns a non-nil error so the caller just returns.
 func (h *Handlers) resolveDestQuery(w http.ResponseWriter, r *http.Request) (pgtype.UUID, error) {
@@ -81,10 +83,18 @@ func (h *Handlers) resolveDestQuery(w http.ResponseWriter, r *http.Request) (pgt
 		return id, nil
 	}
 
-	// Non-UUID dest → geo_code lookup via the spaces reader.
+	// Non-UUID dest → geo_code lookup, then a country-slug fallback.
 	space, err := h.Service.ResolveSpaceByGeoCode(r.Context(), v)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest value — pass a space UUID or country geo_code")
+		if !errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve destination")
+			return pgtype.UUID{}, err
+		}
+
+		space, err = h.Service.ResolveSpaceBySlug(r.Context(), v)
+	}
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dest value — pass a space UUID, country geo_code, or slug")
 		return pgtype.UUID{}, err
 	}
 

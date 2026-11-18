@@ -1468,7 +1468,7 @@ type RoadmapService interface {
 // edge would be a compile-breaking import cycle. Implemented by
 // agentDataAdapter in package server.
 type AgentDataReader interface {
-	ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error)
+	ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education, origin string, experienceYears, age, page, limit int32) (any, int64, error)
 	GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error)
 	CompareVisaRoutes(ctx context.Context, ids []pgtype.UUID) (any, error)
 	GetUniversity(ctx context.Context, slug string) (any, error)

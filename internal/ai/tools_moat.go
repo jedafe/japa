@@ -27,6 +27,8 @@ type visaSearchArgs struct {
 	DestSpaceID string `json:"destination_space_id,omitempty"`
 	Profession  string `json:"profession,omitempty"`
 	Education   string `json:"education,omitempty"`
+	Origin      string `json:"origin,omitempty"`
+	Age         int32  `json:"age,omitempty"`
 	Years       int32  `json:"experience_years,omitempty"`
 	Limit       int32  `json:"limit,omitempty"`
 	Page        int32  `json:"page,omitempty"`
@@ -61,7 +63,7 @@ func VisaSearchHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		routes, total, err := deps.AgentData.ListVisaRoutes(ctx, dest, a.Profession, a.Education, a.Years, a.Page, a.Limit)
+		routes, total, err := deps.AgentData.ListVisaRoutes(ctx, dest, a.Profession, a.Education, strings.TrimSpace(a.Origin), a.Years, a.Age, a.Page, a.Limit)
 		if err != nil {
 			return errorToolResult("visa_search_failed", err.Error()), nil
 		}
@@ -105,8 +107,8 @@ type visaCompareArgs struct {
 	RouteIDs []string `json:"route_ids"`
 }
 
-// VisaCompareHandler implements the visa.compare agent tool — up to 5 visa
-// routes side by side, same read path as GET /public/visa-routes/compare.
+// VisaCompareHandler implements the visa.compare agent tool — up to 4 visa
+// routes side by side (§90), same read path as GET /public/visa-routes/compare.
 func VisaCompareHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.AgentData == nil {
@@ -122,8 +124,8 @@ func VisaCompareHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_route_ids", "route_ids is required"), nil
 		}
 
-		if len(a.RouteIDs) > 5 {
-			return errorToolResult("too_many_route_ids", "route_ids accepts at most 5 route IDs"), nil
+		if len(a.RouteIDs) > 4 {
+			return errorToolResult("too_many_route_ids", "route_ids accepts at most 4 route IDs"), nil
 		}
 
 		ids := make([]pgtype.UUID, 0, len(a.RouteIDs))
