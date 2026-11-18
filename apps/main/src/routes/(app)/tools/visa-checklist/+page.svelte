@@ -636,12 +636,15 @@
 						</p>
 						<div class="mb-2">
 							<label for="vc-req-dest" class="sr-only">{t('checklist.request_destination', 'Destination country')}</label>
-							<input
+							<!-- Real-country autocomplete over the same corpus as
+							     the origin step — normalizes destination_country
+							     to canonical names instead of free text. -->
+							<AutocompleteSelect
 								id="vc-req-dest"
-								type="text"
-								bind:value={requestDestination}
+								value={requestDestination}
+								options={originOptions.map((o) => ({ value: o.name, label: o.name }))}
 								placeholder={t('checklist.request_destination_ph', 'Destination country')}
-								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+								onValueChange={(v) => (requestDestination = v)}
 							/>
 						</div>
 						{#if requestVisaTypeOptions.length > 0}
