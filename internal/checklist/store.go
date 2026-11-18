@@ -219,25 +219,31 @@ SELECT
     JOIN contents c ON c.id = cfv.entity_id AND cfv.entity_type = 'content'
     WHERE c.content_type = 'guide' AND c.guide_category = 'visa'
       AND c.status = 'published' AND c.deleted_at IS NULL)) * 1000)::bigint, 0),
+  (SELECT COUNT(*)::bigint FROM custom_field_values cfv
+    JOIN contents c ON c.id = cfv.entity_id AND cfv.entity_type = 'content'
+    WHERE c.content_type = 'guide' AND c.guide_category = 'visa'
+      AND c.status = 'published' AND c.deleted_at IS NULL),
   (SELECT COUNT(*)::bigint FROM spaces
     WHERE level = 'country' AND deleted_at IS NULL),
   COALESCE((EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM spaces
     WHERE level = 'country' AND deleted_at IS NULL)) * 1000)::bigint, 0)
 `
 
-	var guideCount, guideMax, fieldMax, spaceCount, spaceMax int64
-	if err := s.pool.Reader.QueryRow(ctx, q).Scan(&guideCount, &guideMax, &fieldMax, &spaceCount, &spaceMax); err != nil {
+	var guideCount, guideMax, fieldMax, fieldCount, spaceCount, spaceMax int64
+	if err := s.pool.Reader.QueryRow(ctx, q).Scan(&guideCount, &guideMax, &fieldMax, &fieldCount, &spaceCount, &spaceMax); err != nil {
 		return "", fmt.Errorf("checklist: selector version: %w", err)
 	}
 
-	return fmt.Sprintf("%d:%d:%d:%d:%d", guideCount, guideMax, fieldMax, spaceCount, spaceMax), nil
+	return fmt.Sprintf("%d:%d:%d:%d:%d:%d", guideCount, guideMax, fieldMax, fieldCount, spaceCount, spaceMax), nil
 }
 
-// GetVisaGuideMeta returns the title + effective version timestamp of a
-// published visa guide: the greatest of contents.updated_at and the guide's
-// custom_field_values.updated_at (field edits do not bump the content row).
-// The timestamp feeds the jc:render cache key so any edit mints fresh keys.
-func (s *Store) GetVisaGuideMeta(ctx context.Context, guideID pgtype.UUID) (string, pgtype.Timestamptz, error) {
+// GetVisaGuideMeta returns the title + effective version of a published visa
+// guide: the greatest of contents.updated_at and the guide's
+// custom_field_values.updated_at (field edits do not bump the content row),
+// PLUS the cfv row count — MAX() alone misses row deletes, so the count is
+// hashed into the cache version to catch removals. Feeds the jc:render
+// cache key so any edit mints fresh keys.
+func (s *Store) GetVisaGuideMeta(ctx context.Context, guideID pgtype.UUID) (string, pgtype.Timestamptz, int64, error) {
 	const q = `
 SELECT c.title,
        GREATEST(c.updated_at,
@@ -245,7 +251,9 @@ SELECT c.title,
                           FROM custom_field_values cfv
                           WHERE cfv.entity_type = 'content'
                             AND cfv.entity_id = c.id),
-                         c.updated_at))
+                         c.updated_at)),
+       (SELECT COUNT(*) FROM custom_field_values cfv
+        WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id)
 FROM contents c
 WHERE c.id = $1
   AND c.content_type = 'guide'
@@ -258,16 +266,17 @@ LIMIT 1
 	var (
 		title     string
 		updatedAt pgtype.Timestamptz
+		cfvCount  int64
 	)
-	if err := s.pool.Reader.QueryRow(ctx, q, guideID).Scan(&title, &updatedAt); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, q, guideID).Scan(&title, &updatedAt, &cfvCount); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", pgtype.Timestamptz{}, pgx.ErrNoRows
+			return "", pgtype.Timestamptz{}, 0, pgx.ErrNoRows
 		}
 
-		return "", pgtype.Timestamptz{}, fmt.Errorf("checklist: get visa guide meta: %w", err)
+		return "", pgtype.Timestamptz{}, 0, fmt.Errorf("checklist: get visa guide meta: %w", err)
 	}
 
-	return title, updatedAt, nil
+	return title, updatedAt, cfvCount, nil
 }
 
 // ListChecklistProgress returns all progress rows for a user + guide.

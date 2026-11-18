@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -250,8 +249,8 @@ func (s *Service) cacheSet(ctx context.Context, key string, v any) {
 // checklist payload — jc:render::{guide_id}:{hash(updated_at)}. updated_at
 // changes on every guide edit, so edited guides get a fresh key and stale
 // entries simply expire.
-func guideCacheKey(guideID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
-	hash := sha256.Sum256([]byte(strconv.FormatInt(updatedAt.Time.UnixMilli(), 10)))
+func guideCacheKey(guideID pgtype.UUID, updatedAt pgtype.Timestamptz, cfvCount int64) string {
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%d:%d", updatedAt.Time.UnixMilli(), cfvCount)))
 	return valkey.MustKey("render::%s:%s", guideID.String(), hex.EncodeToString(hash[:]))
 }
 
@@ -526,7 +525,7 @@ func (s *Service) GetGuide(ctx context.Context, guideID pgtype.UUID, origin, ori
 // item set — origin filtering always happens after retrieval so a cached
 // value is never mutated.
 func (s *Service) getGuideCached(ctx context.Context, guideID pgtype.UUID) (ChecklistGuideResult, error) {
-	title, updatedAt, err := s.store.GetVisaGuideMeta(ctx, guideID)
+	title, updatedAt, cfvCount, err := s.store.GetVisaGuideMeta(ctx, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ChecklistGuideResult{}, pgx.ErrNoRows
@@ -536,7 +535,7 @@ func (s *Service) getGuideCached(ctx context.Context, guideID pgtype.UUID) (Chec
 	}
 
 	if s.cache != nil {
-		key := guideCacheKey(guideID, updatedAt)
+		key := guideCacheKey(guideID, updatedAt, cfvCount)
 
 		var cached ChecklistGuideResult
 		if s.cacheGet(ctx, key, &cached) {

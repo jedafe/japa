@@ -4,7 +4,7 @@
 
 BEGIN;
 
-INSERT INTO system_settings (id, key, value, is_secret)
+INSERT INTO system_settings (id, key, value, is_public)
 VALUES
   (gen_random_uuid(), 'checklist.subdomain', '"visa-checklist"'::jsonb, false),
   (gen_random_uuid(), 'checklist.custom_domain', '""'::jsonb, false)
