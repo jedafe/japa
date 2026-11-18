@@ -131,6 +131,7 @@ class _SelectorBody extends ConsumerWidget {
                     guide: g,
                     authed: authed,
                     originSlug: selection.origin?.slug,
+                    originCode: selection.origin?.code,
                   ),
             loading: () => const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
@@ -151,11 +152,13 @@ class _ChecklistItems extends ConsumerWidget {
   final ChecklistGuide guide;
   final bool authed;
   final String? originSlug;
+  final String? originCode;
 
   const _ChecklistItems({
     required this.guide,
     required this.authed,
     this.originSlug,
+    this.originCode,
   });
 
   Future<void> _toggle(
@@ -178,6 +181,7 @@ class _ChecklistItems extends ConsumerWidget {
             item.itemKey,
             completed: value ?? false,
             origin: originSlug,
+            originCode: originCode,
           );
       ref.invalidate(visaChecklistGuideProvider);
     } catch (e) {

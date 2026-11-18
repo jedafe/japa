@@ -2864,6 +2864,9 @@ export interface ChecklistCountryOption {
 	id: string;
 	name: string;
 	slug: string;
+	/** ISO geo_code on origin options — sent back as ?origin_code= so
+	 *  origins lists authored with codes (not just slugs) still match. */
+	code?: string;
 	visa_types?: ChecklistVisaTypeOption[];
 }
 

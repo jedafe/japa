@@ -29,12 +29,14 @@ class ChecklistCountryOption {
   final String id;
   final String name;
   final String slug;
+  final String code;
   final List<ChecklistVisaTypeOption> visaTypes;
 
   const ChecklistCountryOption({
     required this.id,
     required this.name,
     required this.slug,
+    this.code = '',
     this.visaTypes = const [],
   });
 
@@ -43,6 +45,7 @@ class ChecklistCountryOption {
         id: (json['id'] ?? '').toString(),
         name: (json['name'] ?? '').toString(),
         slug: (json['slug'] ?? '').toString(),
+        code: (json['code'] ?? '').toString(),
         visaTypes: ((json['visa_types'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(ChecklistVisaTypeOption.fromJson)

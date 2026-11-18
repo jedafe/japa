@@ -103,18 +103,21 @@ ORDER BY c.id, cf.key
 }
 
 // CountrySpace is a country-level Geo Space (§05) used as an origin selector
-// option. Only the fields needed by the selector are returned.
+// option. Only the fields needed by the selector are returned — GeoCode
+// (ISO) lets clients scope item filtering against origins lists authored
+// with codes rather than slugs.
 type CountrySpace struct {
-	ID   pgtype.UUID
-	Name string
-	Slug string
+	ID      pgtype.UUID
+	Name    string
+	Slug    string
+	GeoCode string
 }
 
 // ListCountrySpaces returns all country-level Geo Spaces for the platform,
 // ordered by name. Used to populate the origin selector (§70 step 1).
 func (s *Store) ListCountrySpaces(ctx context.Context) ([]CountrySpace, error) {
 	const q = `
-SELECT id, name, slug
+SELECT id, name, slug, COALESCE(geo_code, '')
 FROM spaces
 WHERE level = 'country' AND deleted_at IS NULL
 ORDER BY name ASC
@@ -130,7 +133,7 @@ ORDER BY name ASC
 
 	for rows.Next() {
 		var c CountrySpace
-		if err := rows.Scan(&c.ID, &c.Name, &c.Slug); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.GeoCode); err != nil {
 			return nil, fmt.Errorf("checklist: scan country space: %w", err)
 		}
 
@@ -198,8 +201,10 @@ WHERE c.id = $1
 }
 
 // SelectorVersion returns a version string covering the visa-guide corpus
-// plus the country spaces feeding the origin step — used to hash the
-// jc:render selector cache key so corpus changes mint fresh keys.
+// (contents rows AND their custom_field_values timestamps — field edits do
+// not bump contents.updated_at) plus the country spaces feeding the origin
+// step — used to hash the jc:render selector cache key so corpus changes
+// mint fresh keys.
 func (s *Store) SelectorVersion(ctx context.Context) (string, error) {
 	const q = `
 SELECT
@@ -209,25 +214,38 @@ SELECT
   COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM contents
     WHERE content_type = 'guide' AND guide_category = 'visa'
       AND status = 'published' AND deleted_at IS NULL))::bigint, 0),
+  COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(cfv.updated_at)
+    FROM custom_field_values cfv
+    JOIN contents c ON c.id = cfv.entity_id AND cfv.entity_type = 'content'
+    WHERE c.content_type = 'guide' AND c.guide_category = 'visa'
+      AND c.status = 'published' AND c.deleted_at IS NULL))::bigint, 0),
   (SELECT COUNT(*)::bigint FROM spaces
     WHERE level = 'country' AND deleted_at IS NULL),
   COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM spaces
     WHERE level = 'country' AND deleted_at IS NULL))::bigint, 0)
 `
 
-	var guideCount, guideMax, spaceCount, spaceMax int64
-	if err := s.pool.Reader.QueryRow(ctx, q).Scan(&guideCount, &guideMax, &spaceCount, &spaceMax); err != nil {
+	var guideCount, guideMax, fieldMax, spaceCount, spaceMax int64
+	if err := s.pool.Reader.QueryRow(ctx, q).Scan(&guideCount, &guideMax, &fieldMax, &spaceCount, &spaceMax); err != nil {
 		return "", fmt.Errorf("checklist: selector version: %w", err)
 	}
 
-	return fmt.Sprintf("%d:%d:%d:%d", guideCount, guideMax, spaceCount, spaceMax), nil
+	return fmt.Sprintf("%d:%d:%d:%d:%d", guideCount, guideMax, fieldMax, spaceCount, spaceMax), nil
 }
 
-// GetVisaGuideMeta returns the title + updated_at of a published visa guide.
-// updated_at feeds the jc:render cache key so guide edits mint fresh keys.
+// GetVisaGuideMeta returns the title + effective version timestamp of a
+// published visa guide: the greatest of contents.updated_at and the guide's
+// custom_field_values.updated_at (field edits do not bump the content row).
+// The timestamp feeds the jc:render cache key so any edit mints fresh keys.
 func (s *Store) GetVisaGuideMeta(ctx context.Context, guideID pgtype.UUID) (string, pgtype.Timestamptz, error) {
 	const q = `
-SELECT c.title, c.updated_at
+SELECT c.title,
+       GREATEST(c.updated_at,
+                COALESCE((SELECT MAX(cfv.updated_at)
+                          FROM custom_field_values cfv
+                          WHERE cfv.entity_type = 'content'
+                            AND cfv.entity_id = c.id),
+                         c.updated_at))
 FROM contents c
 WHERE c.id = $1
   AND c.content_type = 'guide'

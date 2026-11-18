@@ -74,8 +74,10 @@ final visaChecklistGuideProvider = FutureProvider.autoDispose<ChecklistGuide?>((
 
   final service = ref.watch(visaChecklistServiceProvider);
   final originSlug = sel.origin?.slug;
+  final originCode = sel.origin?.code;
 
-  final guide = await service.getGuide(vt.guideId, origin: originSlug);
+  final guide =
+      await service.getGuide(vt.guideId, origin: originSlug, originCode: originCode);
 
   // Merge saved progress for signed-in users (§70: GET /progress). A
   // failed progress load still renders the checklist unticked rather
@@ -85,7 +87,8 @@ final visaChecklistGuideProvider = FutureProvider.autoDispose<ChecklistGuide?>((
 
   List<ChecklistProgressItem> progress;
   try {
-    progress = await service.getProgress(vt.guideId, origin: originSlug);
+    progress = await service.getProgress(vt.guideId,
+        origin: originSlug, originCode: originCode);
   } catch (_) {
     return guide;
   }

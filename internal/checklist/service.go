@@ -100,6 +100,9 @@ type CountryOption struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+	// Code is the Geo Space ISO code (origins only) — clients send it back
+	// as ?origin_code= so origins lists authored with ISO codes match.
+	Code string `json:"code,omitempty"`
 	// Visa types available for this destination (destinations only).
 	VisaTypes []VisaTypeOption `json:"visa_types,omitempty"`
 }
@@ -318,6 +321,7 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 			ID:   c.ID.String(),
 			Name: c.Name,
 			Slug: c.Slug,
+			Code: c.GeoCode,
 		})
 		spaceByKey[c.Slug] = c
 		spaceByKey[strings.ToLower(c.Name)] = c
@@ -344,10 +348,13 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 		}
 	}
 
-	// Group by destination country; each destination gets its visa types.
-	destMap := make(map[string]*CountryOption) // key = destination country name
+	// Group by destination country (case-insensitive key — free-text guide
+	// fields can carry "United Kingdom" and "united kingdom" variants that
+	// must merge into one option); each destination gets its visa types.
+	destMap := make(map[string]*CountryOption)
+	destKeyOf := make(map[string]string) // raw value → normalized key
 	destOrder := make([]string, 0)
-	guideVisaTypes := make(map[string]map[string]VisaTypeOption) // dest → visa_type → option
+	guideVisaTypes := make(map[string]map[string]VisaTypeOption) // dest key → visa_type → option
 
 	for _, f := range fields {
 		switch f.FieldKey {
@@ -357,10 +364,13 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 				continue
 			}
 
-			if _, ok := destMap[v]; !ok {
+			key := strings.ToLower(v)
+			destKeyOf[v] = key
+
+			if _, ok := destMap[key]; !ok {
 				opt := &CountryOption{Name: v, Slug: slugify(v)}
 				if sp, found := spaceByKey[opt.Slug]; !found {
-					if sp2, found2 := spaceByKey[strings.ToLower(v)]; found2 {
+					if sp2, found2 := spaceByKey[key]; found2 {
 						opt.ID = sp2.ID.String()
 					}
 				} else {
@@ -372,10 +382,10 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 					opt.ID = opt.Slug
 				}
 
-				destMap[v] = opt
+				destMap[key] = opt
 
-				destOrder = append(destOrder, v)
-				guideVisaTypes[v] = make(map[string]VisaTypeOption)
+				destOrder = append(destOrder, key)
+				guideVisaTypes[key] = make(map[string]VisaTypeOption)
 			}
 		case FieldVisaType:
 			v := strings.TrimSpace(f.ValueText)
@@ -383,7 +393,7 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 				continue
 			}
 
-			dest := destByGuide[f.GuideID.Bytes]
+			dest := destKeyOf[destByGuide[f.GuideID.Bytes]]
 			if dest == "" {
 				continue
 			}
@@ -723,11 +733,18 @@ func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUI
 	} else {
 		// Note-only update: keep the original completed_at rather than
 		// stamping now() — refreshing it on every note save would rewrite
-		// when the user actually finished the item.
+		// when the user actually finished the item. Only a missing row
+		// falls through to defaults — a transient read error must NOT
+		// silently write completed=false over an existing tick.
 		existing, err := s.store.GetSingleProgressWriter(ctx, userID, guideID, itemKey)
-		if err == nil {
+		switch {
+		case err == nil:
 			resolvedCompleted = existing.Completed
 			completedAt = existing.CompletedAt
+		case errors.Is(err, pgx.ErrNoRows):
+			// First write for this item — defaults stand.
+		default:
+			return gen.ChecklistProgress{}, fmt.Errorf("checklist: read progress for note update: %w", err)
 		}
 	}
 
@@ -934,9 +951,6 @@ func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) (
 		}
 
 		a.stat.TotalUsers++
-		if len(p.DoneKeys) > 0 {
-			a.stat.UsersWithAnyCompletion++
-		}
 		a.userDone = append(a.userDone, p.DoneKeys)
 	}
 
@@ -969,6 +983,13 @@ func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) (
 				if liveKeys[k] {
 					liveDone++
 				}
+			}
+
+			// "Any completion" is measured against the live set like the
+			// rates — a user whose only ticks were on since-removed items
+			// has effectively zero completion.
+			if liveDone > 0 {
+				a.stat.UsersWithAnyCompletion++
 			}
 
 			if liveDone >= int64(a.stat.TotalItems) {
