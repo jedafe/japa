@@ -96,7 +96,7 @@
 		key: string;
 		label: string;
 		type?: string;
-		flex?: number;
+		full?: boolean;
 	}
 	function repeaterItemFields(field: CustomFieldDef): RepeaterItemField[] {
 		const opts = field.options;
@@ -628,19 +628,30 @@
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-repeater">
 				{#each (Array.isArray(values[field.key]) ? (values[field.key] as unknown[]) : []) as item, idx (idx)}
-					<div class="cf-repeater-row">
-						{#if itemFields.length}
-							{#each itemFields as sf (sf.key)}
-								<input
-									type={repeaterInputType(sf)}
-									class="cf-input"
-									style="flex:{sf.flex ?? 1} 1 0"
-									placeholder={sf.label}
-									value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
-									oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
-								/>
-							{/each}
-						{:else}
+					{#if itemFields.length}
+						<!-- Structured item: labeled card, sub-fields in a
+						     two-column grid (`full` items span both columns). -->
+						<div class="cf-repeater-card">
+							<div class="cf-repeater-card-head">
+								<span class="cf-repeater-card-index">#{idx + 1}</span>
+								<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label={t('common.remove', 'Remove')}>×</button>
+							</div>
+							<div class="cf-repeater-grid">
+								{#each itemFields as sf (sf.key)}
+									<label class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
+										<span class="cf-repeater-field-label">{sf.label}</span>
+										<input
+											type={repeaterInputType(sf)}
+											class="cf-input"
+											value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
+											oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
+										/>
+									</label>
+								{/each}
+							</div>
+						</div>
+					{:else}
+						<div class="cf-repeater-row">
 							<input
 								type="text"
 								class="cf-input"
@@ -648,9 +659,9 @@
 								value={typeof item === 'string' ? item : ''}
 								oninput={(e) => repeaterSet(field.key, idx, e.currentTarget.value)}
 							/>
-						{/if}
-						<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label={t('common.remove', 'Remove')}>×</button>
-					</div>
+							<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label={t('common.remove', 'Remove')}>×</button>
+						</div>
+					{/if}
 				{/each}
 				<button type="button" class="cf-repeater-add" onclick={() => repeaterAdd(field.key, itemFields)}>+ {t('common.add', 'Add')}</button>
 			</div>
@@ -847,15 +858,55 @@
 	}
 	.cf-repeater-row {
 		display: flex;
-		flex-wrap: nowrap;
 		gap: 6px;
 		align-items: center;
 	}
-	/* Sub-field inputs must be allowed to shrink below their intrinsic
-	   (size-attribute) width so a full item_fields row stays on one line;
-	   each input's share is set via the item_fields `flex` weight. */
 	.cf-repeater-row .cf-input {
 		min-width: 0;
+	}
+	/* Structured items render as labeled cards — a two-column sub-field
+	   grid keeps seven-field repeaters readable instead of cramped on a
+	   single line. Fields marked `full` span both columns. */
+	.cf-repeater-card {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		padding: 10px;
+		background: var(--color-surface);
+	}
+	.cf-repeater-card-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+	}
+	.cf-repeater-card-index {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-muted);
+	}
+	.cf-repeater-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+	.cf-repeater-field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.cf-repeater-field-full {
+		grid-column: 1 / -1;
+	}
+	.cf-repeater-field-label {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-muted);
+	}
+	@media (max-width: 560px) {
+		.cf-repeater-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 	.cf-repeater-remove {
 		flex-shrink: 0;
