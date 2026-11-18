@@ -7,7 +7,7 @@
 	import { Stamp, ArrowLeft, Download, AlertTriangle, MessageSquarePlus, BookOpen } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import BodyField from '#lib/components/ui/BodyField.svelte';
-	import { docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
+	import { docTypeLabel, isStepObject, safeUrl, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
 	import type { AttestationCommunityUpdate } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -33,20 +33,24 @@
 	const howToJsonLd = $derived.by(() => {
 		const steps = Array.isArray(pathway.pathway_steps) ? pathway.pathway_steps : [];
 		if (!steps.length) return undefined;
-		const corridor = `${pathway.issuing_space_name ?? ''} → ${pathway.destination_space_name ?? ''}`;
+		const corridor =
+			pathway.issuing_space_name && pathway.destination_space_name
+				? ` — ${pathway.issuing_space_name} → ${pathway.destination_space_name}`
+				: '';
 		return {
 			'@context': 'https://schema.org',
 			'@type': 'HowTo',
-			name: `${docTypeLabel(pathway.document_type)} attestation (${corridor})`,
-			step: steps.map((s, i) => ({
-				'@type': 'HowToStep',
-				position: i + 1,
-				name: isStepObject(s) ? stepHeadline(s, i) : `Step ${i + 1}`,
-				text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? '') : stepValueText(s),
-				...(isStepObject(s) && stepValueText(s.official_url ?? s.url)
-					? { url: stepValueText(s.official_url ?? s.url) }
-					: {})
-			}))
+			name: `${docTypeLabel(pathway.document_type)} attestation${corridor}`,
+			step: steps.map((s, i) => {
+				const u = isStepObject(s) ? safeUrl(s.official_url ?? s.url) : null;
+				return {
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: isStepObject(s) ? stepHeadline(s, i) : `Step ${i + 1}`,
+					text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? '') : stepValueText(s),
+					...(u ? { url: u } : {})
+				};
+			})
 		};
 	});
 

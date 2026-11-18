@@ -35,7 +35,7 @@
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
-	import { DOC_TYPES, docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
+	import { DOC_TYPES, docTypeLabel, isStepObject, safeUrl, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
@@ -135,13 +135,16 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// pathway_id links straight to a pathway detail page, otherwise the
 	// corridor fields map onto the tool's geo-code filter params.
 	const isAttestationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'attestation');
+	const attestationToolEnabled = $derived(
+		((page.data.features as Record<string, boolean> | undefined)?.['attestation_guide.enabled']) ?? false
+	);
 	const attestationSteps = $derived.by((): Record<string, unknown>[] => {
 		if (!isAttestationGuide) return [];
 		const raw = article.field_values?.pathway_steps;
 		return Array.isArray(raw) ? raw.filter(isStepObject) : [];
 	});
 	const attestationToolHref = $derived.by((): string | null => {
-		if (!isAttestationGuide) return null;
+		if (!isAttestationGuide || !attestationToolEnabled) return null;
 		const fv = article.field_values ?? {};
 		const pid = typeof fv.pathway_id === 'string' ? fv.pathway_id.trim() : '';
 		if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid)) {
@@ -159,6 +162,28 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		}
 		const s = q.toString();
 		return `/tools/attestation-guide${s ? `?${s}` : ''}`;
+	});
+
+	// §97 SEO — the editorial guide is the indexable surface, so its
+	// pathway_steps repeater also emits HowTo structured data (separate
+	// script block, same pattern as breadcrumbLd).
+	const attestationHowToLd = $derived.by((): unknown => {
+		if (!attestationSteps.length) return null;
+		return {
+			'@context': 'https://schema.org',
+			'@type': 'HowTo',
+			name: article.title,
+			step: attestationSteps.map((s, i) => {
+				const u = safeUrl(s.official_url ?? s.url);
+				return {
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: stepHeadline(s, i),
+					text: stepValueText(s.description ?? s.note ?? ''),
+					...(u ? { url: u } : {})
+				};
+			})
+		};
 	});
 
 	// Journey-aware metadata chips (§32) — shown for any content that carries
@@ -350,6 +375,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
+	{#if attestationHowToLd}
+		{@html safeJsonLdScript(attestationHowToLd)}
+	{/if}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout (same as blog singles). -->

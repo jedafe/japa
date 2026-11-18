@@ -95,16 +95,22 @@ export function stepFields(step: Record<string, unknown>): StepField[] {
 		const ib = STEP_FIELD_ORDER.indexOf(b);
 		return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
 	});
-	return entries.map(([key, val]) => ({
-		label:
-			STEP_FIELD_LABELS[key] ??
-			key.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()),
-		value:
-			key === 'turnaround_days' && typeof val === 'number'
-				? t('attestation_guide.n_days', '{n} days').replace('{n}', String(val))
+	return entries.map(([key, val]) => {
+		// turnaround_days gets an "N days" suffix for numbers; editorial
+		// repeater values arrive as strings, so numeric strings match too.
+		const isTurnaround =
+			key === 'turnaround_days' &&
+			(typeof val === 'number' || (typeof val === 'string' && /^\d+(\.\d+)?$/.test(val.trim())));
+		return {
+			label:
+				STEP_FIELD_LABELS[key] ??
+				key.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()),
+			value: isTurnaround
+				? t('attestation_guide.n_days', '{n} days').replace('{n}', String(val).trim())
 				: stepValueText(val),
-		url: key === 'url' || key === 'official_url' ? safeUrl(val) : null
-	}));
+			url: key === 'url' || key === 'official_url' ? safeUrl(val) : null
+		};
+	});
 }
 
 /** A step's headline: its step/title text, else a numbered fallback. */
