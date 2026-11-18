@@ -42,7 +42,7 @@
 		new Set(untrack(() => data.initialRouteIds ?? []).filter((id) => routes.some((r) => r.id === id)))
 	);
 	let comparisonData = $state<VisaRouteWithAi[]>([]);
-	let comparisonMissing = $state<string[]>([]);
+	let comparisonMissing = $state<string[]>(untrack(() => data.initialMissingIds ?? []));
 	let loadingComparison = $state(false);
 	let showComparison = $state(false);
 	let savingJCE = $state(false);
@@ -105,6 +105,7 @@
 		selectedRouteIds = new Set([...selectedRouteIds].filter((id) => routes.some((r) => r.id === id)));
 		showComparison = false;
 		comparisonData = [];
+		comparisonMissing = [];
 		syncUrl();
 	}
 
@@ -120,6 +121,7 @@
 		// Hide stale comparison when selection changes
 		showComparison = false;
 		comparisonData = [];
+		comparisonMissing = [];
 		syncUrl();
 	}
 
@@ -338,6 +340,12 @@
 			</details>
 		{/if}
 
+		{#if comparisonMissing.length > 0}
+			<p class="px-4 pt-3 text-xs text-[var(--color-muted)]">
+				{t('visa_routes.partial_comparison', '{count} selected route(s) are no longer available.').replace('{count}', String(comparisonMissing.length))}
+			</p>
+		{/if}
+
 		{#if !selectedDestId && routes.length === 0}
 			<div class="p-4">
 				<EmptyState
@@ -508,11 +516,6 @@
 						<h2 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-3">
 							{t('visa_routes.comparison', 'Comparison')}
 						</h2>
-						{#if comparisonMissing.length > 0}
-							<p class="mb-2 text-xs text-[var(--color-muted)]">
-								{t('visa_routes.partial_comparison', '{count} selected route(s) are no longer available.').replace('{count}', String(comparisonMissing.length))}
-							</p>
-						{/if}
 						{#if loadingComparison}
 							<LoadingSkeleton variant="lines" count={5} />
 						{:else if comparisonData.length === 0}

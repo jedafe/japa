@@ -1154,6 +1154,11 @@ func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec,
 
 	wq := gen.New(dbPool.Writer)
 
+	// The sweep runs weekly but a link can stay broken for months —
+	// remind monthly, don't spam weekly. A recipient with a notification
+	// for this subject younger than brokenLinkReminderDays is skipped.
+	const brokenLinkReminderDays = int32(30)
+
 	for _, it := range broken {
 		title := spec.notifyTitle
 		body := fmt.Sprintf("%s %s returned 404 — possible rule change. URL: %s", spec.noun, it.id.String(), it.url)
@@ -1164,6 +1169,19 @@ func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec,
 		actorType := "system"
 
 		for _, recipientID := range recipients {
+			notified, err := q.ExistsRecentNotificationBySubject(ctx, gen.ExistsRecentNotificationBySubjectParams{
+				RecipientID:      recipientID,
+				NotificationType: spec.notifyType,
+				SubjectType:      &subjectType,
+				SubjectID:        it.id,
+				Days:             brokenLinkReminderDays,
+			})
+			if err != nil {
+				slog.Error("task:"+taskName+": notification dedup check failed", "error", err)
+			} else if notified {
+				continue
+			}
+
 			if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
 				RecipientID:      recipientID,
 				NotificationType: spec.notifyType,

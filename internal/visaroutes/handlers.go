@@ -106,8 +106,8 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	limit = 20
 
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			page = int32(n)
 		}
 	}
 
@@ -119,8 +119,8 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	}
 
 	if perPage != "" {
-		if n, err := strconv.Atoi(perPage); err == nil && n > 0 {
-			limit = min(int32(n), 100) // #nosec
+		if n, err := strconv.ParseInt(perPage, 10, 32); err == nil && n > 0 {
+			limit = min(int32(n), 100)
 		}
 	}
 
@@ -192,15 +192,17 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	var experienceYears, age int32
 
+	// ParseInt(…, 10, 32) rejects out-of-range values — Atoi+int32()
+	// silently wraps ("4294967297" → 1) and would apply a bogus filter.
 	if v := r.URL.Query().Get("experience_years"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			experienceYears = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			experienceYears = int32(n)
 		}
 	}
 
 	if v := r.URL.Query().Get("age"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			age = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			age = int32(n)
 		}
 	}
 

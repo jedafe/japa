@@ -214,3 +214,16 @@ WHERE key = @key;
 -- the notifications.notification_type FK (SQLSTATE 23503) the moment any
 -- notification references the key, so this now flips enabled=false.
 UPDATE notification_types SET enabled = false WHERE key = @key;
+
+-- name: ExistsRecentNotificationBySubject :one
+-- Periodic-task dedup: a recurring sweep (e.g. the weekly link check)
+-- should remind, not spam — skip recipients already notified about the
+-- same subject inside the reminder window.
+SELECT EXISTS (
+    SELECT 1 FROM notifications
+    WHERE recipient_id = @recipient_id
+      AND notification_type = @notification_type
+      AND subject_type = @subject_type
+      AND subject_id = @subject_id
+      AND created_at > now() - make_interval(days => @days)
+) AS exists;

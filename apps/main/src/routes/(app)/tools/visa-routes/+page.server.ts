@@ -2,7 +2,7 @@
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
+import { apiContext, apiGet, apiGetEnvelope, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type { VisaRouteWithAi, JCEComparison, ComparisonCreated, ComparisonItem, GeoCountry } from '#lib/types/index.js';
 
 /**
@@ -56,10 +56,19 @@ export const load: PageServerLoad = async (event) => {
 		.slice(0, 4);
 
 	const sharePromise = !destParam && initialRouteIds.length > 0
-		? apiList<VisaRouteWithAi>(ctx, `/visa-routes/compare?ids=${initialRouteIds.map(encodeURIComponent).join(',')}`)
-				.then((r) => r.items)
-				.catch(() => [] as VisaRouteWithAi[])
-		: Promise.resolve([] as VisaRouteWithAi[]);
+		? apiGetEnvelope<VisaRouteWithAi[]>(ctx, `/visa-routes/compare?ids=${initialRouteIds.map(encodeURIComponent).join(',')}`)
+				.then((r) => ({
+					items: r.data ?? [],
+					missing: ((r as { missing_ids?: string[] }).missing_ids ?? []) as string[]
+				}))
+				.catch((e) => ({
+					// A 404 means every requested id failed to resolve —
+					// report them all as missing so the recipient sees the
+					// "no longer available" notice, not a bare empty state.
+					items: [] as VisaRouteWithAi[],
+					missing: e instanceof ApiError && e.status === 404 ? [...initialRouteIds] : []
+				}))
+		: Promise.resolve({ items: [] as VisaRouteWithAi[], missing: [] as string[] });
 
 	// Destination list — the geo-aware selector source (Rule 16).
 	// A 404 or visa_routes_disabled code means the tool is turned off.
@@ -74,7 +83,8 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
-	const routes = destParam ? await routesPromise : await sharePromise;
+	const share = await sharePromise;
+	const routes = destParam ? await routesPromise : share.items;
 	let initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
 
 	// ?dest= also resolves geo_codes/slugs server-side ("CA" works in the
@@ -108,6 +118,7 @@ export const load: PageServerLoad = async (event) => {
 		routes,
 		initialDestId,
 		initialRouteIds,
+		initialMissingIds: share.missing,
 		disabled,
 		authed
 	};
@@ -149,8 +160,11 @@ export const actions: Actions = {
 				`/visa-routes/compare?ids=${routeIds.map(encodeURIComponent).join(',')}${destParam}`
 			);
 		} catch (e) {
+			// Forward the API's client errors (bad id → 400) instead of
+			// flattening every failure into a 500.
+			const status = e instanceof ApiError && e.status >= 400 && e.status < 600 ? e.status : 500;
 			const message = e instanceof ApiError ? e.message : 'Could not load visa routes';
-			return fail(500, { error: 'fetch_failed', message });
+			return fail(status, { error: 'fetch_failed', message });
 		}
 
 		const routeById = new Map(routes.map((r) => [r.id, r]));

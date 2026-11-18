@@ -67,11 +67,27 @@ type RouteDTO struct {
 	ProcessingSampleCount int32   `json:"processing_sample_count,omitempty"`
 	ProcessingPeriod      string  `json:"processing_period,omitempty"`
 	// HITLReviewerUsername resolves hitl_reviewed_by to a handle for
-	// admin views (populated on all reads; harmless to expose — the
-	// reviewed-by UUID is already public in this DTO).
+	// admin views (populated on all reads; PublicView strips it and the
+	// other review fields before any anonymous-caller response).
 	HITLReviewerUsername string `json:"hitl_reviewed_by_username,omitempty"`
 	CreatedAt            string `json:"created_at"`
 	UpdatedAt            string `json:"updated_at"`
+}
+
+// PublicView returns a copy of the DTO with internal review metadata
+// stripped. The same DTO serves admin and public surfaces; anonymous
+// callers must not see which reviewer approved a route, the review
+// notes, or the AI prompt hash. Status/is_active stay — public callers
+// only ever see 'published'+true anyway, and the fields are part of the
+// documented record shape.
+func (d RouteDTO) PublicView() RouteDTO {
+	d.HITLReviewedBy = ""
+	d.HITLReviewedAt = ""
+	d.HITLReviewNotes = ""
+	d.HITLReviewerUsername = ""
+	d.AIPromptHash = ""
+
+	return d
 }
 
 // CreateRouteInput is the request body for POST /admin/visa-routes.
@@ -248,7 +264,7 @@ func (s *Service) ListFiltered(ctx context.Context, p ListQueryParams) ([]RouteD
 
 	dtos := make([]RouteDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dtos = append(dtos, rowToDTO(r).PublicView())
 	}
 
 	s.mergeRouteFieldValues(ctx, dtos)
@@ -290,9 +306,18 @@ func (s *Service) CompareWithMissing(ctx context.Context, ids []pgtype.UUID) (Co
 
 	var missing []string
 
+	seen := make(map[string]bool, len(rows))
+
 	for _, id := range ids {
 		if r, ok := byID[id.String()]; ok {
-			dtos = append(dtos, rowToDTO(r))
+			// A repeated id in ?ids=a,a returns the route once — a
+			// self-comparison cell is never meaningful.
+			if seen[r.ID.String()] {
+				continue
+			}
+
+			seen[r.ID.String()] = true
+			dtos = append(dtos, rowToDTO(r).PublicView())
 		} else {
 			missing = append(missing, id.String())
 		}
@@ -330,7 +355,7 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (RouteDTO, error)
 		return RouteDTO{}, pgx.ErrNoRows
 	}
 
-	return s.mergeRouteFieldValue(ctx, rowToDTO(row)), nil
+	return s.mergeRouteFieldValue(ctx, rowToDTO(row).PublicView()), nil
 }
 
 // GetBySlug returns a single published, active visa route by its slug.
@@ -350,7 +375,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, destSpaceID pgtype
 		return RouteDTO{}, pgx.ErrNoRows
 	}
 
-	return s.mergeRouteFieldValue(ctx, rowToDTO(row)), nil
+	return s.mergeRouteFieldValue(ctx, rowToDTO(row).PublicView()), nil
 }
 
 // ResolveSpaceID resolves a ?dest=/?origin= value (space UUID, country
@@ -520,9 +545,11 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 
 	if input.TypicalFeeUSD != nil {
 		f, ok := toFloat64(input.TypicalFeeUSD)
-		if ok {
-			typicalFee = &f
+		if !ok {
+			return RouteDTO{}, fmt.Errorf("%w: typical_fee_usd: not a number", ErrInvalidInput)
 		}
+
+		typicalFee = &f
 	}
 
 	var eligibilitySummary *string
@@ -668,9 +695,11 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 
 	if input.TypicalFeeUSD != nil {
 		f, ok := toFloat64(input.TypicalFeeUSD)
-		if ok {
-			update.TypicalFeeUSD = &f
+		if !ok {
+			return RouteDTO{}, fmt.Errorf("%w: typical_fee_usd: not a number", ErrInvalidInput)
 		}
+
+		update.TypicalFeeUSD = &f
 	}
 
 	if input.PathToPR != nil {

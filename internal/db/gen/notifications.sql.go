@@ -188,6 +188,41 @@ func (q *Queries) DeleteNotificationType(ctx context.Context, key string) (int64
 	return result.RowsAffected(), nil
 }
 
+const existsRecentNotificationBySubject = `-- name: ExistsRecentNotificationBySubject :one
+SELECT EXISTS (
+    SELECT 1 FROM notifications
+    WHERE recipient_id = $1
+      AND notification_type = $2
+      AND subject_type = $3
+      AND subject_id = $4
+      AND created_at > now() - make_interval(days => $5)
+) AS exists
+`
+
+type ExistsRecentNotificationBySubjectParams struct {
+	RecipientID      pgtype.UUID `json:"recipient_id"`
+	NotificationType string      `json:"notification_type"`
+	SubjectType      *string     `json:"subject_type"`
+	SubjectID        pgtype.UUID `json:"subject_id"`
+	Days             int32       `json:"days"`
+}
+
+// Periodic-task dedup: a recurring sweep (e.g. the weekly link check)
+// should remind, not spam — skip recipients already notified about the
+// same subject inside the reminder window.
+func (q *Queries) ExistsRecentNotificationBySubject(ctx context.Context, arg ExistsRecentNotificationBySubjectParams) (bool, error) {
+	row := q.db.QueryRow(ctx, existsRecentNotificationBySubject,
+		arg.RecipientID,
+		arg.NotificationType,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.Days,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const extendBatchWindow = `-- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
 SET actor_ids = CASE WHEN $1::uuid = ANY(actor_ids) THEN actor_ids ELSE array_append(actor_ids, $1) END,
