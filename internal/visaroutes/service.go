@@ -614,13 +614,17 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		aiGenerated = *input.AIGenerated
 	}
 
-	// Slug falls back to a slugified name — the (destination_space_id,
-	// slug) unique index treats '' as a real value, so an omitted slug
-	// would collide on the second create instead of deriving naturally.
+	// Slug falls back to the name — the (destination_space_id, slug)
+	// unique index treats '' as a real value, so an omitted slug would
+	// collide on the second create instead of deriving naturally.
+	// Provided values are slugified too: raw input like "a/b" or "My
+	// Route!" would otherwise store a slug that can't be routed to.
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {
-		slug = content.Slugify(input.Name)
+		slug = input.Name
 	}
+
+	slug = content.Slugify(slug)
 
 	row, err := s.store.Create(ctx, CreateRoute{
 		DestinationSpaceID:   destSpaceID,
@@ -662,22 +666,34 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.VisaCategory != nil {
+		// NOT NULL column with no CHECK — an explicit "" would wipe the
+		// stats-join key rather than clearing an optional field.
+		if strings.TrimSpace(*input.VisaCategory) == "" {
+			return RouteDTO{}, fmt.Errorf("%w: visa_category must not be empty", ErrInvalidInput)
+		}
+
 		update.VisaCategory = input.VisaCategory
 	}
 
 	if input.Name != nil {
+		if strings.TrimSpace(*input.Name) == "" {
+			return RouteDTO{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+		}
+
 		update.Name = input.Name
 	}
 
 	if input.Slug != nil {
 		// An explicitly blank slug would wipe the detail URL — reject it
-		// rather than silently ignoring the field.
+		// rather than silently ignoring the field. Non-empty values are
+		// slugified so path-breaking characters can't reach the URL.
 		trimmed := strings.TrimSpace(*input.Slug)
 		if trimmed == "" {
 			return RouteDTO{}, fmt.Errorf("%w: slug must not be empty", ErrInvalidInput)
 		}
 
-		update.Slug = &trimmed
+		normalized := content.Slugify(trimmed)
+		update.Slug = &normalized
 	}
 
 	if input.EligibilitySummary != nil {
