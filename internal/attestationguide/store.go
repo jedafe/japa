@@ -972,9 +972,12 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 		argIdx++
 	}
 	// BUG-004: search (q) — case-insensitive ILIKE on document_type.
+	// % and _ are ILIKE wildcards — escape them so a literal search for
+	// e.g. "police_clearance" does not match unintended rows.
 	if f.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("p.document_type ILIKE $%d", argIdx))
-		args = append(args, "%"+f.Search+"%")
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Search)
+		conditions = append(conditions, fmt.Sprintf(`p.document_type ILIKE $%d ESCAPE '\'`, argIdx))
+		args = append(args, "%"+escaped+"%")
 		argIdx++
 	}
 

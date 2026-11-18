@@ -543,6 +543,14 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 		p.AIGenerated = *input.AIGenerated
 	}
 
+	// ADR-088: an ai_generated pathway may never be created straight into
+	// 'published' — it must land as a draft and pass through the approve
+	// endpoint so hitl_reviewed_by/at is stamped. The agent clamp already
+	// enforces this on the tool surface; this guards the direct admin API.
+	if p.AIGenerated && (p.Status == "" || p.Status == PathwayStatusPublished) {
+		return PathwayDTO{}, fmt.Errorf("%w: ai_generated pathways cannot be created with status 'published' — approve via the review flow", ErrInvalidInput)
+	}
+
 	if input.AIModel != "" {
 		p.AIModel = &input.AIModel
 	}
@@ -923,6 +931,8 @@ func (s *Service) mergePathwayPatch(ctx context.Context, p *Pathway, input Updat
 		}
 	}
 
+	wasPublished := p.Status == PathwayStatusPublished
+
 	if input.Status != nil {
 		switch *input.Status {
 		case PathwayStatusDraft, PathwayStatusAIDraft, PathwayStatusPending,
@@ -935,6 +945,18 @@ func (s *Service) mergePathwayPatch(ctx context.Context, p *Pathway, input Updat
 
 	if input.IsActive != nil {
 		p.IsActive = *input.IsActive
+	}
+
+	// ADR-088: transitioning an unreviewed AI-generated pathway into
+	// 'published' must go through the approve endpoint so
+	// hitl_reviewed_by/at is stamped — a PATCH bypass would put AI content
+	// live with no recorded review and, because approve rejects
+	// already-published rows, would wedge the pathway. Guarded on the
+	// transition only: editing or deactivating a row already published
+	// before the guard existed stays possible, and rows already stamped
+	// (e.g. rejected-then-republished) keep provenance and move freely.
+	if !wasPublished && p.Status == PathwayStatusPublished && p.AIGenerated && !p.HITLReviewedBy.Valid {
+		return fmt.Errorf("%w: AI-generated pathways must be published via the approve endpoint", ErrInvalidInput)
 	}
 
 	return nil
