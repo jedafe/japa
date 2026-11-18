@@ -2418,7 +2418,8 @@ export const appointmentAlertAdminApi = {
 
 export const visaChecklistAdminApi = {
 	listProgress: (params?: string) => api<unknown>(`/admin/checklist/progress${params ? `?${params}` : ''}`),
-	completionStats: () => api<unknown>(`/admin/checklist/completion-stats`),
+	completionStats: (params?: string) =>
+		api<unknown>(`/admin/checklist/completion-stats${params ? `?${params}` : ''}`),
 };
 
 export const readinessAdminApi = {
