@@ -87,6 +87,10 @@
 		/** Content type value from ?type — used to preselect the composer type
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialType?: string | null;
+		/** Category slug from ?category — used to preselect the guide
+		 *  category when creating new content. Ignored when restoring a
+		 *  draft (the stored guide_category is authoritative). */
+		initialCategory?: string | null;
 		/** Space ID resolved from ?space — used to preselect the space
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialSpaceId?: string | null;
@@ -106,7 +110,7 @@
 		assessmentDimensions: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, botAuthors = [], draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, initialTitle = null, initialBody = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, botAuthors = [], draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialCategory = null, initialSpaceId = null, initialTitle = null, initialBody = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -222,7 +226,11 @@
 	let aiPanelOpen = $state(false);
 
 	// ---- Guide category state ----
-	let guideCategory = $state<string | null>(untrack(() => draft?.guide_category ?? null));
+	// ?category seeds a fresh composer; a restored draft's stored category
+	// is authoritative (same convention as initialType).
+	let guideCategory = $state<string | null>(
+		untrack(() => (draft ? (draft.guide_category ?? null) : initialCategory))
+	);
 	// Journey-aware recommendation metadata (backend normalizes free-text input).
 	let journeyStage = $state<string | null>(untrack(() => draft?.journey_stage ?? null));
 	let visaRoute = $state<string | null>(untrack(() => draft?.visa_route ?? null));
@@ -499,6 +507,25 @@
 		selectedType = types.find((ty) => ty.value === value) ?? resolveType(value);
 		const url = new URL(page.url.href);
 		url.searchParams.set('type', selectedType.value);
+		// ?category only applies to category-bearing types — drop it for
+		// others, restore it when switching back to one with a selection
+		// still in force (guideCategory survives the type switch).
+		if (selectedType.hasCategory && guideCategory) {
+			url.searchParams.set('category', guideCategory);
+		} else {
+			url.searchParams.delete('category');
+		}
+		goto(url, { shallow: true, replace: true });
+		markDirty();
+	}
+
+	// The category picker's mirror of selectTypeByValue — keeps ?category=
+	// in sync so a shared or refreshed URL restores the selection.
+	function setGuideCategory(cat: string | null) {
+		guideCategory = cat;
+		const url = new URL(page.url.href);
+		if (cat) url.searchParams.set('category', cat);
+		else url.searchParams.delete('category');
 		goto(url, { shallow: true, replace: true });
 		markDirty();
 	}
@@ -659,8 +686,8 @@
 					initialFetcher={guideCategoryFetcher}
 					selectedId={guideCategory}
 					selectedLabel={guideCategoryLabel}
-					onSelect={(item) => { guideCategory = item.id; markDirty(); }}
-					onClear={() => { guideCategory = null; markDirty(); }}
+					onSelect={(item) => setGuideCategory(item.id)}
+					onClear={() => setGuideCategory(null)}
 				/>
 			</div>
 		{/if}

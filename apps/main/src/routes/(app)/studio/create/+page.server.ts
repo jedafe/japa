@@ -329,6 +329,21 @@ export const load: PageServerLoad = async (event) => {
 			hasPerm(event.locals.user?.permissions, 'admin.hard_delete')
 	};
 
+	const composerTypes = createAvailableTypes(rawTypes, flags, siteSettings, callerPerms);
+
+	// ?category preselects the sub-category of a category-bearing type
+	// (e.g. ?type=guide&category=visa). Validated against the type the
+	// composer will actually select — the resolved ?type, else the
+	// selector's default entry — so an unknown value is ignored the same
+	// way ?type and ?space are.
+	const requestedCategory = event.url.searchParams.get('category') ?? '';
+	const selectedMeta = composerTypes.find((t) => t.value === initialType) ?? composerTypes[0];
+	const initialCategory =
+		selectedMeta?.hasCategory &&
+		selectedMeta.categories?.some((c) => c.Slug === requestedCategory)
+			? requestedCategory
+			: null;
+
 	// author_id override (content.assign_author): the author picker is fed by
 	// GET /admin/personas — the cheap existing source, already exposing the
 	// backing bot's user_id + byline. Only fetched for callers who can
@@ -362,7 +377,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
-		types: createAvailableTypes(rawTypes, flags, siteSettings, callerPerms),
+		types: composerTypes,
 		spaces,
 		fieldGroups,
 		series,
@@ -380,6 +395,7 @@ export const load: PageServerLoad = async (event) => {
 		draftSeriesId,
 		draftSpaces,
 		initialType,
+		initialCategory,
 		initialSpaceId,
 		initialTitle: sharedTitle,
 		initialBody: sharedBody,

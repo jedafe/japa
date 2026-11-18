@@ -59,6 +59,7 @@
 		draftSeriesId={data.draftSeriesId}
 		draftSpaces={data.draftSpaces}
 		initialType={data.initialType}
+		initialCategory={data.initialCategory}
 		initialSpaceId={data.initialSpaceId}
 		initialTitle={data.initialTitle}
 		initialBody={data.initialBody}
