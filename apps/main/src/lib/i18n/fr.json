@@ -7336,5 +7336,6 @@
 	"visa_routes.to_checklist": "Checklist de documents",
 	"visa_routes.view_source": "Voir la source officielle",
 	"checklist.compare_routes": "Comparer les routes de visa",
-	"checklist.guide_unavailable": "La checklist liée n'est plus disponible — choisissez votre route ci-dessous."
+	"checklist.guide_unavailable": "La checklist liée n'est plus disponible — choisissez votre route ci-dessous.",
+	"checklist.guide_failed": "Impossible de charger la checklist liée — veuillez réessayer."
 }

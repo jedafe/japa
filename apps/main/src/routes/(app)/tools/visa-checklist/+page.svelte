@@ -67,6 +67,11 @@
 	const guideNoticeVisible = $derived(
 		data.guideUnavailable && page.url.searchParams.has('guide_id') && !selectedGuideId
 	);
+	// Transient fetch failure — same URL-tracking as the stale notice but
+	// a different message: the guide may be fine, the load just failed.
+	const guideFailureVisible = $derived(
+		data.guideFailed && page.url.searchParams.has('guide_id') && !selectedGuideId
+	);
 	// Request-a-guide CTA: visible whenever the picked combination has no
 	// guide — an empty destination corpus, a destination with no visa types,
 	// or a needed visa type that isn't listed (destination picked, no guide
@@ -450,7 +455,10 @@
 	);
 </script>
 
+<!-- Faceted canonical: ?guide_id= names a distinct checklist (indexable),
+     ?route_id= only carries back-context — collapse it to the guide URL. -->
 <SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd}
+	canonical={page.url.origin + '/tools/visa-checklist' + (page.url.searchParams.get('guide_id') ? `?guide_id=${encodeURIComponent(page.url.searchParams.get('guide_id')!)}` : '')}
 	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
@@ -494,6 +502,14 @@
 		<div class="px-4 pt-3">
 			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-muted)]">
 				{t('checklist.guide_unavailable', 'The linked checklist is no longer available — pick your route below.')}
+			</div>
+		</div>
+	{/if}
+
+	{#if guideFailureVisible}
+		<div class="px-4 pt-3">
+			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-muted)]">
+				{t('checklist.guide_failed', 'Could not load the linked checklist — please try again.')}
 			</div>
 		</div>
 	{/if}

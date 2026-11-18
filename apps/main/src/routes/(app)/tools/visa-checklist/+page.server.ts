@@ -66,12 +66,19 @@ export const load: PageServerLoad = async (event) => {
 	// A failed progress fetch must surface — silently rendering everything
 	// unticked looks like lost data.
 	let progressFailed = false;
+	// 404/400 mean the link is genuinely dead (unpublished, wrong category,
+	// deleted, malformed). Anything else is transient — claiming the guide
+	// is "no longer available" on a backend blip misleads the user.
+	let guideFailed = false;
 	const guideId = event.url.searchParams.get('guide_id');
 	if (guideId && selector && !disabled) {
 		try {
 			guide = await apiGet<ChecklistGuide>(ctx, `/checklist/${encodeURIComponent(guideId)}`);
-		} catch {
+		} catch (e) {
 			guide = null;
+			if (!(e instanceof ApiError && (e.status === 404 || e.status === 400))) {
+				guideFailed = true;
+			}
 		}
 		if (guide && authed) {
 			try {
@@ -88,7 +95,7 @@ export const load: PageServerLoad = async (event) => {
 	// A requested guide that didn't resolve (unpublished, wrong category,
 	// deleted) must surface a notice — silently dropping to the generic
 	// selector leaves shared-link users wondering what happened.
-	const guideUnavailable = !!guideId && !guide && !disabled && !selectorFailed;
+	const guideUnavailable = !!guideId && !guide && !guideFailed && !disabled && !selectorFailed;
 
 	// §90 integration: `?route_id=<uuid>` preserves which Visa Route
 	// Comparison entry sent the user here — the checklist shows a "back to
@@ -122,5 +129,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, progressFailed, guideUnavailable, sourceRoute };
+	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, progressFailed, guideUnavailable, guideFailed, sourceRoute };
 };
