@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { ClipboardCheck, Check, Lock, RotateCcw, MessageSquarePlus, ArrowLeft, Route } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import { AutocompleteSelect, EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
 	import AuthDialog from '#lib/components/auth/AuthDialog.svelte';
 	import { api } from '#lib/api/client.js';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
@@ -576,11 +576,12 @@
 					{t('checklist.step2', '2. Where are you going?')}
 				</label>
 				<div class="mt-2">
-					<SelectField
+					<AutocompleteSelect
 						id="vc-dest"
 						value={selectedDestination}
 						options={destinations.map((d) => ({ value: d.id, label: d.name }))}
 						placeholder={t('checklist.select_destination', 'Select destination country')}
+						clearable
 						onValueChange={(v) => {
 							selectedDestination = v;
 							onSelectDestination();
