@@ -1041,6 +1041,7 @@
 	"checklist.no_visa_types": "No visa guides published for this destination yet.",
 	"checklist.notes_placeholder": "Add a note…",
 	"checklist.progress": "Progress",
+	"checklist.progress_unavailable": "Could not load your saved progress — items show unticked.",
 	"checklist.request_guide": "Request a guide for this route",
 	"checklist.request_heading": "No guide for this route yet — request one",
 	"checklist.request_destination": "Destination country",

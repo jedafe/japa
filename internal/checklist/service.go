@@ -20,9 +20,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -405,8 +409,11 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 				guideVisaTypes[dest] = make(map[string]VisaTypeOption)
 			}
 
-			if _, exists := guideVisaTypes[dest][v]; !exists {
-				guideVisaTypes[dest][v] = VisaTypeOption{
+			// Dedup by normalized value — "Student" and "student" across
+			// guides are one visa type (same case-merge as destinations).
+			k := strings.ToLower(v)
+			if _, exists := guideVisaTypes[dest][k]; !exists {
+				guideVisaTypes[dest][k] = VisaTypeOption{
 					Value:   v,
 					Label:   prettifyVisaType(v),
 					GuideID: f.GuideID.String(),
@@ -469,11 +476,28 @@ func prettifyVisaType(v string) string {
 	}
 }
 
+// foldMarks normalizes to NFD and strips combining marks so matching is
+// accent-insensitive — authored "Côte d'Ivoire" must resolve against the
+// unaccented space slug "cote-divoire".
+var foldMarks = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+
+// fold strips diacritics; on transform failure the input is returned
+// unchanged (matching degrades to exact, never worse).
+func fold(s string) string {
+	out, _, err := transform.String(foldMarks, s)
+	if err != nil {
+		return s
+	}
+
+	return out
+}
+
 // slugify converts a country name into a URL-safe slug (e.g. "United Kingdom"
 // → "united-kingdom"). Used for destination options that don't have a Geo
-// Space ID.
+// Space ID and for origin/origin-code comparisons — accents are folded so
+// authored values match either spelling.
 func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ToLower(strings.TrimSpace(fold(s)))
 	s = strings.ReplaceAll(s, " ", "-")
 	s = strings.ReplaceAll(s, "'", "")
 
@@ -1182,7 +1206,7 @@ func labelsToRawItems(labels []string) []rawDocumentItem {
 // lowercase, hyphens, strip non-alphanumeric. e.g. "Bank Statement" →
 // "bank-statement", "Passport Copy" → "passport-copy".
 func slugifyItemKey(label string) string {
-	label = strings.ToLower(strings.TrimSpace(label))
+	label = strings.ToLower(strings.TrimSpace(fold(label)))
 
 	var sb strings.Builder
 

@@ -63,6 +63,9 @@ export const load: PageServerLoad = async (event) => {
 	// when signed in.
 	let guide: ChecklistGuide | null = null;
 	let progressItems: { item_key: string; completed: boolean; notes?: string }[] = [];
+	// A failed progress fetch must surface — silently rendering everything
+	// unticked looks like lost data.
+	let progressFailed = false;
 	const guideId = event.url.searchParams.get('guide_id');
 	if (guideId && selector && !disabled) {
 		try {
@@ -77,7 +80,7 @@ export const load: PageServerLoad = async (event) => {
 				}>(ctx, `/checklist/${encodeURIComponent(guideId)}/progress`);
 				progressItems = prog?.items ?? [];
 			} catch {
-				progressItems = [];
+				progressFailed = true;
 			}
 		}
 	}
@@ -119,5 +122,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, guideUnavailable, sourceRoute };
+	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, progressFailed, guideUnavailable, sourceRoute };
 };

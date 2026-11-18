@@ -95,6 +95,9 @@ class _SelectorBody extends ConsumerWidget {
         ],
         if (selection.destination != null && visaTypes.isNotEmpty) ...[
           DropdownButtonFormField<String>(
+            // Remount per destination — initialValue is read once, so a
+            // destination switch would otherwise keep showing the old pick.
+            key: ValueKey(selection.destination!.id),
             initialValue: selection.visaType?.value,
             decoration: InputDecoration(
               labelText: t('checklist.step3'),

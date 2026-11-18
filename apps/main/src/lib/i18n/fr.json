@@ -1016,6 +1016,7 @@
 	"checklist.no_visa_types": "Aucun guide visa publié pour cette destination pour le moment.",
 	"checklist.notes_placeholder": "Ajouter une note…",
 	"checklist.progress": "Progression",
+	"checklist.progress_unavailable": "Impossible de charger votre progression enregistrée — les éléments s'affichent non cochés.",
 	"checklist.request_guide": "Demander un guide pour cet itinéraire",
 	"checklist.request_heading": "Pas encore de guide pour cet itinéraire — demandez-en un",
 	"checklist.request_destination": "Pays de destination",

@@ -122,6 +122,12 @@
 			selectedGuideId = g.guide_id;
 			guideTitle = g.title;
 			items = applyProgress(g.items, data.progressItems);
+			if (data.progressFailed) {
+				itemError = t(
+					'checklist.progress_unavailable',
+					'Could not load your saved progress — items show unticked.'
+				);
+			}
 			// Backfill the 3-step selector (destination + visa type) by
 			// scanning the selector corpus for this guide_id, so a
 			// deep-linked user sees — and can change — the route that
@@ -194,12 +200,18 @@
 		return qs;
 	}
 
+	// Stale-response guard: rapid selection/origin changes can overlap
+	// checklist fetches — only the latest request may write results.
+	let loadSeq = 0;
+
 	async function loadChecklist(guideId: string) {
+		const seq = ++loadSeq;
 		loadingItems = true;
 		itemError = null;
 		items = [];
 		const oq = originQuery();
 		const res = await api.get<ChecklistGuide>(`/checklist/${guideId}${oq}`);
+		if (seq !== loadSeq) return;
 		loadingItems = false;
 		if (res.error || !res.data) {
 			itemError = res.error?.message ?? t('checklist.load_error', 'Could not load checklist');
@@ -215,6 +227,7 @@
 			const progRes = await api.get<{
 				items?: { item_key: string; completed: boolean; notes?: string }[];
 			}>(`/checklist/${guideId}/progress${oq}`);
+			if (seq !== loadSeq) return;
 			if (!progRes.error) {
 				loaded = applyProgress(loaded, progRes.data?.items);
 			} else {
@@ -338,6 +351,7 @@
 	}
 
 	function onSelectDestination() {
+		loadSeq++; // discard any in-flight checklist fetch
 		selectedVisaType = '';
 		selectedGuideId = '';
 		guideTitle = '';
@@ -358,6 +372,7 @@
 	}
 
 	function changeSelection() {
+		loadSeq++; // discard any in-flight checklist fetch
 		selectedVisaType = '';
 		selectedGuideId = '';
 		guideTitle = '';
