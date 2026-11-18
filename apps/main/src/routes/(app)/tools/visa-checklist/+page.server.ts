@@ -110,7 +110,7 @@ export const load: PageServerLoad = async (event) => {
 				name?: string;
 				destination_space_name?: string;
 				visa_category?: string;
-			}>(ctx, `/public/visa-routes/${encodeURIComponent(routeId)}`);
+			}>(ctx, `/visa-routes/${encodeURIComponent(routeId)}`);
 			sourceRoute = {
 				id: routeId,
 				title: r?.name ?? '',

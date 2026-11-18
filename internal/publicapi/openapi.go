@@ -488,11 +488,11 @@ func visaRouteByIDPath() map[string]any {
 }
 
 func compareVisaRoutesPath() map[string]any {
-	ids := queryParam("ids", "Comma-separated visa route IDs to compare (required, maximum 5)").(map[string]any)
+	ids := queryParam("ids", "Comma-separated visa route IDs to compare (required, maximum 4)").(map[string]any)
 	ids["required"] = true
 
 	return map[string]any{
-		"get": withRequiredTier(operation("compareVisaRoutes", "Compare visa routes", "Compare up to 5 visa routes side by side. Premium endpoint — requires a pro or business subscription.", visaTag, "api.read.visa", []any{ids}, map[string]any{
+		"get": withRequiredTier(operation("compareVisaRoutes", "Compare visa routes", "Compare up to 4 visa routes side by side. Premium endpoint — requires a pro or business subscription.", visaTag, "api.read.visa", []any{ids}, map[string]any{
 			"200": dataListResponse("Compared visa routes", "VisaRoute"),
 			"401": refResponse("Unauthorized"),
 			"403": refResponse("Forbidden"),

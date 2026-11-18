@@ -492,15 +492,16 @@
 												{t('visa_routes.source', 'Source')}
 											</a>
 										{/if}
-										{#if route.checklist_guide_id}
-											<a
-												href="/tools/visa-checklist?guide_id={route.checklist_guide_id}&route_id={route.id}"
-												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-											>
-												<ListChecks size={12} />
-												{t('visa_routes.checklist', 'Checklist')}
-											</a>
-										{/if}
+										<!-- checklist_guide_id deep-links a published checklist;
+										     without it route_id alone still backfills the
+										     selector (destination + visa type). -->
+										<a
+											href={route.checklist_guide_id ? `/tools/visa-checklist?guide_id=${encodeURIComponent(route.checklist_guide_id)}&route_id=${encodeURIComponent(route.id)}` : `/tools/visa-checklist?route_id=${encodeURIComponent(route.id)}`}
+											class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+										>
+											<ListChecks size={12} />
+											{t('visa_routes.checklist', 'Checklist')}
+										</a>
 										<a
 											href="/tools/visa-routes/{route.id}"
 											class="text-[var(--color-primary-text)] hover:underline"
