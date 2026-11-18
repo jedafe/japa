@@ -6,6 +6,13 @@
 
 BEGIN;
 
+-- Detach comparison_dimensions still pointing at the field before the
+-- delete (staging had 10 such refs; the FK is RESTRICT so the DELETE
+-- fails outright otherwise).
+UPDATE comparison_dimensions
+SET source_field_id = NULL
+WHERE source_field_id = '45390ad3-7bee-4ad1-8e5a-d92bdb9fe1ab';
+
 DELETE FROM custom_fields
 WHERE id = '45390ad3-7bee-4ad1-8e5a-d92bdb9fe1ab'
   AND group_id = (SELECT id FROM custom_field_groups WHERE slug = 'geo_fields')
