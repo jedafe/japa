@@ -87,5 +87,37 @@ export const load: PageServerLoad = async (event) => {
 	// selector leaves shared-link users wondering what happened.
 	const guideUnavailable = !!guideId && !guide && !disabled && !selectorFailed;
 
-	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, guideUnavailable };
+	// §90 integration: `?route_id=<uuid>` preserves which Visa Route
+	// Comparison entry sent the user here — the checklist shows a "back to
+	// comparison" chip, and when the route has no published guide yet the
+	// selector still backfills from the route's destination + visa
+	// category. Best-effort lookup; a stale/deleted route_id hides the
+	// chip and prefill.
+	let sourceRoute: {
+		id: string;
+		title: string;
+		destination?: string;
+		visaCategory?: string;
+	} | null = null;
+	const routeId = event.url.searchParams.get('route_id');
+	if (routeId) {
+		try {
+			const r = await apiGet<{
+				id: string;
+				name?: string;
+				destination_space_name?: string;
+				visa_category?: string;
+			}>(ctx, `/public/visa-routes/${encodeURIComponent(routeId)}`);
+			sourceRoute = {
+				id: routeId,
+				title: r?.name ?? '',
+				destination: r?.destination_space_name,
+				visaCategory: r?.visa_category
+			};
+		} catch {
+			sourceRoute = null;
+		}
+	}
+
+	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, guideUnavailable, sourceRoute };
 };

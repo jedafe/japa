@@ -494,7 +494,7 @@
 										{/if}
 										{#if route.checklist_guide_id}
 											<a
-												href="/tools/visa-checklist?guide_id={route.checklist_guide_id}"
+												href="/tools/visa-checklist?guide_id={route.checklist_guide_id}&route_id={route.id}"
 												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 											>
 												<ListChecks size={12} />

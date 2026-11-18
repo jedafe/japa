@@ -25,6 +25,7 @@
 	const disabled = $derived(data.disabled);
 	const selectorFailed = $derived(data.selectorFailed);
 	const authed = $derived(data.authed);
+	const sourceRoute = $derived(data.sourceRoute);
 
 	// Selector state — 3 steps.
 	let selectedOrigin = $state('');
@@ -66,6 +67,14 @@
 	const guideNoticeVisible = $derived(
 		data.guideUnavailable && page.url.searchParams.has('guide_id') && !selectedGuideId
 	);
+	// Request-a-guide CTA: visible whenever the picked combination has no
+	// guide — an empty destination corpus, a destination with no visa types,
+	// or a needed visa type that isn't listed (destination picked, no guide
+	// loaded). Once a guide renders, the request form is moot.
+	const showRequestCta = $derived(
+		!!selectedOrigin &&
+			(destinations.length === 0 || (selectedDestination !== '' && selectedGuideId === ''))
+	);
 	const completedCount = $derived(items.filter((i) => i.completed).length);
 	const progressPct = $derived(items.length > 0 ? Math.round(completedCount / items.length * 100) : 0);
 
@@ -96,30 +105,101 @@
 	}
 
 	// Hydrate from a ?guide_id= deep link: server already fetched the guide
-	// (and progress when signed in).
+	// (and progress when signed in). Track which guide_id was hydrated — NOT
+	// selectedGuideId — so clearing the selection never re-fires hydration
+	// (previously caused a snap-back that trapped users on deep links).
+	let hydratedGuideId = $state<string | null>(null);
+
 	$effect(() => {
-		if (data.guide && selectedGuideId !== data.guide.guide_id) {
-			untrack(() => {
-				selectedGuideId = (data.guide!).guide_id;
-				guideTitle = (data.guide!).title;
-				items = applyProgress((data.guide!).items, data.progressItems);
-			});
+		const g = data.guide;
+		if (!g) {
+			hydratedGuideId = null;
+			return;
 		}
+		if (g.guide_id === hydratedGuideId) return;
+		hydratedGuideId = g.guide_id;
+		untrack(() => {
+			selectedGuideId = g.guide_id;
+			guideTitle = g.title;
+			items = applyProgress(g.items, data.progressItems);
+			// Backfill the 3-step selector (destination + visa type) by
+			// scanning the selector corpus for this guide_id, so a
+			// deep-linked user sees — and can change — the route that
+			// produced the checklist. Origin stays empty: the guide can't
+			// know it, and picking one re-filters items.
+			backfillSelector(g.guide_id);
+		});
+	});
+
+	// Resolve a guide's destination option id + visa type value so the
+	// selector selects render filled on deep links.
+	function backfillSelector(guideId: string) {
+		for (const d of selector?.destinations ?? []) {
+			const vt = (d.visa_types ?? []).find((v) => v.guide_id === guideId);
+			if (vt) {
+				selectedDestination = d.id;
+				selectedVisaType = vt.value;
+				return;
+			}
+		}
+		// Guide not in selector corpus (unpublished since the link was
+		// shared, or field edited) — nothing to backfill; the checklist
+		// itself is still rendered.
+	}
+
+	// §90 integration: a route_id with no resolvable guide_id still
+	// backfills the selector — destination by name, visa type by category —
+	// so the user lands one step from the checklist (or the request form).
+	$effect(() => {
+		const sr = data.sourceRoute;
+		if (!sr?.destination || data.guide) return;
+		untrack(() => {
+			if (selectedDestination) return;
+			const d = destinations.find(
+				(x) => x.name.toLowerCase() === sr.destination!.toLowerCase()
+			);
+			if (d) {
+				selectedDestination = d.id;
+				if (sr.visaCategory) {
+					const vt = (d.visa_types ?? []).find(
+						(v) => v.value.toLowerCase() === sr.visaCategory!.toLowerCase()
+					);
+					if (vt) {
+						selectedVisaType = vt.value;
+						void onSelectVisaType();
+					}
+				}
+			}
+		});
 	});
 
 	function syncGuideParam(guideId: string | null) {
 		const url = new URL(page.url.href);
 
 		if (guideId) url.searchParams.set('guide_id', guideId); else url.searchParams.delete('guide_id');
+		if (!guideId) url.searchParams.delete('route_id');
 
 		goto(url, { shallow: true, replace: true });
+	}
+
+	// Origin filter params shared by every checklist API call — ADR-070 §2
+	// narrows the item set to origin-specific requirements. Slug + ISO code
+	// are both sent; the backend matches either against per-item origins.
+	function originQuery(): string {
+		const o = originOptions.find((x) => x.id === selectedOrigin);
+		if (!o) return '';
+		const code = 'code' in o ? (o as { code?: string }).code ?? '' : '';
+		let qs = `?origin=${encodeURIComponent(o.slug)}`;
+		if (code) qs += `&origin_code=${encodeURIComponent(code)}`;
+		return qs;
 	}
 
 	async function loadChecklist(guideId: string) {
 		loadingItems = true;
 		itemError = null;
 		items = [];
-		const res = await api.get<ChecklistGuide>(`/checklist/${guideId}`);
+		const oq = originQuery();
+		const res = await api.get<ChecklistGuide>(`/checklist/${guideId}${oq}`);
 		loadingItems = false;
 		if (res.error || !res.data) {
 			itemError = res.error?.message ?? t('checklist.load_error', 'Could not load checklist');
@@ -129,11 +209,17 @@
 		let loaded = res.data.items ?? [];
 
 		// Merge saved progress for authenticated users (§70: GET /progress).
+		// A failed progress load must surface — silently rendering everything
+		// unticked looks like lost data.
 		if (authed) {
 			const progRes = await api.get<{
 				items?: { item_key: string; completed: boolean; notes?: string }[];
-			}>(`/checklist/${guideId}/progress`);
-			if (!progRes.error) loaded = applyProgress(loaded, progRes.data?.items);
+			}>(`/checklist/${guideId}/progress${oq}`);
+			if (!progRes.error) {
+				loaded = applyProgress(loaded, progRes.data?.items);
+			} else {
+				itemError = progRes.error.message;
+			}
 		}
 		items = loaded;
 	}
@@ -143,7 +229,7 @@
 		if (!authed || !selectedGuideId || resetting) return;
 		if (!confirm(t('checklist.reset_confirm', 'Reset all progress for this checklist? This cannot be undone.'))) return;
 		resetting = true;
-		const res = await api.delete(`/checklist/${selectedGuideId}/progress`);
+		const res = await api.delete(`/checklist/${selectedGuideId}/progress${originQuery()}`);
 		resetting = false;
 		if (res.error) {
 			itemError = res.error.message;
@@ -155,47 +241,82 @@
 	}
 
 	// ── Request-a-guide (§70: POST /forms/{id}/submissions via §06) ────────
-	// When no visa guide exists for the selected origin + destination, the
-	// user can submit a request. The form slug is fixed ('visa-guide-request',
-	// seeded by migration 000509); the form ID is resolved via the embed
-	// endpoint and cached for the session.
-	let requestFormId = $state<string | null>(null);
+	// The request UI is rendered from the live embed form definition — the
+	// visa_type select options come from the seeded form schema (Rule 16, no
+	// hardcoded option lists) and destination is a free-text field so the
+	// request still works when no destination is published yet.
+	interface RequestFormField {
+		key: string;
+		label: string;
+		type: string;
+		required?: boolean;
+		option_defs?: { value: string; label: string }[];
+		options?: string[];
+		placeholder?: string | null;
+	}
+	interface RequestFormDef {
+		id: string;
+		submit_label?: string;
+		fields?: RequestFormField[];
+	}
+
+	let requestForm = $state<RequestFormDef | null>(null);
 	let requestLoading = $state(false);
 	let requestError = $state<string | null>(null);
 	let requestSubmitted = $state(false);
+	let requestDestination = $state('');
+	let requestVisaType = $state('other');
+	let requestNotes = $state('');
 
 	function resetRequestState() {
 		requestError = null;
 		requestSubmitted = false;
 	}
 
-	async function ensureRequestFormId(): Promise<string | null> {
-		if (requestFormId) return requestFormId;
-		const res = await api.get<{ id: string }>(`/forms/visa-guide-request/embed`);
+	async function ensureRequestForm(): Promise<RequestFormDef | null> {
+		if (requestForm) return requestForm;
+		const res = await api.get<RequestFormDef>(`/forms/visa-guide-request/embed`);
 		if (res.error || !res.data?.id) return null;
-		requestFormId = res.data.id;
-		return requestFormId;
+		requestForm = res.data;
+		return requestForm;
 	}
 
+	// Preload the form definition the moment the CTA becomes visible so the
+	// fields render instantly when the user expands it.
+	$effect(() => {
+		if (showRequestCta && !requestForm) void ensureRequestForm();
+	});
+
+	const requestVisaTypeOptions = $derived.by(() => {
+		const f = requestForm?.fields?.find((x) => x.key === 'visa_type');
+		return f?.option_defs ?? [];
+	});
+
+	// Sync the requested destination with the selector when one is picked —
+	// free text otherwise (covers the empty-corpus case).
+	$effect(() => {
+		const name = destinations.find((d) => d.id === selectedDestination)?.name;
+		if (name) requestDestination = name;
+	});
+
 	async function submitGuideRequest() {
-		if (!selectedOrigin || !selectedDestination || requestLoading) return;
+		if (!selectedOrigin || !requestDestination.trim() || requestLoading) return;
 		requestLoading = true;
 		requestError = null;
 		requestSubmitted = false;
-		const formId = await ensureRequestFormId();
-		if (!formId) {
+		const form = await ensureRequestForm();
+		if (!form) {
 			requestError = t('checklist.request_unavailable', 'Request form unavailable. Please try again later.');
 			requestLoading = false;
 			return;
 		}
 		const originName = originOptions.find((o) => o.id === selectedOrigin)?.name ?? selectedOrigin;
-		const destName = destinations.find((d) => d.id === selectedDestination)?.name ?? selectedDestination;
-		const res = await api.post(`/forms/${formId}/submissions`, {
+		const res = await api.post(`/forms/${form.id}/submissions`, {
 			field_values: {
 				origin_country: originName,
-				destination_country: destName,
-				visa_type: 'other',
-				notes: ''
+				destination_country: requestDestination.trim(),
+				visa_type: requestVisaType || 'other',
+				notes: requestNotes.trim()
 			}
 		});
 		requestLoading = false;
@@ -207,17 +328,13 @@
 	}
 
 	function onSelectOrigin() {
-		// Step 1 changed — every downstream selection/result is for the old
-		// route and must be cleared (previously left the UK checklist visible
-		// under a different origin).
-		selectedDestination = '';
-		selectedVisaType = '';
-		selectedGuideId = '';
-		guideTitle = '';
-		items = [];
-		itemError = null;
+		// Origin narrows the displayed item set to origin-specific
+		// requirements (ADR-070 §2). With a guide loaded, refetch its items
+		// under the new origin — the guide itself is destination+type-scoped
+		// and stays selected. Before a guide is picked, downstream selects
+		// are origin-independent and stay as-is.
 		resetRequestState();
-		syncGuideParam(null);
+		if (selectedGuideId) void loadChecklist(selectedGuideId);
 	}
 
 	function onSelectDestination() {
@@ -230,10 +347,14 @@
 		syncGuideParam(null);
 	}
 
-	async function onSelectVisaType(guideId: string) {
-		selectedGuideId = guideId;
-		syncGuideParam(guideId);
-		await loadChecklist(guideId);
+	async function onSelectVisaType() {
+		// The select binds the visa-type value; resolve it back to the
+		// guide_id (selectedVisaType storing a guide_id conflated the two).
+		const vt = visaTypes.find((v) => v.value === selectedVisaType);
+		if (!vt) return;
+		selectedGuideId = vt.guide_id;
+		syncGuideParam(vt.guide_id);
+		await loadChecklist(vt.guide_id);
 	}
 
 	function changeSelection() {
@@ -260,7 +381,7 @@
 			i.item_key === item.item_key ? { ...i, completed: !prev } : i
 		);
 		const res = await api.patch(
-			`/checklist/${selectedGuideId}/progress/${item.item_key}`,
+			`/checklist/${selectedGuideId}/progress/${item.item_key}${originQuery()}`,
 			{ completed: !prev }
 		);
 		savingKey = null;
@@ -277,7 +398,7 @@
 		if (!authed || !selectedGuideId) return;
 		savingKey = item.item_key;
 		const res = await api.patch(
-			`/checklist/${selectedGuideId}/progress/${item.item_key}`,
+			`/checklist/${selectedGuideId}/progress/${item.item_key}${originQuery()}`,
 			{ notes }
 		);
 		savingKey = null;
@@ -322,6 +443,22 @@
 	<div class="px-4 pt-4">
 		<ToolHeader icon={ClipboardCheck} title={t('tools.visa_checklist', 'Visa Checklist')} description={description} />
 	</div>
+
+	{#if sourceRoute}
+		<!-- §90 integration: user arrived from a specific comparison route —
+		     give them a way back to exactly that context. -->
+		<div class="px-4 pt-2">
+			<a
+				href={`/tools/visa-routes/${encodeURIComponent(sourceRoute.id)}`}
+				class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text)] hover:border-[var(--color-primary)]"
+			>
+				<ArrowLeft class="rtl:-scale-x-100" size={12} />
+				{sourceRoute.title
+					? t('checklist.back_to_route', 'Back to {route}').replace('{route}', sourceRoute.title)
+					: t('checklist.back_to_comparison', 'Back to route comparison')}
+			</a>
+		</div>
+	{/if}
 
 	{#if !disabled}
 		<!-- §90 reverse link: the comparison tool and this checklist are
@@ -417,11 +554,11 @@
 					<SelectField
 						id="vc-visa"
 						value={selectedVisaType}
-						options={visaTypes.map((vt) => ({ value: vt.guide_id, label: vt.label }))}
+						options={visaTypes.map((vt) => ({ value: vt.value, label: vt.label }))}
 						placeholder={t('checklist.select_visa', 'Select visa type')}
 						onValueChange={(v) => {
 							selectedVisaType = v;
-							onSelectVisaType(v);
+							onSelectVisaType();
 						}}
 					/>
 				</div>
@@ -434,30 +571,64 @@
 			</div>
 		{/if}
 
-		<!-- Request-a-guide CTA (§70): shown whenever the user's combination has
-		     no guide — no destinations published at all, none for the chosen
-		     destination, or the visa type they need is unlisted. -->
-		{#if selectedOrigin && (destinations.length === 0 || selectedDestination && visaTypes.length === 0)}
+		<!-- Request-a-guide (§70): visible whenever the picked combination has
+		     no guide — no destinations published, none for the destination,
+		     or the needed visa type isn't listed. Fields are rendered from
+		     the live form schema; destination is free-text so the request
+		     works even with an empty destination corpus. -->
+		{#if showRequestCta}
 			<div class="px-4 pb-3">
 				{#if requestSubmitted}
 					<p class="text-sm text-[var(--color-primary-text)]">
 						{t('checklist.request_success', 'Your request has been submitted. Our team will prioritize this route.')}
 					</p>
 				{:else}
-					<button
-						type="button"
-						disabled={!selectedOrigin || !selectedDestination || requestLoading}
-						onclick={submitGuideRequest}
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] disabled:opacity-50"
-					>
-						<MessageSquarePlus size={16} />
-						{requestLoading
-							? t('checklist.request_submitting', 'Submitting…')
-							: t('checklist.request_guide', 'Request a guide for this route')}
-					</button>
-					{#if requestError}
-						<p class="mt-2 text-xs text-[var(--color-danger)]">{requestError}</p>
-					{/if}
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+						<p class="mb-2 text-sm font-medium text-[var(--color-text)]">
+							{t('checklist.request_heading', 'No guide for this route yet — request one')}
+						</p>
+						<div class="mb-2">
+							<label for="vc-req-dest" class="sr-only">{t('checklist.request_destination', 'Destination country')}</label>
+							<input
+								id="vc-req-dest"
+								type="text"
+								bind:value={requestDestination}
+								placeholder={t('checklist.request_destination_ph', 'Destination country')}
+								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+							/>
+						</div>
+						{#if requestVisaTypeOptions.length > 0}
+							<div class="mb-2">
+								<SelectField
+									id="vc-req-type"
+									value={requestVisaType}
+									options={requestVisaTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
+									placeholder={t('checklist.request_visa_type', 'Visa type')}
+									onValueChange={(v) => (requestVisaType = v)}
+								/>
+							</div>
+						{/if}
+						<textarea
+							rows="2"
+							bind:value={requestNotes}
+							placeholder={t('checklist.request_notes_ph', 'Anything else we should know? (optional)')}
+							class="mb-2 w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+						></textarea>
+						<button
+							type="button"
+							disabled={!selectedOrigin || !requestDestination.trim() || requestLoading}
+							onclick={submitGuideRequest}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] disabled:opacity-50"
+						>
+							<MessageSquarePlus size={16} />
+							{requestLoading
+								? t('checklist.request_submitting', 'Submitting…')
+								: t('checklist.request_guide', 'Request a guide for this route')}
+						</button>
+						{#if requestError}
+							<p class="mt-2 text-xs text-[var(--color-danger)]">{requestError}</p>
+						{/if}
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -503,7 +674,7 @@
 										type="button"
 										disabled={resetting}
 										onclick={resetProgress}
-										class="inline-flex items-center gap-1 text-[var(--color-muted)] hover:text-red-500 disabled:opacity-50"
+										class="inline-flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-50"
 									>
 										<RotateCcw size={14} />
 										{t('checklist.reset_progress', 'Reset progress')}
@@ -556,7 +727,7 @@
 													: 'text-[var(--color-text)]'}"
 												>{item.label}</span>
 												{#if item.required}
-													<span class="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+													<span class="rounded bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--color-danger)]">
 														{t('checklist.required', 'Required')}
 													</span>
 												{/if}

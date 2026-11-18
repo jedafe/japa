@@ -179,9 +179,10 @@
 			</a>
 			<!-- §70 checklist deep link — checklist_guide_id is only
 			     populated when the linked guide is published, so the
-			     deep link can never land on a dead checklist. -->
+			     deep link can never land on a dead checklist. route_id
+			     preserves this comparison as the checklist's back-context. -->
 			<a
-				href={route.checklist_guide_id ? `/tools/visa-checklist?guide_id=${encodeURIComponent(route.checklist_guide_id)}` : '/tools/visa-checklist'}
+				href={route.checklist_guide_id ? `/tools/visa-checklist?guide_id=${encodeURIComponent(route.checklist_guide_id)}&route_id=${encodeURIComponent(route.id)}` : '/tools/visa-checklist'}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<ClipboardCheck size={16} />
