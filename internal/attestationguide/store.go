@@ -151,12 +151,25 @@ WHERE id = ANY($1) AND deleted_at IS NULL
 }
 
 // GuideSlugForPathway returns the slug of the published editorial guide
-// (guide_category='attestation') whose field_values.pathway_id points at the
-// given pathway — the tool→guide half of the cross-link (§97 editorial
-// integration). Returns "" with nil error when no guide claims the pathway.
-func (s *Store) GuideSlugForPathway(ctx context.Context, pathwayID pgtype.UUID) (string, error) {
-	if !pathwayID.Valid {
+// (guide_category='attestation') linked to the given pathway — the
+// tool→guide half of the cross-link (§97 editorial integration). A guide
+// links either explicitly via field_values.pathway_id or implicitly via
+// the matching field combination (document_type + issuing_country +
+// destination_country geo codes) — the pathway's natural key, so an
+// editor-written guide resolves without anyone pasting a UUID. An
+// explicit pathway_id claim wins over a combination match on conflicts.
+// Returns "" with nil error when no guide claims the pathway.
+func (s *Store) GuideSlugForPathway(ctx context.Context, p PathwayRow) (string, error) {
+	if !p.ID.Valid {
 		return "", nil
+	}
+
+	var issGeo, destGeo *string
+	if p.IssuingSpaceCode != nil && *p.IssuingSpaceCode != "" {
+		issGeo = p.IssuingSpaceCode
+	}
+	if p.DestSpaceCode != nil && *p.DestSpaceCode != "" {
+		destGeo = p.DestSpaceCode
 	}
 
 	const q = `
@@ -165,13 +178,20 @@ WHERE content_type = 'guide'
   AND guide_category = 'attestation'
   AND status = 'published'
   AND deleted_at IS NULL
-  AND field_values->>'pathway_id' = $1
-ORDER BY created_at, id
+  AND (
+      field_values->>'pathway_id' = $1
+      OR (
+          field_values->>'document_type' = $2
+          AND UPPER(field_values->>'issuing_country') = UPPER($3::text)
+          AND UPPER(field_values->>'destination_country') = UPPER($4::text)
+      )
+  )
+ORDER BY (field_values->>'pathway_id' = $1) DESC, created_at, id
 LIMIT 1
 `
 
 	var slug string
-	err := s.pool.Reader.QueryRow(ctx, q, pathwayID.String()).Scan(&slug)
+	err := s.pool.Reader.QueryRow(ctx, q, p.ID.String(), p.DocumentType, issGeo, destGeo).Scan(&slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil

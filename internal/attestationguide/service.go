@@ -449,11 +449,12 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (PathwayDTO, erro
 	dto := pathwayRowToDTO(row)
 	dto.scrubInternal()
 
-	// Enrich with the linked editorial guide slug (guide post whose
-	// field_values.pathway_id references this pathway) so the public detail
-	// page can cross-link tool→guide. Enrichment failure never fails the
-	// read — the page falls back to the guides hub.
-	if slug, slugErr := s.store.GuideSlugForPathway(ctx, id); slugErr != nil {
+	// Enrich with the linked editorial guide slug — matched by explicit
+	// field_values.pathway_id or by the document_type + corridor geo-code
+	// combination — so the public detail page can cross-link tool→guide.
+	// Enrichment failure never fails the read — the page falls back to
+	// the guides hub.
+	if slug, slugErr := s.store.GuideSlugForPathway(ctx, row); slugErr != nil {
 		slog.Warn("attestationguide: guide slug lookup failed", "id", id, "error", slugErr)
 	} else {
 		dto.GuideSlug = slug

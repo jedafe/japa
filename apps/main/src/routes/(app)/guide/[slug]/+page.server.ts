@@ -4,7 +4,7 @@ import { loadContentArticle } from '#lib/server/content-article.js';
 import { contentHref } from '#lib/utils/contentLink.js';
 import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
 import { DOC_TYPES } from '#lib/attestation/steps.js';
-import type { GeoCountry, Scholarship } from '#lib/types/index.js';
+import type { AttestationPathwayWithAi, GeoCountry, Scholarship } from '#lib/types/index.js';
 
 /**
  * Guide single page at /guide/{slug} — the canonical detail route for
@@ -87,7 +87,51 @@ export const load: PageServerLoad = async (event) => {
 					attestationToolHref = `/tools/attestation-guide/${pid}`;
 					linked = true;
 				} catch {
-					// Stale/unpublished pathway id — fall back to the corridor link.
+					// Stale/unpublished pathway id — fall through to resolution.
+				}
+			}
+			// Auto-resolution: the document_type + issuing/destination country
+			// combination is the pathway's natural key, so a guide links to its
+			// pathway without anyone filling pathway_id manually. A single
+			// unambiguous match deep-links straight to the pathway; anything
+			// else falls back to the corridor-filtered tool landing.
+			if (!linked) {
+				const docType =
+					typeof fv.document_type === 'string' &&
+					(DOC_TYPES as readonly { value: string }[]).some(
+						(d) => d.value === fv.document_type
+					)
+						? fv.document_type
+						: '';
+				const spaceId = (geo: unknown) =>
+					typeof geo === 'string' && geo.trim()
+						? (geoCountries.find(
+								(c) =>
+									c.geo_code?.toUpperCase() ===
+									geo.trim().toUpperCase()
+							)?.id ?? null)
+						: null;
+				const destId = spaceId(fv.destination_country);
+				const issId = spaceId(fv.issuing_country);
+				if (docType && destId && issId) {
+					try {
+						const qs = new URLSearchParams({
+							dest: destId,
+							issuing: issId,
+							doc_type: docType,
+							page_size: '2'
+						});
+						const res = await apiList<AttestationPathwayWithAi>(
+							ctx,
+							`/attestation?${qs}`
+						);
+						if (res.items.length === 1) {
+							attestationToolHref = `/tools/attestation-guide/${res.items[0].id}`;
+							linked = true;
+						}
+					} catch {
+						// Lookup failure — fall back to the corridor link.
+					}
 				}
 			}
 			if (!linked) attestationToolHref = corridorHref();
