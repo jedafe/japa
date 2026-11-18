@@ -263,6 +263,9 @@ UPDATE contents
 SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('pathway_id', $2::text),
     updated_at = now()
 WHERE id = $1
+  AND content_type = 'guide'
+  AND guide_category = 'attestation'
+  AND deleted_at IS NULL
 `
 
 	if _, err := s.pool.Writer.Exec(ctx, q, contentID, pathwayID.String()); err != nil {
