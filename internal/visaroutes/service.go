@@ -7,6 +7,7 @@ package visaroutes
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -408,6 +409,11 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 // absolute http(s) URL with a public host.
 var ErrInvalidGovSourceURL = errors.New("gov_source_url must be an absolute http(s) URL")
 
+// ErrInvalidInput is returned when a caller-supplied field fails
+// validation (unparseable date, unmarshalable requirements) — the handler
+// maps it to a 400 instead of the generic 500.
+var ErrInvalidInput = errors.New("invalid input")
+
 // sanitizeVisaGovURL validates a government source URL. Only absolute
 // http(s) URLs with a host are accepted — javascript:, data:,
 // protocol-relative, and bare strings are rejected so the stored value is
@@ -446,6 +452,45 @@ func SanitizeGovSourceURL(raw string) (string, bool) {
 	return sanitizeVisaGovURL(raw)
 }
 
+// validatePatchStatus enforces the ADR-088 HITL gate on PATCH updates:
+// 'published' is reserved for the approve endpoint — it stamps
+// hitl_reviewed_by/at, the audit trail a direct PATCH would bypass.
+// 'ai_draft' belongs to the generate endpoint — PATCHing it would fake
+// AI provenance on a human-edited row. 'rejected' stays PATCH-able:
+// the §90 lifecycle has no dedicated reject route.
+func validatePatchStatus(status string) error {
+	if !IsValidStatus(status) {
+		return fmt.Errorf("%w: %q is not a visa route status", ErrInvalidStatus, status)
+	}
+
+	if status == StatusPublished {
+		return fmt.Errorf("%w: use the approve endpoint to publish", ErrInvalidStatus)
+	}
+
+	if status == StatusAIDraft {
+		return fmt.Errorf("%w: 'ai_draft' is set by the generate endpoint", ErrInvalidStatus)
+	}
+
+	return nil
+}
+
+// aiDraftSlug builds a unique, slug-safe slug for a generated draft. The
+// prompt hash alone makes a repeat Generate of the same (dest, category,
+// prompt) hit the unique index, so a random suffix keeps regeneration
+// repeatable. The category is slug-ified: raw values like "intra company
+// transfer" would otherwise land spaces in the slug.
+func aiDraftSlug(visaCategory, promptHash string) string {
+	var randBuf [4]byte
+	_, _ = rand.Read(randBuf[:])
+	catSlug := strings.Trim(strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(visaCategory)), "-")
+	return fmt.Sprintf("ai-draft-%s-%s-%s", catSlug, promptHash[:min(6, len(promptHash))], hex.EncodeToString(randBuf[:]))
+}
+
 // Create creates a new visa route (admin). New routes default to
 // status=draft, is_active=false — they must be HITL-approved before the
 // public surface serves them.
@@ -462,7 +507,9 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		return RouteDTO{}, errors.New("gov_source_url is required")
 	}
 
-	if _, ok := sanitizeVisaGovURL(input.GovSourceURL); !ok {
+	// Store the sanitized (trimmed) value, not the raw input.
+	govURL, ok := sanitizeVisaGovURL(input.GovSourceURL)
+	if !ok {
 		return RouteDTO{}, ErrInvalidGovSourceURL
 	}
 
@@ -474,7 +521,7 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 
 	requirementsJSON, err := marshalRequirements(input.Requirements)
 	if err != nil {
-		return RouteDTO{}, fmt.Errorf("invalid requirements: %w", err)
+		return RouteDTO{}, fmt.Errorf("%w: requirements: %v", ErrInvalidInput, err)
 	}
 
 	var typicalFee *float64
@@ -519,7 +566,7 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 	var sourceLastChecked pgtype.Date
 	if input.SourceURLLastChecked != "" {
 		if err := sourceLastChecked.Scan(input.SourceURLLastChecked); err != nil {
-			return RouteDTO{}, fmt.Errorf("invalid source_url_last_checked: %w", err)
+			return RouteDTO{}, fmt.Errorf("%w: source_url_last_checked: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -556,7 +603,7 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		PathToPR:             pathToPR,
 		RenewalTerms:         renewalTerms,
 		Restrictions:         restrictions,
-		GovSourceURL:         input.GovSourceURL,
+		GovSourceURL:         govURL,
 		SourceURLLastChecked: sourceLastChecked,
 		Status:               status,
 		IsActive:             isActive,
@@ -603,7 +650,7 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	if input.Requirements != nil {
 		rj, err := marshalRequirements(input.Requirements)
 		if err != nil {
-			return RouteDTO{}, fmt.Errorf("invalid requirements: %w", err)
+			return RouteDTO{}, fmt.Errorf("%w: requirements: %v", ErrInvalidInput, err)
 		}
 
 		update.RequirementsJSON = rj
@@ -629,17 +676,18 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.GovSourceURL != nil {
-		if _, ok := sanitizeVisaGovURL(*input.GovSourceURL); !ok {
+		v, ok := sanitizeVisaGovURL(*input.GovSourceURL)
+		if !ok {
 			return RouteDTO{}, ErrInvalidGovSourceURL
 		}
 
-		update.GovSourceURL = input.GovSourceURL
+		update.GovSourceURL = &v
 	}
 
 	if input.SourceURLLastChecked != nil && *input.SourceURLLastChecked != "" {
 		d, err := timeparse.ParseDate(*input.SourceURLLastChecked)
 		if err != nil {
-			return RouteDTO{}, fmt.Errorf("invalid source_url_last_checked: %w", err)
+			return RouteDTO{}, fmt.Errorf("%w: source_url_last_checked: %v", ErrInvalidInput, err)
 		}
 
 		update.SourceURLLastChecked = &d
@@ -648,14 +696,12 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	if input.Status != nil {
 		// ADR-088 HITL gate: 'published' is reserved for the approve
 		// endpoint — it stamps hitl_reviewed_by/at, the audit trail a
-		// direct PATCH would bypass. 'rejected' stays PATCH-able: the
-		// §90 lifecycle has no dedicated reject route.
-		if !IsValidStatus(*input.Status) {
-			return RouteDTO{}, fmt.Errorf("%w: %q is not a visa route status", ErrInvalidStatus, *input.Status)
-		}
-
-		if *input.Status == StatusPublished {
-			return RouteDTO{}, fmt.Errorf("%w: use the approve endpoint to publish", ErrInvalidStatus)
+		// direct PATCH would bypass. 'ai_draft' belongs to the generate
+		// endpoint — PATCHing it would fake AI provenance on a
+		// human-edited row. 'rejected' stays PATCH-able: the §90
+		// lifecycle has no dedicated reject route.
+		if err := validatePatchStatus(*input.Status); err != nil {
+			return RouteDTO{}, err
 		}
 
 		update.Status = input.Status
@@ -813,7 +859,12 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 	aiModel := "content_agent_v1"
 	aiGenerated := true
 	routeName := fmt.Sprintf("AI Draft: %s (%s)", visaCategory, input.DestinationSpaceID)
-	slug := fmt.Sprintf("ai-draft-%s-%s", visaCategory, promptHash[:8])
+	// The slug must be unique per destination — the prompt hash alone
+	// makes a repeat Generate of the same (dest, category, prompt) hit the
+	// unique index, so a random suffix keeps regeneration repeatable.
+	// The category is slug-ified: raw values like "intra company transfer"
+	// would otherwise land spaces in the slug.
+	slug := aiDraftSlug(visaCategory, promptHash)
 	isActive := false
 
 	row, err := s.store.Create(ctx, CreateRoute{

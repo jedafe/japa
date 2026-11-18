@@ -38,6 +38,19 @@ var privateIPRanges = []string{
 	"fe80::/10",          // IPv6 link-local
 }
 
+// privateIPNets is privateIPRanges pre-parsed once — IsPrivateIP runs on
+// every outbound dial, so re-parsing 18 CIDR strings per call would be
+// needlessly hot.
+var privateIPNets []*net.IPNet
+
+func init() {
+	for _, cidr := range privateIPRanges {
+		if _, n, err := net.ParseCIDR(cidr); err == nil {
+			privateIPNets = append(privateIPNets, n)
+		}
+	}
+}
+
 // MaxRedirectDepth is the maximum number of redirects the safe client
 // follows before failing the request.
 const MaxRedirectDepth = 5
@@ -55,12 +68,7 @@ func IsPrivateIP(ip net.IP) bool {
 		ip = v4
 	}
 
-	for _, cidr := range privateIPRanges {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-
+	for _, network := range privateIPNets {
 		if network.Contains(ip) {
 			return true
 		}

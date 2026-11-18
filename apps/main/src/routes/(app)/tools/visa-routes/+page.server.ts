@@ -45,6 +45,22 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => [] as VisaRouteWithAi[])
 		: Promise.resolve([] as VisaRouteWithAi[]);
 
+	// ?ids=a,b,c — shareable comparison selection (§90). When a link
+	// carries ids but no dest, hydrate the referenced routes through the
+	// compare endpoint so the recipient's selection survives the trip
+	// (otherwise an empty route list silently drops it client-side).
+	const initialRouteIds = (event.url.searchParams.get('ids') ?? '')
+		.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean)
+		.slice(0, 4);
+
+	const sharePromise = !destParam && initialRouteIds.length > 0
+		? apiList<VisaRouteWithAi>(ctx, `/visa-routes/compare?ids=${initialRouteIds.map(encodeURIComponent).join(',')}`)
+				.then((r) => r.items)
+				.catch(() => [] as VisaRouteWithAi[])
+		: Promise.resolve([] as VisaRouteWithAi[]);
+
 	// Destination list — the geo-aware selector source (Rule 16).
 	// A 404 or visa_routes_disabled code means the tool is turned off.
 	let destinations: GeoCountry[] = [];
@@ -58,16 +74,23 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
-	const routes = await routesPromise;
-	const initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+	const routes = destParam ? await routesPromise : await sharePromise;
+	let initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
 
-	// ?ids=a,b,c — shareable comparison selection (§90). Only ids present in
-	// the loaded route set are preselected; the client drops the rest.
-	const initialRouteIds = (event.url.searchParams.get('ids') ?? '')
-		.split(',')
-		.map((s) => s.trim())
-		.filter(Boolean)
-		.slice(0, 4);
+	// ?dest= also resolves geo_codes/slugs server-side ("CA" works in the
+	// API but isn't a picker UUID). When the loaded routes all agree on a
+	// destination space, reflect it in the picker instead of showing the
+	// empty state on a page that has data.
+	if (!initialDestId && routes.length > 0) {
+		const d0 = routes[0].destination_space_id;
+		if (
+			d0 &&
+			routes.every((r) => r.destination_space_id === d0) &&
+			destinations.some((d) => d.id === d0)
+		) {
+			initialDestId = d0;
+		}
+	}
 
 	return {
 		destinations,

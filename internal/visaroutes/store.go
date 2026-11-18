@@ -288,6 +288,11 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		// list (array or scalar); unrestricted routes always match.
 		ph1 := argIdx
 		ph2 := argIdx + 1
+		// The geo_code term ($ph1) is matched by equality — a code is an
+		// atomic token, so substring matching lets "US" hit "AUSTRALIA" or
+		// "IN" hit "GUINEA"/"CHINA"/"SPAIN". The display-name term ($ph2)
+		// stays substring so stored demonyms ("Nigerian citizens") still
+		// match "Nigeria".
 		conditions = append(conditions, fmt.Sprintf(`(NOT (requirements_json ?| '{eligible_countries,eligible_nationalities,origin_countries}'::text[])
   OR EXISTS (
     SELECT 1 FROM jsonb_each(requirements_json) AS e(k, v)
@@ -295,9 +300,9 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
       AND (
         (jsonb_typeof(e.v) = 'array' AND EXISTS (
            SELECT 1 FROM jsonb_array_elements_text(e.v) AS c
-           WHERE c ILIKE '%%' || $%d || '%%' OR c ILIKE '%%' || $%d || '%%'))
+           WHERE lower(c) = lower($%d) OR c ILIKE '%%' || $%d || '%%'))
         OR (jsonb_typeof(e.v) = 'string' AND (
-           e.v #>> '{}' ILIKE '%%' || $%d || '%%' OR e.v #>> '{}' ILIKE '%%' || $%d || '%%'))
+           lower(e.v #>> '{}') = lower($%d) OR e.v #>> '{}' ILIKE '%%' || $%d || '%%'))
       )
   ))`, ph1, ph2, ph1, ph2))
 		code, name := f.OriginTerms[0], f.OriginTerms[0]

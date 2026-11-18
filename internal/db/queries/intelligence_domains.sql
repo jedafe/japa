@@ -72,7 +72,7 @@ LIMIT $5;
 -- ===========================================================================
 
 -- name: CreateVisaRouteIntel :one
-INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *;
+INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, hitl_reviewed_by, hitl_reviewed_at, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING *;
 
 -- name: GetVisaRouteByIntelRecord :one
 SELECT * FROM visa_routes WHERE intel_record_id = $1;
@@ -84,6 +84,7 @@ SET name = $2, visa_category = $3, eligibility_summary = $4, requirements_json =
  gov_source_url = $10, source_url_last_checked = $11,
  confidence_overall = $12, verification_status = $13, freshness_score = $14,
  override_source = $15, editorial_overrides = $16,
+ hitl_reviewed_by = $17, hitl_reviewed_at = $18,
  last_verified_at = now(), updated_at = now()
 WHERE id = $1;
 

@@ -392,17 +392,32 @@ func prPathEaseAndEligibility(s string) (any, any) {
 	}
 
 	positive := []string{"yes", "available", "true", "clear", "direct", "straightforward", "easy"}
-	negative := []string{"no", "none", "false", "not", "not available", "no path", "none available"}
+	negativePhrases := []string{"not available", "no path", "none available", "not eligible", "no longer"}
+	negativeWords := []string{"no", "none", "false", "not", "unavailable", "closed", "impossible"}
+
+	// Negatives first — every negative phrase also contains a positive
+	// token ("not available" → "available"), so checking positives first
+	// scores a negative path_to_pr as 100. Single tokens match whole
+	// words only: bare "no"/"not" would also hit "now"/"note"/"cannot"
+	// as substrings.
+	for _, n := range negativePhrases {
+		if strings.Contains(low, n) {
+			return float64(0), false
+		}
+	}
+
+	for w := range strings.FieldsSeq(low) {
+		w = strings.Trim(w, ".,;:!?()[]\"'")
+		for _, n := range negativeWords {
+			if w == n {
+				return float64(0), false
+			}
+		}
+	}
 
 	for _, p := range positive {
 		if strings.Contains(low, p) {
 			return float64(100), true
-		}
-	}
-
-	for _, n := range negative {
-		if strings.Contains(low, n) {
-			return float64(0), false
 		}
 	}
 

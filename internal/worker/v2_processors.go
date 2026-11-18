@@ -1012,6 +1012,9 @@ type linkCheckSpec struct {
 	notifyType      string // notification_types key — must be seeded
 	notifyTitle     string
 	notifyActionURL string
+	// notifySubjectType is the notifications.subject_type value — the
+	// entity type ("visa_route"), not the log noun ("routes").
+	notifySubjectType string
 }
 
 // checkedLink is one (entity id, URL) row scanned by checkBrokenLinks.
@@ -1131,7 +1134,10 @@ func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec,
 	for _, it := range broken {
 		title := spec.notifyTitle
 		body := fmt.Sprintf("%s %s returned 404 — possible rule change. URL: %s", spec.noun, it.id.String(), it.url)
-		subjectType := spec.noun
+		subjectType := spec.notifySubjectType
+		if subjectType == "" {
+			subjectType = spec.noun
+		}
 		actorType := "system"
 
 		for _, recipientID := range recipients {
@@ -1207,10 +1213,11 @@ WHERE is_active = true
 		noun:      "routes",
 		// §90 Data Maintenance: a 404 on a government source URL flags a
 		// potential rule change — notify every visa_routes.manage holder.
-		notifyPerm:      "visa_routes.manage",
-		notifyType:      "visa_route.broken_link",
-		notifyTitle:     "Visa route government source returned 404",
-		notifyActionURL: "/tools/visa-routes",
+		notifyPerm:        "visa_routes.manage",
+		notifyType:        "visa_route.broken_link",
+		notifyTitle:       "Visa route government source returned 404",
+		notifyActionURL:   "/tools/visa-routes",
+		notifySubjectType: "visa_route",
 	})
 }
 

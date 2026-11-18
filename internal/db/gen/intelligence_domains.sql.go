@@ -826,30 +826,32 @@ func (q *Queries) CreateTaxObligationGuideIntel(ctx context.Context, arg CreateT
 
 const createVisaRouteIntel = `-- name: CreateVisaRouteIntel :one
 
-INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
+INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, hitl_reviewed_by, hitl_reviewed_at, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
 `
 
 type CreateVisaRouteIntelParams struct {
-	DestinationSpaceID pgtype.UUID    `json:"destination_space_id"`
-	VisaCategory       string         `json:"visa_category"`
-	Name               string         `json:"name"`
-	Slug               string         `json:"slug"`
-	EligibilitySummary *string        `json:"eligibility_summary"`
-	RequirementsJson   []byte         `json:"requirements_json"`
-	TypicalFeeUsd      pgtype.Numeric `json:"typical_fee_usd"`
-	PathToPr           *string        `json:"path_to_pr"`
-	RenewalTerms       *string        `json:"renewal_terms"`
-	Restrictions       *string        `json:"restrictions"`
-	GovSourceUrl       string         `json:"gov_source_url"`
-	Status             string         `json:"status"`
-	IsActive           bool           `json:"is_active"`
-	IntelRecordID      pgtype.UUID    `json:"intel_record_id"`
-	ConfidenceOverall  float32        `json:"confidence_overall"`
-	VerificationStatus string         `json:"verification_status"`
-	FreshnessScore     int32          `json:"freshness_score"`
-	OverrideSource     string         `json:"override_source"`
-	EditorialOverrides []byte         `json:"editorial_overrides"`
-	GuideID            pgtype.UUID    `json:"guide_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	VisaCategory       string             `json:"visa_category"`
+	Name               string             `json:"name"`
+	Slug               string             `json:"slug"`
+	EligibilitySummary *string            `json:"eligibility_summary"`
+	RequirementsJson   []byte             `json:"requirements_json"`
+	TypicalFeeUsd      pgtype.Numeric     `json:"typical_fee_usd"`
+	PathToPr           *string            `json:"path_to_pr"`
+	RenewalTerms       *string            `json:"renewal_terms"`
+	Restrictions       *string            `json:"restrictions"`
+	GovSourceUrl       string             `json:"gov_source_url"`
+	Status             string             `json:"status"`
+	IsActive           bool               `json:"is_active"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	GuideID            pgtype.UUID        `json:"guide_id"`
 }
 
 // ===========================================================================
@@ -870,6 +872,8 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 		arg.GovSourceUrl,
 		arg.Status,
 		arg.IsActive,
+		arg.HitlReviewedBy,
+		arg.HitlReviewedAt,
 		arg.IntelRecordID,
 		arg.ConfidenceOverall,
 		arg.VerificationStatus,
@@ -3208,27 +3212,30 @@ SET name = $2, visa_category = $3, eligibility_summary = $4, requirements_json =
  gov_source_url = $10, source_url_last_checked = $11,
  confidence_overall = $12, verification_status = $13, freshness_score = $14,
  override_source = $15, editorial_overrides = $16,
+ hitl_reviewed_by = $17, hitl_reviewed_at = $18,
  last_verified_at = now(), updated_at = now()
 WHERE id = $1
 `
 
 type UpdateVisaRouteIntelParams struct {
-	ID                   pgtype.UUID    `json:"id"`
-	Name                 string         `json:"name"`
-	VisaCategory         string         `json:"visa_category"`
-	EligibilitySummary   *string        `json:"eligibility_summary"`
-	RequirementsJson     []byte         `json:"requirements_json"`
-	TypicalFeeUsd        pgtype.Numeric `json:"typical_fee_usd"`
-	PathToPr             *string        `json:"path_to_pr"`
-	RenewalTerms         *string        `json:"renewal_terms"`
-	Restrictions         *string        `json:"restrictions"`
-	GovSourceUrl         string         `json:"gov_source_url"`
-	SourceUrlLastChecked pgtype.Date    `json:"source_url_last_checked"`
-	ConfidenceOverall    float32        `json:"confidence_overall"`
-	VerificationStatus   string         `json:"verification_status"`
-	FreshnessScore       int32          `json:"freshness_score"`
-	OverrideSource       string         `json:"override_source"`
-	EditorialOverrides   []byte         `json:"editorial_overrides"`
+	ID                   pgtype.UUID        `json:"id"`
+	Name                 string             `json:"name"`
+	VisaCategory         string             `json:"visa_category"`
+	EligibilitySummary   *string            `json:"eligibility_summary"`
+	RequirementsJson     []byte             `json:"requirements_json"`
+	TypicalFeeUsd        pgtype.Numeric     `json:"typical_fee_usd"`
+	PathToPr             *string            `json:"path_to_pr"`
+	RenewalTerms         *string            `json:"renewal_terms"`
+	Restrictions         *string            `json:"restrictions"`
+	GovSourceUrl         string             `json:"gov_source_url"`
+	SourceUrlLastChecked pgtype.Date        `json:"source_url_last_checked"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 func (q *Queries) UpdateVisaRouteIntel(ctx context.Context, arg UpdateVisaRouteIntelParams) error {
@@ -3249,6 +3256,8 @@ func (q *Queries) UpdateVisaRouteIntel(ctx context.Context, arg UpdateVisaRouteI
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.HitlReviewedBy,
+		arg.HitlReviewedAt,
 	)
 	return err
 }

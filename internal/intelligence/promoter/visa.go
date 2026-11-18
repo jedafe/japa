@@ -14,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 	"github.com/jedafe/japa/internal/visaroutes"
 )
 
@@ -142,7 +143,7 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 		)
 	}
 
-	visaParams := buildVisaCreateParams(record, source, ext)
+	visaParams := buildVisaCreateParams(ctx, record, source, ext, p.now())
 	visaParams.DestinationSpaceID = destinationSpaceID
 
 	var result PromoteResult
@@ -183,7 +184,7 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
 
-	params, changed := buildVisaUpdateParams(existing, ext, overrides)
+	params, changed := buildVisaUpdateParams(ctx, existing, ext, overrides, p.now())
 	params.FreshnessScore = freshScore
 
 	var changesJSON []byte
@@ -207,7 +208,10 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 // buildVisaCreateParams maps a validated extraction to a
 // CreateVisaRouteIntelParams. DestinationSpaceID is resolved by the caller
 // (visaCreatePath) via GetCountrySpace and overridden after construction.
-func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) gen.CreateVisaRouteIntelParams {
+// When the promote task carries a reviewer (the intel-queue approver),
+// the visa_routes row is stamped hitl_reviewed_by/at — matching the
+// credential/scholarship promoters' ADR-088 provenance.
+func buildVisaCreateParams(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction, now time.Time) gen.CreateVisaRouteIntelParams {
 	name := stringField(ext, "name")
 	if name == "" {
 		name = source.Name
@@ -231,6 +235,13 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 		}
 	}
 
+	var reviewerID pgtype.UUID
+	var reviewedAt pgtype.Timestamptz
+	if id, ok := reviewerctx.ReviewerFromContext(ctx); ok {
+		reviewerID = id
+		reviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
+	}
+
 	return gen.CreateVisaRouteIntelParams{
 		DestinationSpaceID: pgtype.UUID{}, // resolved by visaCreatePath
 		VisaCategory:       visaCategory,
@@ -245,6 +256,8 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 		GovSourceUrl:       govSourceURL,
 		Status:             "published",
 		IsActive:           true,
+		HitlReviewedBy:     reviewerID,
+		HitlReviewedAt:     reviewedAt,
 		IntelRecordID:      record.ID,
 		ConfidenceOverall:  record.ConfidenceOverall,
 		// spec §530: create path stamps 'verified' + 'ingestion'. The
@@ -267,7 +280,7 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 // destination_space_id and slug are immutable on the update path (the
 // UpdateVisaRouteIntel query does not touch them), so the country extraction
 // is only honored on the create path.
-func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateVisaRouteIntelParams, []string) {
+func buildVisaUpdateParams(ctx context.Context, existing gen.VisaRoute, ext extractor.Extraction, overrides map[string]struct{}, now time.Time) (gen.UpdateVisaRouteIntelParams, []string) {
 	params := gen.UpdateVisaRouteIntelParams{
 		ID:                   existing.ID,
 		Name:                 existing.Name,
@@ -285,6 +298,15 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 		FreshnessScore:       existing.FreshnessScore,
 		OverrideSource:       existing.OverrideSource,
 		EditorialOverrides:   existing.EditorialOverrides,
+		// Re-stamp reviewer provenance only when a human re-approved the
+		// record — a no-reviewer re-crawl keeps the original approval.
+		HitlReviewedBy: existing.HitlReviewedBy,
+		HitlReviewedAt: existing.HitlReviewedAt,
+	}
+
+	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
+		params.HitlReviewedBy = reviewerID
+		params.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
 	}
 
 	var changed []string

@@ -119,8 +119,8 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	}
 
 	if perPage != "" {
-		if n, err := strconv.Atoi(perPage); err == nil && n > 0 && n <= 100 {
-			limit = int32(n) // #nosec
+		if n, err := strconv.Atoi(perPage); err == nil && n > 0 {
+			limit = min(int32(n), 100) // #nosec
 		}
 	}
 
@@ -152,6 +152,8 @@ func writeMutationError(w http.ResponseWriter, err error, code, message string, 
 	switch {
 	case errors.Is(err, ErrInvalidGovSourceURL):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_gov_source_url", err.Error())
+	case errors.Is(err, ErrInvalidInput):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, ErrInvalidStatus):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", err.Error())
 	case errors.Is(err, ErrDuplicateSlug):
