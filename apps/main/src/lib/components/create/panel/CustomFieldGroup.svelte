@@ -96,6 +96,7 @@
 		key: string;
 		label: string;
 		type?: string;
+		flex?: number;
 	}
 	function repeaterItemFields(field: CustomFieldDef): RepeaterItemField[] {
 		const opts = field.options;
@@ -104,15 +105,24 @@
 		}
 		return [];
 	}
+	function repeaterInputType(sf: RepeaterItemField): string {
+		// Sub-fields carry a semantic type (number/url/date/email/tel) that maps
+		// onto native input types; anything else stays text.
+		return sf.type === 'number' || sf.type === 'url' || sf.type === 'date' || sf.type === 'email' || sf.type === 'tel'
+			? sf.type
+			: 'text';
+	}
 	function repeaterAdd(key: string, itemFields: RepeaterItemField[] = []) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
 		arr.push(itemFields.length ? Object.fromEntries(itemFields.map((f) => [f.key, ''])) : '');
 		setField(key, arr);
 	}
-	function repeaterSetItem(key: string, idx: number, subKey: string, val: string) {
+	function repeaterSetItem(key: string, idx: number, sf: RepeaterItemField, val: string) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
 		const cur = typeof arr[idx] === 'object' && arr[idx] !== null ? (arr[idx] as Record<string, unknown>) : {};
-		arr[idx] = { ...cur, [subKey]: val };
+		// number-typed sub-fields store a real number so the public rendering
+		// (e.g. "30 days") and HowTo JSON-LD see the same shape the API emits.
+		arr[idx] = { ...cur, [sf.key]: sf.type === 'number' && val !== '' ? Number(val) : val };
 		setField(key, arr);
 	}
 	function repeaterRemove(key: string, idx: number) {
@@ -622,11 +632,12 @@
 						{#if itemFields.length}
 							{#each itemFields as sf (sf.key)}
 								<input
-									type={sf.type === 'url' ? 'url' : 'text'}
+									type={repeaterInputType(sf)}
 									class="cf-input"
+									style="flex:{sf.flex ?? 1} 1 0"
 									placeholder={sf.label}
 									value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
-									oninput={(e) => repeaterSetItem(field.key, idx, sf.key, e.currentTarget.value)}
+									oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
 								/>
 							{/each}
 						{:else}
@@ -836,8 +847,15 @@
 	}
 	.cf-repeater-row {
 		display: flex;
+		flex-wrap: nowrap;
 		gap: 6px;
 		align-items: center;
+	}
+	/* Sub-field inputs must be allowed to shrink below their intrinsic
+	   (size-attribute) width so a full item_fields row stays on one line;
+	   each input's share is set via the item_fields `flex` weight. */
+	.cf-repeater-row .cf-input {
+		min-width: 0;
 	}
 	.cf-repeater-remove {
 		flex-shrink: 0;
