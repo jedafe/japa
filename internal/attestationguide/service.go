@@ -498,6 +498,12 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 		return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
 	}
 
+	// A pathway where the issuing and destination jurisdictions are the
+	// same is meaningless — attestation is only ever cross-border.
+	if issuingSpaceID == destSpaceID {
+		return PathwayDTO{}, fmt.Errorf("%w: issuing and destination spaces must differ", ErrInvalidInput)
+	}
+
 	// §97 Hague Convention: an apostille is only usable when BOTH the issuing
 	// and destination jurisdictions are Convention members — a member
 	// destination cannot accept an apostille from a non-member issuer, and a
@@ -613,14 +619,15 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 		return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
 	}
 
-	issuing := issuingName
-	if issuing == "" {
-		issuing = input.IssuingSpaceID
+	if issuingSpaceID == destSpaceID {
+		return PathwayDTO{}, fmt.Errorf("%w: issuing and destination spaces must differ", ErrInvalidInput)
 	}
 
-	dest := destName
-	if dest == "" {
-		dest = input.DestinationSpaceID
+	// A custom prompt rides into the AI Gateway payload — cap it so a
+	// malformed or abusive body cannot send an unbounded (and unbounded-cost)
+	// prompt upstream.
+	if len(input.Prompt) > 8000 {
+		return PathwayDTO{}, fmt.Errorf("%w: prompt must be 8000 characters or fewer", ErrInvalidInput)
 	}
 
 	// Build the generation prompt.
@@ -629,13 +636,13 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 		prompt = fmt.Sprintf(
 			"Generate an attestation pathway for document type '%s' from %s to %s. Include the sequence of steps, agencies, fees, turnaround times, and official links.\n\n"+
 				"Use the GROUNDED RESEARCH section below for current attestation requirements. Cite the source URLs when you make factual claims. If no grounded research is available, use your training knowledge and clearly note that details may need verification.",
-			input.DocumentType, issuing, dest,
+			input.DocumentType, issuingName, destName,
 		)
 	} else {
 		prompt = fmt.Sprintf(
 			"%s\n\nContext: document_type=%s, issuing_space=%s, destination_space=%s. "+
 				"Use the GROUNDED RESEARCH section below for current attestation requirements. Cite the source URLs when you make factual claims.",
-			prompt, input.DocumentType, issuing, dest,
+			prompt, input.DocumentType, issuingName, destName,
 		)
 	}
 
@@ -679,6 +686,12 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 		}
 
 		pathwaySteps = parsePathwayStepsFromAIResponse(resp)
+
+		// Record the provider-reported model over the generic marker when
+		// the gateway surfaces it — provenance should name the real model.
+		if m := ai.ExtractModel(resp); m != "" {
+			aiModel = m
+		}
 	}
 
 	p := Pathway{
@@ -710,25 +723,32 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 }
 
 // parsePathwayStepsFromAIResponse extracts pathway steps from the AI
-// gateway response. The response may contain structured JSON or plain
-// text; we wrap text into a single-step array for the reviewer to refine.
+// gateway response. Provider output goes through ai.ExtractText so every
+// response shape (plain text/content/output keys AND the OpenAI-compatible
+// choices[0].message.content structure) is covered — probing Raw keys
+// directly silently returned empty steps for OpenAI-compatible providers.
+// If the model returned a JSON array (as the prompt asks), it is used
+// verbatim; otherwise the text is wrapped into a single-step array for the
+// reviewer to refine.
 func parsePathwayStepsFromAIResponse(resp ai.Response) []byte {
-	if text, ok := resp.Raw["text"].(string); ok && text != "" {
-		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
-		return wrapped
+	text := ai.ExtractText(resp)
+	if text == "" {
+		return []byte("[]")
 	}
 
-	if text, ok := resp.Raw["content"].(string); ok && text != "" {
-		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
-		return wrapped
+	// Strip a markdown code fence if the model wrapped the JSON in one.
+	trimmed := strings.TrimSpace(text)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+
+	if isJSONArray([]byte(strings.TrimSpace(trimmed))) {
+		return json.RawMessage(strings.TrimSpace(trimmed))
 	}
 
-	if output, ok := resp.Raw["output"].(string); ok && output != "" {
-		wrapped, _ := json.Marshal([]map[string]string{{"step": output}})
-		return wrapped
-	}
+	wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
 
-	return []byte("[]")
+	return wrapped
 }
 
 // Approve performs the HITL approval on an AI-drafted pathway. Sets
@@ -765,7 +785,10 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 
 	if err := s.store.ApprovePathway(ctx, id, reviewerID, apostilleRequired, notesPtr); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return PathwayDTO{}, pgx.ErrNoRows
+			// The WHERE's status predicate lost a concurrent-approval race:
+			// the row exists but was just published by the other request.
+			// 400 "already published" is truer than 404.
+			return PathwayDTO{}, fmt.Errorf("%w: pathway is already published", ErrInvalidInput)
 		}
 
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: %w", err)
@@ -790,20 +813,40 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 // attestation_guide.update/.assign_geo agent tools are disabled (000788) —
 // a method named Update would silently light up a disabled op.
 func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input UpdatePathwayInput) (PathwayDTO, error) {
-	row, err := s.store.GetPathwayByID(ctx, id)
+	// The merge runs inside MutatePathway's FOR UPDATE transaction — two
+	// concurrent PATCHes serialize instead of silently losing one set of
+	// changes (UpdatePathway writes the full row).
+	err := s.store.MutatePathway(ctx, id, func(p *Pathway) error {
+		return s.mergePathwayPatch(ctx, p, input)
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
 
-		return PathwayDTO{}, fmt.Errorf("attestationguide: update: lookup: %w", err)
+		if errors.Is(err, ErrInvalidInput) {
+			return PathwayDTO{}, err
+		}
+
+		return PathwayDTO{}, fmt.Errorf("attestationguide: update: %w", err)
 	}
 
-	p := row.Pathway
+	row, err := s.store.GetPathwayByID(ctx, id)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: update: reload: %w", err)
+	}
+
+	return pathwayRowToDTO(row), nil
+}
+
+// mergePathwayPatch overlays the PATCH fields onto a locked pathway row.
+// Runs inside MutatePathway's transaction; returning ErrInvalidInput rolls
+// back cleanly.
+func (s *Service) mergePathwayPatch(ctx context.Context, p *Pathway, input UpdatePathwayInput) error {
 
 	if input.DocumentType != nil {
 		if !isValidDocumentType(*input.DocumentType) {
-			return PathwayDTO{}, fmt.Errorf("%w: invalid document_type %q", ErrInvalidInput, *input.DocumentType)
+			return fmt.Errorf("%w: invalid document_type %q", ErrInvalidInput, *input.DocumentType)
 		}
 
 		p.DocumentType = *input.DocumentType
@@ -819,7 +862,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 
 		if input.IssuingSpaceID != nil {
 			if err := issuingID.Scan(*input.IssuingSpaceID); err != nil {
-				return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
+				return fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
 			}
 		} else {
 			issuingID = p.IssuingSpaceID
@@ -827,7 +870,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 
 		if input.DestinationSpaceID != nil {
 			if err := destID.Scan(*input.DestinationSpaceID); err != nil {
-				return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
+				return fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
 			}
 		} else {
 			destID = p.DestinationSpaceID
@@ -835,15 +878,19 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 
 		names, err := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingID, destID})
 		if err != nil {
-			return PathwayDTO{}, fmt.Errorf("attestationguide: update: space lookup: %w", err)
+			return fmt.Errorf("attestationguide: update: space lookup: %w", err)
 		}
 
 		if names[issuingID] == "" {
-			return PathwayDTO{}, fmt.Errorf("%w: issuing_space_id not found", ErrInvalidInput)
+			return fmt.Errorf("%w: issuing_space_id not found", ErrInvalidInput)
 		}
 
 		if names[destID] == "" {
-			return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
+			return fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
+		}
+
+		if issuingID == destID {
+			return fmt.Errorf("%w: issuing and destination spaces must differ", ErrInvalidInput)
 		}
 
 		p.IssuingSpaceID = issuingID
@@ -862,7 +909,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 
 	if input.PathwaySteps != nil {
 		if !isJSONArray(input.PathwaySteps) {
-			return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", ErrInvalidInput)
+			return fmt.Errorf("%w: pathway_steps must be a JSON array", ErrInvalidInput)
 		}
 
 		p.PathwaySteps = []byte(input.PathwaySteps)
@@ -872,7 +919,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 		if *input.CommunityLastVerified == "" {
 			p.CommunityLastVerified = pgtype.Date{}
 		} else if err := p.CommunityLastVerified.Scan(*input.CommunityLastVerified); err != nil {
-			return PathwayDTO{}, fmt.Errorf("%w: invalid community_last_verified: %v", ErrInvalidInput, err)
+			return fmt.Errorf("%w: invalid community_last_verified: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -882,7 +929,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 			PathwayStatusPublished, PathwayStatusRejected:
 			p.Status = *input.Status
 		default:
-			return PathwayDTO{}, fmt.Errorf("%w: invalid status %s", ErrInvalidInput, *input.Status)
+			return fmt.Errorf("%w: invalid status %s", ErrInvalidInput, *input.Status)
 		}
 	}
 
@@ -890,20 +937,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 		p.IsActive = *input.IsActive
 	}
 
-	if err := s.store.UpdatePathway(ctx, id, p); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return PathwayDTO{}, pgx.ErrNoRows
-		}
-
-		return PathwayDTO{}, fmt.Errorf("attestationguide: update: %w", err)
-	}
-
-	row, err = s.store.GetPathwayByID(ctx, id)
-	if err != nil {
-		return PathwayDTO{}, fmt.Errorf("attestationguide: update: reload: %w", err)
-	}
-
-	return pathwayRowToDTO(row), nil
+	return nil
 }
 
 // SubmitCommunityUpdate creates a pending community update for a
@@ -1043,7 +1077,9 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerI
 
 	if err := s.store.ReviewCommunityUpdate(ctx, updateID, reviewerID, status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return CommunityUpdateDTO{}, pgx.ErrNoRows
+			// The WHERE's u.status='pending' predicate lost a concurrent
+			// review race — the row exists but was already decided.
+			return CommunityUpdateDTO{}, fmt.Errorf("%w: update was already reviewed", ErrInvalidInput)
 		}
 
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: %w", err)

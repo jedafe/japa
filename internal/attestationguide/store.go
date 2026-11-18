@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -466,10 +467,55 @@ RETURNING id, document_type, issuing_space_id, destination_space_id,
 	return out, nil
 }
 
-// UpdatePathway updates the mutable fields on an attestation_pathways
-// row. Only the provided (non-nil) fields are applied.
+// GetPathwayForUpdate locks a pathway row inside the given transaction and
+// returns it — the read-modify-write pair for UpdatePathwayInTx. Without the
+// lock, two concurrent PATCHes each overwrite the other's changes (the
+// update writes the full row).
+func (s *Store) GetPathwayForUpdate(ctx context.Context, tx pgx.Tx, id pgtype.UUID) (Pathway, error) {
+	const q = `
+SELECT id, document_type, issuing_space_id, destination_space_id,
+       apostille_required, pathway_steps, community_last_verified, status,
+       is_active, ai_generated, ai_model, ai_prompt_hash,
+       hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+       is_japabot_indexed, created_at, updated_at
+FROM attestation_pathways
+WHERE id = $1
+FOR UPDATE
+`
+
+	var p Pathway
+
+	err := tx.QueryRow(ctx, q, id).Scan(
+		&p.ID, &p.DocumentType, &p.IssuingSpaceID, &p.DestinationSpaceID,
+		&p.ApostilleRequired, &p.PathwaySteps, &p.CommunityLastVerified, &p.Status,
+		&p.IsActive, &p.AIGenerated, &p.AIModel, &p.AIPromptHash,
+		&p.HITLReviewedBy, &p.HITLReviewedAt, &p.HITLReviewNotes,
+		&p.IsJapabotIndexed, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return Pathway{}, err
+	}
+
+	return p, nil
+}
+
+// pgxExec is satisfied by the writer pool and by pgx.Tx — lets
+// updatePathwayExec serve both direct and transactional calls.
+type pgxExec interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+// UpdatePathwayInTx is the only writer of mutable pathway fields — always
+// pair it with GetPathwayForUpdate (see MutatePathway) so the
+// read-modify-write happens under one row lock. A non-tx variant is
+// deliberately omitted: calling it would silently lose concurrent updates
+// because the UPDATE writes the full row.
 // is_japabot_indexed is a GENERATED column and is NOT updated.
-func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, p Pathway) error {
+func (s *Store) UpdatePathwayInTx(ctx context.Context, tx pgx.Tx, id pgtype.UUID, p Pathway) error {
+	return updatePathwayExec(ctx, tx, id, p)
+}
+
+func updatePathwayExec(ctx context.Context, ex pgxExec, id pgtype.UUID, p Pathway) error {
 	steps := p.PathwaySteps
 	if steps == nil {
 		steps = []byte("[]")
@@ -493,7 +539,7 @@ SET document_type        = $2,
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(
+	cmd, err := ex.Exec(
 		ctx, q,
 		id,
 		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
@@ -512,12 +558,51 @@ WHERE id = $1
 	return nil
 }
 
+// MutatePathway locks a pathway row FOR UPDATE, applies fn to it, writes
+// it back, and commits — one atomic read-modify-write. fn mutates the
+// locked row in place; a fn error rolls the transaction back untouched.
+// pgx.ErrNoRows propagates for a missing id.
+func (s *Store) MutatePathway(ctx context.Context, id pgtype.UUID, fn func(*Pathway) error) error {
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("attestationguide: mutate pathway: begin tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	p, err := s.GetPathwayForUpdate(ctx, tx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("attestationguide: mutate pathway: lock: %w", err)
+	}
+
+	if err := fn(&p); err != nil {
+		return err
+	}
+
+	if err := s.UpdatePathwayInTx(ctx, tx, id, p); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("attestationguide: mutate pathway: commit: %w", err)
+	}
+
+	return nil
+}
+
 // ApprovePathway performs the HITL approval: sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published', recomputes
 // apostille_required from the Hague Convention lookup (BUG-002), and sets
 // community_last_verified = now()::date if it was NULL (BUG-003).
 // Optionally records review notes.
 func (s *Store) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, apostilleRequired bool, notes *string) error {
+	// status != 'published' in the WHERE closes the TOCTOU window: two
+	// concurrent approvals can both pass the service-level check, but only
+	// the first write lands — the second affects 0 rows.
 	const q = `
 UPDATE attestation_pathways
 SET hitl_reviewed_by        = $2,
@@ -528,7 +613,7 @@ SET hitl_reviewed_by        = $2,
     apostille_required     = $4,
     community_last_verified = COALESCE(community_last_verified, now()::date),
     updated_at             = now()
-WHERE id = $1
+WHERE id = $1 AND status != 'published'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes, apostilleRequired)
@@ -636,6 +721,13 @@ func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID pgty
 			// between submission and review — fail visibly rather than bump
 			// community_last_verified on a no-op patch.
 			return fmt.Errorf("attestationguide: apply update: step_index %d out of range (%d steps)", idx, len(arr))
+		}
+
+		// A JSON null element decodes as a nil map — assigning into it would
+		// panic. A null step has no place to put fee/turnaround fields, so
+		// fail visibly instead.
+		if arr[idx] == nil {
+			return fmt.Errorf("attestationguide: apply update: step_index %d is not a step object", idx)
 		}
 
 		if feeEstimate != nil {
