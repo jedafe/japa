@@ -160,6 +160,8 @@ func writeMutationError(w http.ResponseWriter, err error, code, message string, 
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", err.Error())
 	case errors.Is(err, ErrInvalidDestination):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", err.Error())
+	case errors.Is(err, ErrInvalidGuide):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_guide_id", err.Error())
 	default:
 		args := append([]any{"error", err}, logKV...)
 		slog.Error("visaroutes: mutation failed", args...)

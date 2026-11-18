@@ -7433,5 +7433,7 @@
 	"visa_routes.subtitle": "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms.",
 	"visa_routes.title": "Visa Route Comparison",
 	"visa_routes.to_checklist": "Document checklist",
-	"visa_routes.view_source": "View official source"
+	"visa_routes.view_source": "View official source",
+	"checklist.compare_routes": "Compare visa routes",
+	"checklist.guide_unavailable": "The linked checklist is no longer available — pick your route below."
 }

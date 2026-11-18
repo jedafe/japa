@@ -5055,5 +5055,9 @@
   "app.tools.status_gate_hint": "La publication passe par Approuver — cela enregistre les champs du réviseur.",
   "app.tools.visa_routes_desc": "Gérer les données des routes de visa — éligibilité, frais, voie vers la RP et conditions de renouvellement",
   "app.tools.visa_routes_heading": "Gestion des routes de visa",
-  "app.tools.visa_routes_page_title": "Gestion des routes de visa — {site} Admin"
+  "app.tools.visa_routes_page_title": "Gestion des routes de visa — {site} Admin",
+  "app.tools.guide_placeholder": "Rechercher des guides visa…",
+  "app.tools.guide_help": "Guide visa alimentant le CTA « Liste de documents » de la route. Les brouillons sont acceptés — le lien public s'active à la publication du guide.",
+  "app.tools.checklist_link_live": "Lien de checklist actif sur la route publique",
+  "app.tools.checklist_link_pending": "Lien de checklist masqué jusqu'à la publication du guide"
 }

@@ -193,7 +193,11 @@
 	);
 </script>
 
+<!-- Faceted-nav canonical: ?dest=, ?ids= and profile-filter params are
+     app state, not distinct indexable content — consolidate every variant
+     on the clean tool URL. -->
 <SeoHead title={title} description={description} ogTitle={title}
+	canonical="{page.url.origin}/tools/visa-routes"
 	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
 />
 
@@ -488,9 +492,9 @@
 												{t('visa_routes.source', 'Source')}
 											</a>
 										{/if}
-										{#if route.guide_id}
+										{#if route.checklist_guide_id}
 											<a
-												href="/tools/visa-checklist?guide_id={route.guide_id}"
+												href="/tools/visa-checklist?guide_id={route.checklist_guide_id}"
 												class="flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 											>
 												<ListChecks size={12} />

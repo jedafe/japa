@@ -11,7 +11,7 @@
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, Sparkles, Trash2, XCircle, RotateCcw } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
-	import { visaRoutesAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { visaRoutesAdminApi, adminCatalogApi, apiRaw, type CatalogOption } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
 
 	// RouteDTO — matches the backend response shape (internal/visaroutes/service.go).
@@ -42,6 +42,8 @@
 		hitl_review_notes?: string;
 		is_japabot_indexed: boolean;
 		guide_id?: string;
+		guide_title?: string;
+		checklist_guide_id?: string;
 		typical_processing_days?: number;
 		processing_sample_count?: number;
 		processing_period?: string;
@@ -258,6 +260,41 @@
 		return countryUtils.getSelectedLabel(id);
 	}
 
+	// ── Guide autocomplete (§70 checklist link) ────────────────────────────
+	// Published-or-draft visa guides from GET /content?type=guide —
+	// guide_id may link any live visa guide; checklist_guide_id (the
+	// effective public link) only lights up once the guide is published.
+	// guideLabelById mirrors the title the backend joins onto each row so
+	// the picker and view modal resolve ids without a lookup endpoint.
+	const guideLabelById = $state<Record<string, string>>({});
+
+	function fetchGuideId(q: string): Promise<AutocompleteItem[]> {
+		return (async () => {
+			// /content ?q= only applies to the untyped listing — the
+			// type-filtered branch ignores it, so visa guides are fetched
+			// as one bounded page (MaxPageSize) and filtered by title here.
+			const res = await apiRaw<{ data: { id: string; title?: string; slug?: string }[] }>(
+				`/content?type=guide&guide_category=visa&page_size=100`
+			);
+			const rows = res.ok ? (res.data?.data ?? []) : [];
+			const needle = q.trim().toLowerCase();
+			return rows
+				.filter((g) => !needle || (g.title ?? '').toLowerCase().includes(needle))
+				.map((g) => {
+					if (g.title) guideLabelById[g.id] = g.title;
+					return { id: g.id, label: g.title ?? g.id, sublabel: g.slug ?? '' };
+				});
+		})();
+	}
+
+	function fetchGuideIdInitial(): Promise<AutocompleteItem[]> {
+		return fetchGuideId('');
+	}
+
+	function getGuideIdLabel(id: string): string {
+		return guideLabelById[id] ?? id;
+	}
+
 	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryReady; // re-derive when the 250 primary geo space countries load
@@ -276,6 +313,7 @@
 			{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
 			{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea' },
 			{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea' },
+			{ key: 'guide_id', label: t('app.tools.col_guide', 'Checklist Guide'), type: 'autocomplete', placeholder: t('app.tools.guide_placeholder', 'Search visa guides…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchGuideId, initialFetcher: fetchGuideIdInitial, getSelectedLabel: getGuideIdLabel, help: t('app.tools.guide_help', '§70 visa guide powering the route\'s "Document checklist" CTA. Draft guides are allowed — the public link activates when the guide publishes.') },
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
@@ -399,6 +437,11 @@
 			const result = await visaRoutesAdminApi.listRaw(queryString);
 			if (result.ok) {
 				const data = (result.data.data as VisaRoute[]) ?? [];
+				// Seed the guide label map from the joined guide_title so
+				// edit/view resolve the stored link without an extra fetch.
+				for (const r of data) {
+					if (r.guide_id && r.guide_title) guideLabelById[r.guide_id] = r.guide_title;
+				}
 				// Canonical `meta` envelope; `pagination` is the legacy alias.
 				const meta = result.data.meta ?? result.data.pagination;
 				const total = meta?.total ?? data.length;
@@ -602,7 +645,12 @@
 		{#if row.guide_id}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_guide', 'Checklist guide')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.guide_id}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.guide_title ?? row.guide_id}</p>
+				{#if row.checklist_guide_id}
+					<p class="mt-0.5 text-xs" style="color: var(--color-primary)">{t('app.tools.checklist_link_live', 'Checklist link live on public route')}</p>
+				{:else}
+					<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('app.tools.checklist_link_pending', 'Checklist link hidden until the guide is published')}</p>
+				{/if}
 			</div>
 		{/if}
 		{#if row.typical_fee_usd != null}

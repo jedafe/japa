@@ -56,10 +56,16 @@ type RouteDTO struct {
 	HITLReviewedAt       string `json:"hitl_reviewed_at,omitempty"`
 	HITLReviewNotes      string `json:"hitl_review_notes,omitempty"`
 	IsJapabotIndexed     bool   `json:"is_japabot_indexed"`
-	// GuideID links to the §70 visa checklist content row, when one is
-	// curated for this route — the frontend builds the checklist deep
-	// link from it (/tools/visa-checklist?guide_id=).
-	GuideID string `json:"guide_id,omitempty"`
+	// GuideID is the stored §70 checklist link (a contents.id) — admin
+	// surface only. The stored link may point at a guide that is still
+	// a draft; PublicView strips it so anonymous callers only ever see
+	// ChecklistGuideID, which resolves.
+	GuideID    string `json:"guide_id,omitempty"`
+	GuideTitle string `json:"guide_title,omitempty"`
+	// ChecklistGuideID is the effective public link — non-empty only
+	// when the stored guide_id resolves to a published visa guide (the
+	// §70 /checklist/{id} contract). The CTA built from it never 404s.
+	ChecklistGuideID string `json:"checklist_guide_id,omitempty"`
 	// TypicalProcessingDays / ProcessingSampleCount come from the latest
 	// visa_processing_stats bucket for (destination, visa_category) —
 	// the §83 "typical processing time" column (§90 Integration).
@@ -86,6 +92,11 @@ func (d RouteDTO) PublicView() RouteDTO {
 	d.HITLReviewNotes = ""
 	d.HITLReviewerUsername = ""
 	d.AIPromptHash = ""
+	// The raw guide link is admin metadata — a stored link may point at
+	// a still-draft guide the §70 endpoint can't resolve, and the
+	// public CTA must only ever expose the effective link.
+	d.GuideID = ""
+	d.GuideTitle = ""
 
 	return d
 }
@@ -109,6 +120,7 @@ type CreateRouteInput struct {
 	AIGenerated          *bool  `json:"ai_generated"`
 	AIModel              string `json:"ai_model"`
 	AIPromptHash         string `json:"ai_prompt_hash"`
+	GuideID              string `json:"guide_id"`
 }
 
 // UpdateRouteInput is the request body for PATCH /admin/visa-routes/:id.
@@ -131,6 +143,7 @@ type UpdateRouteInput struct {
 	AIGenerated          *bool   `json:"ai_generated"`
 	AIModel              *string `json:"ai_model"`
 	AIPromptHash         *string `json:"ai_prompt_hash"`
+	GuideID              *string `json:"guide_id"`
 }
 
 // ApproveInput is the request body for PATCH /admin/visa-routes/:id/approve.
@@ -431,6 +444,10 @@ var ErrInvalidGovSourceURL = errors.New("gov_source_url must be an absolute http
 // maps it to a 400 instead of the generic 500.
 var ErrInvalidInput = errors.New("invalid input")
 
+// ErrInvalidGuide is returned when guide_id does not reference a live
+// (non-deleted) visa guide content row — the §70 write contract.
+var ErrInvalidGuide = errors.New("guide_id must reference a visa guide")
+
 // sanitizeVisaGovURL validates a government source URL. Only absolute
 // http(s) URLs with a host are accepted — javascript:, data:,
 // protocol-relative, and bare strings are rejected so the stored value is
@@ -467,6 +484,33 @@ func sanitizeVisaGovURL(raw string) (string, bool) {
 // stored in the table meets the same validation the admin API enforces.
 func SanitizeGovSourceURL(raw string) (string, bool) {
 	return sanitizeVisaGovURL(raw)
+}
+
+// resolveGuideID validates an admin-supplied guide_id against the §70
+// contract: it must reference a non-deleted contents row with
+// content_type='guide' and guide_category='visa'. Any status qualifies —
+// the read-side checklist_guide_id gate keeps the CTA hidden until the
+// guide publishes. Returns the invalid UUID for empty input (→ NULL).
+func (s *Service) resolveGuideID(ctx context.Context, raw string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if strings.TrimSpace(raw) == "" {
+		return id, nil
+	}
+
+	if err := id.Scan(raw); err != nil {
+		return id, ErrInvalidGuide
+	}
+
+	ok, err := s.store.VisaGuideExists(ctx, id)
+	if err != nil {
+		return id, err
+	}
+
+	if !ok {
+		return id, ErrInvalidGuide
+	}
+
+	return id, nil
 }
 
 // validatePatchStatus enforces the ADR-088 HITL gate on PATCH updates:
@@ -626,6 +670,11 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 
 	slug = content.Slugify(slug)
 
+	guideID, err := s.resolveGuideID(ctx, input.GuideID)
+	if err != nil {
+		return RouteDTO{}, err
+	}
+
 	row, err := s.store.Create(ctx, CreateRoute{
 		DestinationSpaceID:   destSpaceID,
 		VisaCategory:         input.VisaCategory,
@@ -644,6 +693,7 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		AIGenerated:          aiGenerated,
 		AIModel:              aiModel,
 		AIPromptHash:         aiPromptHash,
+		GuideID:              guideID,
 	})
 	if err != nil {
 		return RouteDTO{}, fmt.Errorf("visaroutes: create: %w", err)
@@ -776,6 +826,17 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 
 	if input.AIPromptHash != nil {
 		update.AIPromptHash = input.AIPromptHash
+	}
+
+	if input.GuideID != nil {
+		// "" clears the link; a UUID is validated against the §70
+		// contract so the stored value can never produce a dead CTA.
+		guideID, err := s.resolveGuideID(ctx, *input.GuideID)
+		if err != nil {
+			return RouteDTO{}, err
+		}
+
+		update.GuideID = &guideID
 	}
 
 	row, err := s.store.Update(ctx, id, update)
@@ -1086,6 +1147,14 @@ func rowToDTO(r RouteRow) RouteDTO {
 
 	if r.GuideID.Valid {
 		dto.GuideID = r.GuideID.String()
+	}
+
+	if r.GuideTitle != nil {
+		dto.GuideTitle = *r.GuideTitle
+	}
+
+	if r.ChecklistGuideID.Valid {
+		dto.ChecklistGuideID = r.ChecklistGuideID.String()
 	}
 
 	if f, err := r.ProcessingMedianDays.Float64Value(); err == nil && f.Valid {

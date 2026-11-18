@@ -82,5 +82,10 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems };
+	// A requested guide that didn't resolve (unpublished, wrong category,
+	// deleted) must surface a notice — silently dropping to the generic
+	// selector leaves shared-link users wondering what happened.
+	const guideUnavailable = !!guideId && !guide && !disabled && !selectorFailed;
+
+	return { selector, disabled, selectorFailed, authed, countries, guide, progressItems, guideUnavailable };
 };

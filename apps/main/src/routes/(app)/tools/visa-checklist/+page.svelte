@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { ClipboardCheck, Check, Lock, RotateCcw, MessageSquarePlus, ArrowLeft } from 'lucide-svelte';
+	import { ClipboardCheck, Check, Lock, RotateCcw, MessageSquarePlus, ArrowLeft, Route } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
 	import AuthDialog from '#lib/components/auth/AuthDialog.svelte';
 	import { api } from '#lib/api/client.js';
@@ -60,6 +60,12 @@
 
 	const destinations = $derived(pinMarketsFirst(selector?.destinations ?? [], destinationMarkets(siteSettings), (d) => destCodeByName.get(d.name.toLowerCase()) ?? ''));
 	const visaTypes = $derived(destinations.find((d) => d.id === selectedDestination)?.visa_types ?? []);
+	// Stale-link notice — SSR flags a ?guide_id= that didn't resolve, but
+	// the flag must track the live URL: a shallow goto() drops the param
+	// on selection change and must not resurface the notice.
+	const guideNoticeVisible = $derived(
+		data.guideUnavailable && page.url.searchParams.has('guide_id') && !selectedGuideId
+	);
 	const completedCount = $derived(items.filter((i) => i.completed).length);
 	const progressPct = $derived(items.length > 0 ? Math.round(completedCount / items.length * 100) : 0);
 
@@ -316,6 +322,29 @@
 	<div class="px-4 pt-4">
 		<ToolHeader icon={ClipboardCheck} title={t('tools.visa_checklist', 'Visa Checklist')} description={description} />
 	</div>
+
+	{#if !disabled}
+		<!-- §90 reverse link: the comparison tool and this checklist are
+		     two halves of the same flow — once a destination is picked,
+		     deep-link straight into its filtered route list. -->
+		<div class="px-4 pt-2">
+			<a
+				href={selectedDestination ? `/tools/visa-routes?dest=${encodeURIComponent(selectedDestination)}` : '/tools/visa-routes'}
+				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
+			>
+				<Route size={14} />
+				{t('checklist.compare_routes', 'Compare visa routes')}
+			</a>
+		</div>
+	{/if}
+
+	{#if guideNoticeVisible}
+		<div class="px-4 pt-3">
+			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-muted)]">
+				{t('checklist.guide_unavailable', 'The linked checklist is no longer available — pick your route below.')}
+			</div>
+		</div>
+	{/if}
 
 	{#if disabled}
 		<div class="p-4">

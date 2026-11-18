@@ -5098,5 +5098,9 @@
   "app.tools.status_gate_hint": "Publishing happens through Approve — it stamps the reviewer fields.",
   "app.tools.visa_routes_desc": "Manage visa route data — eligibility, fees, path to PR, and renewal terms",
   "app.tools.visa_routes_heading": "Visa Routes Management",
-  "app.tools.visa_routes_page_title": "Visa Routes Management — {site} Admin"
+  "app.tools.visa_routes_page_title": "Visa Routes Management — {site} Admin",
+  "app.tools.guide_placeholder": "Search visa guides…",
+  "app.tools.guide_help": "Visa guide powering the route's Document checklist CTA. Draft guides are allowed — the public link activates when the guide publishes.",
+  "app.tools.checklist_link_live": "Checklist link live on public route",
+  "app.tools.checklist_link_pending": "Checklist link hidden until the guide is published"
 }

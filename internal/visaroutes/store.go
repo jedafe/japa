@@ -120,6 +120,8 @@ type RouteRow struct {
 	HITLReviewNotes      *string
 	IsJapabotIndexed     bool
 	GuideID              pgtype.UUID
+	GuideTitle           *string
+	ChecklistGuideID     pgtype.UUID
 	ProcessingMedianDays pgtype.Numeric
 	ProcessingSampleCnt  pgtype.Int4
 	ProcessingPeriod     pgtype.Date
@@ -154,12 +156,23 @@ SELECT vr.id, vr.destination_space_id,
        vr.source_url_last_checked, vr.status, vr.is_active,
        vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
        vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
-       vr.is_japabot_indexed, vr.guide_id,
+       vr.is_japabot_indexed, vr.guide_id, cg.title AS guide_title,
+       CASE WHEN cg.content_type = 'guide'
+             AND cg.guide_category = 'visa'
+             AND cg.status = 'published'
+             AND cg.deleted_at IS NULL
+            THEN cg.id
+       END AS checklist_guide_id,
        vps.median_days, vps.sample_count, vps.period_start,
        rev.username AS hitl_reviewer_username,
        vr.created_at, vr.updated_at
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+-- §70 checklist deep link: guide_title/checklist_guide_id join the raw
+-- guide_id without status predicates — the CASE is the effective-link
+-- gate (the CTA must never surface a guide the checklist API can't
+-- resolve: unpublished guides 404 there).
+LEFT JOIN contents cg ON cg.id = vr.guide_id
 LEFT JOIN LATERAL (
     SELECT median_days, sample_count, period_start
     FROM visa_processing_stats vps
@@ -170,6 +183,29 @@ LEFT JOIN LATERAL (
 ) vps ON true
 LEFT JOIN users rev ON rev.id = vr.hitl_reviewed_by
 `
+
+// VisaGuideExists reports whether id is a live visa guide — the write-side
+// contract for guide_id (§70). Any non-deleted status qualifies: the
+// read-side checklist_guide_id gate already hides the link until the
+// guide publishes, so linking a draft is a valid workflow.
+func (s *Store) VisaGuideExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	const q = `
+SELECT EXISTS (
+    SELECT 1 FROM contents
+    WHERE id = $1
+      AND content_type = 'guide'
+      AND guide_category = 'visa'
+      AND deleted_at IS NULL
+)
+`
+
+	var ok bool
+	if err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&ok); err != nil {
+		return false, fmt.Errorf("visaroutes: guide exists: %w", err)
+	}
+
+	return ok, nil
+}
 
 // routeScanDests returns the scan destinations matching routeSelect's
 // column order, for use with both QueryRow.Scan and Rows.Scan.
@@ -183,7 +219,7 @@ func routeScanDests(r *RouteRow) []any {
 		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
 		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-		&r.IsJapabotIndexed, &r.GuideID,
+		&r.IsJapabotIndexed, &r.GuideID, &r.GuideTitle, &r.ChecklistGuideID,
 		&r.ProcessingMedianDays, &r.ProcessingSampleCnt, &r.ProcessingPeriod,
 		&r.HITLReviewerUsername,
 		&r.CreatedAt, &r.UpdatedAt,
@@ -632,6 +668,7 @@ type CreateRoute struct {
 	AIGenerated          bool
 	AIModel              *string
 	AIPromptHash         *string
+	GuideID              pgtype.UUID // zero → NULL
 }
 
 // Create inserts a new visa route and returns the created row.
@@ -653,8 +690,8 @@ INSERT INTO visa_routes (
     destination_space_id, visa_category, name, slug,
     eligibility_summary, requirements_json, typical_fee_usd, path_to_pr,
     renewal_terms, restrictions, gov_source_url, source_url_last_checked,
-    status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    status, is_active, ai_generated, ai_model, ai_prompt_hash, guide_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 RETURNING id
 `
 
@@ -667,7 +704,7 @@ RETURNING id
 		input.TypicalFeeUSD, input.PathToPR, input.RenewalTerms,
 		input.Restrictions, input.GovSourceURL, input.SourceURLLastChecked,
 		status, input.IsActive, input.AIGenerated, input.AIModel,
-		input.AIPromptHash,
+		input.AIPromptHash, input.GuideID,
 	).Scan(&id)
 	if err != nil {
 		if isDuplicateKey(err) {
@@ -700,6 +737,7 @@ type UpdateRoute struct {
 	AIGenerated          *bool
 	AIModel              *string
 	AIPromptHash         *string
+	GuideID              *pgtype.UUID // nil → unchanged; invalid UUID → NULL
 }
 
 // Update applies a partial update to a visa route and returns the
@@ -810,6 +848,12 @@ func (s *Store) Update(ctx context.Context, id pgtype.UUID, input UpdateRoute) (
 	if input.AIPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *input.AIPromptHash)
+		argIdx++
+	}
+
+	if input.GuideID != nil {
+		sets = append(sets, fmt.Sprintf("guide_id = $%d", argIdx))
+		args = append(args, *input.GuideID)
 		argIdx++
 	}
 
