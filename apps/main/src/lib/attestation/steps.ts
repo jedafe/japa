@@ -65,6 +65,9 @@ export interface StepField {
 	label: string;
 	value: string;
 	url: string | null;
+	/** Set when the field is a list (e.g. what_to_bring nested repeater) —
+	 *  callers render it as bullets instead of the joined `value`. */
+	items?: string[];
 }
 
 export function isStepObject(step: unknown): step is Record<string, unknown> {
@@ -80,8 +83,18 @@ export function safeUrl(val: unknown): string | null {
 
 export function stepValueText(val: unknown): string {
 	if (val === null || val === undefined) return '';
+	if (Array.isArray(val)) return val.map(stepValueText).filter(Boolean).join(', ');
 	if (typeof val === 'object') return JSON.stringify(val);
 	return String(val);
+}
+
+/** {min,max,currency?} range objects → "NGN 5,000–20,000" / "5–14". */
+function stepRangeText(val: Record<string, unknown>): string {
+	const cur = typeof val.currency === 'string' && val.currency.trim() ? `${val.currency.trim()} ` : '';
+	const min = stepValueText(val.min).trim();
+	const max = stepValueText(val.max).trim();
+	const range = min && max ? `${min}–${max}` : min || max;
+	return cur + range;
 }
 
 /** Ordered, labeled fields for a step object. step/title are surfaced as the
@@ -96,27 +109,42 @@ export function stepFields(step: Record<string, unknown>): StepField[] {
 		return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
 	});
 	return entries.map(([key, val]) => {
-		// turnaround_days gets an "N days" suffix for numbers; editorial
-		// repeater values arrive as strings, so numeric strings match too.
+		// List values (what_to_bring nested repeater) render as bullets via
+		// `items`; the joined string stays in `value` for JSON-LD fallbacks.
+		const items = Array.isArray(val)
+			? val.map((v) => stepValueText(v).trim()).filter(Boolean)
+			: undefined;
+		// {min,max,...} objects (fee_estimate, turnaround_days ranges) format
+		// as "min–max" (with currency prefix when present).
+		const range =
+			!items && isStepObject(val) && ('min' in val || 'max' in val) ? stepRangeText(val) : undefined;
+		// turnaround_days gets an "N days" suffix — numbers, numeric strings
+		// (editorial repeater strings), and {min,max} ranges all match.
 		const isTurnaround =
 			key === 'turnaround_days' &&
-			(typeof val === 'number' || (typeof val === 'string' && /^\d+(\.\d+)?$/.test(val.trim())));
+			(typeof val === 'number' ||
+				range !== undefined ||
+				(typeof val === 'string' && /^\d+(\.\d+)?$/.test(val.trim())));
+		const daysSuffix = (n: string) =>
+			t('attestation_guide.n_days', '{n} days').replace('{n}', n);
 		return {
 			label:
 				STEP_FIELD_LABELS[key] ??
 				key.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()),
 			value: isTurnaround
-				? t('attestation_guide.n_days', '{n} days').replace('{n}', String(val).trim())
-				: stepValueText(val),
-			url: key === 'url' || key === 'official_url' ? safeUrl(val) : null
+				? daysSuffix(range ?? String(val).trim())
+				: (range ?? stepValueText(val)),
+			url: key === 'url' || key === 'official_url' ? safeUrl(val) : null,
+			items
 		};
 	});
 }
 
-/** A step's headline: its step/title text, else a numbered fallback. */
+/** A step's headline: "Step N" plus its title when the data carries one
+ *  (editorial items are auto-numbered — no step field — while seeded
+ *  pathways keep their descriptive titles: "Step 1: Notarize…"). */
 export function stepHeadline(step: Record<string, unknown>, index: number): string {
 	const s = step.step ?? step.title;
-	return typeof s === 'string' && s.trim()
-		? s
-		: `${t('attestation_guide.step_n', 'Step')} ${index + 1}`;
+	const prefix = `${t('attestation_guide.step_n', 'Step')} ${index + 1}`;
+	return typeof s === 'string' && s.trim() ? `${prefix}: ${s.trim()}` : prefix;
 }

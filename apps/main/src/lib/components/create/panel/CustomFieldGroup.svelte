@@ -97,6 +97,7 @@
 		label: string;
 		type?: string;
 		full?: boolean;
+		parts?: string[];
 	}
 	function repeaterItemFields(field: CustomFieldDef): RepeaterItemField[] {
 		const opts = field.options;
@@ -105,6 +106,14 @@
 		}
 		return [];
 	}
+	// options.item_label gives structured items an ordinal header ("Step 3");
+	// without it the card falls back to a bare "#3".
+	function repeaterItemLabel(field: CustomFieldDef, idx: number): string {
+		const opts = field.options;
+		const lbl =
+			opts && !Array.isArray(opts) ? (opts as { item_label?: string }).item_label?.trim() : undefined;
+		return lbl ? `${lbl} ${idx + 1}` : `#${idx + 1}`;
+	}
 	function repeaterInputType(sf: RepeaterItemField): string {
 		// Sub-fields carry a semantic type (number/url/date/email/tel) that maps
 		// onto native input types; anything else stays text.
@@ -112,9 +121,15 @@
 			? sf.type
 			: 'text';
 	}
+	// New-item seeds are type-aware: nested repeaters start as [] so the
+	// sub-list editor renders immediately; everything else starts ''.
 	function repeaterAdd(key: string, itemFields: RepeaterItemField[] = []) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
-		arr.push(itemFields.length ? Object.fromEntries(itemFields.map((f) => [f.key, ''])) : '');
+		arr.push(
+			itemFields.length
+				? Object.fromEntries(itemFields.map((f) => [f.key, f.type === 'repeater' ? [] : '']))
+				: ''
+		);
 		setField(key, arr);
 	}
 	function repeaterSetItem(key: string, idx: number, sf: RepeaterItemField, val: string) {
@@ -124,6 +139,71 @@
 		// (e.g. "30 days") and HowTo JSON-LD see the same shape the API emits.
 		arr[idx] = { ...cur, [sf.key]: sf.type === 'number' && val !== '' ? Number(val) : val };
 		setField(key, arr);
+	}
+	// Nested repeater (type:'repeater' sub-field) — item[subKey] is a
+	// string[]. A stored string upgrades to a one-element list on first edit
+	// so rows seeded before the field became a repeater stay editable.
+	function repeaterSubList(item: unknown, subKey: string): string[] {
+		if (typeof item !== 'object' || item === null) return [];
+		const v = (item as Record<string, unknown>)[subKey];
+		if (Array.isArray(v)) return v.map((s) => String(s ?? ''));
+		return typeof v === 'string' && v ? [v] : [];
+	}
+	function repeaterSubWrite(key: string, idx: number, subKey: string, list: string[]) {
+		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
+		const cur = typeof arr[idx] === 'object' && arr[idx] !== null ? (arr[idx] as Record<string, unknown>) : {};
+		arr[idx] = { ...cur, [subKey]: list };
+		setField(key, arr);
+	}
+	function repeaterSubSet(key: string, idx: number, subKey: string, sIdx: number, val: string) {
+		const item = Array.isArray(values[key]) ? (values[key] as unknown[])[idx] : undefined;
+		const list = repeaterSubList(item, subKey);
+		list[sIdx] = val;
+		repeaterSubWrite(key, idx, subKey, list);
+	}
+	function repeaterSubAdd(key: string, idx: number, subKey: string) {
+		const item = Array.isArray(values[key]) ? (values[key] as unknown[])[idx] : undefined;
+		repeaterSubWrite(key, idx, subKey, [...repeaterSubList(item, subKey), '']);
+	}
+	function repeaterSubRemove(key: string, idx: number, subKey: string, sIdx: number) {
+		const item = Array.isArray(values[key]) ? (values[key] as unknown[])[idx] : undefined;
+		const list = repeaterSubList(item, subKey);
+		list.splice(sIdx, 1);
+		repeaterSubWrite(key, idx, subKey, list);
+	}
+	// Min/max sub-field (type:'minmax') — item[sf.key] is {min,max,currency?};
+	// options.parts declares the inputs (default min+max, fee adds currency).
+	// Parts stay strings so mid-typing decimals ("2.") isn't clobbered.
+	function repeaterMinMaxParts(sf: RepeaterItemField): string[] {
+		return Array.isArray(sf.parts) && sf.parts.length ? sf.parts : ['min', 'max'];
+	}
+	function repeaterMinMax(item: unknown, sf: RepeaterItemField): Record<string, string> {
+		const v =
+			typeof item === 'object' && item !== null ? (item as Record<string, unknown>)[sf.key] : undefined;
+		const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+		const out: Record<string, string> = {};
+		for (const p of repeaterMinMaxParts(sf)) {
+			const pv = o[p];
+			out[p] = pv === null || pv === undefined ? '' : String(pv);
+		}
+		return out;
+	}
+	function repeaterSetMinMax(key: string, idx: number, sf: RepeaterItemField, part: string, raw: string) {
+		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
+		const cur = typeof arr[idx] === 'object' && arr[idx] !== null ? (arr[idx] as Record<string, unknown>) : {};
+		const mm = repeaterMinMax(cur, sf);
+		mm[part] = raw;
+		const out: Record<string, string> = {};
+		for (const p of Object.keys(mm)) {
+			if (mm[p].trim() !== '') out[p] = mm[p].trim();
+		}
+		arr[idx] = { ...cur, [sf.key]: Object.keys(out).length ? out : '' };
+		setField(key, arr);
+	}
+	function repeaterMinMaxPlaceholder(part: string): string {
+		if (part === 'min') return t('wiki.price_min', 'Min');
+		if (part === 'max') return t('wiki.price_max', 'Max');
+		return part.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 	}
 	function repeaterRemove(key: string, idx: number) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
@@ -633,20 +713,77 @@
 						     two-column grid (`full` items span both columns). -->
 						<div class="cf-repeater-card">
 							<div class="cf-repeater-card-head">
-								<span class="cf-repeater-card-index">#{idx + 1}</span>
+								<span class="cf-repeater-card-index">{repeaterItemLabel(field, idx)}</span>
 								<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label={t('common.remove', 'Remove')}>×</button>
 							</div>
 							<div class="cf-repeater-grid">
 								{#each itemFields as sf (sf.key)}
-									<label class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
-										<span class="cf-repeater-field-label">{sf.label}</span>
-										<input
-											type={repeaterInputType(sf)}
-											class="cf-input"
-											value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
-											oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
-										/>
-									</label>
+									{#if sf.type === 'textarea'}
+										<label class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
+											<span class="cf-repeater-field-label">{sf.label}</span>
+											<textarea
+												class="cf-input cf-repeater-textarea"
+												rows="2"
+												value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
+												oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
+											></textarea>
+										</label>
+									{:else if sf.type === 'repeater'}
+										<!-- Nested string-list sub-field (e.g. what_to_bring). -->
+										<div class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
+											<span class="cf-repeater-field-label">{sf.label}</span>
+											<div class="cf-subrepeater">
+												{#each repeaterSubList(item, sf.key) as sub, sIdx (sIdx)}
+													<div class="cf-subrepeater-row">
+														<input
+															type="text"
+															class="cf-input"
+															value={sub}
+															oninput={(e) => repeaterSubSet(field.key, idx, sf.key, sIdx, e.currentTarget.value)}
+														/>
+														<button
+															type="button"
+															class="cf-repeater-remove"
+															onclick={() => repeaterSubRemove(field.key, idx, sf.key, sIdx)}
+															aria-label={t('common.remove', 'Remove')}
+														>×</button>
+													</div>
+												{/each}
+												<button
+													type="button"
+													class="cf-repeater-add"
+													onclick={() => repeaterSubAdd(field.key, idx, sf.key)}
+												>+ {t('common.add', 'Add')}</button>
+											</div>
+										</div>
+									{:else if sf.type === 'minmax'}
+										<!-- Paired range inputs → {min,max,...} on the sub-key. -->
+										<div class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
+											<span class="cf-repeater-field-label">{sf.label}</span>
+											<div class="cf-minmax">
+												{#each repeaterMinMaxParts(sf) as part (part)}
+													<input
+														type={part === 'currency' ? 'text' : 'number'}
+														class="cf-input"
+														step="any"
+														placeholder={repeaterMinMaxPlaceholder(part)}
+														value={repeaterMinMax(item, sf)[part] ?? ''}
+														oninput={(e) => repeaterSetMinMax(field.key, idx, sf, part, e.currentTarget.value)}
+													/>
+												{/each}
+											</div>
+										</div>
+									{:else}
+										<label class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
+											<span class="cf-repeater-field-label">{sf.label}</span>
+											<input
+												type={repeaterInputType(sf)}
+												class="cf-input"
+												value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
+												oninput={(e) => repeaterSetItem(field.key, idx, sf, e.currentTarget.value)}
+											/>
+										</label>
+									{/if}
 								{/each}
 							</div>
 						</div>
@@ -902,6 +1039,35 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
+	}
+	.cf-repeater-textarea {
+		height: auto;
+		min-height: 3.5rem;
+		padding: 8px 14px;
+		resize: vertical;
+	}
+	/* Nested string-list sub-field (type:'repeater' inside item_fields). */
+	.cf-subrepeater {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.cf-subrepeater-row {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+	.cf-subrepeater-row .cf-input {
+		min-width: 0;
+	}
+	/* Min/max sub-field — one input per declared part, equal shares. */
+	.cf-minmax {
+		display: flex;
+		gap: 6px;
+	}
+	.cf-minmax .cf-input {
+		flex: 1 1 0;
+		min-width: 0;
 	}
 	@media (max-width: 560px) {
 		.cf-repeater-grid {

@@ -604,7 +604,11 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 									{#each stepFields(step) as field (field.label)}
 										<div class="mt-0.5 flex items-start gap-1.5">
 											<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
-											{#if field.url}
+											{#if field.items}
+												<ul class="list-disc space-y-0.5 pl-4 text-[var(--color-text-subtle)]">
+													{#each field.items as item}<li>{item}</li>{/each}
+												</ul>
+											{:else if field.url}
 												<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
 											{:else}
 												<span class="text-[var(--color-text-subtle)]">{field.value}</span>
