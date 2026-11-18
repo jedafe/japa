@@ -19,11 +19,13 @@ package checklist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -112,6 +114,32 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	return page, limit
 }
 
+// maxNotesLen caps the per-item notes payload (§70 — user's own annotation,
+// not long-form text). Oversized bodies are rejected before the upsert.
+const maxNotesLen = 2000
+
+// originParams reads the optional ?origin= / ?origin_code= filters shared by
+// the guide, progress, and progress-update routes (ADR-070 §2 — origin
+// narrows the item set to origin-specific requirements).
+func originParams(r *http.Request) (origin, originCode string) {
+	q := r.URL.Query()
+	return q.Get("origin"), q.Get("origin_code")
+}
+
+// writeGuideError maps the service's not-found sentinels to 404s so dead or
+// unpublished guide links surface the "no guide yet" state instead of a 500.
+func writeGuideError(w http.ResponseWriter, err error, logMsg, failCode, failMsg string) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "No published visa guide matches this link")
+	case errors.Is(err, ErrItemNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "item_not_found", "This item is not part of the checklist")
+	default:
+		slog.Error(logMsg, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, failCode, failMsg)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public handlers (no auth required — anonymous browse per Section 70)
 // ---------------------------------------------------------------------------
@@ -162,10 +190,11 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.GetGuide(r.Context(), guideID)
+	origin, originCode := originParams(r)
+
+	guide, err := h.service.GetGuide(r.Context(), guideID, origin, originCode)
 	if err != nil {
-		slog.Error("checklist: get guide failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "items_failed", "Failed to get checklist items")
+		writeGuideError(w, err, "checklist: get guide failed", "items_failed", "Failed to get checklist items")
 
 		return
 	}
@@ -197,10 +226,11 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.service.GetProgress(r.Context(), user.UserID, guideID)
+	origin, originCode := originParams(r)
+
+	items, err := h.service.GetProgress(r.Context(), user.UserID, guideID, origin, originCode)
 	if err != nil {
-		slog.Error("checklist: get progress failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "progress_failed", "Failed to get progress")
+		writeGuideError(w, err, "checklist: get progress failed", "progress_failed", "Failed to get progress")
 
 		return
 	}
@@ -246,15 +276,28 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// An empty PATCH must not manufacture a progress row — the upsert only
+	// runs when at least one field was provided.
+	if body.Completed == nil && body.Notes == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_patch", "Provide completed and/or notes")
+		return
+	}
+
+	if body.Notes != nil && len(*body.Notes) > maxNotesLen {
+		errpkg.WriteError(w, http.StatusBadRequest, "notes_too_long", "Notes may be at most 2000 characters")
+		return
+	}
+
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
-	row, err := h.service.UpsertProgress(r.Context(), user.UserID, guideID, itemKey, body.Completed, body.Notes)
+	origin, originCode := originParams(r)
+
+	row, err := h.service.UpsertProgress(r.Context(), user.UserID, guideID, itemKey, body.Completed, body.Notes, origin, originCode)
 	if err != nil {
-		slog.Error("checklist: update progress failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")
+		writeGuideError(w, err, "checklist: update progress failed", "update_failed", "Failed to update progress")
 
 		return
 	}
@@ -290,8 +333,7 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ResetProgress(r.Context(), user.UserID, guideID); err != nil {
-		slog.Error("checklist: reset progress failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "reset_failed", "Failed to reset progress")
+		writeGuideError(w, err, "checklist: reset progress failed", "reset_failed", "Failed to reset progress")
 
 		return
 	}
@@ -331,9 +373,11 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	q := r.URL.Query()
 	page, limit := parsePageParams(r)
 
-	rows, total, err := h.service.AdminListProgress(r.Context(), guideID, userID, page, limit)
+	rows, total, err := h.service.AdminListProgress(r.Context(), guideID, userID,
+		q.Get("q"), q.Get("sort"), q.Get("dir"), page, limit)
 	if err != nil {
 		slog.Error("checklist: admin list progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list progress")
@@ -365,7 +409,7 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 
 	page, limit := parsePageParams(r)
 
-	stats, err := h.service.AdminCompletionStats(r.Context(), page, limit)
+	stats, total, err := h.service.AdminCompletionStats(r.Context(), page, limit)
 	if err != nil {
 		slog.Error("checklist: admin completion stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
@@ -378,6 +422,7 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 		"pagination": map[string]any{
 			"page":  page,
 			"limit": limit,
+			"total": total,
 		},
 	})
 }

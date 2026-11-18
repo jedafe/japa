@@ -8,9 +8,12 @@
 package checklist
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // ---------------------------------------------------------------------------
@@ -93,7 +96,7 @@ func TestHandleAdminCompletionStats_Unauthorized(t *testing.T) {
 
 // TestHandleSelector_NoPlatform verifies the public selector endpoint requires
 // a platform context (returns 503, not 401 — it is anonymous-accessible).
-func _TestHandleSelector_NoPlatform(t *testing.T) {
+func TestHandleSelector_NoPlatform(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/checklist/selector", nil)
 	rr := httptest.NewRecorder()
@@ -105,11 +108,14 @@ func _TestHandleSelector_NoPlatform(t *testing.T) {
 }
 
 // TestHandleGetItems_NoPlatform verifies the public get-items endpoint requires
-// a platform context.
-func _TestHandleGetItems_NoPlatform(t *testing.T) {
+// a platform context. The chi route context is injected so URLParam resolves.
+func TestHandleGetItems_NoPlatform(t *testing.T) {
 	h := NewHandlers(nil, nil)
 	req := httptest.NewRequest(http.MethodGet,
 		"/checklist/00000000-0000-0000-0000-000000000000", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("guide_id", "00000000-0000-0000-0000-000000000000")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 	rr := httptest.NewRecorder()
 	h.HandleGetItems(rr, req)
 

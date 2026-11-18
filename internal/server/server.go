@@ -1811,6 +1811,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	checklistService := checklist.NewService(checklistStore, settingsService)
 	checklistService.SetFeatureChecker(featureChecker)
 	checklistService.SetEnqueuer(taskEnqueuer) // wallet:award_points on full completion (§28)
+	checklistService.SetCache(vkClient)        // ADR-070 §8: jc:render cache for selector + guide items
 	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
 	checklistHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in checklist responses
 

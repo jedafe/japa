@@ -9,11 +9,15 @@ package checklist
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +26,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -39,27 +44,34 @@ type TaskEnqueuer interface {
 }
 
 // ChecklistItem is a single document requirement rendered as a checkable
-// item. ItemKey is a stable slug derived from the label so that rewording a
-// guide's document label does not orphan saved progress.
+// item. ItemKey is a stable slug — taken from the authored `key`/`item_key`
+// in the field value when present (ADR-070 §3), otherwise derived from the
+// label. Origins optionally scopes the item to origin countries (slugs or
+// ISO codes) — empty means "applies to all origins" (ADR-070 §2).
 // //nolint:revive // exported: stutter naming is intentional.
 type ChecklistItem struct {
-	ItemKey     string `json:"item_key"`
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
-	Required    bool   `json:"required,omitempty"`
-	Category    string `json:"category,omitempty"`
-	Completed   bool   `json:"completed"`
-	Notes       string `json:"notes"`
+	ItemKey     string   `json:"item_key"`
+	Label       string   `json:"label"`
+	Description string   `json:"description,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Origins     []string `json:"origins,omitempty"`
+	Completed   bool     `json:"completed"`
+	Notes       string   `json:"notes"`
 }
 
 // ChecklistGuideResult is the payload for GET /checklist/:guide_id — the
 // guide's identity plus its checklist items. Matches the frontend
-// ChecklistGuide type (§70 contract).
+// ChecklistGuide type (§70 contract). DestinationCountry/VisaType let
+// deep-linked clients (e.g. visa-routes ?guide_id= links) backfill the
+// 3-step selector without a second lookup.
 // //nolint:revive // exported: stutter naming is intentional.
 type ChecklistGuideResult struct {
-	GuideID string          `json:"guide_id"`
-	Title   string          `json:"title"`
-	Items   []ChecklistItem `json:"items"`
+	GuideID            string          `json:"guide_id"`
+	Title              string          `json:"title"`
+	DestinationCountry string          `json:"destination_country,omitempty"`
+	VisaType           string          `json:"visa_type,omitempty"`
+	Items              []ChecklistItem `json:"items"`
 }
 
 // ProgressItem is a single persisted progress row, serialized for the API.
@@ -109,11 +121,14 @@ type SelectorResult struct {
 	Destinations []CountryOption `json:"destinations"`
 }
 
-// AdminProgressRow is a single admin-list progress row with the username join.
+// AdminProgressRow is a single admin-list progress row with the username and
+// guide-title joins (guide_title is empty when the backing guide was deleted
+// or is no longer a published visa guide — the row is retained for audit).
 type AdminProgressRow struct {
 	ID          string `json:"id"`
 	UserID      string `json:"user_id"`
 	GuideID     string `json:"guide_id"`
+	GuideTitle  string `json:"guide_title"`
 	ItemKey     string `json:"item_key"`
 	Completed   bool   `json:"completed"`
 	CompletedAt string `json:"completed_at"`
@@ -122,12 +137,23 @@ type AdminProgressRow struct {
 	Username    string `json:"username"`
 }
 
-// CompletionStat is a per-guide completion aggregate for the admin stats route.
+// CompletionStat is a per-guide completion aggregate for the admin stats
+// route — real completion rates (§70): users fully completing the live item
+// set and the average completion percentage across users with progress.
 type CompletionStat struct {
-	GuideID                string `json:"guide_id"`
-	TotalUsers             int64  `json:"total_users"`
-	UsersWithAnyCompletion int64  `json:"users_with_any_completion"`
+	GuideID                string  `json:"guide_id"`
+	Title                  string  `json:"title"`
+	GuideDeleted           bool    `json:"guide_deleted,omitempty"`
+	TotalItems             int     `json:"total_items"`
+	TotalUsers             int64   `json:"total_users"`
+	UsersWithAnyCompletion int64   `json:"users_with_any_completion"`
+	UsersFullyCompleted    int64   `json:"users_fully_completed"`
+	AvgCompletionPct       float64 `json:"avg_completion_pct"`
 }
+
+// ErrItemNotFound is returned when a PATCH targets an item_key that is not
+// part of the guide's live required_documents set (after origin filtering).
+var ErrItemNotFound = errors.New("checklist: item key not in guide")
 
 // Service holds the business logic for the visa document checklist.
 type Service struct {
@@ -135,18 +161,101 @@ type Service struct {
 	settings *config.Settings
 	enqueuer TaskEnqueuer
 	checker  FeatureChecker
+	cache    *valkey.Client
+	cacheTTL time.Duration
 }
+
+// CacheTTLEnv overrides the selector/guide-item cache TTL (Go duration
+// string). Defaults to 24h to match the jc:render catalog entry the ADR-070
+// §8 cache reuses — keys embed a content version hash, so TTL only bounds
+// stale-key memory, never serves stale data.
+const CacheTTLEnv = "JC_CHECKLIST_CACHE_TTL"
+
+const defaultCacheTTL = 24 * time.Hour
 
 // NewService creates a checklist service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{
 		store:    store,
 		settings: settings,
+		cacheTTL: defaultCacheTTL,
 	}
 }
 
 // SetEnqueuer injects the Asynq task enqueuer for completion-points rewards.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetCache injects the Valkey client used for the ADR-070 §8 render-cache
+// pattern (jc:render::{content_id}:{hash}). Nil disables caching — every read
+// falls through to Postgres.
+func (s *Service) SetCache(c *valkey.Client) {
+	if c == nil {
+		return
+	}
+
+	s.cache = c
+
+	if env := strings.TrimSpace(os.Getenv(CacheTTLEnv)); env != "" {
+		if parsed, err := time.ParseDuration(env); err == nil && parsed > 0 {
+			s.cacheTTL = parsed
+		} else {
+			slog.Warn("invalid JC_CHECKLIST_CACHE_TTL, using default", "value", env, "default", s.cacheTTL)
+		}
+	}
+}
+
+// cacheGet unmarshals a cached payload into out. Returns false on miss,
+// malformed payload, or cache outage (all treated identically — the DB is
+// the source of truth).
+func (s *Service) cacheGet(ctx context.Context, key string, out any) bool {
+	if s.cache == nil {
+		return false
+	}
+
+	raw, err := s.cache.Redis().Get(ctx, key).Result()
+	if err != nil {
+		return false
+	}
+
+	if err := json.Unmarshal([]byte(raw), out); err != nil {
+		return false
+	}
+
+	return true
+}
+
+// cacheSet stores a payload. Best-effort — a Valkey failure never breaks
+// the request path.
+func (s *Service) cacheSet(ctx context.Context, key string, v any) {
+	if s.cache == nil {
+		return
+	}
+
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+
+	_ = s.cache.Redis().Set(ctx, key, raw, s.cacheTTL).Err()
+}
+
+// guideCacheKey produces the ADR-070 §8 render-cache key for a guide's
+// checklist payload — jc:render::{guide_id}:{hash(updated_at)}. updated_at
+// changes on every guide edit, so edited guides get a fresh key and stale
+// entries simply expire.
+func guideCacheKey(guideID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
+	hash := sha256.Sum256([]byte(strconv.FormatInt(updatedAt.Time.Unix(), 10)))
+	return valkey.MustKey("render::%s:%s", guideID.String(), hex.EncodeToString(hash[:]))
+}
+
+// selectorCacheKey produces the render-cache key for the selector payload —
+// the version hash covers the visa-guide corpus AND the country spaces that
+// feed the origin step, so publishing a new guide or renaming a country
+// mints a new key.
+func selectorCacheKey(version string) string {
+	hash := sha256.Sum256([]byte(version))
+	return valkey.MustKey("render::checklist-selector:%s", hex.EncodeToString(hash[:]))
+}
 
 // FeatureChecker resolves feature flag state from the feature_flags table —
 // the single source of truth for reachability (Ref: internal/features/features.go).
@@ -176,8 +285,21 @@ func (s *Service) Enabled(ctx context.Context) bool {
 // GetSelector returns origin country Geo Spaces (§05) and destination
 // countries with nested visa types from published visa guides. Follows the
 // 3-step selector model in §70: origin → destination → visa type.
-// Anonymous-accessible (no auth required).
+// Anonymous-accessible (no auth required). The result is cached under the
+// ADR-070 §8 jc:render pattern keyed on a corpus version hash.
 func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
+	version, err := s.store.SelectorVersion(ctx)
+	if err != nil {
+		return SelectorResult{}, fmt.Errorf("checklist: selector version: %w", err)
+	}
+
+	if s.cache != nil {
+		var cached SelectorResult
+		if s.cacheGet(ctx, selectorCacheKey(version), &cached) {
+			return cached, nil
+		}
+	}
+
 	// Step 1: Origins — country-level Geo Spaces.
 	countrySpaces, err := s.store.ListCountrySpaces(ctx)
 	if err != nil {
@@ -209,6 +331,17 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 	})
 	if err != nil {
 		return SelectorResult{}, fmt.Errorf("checklist: selector destinations: %w", err)
+	}
+
+	// Index each guide's destination once (O(n)) — the visa-type pass used to
+	// rescan the whole list per row (O(n²) over the fields result).
+	destByGuide := make(map[[16]byte]string, len(fields))
+	for _, f := range fields {
+		if f.FieldKey == FieldDestinationCountry {
+			if v := strings.TrimSpace(f.ValueText); v != "" {
+				destByGuide[f.GuideID.Bytes] = v
+			}
+		}
 	}
 
 	// Group by destination country; each destination gets its visa types.
@@ -249,9 +382,8 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 			if v == "" {
 				continue
 			}
-			// Find the destination this guide belongs to by scanning the
-			// fields list for the same guide_id's destination_country.
-			dest := findGuideDestination(fields, f.GuideID)
+
+			dest := destByGuide[f.GuideID.Bytes]
 			if dest == "" {
 				continue
 			}
@@ -288,19 +420,10 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 
 	sort.Slice(destinations, func(i, j int) bool { return destinations[i].Name < destinations[j].Name })
 
-	return SelectorResult{Origins: origins, Destinations: destinations}, nil
-}
+	result := SelectorResult{Origins: origins, Destinations: destinations}
+	s.cacheSet(ctx, selectorCacheKey(version), result)
 
-// findGuideDestination scans the flat field list for the destination_country
-// value associated with the given guide_id.
-func findGuideDestination(fields []VisaGuideField, guideID pgtype.UUID) string {
-	for _, f := range fields {
-		if f.FieldKey == FieldDestinationCountry && f.GuideID == guideID {
-			return strings.TrimSpace(f.ValueText)
-		}
-	}
-
-	return ""
+	return result, nil
 }
 
 // prettifyVisaType converts a raw visa_type field value (e.g. "student",
@@ -344,10 +467,29 @@ func slugify(s string) string {
 	return s
 }
 
-// GetGuide returns the checklist guide result (guide_id + title + items) for
-// GET /checklist/:guide_id. Anonymous-accessible (no auth required).
-func (s *Service) GetGuide(ctx context.Context, guideID pgtype.UUID) (ChecklistGuideResult, error) {
-	title, err := s.store.GetVisaGuideTitle(ctx, guideID)
+// GetGuide returns the checklist guide result for GET /checklist/:guide_id.
+// Anonymous-accessible. origin/originCode optionally filter items to those
+// applicable to that origin country (ADR-070 §2 — origin-specific
+// requirements); an empty pair returns the full item set. Returns
+// pgx.ErrNoRows when the guide is not a published visa guide so the handler
+// can answer 404 instead of 500.
+func (s *Service) GetGuide(ctx context.Context, guideID pgtype.UUID, origin, originCode string) (ChecklistGuideResult, error) {
+	guide, err := s.getGuideCached(ctx, guideID)
+	if err != nil {
+		return ChecklistGuideResult{}, err
+	}
+
+	guide.Items = filterItemsByOrigin(guide.Items, origin, originCode)
+
+	return guide, nil
+}
+
+// getGuideCached resolves a guide's canonical (unfiltered) checklist payload,
+// serving from the jc:render cache when possible. The cache stores the full
+// item set — origin filtering always happens after retrieval so a cached
+// value is never mutated.
+func (s *Service) getGuideCached(ctx context.Context, guideID pgtype.UUID) (ChecklistGuideResult, error) {
+	title, updatedAt, err := s.store.GetVisaGuideMeta(ctx, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ChecklistGuideResult{}, pgx.ErrNoRows
@@ -356,38 +498,69 @@ func (s *Service) GetGuide(ctx context.Context, guideID pgtype.UUID) (ChecklistG
 		return ChecklistGuideResult{}, fmt.Errorf("checklist: get guide title: %w", err)
 	}
 
-	items, err := s.GetChecklistItems(ctx, guideID)
-	if err != nil {
-		return ChecklistGuideResult{}, err
-	}
+	if s.cache != nil {
+		key := guideCacheKey(guideID, updatedAt)
 
-	return ChecklistGuideResult{
-		GuideID: guideID.String(),
-		Title:   title,
-		Items:   items,
-	}, nil
-}
-
-// GetChecklistItems extracts the required_documents field from a visa guide
-// and returns the document items with stable item_key slugs plus optional
-// required/category/description metadata. Anonymous-accessible (no auth
-// required) — progress is left empty for anonymous users.
-func (s *Service) GetChecklistItems(ctx context.Context, guideID pgtype.UUID) ([]ChecklistItem, error) {
-	field, err := s.store.GetVisaGuideField(ctx, guideID, FieldRequiredDocuments)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return []ChecklistItem{}, nil
+		var cached ChecklistGuideResult
+		if s.cacheGet(ctx, key, &cached) {
+			return cached, nil
 		}
 
-		return nil, fmt.Errorf("checklist: get items: %w", err)
+		guide, err := s.getGuideUncached(ctx, guideID, title)
+		if err != nil {
+			return ChecklistGuideResult{}, err
+		}
+
+		s.cacheSet(ctx, key, guide)
+
+		return guide, nil
 	}
 
+	return s.getGuideUncached(ctx, guideID, title)
+}
+
+// getGuideUncached builds the checklist payload from the guide's custom
+// fields: required_documents (the item list), destination_country and
+// visa_type (selector backfill for deep-linked clients).
+func (s *Service) getGuideUncached(ctx context.Context, guideID pgtype.UUID, title string) (ChecklistGuideResult, error) {
+	fields, err := s.store.GetVisaGuideFields(ctx, guideID, []string{
+		FieldRequiredDocuments,
+		FieldDestinationCountry,
+		FieldVisaType,
+	})
+	if err != nil {
+		return ChecklistGuideResult{}, fmt.Errorf("checklist: get guide fields: %w", err)
+	}
+
+	result := ChecklistGuideResult{
+		GuideID: guideID.String(),
+		Title:   title,
+		Items:   []ChecklistItem{},
+	}
+
+	for _, f := range fields {
+		switch f.FieldKey {
+		case FieldRequiredDocuments:
+			result.Items = buildChecklistItems(f)
+		case FieldDestinationCountry:
+			result.DestinationCountry = strings.TrimSpace(f.ValueText)
+		case FieldVisaType:
+			result.VisaType = strings.TrimSpace(f.ValueText)
+		}
+	}
+
+	return result, nil
+}
+
+// buildChecklistItems converts a required_documents field into ChecklistItem
+// values with stable keys. An authored `key`/`item_key` in the field value
+// wins (ADR-070 §3 — key generated at authoring time); the label slug is the
+// fallback for legacy values. Duplicate resulting keys get a positional -N
+// suffix so each item keeps a unique key.
+func buildChecklistItems(field VisaGuideField) []ChecklistItem {
 	rawItems := extractDocumentItems(field)
 	items := make([]ChecklistItem, 0, len(rawItems))
 
-	// Duplicate labels slug to the same item_key — suffix duplicates so each
-	// item keeps a stable unique key (frontend each-block keys and progress
-	// rows are keyed on item_key).
 	seen := make(map[string]bool, len(rawItems))
 	for _, ri := range rawItems {
 		label := strings.TrimSpace(ri.Label)
@@ -396,6 +569,10 @@ func (s *Service) GetChecklistItems(ctx context.Context, guideID pgtype.UUID) ([
 		}
 
 		base := slugifyItemKey(label)
+		if k := strings.TrimSpace(ri.effectiveKey()); k != "" {
+			base = slugifyItemKey(k)
+		}
+
 		key := base
 		for i := 2; seen[key]; i++ {
 			key = fmt.Sprintf("%s-%d", base, i)
@@ -408,18 +585,57 @@ func (s *Service) GetChecklistItems(ctx context.Context, guideID pgtype.UUID) ([
 			Description: ri.Description,
 			Required:    ri.Required,
 			Category:    ri.Category,
+			Origins:     ri.effectiveOrigins(),
 		})
 	}
 
-	return items, nil
+	return items
+}
+
+// filterItemsByOrigin narrows an item list to entries applicable to the
+// given origin. Items carry an optional origins list (country slugs or ISO
+// codes, ADR-070 §2); empty origins means "all origins". Empty origin input
+// returns the full set unchanged — the returned slice may share backing
+// storage with the input, callers must not mutate it.
+func filterItemsByOrigin(items []ChecklistItem, origin, originCode string) []ChecklistItem {
+	oKey := slugify(origin)
+	cKey := slugify(originCode)
+	if oKey == "" && cKey == "" {
+		return items
+	}
+
+	out := make([]ChecklistItem, 0, len(items))
+	for _, it := range items {
+		if len(it.Origins) == 0 || originMatches(it.Origins, oKey, cKey) {
+			out = append(out, it)
+		}
+	}
+
+	return out
+}
+
+// originMatches reports whether any origins entry resolves to the requested
+// origin slug or ISO code (both compared after slugification).
+func originMatches(origins []string, slug, code string) bool {
+	for _, o := range origins {
+		so := slugify(o)
+		if (slug != "" && so == slug) || (code != "" && so == code) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetProgress returns the user's saved progress for a guide as a
 // ProgressResult — per-item completed/completed_at/notes merged with the
 // guide's checklist items so every item is present (unchecked items without
-// a progress row still appear). Matches the frontend ChecklistProgress type.
-func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) (ProgressResult, error) {
-	items, err := s.GetChecklistItems(ctx, guideID)
+// a progress row still appear). origin/originCode apply the same item
+// filtering as GetGuide so the progress denominator matches what the client
+// displays. Returns pgx.ErrNoRows when the guide is not a published visa
+// guide (handler → 404).
+func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID, origin, originCode string) (ProgressResult, error) {
+	guide, err := s.GetGuide(ctx, guideID, origin, originCode)
 	if err != nil {
 		return ProgressResult{}, err
 	}
@@ -434,10 +650,10 @@ func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) 
 		progMap[r.ItemKey] = r
 	}
 
-	progressItems := make([]ProgressItem, 0, len(items))
+	progressItems := make([]ProgressItem, 0, len(guide.Items))
 	completedCount := 0
 
-	for _, item := range items {
+	for _, item := range guide.Items {
 		pi := ProgressItem{ItemKey: item.ItemKey}
 		if p, ok := progMap[item.ItemKey]; ok {
 			pi.Completed = p.Completed
@@ -459,20 +675,44 @@ func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) 
 		GuideID:        guideID.String(),
 		Items:          progressItems,
 		CompletedCount: completedCount,
-		TotalCount:     len(items),
+		TotalCount:     len(guide.Items),
 	}, nil
 }
 
 // UpsertProgress marks a single item complete/incomplete (with an optional
-// note) for the authenticated user. A nil completed preserves the existing
-// completed state (note-only update) by fetching the current row first; a
-// nil notes preserves the existing notes via SQL COALESCE. When the item is
-// the final one needed for full completion and checklist.completion_points >
-// 0, a wallet:award_points task is enqueued fire-and-forget (Rule 8).
-func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string) (gen.ChecklistProgress, error) {
+// note) for the authenticated user. The guide must be a published visa guide
+// (pgx.ErrNoRows otherwise) and item_key must belong to its live
+// required_documents set (ErrItemNotFound otherwise) — the guide_id FK was
+// dropped by migration 000453, so the service is the integrity layer.
+// origin/originCode apply the same item filtering the client sees: the
+// completion reward counts only items in that set. A nil completed preserves
+// the existing completed state (note-only update) by fetching the current
+// row first — on the Writer so a same-connection read can't resurrect stale
+// state under replica lag; a nil notes preserves the existing notes via SQL
+// COALESCE.
+func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string, origin, originCode string) (gen.ChecklistProgress, error) {
+	guide, err := s.GetGuide(ctx, guideID, origin, originCode)
+	if err != nil {
+		return gen.ChecklistProgress{}, err
+	}
+
+	itemInGuide := false
+	for _, it := range guide.Items {
+		if it.ItemKey == itemKey {
+			itemInGuide = true
+
+			break
+		}
+	}
+
+	if !itemInGuide {
+		return gen.ChecklistProgress{}, ErrItemNotFound
+	}
+
 	// Resolve nil completed: a note-only PATCH must preserve the existing
-	// completion state AND its timestamp. Fetch the current row; if none
-	// exists, default to false (new item, not yet checked).
+	// completion state AND its timestamp. Fetch the current row on the Writer
+	// (read-your-writes); if none exists, default to false (new item, not yet
+	// checked).
 	resolvedCompleted := false
 	var completedAt pgtype.Timestamptz
 	if completed != nil {
@@ -484,7 +724,7 @@ func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUI
 		// Note-only update: keep the original completed_at rather than
 		// stamping now() — refreshing it on every note save would rewrite
 		// when the user actually finished the item.
-		existing, err := s.store.GetSingleProgress(ctx, userID, guideID, itemKey)
+		existing, err := s.store.GetSingleProgressWriter(ctx, userID, guideID, itemKey)
 		if err == nil {
 			resolvedCompleted = existing.Completed
 			completedAt = existing.CompletedAt
@@ -508,34 +748,43 @@ func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUI
 	if completed != nil && *completed && s.enqueuer != nil && s.settings != nil {
 		points := s.settings.GetIntOr(ctx, "checklist.completion_points", 0)
 		if points > 0 {
-			s.maybeAwardCompletionPoints(ctx, userID, guideID, points)
+			s.maybeAwardCompletionPoints(ctx, userID, guideID, guide.Items, points)
 		}
 	}
 
 	return row, nil
 }
 
-// maybeAwardCompletionPoints checks whether all checklist items are now
-// completed and, if so, enqueues a wallet:award_points task. Fire-and-forget
-// per Rule 8 — failures are logged, never returned to the caller.
-func (s *Service) maybeAwardCompletionPoints(ctx context.Context, userID, guideID pgtype.UUID, points int) {
-	items, err := s.GetChecklistItems(ctx, guideID)
-	if err != nil {
-		slog.Warn("checklist: completion check: list items", "error", err)
-		return
-	}
-
+// maybeAwardCompletionPoints checks whether all live checklist items are now
+// completed and, if so, enqueues a wallet:award_points task. Completed rows
+// are counted on the Writer (the upsert just landed there) and only against
+// keys present in the current item set — orphaned or never-valid keys can't
+// inflate the count toward the threshold. Fire-and-forget per Rule 8 —
+// failures are logged, never returned to the caller.
+func (s *Service) maybeAwardCompletionPoints(ctx context.Context, userID, guideID pgtype.UUID, items []ChecklistItem, points int) {
 	if len(items) == 0 {
 		return
 	}
 
-	completed, err := s.store.CountCompletedChecklistItems(ctx, userID, guideID)
+	liveKeys := make(map[string]bool, len(items))
+	for _, it := range items {
+		liveKeys[it.ItemKey] = true
+	}
+
+	rows, err := s.store.ListChecklistProgressWriter(ctx, userID, guideID)
 	if err != nil {
-		slog.Warn("checklist: completion check: count", "error", err)
+		slog.Warn("checklist: completion check: list progress", "error", err)
 		return
 	}
 
-	if completed < int64(len(items)) {
+	completed := 0
+	for _, r := range rows {
+		if r.Completed && liveKeys[r.ItemKey] {
+			completed++
+		}
+	}
+
+	if completed < len(items) {
 		return
 	}
 
@@ -558,8 +807,13 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, userID, guideI
 	slog.Info("checklist: completion award enqueued", "user_id", userID.String(), "guide_id", guideID.String(), "points", points)
 }
 
-// ResetProgress deletes all progress rows for a user + guide.
+// ResetProgress deletes all progress rows for a user + guide. The guide must
+// be a published visa guide (pgx.ErrNoRows otherwise → handler 404).
 func (s *Service) ResetProgress(ctx context.Context, userID, guideID pgtype.UUID) error {
+	if _, err := s.getGuideCached(ctx, guideID); err != nil {
+		return err
+	}
+
 	if err := s.store.DeleteChecklistProgress(ctx, userID, guideID); err != nil {
 		return fmt.Errorf("checklist: reset progress: %w", err)
 	}
@@ -568,8 +822,9 @@ func (s *Service) ResetProgress(ctx context.Context, userID, guideID pgtype.UUID
 }
 
 // AdminListProgress lists all users' progress rows (paginated, filterable by
-// guide_id and user_id). Admin-only (checklist.manage permission).
-func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.UUID, page, limit int32) ([]AdminProgressRow, int64, error) {
+// guide_id and user_id, free-text q across username/email/item key/guide
+// title, sortable). Admin-only (checklist.manage permission).
+func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.UUID, q, sortCol, sortDir string, page, limit int32) ([]AdminProgressRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -580,9 +835,12 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 
 	offset := (page - 1) * limit
 
-	rows, err := s.store.AdminListChecklistProgress(ctx, gen.AdminListChecklistProgressParams{
+	rows, err := s.store.AdminListProgressFiltered(ctx, AdminProgressParams{
 		GuideID:    guideID,
 		UserID:     userID,
+		Q:          q,
+		Sort:       sortCol,
+		Dir:        sortDir,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -590,7 +848,7 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 		return nil, 0, fmt.Errorf("checklist: admin list progress: %w", err)
 	}
 
-	total, err := s.store.AdminCountChecklistProgress(ctx, guideID, userID)
+	total, err := s.store.AdminCountProgressFiltered(ctx, guideID, userID, q)
 	if err != nil {
 		return nil, 0, fmt.Errorf("checklist: admin count progress: %w", err)
 	}
@@ -601,6 +859,7 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 			ID:          r.ID.String(),
 			UserID:      r.UserID.String(),
 			GuideID:     r.GuideID.String(),
+			GuideTitle:  r.GuideTitle,
 			ItemKey:     r.ItemKey,
 			Completed:   r.Completed,
 			CompletedAt: formatTs(r.CompletedAt),
@@ -613,8 +872,12 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 	return out, total, nil
 }
 
-// AdminCompletionStats returns per-guide completion aggregates (admin).
-func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) ([]CompletionStat, error) {
+// AdminCompletionStats returns per-guide completion aggregates (admin):
+// total users with progress, users with any completion, users who completed
+// every live item, and the average completion percentage — the "completion
+// rates by guide" promised by the §70 route. Guides are paginated; per-user
+// completion counts are computed only for the requested page.
+func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) ([]CompletionStat, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -625,31 +888,154 @@ func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) (
 
 	offset := (page - 1) * limit
 
-	rows, err := s.store.AdminCompletionStats(ctx, offset, limit)
+	guideIDs, total, err := s.store.AdminProgressGuideIDs(ctx, offset, limit)
 	if err != nil {
-		return nil, fmt.Errorf("checklist: admin completion stats: %w", err)
+		return nil, 0, fmt.Errorf("checklist: admin stats guide ids: %w", err)
 	}
 
-	out := make([]CompletionStat, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, CompletionStat{
-			GuideID:                r.GuideID.String(),
-			TotalUsers:             r.TotalUsers,
-			UsersWithAnyCompletion: r.UsersWithAnyCompletion,
-		})
+	if len(guideIDs) == 0 {
+		return []CompletionStat{}, total, nil
 	}
 
-	return out, nil
+	pairs, err := s.store.AdminProgressPairs(ctx, guideIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("checklist: admin stats pairs: %w", err)
+	}
+
+	titles, err := s.store.GuideTitles(ctx, guideIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("checklist: admin stats titles: %w", err)
+	}
+
+	type agg struct {
+		gid      pgtype.UUID
+		stat     *CompletionStat
+		userDone [][]string
+	}
+
+	statsByGuide := make(map[pgtype.UUID]*agg, len(guideIDs))
+	ordered := make([]*agg, 0, len(guideIDs))
+
+	for _, gid := range guideIDs {
+		t, found := titles[gid]
+		a := &agg{gid: gid, stat: &CompletionStat{
+			GuideID:      gid.String(),
+			Title:        t.Title,
+			GuideDeleted: !found || t.Deleted,
+		}}
+		statsByGuide[gid] = a
+		ordered = append(ordered, a)
+	}
+
+	for _, p := range pairs {
+		a, ok := statsByGuide[p.GuideID]
+		if !ok {
+			continue
+		}
+
+		a.stat.TotalUsers++
+		if len(p.DoneKeys) > 0 {
+			a.stat.UsersWithAnyCompletion++
+		}
+		a.userDone = append(a.userDone, p.DoneKeys)
+	}
+
+	// Live item count per guide — the denominator for full-completion and
+	// average-percentage math, intersected with each user's completed keys
+	// so stale/orphaned keys can't inflate the rate. Item sets come from the
+	// guide cache (canonical, unfiltered).
+	for _, a := range ordered {
+		guide, gerr := s.getGuideCached(ctx, a.gid)
+		if gerr != nil {
+			// Guide no longer published/exists — rows retained, rates unknown.
+			a.stat.GuideDeleted = true
+			continue
+		}
+
+		a.stat.TotalItems = len(guide.Items)
+		if a.stat.TotalItems == 0 {
+			continue
+		}
+
+		liveKeys := make(map[string]bool, len(guide.Items))
+		for _, it := range guide.Items {
+			liveKeys[it.ItemKey] = true
+		}
+
+		var pctSum float64
+		for _, doneKeys := range a.userDone {
+			liveDone := int64(0)
+			for _, k := range doneKeys {
+				if liveKeys[k] {
+					liveDone++
+				}
+			}
+
+			if liveDone >= int64(a.stat.TotalItems) {
+				a.stat.UsersFullyCompleted++
+			}
+
+			pctSum += float64(liveDone) / float64(a.stat.TotalItems)
+		}
+
+		if a.stat.TotalUsers > 0 {
+			a.stat.AvgCompletionPct = pctSum / float64(a.stat.TotalUsers) * 100
+		}
+	}
+
+	out := make([]CompletionStat, 0, len(ordered))
+	for _, a := range ordered {
+		out = append(out, *a.stat)
+	}
+
+	return out, total, nil
 }
 
 // rawDocumentItem is the intermediate representation of a single document
 // requirement parsed from the required_documents field. Only Label is
-// required; the other fields are optional metadata.
+// required; the other fields are optional metadata. Key/ItemKey carry the
+// authored stable key (ADR-070 §3); Origins/OriginCountries scope the item
+// to specific origin countries (ADR-070 §2) — slugs or ISO codes.
 type rawDocumentItem struct {
-	Label       string `json:"label"`
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-	Category    string `json:"category"`
+	Label           string   `json:"label"`
+	Description     string   `json:"description"`
+	Required        bool     `json:"required"`
+	Category        string   `json:"category"`
+	Key             string   `json:"key"`
+	ItemKey         string   `json:"item_key"`
+	Origins         []string `json:"origins"`
+	OriginCountries []string `json:"origin_countries"`
+}
+
+// effectiveKey returns the authored stable key when present (key, then
+// item_key aliases), else "" — the caller falls back to the label slug.
+func (r rawDocumentItem) effectiveKey() string {
+	if r.Key != "" {
+		return r.Key
+	}
+
+	return r.ItemKey
+}
+
+// effectiveOrigins merges the two accepted origins aliases into one list.
+func (r rawDocumentItem) effectiveOrigins() []string {
+	out := make([]string, 0, len(r.Origins)+len(r.OriginCountries))
+	for _, o := range r.Origins {
+		if s := strings.TrimSpace(o); s != "" {
+			out = append(out, s)
+		}
+	}
+	for _, o := range r.OriginCountries {
+		if s := strings.TrimSpace(o); s != "" {
+			out = append(out, s)
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
 }
 
 // extractDocumentItems parses the required_documents field value into a list
