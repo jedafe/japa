@@ -1,0 +1,18 @@
+# SearXNG settings for local development — merged over the image's built-in
+# defaults via use_default_settings.
+#
+# `search.formats` must include json: the API's agent external.search provider
+# path (internal/ai/tools_knowledge.go searchSearxng) decodes JSON and fails on
+# HTML responses. The limiter is disabled — no redis sidecar runs in dev and
+# the API's server-to-server calls would otherwise trip bot detection.
+use_default_settings: true
+
+server:
+  secret_key: dev-searxng-secret
+  bind_address: "0.0.0.0"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

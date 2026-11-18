@@ -154,6 +154,26 @@ services:
       retries: 6
     restart: unless-stopped
 
+  # SearXNG — self-hosted metasearch backing the agent external.search tool
+  # (internal/ai/tools_knowledge.go). Needs no API key; the API resolves the
+  # instance via system_settings agent.external_search_provider='searxng' and
+  # agent.external_search_searxng_base. Point it at http://searxng:8080 when
+  # the API runs in compose, or http://localhost:8180 when it runs on the
+  # host. JSON output is enabled in docker/searxng/settings.yml — required by
+  # the response decode. Image tag matches the production Coolify service.
+  searxng:
+    image: searxng/searxng:2026.11.18-b867c56a5
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    ports:
+      - "127.0.0.1:8180:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   # Honcho (AI agent memory) is intentionally NOT part of the compose stack —
   # its image is not published to a registry. The API degrades gracefully when
   # JC_HONCHO_URL is unset; point it at an external Honcho deployment to enable
