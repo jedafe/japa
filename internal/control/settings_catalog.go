@@ -572,8 +572,6 @@ var settingsCatalog = map[string]settingMeta{
 	// Visa Document Checklist (§70, ADR-070)
 	"checklist.enabled":           {Type: "bool", DefaultValue: "true", Description: "Global checklist tool toggle.", Panel: "control"},
 	"checklist.completion_points": {Type: "int", DefaultValue: "0", Description: "Points on full completion (0 = disabled).", Panel: "control"},
-	"checklist.subdomain":         {Type: "string", DefaultValue: "visa-checklist", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
-	"checklist.custom_domain":     {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
 	// Japa Readiness Assessment (§71, ADR-071)
 	"assessment.enabled":                        {Type: "bool", DefaultValue: "true", Description: "Global assessment toggle.", Panel: "control"},

@@ -321,6 +321,75 @@ func (s *Store) DeleteChecklistProgress(ctx context.Context, userID, guideID pgt
 	})
 }
 
+// ListProgressGuideIDs returns the distinct guide_ids that carry visa-list
+// progress rows — the sweep set for orphaned-row pruning.
+func (s *Store) ListProgressGuideIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	const q = `SELECT DISTINCT guide_id FROM checklist_progress WHERE list_type = 'visa'`
+
+	rows, err := s.pool.Reader.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("checklist: progress guide ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []pgtype.UUID
+
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("checklist: scan progress guide id: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
+}
+
+// DeleteProgressExcept removes progress rows for one user+guide whose
+// item_key is not in keepKeys — the orphaned rows left behind when a guide's
+// required_documents changed or a guide was deleted. An empty/nil keepKeys
+// removes every row for the pair.
+func (s *Store) DeleteProgressExcept(ctx context.Context, userID, guideID pgtype.UUID, keepKeys []string) error {
+	if keepKeys == nil {
+		keepKeys = []string{}
+	}
+
+	const q = `
+DELETE FROM checklist_progress
+WHERE list_type = 'visa' AND user_id = $1 AND guide_id = $2
+  AND NOT (item_key = ANY($3::text[]))
+`
+
+	_, err := s.pool.Writer.Exec(ctx, q, userID, guideID, keepKeys)
+	if err != nil {
+		return fmt.Errorf("checklist: prune progress: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteGuideProgressExcept removes orphaned progress rows across all users
+// of one guide — the admin sweep counterpart of DeleteProgressExcept.
+func (s *Store) DeleteGuideProgressExcept(ctx context.Context, guideID pgtype.UUID, keepKeys []string) error {
+	if keepKeys == nil {
+		keepKeys = []string{}
+	}
+
+	const q = `
+DELETE FROM checklist_progress
+WHERE list_type = 'visa' AND guide_id = $1
+  AND NOT (item_key = ANY($2::text[]))
+`
+
+	_, err := s.pool.Writer.Exec(ctx, q, guideID, keepKeys)
+	if err != nil {
+		return fmt.Errorf("checklist: prune guide progress: %w", err)
+	}
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Admin queries — dynamic WHERE/ORDER BY lives in pgx (sqlc can't emit
 // whitelisted dynamic ordering); parameter values stay bound.

@@ -648,10 +648,20 @@ func originMatches(origins []string, slug, code string) bool {
 // displays. Returns pgx.ErrNoRows when the guide is not a published visa
 // guide (handler → 404).
 func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID, origin, originCode string) (ProgressResult, error) {
-	guide, err := s.GetGuide(ctx, guideID, origin, originCode)
+	full, err := s.getGuideCached(ctx, guideID)
 	if err != nil {
 		return ProgressResult{}, err
 	}
+
+	// Prune rows whose item_key left the live set (guide edits, keys injected
+	// before item validation). Keep keys come from the UNFILTERED item set so
+	// an origin-scoped request never drops progress for hidden items.
+	if err := s.store.DeleteProgressExcept(ctx, userID, guideID, itemKeys(full.Items)); err != nil {
+		slog.Warn("checklist: prune user progress", "user_id", userID.String(), "guide_id", guideID.String(), "error", err)
+	}
+
+	guide := full
+	guide.Items = filterItemsByOrigin(full.Items, origin, originCode)
 
 	rows, err := s.store.ListChecklistProgress(ctx, userID, guideID)
 	if err != nil {
@@ -841,10 +851,56 @@ func (s *Service) ResetProgress(ctx context.Context, userID, guideID pgtype.UUID
 	return nil
 }
 
+// itemKeys flattens a guide's item list to its live key set — the keep set
+// for orphan pruning.
+func itemKeys(items []ChecklistItem) []string {
+	keys := make([]string, 0, len(items))
+	for _, it := range items {
+		keys = append(keys, it.ItemKey)
+	}
+
+	return keys
+}
+
+// pruneOrphanedProgress sweeps progress rows whose item_key is no longer in
+// their guide's live checklist — including every row for deleted or
+// unpublished guides (they can never resolve to displayable items). Runs at
+// the top of the admin reads so the table self-heals on use. Best-effort:
+// failures are logged, never returned.
+func (s *Service) pruneOrphanedProgress(ctx context.Context) {
+	ids, err := s.store.ListProgressGuideIDs(ctx)
+	if err != nil {
+		slog.Warn("checklist: prune orphans: list guide ids", "error", err)
+		return
+	}
+
+	for _, id := range ids {
+		var keep []string
+
+		guide, err := s.getGuideCached(ctx, id)
+		switch {
+		case err == nil:
+			keep = itemKeys(guide.Items)
+		case errors.Is(err, pgx.ErrNoRows):
+			// Guide gone — all its rows are orphans.
+		default:
+			// Transient load failure — don't delete on an unknown state.
+			slog.Warn("checklist: prune orphans: load guide", "guide_id", id.String(), "error", err)
+			continue
+		}
+
+		if err := s.store.DeleteGuideProgressExcept(ctx, id, keep); err != nil {
+			slog.Warn("checklist: prune orphans: delete", "guide_id", id.String(), "error", err)
+		}
+	}
+}
+
 // AdminListProgress lists all users' progress rows (paginated, filterable by
 // guide_id and user_id, free-text q across username/email/item key/guide
 // title, sortable). Admin-only (checklist.manage permission).
 func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.UUID, q, sortCol, sortDir string, page, limit int32) ([]AdminProgressRow, int64, error) {
+	s.pruneOrphanedProgress(ctx)
+
 	if limit <= 0 {
 		limit = 20
 	}
@@ -898,6 +954,8 @@ func (s *Service) AdminListProgress(ctx context.Context, guideID, userID pgtype.
 // rates by guide" promised by the §70 route. Guides are paginated; per-user
 // completion counts are computed only for the requested page.
 func (s *Service) AdminCompletionStats(ctx context.Context, page, limit int32) ([]CompletionStat, int64, error) {
+	s.pruneOrphanedProgress(ctx)
+
 	if limit <= 0 {
 		limit = 20
 	}
