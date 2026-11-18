@@ -35,7 +35,7 @@
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
-	import { DOC_TYPES, docTypeLabel, isStepObject, safeUrl, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
+	import { docTypeLabel, isStepObject, safeUrl, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
@@ -65,6 +65,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		/** §73 scholarship integration — set by /guide/[slug] when the guide
 		 *  is also a scholarship in the finder. */
 		scholarship?: { guide_id: string; slug: string; title: string } | null;
+		/** §97 attestation integration — set by /guide/[slug] for
+		 *  guide_category 'attestation': geo countries resolve geo-countries
+		 *  field values into names, and attestationToolHref is the validated
+		 *  deep link into the interactive tool (null when the feature is
+		 *  off or the pathway can't be reached). */
+		geoCountries?: { geo_code: string | null; name: string }[];
+		attestationToolHref?: string | null;
 	}
 
 	type PageData = ContentArticlePageData;
@@ -107,6 +114,19 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// §14 guide amendment — category-specific custom field values rendered as
 	// a "key details" card. Internal keys (leading '_') and nested objects are
 	// skipped; scalars and flat lists are shown.
+	// §97 attestation — geo codes in the geo_countries-sourced fields resolve
+	// to country names via the SSR-loaded /geo/countries list (falls back to
+	// the raw code when the list didn't load).
+	const geoNameByCode = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const c of data.geoCountries ?? []) {
+			if (c.geo_code) m.set(c.geo_code.toUpperCase(), c.name);
+		}
+		return m;
+	});
+
+	const isAttestationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'attestation');
+
 	const guideDetails = $derived.by(() => {
 		if (article.content_type !== 'guide' || !article.field_values) return [] as { key: string; label: string; value: string }[];
 		const out: { key: string; label: string; value: string }[] = [];
@@ -119,8 +139,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				continue;
 			} else if (typeof v === 'boolean') {
 				text = v ? t('common.yes', 'Yes') : t('common.no', 'No');
-			} else if (k === 'document_type' && article.guide_category === 'attestation') {
+			} else if (k === 'document_type' && isAttestationGuide) {
 				text = docTypeLabel(String(v));
+			} else if (
+				isAttestationGuide &&
+				(k === 'issuing_country' || k === 'destination_country')
+			) {
+				const code = String(v).trim().toUpperCase();
+				text = geoNameByCode.get(code) ?? code;
 			} else {
 				text = String(v);
 			}
@@ -131,37 +157,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 	// §97 attestation-category guides — the structured pathway_steps repeater
 	// renders as an ordered card (the generic details card skips object
-	// arrays), and a CTA deep-links into the interactive tool: the optional
-	// pathway_id links straight to a pathway detail page, otherwise the
-	// corridor fields map onto the tool's geo-code filter params.
-	const isAttestationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'attestation');
-	const attestationToolEnabled = $derived(
-		((page.data.features as Record<string, boolean> | undefined)?.['attestation_guide.enabled']) ?? false
-	);
-	const attestationSteps = $derived.by((): Record<string, unknown>[] => {
+	// arrays), and a CTA deep-links into the interactive tool. The href is
+	// resolved server-side (pathway_id validated, feature-gated).
+	const attestationToolHref = $derived(data.attestationToolHref ?? null);
+	const attestationSteps = $derived.by((): unknown[] => {
 		if (!isAttestationGuide) return [];
 		const raw = article.field_values?.pathway_steps;
-		return Array.isArray(raw) ? raw.filter(isStepObject) : [];
-	});
-	const attestationToolHref = $derived.by((): string | null => {
-		if (!isAttestationGuide || !attestationToolEnabled) return null;
-		const fv = article.field_values ?? {};
-		const pid = typeof fv.pathway_id === 'string' ? fv.pathway_id.trim() : '';
-		if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid)) {
-			return `/tools/attestation-guide/${pid}`;
-		}
-		const q = new URLSearchParams();
-		if (typeof fv.destination_country === 'string' && fv.destination_country.trim()) {
-			q.set('dest_geo', fv.destination_country.trim().toUpperCase());
-		}
-		if (typeof fv.issuing_country === 'string' && fv.issuing_country.trim()) {
-			q.set('issuing_geo', fv.issuing_country.trim().toUpperCase());
-		}
-		if (typeof fv.document_type === 'string' && (DOC_TYPES as readonly { value: string }[]).some((d) => d.value === fv.document_type)) {
-			q.set('doc_type', fv.document_type);
-		}
-		const s = q.toString();
-		return `/tools/attestation-guide${s ? `?${s}` : ''}`;
+		return Array.isArray(raw) ? raw.filter((x) => x !== null && x !== undefined && x !== '') : [];
 	});
 
 	// §97 SEO — the editorial guide is the indexable surface, so its
@@ -174,12 +176,12 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			'@type': 'HowTo',
 			name: article.title,
 			step: attestationSteps.map((s, i) => {
-				const u = safeUrl(s.official_url ?? s.url);
+				const u = isStepObject(s) ? safeUrl(s.official_url ?? s.url) : null;
 				return {
 					'@type': 'HowToStep',
 					position: i + 1,
-					name: stepHeadline(s, i),
-					text: stepValueText(s.description ?? s.note ?? ''),
+					name: isStepObject(s) ? stepHeadline(s, i) : `Step ${i + 1}`,
+					text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? '') : stepValueText(s),
 					...(u ? { url: u } : {})
 				};
 			})
@@ -597,17 +599,21 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						<li class="flex items-start gap-3">
 							<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">{i + 1}</span>
 							<div class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
-								<p class="font-medium">{stepHeadline(step, i)}</p>
-								{#each stepFields(step) as field (field.label)}
-									<div class="mt-0.5 flex items-start gap-1.5">
-										<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
-										{#if field.url}
-											<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
-										{:else}
-											<span class="text-[var(--color-text-subtle)]">{field.value}</span>
-										{/if}
-									</div>
-								{/each}
+								{#if isStepObject(step)}
+									<p class="font-medium">{stepHeadline(step, i)}</p>
+									{#each stepFields(step) as field (field.label)}
+										<div class="mt-0.5 flex items-start gap-1.5">
+											<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
+											{#if field.url}
+												<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
+											{:else}
+												<span class="text-[var(--color-text-subtle)]">{field.value}</span>
+											{/if}
+										</div>
+									{/each}
+								{:else}
+									<span class="text-[var(--color-text-subtle)]">{stepValueText(step)}</span>
+								{/if}
 							</div>
 						</li>
 					{/each}
