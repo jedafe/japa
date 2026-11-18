@@ -150,6 +150,39 @@ WHERE id = ANY($1) AND deleted_at IS NULL
 	return out, rows.Err()
 }
 
+// GuideSlugForPathway returns the slug of the published editorial guide
+// (guide_category='attestation') whose field_values.pathway_id points at the
+// given pathway — the tool→guide half of the cross-link (§97 editorial
+// integration). Returns "" with nil error when no guide claims the pathway.
+func (s *Store) GuideSlugForPathway(ctx context.Context, pathwayID pgtype.UUID) (string, error) {
+	if !pathwayID.Valid {
+		return "", nil
+	}
+
+	const q = `
+SELECT slug FROM contents
+WHERE content_type = 'guide'
+  AND guide_category = 'attestation'
+  AND status = 'published'
+  AND deleted_at IS NULL
+  AND field_values->>'pathway_id' = $1
+ORDER BY created_at
+LIMIT 1
+`
+
+	var slug string
+	err := s.pool.Reader.QueryRow(ctx, q, pathwayID.String()).Scan(&slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("attestationguide: guide slug for pathway: %w", err)
+	}
+
+	return slug, nil
+}
+
 // Pathway holds a single attestation_pathways row.
 type Pathway struct {
 	ID pgtype.UUID

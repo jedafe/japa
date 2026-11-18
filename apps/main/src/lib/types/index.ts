@@ -5193,6 +5193,7 @@ export interface AttestationPathway {
 	community_last_verified?: string | null;
 	status: string;
 	is_active: boolean;
+	guide_slug?: string;
 	created_at: string;
 	updated_at: string;
 }

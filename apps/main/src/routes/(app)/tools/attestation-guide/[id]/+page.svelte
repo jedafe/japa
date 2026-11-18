@@ -258,9 +258,12 @@
 				<MessageSquarePlus size={16} />
 				{t('attestation_guide.add_update', 'Add community update')}
 			</button>
-			<!-- Cross-link to the editorial attestation guides (§97 editorial surface). -->
+			<!-- Cross-link to the matching editorial guide post when the pathway
+				has one (guide_slug from the API), else the attestation guides hub. -->
 			<a
-				href="/guides?category=attestation"
+				href={pathway.guide_slug && /^[a-z0-9-]+$/.test(pathway.guide_slug)
+					? `/guide/${pathway.guide_slug}`
+					: '/guides?category=attestation'}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<BookOpen size={16} />
