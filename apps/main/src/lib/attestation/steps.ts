@@ -1,4 +1,5 @@
 import { t } from '#lib/i18n/index.js';
+import { currencySymbol } from '#lib/utils/currency.js';
 
 /**
  * Shared rendering helpers for Attestation Guide (§97/ADR-105) pathway steps.
@@ -88,13 +89,18 @@ export function stepValueText(val: unknown): string {
 	return String(val);
 }
 
-/** {min,max,currency?} range objects → "NGN 5,000–20,000" / "5–14". */
+/** {min,max,currency?} range objects → "₦5,000–20,000" / "NGN 5–20" / "5–14". */
 function stepRangeText(val: Record<string, unknown>): string {
-	const cur = typeof val.currency === 'string' && val.currency.trim() ? `${val.currency.trim()} ` : '';
+	const cur = typeof val.currency === 'string' ? val.currency.trim() : '';
 	const min = stepValueText(val.min).trim();
 	const max = stepValueText(val.max).trim();
 	const range = min && max ? `${min}–${max}` : min || max;
-	return (cur + range).trim();
+	if (!cur) return range;
+	// ISO codes resolve to their symbol (managed list, then Intl narrow
+	// symbol); a stored symbol ("₦") is already display-ready. Symbols sit
+	// flush against the range; unresolved codes take a space.
+	const sym = /^[a-z]{3}$/i.test(cur) ? currencySymbol(cur) : cur;
+	return /^[a-z]{3}$/i.test(sym) ? `${sym} ${range}` : `${sym}${range}`;
 }
 
 /** Ordered, labeled fields for a step object. step/title are surfaced as the

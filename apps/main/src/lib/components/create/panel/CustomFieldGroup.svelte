@@ -214,6 +214,27 @@
 		if (part === 'max') return t('wiki.price_max', 'Max');
 		return part.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 	}
+	// Minmax 'currency' part — managed-currency autocomplete. Dropdown rows
+	// show "Nigerian Naira (₦)"; the stored value is the ISO code and the
+	// selected chip renders the symbol.
+	function minmaxCurrencyItems(q: string): AutocompleteItem[] {
+		const items = (walletCurrencies ?? []).map((c): AutocompleteItem => ({
+			id: c.code,
+			label: c.name ? `${c.name}${c.symbol ? ` (${c.symbol})` : ''}` : c.code,
+			sublabel: c.code
+		}));
+		const query = q.toLowerCase().trim();
+		return query
+			? items.filter((i) => i.label.toLowerCase().includes(query) || i.id.toLowerCase().includes(query))
+			: items;
+	}
+	function minmaxCurrencyChip(mm: Record<string, string>): string | null {
+		const code = mm['currency']?.trim();
+		if (!code) return null;
+		// Managed symbol first, then Intl's narrow symbol, then the raw code —
+		// a legacy stored symbol ("₦") falls through to itself via the catch.
+		return currencySymbol(code, walletCurrencies) || code;
+	}
 	function repeaterRemove(key: string, idx: number) {
 		const arr = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
 		arr.splice(idx, 1);
@@ -408,13 +429,21 @@
 	});
 
 	// Managed currency list (Control → Currencies). Fetched lazily when a
-	// field declares options {"source":"wallet_currencies"} — select fields
-	// store the currency code (e.g. "USD") as the value.
+	// field declares options {"source":"wallet_currencies"} OR a repeater
+	// item_field uses minmax with a 'currency' part — select fields and the
+	// minmax autocomplete store the currency code (e.g. "USD") as the value.
 	let walletCurrencies = $state<{ code: string; name: string; symbol: string }[] | null>(null);
 	$effect(() => {
 		if (
 			walletCurrencies === null &&
-			fields.some((f) => optionSource(f) === 'wallet_currencies')
+			fields.some(
+				(f) =>
+					optionSource(f) === 'wallet_currencies' ||
+					(f.field_type === 'repeater' &&
+						repeaterItemFields(f).some(
+							(sf) => sf.type === 'minmax' && repeaterMinMaxParts(sf).includes('currency')
+						))
+			)
 		) {
 			walletCurrencies = [];
 			listCurrencies()
@@ -542,6 +571,11 @@
 				onClear={() => setField(field.key, '')}
 			/>
 		{:else if field.field_type === 'suggest'}
+			<!-- Managed sources (geo_countries, wallet_currencies) store the
+			     canonical item.id (geo_code / currency code) — storing the label
+			     would write "Nigeria"/"NGN — Nigerian Naira" as the value and
+			     break downstream lookups. Option-list suggests keep the
+			     label, which is their value. -->
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<Autocomplete
 				id={field.key}
@@ -551,7 +585,7 @@
 				initialFetcher={() => suggestItems(field, '')}
 				selectedId={typeof values[field.key] === 'string' && values[field.key] ? (values[field.key] as string) : null}
 				selectedLabel={typeof values[field.key] === 'string' ? (values[field.key] as string) : null}
-				onSelect={(item) => setField(field.key, item.label)}
+				onSelect={(item) => setField(field.key, optionSource(field) ? item.id : item.label)}
 				onClear={() => setField(field.key, '')}
 				allowFreeText={optionSource(field) === null}
 			/>
@@ -766,19 +800,39 @@
 											</div>
 										</div>
 									{:else if sf.type === 'minmax'}
-										<!-- Paired range inputs → {min,max,...} on the sub-key. -->
+										<!-- Paired range inputs → {min,max,...} on the sub-key;
+										     the 'currency' part is a managed-currency
+										     autocomplete (code stored, symbol chip). -->
 										<div class="cf-repeater-field" class:cf-repeater-field-full={sf.full}>
 											<span class="cf-repeater-field-label">{sf.label}</span>
 											<div class="cf-minmax">
 												{#each repeaterMinMaxParts(sf) as part (part)}
-													<input
-														type={part === 'currency' ? 'text' : 'number'}
-														class="cf-input"
-														step="any"
-														placeholder={repeaterMinMaxPlaceholder(part)}
-														value={repeaterMinMax(item, sf)[part] ?? ''}
-														oninput={(e) => repeaterSetMinMax(field.key, idx, sf, part, e.currentTarget.value)}
-													/>
+													{@const mm = repeaterMinMax(item, sf)}
+													{#if part === 'currency'}
+														<div class="cf-minmax-cur">
+															<Autocomplete
+																placeholder={repeaterMinMaxPlaceholder(part)}
+																emptyMessage={t('common.no_results', 'No results found')}
+																fetcher={(q) => Promise.resolve(minmaxCurrencyItems(q))}
+																initialFetcher={() => Promise.resolve(minmaxCurrencyItems(''))}
+																selectedId={mm['currency']?.trim() ? mm['currency'].trim().toUpperCase() : null}
+																selectedLabel={minmaxCurrencyChip(mm)}
+																onSelect={(it) => repeaterSetMinMax(field.key, idx, sf, 'currency', it.id)}
+																onClear={() => repeaterSetMinMax(field.key, idx, sf, 'currency', '')}
+																allowFreeText
+																compact
+															/>
+														</div>
+													{:else}
+														<input
+															type="number"
+															class="cf-input"
+															step="any"
+															placeholder={repeaterMinMaxPlaceholder(part)}
+															value={mm[part] ?? ''}
+															oninput={(e) => repeaterSetMinMax(field.key, idx, sf, part, e.currentTarget.value)}
+														/>
+													{/if}
 												{/each}
 											</div>
 										</div>
@@ -1073,8 +1127,15 @@
 	.cf-minmax {
 		display: flex;
 		gap: 6px;
+		align-items: center;
 	}
 	.cf-minmax .cf-input {
+		flex: 1 1 0;
+		min-width: 0;
+	}
+	/* The currency autocomplete is a component, not a .cf-input — size its
+	   wrapper to a minmax part share. */
+	.cf-minmax-cur {
 		flex: 1 1 0;
 		min-width: 0;
 	}
