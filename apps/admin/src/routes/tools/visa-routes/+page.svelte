@@ -273,12 +273,15 @@
 			// /content ?q= only applies to the untyped listing — the
 			// type-filtered branch ignores it, so visa guides are fetched
 			// as one bounded page (MaxPageSize) and filtered by title here.
-			const res = await apiRaw<{ data: { id: string; title?: string; slug?: string }[] }>(
+			// Archived guides are excluded up front — the backend rejects
+			// them (they can never publish), so don't offer them as picks.
+			const res = await apiRaw<{ data: { id: string; title?: string; slug?: string; status?: string }[] }>(
 				`/content?type=guide&guide_category=visa&page_size=100`
 			);
 			const rows = res.ok ? (res.data?.data ?? []) : [];
 			const needle = q.trim().toLowerCase();
 			return rows
+				.filter((g) => g.status !== 'archived')
 				.filter((g) => !needle || (g.title ?? '').toLowerCase().includes(needle))
 				.map((g) => {
 					if (g.title) guideLabelById[g.id] = g.title;
