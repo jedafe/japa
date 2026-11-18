@@ -682,9 +682,18 @@ WHERE id = $1`
 func (s *Store) GetCommunityUpdateByID(ctx context.Context, id pgtype.UUID) (CommunityUpdate, error) {
 	const q = `
 SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
-       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at,
+       p.document_type, iss.name, ds.name,
+       COALESCE(up.display_name, usr.username) AS submitter_name,
+       COALESCE(rp.display_name, rusr.username) AS reviewer_name
 FROM attestation_community_updates u
 JOIN attestation_pathways p ON p.id = u.pathway_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+LEFT JOIN spaces ds ON ds.id = p.destination_space_id
+LEFT JOIN users usr ON usr.id = u.user_id
+LEFT JOIN user_profiles up ON up.user_id = usr.id
+LEFT JOIN users rusr ON rusr.id = u.reviewed_by
+LEFT JOIN user_profiles rp ON rp.user_id = rusr.id
 WHERE u.id = $1 AND u.deleted_at IS NULL
 LIMIT 1
 `
@@ -694,6 +703,8 @@ LIMIT 1
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
 		&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
+		&u.PathwayDocumentType, &u.IssuingSpaceName, &u.DestinationSpaceName,
+		&u.SubmitterName, &u.ReviewerName,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

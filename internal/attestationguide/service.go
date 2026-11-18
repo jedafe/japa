@@ -89,6 +89,16 @@ type PathwayDTO struct {
 	UpdatedAt             string          `json:"updated_at"`
 }
 
+// scrubInternal clears fields that are internal provenance/audit data —
+// the reviewer's identity, review notes, and the prompt hash must not be
+// exposed on the anonymous public endpoints. Admin surfaces keep them.
+func (d *PathwayDTO) scrubInternal() {
+	d.HITLReviewedBy = ""
+	d.HITLReviewedAt = ""
+	d.HITLReviewNotes = ""
+	d.AIPromptHash = ""
+}
+
 // CommunityUpdateDTO is the API response shape for a community update.
 // The Pathway*/SubmitterName fields give the admin moderation queue enough
 // context to review a submission inline (populated by AdminListUpdates).
@@ -410,7 +420,9 @@ func (s *Service) List(ctx context.Context, destSpaceID, issuingSpaceID pgtype.U
 
 	dtos := make([]PathwayDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, pathwayRowToDTO(r))
+		d := pathwayRowToDTO(r)
+		d.scrubInternal()
+		dtos = append(dtos, d)
 	}
 
 	return dtos, total, nil
@@ -429,7 +441,10 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (PathwayDTO, erro
 		return PathwayDTO{}, fmt.Errorf("attestationguide: get by id: %w", err)
 	}
 
-	return pathwayRowToDTO(row), nil
+	dto := pathwayRowToDTO(row)
+	dto.scrubInternal()
+
+	return dto, nil
 }
 
 // Create creates a new attestation pathway. Admin-only
@@ -466,6 +481,21 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 		steps = []byte("[]")
 	} else if !isJSONArray(steps) {
 		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", ErrInvalidInput)
+	}
+
+	// Both spaces must exist (and not be soft-deleted) — a bad ID would
+	// otherwise surface as an FK-violation 500 at insert time.
+	names, err := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingSpaceID, destSpaceID})
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: create: space lookup: %w", err)
+	}
+
+	if names[issuingSpaceID] == "" {
+		return PathwayDTO{}, fmt.Errorf("%w: issuing_space_id not found", ErrInvalidInput)
+	}
+
+	if names[destSpaceID] == "" {
+		return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
 	}
 
 	// §97 Hague Convention: an apostille is only usable when BOTH the issuing
@@ -547,7 +577,11 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 // (attestation_guide.manage permission).
 func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
-		return PathwayDTO{}, errors.New("document_type, issuing_space_id, and destination_space_id are required")
+		return PathwayDTO{}, fmt.Errorf("%w: document_type, issuing_space_id, and destination_space_id are required", ErrInvalidInput)
+	}
+
+	if !isValidDocumentType(input.DocumentType) {
+		return PathwayDTO{}, fmt.Errorf("%w: invalid document_type %q", ErrInvalidInput, input.DocumentType)
 	}
 
 	var issuingSpaceID pgtype.UUID
@@ -561,10 +595,23 @@ func (s *Service) GenerateDraft(ctx context.Context, input GeneratePathwayInput)
 	}
 
 	// Look up the issuing and destination jurisdiction names so the prompt
-	// and research queries are human-readable. Missing names are non-fatal;
-	// we fall back to the supplied IDs.
-	names, _ := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingSpaceID, destSpaceID})
+	// and research queries are human-readable. The lookup also validates
+	// the spaces exist — a bad ID would otherwise surface as an FK-violation
+	// 500 at insert time.
+	names, err := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingSpaceID, destSpaceID})
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: space lookup: %w", err)
+	}
+
 	issuingName, destName := names[issuingSpaceID], names[destSpaceID]
+
+	if issuingName == "" {
+		return PathwayDTO{}, fmt.Errorf("%w: issuing_space_id not found", ErrInvalidInput)
+	}
+
+	if destName == "" {
+		return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
+	}
 
 	issuing := issuingName
 	if issuing == "" {
@@ -762,22 +809,51 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 		p.DocumentType = *input.DocumentType
 	}
 
-	if input.IssuingSpaceID != nil {
-		var sid pgtype.UUID
-		if err := sid.Scan(*input.IssuingSpaceID); err != nil {
-			return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
+	if input.IssuingSpaceID != nil || input.DestinationSpaceID != nil {
+		// A patched space must exist (and not be soft-deleted) — a bad ID
+		// would otherwise surface as an FK-violation 500 at write time.
+		var (
+			issuingID pgtype.UUID
+			destID    pgtype.UUID
+		)
+
+		if input.IssuingSpaceID != nil {
+			if err := issuingID.Scan(*input.IssuingSpaceID); err != nil {
+				return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id: %v", ErrInvalidInput, err)
+			}
+		} else {
+			issuingID = p.IssuingSpaceID
 		}
 
-		p.IssuingSpaceID = sid
-	}
-
-	if input.DestinationSpaceID != nil {
-		var sid pgtype.UUID
-		if err := sid.Scan(*input.DestinationSpaceID); err != nil {
-			return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
+		if input.DestinationSpaceID != nil {
+			if err := destID.Scan(*input.DestinationSpaceID); err != nil {
+				return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id: %v", ErrInvalidInput, err)
+			}
+		} else {
+			destID = p.DestinationSpaceID
 		}
 
-		p.DestinationSpaceID = sid
+		names, err := s.store.GetSpaceNames(ctx, []pgtype.UUID{issuingID, destID})
+		if err != nil {
+			return PathwayDTO{}, fmt.Errorf("attestationguide: update: space lookup: %w", err)
+		}
+
+		if names[issuingID] == "" {
+			return PathwayDTO{}, fmt.Errorf("%w: issuing_space_id not found", ErrInvalidInput)
+		}
+
+		if names[destID] == "" {
+			return PathwayDTO{}, fmt.Errorf("%w: destination_space_id not found", ErrInvalidInput)
+		}
+
+		p.IssuingSpaceID = issuingID
+		p.DestinationSpaceID = destID
+
+		// apostille_required is derived from the jurisdiction pair — refresh
+		// it when either space changes unless the patch sets it explicitly.
+		if input.ApostilleRequired == nil {
+			p.ApostilleRequired = s.isHagueMember(ctx, destID) && s.isHagueMember(ctx, issuingID)
+		}
 	}
 
 	if input.ApostilleRequired != nil {

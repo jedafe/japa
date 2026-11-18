@@ -47,15 +47,16 @@ SET value = (
     WHERE level = 'country'
       AND deleted_at IS NULL
       AND geo_code = ANY (ARRAY[
-        'AD','AG','AL','AM','AR','AT','AU','AZ','BA','BB','BE','BG','BH','BN',
-        'BO','BR','BS','BW','BY','BZ','CA','CH','CL','CN','CO','CR','CV','CY',
-        'CZ','DE','DK','DM','DO','EC','EE','ES','FI','FJ','FR','GB','GD','GE',
-        'GR','GT','GY','HK','HN','HR','HU','ID','IE','IL','IN','IS','IT','JM',
-        'JP','KG','KN','KR','KZ','LC','LI','LR','LS','LT','LU','LV','MA','MC',
-        'MD','ME','MH','MK','MT','MU','MW','MX','NA','NI','NL','NO','NR','NU',
-        'NZ','OM','PA','PE','PH','PK','PL','PT','PW','PY','RO','RS','RU','RW',
-        'SA','SC','SE','SG','SI','SK','SM','SN','SR','ST','SV','SZ','TJ','TO',
-        'CU','HT','MN','MO','MZ','TT','TN','TR','TV','UA','US','UY','UZ','VC','VE','WS','ZA'
+        'AD','AG','AL','AM','AR','AT','AU','AZ','BA','BB','BD','BE','BG','BH',
+        'BI','BN','BO','BR','BS','BW','BY','BZ','CA','CH','CK','CL','CN','CO',
+        'CR','CV','CY','CZ','DE','DK','DM','DO','DZ','EC','EE','ES','FI','FJ',
+        'FR','GB','GD','GE','GR','GT','GY','HK','HN','HR','HU','ID','IE','IL',
+        'IN','IS','IT','JM','JP','KG','KN','KR','KZ','LC','LI','LR','LS','LT',
+        'LU','LV','MA','MC','MD','ME','MH','MK','MN','MO','MT','MU','MW','MX',
+        'NA','NI','NL','NO','NU','NZ','OM','PA','PE','PH','PK','PL','PT','PW',
+        'PY','RO','RS','RU','RW','SA','SC','SE','SG','SI','SK','SM','SN','SR',
+        'ST','SV','SZ','TH','TJ','TO','TT','TN','TR','UA','US','UY','UZ','VC',
+        'VE','VU','WS','XK','ZA','ZM'
       ])
 )
 WHERE key = 'attestation_guide.hague_members';
@@ -158,15 +159,16 @@ JOIN public.spaces ds
     ON ds.level = 'country' AND ds.geo_code = x.dest_cc AND ds.deleted_at IS NULL
 CROSS JOIN (
     SELECT ARRAY[
-        'AD','AG','AL','AM','AR','AT','AU','AZ','BA','BB','BE','BG','BH','BN',
-        'BO','BR','BS','BW','BY','BZ','CA','CH','CL','CN','CO','CR','CV','CY',
-        'CZ','DE','DK','DM','DO','EC','EE','ES','FI','FJ','FR','GB','GD','GE',
-        'GR','GT','GY','HK','HN','HR','HU','ID','IE','IL','IN','IS','IT','JM',
-        'JP','KG','KN','KR','KZ','LC','LI','LR','LS','LT','LU','LV','MA','MC',
-        'MD','ME','MH','MK','MT','MU','MW','MX','NA','NI','NL','NO','NR','NU',
-        'NZ','OM','PA','PE','PH','PK','PL','PT','PW','PY','RO','RS','RU','RW',
-        'SA','SC','SE','SG','SI','SK','SM','SN','SR','ST','SV','SZ','TJ','TO',
-        'CU','HT','MN','MO','MZ','TT','TN','TR','TV','UA','US','UY','UZ','VC','VE','WS','ZA'
+        'AD','AG','AL','AM','AR','AT','AU','AZ','BA','BB','BD','BE','BG','BH',
+        'BI','BN','BO','BR','BS','BW','BY','BZ','CA','CH','CK','CL','CN','CO',
+        'CR','CV','CY','CZ','DE','DK','DM','DO','DZ','EC','EE','ES','FI','FJ',
+        'FR','GB','GD','GE','GR','GT','GY','HK','HN','HR','HU','ID','IE','IL',
+        'IN','IS','IT','JM','JP','KG','KN','KR','KZ','LC','LI','LR','LS','LT',
+        'LU','LV','MA','MC','MD','ME','MH','MK','MN','MO','MT','MU','MW','MX',
+        'NA','NI','NL','NO','NU','NZ','OM','PA','PE','PH','PK','PL','PT','PW',
+        'PY','RO','RS','RU','RW','SA','SC','SE','SG','SI','SK','SM','SN','SR',
+        'ST','SV','SZ','TH','TJ','TO','TT','TN','TR','UA','US','UY','UZ','VC',
+        'VE','VU','WS','XK','ZA','ZM'
     ] AS codes
 ) hague
 ON CONFLICT DO NOTHING;

@@ -319,8 +319,8 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resolveLiterals(r, &update)
-
+	// No resolveLiterals: the note is user-authored — {{...}} tokens in it
+	// must echo back verbatim, not expand into platform literals.
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": update})
 }
 
@@ -553,6 +553,11 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 	pathway, err := h.service.GenerateDraft(r.Context(), input)
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+
 		slog.Error("attestationguide: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
 
