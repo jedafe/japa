@@ -181,7 +181,11 @@ WHERE content_type = 'guide'
   AND (
       field_values->>'pathway_id' = $1
       OR (
-          field_values->>'document_type' = $2
+          -- Combination matching only claims guides without an explicit
+          -- pathway_id — a guide that names a different pathway must not
+          -- also surface on this one's detail page.
+          COALESCE(BTRIM(field_values->>'pathway_id'), '') = ''
+          AND field_values->>'document_type' = $2
           AND UPPER(field_values->>'issuing_country') = UPPER($3::text)
           AND UPPER(field_values->>'destination_country') = UPPER($4::text)
       )
@@ -201,6 +205,68 @@ LIMIT 1
 	}
 
 	return slug, nil
+}
+
+// SpaceIDByCountryGeoCode resolves a country-level geo space by its
+// geo_code (case-insensitive) — the reverse of the /geo/countries list
+// the editorial guide fields are sourced from. Returns pgx.ErrNoRows
+// when the code is unknown.
+func (s *Store) SpaceIDByCountryGeoCode(ctx context.Context, geoCode string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM spaces
+WHERE level = 'country'
+  AND UPPER(geo_code) = UPPER($1)
+  AND deleted_at IS NULL
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, geoCode).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// PathwayIDForCombination returns the id of the pathway matching the
+// (document_type, issuing_space, destination_space) natural key, in any
+// status — a draft still claims the corridor so the publish hook never
+// duplicates it. Returns pgx.ErrNoRows when no pathway matches.
+func (s *Store) PathwayIDForCombination(ctx context.Context, documentType string, issuingSpaceID, destinationSpaceID pgtype.UUID) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM attestation_pathways
+WHERE document_type = $1
+  AND issuing_space_id = $2
+  AND destination_space_id = $3
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, documentType, issuingSpaceID, destinationSpaceID).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// BackfillGuidePathwayID stamps field_values.pathway_id onto an editorial
+// guide so an auto-resolved link becomes explicit (§97). field_values is
+// JSONB-merged, not rewritten — concurrent edits to other keys are
+// preserved. content_hash is untouched (Rule 12 covers body only).
+func (s *Store) BackfillGuidePathwayID(ctx context.Context, contentID, pathwayID pgtype.UUID) error {
+	const q = `
+UPDATE contents
+SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('pathway_id', $2::text),
+    updated_at = now()
+WHERE id = $1
+`
+
+	if _, err := s.pool.Writer.Exec(ctx, q, contentID, pathwayID.String()); err != nil {
+		return fmt.Errorf("attestationguide: backfill guide pathway_id: %w", err)
+	}
+
+	return nil
 }
 
 // Pathway holds a single attestation_pathways row.

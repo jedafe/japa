@@ -2144,6 +2144,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	attestationGuideStore := attestationguide.NewStore(database)
 	attestationGuideService := attestationguide.NewService(attestationGuideStore, settingsService)
 	attestationGuideService.SetFeatureChecker(featureChecker)
+	// §97: publishing an attestation-category guide auto-provisions a draft
+	// pathway for its document_type + corridor combination when none exists.
+	contentService.SetGuidePublishHook(attestationGuideService)
 	attestationGuideHandlers := attestationguide.NewHandlers(attestationGuideService, settingsService)
 	attestationGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in attestationguide responses
 

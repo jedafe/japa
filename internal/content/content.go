@@ -309,6 +309,7 @@ type Service struct {
 	anchorMinter   threadAnchorMinter
 	anchorDeleter  threadAnchorDeleter
 	guideCatCheck  GuideCategoryChecker
+	guidePubHook   GuidePublishHook
 }
 
 // GuideCategoryChecker reports whether a slug is a registered guide
@@ -323,6 +324,23 @@ type GuideCategoryChecker interface {
 // create/update validation (§14 — categories are admin-configured).
 func (s *Service) SetGuideCategoryChecker(c GuideCategoryChecker) {
 	s.guideCatCheck = c
+}
+
+// GuidePublishHook runs after a guide-type content row reaches
+// 'published' — on direct publish, an edit that lands live, or a status
+// transition (incl. scheduled publish). Implemented by attestationguide
+// in server.go (attestationguide cannot import content — same injection
+// pattern as GuideCategoryChecker). The hook receives the stored
+// field_values so it works inside the caller's uncommitted tx.
+type GuidePublishHook interface {
+	OnGuidePublished(ctx context.Context, contentID pgtype.UUID, guideCategory string, fieldValues []byte) error
+}
+
+// SetGuidePublishHook injects the post-publish guide side effect
+// (§97 — auto-provisioning attestation pathways from guide fields).
+// Nil disables it, matching the other injected-dependency guards.
+func (s *Service) SetGuidePublishHook(h GuidePublishHook) {
+	s.guidePubHook = h
 }
 
 // SetActivityEmitter injects the wallet activity emitter used to record

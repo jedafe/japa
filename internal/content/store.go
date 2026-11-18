@@ -518,6 +518,11 @@ func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (
 		// the federatable set before execution delivers Delete, not a
 		// stale Create.
 		worker.EnqueueFederationFanout(ctx, content.ID)
+
+		// §97: a guide born published may auto-provision its pathway row.
+		// field_values comes from the row, not a re-read — the caller's tx
+		// may still be uncommitted.
+		s.emitGuidePublish(ctx, content.ID, content.ContentType, content.GuideCategory, content.FieldValues)
 	}
 
 	return content, nil
@@ -1814,6 +1819,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	if isPublic {
 		s.emitAtprotoPublish(ctx, content.AuthorID, content.ID)
 	}
+	if content.Status == StatusPublished {
+		s.emitGuidePublish(ctx, content.ID, content.ContentType, content.GuideCategory, content.FieldValues)
+	}
 	// §127 A4: flipping federate_opt_out on a row that stays public-live
 	// tombstones the projected record — the publish emit above only
 	// enqueues a task whose eligibility re-check skips, which leaves the
@@ -2131,6 +2139,9 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 	} else if row.Status == StatusPublished && row.Visibility == VisibilityPublic {
 		s.emitAtprotoDelete(ctx, content.ID)
 	}
+	if status == StatusPublished {
+		s.emitGuidePublish(ctx, content.ID, content.ContentType, content.GuideCategory, content.FieldValues)
+	}
 
 	// §126 M2: status transitions federate through the same convergent
 	// task — publish/restore → Create-or-Update, unpublish → Delete when
@@ -2186,6 +2197,20 @@ func (s *Service) emitAtprotoPublish(ctx context.Context, authorID, contentID pg
 		return
 	}
 	worker.EnqueueAtprotoPublishContent(ctx, contentID)
+}
+
+// emitGuidePublish fires the post-publish guide hook (§97 — the
+// attestation pathway auto-provisioner). Fire-and-forget like the other
+// publish side effects: failures are logged, never propagated — the
+// publish write has already settled. Only guide rows carry a
+// guide_category for the hook to act on.
+func (s *Service) emitGuidePublish(ctx context.Context, contentID pgtype.UUID, contentType string, guideCategory *string, fieldValues []byte) {
+	if s.guidePubHook == nil || contentType != TypeGuide || guideCategory == nil || *guideCategory == "" || !contentID.Valid {
+		return
+	}
+	if err := s.guidePubHook.OnGuidePublished(ctx, contentID, *guideCategory, fieldValues); err != nil {
+		slog.Warn("content: guide publish hook failed", "id", contentID.String(), "error", err)
+	}
 }
 
 // emitAtprotoDelete enqueues the atproto:delete_record task for a
