@@ -22,12 +22,14 @@ CREATE INDEX idx_cmf_media ON content_media_fields (media_id);
 INSERT INTO content_media_fields (content_id, media_id, field_key, position)
 SELECT c.id, c.header_image_id, 'header_image', 0
 FROM contents c
-WHERE c.header_image_id IS NOT NULL;
+WHERE c.header_image_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM media m WHERE m.id = c.header_image_id);
 
 INSERT INTO content_media_fields (content_id, media_id, field_key, position)
 SELECT c.id, c.featured_image_id, 'featured_image', 0
 FROM contents c
-WHERE c.featured_image_id IS NOT NULL;
+WHERE c.featured_image_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM media m WHERE m.id = c.featured_image_id);
 
 -- List items: field_values.items[].media_id, position = item index.
 INSERT INTO content_media_fields (content_id, media_id, field_key, position)
