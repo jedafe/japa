@@ -217,6 +217,7 @@ SELECT id FROM spaces
 WHERE level = 'country'
   AND UPPER(geo_code) = UPPER($1)
   AND deleted_at IS NULL
+ORDER BY created_at, id
 LIMIT 1
 `
 

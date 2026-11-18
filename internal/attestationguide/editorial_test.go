@@ -78,3 +78,32 @@ func TestNormalizeEditorialSteps(t *testing.T) {
 		})
 	}
 }
+
+func TestGuideBool(t *testing.T) {
+	tru := true
+	fal := false
+	tests := []struct {
+		name  string
+		input any
+		want  *bool
+	}{
+		{"bool true", true, &tru},
+		{"bool false", false, &fal},
+		{"string true", "true", &tru},
+		{"string padded", "  false  ", &fal},
+		{"nil", nil, nil},
+		{"unparseable string", "yes-ish", nil},
+		{"number", 1, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := guideBool(tt.input)
+			if (got == nil) != (tt.want == nil) {
+				t.Fatalf("guideBool(%v) = %v, want %v", tt.input, got, tt.want)
+			}
+			if got != nil && *got != *tt.want {
+				t.Errorf("guideBool(%v) = %v, want %v", tt.input, *got, *tt.want)
+			}
+		})
+	}
+}

@@ -81,7 +81,7 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 		}
 	}
 
-	docType := strings.TrimSpace(fv.DocumentType)
+	docType := strings.ToLower(strings.TrimSpace(fv.DocumentType))
 	issGeo := strings.ToUpper(strings.TrimSpace(fv.IssuingCountry))
 	destGeo := strings.ToUpper(strings.TrimSpace(fv.DestinationCountry))
 	if !isValidDocumentType(docType) || issGeo == "" || destGeo == "" || issGeo == destGeo {
@@ -137,6 +137,9 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 	if _, err := time.Parse("2006-01-02", strings.TrimSpace(fv.LastVerified)); err == nil {
 		input.CommunityLastVerified = strings.TrimSpace(fv.LastVerified)
 	}
+	// Provenance for the reviewer — an auto-provisioned draft is otherwise
+	// indistinguishable from a hand-created one.
+	input.HITLReviewNotes = fmt.Sprintf("auto-provisioned from editorial guide %s", contentID.String())
 
 	created, err := s.Create(ctx, input)
 	if err != nil {
