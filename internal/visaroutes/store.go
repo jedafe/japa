@@ -185,9 +185,10 @@ LEFT JOIN users rev ON rev.id = vr.hitl_reviewed_by
 `
 
 // VisaGuideExists reports whether id is a live visa guide — the write-side
-// contract for guide_id (§70). Any non-deleted status qualifies: the
-// read-side checklist_guide_id gate already hides the link until the
-// guide publishes, so linking a draft is a valid workflow.
+// contract for guide_id (§70). Any status except 'archived' qualifies:
+// draft/in_review/scheduled can still publish (the read-side
+// checklist_guide_id gate hides the link until then), but an archived
+// guide is retired — linking it would park a permanently-pending CTA.
 func (s *Store) VisaGuideExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	const q = `
 SELECT EXISTS (
@@ -195,6 +196,7 @@ SELECT EXISTS (
     WHERE id = $1
       AND content_type = 'guide'
       AND guide_category = 'visa'
+      AND status <> 'archived'
       AND deleted_at IS NULL
 )
 `
