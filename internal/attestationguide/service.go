@@ -42,8 +42,12 @@ func isJSONArray(b []byte) bool {
 // isValidDocumentType reports whether v is a §97 canonical document type.
 func isValidDocumentType(v string) bool {
 	switch v {
-	case DocumentTypeBirthCertificate, DocumentTypeDegree, DocumentTypeMarriage,
-		DocumentTypePoliceClearance, DocumentTypeProfessionalLicence, DocumentTypeOther:
+	case DocumentTypeBirthCertificate, DocumentTypeDegree, DocumentTypeAcademicTranscript,
+		DocumentTypeMarriage, DocumentTypeDeathCertificate, DocumentTypeDivorceCertificate,
+		DocumentTypeSingleStatus, DocumentTypeAdoptionPapers, DocumentTypePoliceClearance,
+		DocumentTypeProfessionalLicence, DocumentTypePowerOfAttorney, DocumentTypeDrivingLicence,
+		DocumentTypeEmploymentLetter, DocumentTypeCompanyRegistration, DocumentTypeMedicalCertificate,
+		DocumentTypeOther:
 		return true
 	}
 

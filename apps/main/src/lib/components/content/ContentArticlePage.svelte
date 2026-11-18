@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
-	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
+	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2, Stamp } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
@@ -35,6 +35,7 @@
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
+	import { DOC_TYPES, docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
@@ -110,7 +111,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		if (article.content_type !== 'guide' || !article.field_values) return [] as { key: string; label: string; value: string }[];
 		const out: { key: string; label: string; value: string }[] = [];
 		for (const [k, v] of Object.entries(article.field_values)) {
-			if (k.startsWith('_') || v == null || v === '' || typeof v === 'function') continue;
+			if (k.startsWith('_') || k === 'pathway_id' || v == null || v === '' || typeof v === 'function') continue;
 			let text = '';
 			if (Array.isArray(v)) {
 				text = v.filter((x) => x != null && typeof x !== 'object').map(String).join(', ');
@@ -118,12 +119,46 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				continue;
 			} else if (typeof v === 'boolean') {
 				text = v ? t('common.yes', 'Yes') : t('common.no', 'No');
+			} else if (k === 'document_type' && article.guide_category === 'attestation') {
+				text = docTypeLabel(String(v));
 			} else {
 				text = String(v);
 			}
 			if (text) out.push({ key: k, label: humanizeKey(k), value: text });
 		}
 		return out;
+	});
+
+	// §97 attestation-category guides — the structured pathway_steps repeater
+	// renders as an ordered card (the generic details card skips object
+	// arrays), and a CTA deep-links into the interactive tool: the optional
+	// pathway_id links straight to a pathway detail page, otherwise the
+	// corridor fields map onto the tool's geo-code filter params.
+	const isAttestationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'attestation');
+	const attestationSteps = $derived.by((): Record<string, unknown>[] => {
+		if (!isAttestationGuide) return [];
+		const raw = article.field_values?.pathway_steps;
+		return Array.isArray(raw) ? raw.filter(isStepObject) : [];
+	});
+	const attestationToolHref = $derived.by((): string | null => {
+		if (!isAttestationGuide) return null;
+		const fv = article.field_values ?? {};
+		const pid = typeof fv.pathway_id === 'string' ? fv.pathway_id.trim() : '';
+		if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid)) {
+			return `/tools/attestation-guide/${pid}`;
+		}
+		const q = new URLSearchParams();
+		if (typeof fv.destination_country === 'string' && fv.destination_country.trim()) {
+			q.set('dest_geo', fv.destination_country.trim().toUpperCase());
+		}
+		if (typeof fv.issuing_country === 'string' && fv.issuing_country.trim()) {
+			q.set('issuing_geo', fv.issuing_country.trim().toUpperCase());
+		}
+		if (typeof fv.document_type === 'string' && (DOC_TYPES as readonly { value: string }[]).some((d) => d.value === fv.document_type)) {
+			q.set('doc_type', fv.document_type);
+		}
+		const s = q.toString();
+		return `/tools/attestation-guide${s ? `?${s}` : ''}`;
 	});
 
 	// Journey-aware metadata chips (§32) — shown for any content that carries
@@ -417,6 +452,24 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			</div>
 		{/if}
 
+		<!-- §97 editorial→tool cross-link: attestation guides carry a CTA into
+		     the interactive pathway tool, deep-linked via pathway_id or the
+		     corridor fields. -->
+		{#if attestationToolHref}
+			<div class="mt-4">
+				<a
+					href={attestationToolHref}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<Stamp size={18} />
+					{t('attestation_guide.open_tool', 'Open the interactive attestation tool')}
+				</a>
+				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+					{t('attestation_guide.open_tool_desc', 'Check live fees, turnaround times, and community-verified updates for your corridor.')}
+				</p>
+			</div>
+		{/if}
+
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if article.author_name}
 				{@const authorName = article.author_name}
@@ -504,6 +557,34 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					</div>
 				{/each}
 			</dl>
+		{/if}
+
+		<!-- §97 attestation guides — the pathway_steps repeater renders as an
+		     ordered card using the same step helpers as the interactive tool. -->
+		{#if attestationSteps.length > 0}
+			<div class="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('attestation_guide.pathway_steps', 'Pathway steps')}</h2>
+				<ol class="space-y-3">
+					{#each attestationSteps as step, i (i)}
+						<li class="flex items-start gap-3">
+							<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">{i + 1}</span>
+							<div class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
+								<p class="font-medium">{stepHeadline(step, i)}</p>
+								{#each stepFields(step) as field (field.label)}
+									<div class="mt-0.5 flex items-start gap-1.5">
+										<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
+										{#if field.url}
+											<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
+										{:else}
+											<span class="text-[var(--color-text-subtle)]">{field.value}</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</li>
+					{/each}
+				</ol>
+			</div>
 		{/if}
 
 		<!-- Series navigation (Phase 06.10) — dev.to style part list, same as

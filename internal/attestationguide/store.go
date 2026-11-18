@@ -28,13 +28,24 @@ import (
 	"github.com/jedafe/japa/internal/db"
 )
 
-// Document types (§97).
+// Document types (§97) — kept in sync with the
+// attestation_pathways_document_type_check CHECK constraint.
 const (
 	DocumentTypeBirthCertificate    = "birth_certificate"
 	DocumentTypeDegree              = "degree"
+	DocumentTypeAcademicTranscript  = "academic_transcript"
 	DocumentTypeMarriage            = "marriage"
+	DocumentTypeDeathCertificate    = "death_certificate"
+	DocumentTypeDivorceCertificate  = "divorce_certificate"
+	DocumentTypeSingleStatus        = "single_status"
+	DocumentTypeAdoptionPapers      = "adoption_papers"
 	DocumentTypePoliceClearance     = "police_clearance"
 	DocumentTypeProfessionalLicence = "professional_licence"
+	DocumentTypePowerOfAttorney     = "power_of_attorney"
+	DocumentTypeDrivingLicence      = "driving_licence"
+	DocumentTypeEmploymentLetter    = "employment_letter"
+	DocumentTypeCompanyRegistration = "company_registration"
+	DocumentTypeMedicalCertificate  = "medical_certificate"
 	DocumentTypeOther               = "other"
 )
 

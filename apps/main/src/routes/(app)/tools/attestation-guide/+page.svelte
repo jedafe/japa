@@ -12,7 +12,8 @@
 		ChevronDown,
 		Download,
 		MessageSquarePlus,
-		Lock
+		Lock,
+		BookOpen
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
 	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '#lib/types/index.js';
@@ -266,6 +267,14 @@
 <div class="mx-auto w-full max-w-3xl">
 	<div class="px-4 pt-4">
 		<ToolHeader icon={Stamp} title={title} description={description} />
+		<!-- Cross-link to the editorial attestation guides (§97 editorial surface). -->
+		<a
+			href="/guides?category=attestation"
+			class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
+		>
+			<BookOpen size={16} />
+			{t('attestation_guide.read_editorial', 'Read in-depth attestation guides')}
+		</a>
 	</div>
 
 	{#if disabled}

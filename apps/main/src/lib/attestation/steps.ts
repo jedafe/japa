@@ -12,9 +12,19 @@ import { t } from '#lib/i18n/index.js';
 export const DOC_TYPES = [
 	{ value: 'birth_certificate', label: 'Birth certificate' },
 	{ value: 'degree', label: 'Degree' },
+	{ value: 'academic_transcript', label: 'Academic transcript' },
 	{ value: 'marriage', label: 'Marriage certificate' },
+	{ value: 'death_certificate', label: 'Death certificate' },
+	{ value: 'divorce_certificate', label: 'Divorce certificate' },
+	{ value: 'single_status', label: 'Single-status certificate' },
+	{ value: 'adoption_papers', label: 'Adoption papers' },
 	{ value: 'police_clearance', label: 'Police clearance' },
 	{ value: 'professional_licence', label: 'Professional licence' },
+	{ value: 'power_of_attorney', label: 'Power of attorney' },
+	{ value: 'driving_licence', label: 'Driving licence' },
+	{ value: 'employment_letter', label: 'Employment letter' },
+	{ value: 'company_registration', label: 'Company registration' },
+	{ value: 'medical_certificate', label: 'Medical certificate' },
 	{ value: 'other', label: 'Other' }
 ] as const;
 

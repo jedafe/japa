@@ -4,7 +4,7 @@
 	import { toolOgCard } from '#lib/seo/og.js';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { Stamp, ArrowLeft, Download, AlertTriangle, MessageSquarePlus } from 'lucide-svelte';
+	import { Stamp, ArrowLeft, Download, AlertTriangle, MessageSquarePlus, BookOpen } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import { docTypeLabel, isStepObject, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
@@ -26,6 +26,29 @@
 
 	const title = $derived(`${docTypeLabel(pathway.document_type)} — ${t('attestation_guide.title', 'Attestation Guide')}`);
 	const description = $derived(t('attestation_guide.subtitle', 'Step-by-step document attestation pathways.'));
+
+	// §97 SEO — HowTo JSON-LD mapped from the ordered pathway steps so
+	// indexable pathway pages carry structured data search engines can
+	// render as a step-by-step rich result.
+	const howToJsonLd = $derived.by(() => {
+		const steps = Array.isArray(pathway.pathway_steps) ? pathway.pathway_steps : [];
+		if (!steps.length) return undefined;
+		const corridor = `${pathway.issuing_space_name ?? ''} → ${pathway.destination_space_name ?? ''}`;
+		return {
+			'@context': 'https://schema.org',
+			'@type': 'HowTo',
+			name: `${docTypeLabel(pathway.document_type)} attestation (${corridor})`,
+			step: steps.map((s, i) => ({
+				'@type': 'HowToStep',
+				position: i + 1,
+				name: isStepObject(s) ? stepHeadline(s, i) : `Step ${i + 1}`,
+				text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? '') : stepValueText(s),
+				...(isStepObject(s) && stepValueText(s.official_url ?? s.url)
+					? { url: stepValueText(s.official_url ?? s.url) }
+					: {})
+			}))
+		};
+	});
 
 	// ?print=1 — open the print dialog once content is mounted (invoked from
 	// the list page's "Export PDF" link).
@@ -107,6 +130,7 @@
 
 <SeoHead title={title} description={description} ogTitle={title}
 	ogImage={toolOgCard(page.url.origin, page.url.pathname)}
+	jsonLd={howToJsonLd}
 />
 
 <div class="mx-auto w-full max-w-3xl">
@@ -230,6 +254,14 @@
 				<MessageSquarePlus size={16} />
 				{t('attestation_guide.add_update', 'Add community update')}
 			</button>
+			<!-- Cross-link to the editorial attestation guides (§97 editorial surface). -->
+			<a
+				href="/guides?category=attestation"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
+			>
+				<BookOpen size={16} />
+				{t('attestation_guide.read_editorial', 'Read in-depth attestation guides')}
+			</a>
 		</div>
 
 		{#if updateSubmitted}

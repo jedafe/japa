@@ -253,20 +253,34 @@
 		return acts;
 	});
 
+	// §97 canonical document types — mirrors the backend CHECK constraint;
+	// shared by the create/edit form, the list filter, and the generate modal.
+	const DOC_TYPE_OPTIONS = $derived([
+		{ value: 'birth_certificate', label: t('app.tools.doc_birth_certificate', 'Birth certificate') },
+		{ value: 'degree', label: t('app.tools.doc_degree', 'Degree') },
+		{ value: 'academic_transcript', label: t('app.tools.doc_academic_transcript', 'Academic transcript') },
+		{ value: 'marriage', label: t('app.tools.doc_marriage', 'Marriage certificate') },
+		{ value: 'death_certificate', label: t('app.tools.doc_death_certificate', 'Death certificate') },
+		{ value: 'divorce_certificate', label: t('app.tools.doc_divorce_certificate', 'Divorce certificate') },
+		{ value: 'single_status', label: t('app.tools.doc_single_status', 'Single-status certificate') },
+		{ value: 'adoption_papers', label: t('app.tools.doc_adoption_papers', 'Adoption papers') },
+		{ value: 'police_clearance', label: t('app.tools.doc_police_clearance', 'Police clearance') },
+		{ value: 'professional_licence', label: t('app.tools.doc_professional_licence', 'Professional licence') },
+		{ value: 'power_of_attorney', label: t('app.tools.doc_power_of_attorney', 'Power of attorney') },
+		{ value: 'driving_licence', label: t('app.tools.doc_driving_licence', 'Driving licence') },
+		{ value: 'employment_letter', label: t('app.tools.doc_employment_letter', 'Employment letter') },
+		{ value: 'company_registration', label: t('app.tools.doc_company_registration', 'Company registration') },
+		{ value: 'medical_certificate', label: t('app.tools.doc_medical_certificate', 'Medical certificate') },
+		{ value: 'other', label: t('common.other', 'Other') }
+	]);
+
 	// `fields` drives EntityForm for both create and edit — including the
 	// lifecycle fields (status/is_active) that PATCH /admin/attestation/:id
 	// accepts. doc_type/status are selects constrained to the §97 enums.
 	const fields = $derived.by<FieldDef[]>(() => {
 		countryUtils.ready;
 		return [
-			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'select', options: [
-				{ value: 'birth_certificate', label: t('app.tools.doc_birth_certificate', 'Birth certificate') },
-				{ value: 'degree', label: t('app.tools.doc_degree', 'Degree') },
-				{ value: 'marriage', label: t('app.tools.doc_marriage', 'Marriage certificate') },
-				{ value: 'police_clearance', label: t('app.tools.doc_police_clearance', 'Police clearance') },
-				{ value: 'professional_licence', label: t('app.tools.doc_professional_licence', 'Professional licence') },
-				{ value: 'other', label: t('common.other', 'Other') }
-			] },
+			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'select', options: DOC_TYPE_OPTIONS },
 			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
 			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
@@ -311,14 +325,7 @@
 				// §97 document_type enum — mirrored from the backend's canonical values.
 				key: 'doc_type',
 				label: t('common.doc_type', 'Document Type'),
-				options: [
-					{ value: 'birth_certificate', label: t('app.tools.doc_birth_certificate', 'Birth certificate') },
-					{ value: 'degree', label: t('app.tools.doc_degree', 'Degree') },
-					{ value: 'marriage', label: t('app.tools.doc_marriage', 'Marriage certificate') },
-					{ value: 'police_clearance', label: t('app.tools.doc_police_clearance', 'Police clearance') },
-					{ value: 'professional_licence', label: t('app.tools.doc_professional_licence', 'Professional licence') },
-					{ value: 'other', label: t('common.other', 'Other') }
-				]
+				options: DOC_TYPE_OPTIONS
 			},
 			{
 				key: 'active',
@@ -637,12 +644,9 @@
 				bind:value={generateDocType}
 			>
 				<option value="">{t('app.tools.select_doc_type', 'Select a document type…')}</option>
-				<option value="birth_certificate">{t('app.tools.doc_birth_certificate', 'Birth certificate')}</option>
-				<option value="degree">{t('app.tools.doc_degree', 'Degree')}</option>
-				<option value="marriage">{t('app.tools.doc_marriage', 'Marriage certificate')}</option>
-				<option value="police_clearance">{t('app.tools.doc_police_clearance', 'Police clearance')}</option>
-				<option value="professional_licence">{t('app.tools.doc_professional_licence', 'Professional licence')}</option>
-				<option value="other">{t('common.other', 'Other')}</option>
+				{#each DOC_TYPE_OPTIONS as dt (dt.value)}
+					<option value={dt.value}>{dt.label}</option>
+				{/each}
 			</select>
 		</div>
 		<div>

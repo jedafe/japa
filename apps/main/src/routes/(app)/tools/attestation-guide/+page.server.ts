@@ -44,12 +44,23 @@ export const load: PageServerLoad = async (event) => {
 
 	// If ?dest= is present, fetch attestation pathways for that destination.
 	// ?issuing= and ?doc_type= are honoured too so filtered URLs are shareable.
+	// ?dest_geo=/?issuing_geo= accept ISO geo codes (e.g. ?dest_geo=DE) — the
+	// cross-link contract used by editorial attestation guides, whose
+	// geo_countries custom fields store geo codes rather than space ids.
+	const geoParam = (name: string) =>
+		event.url.searchParams.get(name)?.trim().toUpperCase() ?? '';
 	const destParam = event.url.searchParams.get('dest');
+	const destGeo = geoParam('dest_geo');
 	const initialDestId =
-		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+		(destParam && destinations.find((d) => d.id === destParam)?.id) ||
+		(destGeo && destinations.find((d) => d.geo_code === destGeo)?.id) ||
+		null;
 	const issuingParam = event.url.searchParams.get('issuing');
+	const issuingGeo = geoParam('issuing_geo');
 	const initialIssuingId =
-		issuingParam && destinations.some((d) => d.id === issuingParam) ? issuingParam : null;
+		(issuingParam && destinations.find((d) => d.id === issuingParam)?.id) ||
+		(issuingGeo && destinations.find((d) => d.geo_code === issuingGeo)?.id) ||
+		null;
 	const initialDocType = event.url.searchParams.get('doc_type') ?? '';
 
 	let pathways: AttestationPathwayWithAi[] = [];
