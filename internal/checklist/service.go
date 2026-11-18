@@ -247,7 +247,7 @@ func (s *Service) cacheSet(ctx context.Context, key string, v any) {
 // changes on every guide edit, so edited guides get a fresh key and stale
 // entries simply expire.
 func guideCacheKey(guideID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
-	hash := sha256.Sum256([]byte(strconv.FormatInt(updatedAt.Time.Unix(), 10)))
+	hash := sha256.Sum256([]byte(strconv.FormatInt(updatedAt.Time.UnixMilli(), 10)))
 	return valkey.MustKey("render::%s:%s", guideID.String(), hex.EncodeToString(hash[:]))
 }
 
@@ -310,11 +310,11 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 	}
 
 	origins := make([]CountryOption, 0, len(countrySpaces))
-	// Index country spaces by slug and lowercased name so destination options
-	// derived from guides' free-text destination_country field resolve to a
-	// real Geo Space id (previously emitted as "" — produced duplicate option
-	// keys once more than one destination existed).
-	spaceByKey := make(map[string]CountrySpace, len(countrySpaces)*2)
+	// Index country spaces by slug, lowercased name, and lowercased ISO code
+	// so destination options derived from guides' free-text destination_country
+	// field resolve to a real Geo Space id (previously emitted as "" —
+	// produced duplicate option keys once more than one destination existed).
+	spaceByKey := make(map[string]CountrySpace, len(countrySpaces)*3)
 
 	for _, c := range countrySpaces {
 		origins = append(origins, CountryOption{
@@ -325,6 +325,9 @@ func (s *Service) GetSelector(ctx context.Context) (SelectorResult, error) {
 		})
 		spaceByKey[c.Slug] = c
 		spaceByKey[strings.ToLower(c.Name)] = c
+		if c.GeoCode != "" {
+			spaceByKey[strings.ToLower(c.GeoCode)] = c
+		}
 	}
 
 	// Steps 2+3: Destinations with nested visa types — from published visa

@@ -211,18 +211,18 @@ SELECT
   (SELECT COUNT(*)::bigint FROM contents
     WHERE content_type = 'guide' AND guide_category = 'visa'
       AND status = 'published' AND deleted_at IS NULL),
-  COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM contents
+  COALESCE((EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM contents
     WHERE content_type = 'guide' AND guide_category = 'visa'
-      AND status = 'published' AND deleted_at IS NULL))::bigint, 0),
-  COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(cfv.updated_at)
+      AND status = 'published' AND deleted_at IS NULL)) * 1000)::bigint, 0),
+  COALESCE((EXTRACT(EPOCH FROM (SELECT MAX(cfv.updated_at)
     FROM custom_field_values cfv
     JOIN contents c ON c.id = cfv.entity_id AND cfv.entity_type = 'content'
     WHERE c.content_type = 'guide' AND c.guide_category = 'visa'
-      AND c.status = 'published' AND c.deleted_at IS NULL))::bigint, 0),
+      AND c.status = 'published' AND c.deleted_at IS NULL)) * 1000)::bigint, 0),
   (SELECT COUNT(*)::bigint FROM spaces
     WHERE level = 'country' AND deleted_at IS NULL),
-  COALESCE(EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM spaces
-    WHERE level = 'country' AND deleted_at IS NULL))::bigint, 0)
+  COALESCE((EXTRACT(EPOCH FROM (SELECT MAX(updated_at) FROM spaces
+    WHERE level = 'country' AND deleted_at IS NULL)) * 1000)::bigint, 0)
 `
 
 	var guideCount, guideMax, fieldMax, spaceCount, spaceMax int64
