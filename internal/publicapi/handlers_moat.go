@@ -35,7 +35,7 @@ func parseUUIDQuery(r *http.Request, param string) (pgtype.UUID, error) {
 
 // ListVisaRoutes handles GET /public/visa-routes.
 // Params: dest (space UUID or country geo_code), profession, education,
-// experience_years, page_size, offset.
+// experience_years, age, origin, page_size, offset.
 func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	if !requireAPIKey(w, r) {
 		return
@@ -47,13 +47,14 @@ func (h *Handlers) ListVisaRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	years, _ := strconv.ParseInt(r.URL.Query().Get("experience_years"), 10, 32)
+	age, _ := strconv.ParseInt(r.URL.Query().Get("age"), 10, 32)
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 	page := offset/limit + 1
 
 	routes, total, err := h.Service.ListVisaRoutes(r.Context(), dest,
 		r.URL.Query().Get("profession"), r.URL.Query().Get("education"),
-		int32(years), page, limit)
+		r.URL.Query().Get("origin"), int32(years), int32(age), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

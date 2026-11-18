@@ -24,6 +24,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/ssrfguard"
 	"github.com/jedafe/japa/internal/timeparse"
 )
@@ -186,6 +187,11 @@ func (s *Service) Enabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "visa_routes.enabled", false)
 }
 
+// maxGeneratePromptLen bounds the admin's free-text Generate prompt —
+// the AI Gateway call is per-request and an unbounded prompt bloats
+// spend (same defensive cap as personas' voice_prompt).
+const maxGeneratePromptLen = 5000
+
 // ListQueryParams carries the public ?dest=/?profession=/?education=/
 // ?experience_years=/?age=/?origin= filters plus pagination.
 type ListQueryParams struct {
@@ -248,20 +254,6 @@ func (s *Service) ListFiltered(ctx context.Context, p ListQueryParams) ([]RouteD
 	s.mergeRouteFieldValues(ctx, dtos)
 
 	return dtos, total, nil
-}
-
-// List returns a paginated, filtered list of published+active visa
-// routes. Kept for the public-api VisaRouteReader contract; the app API
-// handler uses ListFiltered for the full profile-attribute filter set.
-func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
-	return s.ListFiltered(ctx, ListQueryParams{
-		DestSpaceID:     destSpaceID,
-		Profession:      profession,
-		Education:       education,
-		ExperienceYears: experienceYears,
-		Page:            page,
-		Limit:           limit,
-	})
 }
 
 // CompareResult is the multi-status payload for the compare endpoint:
@@ -565,9 +557,12 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 
 	var sourceLastChecked pgtype.Date
 	if input.SourceURLLastChecked != "" {
-		if err := sourceLastChecked.Scan(input.SourceURLLastChecked); err != nil {
+		d, err := timeparse.ParseDate(input.SourceURLLastChecked)
+		if err != nil {
 			return RouteDTO{}, fmt.Errorf("%w: source_url_last_checked: %v", ErrInvalidInput, err)
 		}
+
+		sourceLastChecked = d
 	}
 
 	isActive := false
@@ -592,11 +587,19 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		aiGenerated = *input.AIGenerated
 	}
 
+	// Slug falls back to a slugified name — the (destination_space_id,
+	// slug) unique index treats '' as a real value, so an omitted slug
+	// would collide on the second create instead of deriving naturally.
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" {
+		slug = content.Slugify(input.Name)
+	}
+
 	row, err := s.store.Create(ctx, CreateRoute{
 		DestinationSpaceID:   destSpaceID,
 		VisaCategory:         input.VisaCategory,
 		Name:                 input.Name,
-		Slug:                 input.Slug,
+		Slug:                 slug,
 		EligibilitySummary:   eligibilitySummary,
 		RequirementsJSON:     requirementsJSON,
 		TypicalFeeUSD:        typicalFee,
@@ -640,7 +643,14 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.Slug != nil {
-		update.Slug = input.Slug
+		// An explicitly blank slug would wipe the detail URL — reject it
+		// rather than silently ignoring the field.
+		trimmed := strings.TrimSpace(*input.Slug)
+		if trimmed == "" {
+			return RouteDTO{}, fmt.Errorf("%w: slug must not be empty", ErrInvalidInput)
+		}
+
+		update.Slug = &trimmed
 	}
 
 	if input.EligibilitySummary != nil {
@@ -808,8 +818,14 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateRouteRequest)
 		visaCategory = "general"
 	}
 
-	// Build the prompt sent to the Content Agent.
+	// Build the prompt sent to the Content Agent. The free-text prompt is
+	// bounded — an unbounded prompt bloats AI Gateway spend (same cap as
+	// personas' voice_prompt guard).
 	prompt := input.Prompt
+	if len(prompt) > maxGeneratePromptLen {
+		return GenerateDraftResponse{}, fmt.Errorf("%w: prompt exceeds %d characters", ErrInvalidInput, maxGeneratePromptLen)
+	}
+
 	if prompt == "" {
 		prompt = fmt.Sprintf(
 			"Generate a visa route guide for destination_space_id=%s, visa_category=%s. Include eligibility summary, requirements, typical fees, path to permanent residency, renewal terms, restrictions, and government source URL.",
@@ -1051,6 +1067,14 @@ func rowToDTO(r RouteRow) RouteDTO {
 func marshalRequirements(v any) ([]byte, error) {
 	if v == nil {
 		return []byte("{}"), nil
+	}
+
+	// Requirements must be a JSON object — the spec'd shape keys off
+	// profession_groups/min_education/age_range/etc, and a stored scalar
+	// or array would make the profile-filter -> accesses raise "cannot
+	// extract field from a non-object" at query time.
+	if _, ok := v.(map[string]any); !ok {
+		return nil, fmt.Errorf("requirements must be a JSON object, got %T", v)
 	}
 
 	b, err := json.Marshal(v)

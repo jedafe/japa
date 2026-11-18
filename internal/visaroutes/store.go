@@ -217,6 +217,12 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		argIdx     = 1
 	)
 
+	// reqJSON guards every requirements_json access below: a stored
+	// scalar or array would make -> and jsonb_each raise "cannot extract
+	// field from a non-object" and fail the whole list. Malformed rows
+	// degrade to '{}' — i.e. "no constraints" — rather than erroring.
+	reqJSON := "CASE WHEN jsonb_typeof(requirements_json) = 'object' THEN requirements_json ELSE '{}'::jsonb END"
+
 	conditions = append(conditions, "vr.status = 'published'")
 	conditions = append(conditions, "vr.is_active = true")
 
@@ -228,25 +234,25 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 
 	if f.Profession != "" {
 		conditions = append(conditions, fmt.Sprintf(`(
-  (jsonb_typeof(requirements_json->'profession_groups') = 'array'
-   AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(requirements_json->'profession_groups') AS pg
-               WHERE pg ILIKE '%%' || $%d || '%%'))
-  OR COALESCE(requirements_json->>'profession', '') ILIKE '%%' || $%d || '%%'
-)`, argIdx, argIdx))
+  (jsonb_typeof(%[1]s->'profession_groups') = 'array'
+   AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(%[1]s->'profession_groups') AS pg
+               WHERE pg ILIKE '%%' || $%[2]d || '%%'))
+  OR COALESCE(%[1]s->>'profession', '') ILIKE '%%' || $%[2]d || '%%'
+)`, reqJSON, argIdx))
 		args = append(args, f.Profession)
 		argIdx++
 	}
 
 	if f.Education != "" {
-		routeOrd := fmt.Sprintf(educationOrdinalSQL, "requirements_json->>'min_education'", 0)
+		routeOrd := fmt.Sprintf(educationOrdinalSQL, reqJSON+"->>'min_education'", 0)
 		userOrd := fmt.Sprintf(educationOrdinalSQL, "$"+fmt.Sprint(argIdx), 99)
 		conditions = append(conditions, fmt.Sprintf(`(
   %s <= %s
-  OR COALESCE(requirements_json->>'education', '') ILIKE '%%' || $%d || '%%'
-  OR (jsonb_typeof(requirements_json->'education_levels') = 'array'
-      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(requirements_json->'education_levels') AS el
-                  WHERE el ILIKE '%%' || $%d || '%%'))
-)`, routeOrd, userOrd, argIdx, argIdx))
+  OR COALESCE(%[3]s->>'education', '') ILIKE '%%' || $%[4]d || '%%'
+  OR (jsonb_typeof(%[3]s->'education_levels') = 'array'
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(%[3]s->'education_levels') AS el
+                  WHERE el ILIKE '%%' || $%[4]d || '%%'))
+)`, routeOrd, userOrd, reqJSON, argIdx))
 		args = append(args, f.Education)
 		argIdx++
 	}
@@ -257,8 +263,8 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		// values ("3-5", "5+") from erroring the whole list — malformed
 		// values are treated as "no constraint" rather than excluded.
 		conditions = append(conditions, fmt.Sprintf(
-			"(NOT requirements_json ? 'experience_years' OR COALESCE(requirements_json->>'experience_years', '') !~ '^\\d+$' OR (requirements_json->>'experience_years')::int <= $%d)",
-			argIdx,
+			"(NOT %[1]s ? 'experience_years' OR COALESCE(%[1]s->>'experience_years', '') !~ '^\\d+$' OR (%[1]s->>'experience_years')::int <= $%[2]d)",
+			reqJSON, argIdx,
 		))
 
 		args = append(args, f.ExperienceYears)
@@ -267,16 +273,16 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 
 	if f.Age > 0 {
 		// age_range {min,max}: missing/malformed bound = unbounded.
-		conditions = append(conditions, fmt.Sprintf(`(NOT requirements_json ? 'age_range'
+		conditions = append(conditions, fmt.Sprintf(`(NOT %[1]s ? 'age_range'
   OR (
-    (requirements_json->'age_range'->>'min' IS NULL
-     OR requirements_json->'age_range'->>'min' !~ '^\d+$'
-     OR (requirements_json->'age_range'->>'min')::int <= $%d)
+    (%[1]s->'age_range'->>'min' IS NULL
+     OR %[1]s->'age_range'->>'min' !~ '^\d+$'
+     OR (%[1]s->'age_range'->>'min')::int <= $%[2]d)
     AND
-    (requirements_json->'age_range'->>'max' IS NULL
-     OR requirements_json->'age_range'->>'max' !~ '^\d+$'
-     OR (requirements_json->'age_range'->>'max')::int >= $%d)
-  ))`, argIdx, argIdx))
+    (%[1]s->'age_range'->>'max' IS NULL
+     OR %[1]s->'age_range'->>'max' !~ '^\d+$'
+     OR (%[1]s->'age_range'->>'max')::int >= $%[2]d)
+  ))`, reqJSON, argIdx, argIdx))
 		args = append(args, f.Age)
 		argIdx++
 	}
@@ -293,18 +299,18 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		// "IN" hit "GUINEA"/"CHINA"/"SPAIN". The display-name term ($ph2)
 		// stays substring so stored demonyms ("Nigerian citizens") still
 		// match "Nigeria".
-		conditions = append(conditions, fmt.Sprintf(`(NOT (requirements_json ?| '{eligible_countries,eligible_nationalities,origin_countries}'::text[])
+		conditions = append(conditions, fmt.Sprintf(`(NOT (%[5]s ?| '{eligible_countries,eligible_nationalities,origin_countries}'::text[])
   OR EXISTS (
-    SELECT 1 FROM jsonb_each(requirements_json) AS e(k, v)
+    SELECT 1 FROM jsonb_each(%[5]s) AS e(k, v)
     WHERE e.k = ANY('{eligible_countries,eligible_nationalities,origin_countries}'::text[])
       AND (
         (jsonb_typeof(e.v) = 'array' AND EXISTS (
            SELECT 1 FROM jsonb_array_elements_text(e.v) AS c
-           WHERE lower(c) = lower($%d) OR c ILIKE '%%' || $%d || '%%'))
+           WHERE lower(c) = lower($%[1]d) OR c ILIKE '%%' || $%[2]d || '%%'))
         OR (jsonb_typeof(e.v) = 'string' AND (
-           lower(e.v #>> '{}') = lower($%d) OR e.v #>> '{}' ILIKE '%%' || $%d || '%%'))
+           lower(e.v #>> '{}') = lower($%[3]d) OR e.v #>> '{}' ILIKE '%%' || $%[4]d || '%%'))
       )
-  ))`, ph1, ph2, ph1, ph2))
+  ))`, ph1, ph2, ph1, ph2, reqJSON))
 		code, name := f.OriginTerms[0], f.OriginTerms[0]
 		if len(f.OriginTerms) > 1 {
 			name = f.OriginTerms[1]

@@ -74,7 +74,7 @@ func TestGetDestinationBriefPartialFailure(t *testing.T) {
 		Spaces: stubSpaceReader{getBySlugFn: func(_ context.Context, _ string) (gen.GetPublicSpaceBySlugRow, error) {
 			return gen.GetPublicSpaceBySlugRow{Visibility: "public", Status: "active", Name: "Canada"}, nil
 		}},
-		VisaRoutes: stubVisaRoutes{listFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) ([]visaroutes.RouteDTO, int64, error) {
+		VisaRoutes: stubVisaRoutes{listFn: func(_ context.Context, _ visaroutes.ListQueryParams) ([]visaroutes.RouteDTO, int64, error) {
 			return nil, 0, errors.New("boom")
 		}},
 	})

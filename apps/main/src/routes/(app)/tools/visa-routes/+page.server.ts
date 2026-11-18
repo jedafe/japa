@@ -78,9 +78,20 @@ export const load: PageServerLoad = async (event) => {
 	let initialDestId = destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
 
 	// ?dest= also resolves geo_codes/slugs server-side ("CA" works in the
-	// API but isn't a picker UUID). When the loaded routes all agree on a
-	// destination space, reflect it in the picker instead of showing the
-	// empty state on a page that has data.
+	// API but isn't a picker UUID). Match the raw value against the
+	// picker's geo codes first — this is what selects the picker when the
+	// destination has no routes yet and nothing can be derived below.
+	if (!initialDestId && destParam) {
+		const byCode = destinations.find(
+			(d) => d.geo_code.toUpperCase() === destParam.toUpperCase()
+		);
+		if (byCode) initialDestId = byCode.id;
+	}
+
+	// When the loaded routes all agree on a destination space (slug dests,
+	// or bare ?ids= shares that resolved to one country), reflect it in
+	// the picker instead of showing the empty state on a page that has
+	// data.
 	if (!initialDestId && routes.length > 0) {
 		const d0 = routes[0].destination_space_id;
 		if (
@@ -123,18 +134,19 @@ export const actions: Actions = {
 		if (routeIds.length < 2 || routeIds.length > 4) {
 			return fail(400, { error: 'invalid_selection', message: 'Select 2 to 4 visa routes' });
 		}
-		if (!destId || typeof destId !== 'string') {
-			return fail(400, { error: 'missing_destination', message: 'Destination is required' });
-		}
 
 		const ctx = apiContext(event);
 
 		// Fetch the selected routes in the order the user picked them.
+		// dest_id is optional — a shared ?ids= link can span destinations,
+		// in which case no destination filter is applied.
+		const destParam =
+			typeof destId === 'string' && destId ? `&dest=${encodeURIComponent(destId)}` : '';
 		let routes: VisaRouteWithAi[];
 		try {
 			routes = await apiGet<VisaRouteWithAi[]>(
 				ctx,
-				`/visa-routes/compare?dest=${encodeURIComponent(destId)}&ids=${routeIds.map(encodeURIComponent).join(',')}`
+				`/visa-routes/compare?ids=${routeIds.map(encodeURIComponent).join(',')}${destParam}`
 			);
 		} catch (e) {
 			const message = e instanceof ApiError ? e.message : 'Could not load visa routes';
@@ -147,7 +159,10 @@ export const actions: Actions = {
 			.filter((r): r is VisaRouteWithAi => !!r);
 
 		if (orderedRoutes.length !== routeIds.length) {
-			return fail(500, { error: 'route_not_found', message: 'One or more selected routes could not be resolved' });
+			// A selected id stopped resolving (unpublished/deactivated
+			// since the link was made) — that's a client-visible selection
+			// problem, not a server fault.
+			return fail(400, { error: 'route_not_found', message: 'One or more selected routes could not be resolved' });
 		}
 
 		const items = orderedRoutes.map((r, i) => ({

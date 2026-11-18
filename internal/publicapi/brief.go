@@ -113,7 +113,11 @@ func (s *Service) GetDestinationBrief(ctx context.Context, slug string, include 
 				return nil
 			}
 
-			routes, _, err := s.moat.VisaRoutes.List(gctx, dest.ID, "", "", 0, 1, 10)
+			routes, _, err := s.moat.VisaRoutes.ListFiltered(gctx, visaroutes.ListQueryParams{
+				DestSpaceID: dest.ID,
+				Page:        1,
+				Limit:       10,
+			})
 			if err != nil {
 				fail("visa")
 				return nil

@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -1085,6 +1086,28 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 		}
 
 		_ = resp.Body.Close()
+
+		// Some government sites reject HEAD (405/501) while the page itself
+		// is fine — a method rejection isn't a broken link, so retry with
+		// GET before recording a 404.
+		if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
+			reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			getReq, gerr := http.NewRequestWithContext(reqCtx, http.MethodGet, it.url, nil)
+			if gerr != nil {
+				cancel()
+				continue
+			}
+
+			resp, err = client.Do(getReq)
+			cancel()
+			if err != nil {
+				slog.Warn("task:"+taskName+": GET fallback failed", spec.idLabel, it.id.String(), "url", it.url, "error", err)
+				continue
+			}
+
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+			_ = resp.Body.Close()
+		}
 
 		if resp.StatusCode == http.StatusNotFound {
 			broken++

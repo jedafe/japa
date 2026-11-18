@@ -2694,7 +2694,10 @@ func (a *desktopExchangeAuditor) LogExchangeIssuance(ctx context.Context, userID
 type agentDataAdapter struct{ svc *publicapi.Service }
 
 func (a *agentDataAdapter) ListVisaRoutes(ctx context.Context, dest pgtype.UUID, profession, education string, experienceYears, page, limit int32) (any, int64, error) {
-	return a.svc.ListVisaRoutes(ctx, dest, profession, education, experienceYears, page, limit)
+	// The AI tool schema exposes profession/education/experience_years
+	// only — age/origin stay unset here (the public API surface accepts
+	// them; the agent contract doesn't).
+	return a.svc.ListVisaRoutes(ctx, dest, profession, education, "", experienceYears, 0, page, limit)
 }
 
 func (a *agentDataAdapter) GetVisaRoute(ctx context.Context, id pgtype.UUID) (any, error) {

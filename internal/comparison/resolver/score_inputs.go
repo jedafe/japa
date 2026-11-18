@@ -566,7 +566,11 @@ func avgPRPathEase(ctx context.Context, svc *visaroutes.Service, countryID pgtyp
 	)
 
 	for {
-		routes, t, err := svc.List(ctx, countryID, "", "", 0, page, pageSize)
+		routes, t, err := svc.ListFiltered(ctx, visaroutes.ListQueryParams{
+			DestSpaceID: countryID,
+			Page:        page,
+			Limit:       pageSize,
+		})
 		if err != nil {
 			return nil
 		}

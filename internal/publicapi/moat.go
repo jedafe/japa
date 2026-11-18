@@ -30,7 +30,7 @@ var ErrDestinationNotFound = errors.New("destination_not_found")
 
 // VisaRouteReader is satisfied by *visaroutes.Service.
 type VisaRouteReader interface {
-	List(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]visaroutes.RouteDTO, int64, error)
+	ListFiltered(ctx context.Context, p visaroutes.ListQueryParams) ([]visaroutes.RouteDTO, int64, error)
 	Compare(ctx context.Context, ids []pgtype.UUID) ([]visaroutes.RouteDTO, error)
 	GetByID(ctx context.Context, id pgtype.UUID) (visaroutes.RouteDTO, error)
 	Enabled(ctx context.Context) bool
@@ -119,12 +119,21 @@ func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 // SetSettingsReader injects the settings reader used for the brief cache TTL.
 func (s *Service) SetSettingsReader(sr rateLimitSettingsReader) { s.settingsReader = sr }
 
-func (s *Service) ListVisaRoutes(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]visaroutes.RouteDTO, int64, error) {
+func (s *Service) ListVisaRoutes(ctx context.Context, destSpaceID pgtype.UUID, profession, education, origin string, experienceYears, age, page, limit int32) ([]visaroutes.RouteDTO, int64, error) {
 	if s.moat == nil || s.moat.VisaRoutes == nil {
 		return nil, 0, ErrReaderUnconfigured
 	}
 
-	return s.moat.VisaRoutes.List(ctx, destSpaceID, profession, education, experienceYears, page, limit)
+	return s.moat.VisaRoutes.ListFiltered(ctx, visaroutes.ListQueryParams{
+		DestSpaceID:     destSpaceID,
+		Profession:      profession,
+		Education:       education,
+		ExperienceYears: experienceYears,
+		Age:             age,
+		Origin:          origin,
+		Page:            page,
+		Limit:           limit,
+	})
 }
 
 func (s *Service) GetVisaRoute(ctx context.Context, id pgtype.UUID) (visaroutes.RouteDTO, error) {

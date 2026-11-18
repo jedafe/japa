@@ -275,11 +275,6 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) > maxCompareIDs {
-		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "A maximum of 4 route ids can be compared")
-		return
-	}
-
 	ids := make([]pgtype.UUID, 0, len(parts))
 
 	for _, p := range parts {
@@ -295,6 +290,13 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		}
 
 		ids = append(ids, id)
+	}
+
+	// The 4-route cap counts parsed ids, not raw parts — a trailing or
+	// doubled comma shouldn't reject an otherwise-valid request.
+	if len(ids) > maxCompareIDs {
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "A maximum of 4 route ids can be compared")
+		return
 	}
 
 	if len(ids) == 0 {
@@ -417,9 +419,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
-	if limit > 200 {
-		limit = 200
-	}
 
 	routes, total, err := h.service.AdminList(r.Context(), destSpaceID, status, visaCategory, q, sort, order, activePtr, page, limit)
 	if err != nil {

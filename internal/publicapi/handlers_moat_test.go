@@ -19,7 +19,7 @@ func withAPIKey(r *http.Request) *http.Request {
 func TestListVisaRoutesHandler(t *testing.T) {
 	svc := NewService(nil)
 	svc.SetMoatReaders(&MoatReaders{
-		VisaRoutes: stubVisaRoutes{listFn: func(_ context.Context, _ pgtype.UUID, _, _ string, _, _, _ int32) ([]visaroutes.RouteDTO, int64, error) {
+		VisaRoutes: stubVisaRoutes{listFn: func(_ context.Context, _ visaroutes.ListQueryParams) ([]visaroutes.RouteDTO, int64, error) {
 			return []visaroutes.RouteDTO{{}, {}}, 2, nil
 		}},
 	})

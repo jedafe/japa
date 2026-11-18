@@ -338,7 +338,7 @@
 			</details>
 		{/if}
 
-		{#if !selectedDestId}
+		{#if !selectedDestId && routes.length === 0}
 			<div class="p-4">
 				<EmptyState
 					icon={MapPin}
