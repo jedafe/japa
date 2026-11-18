@@ -180,9 +180,18 @@
 	function repeaterMinMax(item: unknown, sf: RepeaterItemField): Record<string, string> {
 		const v =
 			typeof item === 'object' && item !== null ? (item as Record<string, unknown>)[sf.key] : undefined;
-		const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+		const parts = repeaterMinMaxParts(sf);
 		const out: Record<string, string> = {};
-		for (const p of repeaterMinMaxParts(sf)) {
+		if (v !== null && v !== undefined && typeof v !== 'object') {
+			// Legacy scalar (a string like "₦5,000–₦20,000" or a number like 10
+			// from rows seeded before the field became a minmax) seeds the min
+			// input so the existing value stays visible and editable — it
+			// round-trips as a {min}-only range that renders identically.
+			for (const p of parts) out[p] = p === 'min' || !parts.includes('min') && p === parts[0] ? String(v) : '';
+			return out;
+		}
+		const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+		for (const p of parts) {
 			const pv = o[p];
 			out[p] = pv === null || pv === undefined ? '' : String(pv);
 		}

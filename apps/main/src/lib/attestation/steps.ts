@@ -94,14 +94,22 @@ function stepRangeText(val: Record<string, unknown>): string {
 	const min = stepValueText(val.min).trim();
 	const max = stepValueText(val.max).trim();
 	const range = min && max ? `${min}–${max}` : min || max;
-	return cur + range;
+	return (cur + range).trim();
 }
 
 /** Ordered, labeled fields for a step object. step/title are surfaced as the
  *  headline by stepHeadline() and excluded here. */
 export function stepFields(step: Record<string, unknown>): StepField[] {
 	const entries = Object.entries(step).filter(
-		([k, v]) => k !== 'step' && k !== 'title' && v !== null && v !== undefined && v !== ''
+		([k, v]) =>
+			k !== 'step' &&
+			k !== 'title' &&
+			v !== null &&
+			v !== undefined &&
+			v !== '' &&
+			// all-blank lists (e.g. an untouched what_to_bring sub-repeater)
+			// count as empty so no dangling label renders
+			!(Array.isArray(v) && v.every((x) => stepValueText(x).trim() === ''))
 	);
 	entries.sort(([a], [b]) => {
 		const ia = STEP_FIELD_ORDER.indexOf(a);
@@ -115,9 +123,14 @@ export function stepFields(step: Record<string, unknown>): StepField[] {
 			? val.map((v) => stepValueText(v).trim()).filter(Boolean)
 			: undefined;
 		// {min,max,...} objects (fee_estimate, turnaround_days ranges) format
-		// as "min–max" (with currency prefix when present).
+		// as "min–max" (with currency prefix when present). A {currency}-only
+		// object still detects — otherwise it would leak raw JSON.
 		const range =
-			!items && isStepObject(val) && ('min' in val || 'max' in val) ? stepRangeText(val) : undefined;
+			!items?.length &&
+			isStepObject(val) &&
+			('min' in val || 'max' in val || 'currency' in val)
+				? stepRangeText(val)
+				: undefined;
 		// turnaround_days gets an "N days" suffix — numbers, numeric strings
 		// (editorial repeater strings), and {min,max} ranges all match.
 		const isTurnaround =

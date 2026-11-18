@@ -166,7 +166,7 @@ WHERE content_type = 'guide'
   AND status = 'published'
   AND deleted_at IS NULL
   AND field_values->>'pathway_id' = $1
-ORDER BY created_at
+ORDER BY created_at, id
 LIMIT 1
 `
 

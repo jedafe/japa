@@ -181,7 +181,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					'@type': 'HowToStep',
 					position: i + 1,
 					name: isStepObject(s) ? stepHeadline(s, i) : `Step ${i + 1}`,
-					text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? '') : stepValueText(s),
+					text: isStepObject(s) ? stepValueText(s.description ?? s.note ?? s.agency ?? '') : stepValueText(s),
 					...(u ? { url: u } : {})
 				};
 			})
