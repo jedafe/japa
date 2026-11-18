@@ -121,6 +121,7 @@ type RouteRow struct {
 	IsJapabotIndexed     bool
 	GuideID              pgtype.UUID
 	GuideTitle           *string
+	GuideStatus          *string
 	ChecklistGuideID     pgtype.UUID
 	ProcessingMedianDays pgtype.Numeric
 	ProcessingSampleCnt  pgtype.Int4
@@ -157,6 +158,10 @@ SELECT vr.id, vr.destination_space_id,
        vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
        vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
        vr.is_japabot_indexed, vr.guide_id, cg.title AS guide_title,
+       -- 'deleted' folds deleted_at into one admin-facing lifecycle field
+       -- so operators can tell a permanently-dead link (archived/deleted)
+       -- from one that will go live on publish (draft/in_review/scheduled).
+       CASE WHEN cg.deleted_at IS NOT NULL THEN 'deleted' ELSE cg.status END AS guide_status,
        CASE WHEN cg.content_type = 'guide'
              AND cg.guide_category = 'visa'
              AND cg.status = 'published'
@@ -221,7 +226,7 @@ func routeScanDests(r *RouteRow) []any {
 		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
 		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
-		&r.IsJapabotIndexed, &r.GuideID, &r.GuideTitle, &r.ChecklistGuideID,
+		&r.IsJapabotIndexed, &r.GuideID, &r.GuideTitle, &r.GuideStatus, &r.ChecklistGuideID,
 		&r.ProcessingMedianDays, &r.ProcessingSampleCnt, &r.ProcessingPeriod,
 		&r.HITLReviewerUsername,
 		&r.CreatedAt, &r.UpdatedAt,

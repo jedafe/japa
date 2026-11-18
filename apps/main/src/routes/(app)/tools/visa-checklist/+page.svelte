@@ -117,8 +117,23 @@
 
 	$effect(() => {
 		const g = data.guide;
+		const paramId = page.url.searchParams.get('guide_id');
 		if (!g) {
 			hydratedGuideId = null;
+			// The URL asks for a guide the server couldn't resolve (dead
+			// or transitioned link). Any rendered checklist belongs to a
+			// different id — clear it, or it both displays stale items
+			// under the wrong URL and suppresses the stale-link notice
+			// via !selectedGuideId. A manual pick keeps
+			// paramId === selectedGuideId (syncGuideParam wrote it), so
+			// its state survives this check.
+			if (paramId && paramId !== selectedGuideId) {
+				selectedVisaType = '';
+				selectedGuideId = '';
+				guideTitle = '';
+				items = [];
+				itemError = null;
+			}
 			return;
 		}
 		if (g.guide_id === hydratedGuideId) return;

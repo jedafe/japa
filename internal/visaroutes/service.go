@@ -62,6 +62,11 @@ type RouteDTO struct {
 	// ChecklistGuideID, which resolves.
 	GuideID    string `json:"guide_id,omitempty"`
 	GuideTitle string `json:"guide_title,omitempty"`
+	// GuideStatus is the linked guide's lifecycle — 'deleted' folds in
+	// deleted_at. Admin-only (stripped by PublicView): operators use it
+	// to tell a permanently-dead link (archived/deleted) from one that
+	// activates on publish (draft/in_review/scheduled).
+	GuideStatus string `json:"guide_status,omitempty"`
 	// ChecklistGuideID is the effective public link — non-empty only
 	// when the stored guide_id resolves to a published visa guide (the
 	// §70 /checklist/{id} contract). The CTA built from it never 404s.
@@ -97,6 +102,7 @@ func (d RouteDTO) PublicView() RouteDTO {
 	// public CTA must only ever expose the effective link.
 	d.GuideID = ""
 	d.GuideTitle = ""
+	d.GuideStatus = ""
 
 	return d
 }
@@ -1151,6 +1157,10 @@ func rowToDTO(r RouteRow) RouteDTO {
 
 	if r.GuideTitle != nil {
 		dto.GuideTitle = *r.GuideTitle
+	}
+
+	if r.GuideStatus != nil {
+		dto.GuideStatus = *r.GuideStatus
 	}
 
 	if r.ChecklistGuideID.Valid {

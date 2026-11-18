@@ -5069,5 +5069,6 @@
   "app.tools.guide_placeholder": "Rechercher des guides visa…",
   "app.tools.guide_help": "Guide visa alimentant le CTA « Liste de documents » de la route. Les brouillons sont acceptés — le lien public s'active à la publication du guide.",
   "app.tools.checklist_link_live": "Lien de checklist actif sur la route publique",
-  "app.tools.checklist_link_pending": "Lien de checklist masqué jusqu'à la publication du guide"
+  "app.tools.checklist_link_pending": "Lien de checklist masqué jusqu'à la publication du guide",
+  "app.tools.checklist_link_dead": "Lien de checklist mort — le guide est {status} ; reliez un autre guide"
 }

@@ -5112,5 +5112,6 @@
   "app.tools.guide_placeholder": "Search visa guides…",
   "app.tools.guide_help": "Visa guide powering the route's Document checklist CTA. Draft guides are allowed — the public link activates when the guide publishes.",
   "app.tools.checklist_link_live": "Checklist link live on public route",
-  "app.tools.checklist_link_pending": "Checklist link hidden until the guide is published"
+  "app.tools.checklist_link_pending": "Checklist link hidden until the guide is published",
+  "app.tools.checklist_link_dead": "Checklist link dead — guide is {status}; relink another guide"
 }

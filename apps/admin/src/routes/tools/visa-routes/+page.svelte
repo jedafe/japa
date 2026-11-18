@@ -43,6 +43,7 @@
 		is_japabot_indexed: boolean;
 		guide_id?: string;
 		guide_title?: string;
+		guide_status?: string;
 		checklist_guide_id?: string;
 		typical_processing_days?: number;
 		processing_sample_count?: number;
@@ -651,6 +652,8 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.guide_title ?? row.guide_id}</p>
 				{#if row.checklist_guide_id}
 					<p class="mt-0.5 text-xs" style="color: var(--color-primary)">{t('app.tools.checklist_link_live', 'Checklist link live on public route')}</p>
+				{:else if row.guide_status === 'archived' || row.guide_status === 'deleted'}
+					<p class="mt-0.5 text-xs" style="color: var(--color-destructive)">{t('app.tools.checklist_link_dead', 'Checklist link dead — guide is {status}; relink another guide').replace('{status}', row.guide_status)}</p>
 				{:else}
 					<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('app.tools.checklist_link_pending', 'Checklist link hidden until the guide is published')}</p>
 				{/if}
