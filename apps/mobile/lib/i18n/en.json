@@ -207,5 +207,15 @@
   "tools.turns": "turns",
   "tools.unknown_provider": "Unknown provider",
   "tools.view_rates": "View rates",
-  "tools.visa_checklist": "Visa Checklist"
+  "tools.visa_checklist": "Visa Checklist",
+  "checklist.step1": "1. Where are you coming from?",
+  "checklist.step2": "2. Where are you going?",
+  "checklist.step3": "3. Visa type",
+  "checklist.no_visa_types": "No visa guides published for this destination yet.",
+  "checklist.anon_hint": "Sign in to save your progress and notes.",
+  "checklist.load_error": "Could not load checklist",
+  "checklist.empty": "No checklist items for this guide",
+  "checklist.progress": "Progress",
+  "checklist.general_category": "General",
+  "checklist.required": "Required"
 }

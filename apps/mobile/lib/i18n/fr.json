@@ -207,5 +207,15 @@
   "tools.turns": "tours",
   "tools.unknown_provider": "Fournisseur inconnu",
   "tools.view_rates": "Voir les taux",
-  "tools.visa_checklist": "Liste de contrôle visa"
+  "tools.visa_checklist": "Liste de contrôle visa",
+  "checklist.step1": "1. D'où venez-vous ?",
+  "checklist.step2": "2. Où allez-vous ?",
+  "checklist.step3": "3. Type de visa",
+  "checklist.no_visa_types": "Aucun guide de visa publié pour cette destination.",
+  "checklist.anon_hint": "Connectez-vous pour enregistrer votre progression.",
+  "checklist.load_error": "Impossible de charger la checklist",
+  "checklist.empty": "Aucun élément pour ce guide",
+  "checklist.progress": "Progression",
+  "checklist.general_category": "Général",
+  "checklist.required": "Obligatoire"
 }
