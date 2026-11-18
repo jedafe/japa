@@ -432,13 +432,17 @@
 			return attestationGuideAdminApi.create(payload);
 		},
 		update: async (id: string, body: Record<string, unknown>) => {
-			const steps = parseSteps(body.pathway_steps);
-			if (!steps.ok) return { ok: false, error: t('app.tools.invalid_steps_json', 'Pathway steps must be valid JSON') };
-			// PATCH semantics: empty strings mean "leave unchanged" — strip them.
+			// PATCH semantics: empty/blank values mean "leave unchanged" —
+			// including an emptied steps field, which must NOT wipe the array.
 			const payload: Record<string, unknown> = {};
-			for (const [k, v] of Object.entries({ ...body, pathway_steps: steps.steps })) {
+			for (const [k, v] of Object.entries(body)) {
 				if (v === '' || v === undefined || v === null) continue;
 				payload[k] = v;
+			}
+			if ('pathway_steps' in payload) {
+				const steps = parseSteps(payload.pathway_steps);
+				if (!steps.ok) return { ok: false, error: t('app.tools.invalid_steps_json', 'Pathway steps must be valid JSON') };
+				payload.pathway_steps = steps.steps;
 			}
 			return attestationGuideAdminApi.update(id, payload);
 		},
@@ -563,7 +567,7 @@
 								{update.submitter_name ?? update.user_id}
 							</p>
 							<p class="text-xs" style="color: var(--color-muted)">
-								{t('app.tools.fee', 'Fee')}: {update.fee_estimate ?? '—'} · {t('app.tools.turnaround', 'Turnaround')}: {update.turnaround_days ?? '—'} {t('app.tools.days', 'days')}
+								{t('app.tools.fee', 'Fee')}: {update.fee_estimate ?? '—'} · {t('app.tools.turnaround', 'Turnaround')}: {update.turnaround_days != null ? `${update.turnaround_days} ${t('app.tools.days', 'days')}` : '—'}
 								{#if update.reviewer_name}
 									· {t('app.tools.reviewed_by_name', 'Reviewed by {name}').replace('{name}', update.reviewer_name)}
 								{/if}

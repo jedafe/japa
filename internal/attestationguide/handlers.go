@@ -339,8 +339,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -399,8 +399,8 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -582,8 +582,8 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -602,6 +602,11 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_approve", err.Error())
 			return
 		}
 
@@ -652,6 +657,11 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "update_not_found", "Community update not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_update", err.Error())
 			return
 		}
 

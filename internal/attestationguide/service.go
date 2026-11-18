@@ -8,6 +8,7 @@
 package attestationguide
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,6 +30,14 @@ import (
 // ErrInvalidInput marks request-validation failures so handlers can map them
 // to 400 instead of 500.
 var ErrInvalidInput = errors.New("invalid input")
+
+// isJSONArray reports whether b is a JSON array (pathway_steps' shape) —
+// json.Valid alone would accept a scalar, null, or object that later step
+// renderers and step_index bounds checks cannot consume.
+func isJSONArray(b []byte) bool {
+	t := bytes.TrimSpace(b)
+	return len(t) > 0 && t[0] == '[' && json.Valid(t)
+}
 
 // isValidDocumentType reports whether v is a §97 canonical document type.
 func isValidDocumentType(v string) bool {
@@ -455,8 +464,8 @@ func (s *Service) Create(ctx context.Context, input CreatePathwayInput) (Pathway
 	steps := []byte(input.PathwaySteps)
 	if len(steps) == 0 {
 		steps = []byte("[]")
-	} else if !json.Valid(steps) {
-		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be valid JSON", ErrInvalidInput)
+	} else if !isJSONArray(steps) {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", ErrInvalidInput)
 	}
 
 	// §97 Hague Convention: an apostille is only usable when BOTH the issuing
@@ -691,6 +700,13 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: lookup: %w", err)
 	}
 
+	// Approve is the HITL publish act for draft/queued/rejected pathways.
+	// An already-published row must not be re-approved — it would overwrite
+	// hitl_reviewed_by/at and notes for a review that never happened.
+	if row.Status == PathwayStatusPublished {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway is already published", ErrInvalidInput)
+	}
+
 	// Apostille is valid only when issuing AND destination are both Hague
 	// Convention members (see Create for the both-sides rationale).
 	apostilleRequired := s.isHagueMember(ctx, row.DestinationSpaceID) && s.isHagueMember(ctx, row.IssuingSpaceID)
@@ -769,8 +785,8 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 	}
 
 	if input.PathwaySteps != nil {
-		if !json.Valid(input.PathwaySteps) {
-			return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be valid JSON", ErrInvalidInput)
+		if !isJSONArray(input.PathwaySteps) {
+			return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", ErrInvalidInput)
 		}
 
 		p.PathwaySteps = []byte(input.PathwaySteps)
@@ -780,7 +796,7 @@ func (s *Service) AdminUpdatePathway(ctx context.Context, id pgtype.UUID, input 
 		if *input.CommunityLastVerified == "" {
 			p.CommunityLastVerified = pgtype.Date{}
 		} else if err := p.CommunityLastVerified.Scan(*input.CommunityLastVerified); err != nil {
-			return PathwayDTO{}, fmt.Errorf("invalid community_last_verified: %w", err)
+			return PathwayDTO{}, fmt.Errorf("%w: invalid community_last_verified: %v", ErrInvalidInput, err)
 		}
 	}
 
@@ -900,20 +916,27 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerI
 		status = UpdateStatusRejected
 	}
 
-	// On approval, validate the step index is still in range BEFORE flipping
-	// the row to approved — the apply runs after the status write, so a
-	// stale index must fail here or the queue ends up with an "approved"
-	// update that never landed on the pathway.
-	if approve {
-		pending, err := s.store.GetCommunityUpdateByID(ctx, updateID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return CommunityUpdateDTO{}, pgx.ErrNoRows
-			}
-
-			return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: preload: %w", err)
+	// Load the pending row first: only a pending update may transition —
+	// re-approving would re-apply the patch and overwrite the original
+	// reviewer, and rejecting an already-approved update would mark it
+	// rejected while the patch stays applied to the pathway.
+	pending, err := s.store.GetCommunityUpdateByID(ctx, updateID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
 
+		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: preload: %w", err)
+	}
+
+	if pending.Status != UpdateStatusPending {
+		return CommunityUpdateDTO{}, fmt.Errorf("%w: update is already %s", ErrInvalidInput, pending.Status)
+	}
+
+	// On approval, validate the step index is still in range BEFORE the
+	// apply — a stale index must fail here or the pathway gets a verified
+	// bump on a patch that never landed.
+	if approve {
 		if pending.StepIndex != nil && pending.PathwayID.Valid {
 			pw, err := s.store.GetPathwayByID(ctx, pending.PathwayID)
 			if err != nil {
@@ -927,6 +950,17 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerI
 
 			if *pending.StepIndex < 0 || int(*pending.StepIndex) >= len(steps) {
 				return CommunityUpdateDTO{}, fmt.Errorf("%w: step_index out of range (pathway has %d steps)", ErrInvalidInput, len(steps))
+			}
+		}
+
+		// Apply BEFORE flipping the row to approved: if the apply fails the
+		// row stays pending and the review can be retried. A status-write
+		// failure instead leaves an applied-but-pending update that a retry
+		// simply re-applies (the patch writes absolute values, so it is
+		// idempotent).
+		if pending.PathwayID.Valid {
+			if err := s.store.ApplyApprovedUpdateToPathway(ctx, pending.PathwayID, pending.StepIndex, pending.FeeEstimate, pending.TurnaroundDays); err != nil {
+				return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: apply: %w", err)
 			}
 		}
 	}
@@ -946,14 +980,6 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerI
 		}
 
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: reload: %w", err)
-	}
-
-	// BUG-003 + BUG-004: on approval, apply the update to the parent pathway
-	// (patch pathway_steps + bump community_last_verified).
-	if approve && row.PathwayID.Valid {
-		if err := s.store.ApplyApprovedUpdateToPathway(ctx, row.PathwayID, row.StepIndex, row.FeeEstimate, row.TurnaroundDays); err != nil {
-			return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: apply: %w", err)
-		}
 	}
 
 	return communityUpdateToDTO(row), nil

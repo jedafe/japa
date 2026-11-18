@@ -187,11 +187,11 @@ type CommunityUpdate struct {
 	ReviewedBy     pgtype.UUID
 	CreatedAt      pgtype.Timestamptz
 
-	PathwayDocumentType   string
-	IssuingSpaceName      *string
-	DestinationSpaceName  *string
-	SubmitterName         *string
-	ReviewerName          *string
+	PathwayDocumentType  string
+	IssuingSpaceName     *string
+	DestinationSpaceName *string
+	SubmitterName        *string
+	ReviewerName         *string
 }
 
 // ListPathwaysFilter holds the filter parameters for listing pathways.
@@ -574,6 +574,9 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 // approved or rejected and records the reviewer. The ID scopes
 // the update through its parent pathway to prevent cross-platform access.
 func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
+	// status='pending' in the WHERE closes the TOCTOU window: two
+	// concurrent reviews can both pass the service-level pending check,
+	// but only the first write lands — the second affects 0 rows.
 	const q = `
 UPDATE attestation_community_updates u
 SET status      = $2,
@@ -582,6 +585,7 @@ FROM attestation_pathways p
 WHERE u.id = $1
   AND u.pathway_id = p.id
   AND u.deleted_at IS NULL
+  AND u.status = 'pending'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, status, reviewerID)
