@@ -9,7 +9,7 @@
 	import { listCurrencies } from '#lib/api/hub.js';
 	import { isoToLocalDateTime } from '#lib/utils/datetime.js';
 	import { page } from '$app/state';
-	import { currencySymbol, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { currencyName, currencySymbol, type CurrencyInfo } from '#lib/utils/currency.js';
 	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
@@ -487,6 +487,21 @@
 		return Promise.resolve(query ? items.filter((i) => i.label.toLowerCase().includes(query)) : items);
 	}
 
+	// Managed suggest sources store the canonical id (geo_code / currency
+	// code), not the label — the chip must re-resolve it or the field would
+	// show raw codes. Free-form sources store labels already; fall back to
+	// the raw value when the list hasn't loaded or the code is unknown.
+	function suggestLabel(field: CustomFieldDef, val: string): string {
+		if (!val) return '';
+		if (optionSource(field) === 'geo_countries') {
+			return geoCountries?.find((c) => c.geo_code === val)?.name ?? val;
+		}
+		if (optionSource(field) === 'wallet_currencies') {
+			return currencyName(val, walletCurrencies) || val;
+		}
+		return val;
+	}
+
 	// 'select' fields render via the shared Autocomplete too — a closed
 	// list, so free text stays off. Stored values remain the option `value`
 	// (item.id), matching what the native <select> used to save.
@@ -584,7 +599,7 @@
 				fetcher={(q) => suggestItems(field, q)}
 				initialFetcher={() => suggestItems(field, '')}
 				selectedId={typeof values[field.key] === 'string' && values[field.key] ? (values[field.key] as string) : null}
-				selectedLabel={typeof values[field.key] === 'string' ? (values[field.key] as string) : null}
+				selectedLabel={typeof values[field.key] === 'string' ? suggestLabel(field, values[field.key] as string) : null}
 				onSelect={(item) => setField(field.key, optionSource(field) ? item.id : item.label)}
 				onClear={() => setField(field.key, '')}
 				allowFreeText={optionSource(field) === null}

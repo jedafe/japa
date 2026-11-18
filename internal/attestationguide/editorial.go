@@ -15,14 +15,24 @@ import (
 
 // guideFieldValues mirrors the guide_attestation_fields custom-field
 // group keys the publish hook reads (§97 editorial integration).
+// Scalar fields are typed `any` — a single corrupt value (a number where
+// a string was expected) must not fail the entire unmarshal and skip
+// provisioning for the healthy keys.
 type guideFieldValues struct {
-	PathwayID          string          `json:"pathway_id"`
-	DocumentType       string          `json:"document_type"`
-	IssuingCountry     string          `json:"issuing_country"`
-	DestinationCountry string          `json:"destination_country"`
+	PathwayID          any             `json:"pathway_id"`
+	DocumentType       any             `json:"document_type"`
+	IssuingCountry     any             `json:"issuing_country"`
+	DestinationCountry any             `json:"destination_country"`
 	ApostilleRequired  any             `json:"apostille_required"`
-	LastVerified       string          `json:"last_verified"`
+	LastVerified       any             `json:"last_verified"`
 	PathwaySteps       json.RawMessage `json:"pathway_steps"`
+}
+
+// guideString coerces a scalar field value to string; non-strings yield
+// "" (which the combination check treats as missing).
+func guideString(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 // guideBool coerces a field value that the composer may have stored as
@@ -72,7 +82,7 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 	// An explicit pathway_id is authoritative when it resolves — the
 	// editor chose that pathway. A stale/unresolvable id falls through
 	// to combination resolution exactly like an empty field.
-	if pid := strings.TrimSpace(fv.PathwayID); pid != "" {
+	if pid := strings.TrimSpace(guideString(fv.PathwayID)); pid != "" {
 		var id pgtype.UUID
 		if err := id.Scan(pid); err == nil {
 			if _, err := s.store.GetPathwayByID(ctx, id); err == nil {
@@ -81,9 +91,9 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 		}
 	}
 
-	docType := strings.ToLower(strings.TrimSpace(fv.DocumentType))
-	issGeo := strings.ToUpper(strings.TrimSpace(fv.IssuingCountry))
-	destGeo := strings.ToUpper(strings.TrimSpace(fv.DestinationCountry))
+	docType := strings.ToLower(strings.TrimSpace(guideString(fv.DocumentType)))
+	issGeo := strings.ToUpper(strings.TrimSpace(guideString(fv.IssuingCountry)))
+	destGeo := strings.ToUpper(strings.TrimSpace(guideString(fv.DestinationCountry)))
 	if !isValidDocumentType(docType) || issGeo == "" || destGeo == "" || issGeo == destGeo {
 		return nil
 	}
@@ -134,8 +144,8 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 	}
 	// Only forward a parseable date — a free-text last_verified must not
 	// fail pathway creation.
-	if _, err := time.Parse("2006-01-02", strings.TrimSpace(fv.LastVerified)); err == nil {
-		input.CommunityLastVerified = strings.TrimSpace(fv.LastVerified)
+	if _, err := time.Parse("2006-01-02", strings.TrimSpace(guideString(fv.LastVerified))); err == nil {
+		input.CommunityLastVerified = strings.TrimSpace(guideString(fv.LastVerified))
 	}
 	// Provenance for the reviewer — an auto-provisioned draft is otherwise
 	// indistinguishable from a hand-created one.

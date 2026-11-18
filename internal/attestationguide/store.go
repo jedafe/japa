@@ -185,7 +185,7 @@ WHERE content_type = 'guide'
           -- pathway_id — a guide that names a different pathway must not
           -- also surface on this one's detail page.
           COALESCE(BTRIM(field_values->>'pathway_id'), '') = ''
-          AND field_values->>'document_type' = $2
+          AND LOWER(field_values->>'document_type') = LOWER($2::text)
           AND UPPER(field_values->>'issuing_country') = UPPER($3::text)
           AND UPPER(field_values->>'destination_country') = UPPER($4::text)
       )
