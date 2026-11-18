@@ -231,7 +231,9 @@ LIMIT 1
 // PathwayIDForCombination returns the id of the pathway matching the
 // (document_type, issuing_space, destination_space) natural key, in any
 // status — a draft still claims the corridor so the publish hook never
-// duplicates it. Returns pgx.ErrNoRows when no pathway matches.
+// duplicates it. Read off Writer: this feeds a write decision (claim
+// vs. create), where replica lag would duplicate a just-committed row.
+// Returns pgx.ErrNoRows when no pathway matches.
 func (s *Store) PathwayIDForCombination(ctx context.Context, documentType string, issuingSpaceID, destinationSpaceID pgtype.UUID) (pgtype.UUID, error) {
 	const q = `
 SELECT id FROM attestation_pathways
@@ -243,7 +245,7 @@ LIMIT 1
 `
 
 	var id pgtype.UUID
-	if err := s.pool.Reader.QueryRow(ctx, q, documentType, issuingSpaceID, destinationSpaceID).Scan(&id); err != nil {
+	if err := s.pool.Writer.QueryRow(ctx, q, documentType, issuingSpaceID, destinationSpaceID).Scan(&id); err != nil {
 		return pgtype.UUID{}, err
 	}
 

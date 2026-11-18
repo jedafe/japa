@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,9 +20,24 @@ type guideFieldValues struct {
 	DocumentType       string          `json:"document_type"`
 	IssuingCountry     string          `json:"issuing_country"`
 	DestinationCountry string          `json:"destination_country"`
-	ApostilleRequired  *bool           `json:"apostille_required"`
+	ApostilleRequired  any             `json:"apostille_required"`
 	LastVerified       string          `json:"last_verified"`
 	PathwaySteps       json.RawMessage `json:"pathway_steps"`
+}
+
+// guideBool coerces a field value that the composer may have stored as
+// either a bool or a boolish string into *bool. nil input or an
+// unparseable value yields nil — the field simply isn't forwarded.
+func guideBool(v any) *bool {
+	switch b := v.(type) {
+	case bool:
+		return &b
+	case string:
+		if p, err := strconv.ParseBool(strings.TrimSpace(b)); err == nil {
+			return &p
+		}
+	}
+	return nil
 }
 
 // OnGuidePublished implements content.GuidePublishHook (wired in
@@ -39,6 +55,10 @@ type guideFieldValues struct {
 // categories or incomplete field combinations return nil.
 func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, guideCategory string, fieldValues []byte) error {
 	if guideCategory != "attestation" {
+		return nil
+	}
+	// The tool being flagged off must not accumulate provisioned rows.
+	if !s.Enabled(ctx) {
 		return nil
 	}
 
@@ -64,7 +84,7 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 	docType := strings.TrimSpace(fv.DocumentType)
 	issGeo := strings.ToUpper(strings.TrimSpace(fv.IssuingCountry))
 	destGeo := strings.ToUpper(strings.TrimSpace(fv.DestinationCountry))
-	if !isValidDocumentType(docType) || issGeo == "" || destGeo == "" {
+	if !isValidDocumentType(docType) || issGeo == "" || destGeo == "" || issGeo == destGeo {
 		return nil
 	}
 
@@ -96,12 +116,20 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 		return s.store.BackfillGuidePathwayID(ctx, contentID, id)
 	}
 
+	// A malformed steps field (null, object, garbage) must not fail
+	// provisioning — a draft with empty steps is still claimable by the
+	// link resolver; the steps can be backfilled later.
+	steps := normalizeEditorialSteps(fv.PathwaySteps)
+	if !isJSONArray(steps) {
+		steps = nil
+	}
+
 	input := CreatePathwayInput{
 		DocumentType:       docType,
 		IssuingSpaceID:     issSpace.String(),
 		DestinationSpaceID: destSpace.String(),
-		ApostilleRequired:  fv.ApostilleRequired,
-		PathwaySteps:       normalizeEditorialSteps(fv.PathwaySteps),
+		ApostilleRequired:  guideBool(fv.ApostilleRequired),
+		PathwaySteps:       steps,
 		Status:             PathwayStatusDraft,
 	}
 	// Only forward a parseable date — a free-text last_verified must not
