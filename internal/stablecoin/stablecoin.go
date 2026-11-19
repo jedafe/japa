@@ -89,16 +89,16 @@ const (
 // secure enclave holds the operational signer; recovery is their email/phone
 // OTP. All this row records is metadata + our delegated-signer registration.
 type Wallet struct {
-	ID              string            `json:"id"`
-	UserID          string            `json:"user_id"`
-	Chain           string            `json:"chain"` // "solana"
-	Address         string            `json:"address"` // smart wallet / PDA address
-	Locator         string            `json:"locator"` // Crossmint wallet locator
-	Status          string            `json:"status"`
-	RecoveryMethods []string          `json:"recovery_methods"` // "email", "phone"
-	DelegatedSigner *DelegatedSigner  `json:"delegated_signer"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	ID              string           `json:"id"`
+	UserID          string           `json:"user_id"`
+	Chain           string           `json:"chain"`   // "solana"
+	Address         string           `json:"address"` // smart wallet / PDA address
+	Locator         string           `json:"locator"` // Crossmint wallet locator
+	Status          string           `json:"status"`
+	RecoveryMethods []string         `json:"recovery_methods"` // "email", "phone"
+	DelegatedSigner *DelegatedSigner `json:"delegated_signer"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
 }
 
 // DelegatedSigner is Japa.to's scope-capped operational signer on a member
@@ -112,9 +112,9 @@ type DelegatedSigner struct {
 
 // SignerScope bounds one delegated-signer capability onchain.
 type SignerScope struct {
-	Asset         string    `json:"asset"`            // usdc | usdt
-	DailyCapMinor int64     `json:"daily_cap_minor"`  // USD minor units/day
-	ExpiresAt     time.Time `json:"expires_at"`       // short-lived; renewed by member ceremony
+	Asset         string    `json:"asset"`           // usdc | usdt
+	DailyCapMinor int64     `json:"daily_cap_minor"` // USD minor units/day
+	ExpiresAt     time.Time `json:"expires_at"`      // short-lived; renewed by member ceremony
 	// Recipients is the chain-level destination whitelist (docs-confirmed:
 	// scope.recipients — addresses or wallet locators; empty = any). A
 	// treasury-allowlisted scope only adds value on a separate signer —

@@ -98,8 +98,9 @@ type bonusLedger interface {
 // tipReader is the read+write seam into §125 tips for
 // tips:settle_stablecoin — the stablecoin module resolves the tip's
 // parties and net amount, settles via delegated signer (tip−fee →
-// recipient, fee → treasury hot), then closes the tip's lifecycle so a
-// settled tip can't be double-processed or swept as stale.
+// recipient member wallet — or treasury hot for platform donations —
+// fee → treasury hot), then closes the tip's lifecycle so a settled tip
+// can't be double-processed or swept as stale.
 type tipReader interface {
 	GetTip(ctx context.Context, id pgtype.UUID) (*Tip, error)
 	// ClaimTipSettle transitions pending/failed → settling before money

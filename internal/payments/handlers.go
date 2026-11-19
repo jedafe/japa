@@ -47,7 +47,7 @@ type SettingsProvider interface {
 // Handlers holds dependencies for payment HTTP handlers.
 type Handlers struct {
 	Service             *Service
-	StripeSecretKey     string // JC_STRIPE_SECRET_KEY — Stripe API key; gates the Stripe "Enabled" flag
+	StripeSecretKey     string // JC_STRIPE_SECRET_KEY — Stripe API key
 	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret
 	NOWPaymentsIPNKey   string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC key
 	PaystackSecretKey   string // Paystack secret key for webhook HMAC verification
@@ -222,25 +222,33 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 
 // ListPaymentProviders handles GET /api/v1/payment-providers.
 // Returns the available payment providers with their availability status.
+// `enabled` mirrors boot-time registration (ProviderNames) — the same
+// truth CreatePayment dispatches on — so an uncredentialed provider is
+// reported disabled instead of baiting an InitiatePayment failure at
+// checkout. manual_transfer is donation-rail only, not a checkout option.
 func (h *Handlers) ListPaymentProviders(w http.ResponseWriter, r *http.Request) {
+	registered := map[string]bool{}
+	for _, n := range h.Service.ProviderNames() {
+		registered[n] = true
+	}
 	providers := []PaymentProviderInfo{
 		{
 			ID:          ProviderPaystack,
 			Name:        "Paystack",
 			Description: "Card, bank transfer, USSD",
-			Enabled:     h.PaystackSecretKey != "",
+			Enabled:     registered[ProviderPaystack],
 		},
 		{
 			ID:          ProviderStripe,
 			Name:        "Stripe",
 			Description: "International cards",
-			Enabled:     h.StripeSecretKey != "",
+			Enabled:     registered[ProviderStripe],
 		},
 		{
 			ID:          ProviderNOWPayments,
 			Name:        "Crypto",
 			Description: "Bitcoin, USDT, ETH",
-			Enabled:     h.NOWPaymentsIPNKey != "",
+			Enabled:     registered[ProviderNOWPayments],
 		},
 		{
 			ID:          ProviderCredit,

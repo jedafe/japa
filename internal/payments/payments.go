@@ -195,6 +195,9 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 
 // SetProvider registers a payment provider by name.
 func (s *Service) SetProvider(p Provider) {
+	if s.providers == nil {
+		s.providers = map[string]Provider{}
+	}
 	s.providers[p.Name()] = p
 }
 
