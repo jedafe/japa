@@ -221,19 +221,43 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 		Peek:      true,
 	}
 
-	msgs, err := client.Fetch(imap.SeqSetNum(seqNums...), &imap.FetchOptions{
+	fetchCmd := client.Fetch(imap.SeqSetNum(seqNums...), &imap.FetchOptions{
 		BodySection: []*imap.FetchItemBodySection{bodySection},
-	}).Collect()
-	if err != nil {
-		return fmt.Errorf("imap fetch: %w", err)
-	}
+	})
 
 	q := gen.New(dbPool.Writer)
-	processed := make([]uint32, 0, len(msgs))
-	bounced, complained := 0, 0
+	processed := make([]uint32, 0, len(seqNums))
+	bounced, complained, fetched := 0, 0, 0
 
-	for _, msg := range msgs {
-		raw := msg.FindBodySection(bodySection)
+	// Stream message-by-message — Collect() would buffer every body
+	// literal at once (up to batch×1MiB); Next() keeps only one
+	// message live at a time.
+	for {
+		msgData := fetchCmd.Next()
+		if msgData == nil {
+			break
+		}
+
+		fetched++
+
+		var raw []byte
+
+		for {
+			item := msgData.Next()
+			if item == nil {
+				break
+			}
+
+			bs, ok := item.(imapclient.FetchItemDataBodySection)
+			if !ok || bs.Literal == nil || raw != nil {
+				continue
+			}
+
+			if b, err := io.ReadAll(bs.Literal); err == nil {
+				raw = b
+			}
+		}
+
 		if len(raw) == 0 {
 			// Body literal not returned — leave UNSEEN so the next poll
 			// re-fetches rather than dropping a possible bounce.
@@ -250,9 +274,9 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 			// events is a parser gap worth investigating (Warn); ordinary
 			// non-bounce mail (forwards, auto-replies) is routine (Debug).
 			if looksLikeBounceReport(raw) {
-				slog.Warn("task:newsletter:poll_bounces: bounce-shaped message yielded no events", "seq", msg.SeqNum)
+				slog.Warn("task:newsletter:poll_bounces: bounce-shaped message yielded no events", "seq", msgData.SeqNum)
 			} else {
-				slog.Debug("task:newsletter:poll_bounces: no events extracted", "seq", msg.SeqNum)
+				slog.Debug("task:newsletter:poll_bounces: no events extracted", "seq", msgData.SeqNum)
 			}
 		}
 
@@ -287,8 +311,12 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 		// error stays UNSEEN so the next poll retries the mark instead
 		// of dropping the bounce event.
 		if !markFailed {
-			processed = append(processed, msg.SeqNum)
+			processed = append(processed, msgData.SeqNum)
 		}
+	}
+
+	if err := fetchCmd.Close(); err != nil {
+		return fmt.Errorf("imap fetch: %w", err)
 	}
 
 	if len(processed) > 0 {
@@ -302,7 +330,7 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 	}
 
 	slog.Info("task:newsletter:poll_bounces: mailbox processed",
-		"mailbox", cfg.mailbox, "messages", len(msgs),
+		"mailbox", cfg.mailbox, "messages", fetched,
 		"bounced", bounced, "complained", complained)
 
 	return nil
