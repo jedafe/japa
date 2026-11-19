@@ -382,19 +382,18 @@ func HandleAtprotoDeleteRecord(ctx context.Context, t *asynq.Task) error {
 // EnqueueAtprotoReconcileSweep fires atproto:reconcile_sweep — the
 // daily drift probe (§127 projection floor / §11). An empty cursor
 // starts the keyset walk; each page self-continues until the table is
-// exhausted. Fire-and-forget (Rule 8); a nil enqueuer is a no-op.
-func EnqueueAtprotoReconcileSweep(ctx context.Context, cursor string) {
+// exhausted. The caller decides fire-and-forget vs propagation — the
+// page handler propagates so a dropped continuation retries the task
+// (same convention as federation:backfill_optin's page walk).
+func EnqueueAtprotoReconcileSweep(ctx context.Context, cursor string) error {
 	if taskEnqueuer == nil {
-		return
+		return fmt.Errorf("atproto reconcile_sweep: enqueuer not registered")
 	}
 	payload, err := json.Marshal(map[string]string{"cursor": cursor})
 	if err != nil {
-		slog.Error("worker: marshal atproto:reconcile_sweep payload", "error", err)
-		return
+		return fmt.Errorf("atproto reconcile_sweep: marshal: %w", err)
 	}
-	if err := taskEnqueuer.Enqueue(TypeAtprotoReconcileSweep, payload); err != nil {
-		slog.Error("worker: enqueue atproto:reconcile_sweep", "error", err)
-	}
+	return taskEnqueuer.Enqueue(TypeAtprotoReconcileSweep, payload)
 }
 
 // HandleAtprotoReconcileSweep processes one atproto:reconcile_sweep
@@ -435,8 +434,13 @@ func HandleAtprotoReconcileSweep(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:atproto:reconcile_sweep: page failed", "error", err)
 		return err
 	}
+	// A retry of THIS task re-pages the same cursor, so continuation is
+	// safe to enqueue only on success — a swallowed failure would
+	// truncate the walk silently until tomorrow's scheduled run.
 	if next != "" {
-		EnqueueAtprotoReconcileSweep(ctx, next)
+		if err := EnqueueAtprotoReconcileSweep(ctx, next); err != nil {
+			return fmt.Errorf("task:atproto:reconcile_sweep: enqueue next page: %w", err)
+		}
 	}
 	return nil
 }

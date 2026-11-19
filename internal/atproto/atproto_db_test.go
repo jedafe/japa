@@ -989,6 +989,11 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	// reconcile enqueue is a no-op under a nil task enqueuer). A
 	// pgtype zero-UUID is NULL — the keyset walk starts from the
 	// scanned zero value like the handler constructs.
+	// A non-positive page limit must terminate immediately — the
+	// full-page check would otherwise read rows[-1] for the cursor.
+	if next, err := svc.ReconcileSweepPage(ctx, pgtype.UUID{Valid: true}, 0); err != nil || next != "" {
+		t.Fatalf("ReconcileSweepPage(0) = %q, %v — want immediate termination", next, err)
+	}
 	var cursor pgtype.UUID
 	if err := cursor.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
 		t.Fatalf("scan cursor: %v", err)

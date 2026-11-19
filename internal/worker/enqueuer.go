@@ -424,6 +424,8 @@ var taskTier = func() map[string]string {
 		// §126 M2 — remote actor resolution + delivery ledger hygiene, low tier.
 		TypeFederationResolveActor,
 		TypeFederationPruneDeliveries,
+		// §127 projection floor — daily drift probe, low tier.
+		TypeAtprotoReconcileSweep,
 	} {
 		m[t] = QueueLow
 	}

@@ -228,7 +228,9 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 // end). Probing is read-only: converged repos cost one query, not a
 // commit — the sweep can run daily without rewriting healthy repos.
 func (s *Service) ReconcileSweepPage(ctx context.Context, cursor pgtype.UUID, limit int32) (string, error) {
-	if !s.featureOn(ctx) {
+	if !s.featureOn(ctx) || limit <= 0 {
+		// limit <= 0 would page nothing yet read "full" — guard the
+		// rows[-1] cursor read, not just the semantics.
 		return "", nil
 	}
 	rows, err := s.store.q.ListAtprotoSweepAccounts(ctx, gen.ListAtprotoSweepAccountsParams{
@@ -238,13 +240,17 @@ func (s *Service) ReconcileSweepPage(ctx context.Context, cursor pgtype.UUID, li
 	if err != nil {
 		return "", fmt.Errorf("atproto: sweep page: %w", err)
 	}
+	// The probe inputs are page-invariant — resolve once rather than
+	// per account (flag eval and the settings read are remote lookups).
+	minPosts := s.minPostsDiscoverable(ctx)
+	contentTypes := s.federatableTypesFor(ctx)
 	var errs error
 	for _, a := range rows {
 		divergent, err := s.store.q.GetAtprotoRepoDivergent(ctx, gen.GetAtprotoRepoDivergentParams{
 			UserID:       a.UserID,
 			AccountID:    a.ID,
-			ContentTypes: s.federatableTypesFor(ctx),
-			MinPosts:     s.minPostsDiscoverable(ctx),
+			ContentTypes: contentTypes,
+			MinPosts:     minPosts,
 		})
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("atproto: sweep probe %s: %w", a.ID.String(), err))

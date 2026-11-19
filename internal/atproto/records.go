@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -122,17 +123,19 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 		// this path ungated via lifecycle reactivation.
 		return permanent(fmt.Errorf("atproto: feature.atproto disabled"))
 	}
-	user, err := s.store.userByID(ctx, account.UserID)
-	if err != nil {
-		return fmt.Errorf("atproto: profile user: %w", err)
-	}
 	if account.Status != AccountStatusActive {
 		// Disabled/tombstone repos are frozen — syncHandle would emit
 		// PLC ops, #identity events, and handle rewrites for an account
 		// that must not be touched (the refreshProfileRecord active-only
 		// invariant this path inherits). withRepoWrite refuses the write
-		// anyway; refuse the side effects too.
+		// anyway; refuse the side effects too. Checked before the user
+		// read so a tombstoned account whose user row is already gone
+		// (post-erasure) ends permanently, not on a retryable fetch miss.
 		return permanent(ErrNotFound)
+	}
+	user, err := s.store.userByID(ctx, account.UserID)
+	if err != nil {
+		return fmt.Errorf("atproto: profile user: %w", err)
 	}
 	// Profile writes double as the identity-convergence point — a
 	// rename leaves the stored handle stale until this sync. Handle
@@ -370,7 +373,11 @@ func (s *Service) emitBacklogReconcile(ctx context.Context, accountID, authorID 
 		ContentTypes: s.federatableTypesFor(ctx),
 		MinPosts:     minPosts,
 	})
-	if err == nil && backlog != nil && *backlog {
+	if err != nil {
+		slog.Warn("atproto: backlog probe failed", "account_id", accountID.String(), "error", err)
+		return
+	}
+	if backlog != nil && *backlog {
 		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
 	}
 }
