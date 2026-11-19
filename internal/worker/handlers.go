@@ -525,8 +525,16 @@ func resolveBaseURL(ctx context.Context) string {
 // rather than dropped, but the failure is visible in logs.
 // // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 // //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md.
-func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, map[string]string) {
+func newsletterUnsubscribeLink(ctx context.Context, base, apiBase, recipient string) (string, map[string]string) {
 	if dbPool == nil {
+		return "", nil
+	}
+
+	if base == "" {
+		// No base URL — emit no link/header at all rather than a relative
+		// List-Unsubscribe URI, which is invalid per RFC 2369 and worse
+		// than absent (mail clients may surface a broken button).
+		slog.Warn("newsletter: no base URL for unsubscribe link — sending without it")
 		return "", nil
 	}
 
@@ -541,18 +549,6 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 	)
 	if err != nil {
 		slog.Warn("newsletter: resolve subscriber for unsubscribe token failed", "recipient", recipient, "error", err)
-		return "", nil
-	}
-
-	base := resolveBaseURL(ctx)
-	if base == "" {
-		base = os.Getenv("JC_SITE_URL")
-	}
-	if base == "" {
-		// No base URL — emit no link/header at all rather than a relative
-		// List-Unsubscribe URI, which is invalid per RFC 2369 and worse
-		// than absent (mail clients may surface a broken button).
-		slog.Warn("newsletter: no base URL for unsubscribe link — sending without it")
 		return "", nil
 	}
 
@@ -577,7 +573,7 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
 
 	headerURL := url
-	if apiBase := newsletterAPIBase(ctx); apiBase != "" {
+	if apiBase != "" {
 		headerURL = apiBase + "/newsletter/unsubscribe?token=" + token
 	}
 
@@ -591,19 +587,18 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 
 // newsletterAPIBase resolves the public API base URL for URLs that must
 // reach the API server directly (List-Unsubscribe header URI, tracking
-// endpoints): JC_API_PUBLIC_URL first, then site.base_url + "/api/v1" —
-// matching the §62 self-hosted transport contract.
-func newsletterAPIBase(ctx context.Context) string {
+// endpoints): JC_API_PUBLIC_URL first, then the already-resolved site
+// base + "/api/v1" — matching the §62 self-hosted transport contract.
+func newsletterAPIBase(siteBase string) string {
 	if v := os.Getenv("JC_API_PUBLIC_URL"); v != "" {
 		return strings.TrimRight(v, "/")
 	}
 
-	base := resolveBaseURL(ctx)
-	if base == "" {
+	if siteBase == "" {
 		return ""
 	}
 
-	return strings.TrimRight(base, "/") + "/api/v1"
+	return strings.TrimRight(siteBase, "/") + "/api/v1"
 }
 
 // newsletterGenerateUnsubscribeToken generates a 32-byte hex token for
@@ -4080,15 +4075,20 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 // sendNewsletterPage sends the campaign to one page of recipients, marking
 // each recipient sent/failed for resumability. Returns (sent, failed).
 func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID pgtype.UUID, subject, htmlBody string, recipients []string) (sent, failed int) {
+	// Base URLs are page-invariant — resolving once avoids a
+	// system_settings read per recipient (500 rows/page).
+	base := resolveBaseURL(ctx)
+	apiBase := newsletterAPIBase(base)
+
 	for _, r := range recipients {
 		// Generate a per-recipient one-click unsubscribe token + headers.
-		unsubURL, headers := newsletterUnsubscribeLink(ctx, r)
+		unsubURL, headers := newsletterUnsubscribeLink(ctx, base, apiBase, r)
 
 		// Native open/click tracking for self-hosted MTA transport
 		// (§62) — injected BEFORE the unsubscribe footer so the
 		// one-click unsubscribe link is never wrapped by the click
 		// tracker (a wrapped POST would miss the unsubscribe endpoint).
-		body := injectNewsletterTracking(ctx, campaignID, r, htmlBody)
+		body := injectNewsletterTracking(apiBase, campaignID, r, htmlBody)
 
 		if unsubURL != "" {
 			body = appendUnsubscribeLink(body, unsubURL)
@@ -4382,7 +4382,8 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 	// and must carry List-Unsubscribe headers. The HTML <a> footer only
 	// applies to HTML bodies; a plain-text template override gets a bare
 	// URL line instead.
-	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, email)
+	digestBase := resolveBaseURL(ctx)
+	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, digestBase, newsletterAPIBase(digestBase), email)
 	if unsubURL != "" {
 		if isHTML {
 			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
@@ -5352,6 +5353,11 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	total := 0
 	q := gen.New(dbPool.Reader)
 
+	// Base URLs are invariant for the whole run — resolve once rather
+	// than per recipient (system_settings read each call).
+	digestBase := resolveBaseURL(ctx)
+	digestAPIBase := newsletterAPIBase(digestBase)
+
 	for lastEmail := ""; ; {
 		subscribers, err := q.ListDigestSubscriberEmailsPage(ctx, gen.ListDigestSubscriberEmailsPageParams{
 			PageLimit: pageSize, AfterEmail: lastEmail,
@@ -5372,7 +5378,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 			// Generate a per-recipient one-click unsubscribe token +
 			// headers (§62 Compliance, ADR-080 §4) and send via the
 			// marketing-category provider (ADR-015/ADR-080).
-			unsubURL, headers := newsletterUnsubscribeLink(ctx, recipient)
+			unsubURL, headers := newsletterUnsubscribeLink(ctx, digestBase, digestAPIBase, recipient)
 			htmlBody := body
 
 			if unsubURL != "" {

@@ -10,7 +10,6 @@
 package worker
 
 import (
-	"context"
 	"net/url"
 	"os"
 	"strings"
@@ -45,12 +44,12 @@ func newsletterRecipientTag(secret, recipient string) string {
 // open pixel is appended. Run BEFORE appendUnsubscribeLink so the
 // one-click unsubscribe URL is never wrapped (§62 self-hosted transport).
 // Returns the input unchanged when the feature is unconfigured — a
-// missing secret or API base must never block delivery.
-func injectNewsletterTracking(ctx context.Context, campaignID pgtype.UUID, recipient, htmlBody string) string {
+// missing secret, API base, or campaign ID must never block delivery
+// (a wrapped click with no campaign context would 400 on receipt).
+func injectNewsletterTracking(apiBase string, campaignID pgtype.UUID, recipient, htmlBody string) string {
 	secret := newsletterTrackingSecret()
-	apiBase := newsletterAPIBase(ctx)
 
-	if secret == "" || apiBase == "" {
+	if secret == "" || apiBase == "" || !campaignID.Valid {
 		return htmlBody
 	}
 

@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -12,10 +11,11 @@ import (
 
 const testTrackingSecret = "test-tracking-secret"
 
+const testAPIBase = "https://api.japa.test/api/v1"
+
 func setTrackingEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("JC_NEWSLETTER_TRACKING_SECRET", testTrackingSecret)
-	t.Setenv("JC_API_PUBLIC_URL", "https://api.japa.test/api/v1")
 }
 
 func testCampaignID(t *testing.T) pgtype.UUID {
@@ -55,7 +55,7 @@ func TestInjectNewsletterTrackingWrapsLinksAndPixel(t *testing.T) {
 	recipient := "reader@example.com"
 	body := `<p>Hi <a href="https://japa.to/a">link</a></p>`
 
-	out := injectNewsletterTracking(context.Background(), cid, recipient, body)
+	out := injectNewsletterTracking(testAPIBase, cid, recipient, body)
 
 	// The link is wrapped through the click endpoint with a valid signature.
 	idx := strings.Index(out, `href="`)
@@ -121,11 +121,19 @@ func TestInjectNewsletterTrackingWrapsLinksAndPixel(t *testing.T) {
 func TestInjectNewsletterTrackingSkipsWithoutSecret(t *testing.T) {
 	t.Setenv("JC_NEWSLETTER_TRACKING_SECRET", "")
 	t.Setenv("JC_NEWSLETTER_WEBHOOK_SECRET", "")
-	t.Setenv("JC_API_PUBLIC_URL", "https://api.japa.test/api/v1")
 
 	body := `<p>Hi <a href="https://japa.to/a">link</a></p>`
-	if got := injectNewsletterTracking(context.Background(), testCampaignID(t), "r@x.test", body); got != body {
+	if got := injectNewsletterTracking(testAPIBase, testCampaignID(t), "r@x.test", body); got != body {
 		t.Error("body must pass through unchanged when no secret is configured")
+	}
+}
+
+func TestInjectNewsletterTrackingSkipsInvalidCampaign(t *testing.T) {
+	setTrackingEnv(t)
+
+	body := `<p>Hi <a href="https://japa.to/a">link</a></p>`
+	if got := injectNewsletterTracking(testAPIBase, pgtype.UUID{}, "r@x.test", body); got != body {
+		t.Error("body must pass through unchanged when campaign ID is invalid")
 	}
 }
 

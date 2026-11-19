@@ -149,6 +149,10 @@ func HandleNewsletterPollBounces(ctx context.Context, t *asynq.Task) error {
 // up to cfg.batch messages, apply extracted suppressions, flag all
 // processed messages \Seen.
 func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
+	if cfg.user == "" || cfg.pass == "" {
+		return errors.New("imap: JC_BOUNCE_IMAP_USER and JC_BOUNCE_IMAP_PASS are required when HOST is set")
+	}
+
 	addr := cfg.host + ":" + cfg.port
 
 	var client *imapclient.Client
@@ -222,6 +226,11 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 
 	for _, msg := range msgs {
 		raw := msg.FindBodySection(bodySection)
+		if len(raw) == 0 {
+			// Body literal not returned — leave UNSEEN so the next poll
+			// re-fetches rather than dropping a possible bounce.
+			continue
+		}
 
 		markFailed := false
 
@@ -310,7 +319,7 @@ func parseBounceEvents(raw []byte) []bounceEvent {
 	// X-Failed-Recipients — Postfix/Gmail-style non-DSN delivery notices.
 	for _, hdr := range msg.Header["X-Failed-Recipients"] {
 		for _, addr := range strings.Split(hdr, ",") {
-			add(strings.TrimSpace(addr), "bounced")
+			add(bounceAddr(addr), "bounced")
 		}
 	}
 
@@ -412,14 +421,7 @@ func parseDeliveryStatusData(data []byte) []bounceEvent {
 
 		action := strings.ToLower(strings.TrimSpace(sub.Header.Get("Action")))
 		status := strings.TrimSpace(sub.Header.Get("Status"))
-
-		// Final-Recipient format: "rfc822;user@example.com"
-		addr := final
-		if idx := strings.Index(final, ";"); idx >= 0 {
-			addr = final[idx+1:]
-		}
-
-		addr = strings.TrimSpace(addr)
+		addr := bounceAddr(final)
 
 		if action == "failed" || strings.HasPrefix(status, "5") {
 			events = append(events, bounceEvent{email: addr, kind: "bounced"})
@@ -446,17 +448,37 @@ func parseFeedbackReport(part *multipart.Part) []bounceEvent {
 		return nil
 	}
 
-	addr := strings.TrimSpace(sub.Header.Get("Original-Rcpt-To"))
+	addr := sub.Header.Get("Original-Rcpt-To")
 	if addr == "" {
 		// Some FBLs omit Original-Rcpt-To; User-Agent-style generators put
 		// it in Original-Recipient or leave only the embedded original —
 		// in which case suppression can't be attributed safely.
-		addr = strings.TrimSpace(sub.Header.Get("Original-Recipient"))
+		addr = sub.Header.Get("Original-Recipient")
 	}
 
+	addr = bounceAddr(addr)
 	if addr == "" {
 		return nil
 	}
 
 	return []bounceEvent{{email: addr, kind: "complained"}}
+}
+
+// bounceAddr normalizes an address extracted from a bounce notice to a
+// bare mailbox: strips the "addrtype;" prefix used by Final-/Original-
+// Recipient fields (rfc822;user@x), display names, and angle brackets.
+// Without this, "rfc822;user@x" or "Name <user@x>" would be stored
+// verbatim and never match a subscriber row (suppression silently lost).
+func bounceAddr(raw string) string {
+	raw = strings.TrimSpace(raw)
+
+	if idx := strings.Index(raw, ";"); idx >= 0 {
+		raw = strings.TrimSpace(raw[idx+1:])
+	}
+
+	if a, err := mail.ParseAddress(raw); err == nil && a.Address != "" {
+		return a.Address
+	}
+
+	return strings.Trim(raw, `<>""'`)
 }

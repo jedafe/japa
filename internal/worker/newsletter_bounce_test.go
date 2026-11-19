@@ -101,12 +101,12 @@ func TestParseBounceEventsXFailedRecipients(t *testing.T) {
 	t.Parallel()
 
 	raw := "From: bounce@mta.example\r\n" +
-		"X-Failed-Recipients: a@example.com, B@Example.com\r\n" +
+		"X-Failed-Recipients: a@example.com, B@Example.com, Mail Daemon <c@example.com>\r\n" +
 		"\r\nbody\r\n"
 
 	events := parseBounceEvents([]byte(raw))
-	if len(events) != 2 {
-		t.Fatalf("events = %d, want 2: %+v", len(events), events)
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3: %+v", len(events), events)
 	}
 
 	for _, ev := range events {
@@ -117,6 +117,30 @@ func TestParseBounceEventsXFailedRecipients(t *testing.T) {
 
 	if events[1].email != "b@example.com" {
 		t.Errorf("address not normalized: %q", events[1].email)
+	}
+
+	if events[2].email != "c@example.com" {
+		t.Errorf("display-name address not normalized: %q", events[2].email)
+	}
+}
+
+func TestBounceAddr(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"rfc822;user@x.com":           "user@x.com",
+		" user@x.com ":                "user@x.com",
+		"Display Name <user@x.com>":   "user@x.com",
+		"<user@x.com>":                "user@x.com",
+		"rfc822; User Name <u@x.com>": "u@x.com",
+		"":                            "",
+		"garbage-no-at":               "garbage-no-at", // filtered later by add()
+	}
+
+	for in, want := range cases {
+		if got := bounceAddr(in); got != want {
+			t.Errorf("bounceAddr(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
