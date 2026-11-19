@@ -134,13 +134,21 @@
 	// invalidation effect must not clear form.parentId on a stale list.
 	let parentLoadedFor = $state('');
 
+	// Monotonic guard — an earlier audience's fetch resolving after a later
+	// one must not leave parentCandidates/parentLoadedFor mismatched.
+	let parentSeq = 0;
 	async function loadParentCandidates(audience: string) {
+		const seq = ++parentSeq;
 		parentLoadedFor = '';
 		const res = await docsApi.list(`audience=${encodeURIComponent(audience)}&limit=0`);
+		if (seq !== parentSeq) return;
 		if (res.ok) {
 			parentCandidates = res.data?.data ?? [];
+			parentLoadedFor = audience;
 		}
-		parentLoadedFor = audience;
+		// On failure keep the stale list for label resolution and leave
+		// parentLoadedFor cleared — the invalidation effect's gate then
+		// can't wipe a legit selection on a transient error.
 	}
 
 	$effect(() => {
@@ -256,7 +264,7 @@
 		return form.title !== s.title || form.slug !== s.slug || form.audience !== s.audience
 			|| form.status !== s.status || form.category !== s.category || form.subcategory !== s.subcategory
 			|| form.parentId !== s.parentId || form.position !== s.position
-			|| form.featureImageId !== s.featureImageId;
+			|| form.featureImageId !== s.featureImageId || form.summary !== s.summary;
 	});
 	function markClean() {
 		seededForm = { ...form };
@@ -336,6 +344,12 @@
 {#if loadError}
 	<div class="rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{loadError}
+	</div>
+{:else if docId && !editContentReady}
+	<!-- Edit mode: hold the whole form until the detail fetch lands — rendering
+	     empty fields then overwriting them would clobber early keystrokes. -->
+	<div class="rounded-md border px-3 py-16 text-center text-sm" style="border-color: var(--color-border); color: var(--color-muted)">
+		{t('docs.loading')}
 	</div>
 {:else}
 	<div class="space-y-3">
@@ -437,11 +451,6 @@
 		</div>
 		<div>
 			<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_label', 'Body')}</span>
-			{#if docId && !editContentReady}
-				<div class="rounded-md border px-3 py-8 text-center text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
-					{t('docs.body_loading', 'Loading page content…')}
-				</div>
-			{:else}
 				<RichTextEditor
 					bind:this={rte}
 					content={editSeed}
@@ -470,7 +479,6 @@
 						bodyPickerOpen = true;
 					}}
 				/>
-			{/if}
 		</div>
 		{#if docId}
 			<div>

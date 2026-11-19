@@ -8,10 +8,11 @@
 	import { goto } from '$app/navigation';
 
 	const canEdit = $derived(hasPermission('docs.admin'));
-	// Return target passed by the list page (?from=) — internal /docs paths only.
+	// Return target passed by the list page (?from=) — internal /docs paths only
+	// ('/docs', '/docs/…', '/docs?…' — not '/docsanything').
 	const backTo = $derived.by(() => {
 		const from = pageState.url.searchParams.get('from') ?? '';
-		return from.startsWith('/docs') ? from : '/docs';
+		return from === '/docs' || from.startsWith('/docs/') || from.startsWith('/docs?') ? from : '/docs';
 	});
 </script>
 

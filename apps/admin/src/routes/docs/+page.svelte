@@ -293,10 +293,6 @@
 		tblPage = 0;
 	}
 
-	function slugify(text: string): string {
-		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-	}
-
 	// Audience/status filters are URL-synced like the table's q/sort/page —
 	// a filtered review queue stays shareable and back-nav restores it.
 	function syncFilterUrl() {
