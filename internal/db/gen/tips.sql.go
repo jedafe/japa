@@ -296,6 +296,17 @@ func (q *Queries) CountTipsReceived(ctx context.Context, walletUserID pgtype.UUI
 	return column_1, err
 }
 
+const countTipsSent = `-- name: CountTipsSent :one
+SELECT count(*)::int FROM tips WHERE sender_user_id = $1
+`
+
+func (q *Queries) CountTipsSent(ctx context.Context, senderUserID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countTipsSent, senderUserID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createTipExternalLink = `-- name: CreateTipExternalLink :one
 INSERT INTO tip_external_links (tip_settings_id, kind, label, url, position)
 VALUES ($1, $2, $3, $4, $5) RETURNING id, tip_settings_id, kind, label, url, position, created_at, click_count

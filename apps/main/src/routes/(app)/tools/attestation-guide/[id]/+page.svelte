@@ -75,7 +75,7 @@
 	function openUpdateForm() {
 		if (!authed) {
 			const next = encodeURIComponent(page.url.pathname);
-			window.location.href = `/login?next=${next}`;
+			window.location.href = `/login?redirect=${next}`;
 			return;
 		}
 		showUpdateForm = true;

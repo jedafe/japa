@@ -47,7 +47,7 @@ const taskSettleStablecoin = "tips:settle_stablecoin"
 
 // Tip statuses.
 const (
-	StatusPending   = "pending"
+	StatusPending = "pending"
 	// StatusSettling is the claim state: a settle worker holds it between
 	// claim and completion so a concurrent refund/sweep can't flip the row
 	// mid-send (the onchain leg can't sit inside the status-write tx).
@@ -192,10 +192,18 @@ type LinkInput struct {
 
 // PublicConfig is what unauthenticated viewers learn about a recipient.
 type PublicConfig struct {
-	Enabled          bool           `json:"enabled"`
-	Methods          []string       `json:"methods"`
-	MinTipAmount     int64          `json:"min_tip_amount"`
-	FiatCurrency     string         `json:"fiat_currency,omitempty"`
+	Enabled      bool     `json:"enabled"`
+	Methods      []string `json:"methods"`
+	MinTipAmount int64    `json:"min_tip_amount"`
+	FiatCurrency string   `json:"fiat_currency,omitempty"`
+	// Fiat bounds and presets are minor units of FiatCurrency — emitted only
+	// when a fiat method is advertised. They are currency-aware (derived
+	// from currencies.credits_per_unit + the tips.min/max_fiat_* settings)
+	// so the dialog's preset row and min hint match what createFiatTip will
+	// accept for that currency (§125, Rule 16).
+	FiatMinMinor     int64          `json:"fiat_min_minor,omitempty"`
+	FiatMaxMinor     int64          `json:"fiat_max_minor,omitempty"`
+	FiatPresets      []int64        `json:"fiat_presets,omitempty"`
 	OCCollectiveSlug *string        `json:"oc_collective_slug,omitempty"`
 	ExternalLinks    []ExternalLink `json:"external_links"`
 	ThankYouMessage  *string        `json:"thank_you_message,omitempty"`
@@ -203,34 +211,34 @@ type PublicConfig struct {
 
 // Tip is the service-level tip record.
 type Tip struct {
-	ID                    pgtype.UUID        `json:"id"`
-	SenderUserID          pgtype.UUID        `json:"sender_user_id,omitempty"`
-	SenderName            string             `json:"sender_name"`
-	ExternalSenderName    *string            `json:"external_sender_name,omitempty"`
-	RecipientType         string             `json:"recipient_type"`
-	RecipientUserID       pgtype.UUID        `json:"recipient_user_id,omitempty"`
-	RecipientWalletUserID pgtype.UUID        `json:"recipient_wallet_user_id,omitempty"`
-	RecipientOrgID        pgtype.UUID        `json:"recipient_organization_id,omitempty"`
-	RecipientSpaceID      pgtype.UUID        `json:"recipient_space_id,omitempty"`
-	RecipientName         string             `json:"recipient_name,omitempty"`
-	ContentID             pgtype.UUID        `json:"content_id,omitempty"`
-	Method                string             `json:"method"`
-	CreditsAmount         int64              `json:"credits_amount"`
-	PointsAmount          int64              `json:"points_amount,omitempty"`
-	FiatAmount            *int64             `json:"fiat_amount,omitempty"`
-	FiatCurrency          *string            `json:"fiat_currency,omitempty"`
-	FeeAmount             int64              `json:"fee_amount"`
-	NetCredits            int64              `json:"net_credits"`
-	PaymentID             pgtype.UUID        `json:"payment_id,omitempty"`
-	OcContributionID      *string            `json:"oc_contribution_id,omitempty"`
-	Message               *string            `json:"message,omitempty"`
-	IsAnonymous           bool               `json:"is_anonymous"`
-	Status                string             `json:"status"`
+	ID                    pgtype.UUID `json:"id"`
+	SenderUserID          pgtype.UUID `json:"sender_user_id,omitempty"`
+	SenderName            string      `json:"sender_name"`
+	ExternalSenderName    *string     `json:"external_sender_name,omitempty"`
+	RecipientType         string      `json:"recipient_type"`
+	RecipientUserID       pgtype.UUID `json:"recipient_user_id,omitempty"`
+	RecipientWalletUserID pgtype.UUID `json:"recipient_wallet_user_id,omitempty"`
+	RecipientOrgID        pgtype.UUID `json:"recipient_organization_id,omitempty"`
+	RecipientSpaceID      pgtype.UUID `json:"recipient_space_id,omitempty"`
+	RecipientName         string      `json:"recipient_name,omitempty"`
+	ContentID             pgtype.UUID `json:"content_id,omitempty"`
+	Method                string      `json:"method"`
+	CreditsAmount         int64       `json:"credits_amount"`
+	PointsAmount          int64       `json:"points_amount,omitempty"`
+	FiatAmount            *int64      `json:"fiat_amount,omitempty"`
+	FiatCurrency          *string     `json:"fiat_currency,omitempty"`
+	FeeAmount             int64       `json:"fee_amount"`
+	NetCredits            int64       `json:"net_credits"`
+	PaymentID             pgtype.UUID `json:"payment_id,omitempty"`
+	OcContributionID      *string     `json:"oc_contribution_id,omitempty"`
+	Message               *string     `json:"message,omitempty"`
+	IsAnonymous           bool        `json:"is_anonymous"`
+	Status                string      `json:"status"`
 	// SettledVia records which rail landed the tip — credits (bonus
 	// ledger), backed (onchain wallet), or external (off-platform).
-	SettledVia            string             `json:"settled_via,omitempty"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at,omitempty"`
+	SettledVia string             `json:"settled_via,omitempty"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at,omitempty"`
 }
 
 // CreateTipInput is the POST /tips payload.

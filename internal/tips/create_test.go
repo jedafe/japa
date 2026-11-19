@@ -264,3 +264,48 @@ func TestCreateTipSpaceRecipientSnapshot(t *testing.T) {
 		t.Fatalf("space settlement wrong: %+v", p)
 	}
 }
+
+// The wire `amount` maps per-method: credits+stablecoin → CreditsAmount,
+// fiat providers → FiatAmount. Regression test for the stablecoin path
+// landing in FiatAmount (which failed every onchain tip at validation).
+func TestCreateTipInputFromRequest(t *testing.T) {
+	for _, tc := range []struct {
+		method   string
+		wantCr   int64
+		wantFiat int64
+	}{
+		{MethodCredits, 100, 0},
+		{MethodStablecoin, 42, 0},
+		{"stripe", 0, 500},
+		{"paystack", 0, 7500},
+		{"manual_transfer", 0, 1000},
+	} {
+		in, err := createTipInputFromRequest(createTipRequest{Method: tc.method, Amount: tc.wantCr + tc.wantFiat})
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", tc.method, err)
+		}
+		if in.CreditsAmount != tc.wantCr || in.FiatAmount != tc.wantFiat {
+			t.Fatalf("%s: got credits=%d fiat=%d, want credits=%d fiat=%d",
+				tc.method, in.CreditsAmount, in.FiatAmount, tc.wantCr, tc.wantFiat)
+		}
+	}
+
+	// Recipient id routes by type; content_id scans independently.
+	orgIDStr := "dddddddd-dddd-dddd-dddd-dddddddddddd"
+	in, err := createTipInputFromRequest(createTipRequest{
+		Method: MethodCredits, Amount: 5, RecipientType: RecipientOrganization, RecipientID: orgIDStr,
+		ContentID: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+	})
+	if err != nil {
+		t.Fatalf("org recipient: %v", err)
+	}
+	if in.RecipientOrgID.String() != orgIDStr || !in.ContentID.Valid {
+		t.Fatalf("org/content mapping wrong: %+v", in)
+	}
+	if _, err := createTipInputFromRequest(createTipRequest{Method: MethodCredits, Amount: 5, RecipientID: "not-a-uuid"}); err == nil {
+		t.Fatal("expected invalid recipient_id error")
+	}
+	if _, err := createTipInputFromRequest(createTipRequest{Method: MethodCredits, Amount: 5, ContentID: "not-a-uuid"}); err == nil {
+		t.Fatal("expected invalid content_id error")
+	}
+}

@@ -69,7 +69,7 @@ var Registry = []Feature{
 	{Key: "feature.escrow_services", Label: "Service Escrow", Description: "Squads 2-of-3 multisig escrow for mentorship/service bookings (§128)", Default: false, Category: "Commerce"},
 	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: true, Category: "Commerce", SettingsCategory: "ads"},
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},
-	{Key: "tips.enabled", Label: "Tips & Donations", Description: "Creator/org/platform tipping — points, credits, fiat, and Open Collective (§125)", Default: false, Category: "Commerce", SettingsCategory: "tips"},
+	{Key: "tips.enabled", Label: "Tips & Donations", Description: "Creator/org/platform tipping — credits, fiat, and Open Collective (§125)", Default: false, Category: "Commerce", SettingsCategory: "tips"},
 	{Key: "tips.opencollective", Label: "Open Collective Tips", Description: "Open Collective collective linking and contribution sync (§125)", Default: false, Category: "Commerce"},
 	{Key: "tips.kofi", Label: "Ko-fi Tips", Description: "Ko-fi webhook donation imports (§125)", Default: false, Category: "Commerce"},
 	{Key: "tips.buymeacoffee", Label: "Buy Me a Coffee Tips", Description: "Buy Me a Coffee supporters sync (§125)", Default: false, Category: "Commerce"},

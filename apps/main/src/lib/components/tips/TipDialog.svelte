@@ -9,7 +9,7 @@
 	import { page } from '$app/state';
 	import { t } from '#lib/i18n/index.js';
 	import { Modal } from '#lib/components/ui/index.js';
-	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, getContentTipSummary, type TipConfig, type TipSummary } from '#lib/api/tips.js';
+	import { sendTip, newIdempotencyKey, fiatExponent, fiatMajor, getWalletBalance, getContentTipSummary, type TipConfig, type TipSummary } from '#lib/api/tips.js';
 	import { getAccessToken } from '#lib/api/token.svelte.js';
 	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn } from 'lucide-svelte';
 
@@ -38,27 +38,40 @@
 	// (no sender identity; is_anonymous donors still count toward it).
 	let summary = $state<TipSummary | null>(null);
 
-	const authed = $derived(!!getAccessToken());
-	const returnUrl = $derived(`/login?return=${encodeURIComponent(page.url.pathname)}`);
+	const authed = $derived(!!page.data.isAuthed);
+	const returnUrl = $derived(`/login?redirect=${encodeURIComponent(page.url.pathname)}`);
 
+	// Credits-denominated methods settle from a wallet rail (credits ledger
+	// or the §128 stablecoin rail) — raw credit amounts, no currency. Fiat
+	// provider methods convert major→minor; opencollective renders as an
+	// outbound link, never a selectable method.
+	const WALLET_METHODS = ['credits', 'stablecoin'];
 	const methods = $derived(config.methods ?? []);
-	const internal = $derived(methods.filter((m) => m === 'credits'));
-	const fiat = $derived(methods.filter((m) => !['credits', 'opencollective'].includes(m)));
+	const internal = $derived(methods.filter((m) => WALLET_METHODS.includes(m)));
+	const fiat = $derived(methods.filter((m) => !WALLET_METHODS.includes(m) && m !== 'opencollective'));
 	const sendable = $derived(internal.length + fiat.length > 0);
 
-	const currency = $derived(config.fiat_currency ?? 'NGN');
+	const currency = $derived(config.fiat_currency ?? 'USD');
 	const isFiat = $derived(fiat.includes(method));
 	// ISO-4217 minor-unit exponents — shared helper mirrors the backend's
 	// currencyExponent() so the input stays in major units.
 	const exponent = $derived(fiatExponent(currency));
-	const unit = $derived(method === 'credits' ? 'credits' : currency);
+	const unit = $derived(isFiat ? currency : 'credits');
 
-	// §125 frontend spec — amount presets + custom input.
+	// §125 frontend spec — amount presets + custom input. Fiat presets come
+	// from the public config (minor units, currency-aware) so a weak-
+	// currency recipient doesn't offer amounts that always fail the
+	// credit-equivalent minimum; wallet methods keep stable credit presets.
 	const presets = $derived(
-		method === 'credits' ? [5, 10, 25, 50] : [5, 10, 25, 100]
+		isFiat ? (config.fiat_presets ?? []).map((minor) => fiatMajor(minor, currency)) : [5, 10, 25, 50]
+	);
+	// Effective minimum in the method's own units — for fiat that is the
+	// stricter of the recipient minimum and the platform currency floor.
+	const minMethodUnits = $derived(
+		isFiat ? Math.max(config.min_tip_amount ?? 0, config.fiat_min_minor ?? 0) : (config.min_tip_amount ?? 0)
 	);
 	const minMajor = $derived(
-		config.min_tip_amount ? (isFiat ? config.min_tip_amount / Math.pow(10, exponent) : config.min_tip_amount) : 0
+		minMethodUnits ? (isFiat ? minMethodUnits / Math.pow(10, exponent) : minMethodUnits) : 0
 	);
 	const balanceHint = $derived(
 		method === 'credits' && balance.credits != null
@@ -89,7 +102,7 @@
 					if (!res.error && res.data && res.data.tip_count > 0) summary = res.data;
 				});
 			}
-			if (getAccessToken()) {
+			if (authed) {
 				getWalletBalance().then((res) => {
 					if (!res.error && res.data) {
 						balance = { credits: res.data.credits_balance };
@@ -112,7 +125,7 @@
 			error = t('tips.invalid_amount', 'Enter a valid amount');
 			return;
 		}
-		if (config.min_tip_amount && amt < config.min_tip_amount) {
+		if (minMethodUnits && amt < minMethodUnits) {
 			error = t('tips.below_minimum', 'Below the recipient minimum');
 			return;
 		}
@@ -212,7 +225,7 @@
 				{#each internal as m}
 					<button type="button" onclick={() => (method = m)}
 						class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition {method === m ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'}">
-						<Coins class="size-4" />{t('tips.credits')}
+						<Coins class="size-4" />{m === 'stablecoin' ? t('tips.stablecoin', 'Stablecoin (onchain)') : t('tips.credits')}
 					</button>
 				{/each}
 			</div>

@@ -8,10 +8,12 @@
 
 	let tab = $state<'received' | 'sent'>('received');
 	let items = $state<Tip[]>([]);
+	let total = $state<number | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let page = $state(1);
 	const pageSize = 20;
+	const totalPages = $derived(total != null ? Math.max(1, Math.ceil(total / pageSize)) : null);
 
 	async function load() {
 		loading = true;
@@ -23,6 +25,8 @@
 			return;
 		}
 		items = res.data ?? [];
+		const meta = res.envelope?.meta as { total_sent?: number; total_received?: number } | undefined;
+		total = (tab === 'received' ? meta?.total_received : meta?.total_sent) ?? null;
 	}
 
 	$effect(() => {
@@ -90,8 +94,8 @@
 				class="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40">
 				{t('tips.prev', 'Previous')}
 			</button>
-			<span class="text-sm text-muted-foreground">{page}</span>
-			<button onclick={() => { if (items.length === pageSize) page += 1; }} disabled={items.length < pageSize}
+			<span class="text-sm text-muted-foreground">{totalPages != null ? `${page} / ${totalPages}` : page}</span>
+			<button onclick={() => { page += 1; }} disabled={totalPages != null ? page >= totalPages : items.length < pageSize}
 				class="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40">
 				{t('tips.next', 'Next')}
 			</button>

@@ -50,6 +50,7 @@ type tipStore interface {
 	insertAuditLog(ctx context.Context, actorID pgtype.UUID, action, targetType, targetID, metadata string) error
 
 	listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
+	countTipsSent(ctx context.Context, senderID pgtype.UUID) (int32, error)
 	listTipsReceived(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
 	countTipsReceived(ctx context.Context, userID pgtype.UUID) (int32, error)
 	getContentTitle(ctx context.Context, contentID pgtype.UUID) (string, error)
@@ -285,6 +286,10 @@ func (s *Store) insertAuditLog(ctx context.Context, actorID pgtype.UUID, action,
 
 func (s *Store) listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, offset int32) ([]gen.Tip, error) {
 	return s.read.ListTipsSent(ctx, gen.ListTipsSentParams{SenderUserID: senderID, PageLimit: limit, PageOffset: offset})
+}
+
+func (s *Store) countTipsSent(ctx context.Context, senderID pgtype.UUID) (int32, error) {
+	return s.read.CountTipsSent(ctx, senderID)
 }
 
 func (s *Store) listTipsReceived(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Tip, error) {

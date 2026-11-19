@@ -42,10 +42,13 @@
 		if (res.ok && res.data) stats = res.data as typeof stats;
 	});
 
-	// ISO-4217 minor-unit exponent — mirrors internal/tips currencyExponent.
+	// ISO-4217 minor-unit exponent — mirrors internal/tips currencyExponent
+	// (every active ISO currency with a non-×100 minor unit; default 2).
+	const FIAT_EXP_0 = ['BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF'];
+	const FIAT_EXP_3 = ['BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND'];
 	function fiatExponent(currency: string | null | undefined): number {
-		if (['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(currency ?? '')) return 0;
-		if (['BHD', 'JOD', 'KWD', 'OMR'].includes(currency ?? '')) return 3;
+		if (FIAT_EXP_0.includes(currency ?? '')) return 0;
+		if (FIAT_EXP_3.includes(currency ?? '')) return 3;
 		return 2;
 	}
 

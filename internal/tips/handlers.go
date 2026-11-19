@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -470,7 +471,7 @@ func (h *Handlers) DisconnectOrgOC(w http.ResponseWriter, r *http.Request) {
 // --- Tip creation ---------------------------------------------------------------
 
 // createTipRequest is the POST /api/v1/tips body. `amount` maps onto the
-// per-method column: credits→credits_amount, fiat→fiat_amount.
+// per-method column: credits/stablecoin→credits_amount, fiat→fiat_amount.
 type createTipRequest struct {
 	RecipientType string `json:"recipient_type"`
 	RecipientID   string `json:"recipient_id"`
@@ -480,6 +481,44 @@ type createTipRequest struct {
 	Currency      string `json:"currency"`
 	Message       string `json:"message"`
 	IsAnonymous   bool   `json:"is_anonymous"`
+}
+
+// createTipInputFromRequest maps the wire body onto CreateTipInput. The
+// stablecoin rail is credits-denominated like the ledger path (§128 — the
+// worker converts at the USD rate), so its amount lands in CreditsAmount,
+// not FiatAmount — routing it through the fiat field makes every onchain
+// tip fail amount validation before it can be inserted.
+func createTipInputFromRequest(in createTipRequest) (CreateTipInput, error) {
+	var input CreateTipInput
+	input.Method = in.Method
+	input.RecipientType = in.RecipientType
+	input.Message = in.Message
+	input.IsAnonymous = in.IsAnonymous
+	input.FiatCurrency = in.Currency
+	if in.Method == MethodCredits || in.Method == MethodStablecoin {
+		input.CreditsAmount = in.Amount
+	} else {
+		input.FiatAmount = in.Amount
+	}
+	if in.RecipientID != "" {
+		var rid pgtype.UUID
+		if err := rid.Scan(in.RecipientID); err != nil {
+			return CreateTipInput{}, fmt.Errorf("invalid recipient_id")
+		}
+		if in.RecipientType == RecipientOrganization {
+			input.RecipientOrgID = rid
+		} else if in.RecipientType == RecipientSpace {
+			input.RecipientSpaceID = rid
+		} else {
+			input.RecipientUserID = rid
+		}
+	}
+	if in.ContentID != "" {
+		if err := input.ContentID.Scan(in.ContentID); err != nil {
+			return CreateTipInput{}, fmt.Errorf("invalid content_id")
+		}
+	}
+	return input, nil
 }
 
 // CreateTip handles POST /api/v1/tips — Rule 9 Idempotency-Key required.
@@ -503,36 +542,10 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input CreateTipInput
-	input.Method = in.Method
-	input.RecipientType = in.RecipientType
-	input.Message = in.Message
-	input.IsAnonymous = in.IsAnonymous
-	input.FiatCurrency = in.Currency
-	if in.Method == MethodCredits {
-		input.CreditsAmount = in.Amount
-	} else {
-		input.FiatAmount = in.Amount
-	}
-	if in.RecipientID != "" {
-		var rid pgtype.UUID
-		if err := rid.Scan(in.RecipientID); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid recipient_id")
-			return
-		}
-		if in.RecipientType == RecipientOrganization {
-			input.RecipientOrgID = rid
-		} else if in.RecipientType == RecipientSpace {
-			input.RecipientSpaceID = rid
-		} else {
-			input.RecipientUserID = rid
-		}
-	}
-	if in.ContentID != "" {
-		if err := input.ContentID.Scan(in.ContentID); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid content_id")
-			return
-		}
+	input, err := createTipInputFromRequest(in)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", err.Error())
+		return
 	}
 
 	res, err := h.service.CreateTip(r.Context(), user.UserID, input, idemKey)
@@ -656,7 +669,12 @@ func (h *Handlers) ListMyTipsSent(w http.ResponseWriter, r *http.Request) {
 		writeTipError(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips})
+	total, err := h.service.CountTipsSent(r.Context(), user.UserID)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tips, "meta": map[string]any{"total_sent": total}})
 }
 
 // ListMyTipsReceived handles GET /api/v1/me/tips/received.

@@ -130,6 +130,9 @@ WHERE id = @id AND status IN ('pending', 'failed', 'settling');
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id
 ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
+-- name: CountTipsSent :one
+SELECT count(*)::int FROM tips WHERE sender_user_id = @sender_user_id;
+
 -- name: ListTipsReceived :many
 -- recipient_wallet_user_id snapshots the wallet a tip settled into for every
 -- recipient kind — org and space tips land on the owner's wallet too, so the

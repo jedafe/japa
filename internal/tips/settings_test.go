@@ -19,6 +19,7 @@ type fakeStore struct {
 	links          map[pgtype.UUID][]gen.TipExternalLink
 	linkByID       map[pgtype.UUID]gen.TipExternalLink
 	ocTips         map[string]gen.Tip
+	currencies     map[string]gen.Currency
 	inserted       []gen.InsertTipParams
 	settled        []settleWalletParams
 	emailToUser    map[string]pgtype.UUID
@@ -51,6 +52,7 @@ func newFakeStore() *fakeStore {
 		linkByID:    map[pgtype.UUID]gen.TipExternalLink{},
 		ocTips:      map[string]gen.Tip{},
 		emailToUser: map[string]pgtype.UUID{},
+		currencies:  map[string]gen.Currency{},
 	}
 }
 
@@ -182,6 +184,7 @@ func (f *fakeStore) listTipsSent(context.Context, pgtype.UUID, int32, int32) ([]
 func (f *fakeStore) listTipsReceived(context.Context, pgtype.UUID, int32, int32) ([]gen.Tip, error) {
 	return nil, nil
 }
+func (f *fakeStore) countTipsSent(context.Context, pgtype.UUID) (int32, error)     { return 0, nil }
 func (f *fakeStore) countTipsReceived(context.Context, pgtype.UUID) (int32, error) { return 0, nil }
 func (f *fakeStore) contentTipSummary(context.Context, pgtype.UUID) (gen.ContentTipSummaryRow, error) {
 	return gen.ContentTipSummaryRow{}, nil
@@ -210,7 +213,10 @@ func (f *fakeStore) getLegacyTipPoints(context.Context, []pgtype.UUID) ([]gen.Ge
 func (f *fakeStore) isMentor(context.Context, pgtype.UUID) (bool, error) {
 	return f.mentor, f.mentorErr
 }
-func (f *fakeStore) getCurrencyByCode(context.Context, string) (gen.Currency, error) {
+func (f *fakeStore) getCurrencyByCode(_ context.Context, code string) (gen.Currency, error) {
+	if c, ok := f.currencies[code]; ok {
+		return c, nil
+	}
 	return gen.Currency{}, ErrNotFound
 }
 func (f *fakeStore) getContentAuthorID(context.Context, pgtype.UUID) (pgtype.UUID, error) {
@@ -326,7 +332,7 @@ func TestPublicConfigMethods(t *testing.T) {
 	}
 	fs.links[settingID] = []gen.TipExternalLink{{Kind: "paypal", Label: "PayPal", Url: "https://paypal.me/x"}}
 
-	svc := &Service{store: fs, perms: fakePerms{map[string]bool{"tips.receive": true}}}
+	svc := &Service{store: fs, siteURL: "https://japa.example", perms: fakePerms{map[string]bool{"tips.receive": true}}}
 	cfg, err := svc.PublicConfig(context.Background(), owner)
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
@@ -500,7 +506,7 @@ func TestPublicConfigSpaceGates(t *testing.T) {
 		if withPerm {
 			perms[ownerID] = map[string]bool{"tips.receive": true}
 		}
-		return &Service{store: fs, perms: perms}, fs
+		return &Service{store: fs, siteURL: "https://japa.example", perms: perms}, fs
 	}
 
 	// Eligible space + paying owner → enabled, external surfaces shown.
@@ -557,4 +563,87 @@ func (f *fakeStore) setBMCCredentials(context.Context, string, pgtype.UUID, *str
 func (f *fakeStore) clearBMCCredentials(context.Context, string, pgtype.UUID) error { return nil }
 func (f *fakeStore) listSettingsWithBMCToken(context.Context) ([]gen.TipSetting, error) {
 	return nil, nil
+}
+
+// PublicConfig fiat bounds + presets — currency-aware so weak currencies
+// don't advertise amounts that always fail tips.min_fiat_credits.
+func TestPublicConfigFiatBounds(t *testing.T) {
+	newSvc := func(fs *fakeStore, settings map[string]any) *Service {
+		fs.mentor = true
+		return &Service{
+			store:    fs,
+			settings: fakeSettings{m: settings},
+			perms:    fakePerms{map[string]bool{"tips.receive": true}},
+			features: fakeFeatures{on: map[string]bool{}},
+		}
+	}
+	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
+
+	// USD at 100 cr/$: presets land at $5/$10/$25/$100 in minor units.
+	fs := newFakeStore()
+	fs.currencies["USD"] = gen.Currency{CreditsPerUnit: 100}
+	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+		AcceptCredits: false, AcceptFiat: true,
+	}
+	cfg, err := newSvc(fs, map[string]any{
+		"tips.enabled": true, "wallet.default_currency": "USD",
+	}).PublicConfig(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if cfg.FiatMinMinor != 100 || cfg.FiatMaxMinor != 1_000_000 {
+		t.Fatalf("USD bounds: min=%d max=%d", cfg.FiatMinMinor, cfg.FiatMaxMinor)
+	}
+	want := []int64{500, 1000, 2500, 10000}
+	if len(cfg.FiatPresets) != len(want) {
+		t.Fatalf("USD presets: %v", cfg.FiatPresets)
+	}
+	for i, p := range cfg.FiatPresets {
+		if p != want[i] {
+			t.Fatalf("USD presets: %v, want %v", cfg.FiatPresets, want)
+		}
+	}
+
+	// NGN at ~0.065 cr/₦: the 100-credit floor forces ~₦1,539 minimum and
+	// only the ~$5-equivalent preset survives inside max_fiat_minor.
+	fs = newFakeStore()
+	fs.currencies["NGN"] = gen.Currency{CreditsPerUnit: 0.065}
+	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+		AcceptCredits: false, AcceptFiat: true,
+	}
+	cfg, err = newSvc(fs, map[string]any{
+		"tips.enabled": true, "wallet.default_currency": "NGN",
+	}).PublicConfig(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if cfg.FiatMinMinor <= 100 {
+		t.Fatalf("NGN min should exceed the raw minor floor, got %d", cfg.FiatMinMinor)
+	}
+	if len(cfg.FiatPresets) == 0 {
+		t.Fatal("NGN presets should keep the ~$5-equivalent ₦10,000")
+	}
+	for _, p := range cfg.FiatPresets {
+		if p < cfg.FiatMinMinor || p > cfg.FiatMaxMinor {
+			t.Fatalf("preset %d outside NGN bounds [%d,%d]", p, cfg.FiatMinMinor, cfg.FiatMaxMinor)
+		}
+	}
+
+	// Unknown currency → bounds/presets omitted (client falls back).
+	fs = newFakeStore()
+	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+		AcceptCredits: false, AcceptFiat: true,
+	}
+	cfg, err = newSvc(fs, map[string]any{
+		"tips.enabled": true, "wallet.default_currency": "XXX",
+	}).PublicConfig(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if cfg.FiatMinMinor != 0 || cfg.FiatMaxMinor != 0 || cfg.FiatPresets != nil {
+		t.Fatalf("unknown currency should omit fiat bounds: %+v", cfg)
+	}
 }

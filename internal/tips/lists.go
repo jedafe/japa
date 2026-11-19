@@ -37,6 +37,12 @@ func (s *Service) CountTipsReceived(ctx context.Context, userID pgtype.UUID) (in
 	return s.store.countTipsReceived(ctx, userID)
 }
 
+// CountTipsSent totals the member's outgoing tips — mirrors the received
+// count so the sent tab can render a total like the received one does.
+func (s *Service) CountTipsSent(ctx context.Context, senderID pgtype.UUID) (int32, error) {
+	return s.store.countTipsSent(ctx, senderID)
+}
+
 // ContentTipSummary returns the public aggregate for a content item's
 // "Supported" affordance — counts only, no donor identities.
 func (s *Service) ContentTipSummary(ctx context.Context, contentID pgtype.UUID) (gen.ContentTipSummaryRow, error) {

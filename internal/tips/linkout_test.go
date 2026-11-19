@@ -217,3 +217,28 @@ func TestImportKofiWebhook(t *testing.T) {
 		t.Fatal("flag-off import should be refused")
 	}
 }
+
+// Without a configured site base URL the tracked /out redirect can't be
+// built — public configs must hide links rather than leak raw destinations.
+func TestPublicConfigLinksHiddenWithoutSiteURL(t *testing.T) {
+	fs := newFakeStore()
+	fs.mentor = true
+	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
+	settingID := uid(t, "22222222-2222-2222-2222-222222222222")
+	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+		ID: settingID, OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+		AcceptCredits: false, AcceptFiat: false, AcceptExternal: true,
+	}
+	fs.links[settingID] = []gen.TipExternalLink{
+		{Kind: "paypal", Label: "x", Url: "https://example.com/pay"},
+	}
+
+	svc := &Service{store: fs, siteURL: "", perms: fakePerms{map[string]bool{"tips.receive": true}}}
+	cfg, err := svc.PublicConfig(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if len(cfg.ExternalLinks) != 0 {
+		t.Fatalf("expected links hidden without siteURL, got %+v", cfg.ExternalLinks)
+	}
+}

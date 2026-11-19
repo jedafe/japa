@@ -2,6 +2,7 @@ package tips
 
 import (
 	"context"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
@@ -236,6 +237,102 @@ func (s *Service) providerConfigured(method string) bool {
 	return false
 }
 
+// hasFiatMethod reports whether the advertised method list includes a §17
+// fiat provider.
+func hasFiatMethod(methods []string) bool {
+	for _, m := range methods {
+		if fiatMethods[m] {
+			return true
+		}
+	}
+	return false
+}
+
+// fiatPublicBounds derives the effective fiat bounds (minor units of the
+// configured currency) and a currency-aware preset list for the public
+// config — the same constraints createFiatTip enforces at create time:
+//
+//	min = max(tips.min_fiat_minor, recipient min_tip_amount,
+//	          minor units needed for net ≥ tips.min_fiat_credits after fee)
+//	max = min(tips.max_fiat_minor,
+//	          minor units needed for gross ≤ tips.max_fiat_credits)
+//
+// Presets target the familiar ~$5/$10/$25/$100 credit equivalents, snapped
+// to 1-2-5 "nice" major units of the currency, filtered to the bounds.
+// Zero values mean "not computable here" (no settings seam, unknown
+// currency, or a 100%-fee config that can never settle) — the client then
+// falls back to its own minimum display instead of showing wrong presets.
+func (s *Service) fiatPublicBounds(ctx context.Context, currency string, recipientMinMinor int64) (int64, int64, []int64) {
+	if s.settings == nil || s.store == nil || currency == "" {
+		return 0, 0, nil
+	}
+	cur, err := s.store.getCurrencyByCode(ctx, currency)
+	if err != nil || cur.CreditsPerUnit <= 0 {
+		return 0, 0, nil
+	}
+	exp := currencyExponent(currency)
+	div := math.Pow(10, float64(exp))
+	cpu := cur.CreditsPerUnit
+
+	minMinor := int64(s.settings.GetIntOr(ctx, "tips.min_fiat_minor", 100))
+	maxMinor := int64(s.settings.GetIntOr(ctx, "tips.max_fiat_minor", 1_000_000))
+	if recipientMinMinor > minMinor {
+		minMinor = recipientMinMinor
+	}
+	// tips.min_fiat_credits bounds the NET (after fee) — the input amount
+	// must gross enough that net ≥ minCredits, so divide by (1 − fee%).
+	feePct := int64(s.feePercent(ctx))
+	minCredits := int64(s.settings.GetIntOr(ctx, "tips.min_fiat_credits", 100))
+	if minCredits < 1 {
+		minCredits = 1
+	}
+	if feePct >= 100 {
+		return 0, 0, nil // no amount can ever net a credit — nothing usable to emit
+	}
+	minGross := math.Ceil(float64(minCredits) * 100 / float64(100-feePct))
+	if need := int64(math.Ceil(minGross * div / cpu)); need > minMinor {
+		minMinor = need
+	}
+	maxCredits := int64(s.settings.GetIntOr(ctx, "tips.max_fiat_credits", 1_000_000))
+	if cap := int64(math.Floor(float64(maxCredits) * div / cpu)); cap < maxMinor {
+		maxMinor = cap
+	}
+
+	// Presets: ~$5/$10/$25/$100 credit-equivalents snapped to 1-2-5 majors.
+	presets := make([]int64, 0, 4)
+	for _, target := range []int64{500, 1000, 2500, 10000} {
+		minor := int64(math.Round(niceMajor(float64(target)/cpu) * div))
+		if minor >= minMinor && minor <= maxMinor && (len(presets) == 0 || minor > presets[len(presets)-1]) {
+			presets = append(presets, minor)
+		}
+	}
+	return minMinor, maxMinor, presets
+}
+
+// niceMajor snaps a major-unit amount to the nearest 1-2-2.5-5 increment of
+// its own magnitude (7.7k→10k, 704→500, 25→25, 1.52→2) so presets stay
+// "round" in any currency.
+func niceMajor(v float64) float64 {
+	if v <= 0 {
+		return 0
+	}
+	mag := math.Pow(10, math.Floor(math.Log10(v)))
+	n := v / mag
+	switch {
+	case n < 1.5:
+		n = 1
+	case n < 2.25:
+		n = 2
+	case n < 3.75:
+		n = 2.5
+	case n < 7.5:
+		n = 5
+	default:
+		n = 10
+	}
+	return n * mag
+}
+
 // PublicConfig returns the unauthenticated view of a recipient's tip config.
 func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, error) {
 	st, err := s.GetSettings(ctx, owner)
@@ -295,6 +392,11 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		}
 	}
 	cfg.ThankYouMessage = st.ThankYouMessage
+	// Currency-aware fiat bounds + presets — without them the dialog can't
+	// know that ₦5 is far below tips.min_fiat_credits while $5 is fine.
+	if hasFiatMethod(cfg.Methods) {
+		cfg.FiatMinMinor, cfg.FiatMaxMinor, cfg.FiatPresets = s.fiatPublicBounds(ctx, cfg.FiatCurrency, st.MinTipAmount)
+	}
 	// External links are a paying-tier surface — a user whose tips.receive
 	// grant lapsed (downgrade) stops advertising them even while the rows
 	// remain stored. The implicit mentor grant does not qualify here either.
@@ -346,14 +448,17 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		}
 		links = filtered
 		// Public surfaces get the click-tracked redirect URL — the stored
-		// URL stays raw for owner editing (§125 external links).
+		// URL stays raw for owner editing (§125 external links). When the
+		// site base URL isn't configured the tracked redirect can't be
+		// built, so the links stay hidden rather than leaking the raw
+		// destinations without click tracking or affiliate injection.
 		if s.siteURL != "" {
 			base := strings.TrimRight(s.siteURL, "/")
 			for i := range links {
 				links[i].URL = base + "/api/v1/tips/links/" + links[i].ID.String() + "/out"
 			}
+			cfg.ExternalLinks = links
 		}
-		cfg.ExternalLinks = links
 	}
 	return cfg, nil
 }

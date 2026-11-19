@@ -16,6 +16,12 @@ export interface TipConfig {
 	methods: string[];
 	min_tip_amount?: number;
 	fiat_currency?: string;
+	/** Effective fiat bounds + presets in minor units of fiat_currency —
+	 *  currency-aware (§125 Rule 16): emitted by the backend so a weak-
+	 *  currency recipient doesn't show presets that always fail min checks. */
+	fiat_min_minor?: number;
+	fiat_max_minor?: number;
+	fiat_presets?: number[];
 	thank_you_message?: string | null;
 	oc_collective_slug?: string | null;
 	external_links?: TipExternalLink[];
@@ -116,10 +122,12 @@ export const connectBMC = (body: { api_token: string; page_slug?: string }) =>
 	api.put<TipSettings>('/me/tip-settings/buymeacoffee', body);
 export const disconnectBMC = () => api.delete<void>('/me/tip-settings/buymeacoffee');
 
+// getEnvelope so callers can read meta.total_sent / meta.total_received
+// for the page-count indicator — api.get drops the meta sidecar.
 export const listTipsSent = (page = 1, pageSize = 20) =>
-	api.get<Tip[]>(`/me/tips/sent?page=${page}&page_size=${pageSize}`);
+	api.getEnvelope<Tip[]>(`/me/tips/sent?page=${page}&page_size=${pageSize}`);
 export const listTipsReceived = (page = 1, pageSize = 20) =>
-	api.get<Tip[]>(`/me/tips/received?page=${page}&page_size=${pageSize}`);
+	api.getEnvelope<Tip[]>(`/me/tips/received?page=${page}&page_size=${pageSize}`);
 
 // Space tips received — owner/moderator ledger (§05 amendment).
 export const listSpaceTips = (slug: string, page = 1, pageSize = 20) =>
