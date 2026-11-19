@@ -459,6 +459,7 @@ type DocsService interface {
 	UpdateDocPage(ctx context.Context, id pgtype.UUID, req DocsUpdatePageRequest) error
 	ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
 	PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
+	DeleteDocPage(ctx context.Context, id pgtype.UUID) error
 }
 
 // DocsOrganizer is the function-type bridge for docs.organize. §44
@@ -517,6 +518,44 @@ type DocsOrganizeEntry struct {
 	ID       pgtype.UUID  `json:"id"`
 	ParentID *pgtype.UUID `json:"parent_id,omitempty"`
 	Position int32        `json:"position"`
+}
+
+// ---------------------------------------------------------------------------
+// Settings tools (settings.get / settings.set)
+// ---------------------------------------------------------------------------
+
+// SettingsStore is the raw read/write subset of *config.Settings the
+// settings.* tools need. GetSetting returns the stored JSON value as a raw
+// string; UpdateSettingsBatchWithPublic upserts serialized JSON values and
+// stamps is_public per key. nil disables the settings tools.
+type SettingsStore interface {
+	GetSetting(ctx context.Context, key string) (string, error)
+	UpdateSettingsBatchWithPublic(ctx context.Context, settings map[string][]byte, isPublic map[string]bool) error
+}
+
+// AgentSettingInfo mirrors control.SettingInfo — the catalog metadata view
+// the settings tools need for safe get/set decisions. Defined locally
+// because internal/control imports internal/ai (cycle), so the server
+// wiring supplies a SettingsCatalog adapter over control's lookups.
+type AgentSettingInfo struct {
+	// Known reports whether key is catalogued. Uncatalogued keys are
+	// refused (fail-closed — an unknown key could be sensitive or a dead
+	// row from a typo).
+	Known       bool
+	Type        string
+	Description string
+	Sensitive   bool
+	Deprecated  bool
+	Public      bool
+}
+
+// SettingsCatalog is the bridge into the control settings catalog.
+// LookupSetting resolves key metadata; ValidateSetting checks a raw
+// (unquoted) scalar value against the catalog type/bounds/options.
+// nil → the settings tools refuse all keys.
+type SettingsCatalog interface {
+	LookupSetting(key string) AgentSettingInfo
+	ValidateSetting(key, raw string) error
 }
 
 // MenusService is the subset of internal/menus.Service the Phase 9 menu
@@ -708,6 +747,8 @@ type ToolDeps struct {
 	Academy          AcademyStore            // nil → academy tools return "not configured"
 	Docs             DocsService             // nil → docs tools return "not configured"
 	DocsOrganize     DocsOrganizer           // nil → docs.organize returns "not configured"
+	SettingsStore    SettingsStore           // nil → settings.get/set return "not configured"
+	SettingsCatalog  SettingsCatalog         // nil → settings.get/set refuse all keys
 	Menus            MenusService            // nil → menu tools return "not configured"
 	Users            UsersService            // nil → user tools return "not configured"
 	CustomFieldDefs  CustomFieldDefsService  // nil → field/group definition tools return "not configured"
@@ -1548,6 +1589,16 @@ func (d *ToolDeps) WithDocs(s DocsService) *ToolDeps { d.Docs = s; return d }
 
 // WithDocsOrganizer injects the docs.organize bridge (Phase 9).
 func (d *ToolDeps) WithDocsOrganizer(f DocsOrganizer) *ToolDeps { d.DocsOrganize = f; return d }
+
+// WithSettingsStore wires the raw settings read/write service (settings.* tools).
+func (d *ToolDeps) WithSettingsStore(s SettingsStore) *ToolDeps { d.SettingsStore = s; return d }
+
+// WithSettingsCatalog wires the settings catalog metadata bridge
+// (settings.* tools). nil → the tools refuse all keys.
+func (d *ToolDeps) WithSettingsCatalog(c SettingsCatalog) *ToolDeps {
+	d.SettingsCatalog = c
+	return d
+}
 
 // WithMenus injects the menus service (Phase 9 menu tools).
 func (d *ToolDeps) WithMenus(s MenusService) *ToolDeps { d.Menus = s; return d }

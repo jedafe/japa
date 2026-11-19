@@ -1006,6 +1006,48 @@ func IsPublicSetting(key string) bool {
 	return false
 }
 
+// SettingInfo is the exported catalog metadata view for a dot-notation key.
+// internal/ai consumes it through a deps bridge for the settings.get /
+// settings.set agent tools — the ai package cannot import control (import
+// cycle: control imports ai), so server wiring hands it a SettingsCatalog
+// adapter over these lookups.
+type SettingInfo struct {
+	// Known reports whether key is a catalogued setting. Uncatalogued keys
+	// carry no metadata — agents must not read or write them (fail-closed:
+	// an unknown key could be sensitive or a dead row from a typo).
+	Known       bool
+	Type        string
+	Description string
+	Sensitive   bool
+	Deprecated  bool
+	Public      bool
+}
+
+// LookupSetting returns the catalog metadata for a dot-notation key.
+// Known=false means the key is not in the catalog.
+func LookupSetting(key string) SettingInfo {
+	meta, ok := settingsCatalog[key]
+	info := SettingInfo{Known: ok}
+	if !ok {
+		return info
+	}
+
+	info.Type = meta.Type
+	info.Description = meta.Description
+	info.Sensitive = meta.Sensitive
+	info.Public = meta.Public
+	info.Deprecated = isDeprecatedSettingKey(key)
+
+	return info
+}
+
+// ValidateSetting wraps validateSettingValue for callers outside this
+// package. raw is the unquoted scalar form of the value (strings unquoted;
+// numbers/bools as their literal; json settings accept the raw JSON).
+func ValidateSetting(key, raw string) error {
+	return validateSettingValue(key, raw)
+}
+
 // getSettingPanel returns the panel assignment ("admin" or "control") for a
 // given dot-notation key. Empty string means unclassified (shown in both panels).
 func getSettingPanel(key string) string {

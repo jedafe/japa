@@ -200,6 +200,14 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("docs.organize", DocsOrganizeHandler(deps))
 	registry.RegisterHandler("docs.approve", DocsApproveHandler(deps))
 	registry.RegisterHandler("docs.publish", DocsPublishHandler(deps))
+	registry.RegisterHandler("docs.delete", DocsDeleteHandler(deps))
+
+	// --- Settings tools ---
+	// system_settings read/write for callers holding system.settings.* —
+	// catalog-gated (uncatalogued/sensitive/deprecated/security.* keys are
+	// refused inside the handlers).
+	registry.RegisterHandler("settings.get", SettingsGetHandler(deps))
+	registry.RegisterHandler("settings.set", SettingsSetHandler(deps))
 
 	// --- Tools-app tools (task 9.04) ---
 	// tools.list and tools.read are fully implemented. tools.create,

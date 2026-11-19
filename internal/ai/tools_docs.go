@@ -399,6 +399,40 @@ func DocsPublishHandler(deps *ToolDeps) ToolHandler {
 }
 
 // ---------------------------------------------------------------------------
+// docs.delete (agent equivalent of DELETE /admin/docs/pages/{id})
+// ---------------------------------------------------------------------------
+
+// DocsDeleteHandler archives a documentation page. Destructive — the
+// ai_tools row carries requires_hitl so the call lands in the review queue.
+// Required permission docs.admin.
+func DocsDeleteHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Docs == nil {
+			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
+		}
+
+		var a docsReviewArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		docID, err := scanUUID(a.DocID)
+		if err != nil {
+			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
+		}
+
+		if err := deps.Docs.DeleteDocPage(ctx, docID); err != nil {
+			return errorToolResult("docs_delete_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"doc_id":  uuidString(docID),
+			"deleted": true,
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Shared converter
 // ---------------------------------------------------------------------------
 

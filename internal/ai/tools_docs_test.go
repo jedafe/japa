@@ -15,8 +15,10 @@ type stubDocsService struct {
 	updateReq  *DocsUpdatePageRequest
 	approvedBy pgtype.UUID
 	published  pgtype.UUID
+	deleted    pgtype.UUID
 	approveErr error
 	publishErr error
+	deleteErr  error
 }
 
 func (s *stubDocsService) ListAllDocPages(ctx context.Context) ([]DocsPage, error) {
@@ -49,6 +51,11 @@ func (s *stubDocsService) ApproveDocPage(ctx context.Context, id, reviewerID pgt
 func (s *stubDocsService) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	s.published = id
 	return s.publishErr
+}
+
+func (s *stubDocsService) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
+	s.deleted = id
+	return s.deleteErr
 }
 
 func TestDocsCreateHandler_TaxonomyFields(t *testing.T) {
@@ -192,6 +199,44 @@ func TestDocsApproveHandler_InvalidDocID(t *testing.T) {
 	}
 
 	if svc.approvedBy.Valid {
+		t.Error("service must not be called for invalid doc_id")
+	}
+}
+
+func TestDocsDeleteHandler_Deletes(t *testing.T) {
+	svc := &stubDocsService{}
+	h := DocsDeleteHandler(&ToolDeps{Docs: svc})
+
+	res, err := h(t.Context(), mustJSON(t, map[string]any{
+		"doc_id": "11111111-1111-1111-1111-111111111111",
+	}), mustUUID(t, "33333333-3333-3333-3333-333333333333"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if res.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %s, want success", res.Status)
+	}
+
+	if svc.deleted.String() != "11111111-1111-1111-1111-111111111111" {
+		t.Errorf("deleted = %v, want the requested doc id", svc.deleted)
+	}
+}
+
+func TestDocsDeleteHandler_InvalidDocID(t *testing.T) {
+	svc := &stubDocsService{}
+	h := DocsDeleteHandler(&ToolDeps{Docs: svc})
+
+	res, err := h(t.Context(), mustJSON(t, map[string]any{"doc_id": "nope"}), mustUUID(t, "33333333-3333-3333-3333-333333333333"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if res.Status != ToolCallStatusError {
+		t.Errorf("status = %s, want error", res.Status)
+	}
+
+	if svc.deleted.Valid {
 		t.Error("service must not be called for invalid doc_id")
 	}
 }

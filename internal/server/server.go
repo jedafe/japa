@@ -2833,6 +2833,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		return nil
 	}
+	// settings.get / settings.set — raw store + catalog metadata bridge.
+	agentDeps.SettingsStore = settingsService
+	agentDeps.SettingsCatalog = agentSettingsCatalog{}
 	agentDeps.Menus = &agentMenusAdapter{svc: menusService}
 	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
 	agentDeps.CustomFieldDefs = cfService

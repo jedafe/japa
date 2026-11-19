@@ -39,6 +39,7 @@ import (
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/customfields"
@@ -1046,6 +1047,31 @@ func (a *agentDocsAdapter) ApproveDocPage(ctx context.Context, id, reviewerID pg
 
 func (a *agentDocsAdapter) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	return a.svc.PublishDocPage(ctx, id, reviewerID)
+}
+
+func (a *agentDocsAdapter) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
+	return a.svc.DeleteDocPage(ctx, id)
+}
+
+// agentSettingsCatalog adapts the control settings catalog to ai.SettingsCatalog
+// (internal/ai cannot import internal/control — cycle — so the bridge lives
+// in the wiring layer).
+type agentSettingsCatalog struct{}
+
+func (agentSettingsCatalog) LookupSetting(key string) ai.AgentSettingInfo {
+	info := control.LookupSetting(key)
+	return ai.AgentSettingInfo{
+		Known:       info.Known,
+		Type:        info.Type,
+		Description: info.Description,
+		Sensitive:   info.Sensitive,
+		Deprecated:  info.Deprecated,
+		Public:      info.Public,
+	}
+}
+
+func (agentSettingsCatalog) ValidateSetting(key, raw string) error {
+	return control.ValidateSetting(key, raw)
 }
 
 func docsPageToAI(p docs.DocPage) ai.DocsPage {
