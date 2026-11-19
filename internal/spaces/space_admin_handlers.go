@@ -157,6 +157,13 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 	// applies (public + active only).
 	h.Service.dropThreadAnchorsIfClosed(r.Context(), spaceID)
 
+	// §126: reactivating a suspended/archived space re-enters the Group
+	// envelope — provision its actor if it never had one (pre-feature
+	// spaces, or opt-out cleared while suspended). Soft-fail.
+	if input.Status == StatusActive {
+		h.Service.maybeProvisionGroupActor(r.Context(), spaceID)
+	}
+
 	// Record the moderation decision — the reason is otherwise dropped.
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		targetType := "space"

@@ -115,7 +115,9 @@
 	// custom spaces; hidden entirely when feature.federation is off.
 	let federate = $state(untrack(() => !space.federate_opt_out));
 	const federationEnabled = $derived(!!page.data.features?.['feature.federation']);
-	const showFederationToggle = $derived(federationEnabled && space.level === 'custom');
+	const showFederationToggle = $derived(
+		federationEnabled && space.level === 'custom' && space.is_primary !== true && isOwner
+	);
 
 	// --- Tips & donations (§05 addendum; PATCH /spaces/{slug}/tip-settings) ---
 	// Owner-only for member-created custom spaces; mutually exclusive with a
