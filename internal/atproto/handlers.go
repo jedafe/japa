@@ -36,7 +36,7 @@ func handleServiceErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
 	case errors.Is(err, ErrInvalidHandle):
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_handle", "Invalid handle")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_handle", "Username is not a valid AT Protocol handle (lowercase letters, numbers, hyphens; 2-63 chars; not reserved)")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid account id")
 	case errors.Is(err, ErrHandleTaken):

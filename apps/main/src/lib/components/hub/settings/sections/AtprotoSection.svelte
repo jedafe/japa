@@ -42,6 +42,7 @@
 	const sectionData = $derived(
 		data as {
 			status: AtprotoStatus | null;
+			username?: string;
 			appPasswords: AppPassword[];
 			oauthSessions: OAuthSession[];
 		} | null ?? null
@@ -50,6 +51,14 @@
 	const appPasswords = $derived(sectionData?.appPasswords ?? []);
 	const oauthSessions = $derived(sectionData?.oauthSessions ?? []);
 	const enabled = $derived(acct?.enabled === true);
+
+	// §127: the member's username becomes the handle's local part, which
+	// must be DNS-legal — lowercase letters, digits, hyphens, 2–63 chars.
+	// The backend's validHandle enforces the same regex plus a reserved
+	// list; this preview only mirrors the charset rule (the 400 path below
+	// still covers reserved names).
+	const username = $derived(sectionData?.username ?? '');
+	const handleLocalOk = $derived(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(username.toLowerCase()));
 
 	let busy = $state(false);
 	let exportBusy = $state(false);
@@ -79,8 +88,14 @@
 		}
 	}
 
-	function setError(res: { error?: { message?: string } | null }) {
-		errorMsg = res.error?.message ?? t('settings.atproto.action_failed', 'The request failed. Try again.');
+	function setError(res: { error?: { code?: string; message?: string } | null }) {
+		if (res.error?.code === 'invalid_handle') {
+			errorMsg = t('settings.atproto.invalid_handle_msg', "Your username can't be used as a Bluesky handle — it must be 2–63 chars of lowercase letters, numbers, or hyphens. Change your username in Account settings to enable.");
+		} else if (res.error?.code === 'handle_taken') {
+			errorMsg = t('settings.atproto.handle_taken_msg', 'That handle is already claimed by another member.');
+		} else {
+			errorMsg = res.error?.message ?? t('settings.atproto.action_failed', 'The request failed. Try again.');
+		}
 		return false;
 	}
 
@@ -201,17 +216,23 @@
 
 		{#if !enabled}
 			<div class="mt-4">
-				<button
-					type="button"
-					disabled={busy}
-					onclick={handleEnable}
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-				>
-					{busy ? t('common.submitting', 'Submitting…') : t('settings.atproto.enable', 'Enable Bluesky identity')}
-				</button>
-				<p class="mt-2 text-xs text-[var(--color-muted)]">
-					{t('settings.atproto.enable_hint', 'Creates a DID for your account and starts publishing your public posts as AT Protocol records.')}
-				</p>
+				{#if username && !handleLocalOk}
+					<p class="text-sm text-[var(--color-muted)]">
+						{t('settings.atproto.handle_invalid_hint', 'Your username "{username}" can\'t be a Bluesky handle — handles allow only lowercase letters, numbers, and hyphens (2–63 chars). Update your username in Account settings to enable.', { username })}
+					</p>
+				{:else}
+					<button
+						type="button"
+						disabled={busy}
+						onclick={handleEnable}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+					>
+						{busy ? t('common.submitting', 'Submitting…') : t('settings.atproto.enable', 'Enable Bluesky identity')}
+					</button>
+					<p class="mt-2 text-xs text-[var(--color-muted)]">
+						{t('settings.atproto.enable_hint', 'Creates a DID for your account and starts publishing your public posts as AT Protocol records.')}
+					</p>
+				{/if}
 			</div>
 		{:else}
 			<dl class="mt-4 flex flex-col gap-2 text-sm">

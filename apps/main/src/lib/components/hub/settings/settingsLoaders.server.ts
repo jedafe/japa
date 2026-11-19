@@ -269,10 +269,17 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	// on a member with no atproto account, so they're only fetched once the
 	// status reports enabled — and each leg still degrades independently.
 	atproto: async (ctx) => {
-		const status = await apiGet<{ enabled?: boolean }>(ctx, '/me/atproto').catch(() => null);
+		// The profile's username drives the enable-form handle preview —
+		// enable fails 400 invalid_handle when it can't be a DNS-legal
+		// local part, so the section needs it up front (§127 validHandle).
+		const [status, profile] = await Promise.all([
+			apiGet<{ enabled?: boolean }>(ctx, '/me/atproto').catch(() => null),
+			apiGet<MeProfile>(ctx, '/me').catch(() => null)
+		]);
 		const enabled = status?.enabled === true;
 		return {
 			status,
+			username: profile?.username ?? '',
 			appPasswords: enabled
 				? await apiGet<unknown[]>(ctx, '/me/atproto/app-passwords').catch(() => [] as unknown[])
 				: [],
