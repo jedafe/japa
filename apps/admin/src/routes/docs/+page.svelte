@@ -358,19 +358,19 @@
 			show: (row: DocPage) => canPublish && !row.deleted_at && row.status === 'published'
 		},
 		{
+			// Can't prove "has a sibling" from the paginated slice — the real
+			// neighbor may be off-page. Always offer the action; movePage
+			// reports the edge when the full bucket is fetched.
 			label: t('docs.move_up', 'Move up'),
 			icon: ArrowUp,
 			onclick: (row) => movePage(row, -1),
-			show: (row: DocPage) => canEdit && !row.deleted_at && siblingsOf(row).findIndex((d) => d.id === row.id) > 0
+			show: (row: DocPage) => canEdit && !row.deleted_at
 		},
 		{
 			label: t('docs.move_down', 'Move down'),
 			icon: ArrowDown,
 			onclick: (row) => movePage(row, 1),
-			show: (row: DocPage) => {
-				const sibs = siblingsOf(row);
-				return canEdit && !row.deleted_at && sibs.findIndex((d) => d.id === row.id) < sibs.length - 1;
-			}
+			show: (row: DocPage) => canEdit && !row.deleted_at
 		},
 		{
 			label: t('common.delete', 'Delete'),
@@ -693,8 +693,12 @@
 		const sibs = siblingsOf(item, pool);
 		const idx = sibs.findIndex((d) => d.id === item.id);
 		const neighbor = sibs[idx + dir];
-		if (!neighbor) return;
-		errorMessage = '';
+		if (!neighbor) {
+			// Edge of the bucket — say why nothing happened instead of a
+			// silent no-op.
+			errorMessage = t('docs.already_at_edge', 'This page is already at the edge of its section.');
+			return;
+		}
 		// One atomic swap server-side — the old two-PATCH move could leave a
 		// half-swapped order if the second update failed.
 		const res = await docsApi.move(item.id, neighbor.id);
