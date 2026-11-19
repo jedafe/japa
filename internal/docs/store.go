@@ -314,12 +314,10 @@ func (s *Store) listSummaries(ctx context.Context, audiences []string) ([]gen.Li
 
 // swapPositions atomically exchanges the positions of two live pages —
 // a single UPDATE so a mid-failure can't leave a half-swapped order.
-func (s *Store) swapPositions(ctx context.Context, idA, idB pgtype.UUID, posA, posB int32) error {
+func (s *Store) swapPositions(ctx context.Context, idA, idB pgtype.UUID) error {
 	return s.write.SwapDocPagePositions(ctx, gen.SwapDocPagePositionsParams{
-		IDA:       idA,
-		IDB:       idB,
-		PositionA: posA,
-		PositionB: posB,
+		IDA: idA,
+		IDB: idB,
 	})
 }
 

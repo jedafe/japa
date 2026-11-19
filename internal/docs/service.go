@@ -332,7 +332,7 @@ func (s *Service) SwapDocPagePositions(ctx context.Context, idA, idB pgtype.UUID
 		return fmt.Errorf("%w: pages must be in the same audience to reorder", errpkg.ErrInvalid)
 	}
 
-	if err := s.store.swapPositions(ctx, idA, idB, a.Position, b.Position); err != nil {
+	if err := s.store.swapPositions(ctx, idA, idB); err != nil {
 		return fmt.Errorf("swapping positions: %w", err)
 	}
 

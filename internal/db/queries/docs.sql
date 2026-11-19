@@ -154,11 +154,16 @@ WHERE id = @id AND deleted_at IS NULL;
 
 -- name: SwapDocPagePositions :exec
 -- Atomic position swap for adjacent-page reorder — replaces the two-PATCH
--- move flow which could leave positions half-swapped on a mid-failure.
-UPDATE doc_pages
-SET position = CASE id WHEN @id_a::uuid THEN @position_b::int ELSE @position_a::int END,
-    updated_at = now()
-WHERE id IN (@id_a::uuid, @id_b::uuid) AND deleted_at IS NULL;
+-- move flow which could leave positions half-swapped on a mid-failure. The
+-- FROM self-join reads each row's current position inside the statement, so
+-- concurrent reorders can't lose updates through stale caller-supplied values.
+UPDATE doc_pages p
+SET position = other.position, updated_at = now()
+FROM doc_pages other
+WHERE ((p.id = @id_a::uuid AND other.id = @id_b::uuid)
+    OR (p.id = @id_b::uuid AND other.id = @id_a::uuid))
+  AND p.deleted_at IS NULL
+  AND other.deleted_at IS NULL;
 
 -- name: GetDocPageStatus :one
 SELECT review_status, created_by, ai_generated, deleted_at FROM doc_pages WHERE id = @id;

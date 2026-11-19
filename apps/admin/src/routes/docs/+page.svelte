@@ -654,19 +654,25 @@
 	// nests children under parents and groups roots by category, so moving
 	// across those boundaries changed a position the reader never sees.
 	// Equal positions get a synthesized ±1 offset so the move never no-ops.
-	function siblingsOf(item: DocPage): DocPage[] {
+	function siblingsOf(item: DocPage, pool: DocPage[] = docs): DocPage[] {
 		const sameBucket = (d: DocPage) =>
 			d.audience === item.audience &&
 			(d.parent_id ?? null) === (item.parent_id ?? null) &&
 			(d.category ?? null) === (item.category ?? null) &&
 			(d.subcategory ?? null) === (item.subcategory ?? null);
-		return docs
+		return pool
 			.filter(sameBucket)
 			.sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.title.localeCompare(b.title));
 	}
 
 	async function movePage(item: DocPage, dir: -1 | 1) {
-		const sibs = siblingsOf(item);
+		errorMessage = '';
+		// The real position-neighbor may sit outside the current paginated
+		// `docs` slice — resolve siblings from the full unfiltered audience
+		// list (limit=0), falling back to the loaded page on failure.
+		const poolRes = await docsApi.list(`audience=${encodeURIComponent(item.audience)}&limit=0`);
+		const pool: DocPage[] = poolRes.ok ? (poolRes.data?.data ?? docs) : docs;
+		const sibs = siblingsOf(item, pool);
 		const idx = sibs.findIndex((d) => d.id === item.id);
 		const neighbor = sibs[idx + dir];
 		if (!neighbor) return;

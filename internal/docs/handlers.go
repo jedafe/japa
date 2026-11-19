@@ -580,6 +580,9 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	totalPages := int64(0)
 	if limit > 0 {
 		totalPages = (result.Total + int64(limit) - 1) / int64(limit)
+	} else if result.Total > 0 {
+		// limit=0 is "unlimited" — everything fits on one page.
+		totalPages = 1
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

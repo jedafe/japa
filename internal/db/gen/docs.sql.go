@@ -1211,28 +1211,26 @@ func (q *Queries) SoftDeleteDocPage(ctx context.Context, id pgtype.UUID) (int64,
 }
 
 const swapDocPagePositions = `-- name: SwapDocPagePositions :exec
-UPDATE doc_pages
-SET position = CASE id WHEN $1::uuid THEN $2::int ELSE $3::int END,
-    updated_at = now()
-WHERE id IN ($1::uuid, $4::uuid) AND deleted_at IS NULL
+UPDATE doc_pages p
+SET position = other.position, updated_at = now()
+FROM doc_pages other
+WHERE ((p.id = $1::uuid AND other.id = $2::uuid)
+    OR (p.id = $2::uuid AND other.id = $1::uuid))
+  AND p.deleted_at IS NULL
+  AND other.deleted_at IS NULL
 `
 
 type SwapDocPagePositionsParams struct {
-	IDA       pgtype.UUID `json:"id_a"`
-	PositionB int32       `json:"position_b"`
-	PositionA int32       `json:"position_a"`
-	IDB       pgtype.UUID `json:"id_b"`
+	IDA pgtype.UUID `json:"id_a"`
+	IDB pgtype.UUID `json:"id_b"`
 }
 
 // Atomic position swap for adjacent-page reorder — replaces the two-PATCH
-// move flow which could leave positions half-swapped on a mid-failure.
+// move flow which could leave positions half-swapped on a mid-failure. The
+// FROM self-join reads each row's current position inside the statement, so
+// concurrent reorders can't lose updates through stale caller-supplied values.
 func (q *Queries) SwapDocPagePositions(ctx context.Context, arg SwapDocPagePositionsParams) error {
-	_, err := q.db.Exec(ctx, swapDocPagePositions,
-		arg.IDA,
-		arg.PositionB,
-		arg.PositionA,
-		arg.IDB,
-	)
+	_, err := q.db.Exec(ctx, swapDocPagePositions, arg.IDA, arg.IDB)
 	return err
 }
 
