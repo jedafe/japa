@@ -1168,12 +1168,18 @@ func (s *Service) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 // its (audience, slug) claim, drops out of every public read path, and stays
 // restorable until an admin.hard_delete-gated ?force=true call removes it.
 func (s *Service) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
-	// Fetch the page before deleting so we can invalidate its cache.
 	existing, err := s.store.getByID(ctx, id)
-	if err == nil {
+	if err != nil {
+		return err // ErrNoRows → 404: the page genuinely doesn't exist.
+	}
+
+	// Idempotent: already trashed is the desired end state — a repeat
+	// soft-delete (or a bulk op raced by another admin) is a no-op success,
+	// not a failure. Invalidate again anyway: the first deleter's
+	// invalidation is best-effort and a redundant DEL is cheap.
+	if existing.DeletedAt.Valid {
 		s.invalidateCache(ctx, existing.Audience, existing.Slug)
-	} else {
-		s.invalidateAllPageCaches(ctx)
+		return nil
 	}
 
 	rows, err := s.store.softDelete(ctx, id)
@@ -1181,9 +1187,18 @@ func (s *Service) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 		return err
 	}
 	if rows == 0 {
-		// Already trashed or unknown ID — reads treat it as gone either way.
-		return pgx.ErrNoRows
+		// Lost a race between the read and the update — distinguish
+		// "trashed by the racing delete" (goal achieved) from "hard-deleted
+		// out from under us" (truly gone).
+		latest, gerr := s.store.getByID(ctx, id)
+		if gerr != nil || !latest.DeletedAt.Valid {
+			return pgx.ErrNoRows
+		}
+
+		return nil
 	}
+
+	s.invalidateCache(ctx, existing.Audience, existing.Slug)
 
 	return nil
 }
