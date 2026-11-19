@@ -49,7 +49,7 @@
 	// Content-type options accumulate from every fetched leaderboard — deriving
 	// from the *filtered* rows would collapse the picker to just the active
 	// filter after the first selection.
-	let seenContentTypes = new Set<string>();
+	let seenContentTypes = $state(new Set<string>());
 	const advTypeOptions = $derived([
 		{ value: '', label: t('analytics.all_types', 'All types') },
 		...[...seenContentTypes].sort().map((ct) => ({ value: ct, label: ct }))
@@ -77,7 +77,7 @@
 		const p = `period=${period}`;
 		switch (tab) {
 			case "top_content": {
-				const res = await analyticsAdminApi.getTopContent(`${p}${advType ? `&type=${advType}` : ''}`);
+				const res = await analyticsAdminApi.getTopContent(`${p}${advType ? `&type=${encodeURIComponent(advType)}` : ''}`);
 				if (res.ok && fresh()) {
 					topContent = (res.data as { content?: Array<Record<string, unknown>> })?.content ?? [];
 					for (const r of topContent ?? []) {

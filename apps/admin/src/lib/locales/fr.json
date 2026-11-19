@@ -5099,5 +5099,14 @@
   "app.tools.guide_help": "Guide visa alimentant le CTA « Liste de documents » de la route. Les brouillons sont acceptés — le lien public s'active à la publication du guide.",
   "app.tools.checklist_link_live": "Lien de checklist actif sur la route publique",
   "app.tools.checklist_link_pending": "Lien de checklist masqué jusqu'à la publication du guide",
-  "app.tools.checklist_link_dead": "Lien de checklist mort — le guide est {status} ; reliez un autre guide"
+  "app.tools.checklist_link_dead": "Lien de checklist mort — le guide est {status} ; reliez un autre guide",
+  "nav.advanced_analytics": "Analytique avancée",
+  "analytics.advanced_title": "Analytique avancée",
+  "analytics.advanced_description": "Métriques détaillées : contenu, revenus, publicité, newsletter et rétention",
+  "analytics.back_to_analytics": "Retour aux analyses",
+  "analytics.new_in_period": "Nouveaux (période)",
+  "analytics.all_types": "Tous les types",
+  "analytics.spent_credits": "Dépensé (crédits)",
+  "analytics.subscribers": "Abonnés",
+  "analytics.name": "Nom"
 }

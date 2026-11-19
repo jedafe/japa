@@ -5142,5 +5142,14 @@
   "app.tools.guide_help": "Visa guide powering the route's Document checklist CTA. Draft guides are allowed — the public link activates when the guide publishes.",
   "app.tools.checklist_link_live": "Checklist link live on public route",
   "app.tools.checklist_link_pending": "Checklist link hidden until the guide is published",
-  "app.tools.checklist_link_dead": "Checklist link dead — guide is {status}; relink another guide"
+  "app.tools.checklist_link_dead": "Checklist link dead — guide is {status}; relink another guide",
+  "nav.advanced_analytics": "Advanced Analytics",
+  "analytics.advanced_title": "Advanced Analytics",
+  "analytics.advanced_description": "Deep-dive content, revenue, advertising, newsletter, and retention metrics",
+  "analytics.back_to_analytics": "Back to Analytics",
+  "analytics.new_in_period": "New (period)",
+  "analytics.all_types": "All types",
+  "analytics.spent_credits": "Spent (credits)",
+  "analytics.subscribers": "Subscribers",
+  "analytics.name": "Name"
 }
