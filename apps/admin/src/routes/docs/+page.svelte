@@ -113,6 +113,7 @@
 	let deleteMode = $state<'soft' | 'hard'>('soft');
 	let deleteTargetIds = $state<string[]>([]);
 	let deleteBusy = $state(false);
+	let restoreBusy = $state(false);
 	// Bulk selection — bound to the DataTable checkboxes.
 	let selectedIds = $state<Set<string>>(new Set());
 
@@ -686,26 +687,37 @@
 	}
 
 	async function restorePage(id: string) {
+		if (restoreBusy) return;
+		restoreBusy = true;
 		errorMessage = '';
-		const result = await docsApi.restore(id);
-		if (result.ok) {
-			loadDocs();
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await docsApi.restore(id);
+			if (result.ok) {
+				loadDocs();
+			} else {
+				errorMessage = result.error;
+			}
+		} finally {
+			restoreBusy = false;
 		}
 	}
 
 	async function bulkRestore(ids: Set<string>) {
 		const idArr = [...ids];
-		if (idArr.length === 0) return;
+		if (idArr.length === 0 || restoreBusy) return;
+		restoreBusy = true;
 		errorMessage = '';
-		const results = await Promise.all(idArr.map((id) => docsApi.restore(id)));
-		const failed = results.filter((r) => !r.ok).length;
-		selectedIds = new Set();
-		if (failed > 0) {
-			errorMessage = t('docs.bulk_action_partial', '{n} of {total} actions failed').replace('{n}', String(failed)).replace('{total}', String(idArr.length));
+		try {
+			const results = await Promise.all(idArr.map((id) => docsApi.restore(id)));
+			const failed = results.filter((r) => !r.ok).length;
+			selectedIds = new Set();
+			if (failed > 0) {
+				errorMessage = t('docs.bulk_action_partial', '{n} of {total} actions failed').replace('{n}', String(failed)).replace('{total}', String(idArr.length));
+			}
+			loadDocs();
+		} finally {
+			restoreBusy = false;
 		}
-		loadDocs();
 	}
 
 	function openGenerate() {
@@ -1084,9 +1096,9 @@
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteConfirm} title={deleteMode === 'hard' ? t('docs.confirm_hard_delete', 'Delete permanently') : t('docs.confirm_delete')} size="sm">
 	{#if deleteMode === 'hard'}
-		<p class="text-sm" style="color: var(--color-muted)">{t('docs.hard_delete_warning', 'This permanently deletes {n} page(s) — including their revision history — and cannot be undone.').replace('{n}', String(deleteTargetIds.length))}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{deleteTargetIds.length === 1 ? t('docs.hard_delete_warning', 'This permanently deletes this page — including its revision history — and cannot be undone.') : t('docs.hard_delete_warning_many', 'This permanently deletes {n} pages — including their revision history — and cannot be undone.').replace('{n}', String(deleteTargetIds.length))}</p>
 	{:else}
-		<p class="text-sm" style="color: var(--color-muted)">{t('docs.soft_delete_warning', 'This moves {n} page(s) to the trash. You can restore them later from the Deleted filter.').replace('{n}', String(deleteTargetIds.length))}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{deleteTargetIds.length === 1 ? t('docs.soft_delete_warning', 'This moves this page to the trash. You can restore it later from the Deleted filter.') : t('docs.soft_delete_warning_many', 'This moves {n} pages to the trash. You can restore them later from the Deleted filter.').replace('{n}', String(deleteTargetIds.length))}</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('docs.cancel')}</Button>

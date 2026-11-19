@@ -73,16 +73,20 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 	return id, err
 }
 
-const deleteDocPage = `-- name: DeleteDocPage :exec
+const deleteDocPage = `-- name: DeleteDocPage :execrows
 DELETE FROM doc_pages WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
 // Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
 // rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
-// live page is by design: soft-delete first.
-func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteDocPage, id)
-	return err
+// live page is by design: soft-delete first. The row count also closes the
+// race where a page is restored between the caller's check and this delete.
+func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDocPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteDocPageRevision = `-- name: DeleteDocPageRevision :execrows

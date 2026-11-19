@@ -223,8 +223,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "revision_is_latest", "The latest revision cannot be deleted")
 	case errors.Is(err, errPageDeleted):
 		errpkg.WriteError(w, http.StatusConflict, "doc_page_deleted", "This page is in the trash — restore it before editing or publishing")
-	case errors.Is(err, errPageNotDeleted):
-		errpkg.WriteError(w, http.StatusConflict, "doc_page_not_deleted", "This action requires the page to be in the trash first")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

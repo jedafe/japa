@@ -1182,8 +1182,9 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 	// Only published pages are searchable. /docs/search filters on
 	// review_status, but the omnibox autocomplete (DOC-016) queries this
 	// index unfiltered — drafts/in_review/rejected pages must never reach
-	// the index (delete any stale doc).
-	if row.ReviewStatus != "published" {
+	// the index (delete any stale doc). Soft-deleted pages keep their
+	// review_status while trashed, so deleted_at must gate too (Rule 11).
+	if row.ReviewStatus != "published" || row.DeletedAt.Valid {
 		return ix.DeleteDocument(ctx, IndexDocPages, pageID)
 	}
 

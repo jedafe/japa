@@ -282,21 +282,44 @@ func (s *Store) restore(ctx context.Context, id pgtype.UUID) (int64, error) {
 }
 
 // hardDelete permanently removes a doc page and orphans its children.
-// parent_id is not an FK, so children must be unlinked before the delete;
-// the nav tree promotes orphans to roots. The query itself only matches
-// rows where deleted_at IS NOT NULL — Rule 11's soft-delete-first gate.
+// parent_id is not an FK, so the delete can run first and unlink after —
+// children are only orphaned when the row actually went away (a page
+// restored between the caller's check and this delete returns 0 rows and
+// keeps its subtree). The pair commits together when the writer pool is
+// available. DeleteDocPage itself only matches deleted_at IS NOT NULL —
+// Rule 11's soft-delete-first gate at the SQL layer.
 func (s *Store) hardDelete(ctx context.Context, id pgtype.UUID) error {
-	if err := s.write.ClearDocPageParent(ctx, id); err != nil {
-		return fmt.Errorf("unlinking doc page children: %w", err)
+	exec := func(q *gen.Queries) error {
+		rows, err := q.DeleteDocPage(ctx, id)
+		if err != nil {
+			return fmt.Errorf("deleting doc page: %w", err)
+		}
+		if rows == 0 {
+			return pgx.ErrNoRows
+		}
+
+		if err := q.ClearDocPageParent(ctx, id); err != nil {
+			return fmt.Errorf("unlinking doc page children: %w", err)
+		}
+
+		return nil
 	}
 
-	if err := s.write.DeleteDocPage(ctx,
-		id,
-	); err != nil {
-		return fmt.Errorf("deleting doc page: %w", err)
+	if s.pool != nil {
+		tx, err := s.pool.Writer.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("beginning hard-delete tx: %w", err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		if err := exec(s.write.WithTx(tx)); err != nil {
+			return err
+		}
+
+		return tx.Commit(ctx)
 	}
 
-	return nil
+	return exec(s.write)
 }
 
 // getFeedback returns aggregate helpful counters plus the user's recorded

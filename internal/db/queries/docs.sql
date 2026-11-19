@@ -123,10 +123,11 @@ UPDATE doc_pages SET deleted_at = now() WHERE id = @id AND deleted_at IS NULL;
 -- Undo a soft delete; 0 rows means the page wasn't in the trash.
 UPDATE doc_pages SET deleted_at = NULL WHERE id = @id AND deleted_at IS NOT NULL;
 
--- name: DeleteDocPage :exec
+-- name: DeleteDocPage :execrows
 -- Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
 -- rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
--- live page is by design: soft-delete first.
+-- live page is by design: soft-delete first. The row count also closes the
+-- race where a page is restored between the caller's check and this delete.
 DELETE FROM doc_pages WHERE id = @id AND deleted_at IS NOT NULL;
 
 -- name: ClearDocPageParent :exec

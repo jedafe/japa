@@ -1197,7 +1197,7 @@ func (s *Service) HardDeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 		return err
 	}
 	if !existing.DeletedAt.Valid {
-		return errPageNotDeleted
+		return errpkg.ErrNotDeleted
 	}
 
 	s.invalidateCache(ctx, existing.Audience, existing.Slug)
@@ -1214,7 +1214,7 @@ func (s *Service) RestoreDocPage(ctx context.Context, id pgtype.UUID) (*DocPage,
 		return nil, err
 	}
 	if !existing.DeletedAt.Valid {
-		return nil, errPageNotDeleted
+		return nil, fmt.Errorf("%w: page is not in the trash", errpkg.ErrInvalidStatusTransition)
 	}
 
 	if _, err := s.store.restore(ctx, id); err != nil {
@@ -1633,9 +1633,10 @@ func (s *Service) RestoreDocPageRevision(ctx context.Context, pageID, revID pgty
 // handler maps it to 409 revision_is_latest.
 var errRevisionIsLatest = errors.New("latest revision cannot be deleted")
 
-// Deletion-state sentinels (Rule 11) — mapped to 409s in handleServiceError.
+// errPageDeleted marks writes against a trashed page (Rule 11) — mapped to
+// 409 doc_page_deleted in handleServiceError. The inverse check uses the
+// shared errpkg.ErrNotDeleted sentinel.
 var errPageDeleted = errors.New("page is in the trash — restore it first")
-var errPageNotDeleted = errors.New("page must be soft-deleted before this action")
 
 // DeleteDocPageRevision removes a non-latest revision (§44 amendment 5).
 func (s *Service) DeleteDocPageRevision(ctx context.Context, revID pgtype.UUID) error {
