@@ -16,9 +16,8 @@
 	import { page as pageState } from '$app/state';
 	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
-	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 	import { RichTextEditor } from '@japaconnect/ui';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon, RotateCcw, Eye, Eraser } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, RotateCcw, Eye, Eraser } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.admin'));
@@ -80,40 +79,6 @@
 	// after the request (a pre-existing page isn't a false positive).
 	let generateStartedAt = '';
 
-	// Create/Edit Modal
-	let showFormModal = $state(false);
-	let editingId = $state<string | null>(null);
-	let editingOriginalStatus = $state('');
-	// Optimistic lock token — sent as expected_updated_at so a stale admin
-	// form can't silently overwrite a concurrent docs-site save.
-	let editingUpdatedAt = $state('');
-	// True once openEdit's detail fetch populated the body — guards submit from
-	// writing an empty doc over stored content when the fetch failed.
-	let editContentReady = $state(false);
-	// The shared TipTap editor edits every stored content shape directly:
-	// TipTap docs seed as-is, markdown/plain string bodies parse into
-	// structure — no flatten-then-rewrap lossy round-trip (§44 content=jsonb).
-	let rte: RichTextEditor | undefined = $state(undefined);
-	let editSeed = $state<unknown>(null);
-	let editorJson = $state<unknown>(null);
-	let pendingImageInsert: ((src: string, alt?: string) => void) | null = null;
-	let bodyPickerOpen = $state(false);
-	let featurePickerOpen = $state(false);
-	let saving = $state(false);
-	let form = $state({
-		title: '',
-		slug: '',
-		audience: 'users',
-		status: 'draft' as string,
-		category: '',
-		subcategory: '',
-		parentId: '',
-		position: 0,
-		featureImageId: '',
-		featureImageUrl: '',
-		summary: ''
-	});
-
 	// Revision history modal (§44 amendment 5).
 	let showHistoryModal = $state(false);
 	let historyRow = $state<DocPage | null>(null);
@@ -148,29 +113,9 @@
 	let audiences = $state<string[]>(['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin']);
 	let statuses = $state<string[]>(['draft', 'in_review', 'approved', 'published']);
 
-	// §44 amendment 2: PATCH may only set draft/in_review — approve/publish are
-	// dedicated endpoints (and record the reviewer). Editors with docs.admin
-	// can still *select* approved/published here — submit() chains the
-	// dedicated endpoints after the write so a logged-in admin can approve or
-	// publish directly from the form. Backward transitions (e.g. published →
-	// approved) are not expressible via PATCH, so they're not offered.
-	const statusOptions = $derived.by(() => {
-		const current = editingId ? editingOriginalStatus : '';
-		const forward: string[] = [];
-		if (canPublish) {
-			if (current !== 'published' && current !== 'approved') forward.push('approved');
-			if (current !== 'published') forward.push('published');
-		}
-		const all = [...new Set([...statuses.filter((s) => s === 'draft' || s === 'in_review'), ...(current ? [current] : []), ...forward])];
-		return all.map((s) => ({
-			value: s,
-			label: t(`docs.status.${s}`, s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
-		}));
-	});
-
 	const audienceOptions = $derived(audiences.map((a) => ({ value: a, label: a })));
-	// Filter panel — all four statuses (the form's statusOptions is a
-	// reduced, forward-only list; the review-queue filter needs all of them).
+	// Filter panel — all four statuses (the review-queue filter needs the
+	// full set, unlike the form's forward-only select).
 	const statusFilterOptions = $derived(
 		statuses.map((s) => ({
 			value: s,
@@ -197,8 +142,7 @@
 
 	// Subcategory suggestions follow the selected category: its managed subs
 	// plus subs already used by pages in that category. No category selected →
-	// the union of all known subs. Shared by the create/edit form and the
-	// AI-generate form — pass the currently selected category value.
+	// the union of all known subs. Used by the AI-generate form.
 	function subSuggestionsFor(category: string): string[] {
 		const cat = category.trim().toLowerCase();
 		const seen = new Map<string, string>();
@@ -212,7 +156,6 @@
 		}
 		return [...seen.values()];
 	}
-	const subcategorySuggestions = $derived(subSuggestionsFor(form.category));
 	const generateSubSuggestions = $derived(subSuggestionsFor(generateCategory));
 
 	const toItems = (list: string[]): AutocompleteItem[] => list.map((s) => ({ id: s, label: s }));
@@ -221,58 +164,8 @@
 
 	const categoryFetcher = (q: string) => filterItems(categorySuggestions, q);
 	const categoryInitial = () => Promise.resolve(toItems(categorySuggestions));
-	const subcategoryFetcher = (q: string) => filterItems(subcategorySuggestions, q);
-	const subcategoryInitial = () => Promise.resolve(toItems(subcategorySuggestions));
 	const generateSubFetcher = (q: string) => filterItems(generateSubSuggestions, q);
 	const generateSubInitial = () => Promise.resolve(toItems(generateSubSuggestions));
-
-	// Parent page select — siblings in the same audience (the backend enforces
-	// audience match in validateParent), minus the page being edited. Fetched
-	// unfiltered: the table's active filters must not silently remove valid
-	// parents from the picker.
-	let parentCandidates = $state<DocPage[]>([]);
-	// Audience the current parentCandidates list was fetched for — the
-	// parentId invalidation effect below must wait for the fetch or it
-	// would wipe a legit selection while the list is still loading.
-	let parentLoadedFor = $state('');
-
-	async function loadParentCandidates(audience: string) {
-		parentLoadedFor = '';
-		const res = await docsApi.list(`audience=${encodeURIComponent(audience)}`);
-		if (res.ok) {
-			const rows = res.data?.data ?? [];
-			parentCandidates = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft' }));
-		} else {
-			// Degrade to the loaded list rather than an empty picker.
-			parentCandidates = docs.filter((d) => d.audience === audience);
-		}
-		parentLoadedFor = audience;
-	}
-
-	$effect(() => {
-		const aud = form.audience;
-		if (showFormModal && aud) loadParentCandidates(aud);
-	});
-
-	const parentPages = $derived(parentCandidates.filter((d) => d.id !== editingId));
-	const parentFetcher = (q: string) =>
-		Promise.resolve(
-			parentPages
-				.filter((d) => d.title.toLowerCase().includes(q.toLowerCase()))
-				.map((d) => ({ id: d.id, label: d.title, sublabel: d.slug }))
-		);
-	const parentInitial = () =>
-		Promise.resolve(parentPages.map((d) => ({ id: d.id, label: d.title, sublabel: d.slug })));
-
-	// Changing the audience invalidates the parent choice — the backend
-	// requires the parent to live in the same audience (validateParent).
-	// Gated on the candidate fetch completing so an in-flight load can't
-	// clear a legit parent during the empty-list window.
-	$effect(() => {
-		if (form.parentId && parentLoadedFor === form.audience && !parentPages.some((p) => p.id === form.parentId)) {
-			form.parentId = '';
-		}
-	});
 
 	// The categories/subcategories catalog lives on the /docs/categories
 	// subpage. It writes the docs.categories setting, which requires the
@@ -509,15 +402,21 @@
 		loading = false;
 	}
 
+	// Create/edit live on dedicated routes — the form is too rich for a modal
+	// (TipTap + taxonomy + media pickers), matching /spaces' goto("/new") flow.
+	// ?from= carries the current list URL (filters/page/sort) so save/cancel
+	// returns to the same view — read from window.location because $app/state
+	// can lag behind the DataTable's replaceState writes.
+	function listReturnTo(): string {
+		const u = new URL(window.location.href);
+		return u.pathname + u.search;
+	}
 	function openCreate() {
-		editingId = null;
-		editingOriginalStatus = '';
-		editingUpdatedAt = '';
-		editContentReady = true; // nothing to fetch
-		editSeed = null;
-		editorJson = null;
-		form = { title: '', slug: '', audience: 'users', status: 'draft', category: '', subcategory: '', parentId: '', position: 0, featureImageId: '', featureImageUrl: '', summary: '' };
-		showFormModal = true;
+		goto(`/docs/new?from=${encodeURIComponent(listReturnTo())}`);
+	}
+
+	function openEdit(item: DocPage) {
+		goto(`/docs/${item.id}?from=${encodeURIComponent(listReturnTo())}`);
 	}
 
 	// Read-only detail view (spec: View stays modal, never navigates). The
@@ -533,113 +432,7 @@
 		viewLoading = false;
 	}
 
-	async function openEdit(item: DocPage) {
-		editingId = item.id;
-		editingOriginalStatus = item.status;
-		editingUpdatedAt = item.updated_at;
-		editContentReady = false;
-		editSeed = null;
-		editorJson = null;
-		form = {
-			title: item.title,
-			slug: item.slug,
-			audience: item.audience,
-			status: item.status,
-			category: item.category ?? '',
-			subcategory: item.subcategory ?? '',
-			parentId: item.parent_id ?? '',
-			position: item.position ?? 0,
-			featureImageId: item.feature_image_id ?? '',
-			featureImageUrl: item.feature_image_url ?? '',
-			summary: ''
-		};
-		showFormModal = true;
-		// The list row is a summary (no content body, §44) — fetch the full page
-		// so editing doesn't clobber stored TipTap content with an empty doc.
-		const detail = await docsApi.get(item.id);
-		if (detail.ok && detail.data && editingId === item.id) {
-			const d = detail.data as any;
-			// Seed the TipTap editor with the stored body as-is — TipTap docs,
-			// markdown strings, and plain text all parse natively.
-			editSeed = d.content ?? null;
-			form.category = d.category ?? form.category;
-			form.subcategory = d.subcategory ?? form.subcategory;
-			form.parentId = d.parent_id ?? '';
-			form.position = d.position ?? form.position;
-			form.featureImageId = d.feature_image_id ?? '';
-			form.featureImageUrl = d.feature_image_url ?? '';
-			editingUpdatedAt = d.updated_at ?? editingUpdatedAt;
-			editContentReady = true;
-		}
-	}
 
-	async function submit() {
-		if (!form.title.trim()) return;
-		saving = true;
-		errorMessage = '';
-		// Flush any pending editor transaction so the JSON reflects the latest
-		// keystroke before it ships.
-		rte?.flush();
-		const slug = form.slug.trim() || slugify(form.title);
-		// §44 amendment 2: only draft/in_review are writable via create/PATCH.
-		// Selecting approved/published omits review_status from the write and
-		// chains the dedicated approve/publish endpoints afterwards so reviewer
-		// metadata stays truthful. Empty category/subcategory/parent_id clear
-		// the stored value (preserve-on-absent → send "" to clear).
-		const desired = form.status;
-		const writable = desired === 'approved' || desired === 'published' ? undefined : desired;
-		// editorJson tracks every edit (the editor also fires it on seed) —
-		// falling back to editSeed covers the untouched case.
-		const content = editingId
-			? editContentReady
-				? (editorJson ?? editSeed ?? '')
-				: undefined
-			: (editorJson ?? '');
-		const payload = {
-			title: form.title.trim(),
-			slug,
-			audience: form.audience,
-			// On update without a successful detail fetch, omit content so the
-			// stored document is preserved rather than overwritten with an
-			// empty doc.
-			content,
-			review_status: writable,
-			category: form.category.trim(),
-			subcategory: form.subcategory.trim(),
-			parent_id: form.parentId,
-			position: Math.max(0, Math.trunc(form.position) || 0),
-			feature_image_id: form.featureImageId,
-			...(form.summary.trim() ? { summary: form.summary.trim() } : {}),
-			// Optimistic lock — the docs-site editor uses the same contract.
-			...(editingId && editingUpdatedAt ? { expected_updated_at: editingUpdatedAt } : {})
-		};
-		const result = editingId ? await docsApi.update(editingId, payload) : await docsApi.create(payload);
-		if (result.ok) {
-			// Chain the dedicated status endpoints for forward transitions.
-			// Both endpoints are idempotent for their target state, so call only
-			// when the transition is actually needed.
-			const newId = editingId ?? (result.data as { id?: string })?.id;
-			const prior = editingId ? editingOriginalStatus : '';
-			if (newId && desired === 'approved' && prior !== 'approved' && prior !== 'published') {
-				const r = await docsApi.approve(newId);
-				if (!r.ok) errorMessage = t('docs.saved_transition_failed', `Saved, but approve failed: ${r.error}`);
-			} else if (newId && desired === 'published' && prior !== 'published') {
-				if (prior !== 'approved') {
-					const r = await docsApi.approve(newId);
-					if (!r.ok) errorMessage = t('docs.saved_transition_failed', `Saved, but approve failed: ${r.error}`);
-				}
-				if (!errorMessage) {
-					const r = await docsApi.publish(newId);
-					if (!r.ok) errorMessage = t('docs.saved_transition_failed', `Saved, but publish failed: ${r.error}`);
-				}
-			}
-			showFormModal = false;
-			loadDocs();
-		} else {
-			errorMessage = result.error;
-		}
-		saving = false;
-	}
 
 	// §44 amendment 2: the review workflow is draft/in_review → approve →
 	// publish, enforced server-side. Approve and publish are dedicated calls
@@ -1014,161 +807,6 @@
 	bulkActionsList={bulkActions}
 />
 
-<!-- Create/Edit Modal -->
-<Modal bind:open={showFormModal} title={editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')} size="lg">
-	<!-- Submit errors must render inside the modal — the page-level banner
-	     sits behind the dialog and is invisible while the form is open. -->
-	{#if errorMessage}
-		<div class="mb-3 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-			{errorMessage}
-		</div>
-	{/if}
-	<div class="space-y-3">
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div>
-				<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
-				<input id="doc-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.title} oninput={() => { if (!editingId) form.slug = slugify(form.title); }} />
-			</div>
-			<div>
-				<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
-				<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
-			</div>
-		</div>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div>
-				<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
-				<Select options={audienceOptions} bind:value={form.audience} />
-			</div>
-			<div>
-				<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
-				<Select options={statusOptions} bind:value={form.status} />
-			</div>
-		</div>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div>
-				<label for="doc-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}</label>
-				<Autocomplete
-					id="doc-category"
-					placeholder={t('docs.category_ph', 'Category (optional)')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={categoryFetcher}
-					initialFetcher={categoryInitial}
-					selectedId={form.category || null}
-					selectedLabel={form.category || null}
-					freeText
-					allowFreeText
-					onSelect={(item) => { form.category = item.label; }}
-					onInput={(q) => { form.category = q; }}
-					onFreeTextBlur={(q) => { form.category = q.trim(); }}
-				/>
-			</div>
-			<div>
-				<label for="doc-subcategory" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}</label>
-				<Autocomplete
-					id="doc-subcategory"
-					disabled={!form.category.trim()}
-					placeholder={form.category.trim() ? t('docs.subcategory_ph', 'Subcategory (optional)') : t('docs.subcategory_pick_cat', 'Pick a category first')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={subcategoryFetcher}
-					initialFetcher={subcategoryInitial}
-					selectedId={form.subcategory || null}
-					selectedLabel={form.subcategory || null}
-					freeText
-					allowFreeText
-					onSelect={(item) => { form.subcategory = item.label; }}
-					onInput={(q) => { form.subcategory = q; }}
-					onFreeTextBlur={(q) => { form.subcategory = q.trim(); }}
-				/>
-			</div>
-		</div>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div>
-				<label for="doc-parent" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.parent_page', 'Parent page')}</label>
-				<Autocomplete
-					id="doc-parent"
-					placeholder={t('docs.parent_ph', '— Top level —')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={parentFetcher}
-					initialFetcher={parentInitial}
-					selectedId={form.parentId || null}
-					selectedLabel={parentPages.find((p) => p.id === form.parentId)?.title ?? null}
-					onSelect={(item) => { form.parentId = item.id; }}
-					onClear={() => { form.parentId = ''; }}
-				/>
-			</div>
-			<div>
-				<label for="doc-position" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.position', 'Position')}</label>
-				<input id="doc-position" type="number" min="0" step="1" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.position} />
-			</div>
-		</div>
-		<!-- Feature image (§44 amendment 5) — media-library backed, URL is
-		     computed server-side. -->
-		<div>
-			<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.feature_image', 'Feature image')}</span>
-			<div class="flex items-center gap-3">
-				{#if form.featureImageUrl}
-					<img src={form.featureImageUrl} alt="" class="h-14 w-24 rounded-md border object-cover" style="border-color: var(--color-border)" />
-				{/if}
-				<Button variant="outline" onclick={() => { featurePickerOpen = true; }}>
-					<ImageIcon size={14} class="mr-1 inline-block" />
-					{form.featureImageId ? t('docs.change_image', 'Change image') : t('docs.choose_image', 'Choose image')}
-				</Button>
-				{#if form.featureImageId}
-					<button type="button" class="text-xs" style="color: var(--color-muted)" onclick={() => { form.featureImageId = ''; form.featureImageUrl = ''; }}>
-						{t('common.clear', 'Clear')}
-					</button>
-				{/if}
-			</div>
-		</div>
-		<div>
-			<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_label', 'Body')}</span>
-			{#if editingId && !editContentReady}
-				<div class="rounded-md border px-3 py-8 text-center text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
-					{t('docs.body_loading', 'Loading page content…')}
-				</div>
-			{:else}
-				<RichTextEditor
-					bind:this={rte}
-					content={editSeed}
-					{t}
-					placeholder={t('docs.body_placeholder', 'Write the documentation…')}
-					ariaLabel={t('docs.body_label', 'Body')}
-					defaultMode="wysiwyg"
-					modes={['wysiwyg', 'markdown', 'block']}
-					minHeight={320}
-					features={{
-						image: true,
-						youtube: true,
-						markdown: true,
-						suggestions: false,
-						coupon: false,
-						linkPreview: false,
-						video: false
-					}}
-					onjson={(json) => { editorJson = json; }}
-					onPickImage={(insert) => {
-						pendingImageInsert = insert;
-						bodyPickerOpen = true;
-					}}
-				/>
-			{/if}
-		</div>
-		{#if editingId}
-			<div>
-				<label for="doc-summary" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.summary_label', 'Edit summary (optional)')}</label>
-				<input id="doc-summary" type="text" maxlength="200" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.summary} placeholder={t('docs.summary_placeholder', 'Briefly describe your changes')} />
-			</div>
-		{/if}
-	</div>
-	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showFormModal = false; }}>{t('docs.cancel')}</Button>
-			<Button onclick={submit} disabled={saving}>
-				{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
-			</Button>
-		</div>
-	{/snippet}
-</Modal>
 
 <!-- AI Generation Modal (DOC-010) -->
 <Modal bind:open={showGenerateModal} title={t('docs.generate_with_ai', 'Generate with AI')} size="lg">
@@ -1392,21 +1030,3 @@
 		</div>
 	{/snippet}
 </Modal>
-
-<!-- In-body image insert (RichTextEditor onPickImage) and feature-image pick -->
-<MediaPickerModal
-	bind:open={bodyPickerOpen}
-	onselect={(media) => {
-		pendingImageInsert?.(media.url, media.filename);
-		pendingImageInsert = null;
-		bodyPickerOpen = false;
-	}}
-/>
-<MediaPickerModal
-	bind:open={featurePickerOpen}
-	onselect={(media) => {
-		form.featureImageId = media.id;
-		form.featureImageUrl = media.url;
-		featurePickerOpen = false;
-	}}
-/>
