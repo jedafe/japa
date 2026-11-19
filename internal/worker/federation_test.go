@@ -70,6 +70,9 @@ func (f *fakeProvisioner) SyncUserLifecycle(_ context.Context, _ pgtype.UUID) (b
 func (f *fakeProvisioner) MigratePLC(_ context.Context, _ pgtype.UUID) error { return nil }
 func (f *fakeProvisioner) EnqueueReconcileBelowPostFloor(_ context.Context, _ pgtype.UUID) {
 }
+func (f *fakeProvisioner) ReconcileSweepPage(_ context.Context, _ pgtype.UUID, _ int32) (string, error) {
+	return "", nil
+}
 
 // setAutoOptinSeams injects fakes into the package-level seams the handler
 // reads and restores them on cleanup.

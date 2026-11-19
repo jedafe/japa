@@ -469,6 +469,7 @@ var taskTypeCatalog = []struct {
 	{TypeAtprotoRequestCrawl, "default", "Announce the PDS host to the configured relay (§127 A3)"},
 	{TypeAtprotoLifecycleSync, "default", "Reconcile atproto account status with users.status (§127 lifecycle)"},
 	{TypeAtprotoReconcileRepo, "default", "Converge an account's indexed records to canonical eligibility on reactivation (§127 A4)"},
+	{TypeAtprotoReconcileSweep, "low", "Daily projection-floor divergence probe → reconcile_repo for divergent repos (§127, paged self-continue)"},
 	{TypeFederationAutoOptin, "default", "Provision a new member's federated identity when auto opt-in is on (§126)"},
 	{TypeFederationBackfillOptin, "default", "Paged backfill of federated identities for existing members (§126)"},
 	{TypeSearchReindexAll, "low", "Full bulk resync of every managed Meilisearch index (optional purge-first)"},

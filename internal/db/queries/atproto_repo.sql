@@ -221,6 +221,89 @@ SELECT (SELECT COUNT(*) FROM (
             AND pc.deleted_at IS NULL
           LIMIT @min_posts) p) >= @min_posts AS meets_floor;
 
+-- name: GetAtprotoRepoBacklogExists :one
+-- §127 floor-crossing probe (post-publish emit): true while the repo
+-- still owes projection — eligible-but-unindexed posts, or the self
+-- profile row absent. Only meaningful at/above the floor: below it the
+-- post half returns nothing (the floor predicate) and a withheld
+-- profile is the correct state, so callers only probe after a
+-- successful publish.
+SELECT EXISTS(
+    SELECT 1 FROM contents c
+    WHERE c.author_id = @user_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.deleted_at IS NULL
+      AND c.federate_opt_out = false
+      AND c.content_type = ANY(@content_types::text[])
+      AND (SELECT COUNT(*) FROM (
+             SELECT 1 FROM contents pc
+             WHERE pc.author_id = @user_id
+               AND pc.status = 'published'
+               AND pc.deleted_at IS NULL
+             LIMIT @min_posts) p) >= @min_posts
+      AND NOT EXISTS (
+        SELECT 1 FROM atproto_records r
+        WHERE r.content_id = c.id AND r.account_id = @account_id
+      )
+  )
+  OR NOT EXISTS(
+    SELECT 1 FROM atproto_records r
+    WHERE r.account_id = @account_id
+      AND r.collection = 'app.bsky.actor.profile'
+  ) AS backlog_exists;
+
+-- name: GetAtprotoRepoDivergent :one
+-- atproto:reconcile_sweep probe: true when the repo's index disagrees
+-- with the §127 projection floor either direction — below the floor
+-- with rows still indexed, or at/above it with withheld work (a
+-- missing self profile or eligible-but-unindexed posts). Divergence —
+-- not "has work" — is the enqueue criterion, so below-floor repos that
+-- correctly hold nothing and fully-converged repos both skip.
+WITH meets AS (
+  SELECT (SELECT COUNT(*) FROM (
+            SELECT 1 FROM contents pc
+            WHERE pc.author_id = @user_id
+              AND pc.status = 'published'
+              AND pc.deleted_at IS NULL
+            LIMIT @min_posts) p) >= @min_posts AS m
+)
+SELECT (
+    (NOT m AND EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = @account_id))
+    OR
+    (m AND (
+      NOT EXISTS(
+        SELECT 1 FROM atproto_records r
+        WHERE r.account_id = @account_id
+          AND r.collection = 'app.bsky.actor.profile'
+      )
+      OR EXISTS(
+        SELECT 1 FROM contents c
+        WHERE c.author_id = @user_id
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+          AND c.federate_opt_out = false
+          AND c.content_type = ANY(@content_types::text[])
+          AND NOT EXISTS(
+            SELECT 1 FROM atproto_records r
+            WHERE r.content_id = c.id AND r.account_id = @account_id
+          )
+      )
+    ))
+  ) AS divergent
+FROM meets;
+
+-- name: ListAtprotoSweepAccounts :many
+-- atproto:reconcile_sweep page walk: active accounts only (frozen
+-- repos converge on their own reactivation), uuid keyset so pages stay
+-- stable under mid-sweep inserts.
+SELECT id, user_id FROM atproto_accounts
+WHERE status = 'active'
+  AND id > @cursor::uuid
+ORDER BY id
+LIMIT @page_limit;
+
 -- name: ListAtprotoBlobsByAccount :many
 -- CAR traversal sees embedded blob CIDs as DAG links — the blockstore
 -- must resolve them or car.WriteCar aborts on the missing leaf (A4).

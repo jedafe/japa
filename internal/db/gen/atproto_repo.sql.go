@@ -336,6 +336,119 @@ func (q *Queries) GetAtprotoRecordsByContent(ctx context.Context, contentID pgty
 	return items, nil
 }
 
+const getAtprotoRepoBacklogExists = `-- name: GetAtprotoRepoBacklogExists :one
+SELECT EXISTS(
+    SELECT 1 FROM contents c
+    WHERE c.author_id = $1
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.deleted_at IS NULL
+      AND c.federate_opt_out = false
+      AND c.content_type = ANY($2::text[])
+      AND (SELECT COUNT(*) FROM (
+             SELECT 1 FROM contents pc
+             WHERE pc.author_id = $1
+               AND pc.status = 'published'
+               AND pc.deleted_at IS NULL
+             LIMIT $3) p) >= $3
+      AND NOT EXISTS (
+        SELECT 1 FROM atproto_records r
+        WHERE r.content_id = c.id AND r.account_id = $4
+      )
+  )
+  OR NOT EXISTS(
+    SELECT 1 FROM atproto_records r
+    WHERE r.account_id = $4
+      AND r.collection = 'app.bsky.actor.profile'
+  ) AS backlog_exists
+`
+
+type GetAtprotoRepoBacklogExistsParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	ContentTypes []string    `json:"content_types"`
+	MinPosts     int32       `json:"min_posts"`
+	AccountID    pgtype.UUID `json:"account_id"`
+}
+
+// §127 floor-crossing probe (post-publish emit): true while the repo
+// still owes projection — eligible-but-unindexed posts, or the self
+// profile row absent. Only meaningful at/above the floor: below it the
+// post half returns nothing (the floor predicate) and a withheld
+// profile is the correct state, so callers only probe after a
+// successful publish.
+func (q *Queries) GetAtprotoRepoBacklogExists(ctx context.Context, arg GetAtprotoRepoBacklogExistsParams) (*bool, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRepoBacklogExists,
+		arg.UserID,
+		arg.ContentTypes,
+		arg.MinPosts,
+		arg.AccountID,
+	)
+	var backlog_exists *bool
+	err := row.Scan(&backlog_exists)
+	return backlog_exists, err
+}
+
+const getAtprotoRepoDivergent = `-- name: GetAtprotoRepoDivergent :one
+WITH meets AS (
+  SELECT (SELECT COUNT(*) FROM (
+            SELECT 1 FROM contents pc
+            WHERE pc.author_id = $2
+              AND pc.status = 'published'
+              AND pc.deleted_at IS NULL
+            LIMIT $4) p) >= $4 AS m
+)
+SELECT (
+    (NOT m AND EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = $1))
+    OR
+    (m AND (
+      NOT EXISTS(
+        SELECT 1 FROM atproto_records r
+        WHERE r.account_id = $1
+          AND r.collection = 'app.bsky.actor.profile'
+      )
+      OR EXISTS(
+        SELECT 1 FROM contents c
+        WHERE c.author_id = $2
+          AND c.status = 'published'
+          AND c.visibility = 'public'
+          AND c.deleted_at IS NULL
+          AND c.federate_opt_out = false
+          AND c.content_type = ANY($3::text[])
+          AND NOT EXISTS(
+            SELECT 1 FROM atproto_records r
+            WHERE r.content_id = c.id AND r.account_id = $1
+          )
+      )
+    ))
+  ) AS divergent
+FROM meets
+`
+
+type GetAtprotoRepoDivergentParams struct {
+	AccountID    pgtype.UUID `json:"account_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	ContentTypes []string    `json:"content_types"`
+	MinPosts     int32       `json:"min_posts"`
+}
+
+// atproto:reconcile_sweep probe: true when the repo's index disagrees
+// with the §127 projection floor either direction — below the floor
+// with rows still indexed, or at/above it with withheld work (a
+// missing self profile or eligible-but-unindexed posts). Divergence —
+// not "has work" — is the enqueue criterion, so below-floor repos that
+// correctly hold nothing and fully-converged repos both skip.
+func (q *Queries) GetAtprotoRepoDivergent(ctx context.Context, arg GetAtprotoRepoDivergentParams) (*bool, error) {
+	row := q.db.QueryRow(ctx, getAtprotoRepoDivergent,
+		arg.AccountID,
+		arg.UserID,
+		arg.ContentTypes,
+		arg.MinPosts,
+	)
+	var divergent *bool
+	err := row.Scan(&divergent)
+	return divergent, err
+}
+
 const getAtprotoRepoHead = `-- name: GetAtprotoRepoHead :one
 SELECT account_id, seq, cid, rev, prev_cid, data, created_at FROM atproto_repo_commits
 WHERE account_id = $1
@@ -692,6 +805,47 @@ func (q *Queries) ListAtprotoRepoBlocks(ctx context.Context, accountID pgtype.UU
 			&i.Data,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAtprotoSweepAccounts = `-- name: ListAtprotoSweepAccounts :many
+SELECT id, user_id FROM atproto_accounts
+WHERE status = 'active'
+  AND id > $1::uuid
+ORDER BY id
+LIMIT $2
+`
+
+type ListAtprotoSweepAccountsParams struct {
+	Cursor    pgtype.UUID `json:"cursor"`
+	PageLimit int32       `json:"page_limit"`
+}
+
+type ListAtprotoSweepAccountsRow struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// atproto:reconcile_sweep page walk: active accounts only (frozen
+// repos converge on their own reactivation), uuid keyset so pages stay
+// stable under mid-sweep inserts.
+func (q *Queries) ListAtprotoSweepAccounts(ctx context.Context, arg ListAtprotoSweepAccountsParams) ([]ListAtprotoSweepAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listAtprotoSweepAccounts, arg.Cursor, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtprotoSweepAccountsRow
+	for rows.Next() {
+		var i ListAtprotoSweepAccountsRow
+		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

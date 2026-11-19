@@ -29,6 +29,7 @@ type atprotoRepoWriter interface {
 	ReconcileRepo(ctx context.Context, accountID pgtype.UUID) error
 	MigratePLC(ctx context.Context, accountID pgtype.UUID) error
 	EnqueueReconcileBelowPostFloor(ctx context.Context, accountID pgtype.UUID)
+	ReconcileSweepPage(ctx context.Context, cursor pgtype.UUID, limit int32) (string, error)
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -377,6 +378,73 @@ func HandleAtprotoDeleteRecord(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:atproto:delete_record: committed", "uri", payload.URI)
 	return nil
 }
+
+// EnqueueAtprotoReconcileSweep fires atproto:reconcile_sweep — the
+// daily drift probe (§127 projection floor / §11). An empty cursor
+// starts the keyset walk; each page self-continues until the table is
+// exhausted. Fire-and-forget (Rule 8); a nil enqueuer is a no-op.
+func EnqueueAtprotoReconcileSweep(ctx context.Context, cursor string) {
+	if taskEnqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"cursor": cursor})
+	if err != nil {
+		slog.Error("worker: marshal atproto:reconcile_sweep payload", "error", err)
+		return
+	}
+	if err := taskEnqueuer.Enqueue(TypeAtprotoReconcileSweep, payload); err != nil {
+		slog.Error("worker: enqueue atproto:reconcile_sweep", "error", err)
+	}
+}
+
+// HandleAtprotoReconcileSweep processes one atproto:reconcile_sweep
+// page (§127 projection floor / §11): the service walks a keyset page
+// of active accounts, probes each for projection divergence, and
+// enqueues reconcile_repo only where the probe disagrees. A non-empty
+// next cursor self-continues with the following page.
+func HandleAtprotoReconcileSweep(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:atproto:reconcile_sweep")
+
+	if atprotoSvc == nil {
+		slog.Warn("task:atproto:reconcile_sweep: service not registered, dropping task")
+		return nil
+	}
+
+	var payload struct {
+		Cursor string `json:"cursor"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:atproto:reconcile_sweep: invalid payload", "error", err)
+		return err
+	}
+	var cursor pgtype.UUID
+	if payload.Cursor != "" {
+		c, err := scanUUID(payload.Cursor)
+		if err != nil {
+			return fmt.Errorf("task:atproto:reconcile_sweep: %w: %w", err, asynq.SkipRetry)
+		}
+		cursor = c
+	} else {
+		// Zero uuid — the keyset predicate (id > cursor) admits every
+		// row, so page one needs no special case.
+		_ = cursor.Scan("00000000-0000-0000-0000-000000000000")
+	}
+
+	next, err := atprotoSvc.ReconcileSweepPage(ctx, cursor, reconcileSweepPageSize)
+	if err != nil {
+		slog.Error("task:atproto:reconcile_sweep: page failed", "error", err)
+		return err
+	}
+	if next != "" {
+		EnqueueAtprotoReconcileSweep(ctx, next)
+	}
+	return nil
+}
+
+// reconcileSweepPageSize bounds each sweep page — large enough that a
+// fleet walks in a handful of tasks, small enough that one page's probe
+// round-trips stay cheap.
+const reconcileSweepPageSize = 200
 
 // EnqueueAtprotoPlcMigrate fires atproto:plc_migrate for one account
 // (§127 A6-2): provision a did:plc — rotation-key custody, signed

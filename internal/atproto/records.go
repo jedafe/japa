@@ -138,7 +138,11 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 	// rename leaves the stored handle stale until this sync. Handle
 	// resolution is identity, not discovery — it runs below the floor.
 	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
-	if !s.authorMeetsPostFloor(ctx, account.UserID) {
+	meets, err := s.authorMeetsPostFloor(ctx, account.UserID)
+	if err != nil {
+		return err
+	}
+	if !meets {
 		return s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did))
 	}
 	profile, err := s.store.q.GetAtprotoUserProfile(ctx, account.UserID)
@@ -282,6 +286,14 @@ func ContentPostURI(did string, contentID pgtype.UUID) string {
 // but never blocks deletes, so tombstones still drain the repo while
 // the feature is off. Returns the record's at:// URI.
 func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (string, error) {
+	return s.publishContent(ctx, contentID, true)
+}
+
+// publishContent is PublishContent with the backlog probe switchable —
+// the reconcile missing-walk calls it with probeBacklog=false since the
+// walk itself is the convergence a probe would enqueue (probing
+// mid-walk would queue a redundant pass over rows still in flight).
+func (s *Service) publishContent(ctx context.Context, contentID pgtype.UUID, probeBacklog bool) (string, error) {
 	if !s.featureOn(ctx) {
 		return "", permanent(fmt.Errorf("atproto: feature.atproto disabled"))
 	}
@@ -338,7 +350,7 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	if errors.Is(err, ErrNotFound) {
 		return "", permanent(err)
 	}
-	if err == nil {
+	if err == nil && probeBacklog {
 		s.emitBacklogReconcile(ctx, accountID, row.AuthorID, minPosts)
 	}
 	return uri, err
@@ -349,24 +361,16 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 // floor-crossing emit. Below the floor nothing projects, so a publish
 // can only succeed at or above it; whatever was withheld before the
 // crossing (earlier posts, the never-projected profile) is a backlog
-// the reconcile's missing-walk emits together. Steady-state authors
-// pay two indexed probes and enqueue nothing.
+// the reconcile's missing-walk emits together. One indexed probe;
+// steady-state authors enqueue nothing.
 func (s *Service) emitBacklogReconcile(ctx context.Context, accountID, authorID pgtype.UUID, minPosts int32) {
-	missing, err := s.store.q.ListAtprotoReconcileMissingPosts(ctx, gen.ListAtprotoReconcileMissingPostsParams{
+	backlog, err := s.store.q.GetAtprotoRepoBacklogExists(ctx, gen.GetAtprotoRepoBacklogExistsParams{
 		UserID:       authorID,
 		AccountID:    accountID,
 		ContentTypes: s.federatableTypesFor(ctx),
 		MinPosts:     minPosts,
 	})
-	if err == nil && len(missing) > 0 {
-		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
-		return
-	}
-	account, aerr := s.store.q.GetAtprotoAccountByID(ctx, accountID)
-	if aerr != nil {
-		return
-	}
-	if _, perr := s.store.q.GetAtprotoRecord(ctx, profileRecordURI(account.Did)); errors.Is(perr, pgx.ErrNoRows) {
+	if err == nil && backlog != nil && *backlog {
 		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
 	}
 }
@@ -512,6 +516,19 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 		}
 		if owner != accountID {
 			return "", permanent(fmt.Errorf("atproto: content %s is not owned by account %s", contentID.String(), accountID.String()))
+		}
+		// A raw record carrying content_id re-checks the same
+		// eligibility PublishContent enforces — published, public,
+		// federatable, not opted out, author at the §127 post floor —
+		// so a stale or withheld row can't write through this path.
+		if _, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
+			ID:           contentID,
+			ContentTypes: s.federatableTypesFor(ctx),
+			MinPosts:     s.minPostsDiscoverable(ctx),
+		}); errors.Is(err, pgx.ErrNoRows) {
+			return "", permanent(ErrNotFound)
+		} else if err != nil {
+			return "", fmt.Errorf("atproto: projectable check: %w", err)
 		}
 	}
 	var uri string

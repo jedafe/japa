@@ -144,6 +144,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Honcho memory retention sweep — daily (JC_HONCHO_RETENTION_DAYS).
 	schedule("40 4 * * *", TypeHonchoRetentionSweep, 24*time.Hour)
 
+	// §127 projection-floor drift sweep — daily: keyset-walks active
+	// atproto accounts, enqueues reconcile_repo only for divergent repos.
+	schedule("37 3 * * *", TypeAtprotoReconcileSweep, 24*time.Hour)
+
 	// Velocity score recalculation — every 5 minutes.
 	// Writes to content_scores.velocity_score (used by feed ranking queries).
 	schedule("*/5 * * * *", TypeMaintenanceUpdateVelocityScores, 5*time.Minute)

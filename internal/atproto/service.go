@@ -97,28 +97,40 @@ func (s *Service) minPostsDiscoverable(ctx context.Context) int32 {
 // authorMeetsPostFloor reports whether the author's published contents
 // (any visibility — the same count the AP discoverable flag uses)
 // reach the floor. The probe query caps the scan at the threshold.
-func (s *Service) authorMeetsPostFloor(ctx context.Context, userID pgtype.UUID) bool {
+// Errors propagate — callers must not treat a failed probe as
+// below-floor (a transient read failure would otherwise delete a
+// legitimately-projected profile).
+func (s *Service) authorMeetsPostFloor(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	meets, err := s.store.q.GetAtprotoAuthorMeetsPostFloor(ctx, gen.GetAtprotoAuthorMeetsPostFloorParams{
 		UserID:   userID,
 		MinPosts: s.minPostsDiscoverable(ctx),
 	})
-	return err == nil && meets
+	if err != nil {
+		return false, fmt.Errorf("atproto: post floor probe: %w", err)
+	}
+	return meets, nil
 }
 
 // EnqueueReconcileBelowPostFloor is the atproto:delete_record
 // convergence hook (§127 projection floor): a tombstone can drop the
 // author under the floor, and emit paths only remove the deleted
 // content's own record — the profile and any still-indexed siblings
-// need the reconcile walk to converge. Above the floor, or on a
-// non-active account, this is a cheap no-op. Fire-and-forget (Rule 8).
+// need the reconcile walk to converge. Enqueues only when rows remain
+// to converge — a below-floor repo already empty has nothing for the
+// walk to do. Above the floor, on a non-active account, or on a probe
+// failure, this is a cheap no-op. Fire-and-forget (Rule 8).
 func (s *Service) EnqueueReconcileBelowPostFloor(ctx context.Context, accountID pgtype.UUID) {
 	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
 	if err != nil || account.Status != AccountStatusActive {
 		return
 	}
-	if !s.authorMeetsPostFloor(ctx, account.UserID) {
-		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
+	if meets, err := s.authorMeetsPostFloor(ctx, account.UserID); err != nil || meets {
+		return
 	}
+	if n, err := s.store.q.CountAtprotoRecords(ctx, accountID); err != nil || n == 0 {
+		return
+	}
+	worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
 }
 
 // ---------------------------------------------------------------------------

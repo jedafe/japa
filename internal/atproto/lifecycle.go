@@ -189,7 +189,7 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 			} else {
 				// Still eligible and still owned — re-upsert; the refresh
 				// also repairs drift (pre-A4 records gain facets/embeds).
-				_, perr := s.PublishContent(ctx, rec.ContentID)
+				_, perr := s.publishContent(ctx, rec.ContentID, false)
 				perRow(perr)
 			}
 		}
@@ -207,7 +207,7 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 		return errors.Join(errs, fmt.Errorf("atproto: reconcile missing: %w", err))
 	}
 	for _, contentID := range missing {
-		_, perr := s.PublishContent(ctx, contentID)
+		_, perr := s.publishContent(ctx, contentID, false)
 		perRow(perr)
 	}
 	if !profileIndexed {
@@ -218,6 +218,47 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 		perRow(s.publishProfile(ctx, &account))
 	}
 	return errs
+}
+
+// ReconcileSweepPage walks one keyset page of active accounts for
+// atproto:reconcile_sweep (§127 projection floor / §11), probing each
+// for projection divergence — indexed rows below the floor, or
+// withheld backlog above it — and enqueuing atproto:reconcile_repo
+// only for divergent repos. Returns the next page cursor ("" at the
+// end). Probing is read-only: converged repos cost one query, not a
+// commit — the sweep can run daily without rewriting healthy repos.
+func (s *Service) ReconcileSweepPage(ctx context.Context, cursor pgtype.UUID, limit int32) (string, error) {
+	if !s.featureOn(ctx) {
+		return "", nil
+	}
+	rows, err := s.store.q.ListAtprotoSweepAccounts(ctx, gen.ListAtprotoSweepAccountsParams{
+		Cursor:    cursor,
+		PageLimit: limit,
+	})
+	if err != nil {
+		return "", fmt.Errorf("atproto: sweep page: %w", err)
+	}
+	var errs error
+	for _, a := range rows {
+		divergent, err := s.store.q.GetAtprotoRepoDivergent(ctx, gen.GetAtprotoRepoDivergentParams{
+			UserID:       a.UserID,
+			AccountID:    a.ID,
+			ContentTypes: s.federatableTypesFor(ctx),
+			MinPosts:     s.minPostsDiscoverable(ctx),
+		})
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("atproto: sweep probe %s: %w", a.ID.String(), err))
+			continue
+		}
+		if divergent != nil && *divergent {
+			worker.EnqueueAtprotoReconcileRepo(ctx, a.ID)
+		}
+	}
+	next := ""
+	if int32(len(rows)) == limit {
+		next = uuidString(rows[len(rows)-1].ID)
+	}
+	return next, errs
 }
 
 // EraseAccount is the GDPR erasure path — called by the gdpr service

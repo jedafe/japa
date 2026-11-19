@@ -924,6 +924,21 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 		}
 		return n
 	}
+	// The reconcile_sweep probe — true only when the index disagrees
+	// with the floor either direction.
+	divergent := func() bool {
+		t.Helper()
+		div, err := svc.store.q.GetAtprotoRepoDivergent(ctx, gen.GetAtprotoRepoDivergentParams{
+			UserID:       userID,
+			AccountID:    acct.ID,
+			ContentTypes: svc.federatableTypesFor(ctx),
+			MinPosts:     3,
+		})
+		if err != nil {
+			t.Fatalf("divergent probe: %v", err)
+		}
+		return div != nil && *div
+	}
 
 	// Enable ran below the floor: account active, no profile indexed.
 	if got := acct.Status; got != AccountStatusActive {
@@ -931,6 +946,9 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	}
 	if n := countRecords(CollectionProfile); n != 0 {
 		t.Fatalf("profile rows = %d below floor, want 0", n)
+	}
+	if divergent() {
+		t.Fatal("below-floor repo holding nothing reads divergent — sweep would churn a no-op reconcile")
 	}
 
 	c1 := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
@@ -954,18 +972,53 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	if n := countRecords(CollectionProfile); n != 1 {
 		t.Fatalf("profile rows = %d after crossing reconcile, want 1", n)
 	}
+	if divergent() {
+		t.Fatal("fully-projected repo reads divergent — sweep would rewrite a healthy repo daily")
+	}
 
-	// Dropping below the floor converges back to an empty repo: posts
-	// tombstone via the reconcile stale-check (the floor makes the row
-	// read ineligible) and the profile comes down via publishProfile.
+	// Dropping below the floor reads divergent the moment records fall
+	// out of eligibility — the sweep enqueues reconcile for exactly
+	// this state before the per-record emits even land.
 	if _, err := d.Writer.Exec(ctx, `UPDATE contents SET status = 'draft' WHERE id = $1`, c3); err != nil {
 		t.Fatalf("unpublish: %v", err)
 	}
+	if !divergent() {
+		t.Fatal("below-floor repo with indexed rows must read divergent")
+	}
+	// The sweep's page walk covers the account without error (the
+	// reconcile enqueue is a no-op under a nil task enqueuer). A
+	// pgtype zero-UUID is NULL — the keyset walk starts from the
+	// scanned zero value like the handler constructs.
+	var cursor pgtype.UUID
+	if err := cursor.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+		t.Fatalf("scan cursor: %v", err)
+	}
+	for pages := 0; ; pages++ {
+		next, err := svc.ReconcileSweepPage(ctx, cursor, 50)
+		if err != nil {
+			t.Fatalf("ReconcileSweepPage: %v", err)
+		}
+		if next == "" {
+			break
+		}
+		if err := cursor.Scan(next); err != nil {
+			t.Fatalf("sweep cursor %q: %v", next, err)
+		}
+		if pages > 50 {
+			t.Fatal("sweep walk did not terminate")
+		}
+	}
+	// Posts tombstone via the reconcile stale-check (the floor makes
+	// the row read ineligible) and the profile comes down via
+	// publishProfile.
 	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
 		t.Fatalf("ReconcileRepo below floor: %v", err)
 	}
 	if n := countRecords(CollectionPost) + countRecords(CollectionProfile); n != 0 {
 		t.Fatalf("rows = %d below floor after reconcile, want 0", n)
+	}
+	if divergent() {
+		t.Fatal("converged empty repo reads divergent — sweep would never settle")
 	}
 	if got := atprotoAccountFor(t, ctx, d, userID).Status; got != AccountStatusActive {
 		t.Fatalf("account status = %q, want active — floor must not disable identity", got)
