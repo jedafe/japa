@@ -185,7 +185,7 @@
 	}
 
 	function spaceTipAmount(tip: Tip): string {
-		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
+		if (tip.method === 'credits' || tip.method === 'stablecoin') return `${tip.credits_amount ?? 0} cr`;
 		if (tip.method === 'points') return tip.points_amount != null ? `${tip.points_amount} pts` : '—';
 		if (tip.fiat_amount != null) return fiatDisplay(tip.fiat_amount, tip.fiat_currency ?? '');
 		return '—';

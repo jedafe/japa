@@ -370,7 +370,8 @@ func (s *Service) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID, noti
 // are converted with the ISO-4217 exponent (JPY has no cents).
 func tipDisplayAmount(tip gen.Tip) string {
 	switch {
-	case tip.Method == MethodCredits:
+	case tip.Method == MethodCredits || tip.Method == MethodStablecoin:
+		// The onchain rail is credits-denominated — same display unit.
 		return fmt.Sprintf("%d credits", tip.CreditsAmount)
 	case tip.FiatAmount != nil && tip.FiatCurrency != nil:
 		exp := currencyExponent(*tip.FiatCurrency)

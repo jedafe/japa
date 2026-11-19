@@ -36,7 +36,8 @@
 	});
 
 	function amount(tip: Tip): string {
-		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
+		// stablecoin is credits-denominated too — same amount column.
+		if (tip.method === 'credits' || tip.method === 'stablecoin') return `${tip.credits_amount ?? 0} cr`;
 		// ADR-136: historical points tips carry their amount in
 		// tips_points_legacy — surfaced as points_amount by the API.
 		if (tip.method === 'points') return tip.points_amount != null ? `${tip.points_amount} pts` : '—';

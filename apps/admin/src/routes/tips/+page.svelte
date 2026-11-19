@@ -58,7 +58,7 @@
 	}
 
 	function amount(r: Pick<TipRow, 'method' | 'credits_amount' | 'points_amount' | 'fiat_amount' | 'fiat_currency'>): string {
-		if (r.method === 'credits') return `${r.credits_amount ?? 0} cr`;
+		if (r.method === 'credits' || r.method === 'stablecoin') return `${r.credits_amount ?? 0} cr`;
 		// ADR-136: historical points tips carry their amount in
 		// tips_points_legacy — surfaced as points_amount by the API.
 		if (r.method === 'points') return r.points_amount != null ? `${r.points_amount} pts` : '—';
