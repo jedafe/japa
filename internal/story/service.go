@@ -37,6 +37,7 @@ type ContentService interface {
 	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	HardDeleteContent(ctx context.Context, id pgtype.UUID) error
+	IsContentDeleted(ctx context.Context, id pgtype.UUID) (bool, error)
 }
 
 // FeatureChecker checks whether a feature flag is enabled for a platform.
@@ -561,6 +562,13 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, userID pgtype.UUID, 
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// GetContent filters soft-deleted rows — the row may exist in
+			// trash, which is already the desired end state: idempotent
+			// success. Only a genuinely missing row is a 404.
+			if deleted, derr := s.content.IsContentDeleted(ctx, contentID); derr == nil && deleted {
+				return nil
+			}
+
 			return pgx.ErrNoRows
 		}
 

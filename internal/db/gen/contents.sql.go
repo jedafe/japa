@@ -1050,6 +1050,20 @@ func (q *Queries) GetContentBySlug(ctx context.Context, slug string) (GetContent
 	return i, err
 }
 
+const getContentDeletedAt = `-- name: GetContentDeletedAt :one
+SELECT deleted_at FROM contents WHERE id = $1
+`
+
+// deleted_at for any row including trashed — lets soft-delete callers
+// distinguish "missing" from "already deleted" so repeat deletes are
+// idempotent successes rather than false 404s.
+func (q *Queries) GetContentDeletedAt(ctx context.Context, id pgtype.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getContentDeletedAt, id)
+	var deleted_at pgtype.Timestamptz
+	err := row.Scan(&deleted_at)
+	return deleted_at, err
+}
+
 const getContentDetailBySlug = `-- name: GetContentDetailBySlug :one
 SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.content_type, c.title, c.slug, c.body, c.body_html,

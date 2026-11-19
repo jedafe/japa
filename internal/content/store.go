@@ -855,6 +855,19 @@ func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetConten
 	return content, nil
 }
 
+// IsContentDeleted reports whether the row exists and is soft-deleted.
+// GetContentByID filters deleted_at, so callers needing to distinguish
+// "missing" (404) from "already deleted" (idempotent success) probe here.
+// Returns the underlying error — pgx.ErrNoRows when no such row exists.
+func (s *Service) IsContentDeleted(ctx context.Context, id pgtype.UUID) (bool, error) {
+	deletedAt, err := s.read.GetContentDeletedAt(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("checking content deleted state: %w", err)
+	}
+
+	return deletedAt.Valid, nil
+}
+
 // AdminContentDetail is the §22 admin content detail payload: the full
 // joined content row plus its moderation-history projection (reports and
 // resolutions, admin audit actions, appeals and resolutions, editorial/AI

@@ -811,6 +811,12 @@ SELECT EXISTS(SELECT 1 FROM contents WHERE id = @id);
 -- GetContentByID filters deleted_at and would miss the row.
 SELECT slug, content_type FROM contents WHERE id = @id;
 
+-- name: GetContentDeletedAt :one
+-- deleted_at for any row including trashed — lets soft-delete callers
+-- distinguish "missing" from "already deleted" so repeat deletes are
+-- idempotent successes rather than false 404s.
+SELECT deleted_at FROM contents WHERE id = @id;
+
 -- name: HardDeleteContent :execrows
 -- Admin force-delete — only rows already soft-deleted are removed
 -- (gated by admin.hard_delete via ?force=true). Children cascade via
