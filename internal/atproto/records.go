@@ -118,11 +118,6 @@ func profileRecordURI(did string) string {
 // way a never-projected one stays empty. Identity (DID/handle) is not
 // part of the gate and still converges via syncHandle.
 func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccount) error {
-	if !s.featureOn(ctx) {
-		// Same freeze PublishContent enforces — reconcile_repo reaches
-		// this path ungated via lifecycle reactivation.
-		return permanent(fmt.Errorf("atproto: feature.atproto disabled"))
-	}
 	if account.Status != AccountStatusActive {
 		// Disabled/tombstone repos are frozen — syncHandle would emit
 		// PLC ops, #identity events, and handle rewrites for an account
@@ -133,6 +128,23 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 		// (post-erasure) ends permanently, not on a retryable fetch miss.
 		return permanent(ErrNotFound)
 	}
+	meets, err := s.authorMeetsPostFloor(ctx, account.UserID)
+	if err != nil {
+		return err
+	}
+	if !s.featureOn(ctx) {
+		// The kill switch freezes new projection but never blocks
+		// deletes — drain the below-floor profile row the same way
+		// reconcile's stale-check tombstones already drain posts under
+		// the flag. Genesis minting is repo structure, same class.
+		if !meets {
+			if err := s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did)); err != nil {
+				return err
+			}
+			return s.ensureRepoHead(ctx, account.ID)
+		}
+		return permanent(fmt.Errorf("atproto: feature.atproto disabled"))
+	}
 	user, err := s.store.userByID(ctx, account.UserID)
 	if err != nil {
 		return fmt.Errorf("atproto: profile user: %w", err)
@@ -141,10 +153,6 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 	// rename leaves the stored handle stale until this sync. Handle
 	// resolution is identity, not discovery — it runs below the floor.
 	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
-	meets, err := s.authorMeetsPostFloor(ctx, account.UserID)
-	if err != nil {
-		return err
-	}
 	if !meets {
 		if err := s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did)); err != nil {
 			return err

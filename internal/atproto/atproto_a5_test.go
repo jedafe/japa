@@ -535,13 +535,19 @@ func TestJetstreamConsumeLiveSmoke(t *testing.T) {
 		t.Fatalf("live reply on wrong content")
 	}
 
-	// Identity + account events updated the tracked actor row.
+	// Identity + account frames ride behind the commit in the same
+	// sequential decode stream — the comment's landing says nothing
+	// about their progress, so poll for the bookkeeping the same way.
 	var handle *string
 	var deactivated *time.Time
-	if err := d.Writer.QueryRow(ctx,
-		`SELECT handle, deactivated_at FROM atproto_remote_actors WHERE did = $1`, remoteDID,
-	).Scan(&handle, &deactivated); err != nil {
-		t.Fatalf("remote actor row missing: %v", err)
+	for i := 0; i < 60; i++ {
+		_ = d.Writer.QueryRow(ctx,
+			`SELECT handle, deactivated_at FROM atproto_remote_actors WHERE did = $1`, remoteDID,
+		).Scan(&handle, &deactivated)
+		if deactivated != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	if handle == nil || *handle != "liverep.bsky.social" {
 		t.Fatalf("identity event did not refresh handle: %v", handle)

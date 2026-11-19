@@ -365,8 +365,14 @@ func (s *Service) ResolveHandleDID(ctx context.Context, handle string) (string, 
 	// Post-sync check: if the row matched via a stale stored handle, the
 	// claim just migrated to the member's live username — the requested
 	// handle is now unclaimed. Returning the row's DID here would cache
-	// (and prove) the wrong account for a freed handle.
-	if !strings.EqualFold(s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername), handle) {
+	// (and prove) the wrong account for a freed handle. Frozen accounts
+	// serve their stored identity — syncHandle's PLC ops and #identity
+	// frames must not mutate a disabled repo.
+	liveHandle := account.Handle
+	if account.Status == AccountStatusActive {
+		liveHandle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername)
+	}
+	if !strings.EqualFold(liveHandle, handle) {
 		return "", ErrNotFound
 	}
 	if s.vk != nil {
@@ -408,8 +414,13 @@ func (s *Service) DIDDocument(ctx context.Context, id string) (map[string]any, e
 	// account matched_did is previous_did (the did:web this URL claims
 	// to describe); the account's current did:plc lives in the PLC
 	// directory, not here. alsoKnownAs emits the live handle (synced on
-	// read after renames).
-	doc := didDocument(account.MatchedDid, s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername),
+	// read after renames); frozen accounts advertise their stored one —
+	// a handle sync would emit identity ops on a disabled repo.
+	liveHandle := account.Handle
+	if account.Status == AccountStatusActive {
+		liveHandle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, account.LiveUsername)
+	}
+	doc := didDocument(account.MatchedDid, liveHandle,
 		account.PublicKeyMultibase, s.cfg.pdsURL())
 	s.cacheSet(ctx, cacheKey, doc, 10*time.Minute)
 	return doc, nil
@@ -451,11 +462,13 @@ func (s *Service) GetMyAccount(ctx context.Context, userID pgtype.UUID) (Account
 		}
 		return AccountStatus{}, fmt.Errorf("atproto: my account: %w", err)
 	}
-	user, err := s.store.userByID(ctx, userID)
-	if err != nil {
-		return AccountStatus{}, fmt.Errorf("atproto: my user: %w", err)
+	if account.Status == AccountStatusActive {
+		user, err := s.store.userByID(ctx, userID)
+		if err != nil {
+			return AccountStatus{}, fmt.Errorf("atproto: my user: %w", err)
+		}
+		account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
 	}
-	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
 	return s.statusFor(account), nil
 }
 

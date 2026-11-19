@@ -1058,6 +1058,34 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	if divergent() {
 		t.Fatal("reminted empty repo still reads divergent")
 	}
+
+	// The flag-off freeze gates projection, never retractions: with
+	// rows re-indexed below the floor, reconcile under a disabled flag
+	// still drains posts (stale-check) AND the profile (publishProfile's
+	// drain branch) — the kill switch can't strand either collection.
+	if _, err := d.Writer.Exec(ctx, `UPDATE contents SET status = 'published' WHERE id = $1`, c3); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo republish: %v", err)
+	}
+	if n := countRecords(CollectionPost) + countRecords(CollectionProfile); n != 4 {
+		t.Fatalf("rows = %d after republish reconcile, want 4 (3 posts + profile)", n)
+	}
+	if _, err := d.Writer.Exec(ctx, `UPDATE contents SET status = 'draft' WHERE id = $1`, c3); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetFlags(flagOff{})
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo flag-off: %v", err)
+	}
+	svc.SetFlags(nil)
+	if n := countRecords(CollectionPost) + countRecords(CollectionProfile); n != 0 {
+		t.Fatalf("rows = %d after flag-off drain, want 0 — freeze gates upserts, never retractions", n)
+	}
+	if divergent() {
+		t.Fatal("flag-off drained repo reads divergent — sweep would churn")
+	}
 }
 
 // A profile task landing on a disabled/tombstone account must end
