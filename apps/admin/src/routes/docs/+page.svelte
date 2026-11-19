@@ -62,7 +62,11 @@
 	let docs = $state<DocPage[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	// FilterPanel binds filterValue LIVE (per-select), so it can't drive
+	// fetches — every dropdown change would fire a request before Apply.
+	// appliedFilters is the staged snapshot the API actually sees.
 	let filterValue = $state<Record<string, string>>({});
+	let appliedFilters = $state<Record<string, string>>({});
 	let searchQuery = $state('');
 	// Server-side table state — every change re-fetches the current slice.
 	let tblPage = $state(0);
@@ -403,17 +407,21 @@
 	// Audience/status filters are URL-synced like the table's q/sort/page —
 	// a filtered review queue stays shareable and back-nav restores it.
 	function syncFilterUrl() {
-		const url = new URL(pageState.url.href);
+		// $app/state's page.url can lag behind the DataTable's own
+		// replaceState writes (sort/dir/q/page) — merging against the laggy
+		// copy would silently drop those params. window.location is current.
+		const url = new URL(window.location.href);
 		for (const key of ['audience', 'status', 'deleted'] as const) {
-			if (filterValue[key]) url.searchParams.set(key, filterValue[key]);
+			if (appliedFilters[key]) url.searchParams.set(key, appliedFilters[key]);
 			else url.searchParams.delete(key);
 		}
 		replaceState(url, pageState.state);
 	}
 
 	function applyFilters() {
-		// The $effect below re-runs loadDocs when filterValue changes — only
-		// the URL sync is needed here.
+		// Snapshot the panel's draft — the $effect re-runs loadDocs when
+		// appliedFilters changes.
+		appliedFilters = { ...filterValue };
 		syncFilterUrl();
 		tblPage = 0;
 	}
@@ -422,11 +430,15 @@
 		// Seed filters from the URL (DataTable restores q/sort/page itself;
 		// filters are page-managed state).
 		const sp = pageState.url.searchParams;
-		filterValue = {
+		const seeded = {
 			...(sp.get('audience') ? { audience: sp.get('audience')! } : {}),
 			...(sp.get('status') ? { status: sp.get('status')! } : {}),
 			...(sp.get('deleted') === '1' || sp.get('deleted') === 'true' ? { deleted: 'true' } : {})
 		};
+		// Draft and applied state both start from the URL — the table must not
+		// fetch unfiltered first and then re-filter.
+		filterValue = seeded;
+		appliedFilters = { ...seeded };
 
 		// Seed the server-side table state from the URL (q/sort/dir/page/
 		// pageSize are the table's shareable params).
@@ -462,13 +474,18 @@
 		}
 	});
 
+	// Monotonic request id — rapid filter/sort/page changes fire overlapping
+	// requests, and a slow earlier response must not clobber newer state.
+	let loadSeq = 0;
+
 	async function loadDocs() {
+		const seq = ++loadSeq;
 		loading = true;
 		errorMessage = '';
 		const params = new URLSearchParams();
-		if (filterValue.audience) params.set('audience', filterValue.audience);
-		if (filterValue.status) params.set('status', filterValue.status);
-		if (filterValue.deleted === 'true') params.set('deleted', '1');
+		if (appliedFilters.audience) params.set('audience', appliedFilters.audience);
+		if (appliedFilters.status) params.set('status', appliedFilters.status);
+		if (appliedFilters.deleted === 'true') params.set('deleted', '1');
 		if (searchQuery.trim()) params.set('q', searchQuery.trim());
 		if (sortKey) {
 			params.set('sort', sortKey);
@@ -477,6 +494,7 @@
 		params.set('limit', String(tblPageSize));
 		params.set('offset', String(tblPage * tblPageSize));
 		const result = await docsApi.list(params.toString());
+		if (seq !== loadSeq) return; // superseded — a newer request owns the table
 		if (result.ok) {
 			const rows = result.data?.data ?? [];
 			serverTotal = result.data?.meta?.total ?? rows.length;
@@ -765,8 +783,10 @@
 	}
 
 	// Trash view: bulk actions swap to restore + permanent delete (Rule 11).
+	// Reads the APPLIED filters — the panel draft doesn't reflect what's in
+	// the table until Apply is clicked.
 	const bulkActions = $derived.by((): BulkAction[] => {
-		if (filterValue.deleted === 'true') {
+		if (appliedFilters.deleted === 'true') {
 			return [
 				{ label: t('docs.bulk_restore', 'Restore Selected'), icon: RotateCcw, onclick: (ids) => bulkRestore(ids) },
 				...(canHardDelete
