@@ -123,6 +123,7 @@
 		'/content': 'admin.content.view',
 		'/content-types': 'admin.settings',
 		'/moderation': 'admin.moderation',
+		'/analytics/advanced': 'analytics.advanced',
 		'/analytics': 'analytics.admin',
 		'/settings': 'admin.settings.view',
 		'/seo': 'admin.settings',

@@ -25,7 +25,7 @@
 		FileCheck, Globe2, Calculator, MapPin,
 		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer,
 		ScanSearch, Video, Inbox, Rss, Tags,
-		Map as MapIcon
+		TrendingUp, Map as MapIcon
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "#lib/stores/sidebar.svelte.js";
@@ -153,6 +153,7 @@
 			label: t("nav.section.analytics", "Analytics & Reports"),
 			items: [
 				{ path: "/analytics", label: t("nav.analytics", "Analytics"), icon: BarChart3, permission: "analytics.admin" },
+				{ path: "/analytics/advanced", label: t("nav.advanced_analytics", "Advanced Analytics"), icon: TrendingUp, permission: "analytics.advanced" },
 			{ path: "/search", label: t("nav.search", "Search Analytics"), icon: Search, permission: "search.analytics.view" },
 			{ path: "/pagespeed", label: t("nav.pagespeed", "PageSpeed"), icon: Gauge, permission: "analytics.admin" }
 			]

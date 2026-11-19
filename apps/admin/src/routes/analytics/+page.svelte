@@ -89,21 +89,7 @@
 		return `₦${Number(v ?? 0).toLocaleString()}`;
 	}
 
-	// Section 66 — Advanced Analytics state (ADR-084)
-	let advancedPeriod = $state("7d");
-	let topContent = $state<Array<Record<string, unknown>> | null>(null);
-	let revenueStreams = $state<Array<Record<string, unknown>> | null>(null);
-	let adPerformance = $state<Array<Record<string, unknown>> | null>(null);
-	let newsletterEngagement = $state<{ campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> } | null>(null);
-	let retentionCohorts = $state<Array<Record<string, unknown>> | null>(null);
-	let advancedLoading = $state(false);
-	let advancedError = $state("");
-	let advType = $state("");
-	// Set once the advanced tab has attempted its first fetch — the lazy-load
-	// effect below must not refire on every state change (infinite loop when
-	// any request fails, since a failed call leaves its slice null).
-	let advancedFetched = $state(false);
-	
+
 	async function loadAnalytics(f = from, toVal = to) {
 		if (loadAbortController) loadAbortController.abort();
 		loadAbortController = new AbortController();
@@ -199,62 +185,6 @@
 			spaceTotals = { total_spaces: d.total, total_joins: d.total_joins, total_posts: d.total_posts };
 		} else if (!signal?.aborted) {
 			error = res.error ?? 'Failed to load space analytics';
-		}
-	}
-
-	// Section 66 — Load advanced analytics from the §66 backend routes.
-	async function loadAdvancedAnalytics(period = advancedPeriod) {
-		advancedLoading = true;
-		advancedError = "";
-		try {
-			const periodParam = `period=${period}`;
-			const results = await Promise.allSettled([
-				analyticsAdminApi.getTopContent(`${periodParam}${advType ? `&type=${advType}` : ''}`),
-				analyticsAdminApi.getRevenueStreams(periodParam),
-				analyticsAdminApi.getAdPerformance(periodParam),
-				analyticsAdminApi.getNewsletterEngagement(periodParam),
-				analyticsAdminApi.getRetention(periodParam)
-			]);
-			const [topRes, revRes, adsRes, newsRes, retRes] = results;
-			topContent = topRes.status === 'fulfilled' && topRes.value.ok ? (topRes.value.data as { content?: Array<Record<string, unknown>> })?.content ?? null : null;
-			for (const r of topContent ?? []) {
-				const ct = String(r.content_type ?? '');
-				if (ct) seenContentTypes.add(ct);
-			}
-			seenContentTypes = new Set(seenContentTypes);
-			revenueStreams = revRes.status === 'fulfilled' && revRes.value.ok ? (revRes.value.data as { revenue?: Array<Record<string, unknown>> })?.revenue ?? null : null;
-			adPerformance = adsRes.status === 'fulfilled' && adsRes.value.ok ? (adsRes.value.data as { ads?: Array<Record<string, unknown>> })?.ads ?? null : null;
-			newsletterEngagement = newsRes.status === 'fulfilled' && newsRes.value.ok ? (newsRes.value.data as { campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> }) : null;
-			retentionCohorts = retRes.status === 'fulfilled' && retRes.value.ok ? (retRes.value.data as { cohorts?: Array<Record<string, unknown>> })?.cohorts ?? null : null;
-			// Surface a hard failure when every advanced request failed so the
-			// lazy-load effect stops retrying in a loop.
-			if (results.every((r) => r.status === 'rejected' || !r.value.ok)) {
-				advancedError = t('analytics.failed_to_load', 'Failed to load advanced analytics');
-			}
-		} catch (e) {
-			advancedError = e instanceof Error ? e.message : t('analytics.failed_to_load', 'Failed to load advanced analytics');
-		} finally {
-			advancedLoading = false;
-		}
-	}
-
-	// Section 66 — Export via the backend /admin/analytics/export route.
-	// top_content honors the active content-type filter; other metrics
-	// don't expose a type dimension so they export unfiltered.
-	async function handleAdvancedExport(metric: string) {
-		try {
-			const res = await analyticsAdminApi.exportCsv(metric, advancedPeriod, metric === 'top_content' ? advType || undefined : undefined);
-			if (!res.ok) throw new Error('Export failed');
-			// The backend returns CSV text; trigger a download.
-			const blob = new Blob([res.data as string], { type: 'text/csv' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `${metric}_export.csv`;
-			a.click();
-			URL.revokeObjectURL(url);
-		} catch (e) {
-			advancedError = e instanceof Error ? e.message : t('analytics.export_failed', 'Export failed');
 		}
 	}
 
@@ -375,24 +305,13 @@
 		};
 	});
 
-	// Section 66 — Load advanced analytics once when the Advanced tab is
-	// active. Retries go through the period selector or the error Retry
-	// button (both call loadAdvancedAnalytics directly). The tab guard keeps
-	// a deep-linked ?tab=advanced from firing §66 calls for operators
-	// without analytics.advanced.
+	// Legacy deep links (?tab=advanced) forward to the dedicated route —
+	// advanced analytics lives at /analytics/advanced now (ADR-084). Read
+	// the URL param directly: the Tabs component won't seed a value that
+	// isn't in its tab list.
 	$effect(() => {
-		if (activeTab === "advanced" && !advancedFetched && !advancedLoading && hasPermission('analytics.advanced')) {
-			advancedFetched = true;
-			loadAdvancedAnalytics();
-		}
-	});
-
-	// A deep-linked tab the operator can't see (e.g. ?tab=advanced without
-	// analytics.advanced) falls back to Overview rather than rendering
-	// permission errors.
-	$effect(() => {
-		if (activeTab === "advanced" && !hasPermission('analytics.advanced')) {
-			activeTab = "overview";
+		if (page.url.searchParams.get("tab") === "advanced") {
+			goto('/analytics/advanced', { replaceState: true });
 		}
 	});
 	
@@ -403,12 +322,7 @@
 		{ value: "spaces", label: t('analytics.tab_spaces', 'Spaces'), icon: Eye },
 		{ value: "revenue", label: t('analytics.tab_revenue', 'Revenue'), icon: DollarSign },
 		{ value: "search", label: t('analytics.tab_search', 'Search'), icon: Search },
-		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield },
-		// §66 endpoints require the analytics.advanced node — hide the tab
-		// entirely for operators who would only see permission errors.
-		...(hasPermission('analytics.advanced')
-			? [{ value: "advanced", label: t('analytics.tab_advanced', 'Advanced'), icon: BarChart3 }]
-			: [])
+		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield }
 	]);
 	
 	// Analytics series arrive in mixed orders (DAU/content are newest-first,
@@ -471,15 +385,6 @@
 			icon: TrendingUp,
 			color: "success"
 		}
-	]);
-
-	// Content-type options accumulate from every fetched leaderboard — deriving
-	// from the *filtered* rows would collapse the picker to just the active
-	// filter after the first selection.
-	let seenContentTypes = new Set<string>();
-	const advTypeOptions = $derived([
-		{ value: '', label: t('analytics.all_types', 'All types') },
-		...[...seenContentTypes].sort().map((ct) => ({ value: ct, label: ct }))
 	]);
 
 	// Top Content table columns for the Overview tab.
@@ -558,7 +463,6 @@
 			// active ?tab and leave stale data (the load effect only fires
 			// when ?from/?to change).
 			await loadAnalytics();
-			if (advancedFetched) await loadAdvancedAnalytics();
 		} catch {
 			error = t('analytics.failed_to_flush_cache', 'Failed to flush cache');
 		} finally {
@@ -581,6 +485,11 @@
 	// node, Refresh Views on analytics.admin, Export on analytics.export
 	// (matching the backend route permissions).
 	const pageActions = $derived([
+		// §66 dashboard lives on its own route — link instead of a tab so the
+		// heavy §66 datasets don't share this page's tab state.
+		...(hasPermission('analytics.advanced')
+			? [{ label: t('analytics.tab_advanced', 'Advanced'), icon: BarChart3, onclick: () => goto('/analytics/advanced'), variant: "outline" as const }]
+			: []),
 		...(hasPermission('analytics.export')
 			? [{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" as const }]
 			: []),
@@ -1065,187 +974,7 @@
 		</Card>
 	{/if}
 
-	{#if !loading && activeTab === "advanced"}
-		<!-- Section 66 — Advanced Analytics Dashboard (ADR-084) -->
-		<div class="flex flex-wrap items-center gap-2">
-			<label for="advanced-period" class="text-xs font-medium" style="color: var(--color-muted)">{t('analytics.period', 'Period')}</label>
-			<AutocompleteSelect
-				id="advanced-period"
-				value={advancedPeriod}
-				onValueChange={(v) => { advancedPeriod = v; loadAdvancedAnalytics(v); }}
-				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }]}
-			/>
-			<AutocompleteSelect
-				id="advanced-type"
-				value={advType}
-				onValueChange={(v) => { advType = v; loadAdvancedAnalytics(); }}
-				options={advTypeOptions}
-			/>
-			{#if hasPermission('analytics.export')}
-				<div class="ms-auto flex gap-2">
-					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('top_content')}>{t('analytics.export_top_content', 'Export Top Content')}</Button>
-					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('revenue_streams')}>{t('analytics.export_revenue', 'Export Revenue')}</Button>
-					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('ad_performance')}>{t('analytics.export_ads', 'Export Ads')}</Button>
-					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('newsletter')}>{t('analytics.export_newsletter', 'Export Newsletter')}</Button>
-					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('retention')}>{t('analytics.export_retention', 'Export Retention')}</Button>
-				</div>
-			{/if}
-		</div>
 
-		{#if advancedError}
-			<div class="flex items-center justify-between gap-2 rounded-lg p-3 text-sm" style="background: var(--color-danger); color: var(--color-white)">
-				<span>{advancedError}</span>
-				<Button variant="outline" size="sm" onclick={() => loadAdvancedAnalytics()}>{t('common.retry', 'Retry')}</Button>
-			</div>
-		{/if}
-
-		{#if advancedLoading}
-			<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-				{#each Array(4) as _, i (i)}
-					<CardSkeleton />
-				{/each}
-			</div>
-		{:else}
-			<!-- Top Content Leaderboard -->
-			<Card>
-				<CardHeader>
-					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.top_content', 'Top Content')}</h3>
-				</CardHeader>
-				<CardContent>
-					<DataTable
-						columns={[
-							{ key: "title", label: t('analytics.content_title', 'Title'), sortable: true, render: (v: string) => v ? `<span class="font-medium">${v}</span>` : '—' },
-							{ key: "content_type", label: t('analytics.type', 'Type'), sortable: true },
-							{ key: "total_views", label: t('analytics.views', 'Views'), sortable: true },
-							{ key: "total_reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
-							{ key: "total_comments", label: t('analytics.comments', 'Comments'), sortable: true },
-							{ key: "engagement_score", label: t('analytics.engagement_score', 'Engagement Score'), sortable: true }
-						]}
-						data={topContent ?? []}
-						pageSize={10}
-						urlSync={false}
-						rowKey={(r) => String(r.content_id)}
-						emptyMessage={t('analytics.no_top_content', 'No top content data')}
-					/>
-				</CardContent>
-			</Card>
-
-			<!-- Revenue Stream Breakdown -->
-			<Card>
-				<CardHeader>
-					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.revenue_streams', 'Revenue Streams')}</h3>
-				</CardHeader>
-				<CardContent>
-					<DataTable
-						columns={[
-							{ key: "month", label: t('analytics.month', 'Month'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short' }) : '—' },
-							{ key: "subscription_revenue", label: t('analytics.subscription', 'Subscription'), sortable: true, render: (v: number) => fmtNaira(v) },
-							{ key: "course_revenue", label: t('analytics.course', 'Course'), sortable: true, render: (v: number) => fmtNaira(v) },
-							{ key: "ad_revenue", label: t('analytics.ad_revenue', 'Ads'), sortable: true, render: (v: number) => fmtNaira(v) },
-							{ key: "credit_revenue", label: t('analytics.credits', 'Credits'), sortable: true, render: (v: number) => fmtNaira(v) }
-						]}
-						data={revenueStreams ?? []}
-						pageSize={12}
-						urlSync={false}
-						rowKey={(r) => String(r.month)}
-						bulkExport={false}
-						emptyMessage={t('analytics.no_revenue_streams', 'No revenue stream data')}
-					/>
-				</CardContent>
-			</Card>
-
-			<!-- Ad Performance -->
-			<Card>
-				<CardHeader>
-					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.ad_performance', 'Ad Performance')}</h3>
-				</CardHeader>
-				<CardContent>
-					<DataTable
-						columns={[
-							{ key: "campaign_name", label: t('analytics.campaign', 'Campaign'), sortable: true },
-							{ key: "status", label: t('analytics.status', 'Status'), sortable: true },
-							{ key: "impressions", label: t('analytics.impressions', 'Impressions'), sortable: true },
-							{ key: "clicks", label: t('analytics.clicks', 'Clicks'), sortable: true },
-							{ key: "ctr", label: t('analytics.ctr', 'CTR %'), sortable: true },
-							{ key: "spent", label: t('analytics.spent_credits', 'Spent (credits)'), sortable: true, render: (v: number) => `${Number(v ?? 0).toLocaleString()}` }
-						]}
-						data={adPerformance ?? []}
-						pageSize={10}
-						urlSync={false}
-						rowKey={(r) => String(r.campaign_id)}
-						emptyMessage={t('analytics.no_ad_performance', 'No ad performance data')}
-					/>
-				</CardContent>
-			</Card>
-
-			<!-- Newsletter Engagement -->
-			<Card>
-				<CardHeader>
-					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.newsletter_engagement', 'Newsletter Engagement')}</h3>
-				</CardHeader>
-				<CardContent>
-					<DataTable
-						columns={[
-							{ key: "campaign_name", label: t('analytics.campaign', 'Campaign'), sortable: true },
-							{ key: "total_sent", label: t('analytics.sent', 'Sent'), sortable: true },
-							{ key: "total_opened", label: t('analytics.opened', 'Opened'), sortable: true },
-							{ key: "open_rate", label: t('analytics.open_rate', 'Open Rate %'), sortable: true },
-							{ key: "total_clicked", label: t('analytics.clicked', 'Clicked'), sortable: true },
-							{ key: "click_rate", label: t('analytics.click_rate', 'Click Rate %'), sortable: true }
-						]}
-						data={newsletterEngagement?.campaigns ?? []}
-						pageSize={10}
-						urlSync={false}
-						rowKey={(r) => String(r.campaign_id)}
-						emptyMessage={t('analytics.no_newsletter_engagement', 'No newsletter engagement data')}
-					/>
-					{#if (newsletterEngagement?.lists ?? []).length > 0}
-						<h4 class="mb-2 mt-6 text-sm font-medium" style="color: var(--color-muted)">{t('analytics.top_lists', 'Top Lists')}</h4>
-						<DataTable
-							columns={[
-								{ key: "list_name", label: t('analytics.name', 'Name'), sortable: true },
-								{ key: "subscriber_count", label: t('analytics.subscribers', 'Subscribers'), sortable: true },
-								{ key: "new_subscribers", label: t('analytics.new_in_period', 'New (period)'), sortable: true }
-							]}
-							data={newsletterEngagement?.lists ?? []}
-							pageSize={5}
-							urlSync={false}
-							rowKey={(r) => String(r.list_id)}
-							bulkExport={false}
-							emptyMessage={t('analytics.no_data_available', 'No data available')}
-						/>
-					{/if}
-				</CardContent>
-			</Card>
-
-			<!-- Retention Cohorts -->
-			<Card>
-				<CardHeader>
-					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.retention_cohorts', 'Retention Cohorts')}</h3>
-				</CardHeader>
-				<CardContent>
-					<DataTable
-						columns={[
-							{ key: "cohort_date", label: t('analytics.cohort_date', 'Cohort Date'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
-							{ key: "cohort_size", label: t('analytics.cohort_size', 'Cohort Size'), sortable: true },
-							{ key: "retained_d1", label: 'D1', sortable: true },
-							{ key: "d1_rate", label: 'D1 %', sortable: true },
-							{ key: "retained_d7", label: 'D7', sortable: true },
-							{ key: "d7_rate", label: 'D7 %', sortable: true },
-							{ key: "retained_d30", label: 'D30', sortable: true },
-							{ key: "d30_rate", label: 'D30 %', sortable: true }
-						]}
-						data={retentionCohorts ?? []}
-						pageSize={12}
-						urlSync={false}
-						rowKey={(r) => String(r.cohort_date)}
-						bulkExport={false}
-						emptyMessage={t('analytics.no_retention_cohorts', 'No retention cohort data')}
-					/>
-				</CardContent>
-			</Card>
-		{/if}
-	{/if}
 </div>
 
 <Modal
