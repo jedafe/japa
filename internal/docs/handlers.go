@@ -41,7 +41,9 @@ type PermissionChecker interface {
 var AudienceGates = map[string]string{
 	"moderators": "admin.moderation",
 	"admin":      "admin.panel.access",
-	"superadmin": "admin.panel.access", // super_admin group holds wildcard
+	// §44 gates superadmin docs on the super_admin group — the "*" wildcard
+	// is granted only to super-admin roles, so it expresses exactly that.
+	"superadmin": rbac.SystemWildcardPermission,
 	// users/premium/organizations/api stay public — moderator playbooks are
 	// internal; premium/org docs are pre-signup reading by product decision.
 	// TestAudienceGatesOnlyInternal codifies this.
