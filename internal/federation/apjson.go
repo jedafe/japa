@@ -1,5 +1,7 @@
 package federation
 
+import "sort"
+
 // Minimal ActivityStreams JSON handling. Remote payloads are deliberately
 // parsed as generic maps — AP documents vary wildly across Mastodon,
 // GoToSocial, Misskey, Threads and friends, and a strict struct would
@@ -38,6 +40,34 @@ func apType(v any) string {
 	}
 	return ""
 }
+
+// apLocalizedText reads a text-bearing AP field — `field`, falling back
+// to the first non-empty `<field>Map` value for servers that ship
+// localized maps instead (contentMap, summaryMap). Map iteration is
+// nondeterministic, so keys are sorted before selection.
+func apLocalizedText(obj map[string]any, field string) string {
+	if v := apStr(obj[field]); v != "" {
+		return v
+	}
+	m, _ := obj[field+"Map"].(map[string]any)
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if v := apStr(m[k]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// apContentText returns the object's HTML body (content / contentMap).
+func apContentText(obj map[string]any) string { return apLocalizedText(obj, "content") }
 
 // apActorID resolves an activity's actor — conventionally a bare IRI but
 // some implementations embed the actor object.

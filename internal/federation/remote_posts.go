@@ -41,9 +41,9 @@ type remotePostFields struct {
 
 func remotePostFieldsFromObject(obj map[string]any) remotePostFields {
 	f := remotePostFields{
-		ContentText: htmlToText(apStr(obj["content"])),
+		ContentText: htmlToText(apContentText(obj)),
 		Name:        stringPtrOrNil(runeCap(apStr(obj["name"]), maxRemotePostField)),
-		Summary:     stringPtrOrNil(runeCap(apStr(obj["summary"]), maxRemotePostField)),
+		Summary:     stringPtrOrNil(runeCap(apLocalizedText(obj, "summary"), maxRemotePostField)),
 		Hashtags:    remotePostHashtags(obj),
 	}
 	if s, _ := obj["sensitive"].(bool); s {

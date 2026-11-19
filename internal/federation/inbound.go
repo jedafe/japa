@@ -128,13 +128,6 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		}
 	}
 
-	// §126: remote comments route through the existing spam pipeline.
-	// Pre-tx on purpose — the AI layer can take seconds and must not hold
-	// a database transaction open.
-	if reason := s.spamCheckReply(ctx, act); reason != "" {
-		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{}, nil)
-	}
-
 	// M3: relay couriers carry activities whose actor is NOT the signer —
 	// the relay re-signs subscribers' public content for its audience.
 	// Only an accepted relay subscription earns this: the embedded actor
@@ -154,6 +147,15 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 			}
 			signer = resolved
 		}
+	}
+
+	// §126: remote comments AND posts route through the existing spam
+	// pipeline. Pre-tx on purpose — the AI layer can take seconds and
+	// must not hold a database transaction open — and post-auth: a
+	// forged actor claim gets bounced above without spending a pipeline
+	// call on its body.
+	if reason := s.spamCheckReply(ctx, act); reason != "" {
+		return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{}, nil)
 	}
 
 	// §126 M4: Move{actor→target} needs the TARGET's actor document —
@@ -200,7 +202,7 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 		// object body runs the same pipeline arm. A bare-IRI announce
 		// resolves nothing here (announced nil) and ingests nothing.
 		if announced != nil {
-			if reason := s.spamCheckBody(ctx, htmlToText(apStr(announced.obj["content"]))); reason != "" {
+			if reason := s.spamCheckBody(ctx, htmlToText(apLocalizedText(announced.obj, "summary")+" "+apContentText(announced.obj))); reason != "" {
 				return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{}, nil)
 			}
 		}
@@ -239,9 +241,11 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 // and top-level posts land in member timelines via storeRemotePost, so
 // both ingest paths need the gate. Update objects get checked when they
 // carry a rewritten content body — otherwise a clean Create followed by
-// a spammy Update would sidestep the pipeline entirely. Actor
-// self-updates (object = the activity's actor) carry no comment body and
-// are skipped.
+// a spammy Update would sidestep the pipeline entirely. CW/summary text
+// is checked alongside content, and contentMap-localized bodies resolve
+// through the same apContentText fallback the ingest arms use. Actor
+// self-updates (object = the activity's actor) are profile edits, not
+// posts — skipped while they carry no content body.
 func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string {
 	var body string
 	switch apStr(act["type"]) {
@@ -250,13 +254,22 @@ func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string
 		if obj == nil {
 			return ""
 		}
-		body = htmlToText(apStr(obj["content"]))
+		// CW/summary text is as ingestible as the body — a spam payload
+		// there must not skip the pipeline. contentMap-localized posts
+		// resolve through the same fallback the ingest arms use.
+		body = htmlToText(apLocalizedText(obj, "summary") + " " + apContentText(obj))
 	case "Update":
 		obj := apObj(act["object"])
-		if obj == nil || strings.EqualFold(apID(obj["id"]), apActorID(act)) {
+		if obj == nil {
 			return ""
 		}
-		body = htmlToText(apStr(obj["content"]))
+		// Actor self-updates (Update{Person}) are profile edits — the
+		// summary field carries the bio, not a post body — so they skip
+		// only while no content body is actually present.
+		if strings.EqualFold(apID(obj["id"]), apActorID(act)) && apContentText(obj) == "" {
+			return ""
+		}
+		body = htmlToText(apLocalizedText(obj, "summary") + " " + apContentText(obj))
 	default:
 		return ""
 	}
@@ -1154,7 +1167,7 @@ func (s *Service) dispatchCreate(ctx context.Context, q *gen.Queries, act map[st
 		!strings.EqualFold(ru.Hostname(), su.Hostname()) {
 		return dispatchResult{status: "rejected", reason: "object id outside actor domain"}
 	}
-	body := htmlToText(apStr(obj["content"]))
+	body := htmlToText(apContentText(obj))
 	if body == "" {
 		return dispatchResult{status: "rejected", reason: "empty reply text"}
 	}
@@ -1255,7 +1268,7 @@ func (s *Service) dispatchUpdate(ctx context.Context, q *gen.Queries, act map[st
 	if c.RemoteApActorID != signer.ID {
 		return dispatchResult{status: "rejected", reason: "update of another actor's object"}
 	}
-	body := htmlToText(apStr(objMap["content"]))
+	body := htmlToText(apContentText(objMap))
 	if body == "" || len(body) > maxRemoteCommentText {
 		return dispatchResult{status: "rejected", reason: "bad updated text"}
 	}
