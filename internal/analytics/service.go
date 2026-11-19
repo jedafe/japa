@@ -553,13 +553,14 @@ func (s *Service) EnqueueSecurityScan(_ context.Context) error {
 	return s.enqueuer.Enqueue(worker.TypeSecurityScan, payload)
 }
 
-// ListSecurityScanResults returns scan results matching filters.
-func (s *Service) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
+// ListSecurityScanResults returns scan results matching filters. sort/sortDir
+// select an allowlisted CASE ordering in the query (empty = newest-first).
+func (s *Service) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter, sort, sortDir string) ([]gen.SecurityScanResult, error) {
 	if filter.Limit <= 0 || filter.Limit > MaxPageSize {
 		filter.Limit = DefaultPageSize
 	}
 
-	return s.store.ListSecurityScanResults(ctx, filter)
+	return s.store.ListSecurityScanResults(ctx, filter, sort, sortDir)
 }
 
 // ResolveScanResult marks a security finding as resolved.

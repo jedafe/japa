@@ -415,7 +415,9 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	results, err := h.Service.ListSecurityScanResults(r.Context(), filter)
+	sort, sortDir := parseSortParams(r, "scan_type", "severity", "finding", "resolved_at", "created_at")
+
+	results, err := h.Service.ListSecurityScanResults(r.Context(), filter, sort, sortDir)
 	if err != nil {
 		handleServiceError(w, err)
 		return

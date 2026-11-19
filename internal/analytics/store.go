@@ -206,12 +206,15 @@ func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecuri
 	return s.write.CreateSecurityScanResult(ctx, p)
 }
 
-// ListSecurityScanResults returns scan results matching filters.
-func (s *Store) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
+// ListSecurityScanResults returns scan results matching filters. sort/sortDir
+// are allowlisted by CASE arms in the query; empty values use the default
+// newest-first ordering.
+func (s *Store) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter, sort, sortDir string) ([]gen.SecurityScanResult, error) {
 	return s.read.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
 		Column1: filter.Severity, Column2: filter.Unresolved,
 		Column3: nullableTimestamptz(filter.StartDate), Column4: nullableTimestamptz(filter.EndDate),
 		Limit: filter.Limit, Offset: filter.Page * filter.Limit,
+		Column7: sort, Column8: sortDir,
 	})
 }
 

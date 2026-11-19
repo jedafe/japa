@@ -71,6 +71,7 @@
 	let secPage = $state(0);
 	let secPageSize = $state(10);
 	let secTotal = $state(0);
+	let secSort = $state<{ key: string | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'desc' });
 	let secSeverity = $state("");
 	let secUnresolvedOnly = $state(false);
 
@@ -145,6 +146,7 @@
 			rangeQS(f, t),
 			`page_size=${secPageSize}`,
 			`offset=${secPage * secPageSize}`,
+			secSort.key && `sort=${secSort.key}&dir=${secSort.dir}`,
 			secSeverity && `severity=${secSeverity}`,
 			secUnresolvedOnly && `unresolved=true`
 		].filter(Boolean).join("&");
@@ -153,6 +155,8 @@
 			const d = res.data as { items?: Array<Record<string, unknown>>; total?: number };
 			security = d.items ?? [];
 			secTotal = d.total ?? 0;
+		} else if (!signal?.aborted) {
+			error = res.error ?? 'Failed to load security findings';
 		}
 	}
 
@@ -167,6 +171,8 @@
 		if (res.ok) {
 			contentAnalytics = res.data as typeof contentAnalytics;
 			contentTotal = (res.data as { total?: number }).total ?? 0;
+		} else if (!signal?.aborted) {
+			error = res.error ?? 'Failed to load content analytics';
 		}
 	}
 
@@ -183,6 +189,8 @@
 			spaceAnalytics = d.items ?? [];
 			spaceTotal = d.total ?? 0;
 			spaceTotals = { total_spaces: d.total, total_joins: d.total_joins, total_posts: d.total_posts };
+		} else if (!signal?.aborted) {
+			error = res.error ?? 'Failed to load space analytics';
 		}
 	}
 
@@ -201,6 +209,11 @@
 			]);
 			const [topRes, revRes, adsRes, newsRes, retRes] = results;
 			topContent = topRes.status === 'fulfilled' && topRes.value.ok ? (topRes.value.data as { content?: Array<Record<string, unknown>> })?.content ?? null : null;
+			for (const r of topContent ?? []) {
+				const ct = String(r.content_type ?? '');
+				if (ct) seenContentTypes.add(ct);
+			}
+			seenContentTypes = new Set(seenContentTypes);
 			revenueStreams = revRes.status === 'fulfilled' && revRes.value.ok ? (revRes.value.data as { revenue?: Array<Record<string, unknown>> })?.revenue ?? null : null;
 			adPerformance = adsRes.status === 'fulfilled' && adsRes.value.ok ? (adsRes.value.data as { ads?: Array<Record<string, unknown>> })?.ads ?? null : null;
 			newsletterEngagement = newsRes.status === 'fulfilled' && newsRes.value.ok ? (newsRes.value.data as { campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> }) : null;
@@ -264,9 +277,9 @@
 		try {
 			const res = await analyticsAdminApi.resolveSecurityItem(id, {});
 			if (!res.ok) throw new Error(res.error ?? 'Resolve failed');
-			security = (security ?? []).map((s) =>
-				s.id === id ? { ...s, resolved_at: new Date().toISOString() } : s
-			);
+			// Refetch rather than patch locally — with the unresolved filter
+			// active the row must leave the result set, and the total changes.
+			await loadSecurity();
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('analytics.resolve_failed', 'Failed to resolve');
 		}
@@ -281,7 +294,8 @@
 			if (!res.ok) throw new Error(res.error ?? 'Delete failed');
 			deleteModalOpen = false;
 			pendingDeleteScan = null;
-			security = (security ?? []).filter((s) => s.id !== id);
+			// Refetch — local filtering leaves the server total stale.
+			await loadSecurity();
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('analytics.delete_failed', 'Delete failed');
 		} finally {
@@ -319,12 +333,22 @@
 		goto(url, { reset: false });
 	}
 
+	let lastRange = "";
 	$effect(() => {
 		// Re-sync controls from the URL and reload whenever the range changes
 		const f = page.url.searchParams.get("from") ?? "";
 		const t = page.url.searchParams.get("to") ?? "";
 		from = f;
 		to = t;
+		const rangeKey = `${f}|${t}`;
+		if (lastRange && lastRange !== rangeKey) {
+			// The range actually changed — reset server pagination so a stale
+			// page offset can't render an empty table on the narrower result.
+			contentPage = 0;
+			spacePage = 0;
+			secPage = 0;
+		}
+		lastRange = rangeKey;
 		loadAnalytics(f, t);
 
 		return () => {
@@ -334,11 +358,22 @@
 
 	// Section 66 — Load advanced analytics once when the Advanced tab is
 	// active. Retries go through the period selector or the error Retry
-	// button (both call loadAdvancedAnalytics directly).
+	// button (both call loadAdvancedAnalytics directly). The tab guard keeps
+	// a deep-linked ?tab=advanced from firing §66 calls for operators
+	// without analytics.advanced.
 	$effect(() => {
-		if (activeTab === "advanced" && !advancedFetched && !advancedLoading) {
+		if (activeTab === "advanced" && !advancedFetched && !advancedLoading && hasPermission('analytics.advanced')) {
 			advancedFetched = true;
 			loadAdvancedAnalytics();
+		}
+	});
+
+	// A deep-linked tab the operator can't see (e.g. ?tab=advanced without
+	// analytics.advanced) falls back to Overview rather than rendering
+	// permission errors.
+	$effect(() => {
+		if (activeTab === "advanced" && !hasPermission('analytics.advanced')) {
+			activeTab = "overview";
 		}
 	});
 	
@@ -419,12 +454,13 @@
 		}
 	]);
 
-	// Content-type filter options for the Advanced tab, seeded from the
-	// fetched leaderboard rows (the same values the backend ?type= accepts).
+	// Content-type options accumulate from every fetched leaderboard — deriving
+	// from the *filtered* rows would collapse the picker to just the active
+	// filter after the first selection.
+	let seenContentTypes = new Set<string>();
 	const advTypeOptions = $derived([
 		{ value: '', label: t('analytics.all_types', 'All types') },
-		...Array.from(new Set((topContent ?? []).map((r) => String(r.content_type ?? '')).filter(Boolean)))
-			.map((ct) => ({ value: ct, label: ct }))
+		...[...seenContentTypes].sort().map((ct) => ({ value: ct, label: ct }))
 	]);
 
 	// Top Content table columns for the Overview tab.
@@ -829,10 +865,12 @@
 					columns={securityColumns}
 					data={security ?? []}
 					serverSide
+					urlSync={false}
 					bind:page={secPage}
 					bind:pageSize={secPageSize}
 					totalRows={secTotal}
 					rowKey={(r) => String(r.id)}
+					onsortchange={(s) => { secSort = { key: s.key, dir: s.dir }; secPage = 0; loadSecurity(); }}
 					onpagechange={() => loadSecurity()}
 					onpagesizechange={() => { secPage = 0; loadSecurity(); }}
 					actions={securityActions}
@@ -1016,7 +1054,7 @@
 				id="advanced-period"
 				value={advancedPeriod}
 				onValueChange={(v) => { advancedPeriod = v; loadAdvancedAnalytics(v); }}
-				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }, { value: '12m', label: '12m' }]}
+				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }]}
 			/>
 			<AutocompleteSelect
 				id="advanced-type"

@@ -1552,7 +1552,18 @@ WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)
  AND ($3::timestamptz IS NULL OR created_at >= $3)
  AND ($4::timestamptz IS NULL OR created_at <= $4)
-ORDER BY created_at DESC, id DESC
+ORDER BY
+ CASE WHEN $7::text = 'scan_type' AND $8::text = 'asc' THEN scan_type END ASC NULLS LAST,
+ CASE WHEN $7::text = 'scan_type' AND $8::text = 'desc' THEN scan_type END DESC NULLS LAST,
+ CASE WHEN $7::text = 'severity' AND $8::text = 'asc' THEN severity END ASC NULLS LAST,
+ CASE WHEN $7::text = 'severity' AND $8::text = 'desc' THEN severity END DESC NULLS LAST,
+ CASE WHEN $7::text = 'finding' AND $8::text = 'asc' THEN finding END ASC NULLS LAST,
+ CASE WHEN $7::text = 'finding' AND $8::text = 'desc' THEN finding END DESC NULLS LAST,
+ CASE WHEN $7::text = 'resolved_at' AND $8::text = 'asc' THEN resolved_at END ASC NULLS LAST,
+ CASE WHEN $7::text = 'resolved_at' AND $8::text = 'desc' THEN resolved_at END DESC NULLS LAST,
+ CASE WHEN $7::text = 'created_at' AND $8::text = 'asc' THEN created_at END ASC,
+ CASE WHEN $7::text = 'created_at' AND $8::text = 'desc' THEN created_at END DESC,
+ created_at DESC, id DESC
 LIMIT $5 OFFSET $6
 `
 
@@ -1563,8 +1574,12 @@ type ListSecurityScanResultsParams struct {
 	Column4 pgtype.Timestamptz `json:"column_4"`
 	Limit   int32              `json:"limit"`
 	Offset  int32              `json:"offset"`
+	Column7 string             `json:"column_7"`
+	Column8 string             `json:"column_8"`
 }
 
+// $7/$8 select an allowlisted CASE ordering — see GetDailyContentStats for the
+// same pattern. Default remains newest-first.
 func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]SecurityScanResult, error) {
 	rows, err := q.db.Query(ctx, listSecurityScanResults,
 		arg.Column1,
@@ -1573,6 +1588,8 @@ func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityS
 		arg.Column4,
 		arg.Limit,
 		arg.Offset,
+		arg.Column7,
+		arg.Column8,
 	)
 	if err != nil {
 		return nil, err
