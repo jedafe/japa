@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 )
@@ -1112,4 +1114,106 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+}
+
+// trackingPixel is the standard 1x1 transparent GIF served by the open
+// tracking endpoint (§62 self-hosted transport).
+var trackingPixel = []byte{
+	0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
+	0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21,
+	0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00,
+	0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+	0x01, 0x00, 0x3b,
+}
+
+// HandleTrackOpen serves the 1px open-tracking pixel appended to campaign
+// bodies (§62 self-hosted MTA transport — provider transports get opens
+// via HandleWebhook instead). GET /newsletter/track/open?c={campaign}&e={recipient}&s={sig}.
+// The HMAC signature binds scope+campaign+recipient, verified against
+// JC_NEWSLETTER_TRACKING_SECRET; a valid first hit inside the dedupe
+// window increments the campaign's open_count. The pixel is served even
+// for invalid signatures so a broken/forged URL never renders a missing
+// image in the recipient's client — it just doesn't count.
+//
+// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+func (h *Handlers) HandleTrackOpen(w http.ResponseWriter, r *http.Request) {
+	campaignID := r.URL.Query().Get("c")
+	recipient := r.URL.Query().Get("e")
+	sig := r.URL.Query().Get("s")
+
+	if campaignID != "" && recipient != "" &&
+		email.VerifyTracking(h.Service.TrackingSecret(), sig, TrackScopeOpen, campaignID, recipient) {
+		var cid pgtype.UUID
+		if err := cid.Scan(campaignID); err == nil {
+			if _, gerr := h.Service.GetCampaign(r.Context(), cid); gerr == nil {
+				if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeOpen, campaignID, recipient, ""); err != nil {
+					slog.Warn("newsletter track: open increment failed", "campaign_id", campaignID, "error", err)
+				}
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "image/gif")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(trackingPixel)
+}
+
+// HandleTrackClick redirects a wrapped campaign link to its destination
+// and counts the click (§62 self-hosted MTA transport). GET
+// /newsletter/track/click?c={campaign}&e={recipient}&u={url}&s={sig}.
+// The HMAC signature binds scope+campaign+recipient+destination, so an
+// attacker cannot turn the endpoint into an open redirect without the
+// secret — invalid signatures and non-http(s) destinations are rejected
+// with 400 instead of redirecting.
+//
+// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+func (h *Handlers) HandleTrackClick(w http.ResponseWriter, r *http.Request) {
+	campaignID := r.URL.Query().Get("c")
+	recipient := r.URL.Query().Get("e")
+	dest := r.URL.Query().Get("u")
+	sig := r.URL.Query().Get("s")
+
+	if campaignID == "" || recipient == "" || dest == "" ||
+		!email.VerifyTracking(h.Service.TrackingSecret(), sig, TrackScopeClick, campaignID, recipient, dest) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_token", "Invalid or expired tracking link")
+		return
+	}
+
+	u, err := url.Parse(dest)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", "Unsupported redirect destination")
+		return
+	}
+
+	var cid pgtype.UUID
+	if err := cid.Scan(campaignID); err == nil {
+		if _, gerr := h.Service.GetCampaign(r.Context(), cid); gerr == nil {
+			if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeClick, campaignID, recipient, dest); err != nil {
+				slog.Warn("newsletter track: click increment failed", "campaign_id", campaignID, "error", err)
+			}
+		}
+	}
+
+	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// HandleUnsubscribeRedirect 302s to the human-facing unsubscribe page.
+// The per-recipient List-Unsubscribe header URI targets THIS api route —
+// mail clients doing an RFC 8058 one-click POST hit HandleUnsubscribe on
+// the same path, while clients/users that GET the URI are sent to the
+// frontend page (which offers the confirm UX). GET never mutates state.
+//
+// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+func (h *Handlers) HandleUnsubscribeRedirect(w http.ResponseWriter, r *http.Request) {
+	target := "/unsubscribe"
+	if token := r.URL.Query().Get("token"); token != "" {
+		target += "?token=" + url.QueryEscape(token)
+	}
+
+	if base := h.Service.siteBaseURL(r.Context()); base != "" {
+		target = strings.TrimRight(base, "/") + target
+	}
+
+	http.Redirect(w, r, target, http.StatusFound)
 }

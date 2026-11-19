@@ -24,20 +24,25 @@ type SMTPConfig struct {
 	User string
 	Pass string // secret — stored encrypted at rest, decrypted at load
 	From string
-	Name string // optional display name for logs/dashboards
+	// EnvelopeFrom overrides the SMTP MAIL FROM (return-path) while From
+	// stays the header address — bounces land in a dedicated mailbox the
+	// newsletter:poll_bounces task ingests (§62 self-hosted transport).
+	EnvelopeFrom string
+	Name         string // optional display name for logs/dashboards
 }
 
 // SMTPProvider implements EmailProvider using raw SMTP via net/smtp.
 // Configuration is read from JC_SMTP_* environment variables, or supplied
 // directly via NewSMTPProviderFromConfig for DB-backed providers.
 type SMTPProvider struct {
-	host string
-	port string
-	user string
-	pass string
-	from string
-	addr string
-	name string
+	host         string
+	port         string
+	user         string
+	pass         string
+	from         string
+	envelopeFrom string
+	addr         string
+	name         string
 }
 
 // NewSMTPProvider creates an SMTPProvider from environment variables.
@@ -49,11 +54,12 @@ func NewSMTPProvider() (*SMTPProvider, error) {
 	}
 
 	return NewSMTPProviderFromConfig(SMTPConfig{
-		Host: host,
-		Port: os.Getenv("JC_SMTP_PORT"),
-		User: os.Getenv("JC_SMTP_USER"),
-		Pass: os.Getenv("JC_SMTP_PASS"),
-		From: os.Getenv("JC_SMTP_FROM"),
+		Host:         host,
+		Port:         os.Getenv("JC_SMTP_PORT"),
+		User:         os.Getenv("JC_SMTP_USER"),
+		Pass:         os.Getenv("JC_SMTP_PASS"),
+		From:         os.Getenv("JC_SMTP_FROM"),
+		EnvelopeFrom: os.Getenv("JC_SMTP_ENVELOPE_FROM"),
 	})
 }
 
@@ -80,13 +86,14 @@ func NewSMTPProviderFromConfig(cfg SMTPConfig) (*SMTPProvider, error) {
 	}
 
 	return &SMTPProvider{
-		host: cfg.Host,
-		port: port,
-		user: cfg.User,
-		pass: cfg.Pass,
-		from: from,
-		addr: cfg.Host + ":" + port,
-		name: name,
+		host:         cfg.Host,
+		port:         port,
+		user:         cfg.User,
+		pass:         cfg.Pass,
+		from:         from,
+		envelopeFrom: cfg.EnvelopeFrom,
+		addr:         cfg.Host + ":" + port,
+		name:         name,
 	}, nil
 }
 
@@ -133,6 +140,16 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 	from, err := sanitizeAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp misconfigured (JC_SMTP_FROM): %w", err)
+	}
+
+	// Envelope MAIL FROM may differ from the header From (bounce mailbox
+	// routing, §62 self-hosted transport); default to the header address.
+	mailFrom := from
+
+	if p.envelopeFrom != "" {
+		if mailFrom, err = sanitizeAddress(p.envelopeFrom); err != nil {
+			return EmailResponse{}, fmt.Errorf("smtp misconfigured (envelope_from): %w", err)
+		}
 	}
 
 	// Build the message
@@ -211,7 +228,7 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		}
 	}
 
-	if err := client.Mail(from); err != nil {
+	if err := client.Mail(mailFrom); err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp mail: %w", err)
 	}
 

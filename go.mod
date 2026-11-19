@@ -8,6 +8,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/bluesky-social/indigo v0.0.0-20261027171756-51095abf6e95
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
+	github.com/emersion/go-imap/v2 v2.0.0-beta.9
 	github.com/gen2brain/webp v0.6.4
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/go-chi/chi/v5 v5.5.0
@@ -61,6 +62,8 @@ require (
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/earthboundkid/versioninfo/v2 v2.24.1 // indirect
 	github.com/ebitengine/purego v0.11.3 // indirect
+	github.com/emersion/go-message v0.18.2 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect

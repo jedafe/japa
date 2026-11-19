@@ -570,14 +570,40 @@ func newsletterUnsubscribeLink(ctx context.Context, recipient string) (string, m
 		return "", nil
 	}
 
+	// The body footer link is the human-facing frontend page; the
+	// List-Unsubscribe header URI is the API endpoint so RFC 8058
+	// one-click POSTs from mail clients land on the machine route
+	// (GETs on it 302 back to the frontend page — §62 Compliance).
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
 
+	headerURL := url
+	if apiBase := newsletterAPIBase(ctx); apiBase != "" {
+		headerURL = apiBase + "/newsletter/unsubscribe?token=" + token
+	}
+
 	headers := map[string]string{
-		"List-Unsubscribe":      "<" + url + ">",
+		"List-Unsubscribe":      "<" + headerURL + ">",
 		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	}
 
 	return url, headers
+}
+
+// newsletterAPIBase resolves the public API base URL for URLs that must
+// reach the API server directly (List-Unsubscribe header URI, tracking
+// endpoints): JC_API_PUBLIC_URL first, then site.base_url + "/api/v1" —
+// matching the §62 self-hosted transport contract.
+func newsletterAPIBase(ctx context.Context) string {
+	if v := os.Getenv("JC_API_PUBLIC_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+
+	base := resolveBaseURL(ctx)
+	if base == "" {
+		return ""
+	}
+
+	return strings.TrimRight(base, "/") + "/api/v1"
 }
 
 // newsletterGenerateUnsubscribeToken generates a 32-byte hex token for
@@ -4057,10 +4083,15 @@ func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID pgt
 	for _, r := range recipients {
 		// Generate a per-recipient one-click unsubscribe token + headers.
 		unsubURL, headers := newsletterUnsubscribeLink(ctx, r)
-		body := htmlBody
+
+		// Native open/click tracking for self-hosted MTA transport
+		// (§62) — injected BEFORE the unsubscribe footer so the
+		// one-click unsubscribe link is never wrapped by the click
+		// tracker (a wrapped POST would miss the unsubscribe endpoint).
+		body := injectNewsletterTracking(ctx, campaignID, r, htmlBody)
 
 		if unsubURL != "" {
-			body = appendUnsubscribeLink(htmlBody, unsubURL)
+			body = appendUnsubscribeLink(body, unsubURL)
 		}
 
 		if err := sendMarketingEmail(ctx, r, subject, body, true, headers); err != nil {
@@ -5980,12 +6011,13 @@ func wrapHTMLEmail(body string) string {
 
 // smtpConfig holds parsed SMTP configuration from environment variables.
 type smtpConfig struct {
-	Host string
-	Port string
-	User string
-	Pass string
-	From string
-	Addr string
+	Host         string
+	Port         string
+	User         string
+	Pass         string
+	From         string
+	EnvelopeFrom string
+	Addr         string
 }
 
 // readSMTPConfig reads SMTP settings from environment variables.
@@ -6010,12 +6042,13 @@ func readSMTPConfig() *smtpConfig {
 	}
 
 	return &smtpConfig{
-		Host: host,
-		Port: port,
-		User: user,
-		Pass: pass,
-		From: from,
-		Addr: host + ":" + port,
+		Host:         host,
+		Port:         port,
+		User:         user,
+		Pass:         pass,
+		From:         from,
+		EnvelopeFrom: os.Getenv("JC_SMTP_ENVELOPE_FROM"),
+		Addr:         host + ":" + port,
 	}
 }
 
@@ -6106,14 +6139,22 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 		auth = smtp.PlainAuth("", cfg.User, cfg.Pass, cfg.Host)
 	}
 
+	// The envelope MAIL FROM may differ from the header From when a bounce
+	// mailbox is configured (JC_SMTP_ENVELOPE_FROM, §62 self-hosted
+	// transport) — DSNs then return to the polled bounce address.
+	envFrom := cfg.From
+	if cfg.EnvelopeFrom != "" {
+		envFrom = cfg.EnvelopeFrom
+	}
+
 	// Try TLS first for port 465, otherwise use STARTTLS or plain.
 	if cfg.Port == "465" {
-		return sendSMTPTLS(cfg, auth, to, msg)
+		return sendSMTPTLS(cfg, auth, envFrom, to, msg)
 	}
 
 	// STARTTLS or plain SMTP.
 	// #nosec G707 // pending recipient validation
-	if err := smtp.SendMail(cfg.Addr, auth, cfg.From, []string{to}, []byte(msg)); err != nil {
+	if err := smtp.SendMail(cfg.Addr, auth, envFrom, []string{to}, []byte(msg)); err != nil {
 		slog.Error("email_send: SMTP send failed", "to", to, "addr", cfg.Addr, "error", err)
 		return fmt.Errorf("smtp send to %s: %w", to, err)
 	}
@@ -6122,8 +6163,9 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 }
 
 // sendSMTPTLS delivers a message over implicit TLS (port 465): it dials a TLS
-// connection, authenticates, runs the SMTP transaction, and quits.
-func sendSMTPTLS(cfg *smtpConfig, auth smtp.Auth, to, msg string) error {
+// connection, authenticates, runs the SMTP transaction, and quits. envFrom is
+// the envelope MAIL FROM (return-path) — may differ from the header From.
+func sendSMTPTLS(cfg *smtpConfig, auth smtp.Auth, envFrom, to, msg string) error {
 	tlsConfig := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
 
 	conn, err := tls.Dial("tcp", cfg.Addr, tlsConfig)
@@ -6149,7 +6191,7 @@ func sendSMTPTLS(cfg *smtpConfig, auth smtp.Auth, to, msg string) error {
 	}
 
 	// #nosec G707 // pending recipient validation
-	if err := client.Mail(cfg.From); err != nil {
+	if err := client.Mail(envFrom); err != nil {
 		return fmt.Errorf("smtp mail: %w", err)
 	}
 

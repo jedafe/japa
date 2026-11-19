@@ -177,6 +177,13 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// overridable via JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP.
 	schedule("*/30 * * * *", TypeSubscriptionExpirySweep, 30*time.Minute)
 
+	// §62 self-hosted MTA transport: poll the IMAP bounce mailbox every
+	// 15 min — DSN/ARF notices mark subscribers bounced/complained so
+	// dead addresses stop receiving mail (deliverability hygiene).
+	// Singleton via jc:newsletter:bounce_poll_lock; no-ops when
+	// JC_BOUNCE_IMAP_HOST is unset.
+	schedule("*/15 * * * *", TypeNewsletterPollBounces, 15*time.Minute)
+
 	// Hourly: trending, llms.txt, analytics views, RSS, GDPR retention sweep.
 	schedule("0 * * * *", TypeComputeTrending, 1*time.Hour)
 	schedule("0 * * * *", TypeMaintenanceRegenerateLLMsTxt, 1*time.Hour)

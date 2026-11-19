@@ -455,8 +455,10 @@ func configStr(cfg map[string]string, key string) string {
 // The secret must be the decrypted plaintext.
 //
 // Supported types (ADR-015):
-//   - "smtp":      generic SMTP — config{host,port,username,from_address};
-//     secret = password
+//   - "smtp":      generic SMTP — config{host,port,username,from_address,
+//     envelope_from}; secret = password. envelope_from is optional —
+//     overrides SMTP MAIL FROM (return-path → bounce mailbox) while
+//     from_address stays the header From (§62 self-hosted transport).
 //   - "resend":    Resend API — config{from_address}; secret = API key
 //   - "postmark":  Postmark API — config{from_address,message_stream};
 //     secret = server token
@@ -475,12 +477,13 @@ func NewProviderFromConfig(cfg ProviderConfig, secret string) (EmailProvider, er
 	switch cfg.ProviderType {
 	case "smtp":
 		return NewSMTPProviderFromConfig(SMTPConfig{
-			Host: configStr(cfg.Config, "host"),
-			Port: configStr(cfg.Config, "port"),
-			User: configStr(cfg.Config, "username"),
-			Pass: secret,
-			From: configStr(cfg.Config, "from_address"),
-			Name: cfg.Name,
+			Host:         configStr(cfg.Config, "host"),
+			Port:         configStr(cfg.Config, "port"),
+			User:         configStr(cfg.Config, "username"),
+			Pass:         secret,
+			From:         configStr(cfg.Config, "from_address"),
+			EnvelopeFrom: configStr(cfg.Config, "envelope_from"),
+			Name:         cfg.Name,
 		})
 	case "resend":
 		return NewResendProvider(cfg.Name, secret, cfg.BaseURL,

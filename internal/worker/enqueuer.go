@@ -347,6 +347,7 @@ var taskTier = func() map[string]string {
 		TypeAnalyticsRefreshViews, TypeSecurityScan,
 		TypeMaintenanceRegenerateLLMsTxt, TypeAcademyIssueCertificate,
 		TypeDBManualVacuum, TypeNewsletterDigest, TypeVideoGenerateSummary,
+		TypeNewsletterPollBounces, // §62 self-hosted transport — IMAP bounce mailbox poll
 		TypeComputeTrending, TypeComputeSuggestions,
 		// Full Meilisearch resync — heavy sweep, low tier.
 		TypeSearchReindexAll,
@@ -594,6 +595,7 @@ var taskTypeCatalog = []struct {
 	{TypeAcademyIssueCertificate, "low", "Issue learning certificate"},
 	{TypeDBManualVacuum, "low", "Run database VACUUM"},
 	{TypeNewsletterDigest, "low", "Send newsletter digest"},
+	{TypeNewsletterPollBounces, "low", "Poll IMAP bounce mailbox — mark subscribers bounced/complained (§62 self-hosted transport)"},
 	{TypeComputeTrending, "low", "Compute trending content"},
 	{TypeComputeSuggestions, "low", "Compute content suggestions"},
 	{TypeMaintenanceCheckExpiredBans, "low", "Check and lift expired user bans"},

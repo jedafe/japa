@@ -10081,6 +10081,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// RFC 8058 one-click: email clients POST List-Unsubscribe=One-Click
 			// (audit NL-04). Same handler — token path is method-agnostic.
 			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Post("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			// GET on the same URI is the human-facing path for clients that
+			// GET (not POST) the List-Unsubscribe header URI — 302 to the
+			// frontend unsubscribe page (§62, self-hosted transport).
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribeRedirect)
+			// Native open/click tracking for self-hosted MTA transport (§62):
+			// HMAC-signed URLs injected at send time — provider transports
+			// report the same events via /newsletter/webhook instead.
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/newsletter/track/open", newsletterHandlers.HandleTrackOpen)
+			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/newsletter/track/click", newsletterHandlers.HandleTrackClick)
 			// Double opt-in confirmation (migration 001170, audit NL-I1) —
 			// single-use purpose='confirm' token, public + rate-limited.
 			r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/newsletter/confirm", newsletterHandlers.HandleConfirm)

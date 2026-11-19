@@ -75,6 +75,7 @@ const (
 	TypeWalletReconcileSolvency      = "wallet:reconcile_solvency"
 	TypeWalletReprocessEvents        = "wallet:reprocess_events"
 	TypeNewsletterSend               = "newsletter:send"
+	TypeNewsletterPollBounces        = "newsletter:poll_bounces" // §62 self-hosted MTA transport — IMAP DSN/ARF ingestion
 	TypeScholarshipSyncFromGuide     = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage             = "docs:generate_page"
 	TypeFormFireSubmissionTriggers   = "form:fire_submission_triggers"
@@ -334,6 +335,7 @@ var handlerRegistry = []struct {
 	{TypeAcademyIssueCertificate, HandleAcademyIssueCertificate},
 	{TypeDBManualVacuum, HandleDBManualVacuum},
 	{TypeNewsletterDigest, HandleNewsletterDigest},
+	{TypeNewsletterPollBounces, HandleNewsletterPollBounces},
 	{TypeComputeTrending, HandleComputeTrending},
 	{TypeComputeSuggestions, HandleComputeSuggestions},
 	// Missing Phase 31 task handlers (catalog amendments)
