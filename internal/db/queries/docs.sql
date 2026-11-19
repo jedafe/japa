@@ -104,11 +104,22 @@ WHERE id = @id
        OR updated_at = sqlc.narg(expected_updated_at)::timestamptz);
 
 -- name: UpdateDocPageStatus :exec
--- Approve/publish transitions only — records the reviewer (§44). Trashed
+-- Approve/publish transitions only (§44). The reviewer stamp is written on
+-- the transition INTO 'approved' and preserved everywhere else — publish
+-- must keep naming the approver, not the publisher, and a redundant
+-- re-approve of an already-approved page keeps the first reviewer. Trashed
 -- pages can't transition (Rule 11: restore first).
 UPDATE doc_pages
-SET review_status = @review_status, last_reviewed_by = @last_reviewed_by,
- last_reviewed_at = now(), updated_at = now()
+SET review_status = @review_status,
+ last_reviewed_by = CASE
+  WHEN @review_status = 'approved' AND review_status <> 'approved' THEN @last_reviewed_by
+  ELSE last_reviewed_by
+ END,
+ last_reviewed_at = CASE
+  WHEN @review_status = 'approved' AND review_status <> 'approved' THEN now()
+  ELSE last_reviewed_at
+ END,
+ updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: GetDocPageStatus :one
@@ -123,16 +134,22 @@ UPDATE doc_pages SET deleted_at = now() WHERE id = @id AND deleted_at IS NULL;
 -- Undo a soft delete; 0 rows means the page wasn't in the trash.
 UPDATE doc_pages SET deleted_at = NULL WHERE id = @id AND deleted_at IS NOT NULL;
 
--- name: DeleteDocPage :execrows
+-- name: HardDeleteDocPage :one
 -- Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
 -- rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
 -- live page is by design: soft-delete first. The row count also closes the
 -- race where a page is restored between the caller's check and this delete.
-DELETE FROM doc_pages WHERE id = @id AND deleted_at IS NOT NULL;
-
--- name: ClearDocPageParent :exec
--- Orphan children before their parent is deleted — parent_id is not an FK.
-UPDATE doc_pages SET parent_id = NULL, updated_at = now() WHERE parent_id = @id;
+-- parent_id IS a real FK, so children are unlinked in the same statement —
+-- the FK check runs at statement end and sees the post-update state.
+WITH deleted AS (
+ DELETE FROM doc_pages WHERE doc_pages.id = @id AND deleted_at IS NOT NULL
+ RETURNING doc_pages.id
+), unlinked AS (
+ UPDATE doc_pages
+ SET parent_id = NULL, updated_at = now()
+ WHERE parent_id IN (SELECT deleted.id FROM deleted)
+)
+SELECT count(*)::int AS deleted_rows FROM deleted;
 
 -- name: IncrementDocPageHelpful :exec
 UPDATE doc_pages

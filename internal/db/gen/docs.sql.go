@@ -11,16 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const clearDocPageParent = `-- name: ClearDocPageParent :exec
-UPDATE doc_pages SET parent_id = NULL, updated_at = now() WHERE parent_id = $1
-`
-
-// Orphan children before their parent is deleted — parent_id is not an FK.
-func (q *Queries) ClearDocPageParent(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, clearDocPageParent, id)
-	return err
-}
-
 const countDocPageRevisions = `-- name: CountDocPageRevisions :one
 SELECT COUNT(*) FROM doc_page_revisions WHERE doc_page_id = $1
 `
@@ -71,22 +61,6 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
-}
-
-const deleteDocPage = `-- name: DeleteDocPage :execrows
-DELETE FROM doc_pages WHERE id = $1 AND deleted_at IS NOT NULL
-`
-
-// Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
-// rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
-// live page is by design: soft-delete first. The row count also closes the
-// race where a page is restored between the caller's check and this delete.
-func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDocPage, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const deleteDocPageRevision = `-- name: DeleteDocPageRevision :execrows
@@ -425,6 +399,31 @@ func (q *Queries) GetDocPageStatus(ctx context.Context, id pgtype.UUID) (GetDocP
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const hardDeleteDocPage = `-- name: HardDeleteDocPage :one
+WITH deleted AS (
+ DELETE FROM doc_pages WHERE doc_pages.id = $1 AND deleted_at IS NOT NULL
+ RETURNING doc_pages.id
+), unlinked AS (
+ UPDATE doc_pages
+ SET parent_id = NULL, updated_at = now()
+ WHERE parent_id IN (SELECT deleted.id FROM deleted)
+)
+SELECT count(*)::int AS deleted_rows FROM deleted
+`
+
+// Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
+// rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
+// live page is by design: soft-delete first. The row count also closes the
+// race where a page is restored between the caller's check and this delete.
+// parent_id IS a real FK, so children are unlinked in the same statement —
+// the FK check runs at statement end and sees the post-update state.
+func (q *Queries) HardDeleteDocPage(ctx context.Context, id pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, hardDeleteDocPage, id)
+	var deleted_rows int32
+	err := row.Scan(&deleted_rows)
+	return deleted_rows, err
 }
 
 const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
@@ -1164,8 +1163,16 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) (i
 
 const updateDocPageStatus = `-- name: UpdateDocPageStatus :exec
 UPDATE doc_pages
-SET review_status = $1, last_reviewed_by = $2,
- last_reviewed_at = now(), updated_at = now()
+SET review_status = $1,
+ last_reviewed_by = CASE
+  WHEN $1 = 'approved' AND review_status <> 'approved' THEN $2
+  ELSE last_reviewed_by
+ END,
+ last_reviewed_at = CASE
+  WHEN $1 = 'approved' AND review_status <> 'approved' THEN now()
+  ELSE last_reviewed_at
+ END,
+ updated_at = now()
 WHERE id = $3 AND deleted_at IS NULL
 `
 
@@ -1175,7 +1182,10 @@ type UpdateDocPageStatusParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-// Approve/publish transitions only — records the reviewer (§44). Trashed
+// Approve/publish transitions only (§44). The reviewer stamp is written on
+// the transition INTO 'approved' and preserved everywhere else — publish
+// must keep naming the approver, not the publisher, and a redundant
+// re-approve of an already-approved page keeps the first reviewer. Trashed
 // pages can't transition (Rule 11: restore first).
 func (q *Queries) UpdateDocPageStatus(ctx context.Context, arg UpdateDocPageStatusParams) error {
 	_, err := q.db.Exec(ctx, updateDocPageStatus, arg.ReviewStatus, arg.LastReviewedBy, arg.ID)

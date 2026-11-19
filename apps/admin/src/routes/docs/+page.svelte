@@ -18,7 +18,7 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 	import { RichTextEditor } from '@japaconnect/ui';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon, RotateCcw } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon, RotateCcw, Eye, Eraser } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.manage'));
@@ -105,6 +105,18 @@
 	let revisions = $state<DocRevision[]>([]);
 	let revisionsLoading = $state(false);
 	let revisionBusy = $state('');
+	// Inline revision preview + clear-history confirm state.
+	let expandedRevId = $state('');
+	let revViewContent = $state<unknown>(null);
+	let revViewLoading = $state(false);
+	let showClearConfirm = $state(false);
+	let clearBusy = $state(false);
+
+	// Read-only view modal — the spec's View affordance. Row-click opens this
+	// for admins without docs.manage (edit form stays docs.manage-gated).
+	let showViewModal = $state(false);
+	let viewRow = $state<(DocPage & { content?: unknown; created_at?: string; last_reviewed_at?: string | null }) | null>(null);
+	let viewLoading = $state(false);
 
 	// Delete confirmation Modal — shared by single-row and bulk deletes.
 	// 'soft' moves to the trash (restorable); 'hard' permanently removes a
@@ -200,8 +212,35 @@
 	const generateSubInitial = () => Promise.resolve(toItems(generateSubSuggestions));
 
 	// Parent page select — siblings in the same audience (the backend enforces
-	// audience match in validateParent), minus the page being edited.
-	const parentPages = $derived(docs.filter((d) => d.audience === form.audience && d.id !== editingId));
+	// audience match in validateParent), minus the page being edited. Fetched
+	// unfiltered: the table's active filters must not silently remove valid
+	// parents from the picker.
+	let parentCandidates = $state<DocPage[]>([]);
+	// Audience the current parentCandidates list was fetched for — the
+	// parentId invalidation effect below must wait for the fetch or it
+	// would wipe a legit selection while the list is still loading.
+	let parentLoadedFor = $state('');
+
+	async function loadParentCandidates(audience: string) {
+		parentLoadedFor = '';
+		const res = await docsApi.list(`audience=${encodeURIComponent(audience)}`);
+		if (res.ok) {
+			const raw = res.data as any[] | { data?: any[] };
+			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
+			parentCandidates = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft' }));
+		} else {
+			// Degrade to the loaded list rather than an empty picker.
+			parentCandidates = docs.filter((d) => d.audience === audience);
+		}
+		parentLoadedFor = audience;
+	}
+
+	$effect(() => {
+		const aud = form.audience;
+		if (showFormModal && aud) loadParentCandidates(aud);
+	});
+
+	const parentPages = $derived(parentCandidates.filter((d) => d.id !== editingId));
 	const parentFetcher = (q: string) =>
 		Promise.resolve(
 			parentPages
@@ -213,8 +252,10 @@
 
 	// Changing the audience invalidates the parent choice — the backend
 	// requires the parent to live in the same audience (validateParent).
+	// Gated on the candidate fetch completing so an in-flight load can't
+	// clear a legit parent during the empty-list window.
 	$effect(() => {
-		if (form.parentId && !parentPages.some((p) => p.id === form.parentId)) {
+		if (form.parentId && parentLoadedFor === form.audience && !parentPages.some((p) => p.id === form.parentId)) {
 			form.parentId = '';
 		}
 	});
@@ -247,11 +288,31 @@
 		},
 		{ key: 'slug', label: t('docs.slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'audience', label: t('docs.audience'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
-		{ key: 'status', label: t('docs.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
-		{ key: 'updated_at', label: t('docs.updated'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` }
+		{ key: 'status', label: t('docs.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[v] ?? 'bg-black/5'}" style="color: var(--color-text)">${v}</span>` },
+		{ key: 'updated_at', label: t('docs.updated'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${fmtDate(v)}</span>` }
 	];
 
+	// Status badge palette — the review queue needs approved distinct from
+	// draft/in_review at a glance (all three were the same warning hue).
+	const STATUS_BADGE: Record<string, string> = {
+		draft: 'bg-black/5 dark:bg-surface/10',
+		in_review: 'bg-warning/15 text-warning dark:text-warning',
+		approved: 'bg-info/15 text-info dark:text-info',
+		published: 'bg-success/15 text-success dark:text-success'
+	};
+
+	const fmtDate = (v: string) => {
+		const d = new Date(v);
+		return Number.isNaN(d.getTime()) ? v : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+	};
+
 	const rowActions: ActionItem[] = [
+		{
+			label: t('common.view', 'View'),
+			icon: Eye,
+			onclick: (row) => openView(row),
+			show: (row: DocPage) => !row.deleted_at
+		},
 		{
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
@@ -320,13 +381,12 @@
 	];
 
 	const filteredDocs = $derived.by(() => {
-		const source = docs;
+		// audience/status/deleted are applied server-side by loadDocs —
+		// re-filtering them here was redundant double work. Only the search
+		// box (unsupported by the backend list endpoint) filters client-side.
 		const q = searchQuery.toLowerCase().trim();
-		let result = source;
-		if (filterValue.audience) result = result.filter((d) => d.audience === filterValue.audience);
-		if (filterValue.status) result = result.filter((d) => d.status === filterValue.status);
-		if (q) result = result.filter((d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q));
-		return result;
+		if (!q) return docs;
+		return docs.filter((d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q));
 	});
 
 	function slugify(text: string): string {
@@ -414,6 +474,19 @@
 		editorJson = null;
 		form = { title: '', slug: '', audience: 'users', status: 'draft', category: '', subcategory: '', parentId: '', position: 0, featureImageId: '', featureImageUrl: '', summary: '' };
 		showFormModal = true;
+	}
+
+	// Read-only detail view (spec: View stays modal, never navigates). The
+	// list row is a summary — fetch the detail for the body preview.
+	async function openView(item: DocPage) {
+		viewRow = item;
+		viewLoading = true;
+		showViewModal = true;
+		const detail = await docsApi.get(item.id);
+		if (detail.ok && detail.data && viewRow?.id === item.id) {
+			viewRow = { ...item, ...(detail.data as any) };
+		}
+		viewLoading = false;
 	}
 
 	async function openEdit(item: DocPage) {
@@ -597,6 +670,8 @@
 		historyRow = item;
 		revisions = [];
 		revisionsLoading = true;
+		expandedRevId = '';
+		revViewContent = null;
 		showHistoryModal = true;
 		const res = await docsApi.revisions(item.id);
 		if (res.ok) {
@@ -633,6 +708,40 @@
 			errorMessage = res.error;
 		}
 		revisionBusy = '';
+	}
+
+	// Inline preview of a revision's stored content — restores must not be
+	// blind (GET /admin/docs/revisions/{revId} returns the full snapshot).
+	async function viewRevision(rev: DocRevision) {
+		if (expandedRevId === rev.id) {
+			expandedRevId = '';
+			revViewContent = null;
+			return;
+		}
+		expandedRevId = rev.id;
+		revViewContent = null;
+		revViewLoading = true;
+		const res = await docsApi.getRevision(rev.id);
+		if (res.ok) {
+			revViewContent = (res.data as any)?.content ?? null;
+		} else {
+			errorMessage = res.error;
+		}
+		revViewLoading = false;
+	}
+
+	async function clearHistory() {
+		if (!historyRow || clearBusy) return;
+		clearBusy = true;
+		errorMessage = '';
+		const res = await docsApi.clearRevisions(historyRow.id);
+		showClearConfirm = false;
+		if (res.ok) {
+			revisions = [];
+		} else {
+			errorMessage = res.error;
+		}
+		clearBusy = false;
 	}
 
 	// Trash view: bulk actions swap to restore + permanent delete (Rule 11).
@@ -837,11 +946,11 @@
 	filters={[
 		{ key: 'audience', label: t('docs.audience'), options: audienceOptions },
 		{ key: 'status', label: t('docs.status'), options: statusFilterOptions },
-		{ key: 'deleted', label: t('docs.deleted', 'Deleted'), options: [{ value: 'true', label: t('docs.deleted_only', 'In trash') }] }
+		{ key: 'deleted', label: t('docs.trash', 'Trash'), options: [{ value: 'true', label: t('docs.deleted_only', 'In trash') }] }
 	]}
 	bind:filterValue
 	onfilterapply={applyFilters}
-	onrowclick={(row: DocPage) => { if (!row.deleted_at) openEdit(row); }}
+	onrowclick={(row: DocPage) => { if (row.deleted_at) return; if (canEdit) openEdit(row); else openView(row); }}
 	pageSize={25}
 	emptyMessage={t('docs.no_documentation_pages_found')}
 	actions={rowActions}
@@ -1106,6 +1215,47 @@
 	</div>
 </Modal>
 
+<!-- View Modal — read-only detail for admins without docs.manage -->
+<Modal bind:open={showViewModal} title={viewRow?.title ?? t('common.view', 'View')} size="lg">
+	{#if viewRow}
+		<div class="space-y-4">
+			<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</dt><dd class="font-mono text-xs">{viewRow.slug}</dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</dt><dd>{viewRow.audience}</dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</dt><dd><span class="inline-block rounded-full px-2 py-0.5 text-xs {STATUS_BADGE[viewRow.status] ?? 'bg-black/5'}">{viewRow.status}</span></dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.position', 'Position')}</dt><dd>{viewRow.position ?? 0}</dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.category', 'Category')}</dt><dd>{viewRow.category || '—'}</dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.subcategory', 'Subcategory')}</dt><dd>{viewRow.subcategory || '—'}</dd></div>
+				<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.updated')}</dt><dd>{fmtDate(viewRow.updated_at)}</dd></div>
+				{#if viewRow.last_reviewed_at}
+					<div><dt class="text-xs font-medium" style="color: var(--color-muted)">{t('docs.last_reviewed', 'Last reviewed')}</dt><dd>{fmtDate(viewRow.last_reviewed_at)}</dd></div>
+				{/if}
+			</dl>
+			{#if viewRow.feature_image_url}
+				<img src={viewRow.feature_image_url} alt="" class="h-24 w-40 rounded-md border object-cover" style="border-color: var(--color-border)" />
+			{/if}
+			{#if viewLoading}
+				<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+			{:else if viewRow.content}
+				<div class="rounded-md border p-3" style="border-color: var(--color-border)">
+					<!-- pointer-events-none keeps the shared editor read-only for preview. -->
+					<div class="pointer-events-none">
+						<RichTextEditor content={viewRow.content} {t} modes={['wysiwyg']} minHeight={120} features={{ image: true, youtube: true, markdown: false, suggestions: false, coupon: false, linkPreview: false, video: false }} />
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showViewModal = false; }}>{t('common.close', 'Close')}</Button>
+			{#if canEdit && viewRow && !viewRow.deleted_at}
+				<Button onclick={() => { showViewModal = false; if (viewRow) openEdit(viewRow); }}>{t('common.edit', 'Edit')}</Button>
+			{/if}
+		</div>
+	{/snippet}
+</Modal>
+
 <!-- Revision History Modal (§44 amendment 5) -->
 <Modal bind:open={showHistoryModal} title={t('docs.history', 'History')} size="lg">
 	{#if errorMessage}
@@ -1120,39 +1270,70 @@
 	{:else}
 		<ul class="divide-y" style="border-color: var(--color-border)">
 			{#each revisions as rev (rev.id)}
-				<li class="flex items-start justify-between gap-3 py-3">
-					<div class="min-w-0">
-						<div class="flex items-center gap-2 text-sm font-medium">
-							<span>v{rev.version} — {rev.title}</span>
-							{#if rev.is_latest}
-								<span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">{t('docs.latest', 'latest')}</span>
+				<li class="py-3">
+					<div class="flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<div class="flex items-center gap-2 text-sm font-medium">
+								<span>v{rev.version} — {rev.title}</span>
+								{#if rev.is_latest}
+									<span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">{t('docs.latest', 'latest')}</span>
+								{/if}
+							</div>
+							{#if rev.summary}
+								<p class="mt-0.5 text-xs italic" style="color: var(--color-muted)">{rev.summary}</p>
+							{/if}
+							{#if rev.excerpt}
+								<p class="mt-0.5 line-clamp-2 text-xs" style="color: var(--color-muted)">{rev.excerpt}</p>
+							{/if}
+							<p class="mt-0.5 text-[11px]" style="color: var(--color-muted)">{new Date(rev.created_at).toLocaleString()}</p>
+						</div>
+						<div class="flex shrink-0 items-center gap-1.5">
+							<Button variant="outline" onclick={() => viewRevision(rev)}>
+								<Eye size={13} class="mr-1 inline-block" />{expandedRevId === rev.id ? t('common.hide', 'Hide') : t('common.view', 'View')}
+							</Button>
+							{#if !rev.is_latest}
+								<Button variant="outline" onclick={() => restoreRevision(rev)} disabled={revisionBusy === rev.id}>
+									{t('docs.restore', 'Restore')}
+								</Button>
+								<Button variant="destructive" onclick={() => deleteRevision(rev)} disabled={revisionBusy === rev.id}>
+									{t('common.delete', 'Delete')}
+								</Button>
 							{/if}
 						</div>
-						{#if rev.summary}
-							<p class="mt-0.5 text-xs italic" style="color: var(--color-muted)">{rev.summary}</p>
-						{/if}
-						{#if rev.excerpt}
-							<p class="mt-0.5 line-clamp-2 text-xs" style="color: var(--color-muted)">{rev.excerpt}</p>
-						{/if}
-						<p class="mt-0.5 text-[11px]" style="color: var(--color-muted)">{new Date(rev.created_at).toLocaleString()}</p>
 					</div>
-					<div class="flex shrink-0 items-center gap-1.5">
-						{#if !rev.is_latest}
-							<Button variant="outline" onclick={() => restoreRevision(rev)} disabled={revisionBusy === rev.id}>
-								{t('docs.restore', 'Restore')}
-							</Button>
-							<Button variant="destructive" onclick={() => deleteRevision(rev)} disabled={revisionBusy === rev.id}>
-								{t('common.delete', 'Delete')}
-							</Button>
-						{/if}
-					</div>
+					{#if expandedRevId === rev.id}
+						<div class="mt-3 max-h-80 overflow-y-auto rounded-md border p-3" style="border-color: var(--color-border)">
+							{#if revViewLoading}
+								<p class="py-4 text-center text-xs" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+							{:else}
+								<div class="pointer-events-none">
+									<RichTextEditor content={revViewContent} {t} modes={['wysiwyg']} minHeight={100} features={{ image: true, youtube: true, markdown: false, suggestions: false, coupon: false, linkPreview: false, video: false }} />
+								</div>
+							{/if}
+						</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>
 	{/if}
 	{#snippet footer()}
-		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => { showHistoryModal = false; }}>{t('common.close', 'Close')}</Button>
+		<div class="flex w-full items-center justify-between">
+			{#if revisions.length > 0}
+				{#if showClearConfirm}
+					<span class="flex items-center gap-2 text-xs" style="color: var(--color-danger)">
+						{t('docs.clear_history_confirm', 'Delete all revisions for this page?')}
+						<Button variant="destructive" onclick={clearHistory} disabled={clearBusy}>{t('common.confirm', 'Confirm')}</Button>
+						<Button variant="outline" onclick={() => { showClearConfirm = false; }}>{t('docs.cancel')}</Button>
+					</span>
+				{:else}
+					<Button variant="outline" onclick={() => { showClearConfirm = true; }}>
+						<Eraser size={13} class="mr-1 inline-block" />{t('docs.clear_history', 'Clear history')}
+					</Button>
+				{/if}
+			{:else}
+				<span></span>
+			{/if}
+			<Button variant="outline" onclick={() => { showHistoryModal = false; showClearConfirm = false; }}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/snippet}
 </Modal>

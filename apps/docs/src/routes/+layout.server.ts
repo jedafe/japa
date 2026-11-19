@@ -26,14 +26,11 @@ export const load: LayoutServerLoad = async (event) => {
 		event.locals.accessibleAudiences.includes(tree.audience)
 	);
 
-	// Public site settings (appearance/branding) — fetched SSR so the primary
-	// color and logo are available before hydration.
-	let siteSettings: Record<string, unknown> = {};
-	try {
-		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
-	} catch {
-		siteSettings = {};
-	}
+	// Public site settings (appearance/branding) — reuse the hooks-populated
+	// locals value; hooks already fetches /site/settings/public with a 30s
+	// cache on every request, so a second fetch here would double the
+	// backend round-trip per page.
+	const siteSettings: Record<string, unknown> = event.locals.siteSettings ?? {};
 
 	// Feature flags (public endpoint) — fetched SSR so the layout can gate
 	// client-only features on feature.dm without firing doomed requests when

@@ -213,9 +213,18 @@ func (h *Handlers) checkPageAudienceGate(w http.ResponseWriter, r *http.Request,
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
-		return
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505":
+			errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
+			return
+		case "23503":
+			// FK violation — a referenced row no longer exists. Mirror
+			// mapWriteErr's ErrInvalid mapping so writes that bypass it
+			// return 400 instead of a raw 500.
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "The request references a row that no longer exists")
+			return
+		}
 	}
 
 	switch {

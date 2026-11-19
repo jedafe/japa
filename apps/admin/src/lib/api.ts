@@ -361,6 +361,12 @@ export const docsApi = {
 		api(`/admin/docs/pages/${id}/restore`, { method: 'POST' }),
 	revisions: (id: string) =>
 		api<unknown>(`/admin/docs/pages/${id}/revisions`),
+	// One revision's full content for the inline preview panel.
+	getRevision: (revId: string) =>
+		api<unknown>(`/admin/docs/revisions/${revId}`),
+	// DELETE /pages/{id}/revisions — drops every snapshot for the page.
+	clearRevisions: (id: string) =>
+		api<unknown>(`/admin/docs/pages/${id}/revisions`, { method: 'DELETE' }),
 	deleteRevision: (revId: string) =>
 		api<unknown>(`/admin/docs/revisions/${revId}`, { method: 'DELETE' }),
 	restoreRevision: (id: string, revId: string) =>
