@@ -345,7 +345,7 @@ export const impersonationApi = {
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
-	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string }) =>
+	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string; summary?: string }) =>
 		api('/admin/docs/pages', { method: 'POST', body }),
 	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string; summary?: string; expected_updated_at?: string }) =>
 		api(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
@@ -355,6 +355,12 @@ export const docsApi = {
 		api(`/admin/docs/pages/${id}/publish`, { method: 'POST' }),
 	delete: (id: string) =>
 		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
+	revisions: (id: string) =>
+		api<unknown>(`/admin/docs/pages/${id}/revisions`),
+	deleteRevision: (revId: string) =>
+		api<unknown>(`/admin/docs/revisions/${revId}`, { method: 'DELETE' }),
+	restoreRevision: (id: string, revId: string) =>
+		api<unknown>(`/admin/docs/pages/${id}/revisions/${revId}/restore`, { method: 'POST' }),
 	audiences: () => api<string[]>('/docs/audiences'),
 	statuses: () => api<string[]>('/docs/statuses'),
 	generate: (body: {

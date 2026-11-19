@@ -817,7 +817,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 		taskID := fmt.Sprintf(
 			"docs:generate_page:%s:%s:%s",
-			pgtype.UUID{}.String(),
+			"platform",
 			audience,
 			idSeed,
 		)

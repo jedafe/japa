@@ -516,7 +516,12 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, limit, offset)
+
+	// Fetch the full (status-filtered) list, then apply the audience gate
+	// BEFORE slicing — paginating first and filtering after produced sparse,
+	// misaligned pages for docs.manage holders who lack gated-audience read
+	// permission.
+	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, 0, 0)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -536,6 +541,13 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		if allowedSet[p.Audience] {
 			filtered = append(filtered, p)
 		}
+	}
+
+	if offset > 0 {
+		filtered = filtered[min(int(offset), len(filtered)):]
+	}
+	if limit > 0 && int(limit) < len(filtered) {
+		filtered = filtered[:limit]
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
@@ -745,7 +757,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	// SEARCH-001: enqueue Meilisearch document deletion for the removed doc page.
 	h.enqueueSearchIndex(id, "delete")
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------

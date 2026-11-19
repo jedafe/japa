@@ -12,10 +12,13 @@
 	import { Modal } from '#lib/components/ui/modal/index.js';
 	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { api, docsApi } from '#lib/api.js';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { page as pageState } from '$app/state';
 	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
+	import { RichTextEditor } from '@japaconnect/ui';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.manage'));
@@ -35,6 +38,21 @@
 		subcategory?: string | null;
 		parent_id?: string | null;
 		position?: number;
+		ai_generated?: boolean;
+		feature_image_id?: string | null;
+		feature_image_url?: string | null;
+	};
+
+	type DocRevision = {
+		id: string;
+		doc_page_id: string;
+		version: number;
+		title: string;
+		summary?: string | null;
+		created_by?: string | null;
+		created_at: string;
+		excerpt: string;
+		is_latest: boolean;
 	};
 
 	let docs = $state<DocPage[]>([]);
@@ -53,25 +71,36 @@
 	// True once openEdit's detail fetch populated the body — guards submit from
 	// writing an empty doc over stored content when the fetch failed.
 	let editContentReady = $state(false);
-	// Stored body shape: 'plain' TipTap paragraphs are editable in the
-	// textarea; 'markdown' string bodies round-trip verbatim; 'rich' docs
-	// (marks, tables, code blocks, embeds, non-paragraph nodes) cannot be
-	// flattened into text — the body field locks and content is omitted from
-	// the PATCH so a metadata edit never destroys the markup.
-	type BodyKind = 'plain' | 'markdown' | 'rich';
-	let editBodyKind = $state<BodyKind>('plain');
+	// The shared TipTap editor edits every stored content shape directly:
+	// TipTap docs seed as-is, markdown/plain string bodies parse into
+	// structure — no flatten-then-rewrap lossy round-trip (§44 content=jsonb).
+	let rte: RichTextEditor | undefined = $state(undefined);
+	let editSeed = $state<unknown>(null);
+	let editorJson = $state<unknown>(null);
+	let pendingImageInsert: ((src: string, alt?: string) => void) | null = null;
+	let bodyPickerOpen = $state(false);
+	let featurePickerOpen = $state(false);
 	let saving = $state(false);
 	let form = $state({
 		title: '',
 		slug: '',
 		audience: 'users',
 		status: 'draft' as string,
-		body: '',
 		category: '',
 		subcategory: '',
 		parentId: '',
-		position: 0
+		position: 0,
+		featureImageId: '',
+		featureImageUrl: '',
+		summary: ''
 	});
+
+	// Revision history modal (§44 amendment 5).
+	let showHistoryModal = $state(false);
+	let historyRow = $state<DocPage | null>(null);
+	let revisions = $state<DocRevision[]>([]);
+	let revisionsLoading = $state(false);
+	let revisionBusy = $state('');
 
 	// Delete confirmation Modal
 	let showDeleteConfirm = $state(false);
@@ -196,7 +225,15 @@
 	let generateSuccess = $state('');
 
 	const columns = [
-		{ key: 'title', label: t('docs.title_2'), sortable: true },
+		{
+			key: 'title',
+			label: t('docs.title_2'),
+			sortable: true,
+			// HITL visibility: AI-generated drafts carry a chip so reviewers can
+			// tell machine drafts from human pages in the review queue (§44).
+			render: (v: string, row: DocPage) =>
+				`${v}${row.ai_generated ? ` <span class="ml-1 inline-block rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary)">${t('docs.ai_chip', 'AI')}</span>` : ''}`
+		},
 		{ key: 'slug', label: t('docs.slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'audience', label: t('docs.audience'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
 		{ key: 'status', label: t('docs.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
@@ -208,6 +245,12 @@
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
 			onclick: (row) => openEdit(row),
+			show: () => canEdit
+		},
+		{
+			label: t('docs.history', 'History'),
+			icon: History,
+			onclick: (row) => openHistory(row),
 			show: () => canEdit
 		},
 		{
@@ -266,21 +309,32 @@
 		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 	}
 
-	// wrapAsTipTap converts a plain-text body into a minimal TipTap JSON document
-	// so the backend can store it as jsonb content (§44 — content is TipTap JSON).
-	// Each non-empty line becomes a paragraph node; empty lines become empty paragraphs.
-	function wrapAsTipTap(body: string): object {
-		const lines = body.split('\n');
-		const content = lines.map((line) => ({
-			type: 'paragraph',
-			content: line.trim()
-				? [{ type: 'text', text: line }]
-				: []
-		}));
-		return { type: 'doc', content };
+	// Audience/status filters are URL-synced like the table's q/sort/page —
+	// a filtered review queue stays shareable and back-nav restores it.
+	function syncFilterUrl() {
+		const url = new URL(pageState.url.href);
+		for (const key of ['audience', 'status'] as const) {
+			if (filterValue[key]) url.searchParams.set(key, filterValue[key]);
+			else url.searchParams.delete(key);
+		}
+		replaceState(url, pageState.state);
+	}
+
+	function applyFilters() {
+		// The $effect below re-runs loadDocs when filterValue changes — only
+		// the URL sync is needed here.
+		syncFilterUrl();
 	}
 
 	onMount(async () => {
+		// Seed filters from the URL (DataTable restores q/sort/page itself;
+		// filters are page-managed state).
+		const sp = pageState.url.searchParams;
+		filterValue = {
+			...(sp.get('audience') ? { audience: sp.get('audience')! } : {}),
+			...(sp.get('status') ? { status: sp.get('status')! } : {})
+		};
+
 		const [audResult, statusResult] = await Promise.all([docsApi.audiences(), docsApi.statuses()]);
 		if (audResult.ok && Array.isArray(audResult.data) && audResult.data.length > 0) {
 			audiences = audResult.data;
@@ -325,49 +379,12 @@
 	function openCreate() {
 		editingId = null;
 		editingOriginalStatus = '';
-		editBodyKind = 'plain';
-		form = { title: '', slug: '', audience: 'users', status: 'draft', body: '', category: '', subcategory: '', parentId: '', position: 0 };
+		editingUpdatedAt = '';
+		editContentReady = true; // nothing to fetch
+		editSeed = null;
+		editorJson = null;
+		form = { title: '', slug: '', audience: 'users', status: 'draft', category: '', subcategory: '', parentId: '', position: 0, featureImageId: '', featureImageUrl: '', summary: '' };
 		showFormModal = true;
-	}
-
-	// unwrapTipTap flattens stored TipTap JSON back to the plain-text lines the
-	// body textarea edits (the inverse of wrapAsTipTap). Returns the body kind
-	// so submit can decide whether text editing is lossless — a rich doc or
-	// non-paragraph content must be left alone, not flattened.
-	function unwrapBody(content: unknown): { body: string; kind: BodyKind } {
-		// String bodies (legacy markdown/plain-text pages) are edited as
-		// raw text and re-stored verbatim — never re-wrapped. A string that
-		// happens to parse as JSON (e.g. '"# heading"') unwraps to itself.
-		if (typeof content === 'string') {
-			try {
-				const parsed: unknown = JSON.parse(content);
-				if (typeof parsed === 'string') return { body: parsed, kind: 'markdown' };
-				return classifyDoc(parsed);
-			} catch {
-				return { body: content, kind: 'markdown' };
-			}
-		}
-		return classifyDoc(content);
-	}
-
-	// classifyDoc: TipTap doc → 'plain' (all-paragraph/no-mark text, editable
-	// in the textarea) or 'rich' (anything else — body locks, content omitted
-	// from the PATCH so a metadata edit never destroys markup).
-	function classifyDoc(doc: unknown): { body: string; kind: BodyKind } {
-		if (!doc || typeof doc !== 'object' || !Array.isArray((doc as any).content)) {
-			return { body: '', kind: 'rich' };
-		}
-		const nodes = (doc as any).content as any[];
-		const rich = nodes.some(
-			(n) =>
-				n?.type !== 'paragraph' ||
-				(n?.content ?? []).some((c: any) => c?.type !== 'text' || (c?.marks?.length ?? 0) > 0)
-		);
-		if (rich) return { body: '', kind: 'rich' };
-		const body = nodes
-			.map((n) => (Array.isArray(n?.content) ? n.content.map((c: any) => c?.text ?? '').join('') : ''))
-			.join('\n');
-		return { body, kind: 'plain' };
 	}
 
 	async function openEdit(item: DocPage) {
@@ -375,31 +392,36 @@
 		editingOriginalStatus = item.status;
 		editingUpdatedAt = item.updated_at;
 		editContentReady = false;
-		editBodyKind = 'plain';
+		editSeed = null;
+		editorJson = null;
 		form = {
 			title: item.title,
 			slug: item.slug,
 			audience: item.audience,
 			status: item.status,
-			body: '',
 			category: item.category ?? '',
 			subcategory: item.subcategory ?? '',
 			parentId: item.parent_id ?? '',
-			position: item.position ?? 0
+			position: item.position ?? 0,
+			featureImageId: item.feature_image_id ?? '',
+			featureImageUrl: item.feature_image_url ?? '',
+			summary: ''
 		};
 		showFormModal = true;
 		// The list row is a summary (no content body, §44) — fetch the full page
-		// so editing doesn't clobber stored TipTap content with empty text.
+		// so editing doesn't clobber stored TipTap content with an empty doc.
 		const detail = await docsApi.get(item.id);
 		if (detail.ok && detail.data && editingId === item.id) {
 			const d = detail.data as any;
-			const unwrapped = unwrapBody(d.content);
-			editBodyKind = unwrapped.kind;
-			form.body = unwrapped.body;
+			// Seed the TipTap editor with the stored body as-is — TipTap docs,
+			// markdown strings, and plain text all parse natively.
+			editSeed = d.content ?? null;
 			form.category = d.category ?? form.category;
 			form.subcategory = d.subcategory ?? form.subcategory;
 			form.parentId = d.parent_id ?? '';
 			form.position = d.position ?? form.position;
+			form.featureImageId = d.feature_image_id ?? '';
+			form.featureImageUrl = d.feature_image_url ?? '';
 			editingUpdatedAt = d.updated_at ?? editingUpdatedAt;
 			editContentReady = true;
 		}
@@ -409,11 +431,10 @@
 		if (!form.title.trim()) return;
 		saving = true;
 		errorMessage = '';
+		// Flush any pending editor transaction so the JSON reflects the latest
+		// keystroke before it ships.
+		rte?.flush();
 		const slug = form.slug.trim() || slugify(form.title);
-		// Wrap the plain-text body in a minimal TipTap JSON document so the
-		// backend (which expects jsonb TipTap content) can store and render it.
-		// Ref: §44 "content jsonb NOT NULL DEFAULT '{}', -- TipTap JSON"
-		const tiptapContent = wrapAsTipTap(form.body);
 		// §44 amendment 2: only draft/in_review are writable via create/PATCH.
 		// Selecting approved/published omits review_status from the write and
 		// chains the dedicated approve/publish endpoints afterwards so reviewer
@@ -421,22 +442,13 @@
 		// the stored value (preserve-on-absent → send "" to clear).
 		const desired = form.status;
 		const writable = desired === 'approved' || desired === 'published' ? undefined : desired;
-		// Body kind decides what (if anything) is written to content:
-		// 'rich' docs omit it entirely (flattening would destroy markup),
-		// 'markdown' bodies round-trip as the same JSON string shape they
-		// were stored as, and 'plain' docs re-wrap into TipTap paragraphs.
-		const content =
-			editingId && (!editContentReady || editBodyKind === 'rich')
-				? undefined
-				: editBodyKind === 'markdown'
-					? form.body
-					: editingId
-						? tiptapContent
-						: // Create stores the textarea verbatim as a markdown string body
-							// (the field is labelled "Body (Markdown)"): the docs renderer
-							// handles string content via marked, so headings/lists/fences
-							// work — TipTap paragraph-wrapping would render them literally.
-							form.body;
+		// editorJson tracks every edit (the editor also fires it on seed) —
+		// falling back to editSeed covers the untouched case.
+		const content = editingId
+			? editContentReady
+				? (editorJson ?? editSeed ?? '')
+				: undefined
+			: (editorJson ?? '');
 		const payload = {
 			title: form.title.trim(),
 			slug,
@@ -450,6 +462,8 @@
 			subcategory: form.subcategory.trim(),
 			parent_id: form.parentId,
 			position: Math.max(0, Math.trunc(form.position) || 0),
+			feature_image_id: form.featureImageId,
+			...(form.summary.trim() ? { summary: form.summary.trim() } : {}),
 			// Optimistic lock — the docs-site editor uses the same contract.
 			...(editingId && editingUpdatedAt ? { expected_updated_at: editingUpdatedAt } : {})
 		};
@@ -507,12 +521,19 @@
 		}
 	}
 
-	// Reorder — swap a page's position with its adjacent same-audience
-	// sibling (nav orders by position, then title). Equal positions get a
-	// synthesized ±1 offset so the move never silently no-ops.
+	// Reorder — swap a page's position with its adjacent sibling in the same
+	// nav bucket (audience + parent + category + subcategory). The nav tree
+	// nests children under parents and groups roots by category, so moving
+	// across those boundaries changed a position the reader never sees.
+	// Equal positions get a synthesized ±1 offset so the move never no-ops.
 	function siblingsOf(item: DocPage): DocPage[] {
+		const sameBucket = (d: DocPage) =>
+			d.audience === item.audience &&
+			(d.parent_id ?? null) === (item.parent_id ?? null) &&
+			(d.category ?? null) === (item.category ?? null) &&
+			(d.subcategory ?? null) === (item.subcategory ?? null);
 		return docs
-			.filter((d) => d.audience === item.audience)
+			.filter(sameBucket)
 			.sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.title.localeCompare(b.title));
 	}
 
@@ -539,6 +560,50 @@
 		if (!r1.ok) errorMessage = r1.error;
 		else if (!r2.ok) errorMessage = r2.error;
 		loadDocs();
+	}
+
+	// Revision history — §44 amendment 5. Restoring creates a new forward
+	// revision (never rewrites history); the latest snapshot can't be deleted.
+	async function openHistory(item: DocPage) {
+		historyRow = item;
+		revisions = [];
+		revisionsLoading = true;
+		showHistoryModal = true;
+		const res = await docsApi.revisions(item.id);
+		if (res.ok) {
+			const raw = res.data as DocRevision[] | { data?: DocRevision[] };
+			revisions = Array.isArray(raw) ? raw : (raw?.data ?? []);
+		} else {
+			errorMessage = res.error;
+		}
+		revisionsLoading = false;
+	}
+
+	async function restoreRevision(rev: DocRevision) {
+		if (!historyRow || revisionBusy) return;
+		revisionBusy = rev.id;
+		errorMessage = '';
+		const res = await docsApi.restoreRevision(historyRow.id, rev.id);
+		if (res.ok) {
+			await openHistory(historyRow);
+			loadDocs();
+		} else {
+			errorMessage = res.error;
+		}
+		revisionBusy = '';
+	}
+
+	async function deleteRevision(rev: DocRevision) {
+		if (revisionBusy) return;
+		revisionBusy = rev.id;
+		errorMessage = '';
+		const res = await docsApi.deleteRevision(rev.id);
+		if (res.ok) {
+			revisions = revisions.filter((r) => r.id !== rev.id);
+		} else {
+			errorMessage = res.error;
+		}
+		revisionBusy = '';
 	}
 
 	function confirmDelete(id: string) {
@@ -608,6 +673,9 @@
 			generateSuccess = t('docs.generate_accepted', 'Generation queued. A draft will appear for HITL review.');
 			generatePrompt = '';
 			generateRelated = '';
+			// Poll for the generated draft — it lands in_review via the worker,
+			// not the response. Watch the audience list for the slug.
+			pollForGeneratedPage(generateSlug.trim(), generateAudience);
 			setTimeout(() => {
 				showGenerateModal = false;
 				generateSuccess = '';
@@ -616,6 +684,23 @@
 			generateError = result.error;
 		}
 		generateLoading = false;
+	}
+
+	// After the queue accepts a generation, poll the admin list until the
+	// draft materializes (worker latency is a few seconds) — no silent wait.
+	async function pollForGeneratedPage(slug: string, audience: string) {
+		for (let i = 0; i < 12; i++) {
+			await new Promise((r) => setTimeout(r, 3000));
+			const res = await docsApi.list(`audience=${encodeURIComponent(audience)}`);
+			if (res.ok) {
+				const raw = res.data as any[] | { data?: any[] };
+				const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
+				if (rows.some((d) => d.slug === slug)) {
+					loadDocs();
+					return;
+				}
+			}
+		}
 	}
 
 	$effect(() => {
@@ -658,7 +743,7 @@
 		{ key: 'status', label: t('docs.status'), options: statusFilterOptions }
 	]}
 	bind:filterValue
-	onfilterapply={loadDocs}
+	onfilterapply={applyFilters}
 	onrowclick={(row: DocPage) => openEdit(row)}
 	pageSize={25}
 	emptyMessage={t('docs.no_documentation_pages_found')}
@@ -752,15 +837,64 @@
 				<input id="doc-position" type="number" min="0" step="1" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.position} />
 			</div>
 		</div>
+		<!-- Feature image (§44 amendment 5) — media-library backed, URL is
+		     computed server-side. -->
 		<div>
-			<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
-			{#if editingId && editBodyKind === 'rich'}
-				<div class="mb-1 rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-warning, #b45309); color: var(--color-warning, #b45309)">
-					{t('docs.rich_body_locked', 'This page contains rich formatting (links, tables, code blocks, or embeds). The body is read-only here — edit it on the Docs site to preserve the markup.')}
-				</div>
-			{/if}
-			<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body} disabled={editingId !== null && editBodyKind === 'rich'} placeholder={editingId && editBodyKind === 'rich' ? t('docs.rich_body_locked_ph', 'Rich TipTap document — not editable as text') : ''}></textarea>
+			<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.feature_image', 'Feature image')}</span>
+			<div class="flex items-center gap-3">
+				{#if form.featureImageUrl}
+					<img src={form.featureImageUrl} alt="" class="h-14 w-24 rounded-md border object-cover" style="border-color: var(--color-border)" />
+				{/if}
+				<Button variant="outline" onclick={() => { featurePickerOpen = true; }}>
+					<ImageIcon size={14} class="mr-1 inline-block" />
+					{form.featureImageId ? t('docs.change_image', 'Change image') : t('docs.choose_image', 'Choose image')}
+				</Button>
+				{#if form.featureImageId}
+					<button type="button" class="text-xs" style="color: var(--color-muted)" onclick={() => { form.featureImageId = ''; form.featureImageUrl = ''; }}>
+						{t('common.clear', 'Clear')}
+					</button>
+				{/if}
+			</div>
 		</div>
+		<div>
+			<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_label', 'Body')}</span>
+			{#if editingId && !editContentReady}
+				<div class="rounded-md border px-3 py-8 text-center text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
+					{t('docs.body_loading', 'Loading page content…')}
+				</div>
+			{:else}
+				<RichTextEditor
+					bind:this={rte}
+					content={editSeed}
+					{t}
+					placeholder={t('docs.body_placeholder', 'Write the documentation…')}
+					ariaLabel={t('docs.body_label', 'Body')}
+					defaultMode="wysiwyg"
+					modes={['wysiwyg', 'markdown', 'block']}
+					minHeight={320}
+					features={{
+						image: true,
+						youtube: true,
+						markdown: true,
+						suggestions: false,
+						coupon: false,
+						linkPreview: false,
+						video: false
+					}}
+					onjson={(json) => { editorJson = json; }}
+					onPickImage={(insert) => {
+						pendingImageInsert = insert;
+						bodyPickerOpen = true;
+					}}
+				/>
+			{/if}
+		</div>
+		{#if editingId}
+			<div>
+				<label for="doc-summary" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.summary_label', 'Edit summary (optional)')}</label>
+				<input id="doc-summary" type="text" maxlength="200" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.summary} placeholder={t('docs.summary_placeholder', 'Briefly describe your changes')} />
+			</div>
+		{/if}
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
@@ -867,3 +1001,72 @@
 		<Button variant="destructive" onclick={executeDelete}>{t('docs.confirm_delete')}</Button>
 	</div>
 </Modal>
+
+<!-- Revision History Modal (§44 amendment 5) -->
+<Modal bind:open={showHistoryModal} title={t('docs.history', 'History')} size="lg">
+	{#if errorMessage}
+		<div class="mb-3 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+			{errorMessage}
+		</div>
+	{/if}
+	{#if revisionsLoading}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+	{:else if revisions.length === 0}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('docs.no_revisions', 'No revisions recorded for this page.')}</p>
+	{:else}
+		<ul class="divide-y" style="border-color: var(--color-border)">
+			{#each revisions as rev (rev.id)}
+				<li class="flex items-start justify-between gap-3 py-3">
+					<div class="min-w-0">
+						<div class="flex items-center gap-2 text-sm font-medium">
+							<span>v{rev.version} — {rev.title}</span>
+							{#if rev.is_latest}
+								<span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">{t('docs.latest', 'latest')}</span>
+							{/if}
+						</div>
+						{#if rev.summary}
+							<p class="mt-0.5 text-xs italic" style="color: var(--color-muted)">{rev.summary}</p>
+						{/if}
+						{#if rev.excerpt}
+							<p class="mt-0.5 line-clamp-2 text-xs" style="color: var(--color-muted)">{rev.excerpt}</p>
+						{/if}
+						<p class="mt-0.5 text-[11px]" style="color: var(--color-muted)">{new Date(rev.created_at).toLocaleString()}</p>
+					</div>
+					<div class="flex shrink-0 items-center gap-1.5">
+						{#if !rev.is_latest}
+							<Button variant="outline" onclick={() => restoreRevision(rev)} disabled={revisionBusy === rev.id}>
+								{t('docs.restore', 'Restore')}
+							</Button>
+							<Button variant="destructive" onclick={() => deleteRevision(rev)} disabled={revisionBusy === rev.id}>
+								{t('common.delete', 'Delete')}
+							</Button>
+						{/if}
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end">
+			<Button variant="outline" onclick={() => { showHistoryModal = false; }}>{t('common.close', 'Close')}</Button>
+		</div>
+	{/snippet}
+</Modal>
+
+<!-- In-body image insert (RichTextEditor onPickImage) and feature-image pick -->
+<MediaPickerModal
+	bind:open={bodyPickerOpen}
+	onselect={(media) => {
+		pendingImageInsert?.(media.url, media.filename);
+		pendingImageInsert = null;
+		bodyPickerOpen = false;
+	}}
+/>
+<MediaPickerModal
+	bind:open={featurePickerOpen}
+	onselect={(media) => {
+		form.featureImageId = media.id;
+		form.featureImageUrl = media.url;
+		featurePickerOpen = false;
+	}}
+/>
