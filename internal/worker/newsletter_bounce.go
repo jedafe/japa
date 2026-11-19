@@ -106,6 +106,13 @@ func HandleNewsletterPollBounces(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
+	// Honor the feature.newsletter kill-switch — no subscriber mutation
+	// when the flag is off (same gate as newsletter:send/digest, §62).
+	if featureChecker != nil && !featureChecker.IsEnabled(ctx, "feature.newsletter") {
+		slog.Info("task:newsletter:poll_bounces: feature.newsletter disabled, skipping")
+		return nil
+	}
+
 	cfg := readBounceIMAPConfig()
 	if cfg == nil {
 		slog.Debug("task:newsletter:poll_bounces: JC_BOUNCE_IMAP_HOST unset, skipping")
@@ -203,6 +210,8 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 	for _, msg := range msgs {
 		raw := msg.FindBodySection(bodySection)
 
+		markFailed := false
+
 		for _, ev := range parseBounceEvents(raw) {
 			var markErr error
 
@@ -217,6 +226,7 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 
 			if markErr != nil {
 				slog.Warn("task:newsletter:poll_bounces: mark failed", "email", ev.email, "kind", ev.kind, "error", markErr)
+				markFailed = true
 				continue
 			}
 
@@ -227,9 +237,14 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 			}
 		}
 
-		// Every fetched message is flagged \Seen — including unparseable
-		// ones — so a poison message can't re-enter the poll forever.
-		processed = append(processed, msg.SeqNum)
+		// Messages are flagged \Seen once fully handled: unparseable mail
+		// is marked seen so a poison message can't re-enter the poll
+		// forever, but a message whose suppression hit a transient DB
+		// error stays UNSEEN so the next poll retries the mark instead
+		// of dropping the bounce event.
+		if !markFailed {
+			processed = append(processed, msg.SeqNum)
+		}
 	}
 
 	if len(processed) > 0 {
@@ -332,9 +347,16 @@ func parseDeliveryStatus(part *multipart.Part) []bounceEvent {
 
 	var events []bounceEvent
 
-	for i, block := range blocks {
-		if i == 0 || strings.TrimSpace(block) == "" {
-			continue // per-message block (Reporting-MTA etc.)
+	seenFirst := false // first non-empty block is per-message (Reporting-MTA etc.)
+
+	for _, block := range blocks {
+		if strings.TrimSpace(block) == "" {
+			continue
+		}
+
+		if !seenFirst {
+			seenFirst = true
+			continue
 		}
 
 		sub, err := mail.ReadMessage(strings.NewReader(block))
@@ -342,7 +364,13 @@ func parseDeliveryStatus(part *multipart.Part) []bounceEvent {
 			continue
 		}
 
+		// Final-Recipient carries the bounced address; some MTAs emit only
+		// Original-Recipient. Both use the "rfc822;addr" form.
 		final := sub.Header.Get("Final-Recipient")
+		if final == "" {
+			final = sub.Header.Get("Original-Recipient")
+		}
+
 		action := strings.ToLower(strings.TrimSpace(sub.Header.Get("Action")))
 		status := strings.TrimSpace(sub.Header.Get("Status"))
 
@@ -363,10 +391,11 @@ func parseDeliveryStatus(part *multipart.Part) []bounceEvent {
 }
 
 // parseFeedbackReport extracts the complained-about recipient from an
-// ARF (message/feedback-report, RFC 6449) part. Feedback-Type "abuse"
-// (and its aliases) maps to 'complained'; other feedback types
-// (auth-failure, not-spam, virus) don't suppress the address.
-// Original-Rcpt-To carries the original recipient in CFBL reports.
+// ARF (message/feedback-report, RFC 6449) part. Only Feedback-Type
+// "abuse" suppresses (§62): fraud/virus reports concern message content,
+// not the recipient's subscription — suppressing them would drop a
+// victim address that never opted out. Original-Rcpt-To carries the
+// original recipient in CFBL reports.
 func parseFeedbackReport(part *multipart.Part) []bounceEvent {
 	sub, err := mail.ReadMessage(part)
 	if err != nil {
@@ -374,7 +403,7 @@ func parseFeedbackReport(part *multipart.Part) []bounceEvent {
 	}
 
 	fbType := strings.ToLower(strings.TrimSpace(sub.Header.Get("Feedback-Type")))
-	if fbType != "abuse" && fbType != "fraud" && fbType != "virus" {
+	if fbType != "abuse" {
 		return nil
 	}
 

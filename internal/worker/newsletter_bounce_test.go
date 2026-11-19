@@ -156,6 +156,49 @@ func TestParseBounceEventsGarbage(t *testing.T) {
 	}
 }
 
+func TestParseBounceEventsOriginalRecipientFallback(t *testing.T) {
+	t.Parallel()
+
+	raw := "From: bounce@mta.example\r\n" +
+		"Content-Type: multipart/report; report-type=delivery-status; boundary=\"b4\"\r\n" +
+		"\r\n" +
+		"--b4\r\n" +
+		"Content-Type: message/delivery-status\r\n" +
+		"\r\n" +
+		"\r\n" + // leading blank line — first NON-empty block is per-message
+		"Reporting-MTA: dns; mta\r\n" +
+		"\r\n" +
+		"Original-Recipient: rfc822;gone@example.com\r\n" +
+		"Action: failed\r\n" +
+		"Status: 5.2.2\r\n" +
+		"\r\n" +
+		"--b4--\r\n"
+
+	events := parseBounceEvents([]byte(raw))
+	if len(events) != 1 || events[0].email != "gone@example.com" || events[0].kind != "bounced" {
+		t.Fatalf("events = %+v, want gone@example.com bounced via Original-Recipient", events)
+	}
+}
+
+func TestParseFeedbackReportNonAbuseIgnored(t *testing.T) {
+	t.Parallel()
+
+	raw := "From: fbl@isp.example\r\n" +
+		"Content-Type: multipart/report; report-type=feedback-report; boundary=\"b5\"\r\n" +
+		"\r\n" +
+		"--b5\r\n" +
+		"Content-Type: message/feedback-report\r\n" +
+		"\r\n" +
+		"Feedback-Type: virus\r\n" +
+		"Original-Rcpt-To: victim@example.com\r\n" +
+		"\r\n" +
+		"--b5--\r\n"
+
+	if events := parseBounceEvents([]byte(raw)); len(events) != 0 {
+		t.Fatalf("virus report must not suppress, got %+v", events)
+	}
+}
+
 func TestHandleNewsletterPollBouncesNoDB(t *testing.T) {
 	old := dbPool
 	dbPool = nil
