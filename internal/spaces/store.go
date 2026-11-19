@@ -1158,9 +1158,10 @@ func (s *Service) SetSpaceParent(ctx context.Context, spaceID, parentID pgtype.U
 func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error) {
 	// §80 wiki-only space types: force the restrictive axes regardless of
 	// caller input — the space's type can't change on update, so the check
-	// keys off the stored row's space_type_id.
-	if existing, err := s.read.GetSpaceByID(ctx, params.ID); err == nil &&
-		s.IsWikiOnlyType(ctx, existing.SpaceTypeID) {
+	// keys off the stored row's space_type_id. The row is also reused below
+	// to detect envelope-relevant transitions for §126 provisioning.
+	existing, existingErr := s.read.GetSpaceByID(ctx, params.ID)
+	if existingErr == nil && s.IsWikiOnlyType(ctx, existing.SpaceTypeID) {
 		params.Visibility = VisibilityPublic
 		params.PostingPerm = PermAdmins
 		params.ReplyingPerm = PermAdmins
@@ -1177,9 +1178,15 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 	// closed takes its pages' public thread pages down with it.
 	s.dropThreadAnchorsIfClosed(ctx, space.ID)
 
-	// §126: a private→public flip (or clearing federate_opt_out) brings the
-	// space into the Group envelope — mint/revive its actor. Soft-fail.
-	if space.Visibility == "public" && space.Level == LevelCustom && !space.FederateOptOut {
+	// §126: a private→public flip (or clearing federate_opt_out, or
+	// reactivation) brings the space into the Group envelope — mint/revive
+	// its actor. Only on an envelope-relevant transition so unrelated edits
+	// don't hit the federation tables. Soft-fail.
+	if space.Visibility == "public" && space.Level == LevelCustom && !space.FederateOptOut &&
+		(existingErr != nil ||
+			existing.Visibility != space.Visibility ||
+			existing.Status != space.Status ||
+			existing.FederateOptOut != space.FederateOptOut) {
 		s.maybeProvisionGroupActor(ctx, space.ID)
 	}
 

@@ -1238,6 +1238,26 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		status = req.Status
 	}
 
+	// §126: federate_opt_out is an owner-level preference — a moderator may
+	// manage the space but not its federation posture. Platform admins
+	// (spaces.admin) may still flip it for moderation/recovery.
+	if req.FederateOptOut != nil {
+		allowed := false
+		if user := auth.FromContext(r.Context()); user != nil {
+			if resolver := rbac.FromContext(r.Context()); resolver != nil &&
+				resolver.HasPermission(r.Context(), user.UserID, "spaces.admin") {
+				allowed = true
+			} else if isOwner, oerr := h.Service.IsOwner(r.Context(), id, user.UserID); oerr == nil && isOwner {
+				allowed = true
+			}
+		}
+		if !allowed {
+			errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
+				"Only the space owner or a platform admin can change federation visibility")
+			return
+		}
+	}
+
 	space, err := h.Service.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
 		Name:           name,
 		Description:    description,

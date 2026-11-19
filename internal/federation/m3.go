@@ -460,6 +460,9 @@ func (s *Service) GroupDocument(ctx context.Context, slug string) (map[string]an
 	}
 	cacheKey := "jc:fed:groupdoc:" + strings.ToLower(slug)
 	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+		// Refresh the live-derived flag — a cached doc must not report a
+		// stale discoverable once the space crosses the post floor.
+		doc["discoverable"] = row.Discoverable
 		return doc, nil
 	}
 	doc := groupDocument(row, s.siteBase())

@@ -167,7 +167,8 @@ func (s *Service) minPostsDiscoverable(ctx context.Context) int32 {
 	if s.settings == nil {
 		return fallback
 	}
-	if n, err := s.settings.GetSettingInt(ctx, "federation.min_posts_discoverable"); err == nil && n > 0 {
+	// 0 is a valid override — it disables the floor entirely.
+	if n, err := s.settings.GetSettingInt(ctx, "federation.min_posts_discoverable"); err == nil && n >= 0 {
 		return int32(n)
 	}
 	return fallback
@@ -316,18 +317,25 @@ func (s *Service) instanceWebfinger(ctx context.Context, domain string) (map[str
 // ---------------------------------------------------------------------------
 
 // ActorDocument returns the Person document for a federated username.
+// The profile row resolves live on EVERY request — same contract as
+// GroupDocument: a suspension, deletion, or privacy/discoverability change
+// takes effect immediately; the cache may only elide the doc build.
 func (s *Service) ActorDocument(ctx context.Context, username string) (map[string]any, error) {
-	cacheKey := "jc:fed:actor:" + strings.ToLower(username)
-	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
-		return doc, nil
-	}
-
 	profile, err := s.store.actorProfile(ctx, username, s.minPostsDiscoverable(ctx))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("federation: actor lookup: %w", err)
+	}
+
+	cacheKey := "jc:fed:actor:" + strings.ToLower(username)
+	if doc, ok := s.cacheGet(ctx, cacheKey); ok {
+		// The cached build carries these from build-time — refresh the
+		// live-derived flags so a cached doc never reports stale state.
+		doc["discoverable"] = profile.Discoverable != nil && *profile.Discoverable
+		doc["manuallyApprovesFollowers"] = profile.ManuallyApprovesFollowers
+		return doc, nil
 	}
 
 	doc := actorDocument(profile, s.siteBase())
