@@ -370,6 +370,26 @@ func (s *Service) withRepoWrite(ctx context.Context, accountID pgtype.UUID, mode
 	})
 }
 
+// ensureRepoHead mints the account's genesis commit when the repo has
+// none — an empty-MST root. The §127 projection floor withholds
+// records, never the repo itself: an active account with no head has
+// no repo at all (getRepo 404s while the #account frame announced it
+// live). A headless repo's commit carries no data CID until signed,
+// so checking inside the lock makes a concurrent init a rollback
+// no-op rather than a duplicate seq-1 commit.
+func (s *Service) ensureRepoHead(ctx context.Context, accountID pgtype.UUID) error {
+	err := s.withRepoWrite(ctx, accountID, repoWriteNormal, func(rep *atrepo.Repo, _ *gen.Queries) ([]indexWrite, error) {
+		if rep.SignedCommit().Data.Defined() {
+			return nil, errRepoNoop
+		}
+		return []indexWrite{}, nil
+	})
+	if errors.Is(err, errRepoNoop) {
+		return nil
+	}
+	return err
+}
+
 // upsertRecord is the Add-vs-Update upsert indigo lacks — its PutRecord
 // fails on existing keys and UpdateRecord fails on missing ones, so the
 // pick rides on whether the rpath already resolves.

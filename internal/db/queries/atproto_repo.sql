@@ -256,10 +256,11 @@ SELECT EXISTS(
 -- name: GetAtprotoRepoDivergent :one
 -- atproto:reconcile_sweep probe: true when the repo's index disagrees
 -- with the §127 projection floor either direction — below the floor
--- with rows still indexed, or at/above it with withheld work (a
--- missing self profile or eligible-but-unindexed posts). Divergence —
--- not "has work" — is the enqueue criterion, so below-floor repos that
--- correctly hold nothing and fully-converged repos both skip.
+-- with rows still indexed or no genesis commit at all, or at/above it
+-- with withheld work (a missing self profile or eligible-but-unindexed
+-- posts). Divergence — not "has work" — is the enqueue criterion, so
+-- below-floor repos holding an empty root commit and fully-converged
+-- repos both skip.
 WITH meets AS (
   SELECT (SELECT COUNT(*) FROM (
             SELECT 1 FROM contents pc
@@ -269,7 +270,10 @@ WITH meets AS (
             LIMIT @min_posts) p) >= @min_posts AS m
 )
 SELECT (
-    (NOT m AND EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = @account_id))
+    (NOT m AND (
+      EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = @account_id)
+      OR NOT EXISTS(SELECT 1 FROM atproto_repo_commits rc WHERE rc.account_id = @account_id)
+    ))
     OR
     (m AND (
       NOT EXISTS(

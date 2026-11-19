@@ -146,7 +146,13 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 		return err
 	}
 	if !meets {
-		return s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did))
+		if err := s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did)); err != nil {
+			return err
+		}
+		// The floor withholds records, never the repo itself — a
+		// headless active account still mints its empty-MST genesis
+		// commit so sync surfaces serve a real (empty) repo.
+		return s.ensureRepoHead(ctx, account.ID)
 	}
 	profile, err := s.store.q.GetAtprotoUserProfile(ctx, account.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -509,10 +515,15 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 		}
 		return profileRecordURI(account.Did), nil
 	}
-	// A record task carrying content_id must target the repo that owns
-	// the content — otherwise the index would link someone else's row
-	// and a later content delete would tombstone the wrong repo's
-	// record. Mispairing is terminal, never retryable.
+	// A record task carrying content_id must still name the repo that
+	// owns the content — mispairing is a caller bug and stays terminal —
+	// then the write itself converges through publishContent: it
+	// rebuilds the feed.post from the canonical contents row (a raw
+	// payload could carry arbitrary text under an eligible content's
+	// index link) and re-checks eligibility including the §127 floor
+	// inside the write tx. The only content-linked collection the
+	// engine writes is feed.post; decodeRecord already rejected
+	// anything else.
 	if contentID.Valid {
 		owner, err := s.store.q.GetAtprotoAccountIDByContent(ctx, contentID)
 		if err != nil {
@@ -524,19 +535,7 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 		if owner != accountID {
 			return "", permanent(fmt.Errorf("atproto: content %s is not owned by account %s", contentID.String(), accountID.String()))
 		}
-		// A raw record carrying content_id re-checks the same
-		// eligibility PublishContent enforces — published, public,
-		// federatable, not opted out, author at the §127 post floor —
-		// so a stale or withheld row can't write through this path.
-		if _, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
-			ID:           contentID,
-			ContentTypes: s.federatableTypesFor(ctx),
-			MinPosts:     s.minPostsDiscoverable(ctx),
-		}); errors.Is(err, pgx.ErrNoRows) {
-			return "", permanent(ErrNotFound)
-		} else if err != nil {
-			return "", fmt.Errorf("atproto: projectable check: %w", err)
-		}
+		return s.publishContent(ctx, contentID, true)
 	}
 	var uri string
 	if rkey == "" {

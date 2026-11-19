@@ -940,15 +940,24 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 		return div != nil && *div
 	}
 
-	// Enable ran below the floor: account active, no profile indexed.
+	// Enable ran below the floor: account active, no profile indexed —
+	// but the repo itself exists: the floor withholds records, never the
+	// genesis commit, or getRepo would 404 on an announced-live account.
 	if got := acct.Status; got != AccountStatusActive {
 		t.Fatalf("account status = %q, want active — identity is not gated", got)
 	}
 	if n := countRecords(CollectionProfile); n != 0 {
 		t.Fatalf("profile rows = %d below floor, want 0", n)
 	}
+	var commits int
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_repo_commits WHERE account_id = $1`, acct.ID).Scan(&commits); err != nil {
+		t.Fatal(err)
+	}
+	if commits != 1 {
+		t.Fatalf("commits = %d below floor, want 1 (empty-MST genesis)", commits)
+	}
 	if divergent() {
-		t.Fatal("below-floor repo holding nothing reads divergent — sweep would churn a no-op reconcile")
+		t.Fatal("below-floor repo holding an empty genesis reads divergent — sweep would churn a no-op reconcile")
 	}
 
 	c1 := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
@@ -1027,6 +1036,27 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	}
 	if got := atprotoAccountFor(t, ctx, d, userID).Status; got != AccountStatusActive {
 		t.Fatalf("account status = %q, want active — floor must not disable identity", got)
+	}
+
+	// A headless active repo — the pre-fix below-floor state — reads
+	// divergent and the reconcile walk remints the genesis commit.
+	if _, err := d.Writer.Exec(ctx, `DELETE FROM atproto_repo_commits WHERE account_id = $1`, acct.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !divergent() {
+		t.Fatal("headless below-floor repo must read divergent")
+	}
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo headless: %v", err)
+	}
+	if err := d.Writer.QueryRow(ctx, `SELECT COUNT(*) FROM atproto_repo_commits WHERE account_id = $1`, acct.ID).Scan(&commits); err != nil {
+		t.Fatal(err)
+	}
+	if commits != 1 {
+		t.Fatalf("commits = %d after headless reconcile, want 1 reminted genesis", commits)
+	}
+	if divergent() {
+		t.Fatal("reminted empty repo still reads divergent")
 	}
 }
 

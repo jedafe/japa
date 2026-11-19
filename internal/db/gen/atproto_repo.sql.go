@@ -398,7 +398,10 @@ WITH meets AS (
             LIMIT $4) p) >= $4 AS m
 )
 SELECT (
-    (NOT m AND EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = $1))
+    (NOT m AND (
+      EXISTS(SELECT 1 FROM atproto_records r WHERE r.account_id = $1)
+      OR NOT EXISTS(SELECT 1 FROM atproto_repo_commits rc WHERE rc.account_id = $1)
+    ))
     OR
     (m AND (
       NOT EXISTS(
@@ -433,10 +436,11 @@ type GetAtprotoRepoDivergentParams struct {
 
 // atproto:reconcile_sweep probe: true when the repo's index disagrees
 // with the §127 projection floor either direction — below the floor
-// with rows still indexed, or at/above it with withheld work (a
-// missing self profile or eligible-but-unindexed posts). Divergence —
-// not "has work" — is the enqueue criterion, so below-floor repos that
-// correctly hold nothing and fully-converged repos both skip.
+// with rows still indexed or no genesis commit at all, or at/above it
+// with withheld work (a missing self profile or eligible-but-unindexed
+// posts). Divergence — not "has work" — is the enqueue criterion, so
+// below-floor repos holding an empty root commit and fully-converged
+// repos both skip.
 func (q *Queries) GetAtprotoRepoDivergent(ctx context.Context, arg GetAtprotoRepoDivergentParams) (*bool, error) {
 	row := q.db.QueryRow(ctx, getAtprotoRepoDivergent,
 		arg.AccountID,
