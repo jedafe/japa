@@ -32,7 +32,6 @@
 	let newsletterEngagement = $state<{ campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> } | null>(null);
 	let retentionCohorts = $state<Array<Record<string, unknown>> | null>(null);
 	let tabLoading = $state(false);
-	let tabError = $state("");
 	// Datasets already fetched, keyed by the params they were fetched with —
 	// a load finishing after a filter change adds the stale key, so it can
 	// never mark the new params' view as fresh.
@@ -41,6 +40,11 @@
 	// so their keys exclude it and survive a type change untouched.
 	const loadKey = (tab: string) =>
 		tab === "top_content" ? `${tab}|${period}|${advType}` : `${tab}|${period}`;
+	// Error is keyed to the params that produced it — a failure on one tab
+	// must not plaster a banner over another tab's loaded data.
+	let errorKey = $state("");
+	let errorMsg = $state("");
+	const tabError = $derived(errorKey && errorKey === loadKey(activeTab) ? errorMsg : "");
 
 	// Content-type options accumulate from every fetched leaderboard — deriving
 	// from the *filtered* rows would collapse the picker to just the active
@@ -65,37 +69,51 @@
 		{ value: "retention", label: t('analytics.retention_cohorts', 'Retention'), icon: Repeat2 }
 	]);
 
-	async function fetchDataset(tab: string) {
+	async function fetchDataset(tab: string, key: string) {
+		// Write state only while this fetch still represents the current view —
+		// a response landing after a filter change would otherwise flash
+		// old-params data (and keep it if the fresh fetch then fails).
+		const fresh = () => key === loadKey(tab);
 		const p = `period=${period}`;
 		switch (tab) {
 			case "top_content": {
 				const res = await analyticsAdminApi.getTopContent(`${p}${advType ? `&type=${advType}` : ''}`);
-				topContent = res.ok ? (res.data as { content?: Array<Record<string, unknown>> })?.content ?? [] : null;
-				for (const r of topContent ?? []) {
-					const ct = String(r.content_type ?? '');
-					if (ct) seenContentTypes.add(ct);
+				if (res.ok && fresh()) {
+					topContent = (res.data as { content?: Array<Record<string, unknown>> })?.content ?? [];
+					for (const r of topContent ?? []) {
+						const ct = String(r.content_type ?? '');
+						if (ct) seenContentTypes.add(ct);
+					}
+					seenContentTypes = new Set(seenContentTypes);
 				}
-				seenContentTypes = new Set(seenContentTypes);
 				return res.ok;
 			}
 			case "revenue_streams": {
 				const res = await analyticsAdminApi.getRevenueStreams(p);
-				revenueStreams = res.ok ? (res.data as { revenue?: Array<Record<string, unknown>> })?.revenue ?? [] : null;
+				if (res.ok && fresh()) {
+					revenueStreams = (res.data as { revenue?: Array<Record<string, unknown>> })?.revenue ?? [];
+				}
 				return res.ok;
 			}
 			case "ads": {
 				const res = await analyticsAdminApi.getAdPerformance(p);
-				adPerformance = res.ok ? (res.data as { ads?: Array<Record<string, unknown>> })?.ads ?? [] : null;
+				if (res.ok && fresh()) {
+					adPerformance = (res.data as { ads?: Array<Record<string, unknown>> })?.ads ?? [];
+				}
 				return res.ok;
 			}
 			case "newsletter": {
 				const res = await analyticsAdminApi.getNewsletterEngagement(p);
-				newsletterEngagement = res.ok ? (res.data as { campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> }) : null;
+				if (res.ok && fresh()) {
+					newsletterEngagement = res.data as { campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> };
+				}
 				return res.ok;
 			}
 			case "retention": {
 				const res = await analyticsAdminApi.getRetention(p);
-				retentionCohorts = res.ok ? (res.data as { cohorts?: Array<Record<string, unknown>> })?.cohorts ?? [] : null;
+				if (res.ok && fresh()) {
+					retentionCohorts = (res.data as { cohorts?: Array<Record<string, unknown>> })?.cohorts ?? [];
+				}
 				return res.ok;
 			}
 			default:
@@ -105,18 +123,16 @@
 
 	async function loadDataset(tab = activeTab) {
 		tabLoading = true;
-		tabError = "";
 		const key = loadKey(tab);
-		const ok = await fetchDataset(tab).catch(() => false);
+		const ok = await fetchDataset(tab, key).catch(() => false);
 		// Mark the tab attempted either way — leaving it unloaded on failure
 		// would make the lazy effect retry in an endless loop. Recovery goes
 		// through the error banner's Retry button (or a filter change, which
 		// resets loadedTabs).
 		loadedTabs = new Set(loadedTabs).add(key);
 		tabLoading = false;
-		if (!ok) {
-			tabError = t('analytics.failed_to_load', 'Failed to load advanced analytics');
-		}
+		errorKey = ok ? "" : key;
+		errorMsg = ok ? "" : t('analytics.failed_to_load', 'Failed to load advanced analytics');
 	}
 
 	// Lazy per-tab fetch — only the active dataset is requested; the set is
@@ -167,8 +183,9 @@
 			a.download = `${exportMetric}_export.csv`;
 			a.click();
 			URL.revokeObjectURL(url);
-		} catch (e) {
-			tabError = e instanceof Error ? e.message : t('analytics.export_failed', 'Export failed');
+		} catch {
+			errorKey = loadKey(activeTab);
+			errorMsg = t('analytics.export_failed', 'Export failed');
 		}
 	}
 
