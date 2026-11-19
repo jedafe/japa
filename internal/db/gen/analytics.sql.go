@@ -562,31 +562,33 @@ func (q *Queries) GetDailyActiveUsers(ctx context.Context, arg GetDailyActiveUse
 
 const getDailyContentStats = `-- name: GetDailyContentStats :many
 
-SELECT date_trunc('day', c.created_at)::date AS day, c.id AS content_id, c.title AS content_title,
+SELECT day, content_id, content_title, views, reactions, comments, shares, unique_viewers FROM (
+ SELECT date_trunc('day', c.created_at)::date AS day, c.id AS content_id, c.title AS content_title,
  c.view_count AS views,
  (SELECT COUNT(*)::int FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
  c.comment_count AS comments,
  (c.share_count + c.reshare_count) AS shares,
  (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
-FROM contents c
-WHERE c.status != 'draft'
+ FROM contents c
+ WHERE c.status != 'draft'
  AND ($1::date IS NULL OR c.created_at::date >= $1)
  AND ($2::date IS NULL OR c.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $3)
+) s
 ORDER BY
- CASE WHEN $4::text = 'content_title' AND $5::text = 'asc' THEN c.title END ASC NULLS LAST,
- CASE WHEN $4::text = 'content_title' AND $5::text = 'desc' THEN c.title END DESC NULLS LAST,
- CASE WHEN $4::text = 'views' AND $5::text = 'asc' THEN views END ASC,
- CASE WHEN $4::text = 'views' AND $5::text = 'desc' THEN views END DESC,
- CASE WHEN $4::text = 'reactions' AND $5::text = 'asc' THEN reactions END ASC,
- CASE WHEN $4::text = 'reactions' AND $5::text = 'desc' THEN reactions END DESC,
- CASE WHEN $4::text = 'comments' AND $5::text = 'asc' THEN comments END ASC,
- CASE WHEN $4::text = 'comments' AND $5::text = 'desc' THEN comments END DESC,
- CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'asc' THEN unique_viewers END ASC,
- CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'desc' THEN unique_viewers END DESC,
- CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN day END ASC,
- CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN day END DESC,
- day DESC, views DESC
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'asc' THEN s.content_title END ASC NULLS LAST,
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'desc' THEN s.content_title END DESC NULLS LAST,
+ CASE WHEN $4::text = 'views' AND $5::text = 'asc' THEN s.views END ASC,
+ CASE WHEN $4::text = 'views' AND $5::text = 'desc' THEN s.views END DESC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'asc' THEN s.reactions END ASC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'desc' THEN s.reactions END DESC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'asc' THEN s.comments END ASC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'desc' THEN s.comments END DESC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'asc' THEN s.unique_viewers END ASC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'desc' THEN s.unique_viewers END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN s.day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN s.day END DESC,
+ s.day DESC, s.views DESC
 LIMIT NULLIF($6::int, 0) OFFSET $7
 `
 
@@ -656,25 +658,27 @@ func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentS
 }
 
 const getDailySpaceStats = `-- name: GetDailySpaceStats :many
-SELECT date_trunc('day', s.created_at)::date AS day, s.id AS space_id, s.name AS space_name,
+SELECT day, space_id, space_name, joins, posts, active_users FROM (
+ SELECT date_trunc('day', s.created_at)::date AS day, s.id AS space_id, s.name AS space_name,
  (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
  (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
  (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
-FROM spaces s
-WHERE s.deleted_at IS NULL
+ FROM spaces s
+ WHERE s.deleted_at IS NULL
  AND ($1::date IS NULL OR s.created_at::date >= $1)
  AND ($2::date IS NULL OR s.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $3)
+) sp
 ORDER BY
- CASE WHEN $4::text = 'space_name' AND $5::text = 'asc' THEN s.name END ASC NULLS LAST,
- CASE WHEN $4::text = 'space_name' AND $5::text = 'desc' THEN s.name END DESC NULLS LAST,
- CASE WHEN $4::text = 'joins' AND $5::text = 'asc' THEN joins END ASC,
- CASE WHEN $4::text = 'joins' AND $5::text = 'desc' THEN joins END DESC,
- CASE WHEN $4::text = 'posts' AND $5::text = 'asc' THEN posts END ASC,
- CASE WHEN $4::text = 'posts' AND $5::text = 'desc' THEN posts END DESC,
- CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN day END ASC,
- CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN day END DESC,
- joins DESC, space_name ASC
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'asc' THEN sp.space_name END ASC NULLS LAST,
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'desc' THEN sp.space_name END DESC NULLS LAST,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'asc' THEN sp.joins END ASC,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'desc' THEN sp.joins END DESC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'asc' THEN sp.posts END ASC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'desc' THEN sp.posts END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN sp.day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN sp.day END DESC,
+ sp.joins DESC, sp.space_name ASC
 LIMIT NULLIF($6::int, 0) OFFSET $7
 `
 

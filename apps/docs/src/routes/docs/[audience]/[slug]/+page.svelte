@@ -220,7 +220,7 @@
 			{#if noticeText}
 				<div class="save-notice" role="status">{noticeText}</div>
 			{/if}
-			{#if data.locale !== 'en' && data.page.content_lang === 'en'}
+			{#if data.langRequested && data.langRequested !== 'en' && data.page.content_lang === 'en'}
 				<div class="translation-notice">
 					{t('page.not_translated', 'This page is not yet translated. Showing the English version.')}
 					{#if editing}

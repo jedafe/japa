@@ -33,8 +33,9 @@ func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsP
 	}
 
 	// req.UserID is the requester who queued the generation (the enqueue
-	// payload carries it). Stamping it as created_by means the §44
-	// self-review rule blocks that requester from approving the draft.
+	// payload carries it). Stamping it as created_by keeps authorship
+	// attribution on the generated draft; per §44 the requester may still
+	// self-review AI-generated content.
 	if uid := (pgtype.UUID{}); req.UserID != "" && uid.Scan(req.UserID) == nil && uid.Valid {
 		if auth.FromContext(ctx) == nil {
 			ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: uid})

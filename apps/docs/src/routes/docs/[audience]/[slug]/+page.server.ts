@@ -81,6 +81,10 @@ export const load: PageServerLoad = async (event) => {
 		audienceLabelKey: AUDIENCE_LABEL_KEY[audience],
 		isGated,
 		locale: event.locals.locale,
+		// The "not translated" notice only makes sense when the reader
+		// explicitly asked for another language — a non-en UI locale alone
+		// shouldn't nag on every page.
+		langRequested: event.url.searchParams.get('lang'),
 		meta,
 		canEditDocs,
 		editSeed: editor?.editSeed ?? null,

@@ -1367,7 +1367,13 @@ func (s *Service) RestoreDocPage(ctx context.Context, id pgtype.UUID) (*DocPage,
 
 	s.invalidateCache(ctx, existing.Audience, existing.Slug)
 
-	return toDocPage(existing), nil
+	// Re-fetch so the returned DTO reflects the cleared deleted_at rather
+	// than the pre-restore row read above.
+	restored, err := s.store.getByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return toDocPage(restored), nil
 }
 
 // toDocPage converts a docPageRow to our API type, resolving the media

@@ -380,7 +380,7 @@ func (s *Store) updateStatus(ctx context.Context, params gen.UpdateDocPageStatus
 }
 
 // getStatus returns the status row (review_status, created_by, ai_generated)
-// driving transition + self-review checks.
+// driving transition checks.
 func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (gen.GetDocPageStatusRow, error) {
 	row, err := s.read.GetDocPageStatus(ctx, id)
 	if err != nil {
