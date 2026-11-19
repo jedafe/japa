@@ -573,6 +573,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		IsAnonymous       bool           `json:"is_anonymous"`
 		AuthorID          *string        `json:"author_id"`
 		EditWindowMinutes *int32         `json:"edit_window_minutes"`
+		FederateOptOut    bool           `json:"federate_opt_out"`
 		Poll              *pollInputJSON `json:"poll"`
 	}
 
@@ -712,6 +713,10 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			Visibility:      content.VisibilityPublic,
 			SpaceID:         spaceID,
 			CreatedByUserID: createdBy,
+			// §126: a forum_thread is federatable — the member's per-post
+			// "don't federate" flag must reach the contents row or the
+			// discussion publishes to the fediverse with no opt-out.
+			FederateOptOut:  input.FederateOptOut,
 		})
 		if err != nil {
 			handleServiceError(w, err)
@@ -1428,9 +1433,10 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title       string `json:"title"`
-		Body        []byte `json:"body"`
-		IsAnonymous bool   `json:"is_anonymous"`
+		Title          string `json:"title"`
+		Body           []byte `json:"body"`
+		IsAnonymous    bool   `json:"is_anonymous"`
+		FederateOptOut *bool  `json:"federate_opt_out"`
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
@@ -1459,7 +1465,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-004: keep the backing contents row in sync with title/body changes.
 	if thread.ContentID.Valid {
-		h.syncThreadContent(r.Context(), user.UserID, thread.ContentID, thread.Title, thread.Slug, input.Body)
+		h.syncThreadContent(r.Context(), user.UserID, thread.ContentID, thread.Title, thread.Slug, input.Body, input.FederateOptOut)
 	}
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
@@ -2716,7 +2722,9 @@ func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
 // syncThreadContent updates the backing contents row for a forum thread
 // when its title or body changes. It preserves existing content metadata and
 // re-queues embedding generation. Errors are logged, never propagated.
-func (h *Handlers) syncThreadContent(ctx context.Context, userID, contentID pgtype.UUID, title, slug string, body []byte) {
+// federateOptOut nil keeps the stored flag — a pointer so "no change" and
+// "set false" stay distinguishable (§126 opt-out parity with /content PATCH).
+func (h *Handlers) syncThreadContent(ctx context.Context, userID, contentID pgtype.UUID, title, slug string, body []byte, federateOptOut *bool) {
 	if h.content == nil {
 		return
 	}
@@ -2786,6 +2794,7 @@ func (h *Handlers) syncThreadContent(ctx context.Context, userID, contentID pgty
 		VisaRoute:       existing.VisaRoute,
 		SourceCountry:   existing.SourceCountry,
 		TargetCountry:   existing.TargetCountry,
+		FederateOptOut:  federateOptOut,
 	}
 
 	if _, err := h.content.UpdateContent(ctx, contentID, userID, input, true); err != nil {

@@ -16,6 +16,7 @@ class LocalDraft {
   final String? guideCategory;
   final String? destinationCountry;
   final String? contentId;
+  final bool federateOptOut;
   final DateTime updatedAt;
 
   const LocalDraft({
@@ -27,6 +28,7 @@ class LocalDraft {
     this.guideCategory,
     this.destinationCountry,
     this.contentId,
+    this.federateOptOut = false,
     required this.updatedAt,
   });
 
@@ -39,6 +41,7 @@ class LocalDraft {
         'guide_category': guideCategory,
         'destination_country': destinationCountry,
         'content_id': contentId,
+        'federate_opt_out': federateOptOut,
         'updated_at': updatedAt.toIso8601String(),
       };
 
@@ -51,6 +54,7 @@ class LocalDraft {
         guideCategory: j['guide_category']?.toString(),
         destinationCountry: j['destination_country']?.toString(),
         contentId: j['content_id']?.toString(),
+        federateOptOut: j['federate_opt_out'] == true,
         updatedAt: DateTime.tryParse(j['updated_at']?.toString() ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
       );

@@ -92,13 +92,17 @@ class ComposeService {
   /// Forum threads have their own endpoint (POST /forum — forum.thread.create
   /// node), not the generic /content route.
   Future<Map<String, dynamic>> createThread(
-      {required String title, required String body, String? spaceId}) async {
+      {required String title,
+      required String body,
+      String? spaceId,
+      bool federateOptOut = false}) async {
     return _client.post<Map<String, dynamic>>(
       '/forum',
       body: {
         'title': title,
         'body': body,
         if (spaceId != null && spaceId.isNotEmpty) 'space_id': spaceId,
+        'federate_opt_out': federateOptOut,
       },
       parse: (json) => Map<String, dynamic>.from(json as Map),
     );

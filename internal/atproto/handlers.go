@@ -128,7 +128,10 @@ func (h *Handlers) GetMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	// Member-API envelope — /me/federation and the sibling atproto
+	// list routes all wrap in {"data": ...}; the main-app client
+	// unwraps body.data so a bare struct would read as null.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // EnableMyAccount serves POST /api/v1/me/atproto (idempotent opt-in).
@@ -142,7 +145,7 @@ func (h *Handlers) EnableMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // DisableMyAccount serves DELETE /api/v1/me/atproto.
@@ -156,7 +159,7 @@ func (h *Handlers) DisableMyAccount(w http.ResponseWriter, r *http.Request) {
 		handleServiceErr(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // ---------------------------------------------------------------------------

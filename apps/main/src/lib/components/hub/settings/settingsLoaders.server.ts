@@ -263,4 +263,22 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			.then((r) => r.following ?? [])
 			.catch(() => [] as unknown[])
 	}),
+
+	// §127 / ADR-139: member ATProto state — {enabled, status, did, handle,
+	// created_at} plus app passwords and OAuth grants. The list routes 404
+	// on a member with no atproto account, so they're only fetched once the
+	// status reports enabled — and each leg still degrades independently.
+	atproto: async (ctx) => {
+		const status = await apiGet<{ enabled?: boolean }>(ctx, '/me/atproto').catch(() => null);
+		const enabled = status?.enabled === true;
+		return {
+			status,
+			appPasswords: enabled
+				? await apiGet<unknown[]>(ctx, '/me/atproto/app-passwords').catch(() => [] as unknown[])
+				: [],
+			oauthSessions: enabled
+				? await apiGet<unknown[]>(ctx, '/me/atproto/oauth-sessions').catch(() => [] as unknown[])
+				: []
+		};
+	}
 };

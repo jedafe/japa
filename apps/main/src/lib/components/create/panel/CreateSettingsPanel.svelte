@@ -9,11 +9,16 @@
 		canonicalUrl: string;
 		publishAt: string | null;
 		visibilityOptions?: { value: Visibility; label: string }[];
+		/** §126 — member's per-post "don't federate" flag; the row renders
+		 *  only when a federation feature is live (federateVisible). */
+		federateOptOut?: boolean;
+		federateVisible?: boolean;
 		/** Slug change callback. */
 		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
+		onfederateoptout?: (v: boolean) => void;
 		onedit: () => void;
 	}
 
@@ -23,10 +28,13 @@
 		canonicalUrl,
 		publishAt,
 		visibilityOptions,
+		federateOptOut = false,
+		federateVisible = false,
 		onslug,
 		onvisibility,
 		oncanonical,
 		onpublishat,
+		onfederateoptout,
 		onedit
 	}: Props = $props();
 
@@ -95,6 +103,30 @@
 			}}
 		/>
 	</div>
+
+	<!-- §126 — fediverse opt-out: keeps the post public on JapaConnect
+	     while withholding it from remote servers (both AP + ATProto
+	     projections honor the flag). -->
+	{#if federateVisible}
+		<div class="field-row">
+			<label
+				class="checkbox-label"
+				for="settings-federate-opt-out"
+				title={t('create.federate_opt_out_hint')}
+			>
+				<input
+					id="settings-federate-opt-out"
+					type="checkbox"
+					checked={federateOptOut}
+					onchange={(e) => {
+						onfederateoptout?.(e.currentTarget.checked);
+						onedit();
+					}}
+				/>
+				{t('create.federate_opt_out')}
+			</label>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -115,6 +147,20 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
+	}
+
+	.checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		cursor: pointer;
+	}
+	.checkbox-label input {
+		width: 1rem;
+		height: 1rem;
+		accent-color: var(--color-primary);
 	}
 
 	.field-input {

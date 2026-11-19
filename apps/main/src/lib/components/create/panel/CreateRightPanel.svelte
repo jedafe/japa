@@ -27,6 +27,10 @@
 		canonicalUrl: string;
 		publishAt: string | null;
 		visibilityOptions?: { value: Visibility; label: string }[];
+		/** §126 — member's per-post "don't federate" flag + whether a
+		 *  federation feature is live (hides the control otherwise). */
+		federateOptOut?: boolean;
+		federateVisible?: boolean;
 		series: BlogSeries[];
 		seriesId: string | null;
 		spaces: MeSpace[];
@@ -53,6 +57,7 @@
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
+		onfederateoptout?: (v: boolean) => void;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
 		onspace: (ids: string[]) => void;
@@ -88,6 +93,8 @@
 		canonicalUrl,
 		publishAt,
 		visibilityOptions,
+		federateOptOut = false,
+		federateVisible = false,
 		series = $bindable(),
 		seriesId,
 		spaces = $bindable(),
@@ -110,6 +117,7 @@
 		onvisibility,
 		oncanonical,
 		onpublishat,
+		onfederateoptout,
 		onseries,
 		onseriesfocus,
 		onspace,
@@ -189,10 +197,13 @@
 			{canonicalUrl}
 			{publishAt}
 			{visibilityOptions}
+			{federateOptOut}
+			{federateVisible}
 			{onslug}
 			{onvisibility}
 			{oncanonical}
 			{onpublishat}
+			{onfederateoptout}
 			{onedit}
 		/>
 	</Tabs.Content>

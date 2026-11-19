@@ -333,6 +333,36 @@ export const api = {
 			method: 'POST',
 			body: formData
 		}),
+	/** Binary GET (e.g. /me/atproto/export's CAR stream). Shares the
+	 *  Bearer + refresh-on-401 transport but returns the raw body with
+	 *  the Content-Disposition filename instead of a JSON envelope. */
+	download: async (
+		path: string
+	): Promise<{ blob: Blob | null; filename: string | null; status: number }> => {
+		const doFetch = () => {
+			const token = untrack(getAccessToken);
+			return fetch(buildApiUrl(path, API_BASE), {
+				method: 'GET',
+				credentials: 'include',
+				headers: {
+					'x-jc-surface': JC_SURFACE,
+					...(token ? { authorization: `Bearer ${token}` } : {})
+				}
+			});
+		};
+		let res = await doFetch();
+		if (res.status === 401 && (await refreshSession())) {
+			res = await doFetch();
+		}
+		if (!res.ok) return { blob: null, filename: null, status: res.status };
+		const cd = res.headers.get('content-disposition') ?? '';
+		const m = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(cd);
+		return {
+			blob: await res.blob(),
+			filename: m ? decodeURIComponent(m[1]) : null,
+			status: res.status
+		};
+	},
 	patch: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
 		clientFetch<T>(path, {
 			method: 'PATCH',

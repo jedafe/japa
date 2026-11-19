@@ -194,6 +194,16 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 	var announced *announceIngest
 	if apStr(act["type"]) == "Announce" && signer != nil {
 		announced = s.resolveAnnounceTarget(ctx, act)
+		// The Announce arm ingests the announced object into member
+		// timelines under a tag-subscription warrant — content arriving
+		// this way is as unvetted as a direct Create, so the fetched
+		// object body runs the same pipeline arm. A bare-IRI announce
+		// resolves nothing here (announced nil) and ingests nothing.
+		if announced != nil {
+			if reason := s.spamCheckBody(ctx, htmlToText(apStr(announced.obj["content"]))); reason != "" {
+				return s.finishInbound(ctx, row.ID, "rejected", reason, nil, pgtype.UUID{}, nil)
+			}
+		}
 	}
 
 	tx, err := s.db.Writer.Begin(ctx)
@@ -224,26 +234,20 @@ func (s *Service) ProcessInbound(ctx context.Context, inboundID pgtype.UUID) err
 }
 
 // spamCheckReply runs the §41 pipeline on inbound content bodies — the
-// same check member comments and member edits get. Create objects must
-// carry inReplyTo (only replies become comments); Update objects get
-// checked when they carry a rewritten content body — otherwise a clean
-// Create followed by a spammy Update would sidestep the pipeline
-// entirely. Actor self-updates (object = the activity's actor) carry no
-// comment body and are skipped. A zero-identity request (no local user,
-// no client IP) lets the user/IP-scoped layers skip while the content
-// layers — censored words, content hash, link analysis, length, AI
-// classification — apply exactly as they do for members. Like the member
-// path, a pipeline failure is fail-open; a blocked verdict is not — the
-// activity is rejected outright.
+// same check member comments and member posts get. Create objects are
+// checked whether or not they carry inReplyTo: replies become comments
+// and top-level posts land in member timelines via storeRemotePost, so
+// both ingest paths need the gate. Update objects get checked when they
+// carry a rewritten content body — otherwise a clean Create followed by
+// a spammy Update would sidestep the pipeline entirely. Actor
+// self-updates (object = the activity's actor) carry no comment body and
+// are skipped.
 func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string {
-	if s.spam == nil {
-		return ""
-	}
 	var body string
 	switch apStr(act["type"]) {
 	case "Create":
 		obj := apObj(act["object"])
-		if obj == nil || apID(obj["inReplyTo"]) == "" {
+		if obj == nil {
 			return ""
 		}
 		body = htmlToText(apStr(obj["content"]))
@@ -256,7 +260,18 @@ func (s *Service) spamCheckReply(ctx context.Context, act map[string]any) string
 	default:
 		return ""
 	}
-	if body == "" {
+	return s.spamCheckBody(ctx, body)
+}
+
+// spamCheckBody is the pipeline arm shared by Create/Update bodies and
+// the relay-announced object resolved pre-tx. A zero-identity request
+// (no local user, no client IP) lets the user/IP-scoped layers skip
+// while the content layers — censored words, content hash, link
+// analysis, length, AI classification — apply exactly as they do for
+// members. Like the member path, a pipeline failure is fail-open; a
+// blocked verdict is not — the activity is rejected outright.
+func (s *Service) spamCheckBody(ctx context.Context, body string) string {
+	if s.spam == nil || body == "" {
 		return ""
 	}
 	res, err := s.spam.Check(ctx, spam.SpamCheckRequest{

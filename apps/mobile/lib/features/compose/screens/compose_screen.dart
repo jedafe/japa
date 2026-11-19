@@ -31,6 +31,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   String? _guideCategory;
   String? _destCountry;
   String? _contentId;
+  bool _federateOptOut = false;
   bool _sending = false;
   Timer? _autosave;
 
@@ -68,6 +69,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       _guideCategory = d.guideCategory;
       _destCountry = d.destinationCountry;
       _contentId = d.contentId;
+      _federateOptOut = d.federateOptOut;
     });
   }
 
@@ -100,6 +102,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         guideCategory: _guideCategory,
         destinationCountry: _destCountry,
         contentId: _contentId,
+        federateOptOut: _federateOptOut,
         updatedAt: DateTime.now(),
       );
 
@@ -112,6 +115,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         'title': _titleCtrl.text.trim(),
         'body': _bodyCtrl.text.trim(),
         'content_type': _type,
+        'federate_opt_out': _federateOptOut,
         if (_spaceId != null && _spaceId!.isNotEmpty) 'space_id': _spaceId,
         if (_type == 'guide' && _guideCategory != null)
           'guide_category': _guideCategory,
@@ -179,7 +183,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         await ref.read(composeServiceProvider).createThread(
             title: _titleCtrl.text.trim(),
             body: _bodyCtrl.text.trim(),
-            spaceId: _spaceId);
+            spaceId: _spaceId,
+            federateOptOut: _federateOptOut);
         status = 'published';
       } else {
         if (!await _saveDraft() || _contentId == null) {
@@ -296,6 +301,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 error: (_, _) => const SizedBox.shrink(),
               ),
             ],
+            const SizedBox(height: 12),
+            // §126 — member "don't federate" flag; honored by both the
+            // /content and POST /forum paths (stored preference even when
+            // no federation feature is currently enabled).
+            CheckboxListTile(
+              value: _federateOptOut,
+              onChanged: (v) => setState(() {
+                _federateOptOut = v ?? false;
+                _onChanged();
+              }),
+              title: Text(t('compose.federate_opt_out')),
+              subtitle: Text(t('compose.federate_opt_out_hint')),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
             const SizedBox(height: 24),
             Row(
               children: [

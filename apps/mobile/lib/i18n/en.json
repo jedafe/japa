@@ -33,6 +33,8 @@
   "common.retry": "Try again",
   "compose.draft_saved": "Draft saved",
   "compose.field.body": "Body",
+  "compose.federate_opt_out": "Don't share to the fediverse",
+  "compose.federate_opt_out_hint": "Stays public on JapaConnect; not sent to other servers",
   "compose.field.category": "Category",
   "compose.field.destination": "Destination",
   "compose.field.space": "Space",

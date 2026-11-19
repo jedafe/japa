@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { Send, BarChart3, Plus, Trash2, ArrowLeft } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
@@ -37,6 +38,14 @@
 	let spaces = $state<MeSpace[]>([]);
 	let spaceId = $state<string>('');
 	let isAnonymous = $state(false);
+	// §126: forum_thread is federatable — the member's per-post "don't
+	// federate" flag rides the create. Hidden when no federation feature
+	// is live (the flag would be a dead control).
+	let federateOptOut = $state(false);
+	const federateVisible = $derived(
+		page.data.features?.['feature.federation'] === true ||
+			page.data.features?.['feature.atproto'] === true
+	);
 	let submitting = $state(false);
 	let errorMsg = $state<string | null>(null);
 
@@ -136,6 +145,7 @@
 				body: encodeTiptapDoc(bodyJson as unknown as TipTapDoc),
 				space_id: spaceId,
 				is_anonymous: isAnonymous,
+				federate_opt_out: federateOptOut,
 				poll
 			});
 
@@ -239,12 +249,23 @@
 			/>
 		</div>
 
-		<!-- Anonymous toggle (left) + Type toggle (right) -->
+		<!-- Anonymous + fediverse opt-out (left) · Type toggle (right) -->
 		<div class="flex flex-wrap items-center justify-between gap-4">
-			<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
-				<input type="checkbox" bind:checked={isAnonymous} class="h-4 w-4 accent-[var(--color-primary)]" />
-				{t('forum.new.anonymous', 'Post anonymously')}
-			</label>
+			<div class="flex flex-wrap items-center gap-4">
+				<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
+					<input type="checkbox" bind:checked={isAnonymous} class="h-4 w-4 accent-[var(--color-primary)]" />
+					{t('forum.new.anonymous', 'Post anonymously')}
+				</label>
+				{#if federateVisible}
+					<label
+						class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]"
+						title={t('create.federate_opt_out_hint', 'The post stays public on JapaConnect but is not shared to fediverse servers')}
+					>
+						<input type="checkbox" bind:checked={federateOptOut} class="h-4 w-4 accent-[var(--color-primary)]" />
+						{t('create.federate_opt_out', "Don't share to the fediverse")}
+					</label>
+				{/if}
+			</div>
 			<div class="inline-flex rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5">
 				<button
 					type="button"

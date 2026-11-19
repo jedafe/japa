@@ -22,6 +22,7 @@ import DataPrivacySection from './sections/DataPrivacySection.svelte';
 import LocationSection from './sections/LocationSection.svelte';
 import MentorSection from './sections/MentorSection.svelte';
 import FederationSection from './sections/FederationSection.svelte';
+import AtprotoSection from './sections/AtprotoSection.svelte';
 import AiSection from './sections/AiSection.svelte';
 
 /**
@@ -54,6 +55,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
 	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'mentorship', backendReady: true, component: MentorSection, featureFlag: 'mentorship.enabled' },
 	{ slug: 'federation', labelKey: 'settings.nav.federation', icon: 'at-sign', group: 'account', backendReady: true, component: FederationSection, featureFlag: 'feature.federation' },
+	{ slug: 'atproto', labelKey: 'settings.nav.atproto', icon: 'cloud', group: 'account', backendReady: true, component: AtprotoSection, featureFlag: 'feature.atproto' },
 	{ slug: 'ai', labelKey: 'settings.nav.ai', icon: 'brain', group: 'ai', backendReady: true, component: AiSection },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },

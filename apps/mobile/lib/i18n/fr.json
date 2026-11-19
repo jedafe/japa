@@ -33,6 +33,8 @@
   "common.retry": "Réessayer",
   "compose.draft_saved": "Brouillon enregistré",
   "compose.field.body": "Contenu",
+  "compose.federate_opt_out": "Ne pas partager vers le fediverse",
+  "compose.federate_opt_out_hint": "Reste public sur JapaConnect ; non envoyé vers d'autres serveurs",
   "compose.field.category": "Catégorie",
   "compose.field.destination": "Destination",
   "compose.field.space": "Espace",

@@ -170,6 +170,12 @@
 	let postAsPersona = $state<boolean>(untrack(() => authorId != null || !!draft?.author_id && draft.author_id !== user?.id));
 
 	let visibility = $state<Visibility>(untrack(() => draft?.visibility as Visibility ?? 'public'));
+	// §126 — per-post "don't federate" flag; only meaningful while a
+	// federation feature is live (hidden otherwise — a dead control).
+	let federateOptOut = $state<boolean>(untrack(() => draft?.federate_opt_out ?? false));
+	const federateVisible = $derived(
+		features['feature.federation'] === true || features['feature.atproto'] === true
+	);
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
 	// draft.publish_at is a zoned ISO instant (timestamptz) — convert to the
 	// browser-local "YYYY-MM-DDTHH:mm" the datetime-local input requires.
@@ -370,7 +376,11 @@
 		journey_stage: journeyStage,
 		visa_route: visaRoute,
 		source_country: sourceCountry,
-		target_country: targetCountry
+		target_country: targetCountry,
+		// §126 — always sent; the backend treats the bool as the stored
+		// flag on both create and PATCH (no nil-keep semantics needed —
+		// the checkbox carries the current value).
+		federate_opt_out: federateOptOut
 	});
 
 	const requiredFieldsFilled = $derived(
@@ -888,6 +898,8 @@
 			canonicalUrl={canonicalUrl}
 			publishAt={publishAt}
 			visibilityOptions={visibilityOptions}
+			federateOptOut={federateOptOut}
+			federateVisible={federateVisible}
 			bind:series
 			seriesId={seriesId}
 			bind:spaces
@@ -909,6 +921,7 @@
 			onvisibility={(v) => { visibility = v; markDirty(); }}
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}
+			onfederateoptout={(v) => { federateOptOut = v; markDirty(); }}
 			onslug={handleSlug}
 			onseries={(id) => {
 				seriesId = id;

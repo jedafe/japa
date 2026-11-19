@@ -447,6 +447,9 @@ export interface ContentRecord {
 	status: string;
 	visibility: string;
 	publish_at?: string | null;
+	/** §126 — member's per-content "don't federate" flag (restores the
+	 *  settings-panel opt-out checkbox on draft/edit load). */
+	federate_opt_out?: boolean;
 	/** RFC3339 — sent back as expected_updated_at for the U1 optimistic
 	 *  lock on PATCH (BUG-CE-006). */
 	updated_at?: string;
