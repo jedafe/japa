@@ -79,3 +79,54 @@ func (s *Service) RecordTrackEvent(ctx context.Context, kind, campaignID, recipi
 
 	return s.IncrementCampaignClicks(ctx, campaignID)
 }
+
+// trackingScannerUAs are lowercase User-Agent substrings of known
+// mailbox-provider image proxies and corporate link scanners. Their
+// pixel/link hits are machine fetches, not recipient engagement — the
+// endpoints still serve the pixel / follow the redirect, but the hit is
+// not counted so prefetch doesn't inflate rates (§62 self-hosted
+// transport). Matching is case-insensitive substring, so entries stay
+// specific (never "mozilla") — over-matching only loses a count, while
+// under-matching inflates.
+var trackingScannerUAs = []string{
+	"googleimageproxy",    // Gmail image proxy
+	"yahoomailproxy",      // Yahoo image proxy
+	"outlook-ios-android", // Outlook app proxy fetcher
+	"barracuda",           // Barracuda link/image inspection
+	"proofpoint",          // Proofpoint URL Defense
+	"mimecast",            // Mimecast URL protection
+	"forcepoint",          // Forcepoint email security
+	"sophos",              // Sophos email gateway
+	"mcafee",              // McAfee/Skyhigh secure web gateway
+	"trendmicro",          // Trend Micro HES
+	"trend micro",
+	"zscaler",  // Zscaler URL inspection
+	"defender", // Microsoft Defender SafeLinks
+	"safelinks",
+}
+
+// IsTrackingScanner reports whether a User-Agent belongs to a known
+// prefetcher/scanner whose hits must not count as engagement. Deployments
+// can append extra substrings via JC_NEWSLETTER_TRACKING_IGNORE_UA
+// (comma-separated, e.g. a site-specific gateway).
+func IsTrackingScanner(ua string) bool {
+	if ua == "" {
+		return false
+	}
+
+	l := strings.ToLower(ua)
+
+	for _, sub := range trackingScannerUAs {
+		if strings.Contains(l, sub) {
+			return true
+		}
+	}
+
+	for sub := range strings.SplitSeq(os.Getenv("JC_NEWSLETTER_TRACKING_IGNORE_UA"), ",") {
+		if sub = strings.ToLower(strings.TrimSpace(sub)); sub != "" && strings.Contains(l, sub) {
+			return true
+		}
+	}
+
+	return false
+}

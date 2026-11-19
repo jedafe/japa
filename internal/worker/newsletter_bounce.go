@@ -19,6 +19,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -157,6 +158,12 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 	if cfg.tls {
 		client, err = imapclient.DialTLS(addr, nil)
 	} else {
+		// Plain-text IMAP is a dev convenience — in production credentials
+		// and mail content must never travel unencrypted.
+		if os.Getenv("JC_ENV") == "production" {
+			return errors.New("JC_BOUNCE_IMAP_TLS=false refused in production")
+		}
+
 		client, err = imapclient.DialInsecure(addr, nil)
 	}
 
@@ -165,6 +172,12 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 	}
 
 	defer func() {
+		// Graceful LOGOUT first so the server can checkpoint flag state;
+		// Close drops the connection regardless (best-effort both).
+		if err := client.Logout().Wait(); err != nil {
+			slog.Debug("task:newsletter:poll_bounces: imap logout failed", "error", err)
+		}
+
 		if err := client.Close(); err != nil {
 			slog.Warn("task:newsletter:poll_bounces: client close failed", "error", err)
 		}
@@ -302,31 +315,51 @@ func parseBounceEvents(raw []byte) []bounceEvent {
 	}
 
 	mediaType, params, _ := mime.ParseMediaType(msg.Header.Get("Content-Type"))
-	if strings.HasPrefix(mediaType, "multipart/") {
-		mr := multipart.NewReader(msg.Body, params["boundary"])
 
-		for {
-			part, err := mr.NextPart()
-			if err != nil {
-				break
-			}
-
-			partType := part.Header.Get("Content-Type")
-
-			switch {
-			case strings.HasPrefix(partType, "message/delivery-status"):
-				for _, ev := range parseDeliveryStatus(part) {
-					add(ev.email, ev.kind)
-				}
-			case strings.HasPrefix(partType, "message/feedback-report"):
-				for _, ev := range parseFeedbackReport(part) {
-					add(ev.email, ev.kind)
-				}
+	switch {
+	case strings.HasPrefix(mediaType, "multipart/"):
+		walkMultipart(msg.Body, params["boundary"], add)
+	case strings.HasPrefix(mediaType, "message/delivery-status"):
+		// Rare non-wrapped DSN — the whole body is the status report.
+		data, err := io.ReadAll(io.LimitReader(msg.Body, 1<<20))
+		if err == nil {
+			for _, ev := range parseDeliveryStatusData(data) {
+				add(ev.email, ev.kind)
 			}
 		}
 	}
 
 	return events
+}
+
+// walkMultipart recurses a multipart body looking for report parts —
+// DSN/ARF parts can sit a level down when a relay wraps the report in
+// multipart/mixed. message/rfc822 parts (the bounced original) are NOT
+// descended: their content isn't a status report.
+func walkMultipart(r io.Reader, boundary string, add func(addr, kind string)) {
+	mr := multipart.NewReader(r, boundary)
+
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			return
+		}
+
+		partType, partParams, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+
+		switch {
+		case strings.HasPrefix(partType, "multipart/"):
+			walkMultipart(part, partParams["boundary"], add)
+		case strings.HasPrefix(partType, "message/delivery-status"):
+			for _, ev := range parseDeliveryStatus(part) {
+				add(ev.email, ev.kind)
+			}
+		case strings.HasPrefix(partType, "message/feedback-report"):
+			for _, ev := range parseFeedbackReport(part) {
+				add(ev.email, ev.kind)
+			}
+		}
+	}
 }
 
 // parseDeliveryStatus walks the per-recipient blocks of a
@@ -341,6 +374,12 @@ func parseDeliveryStatus(part *multipart.Part) []bounceEvent {
 		return nil
 	}
 
+	return parseDeliveryStatusData(data)
+}
+
+// parseDeliveryStatusData extracts per-recipient failure events from the
+// raw body of a message/delivery-status part.
+func parseDeliveryStatusData(data []byte) []bounceEvent {
 	// Blocks are separated by a blank line in either CRLF or LF form.
 	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
 	blocks := strings.Split(normalized, "\n\n")

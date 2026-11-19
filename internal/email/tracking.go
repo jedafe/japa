@@ -100,8 +100,10 @@ func InjectEmailTracking(htmlBody, pixelURL string, rewriteURL func(dest string)
 }
 
 // isTrackableLink reports whether an href value is a remote link worth
-// wrapping — http(s) only. mailto/tel/anchors and scheme-relative URLs
-// are left alone.
+// wrapping — http(s) only, case-insensitive with surrounding whitespace
+// tolerated (mail clients normalize both). mailto/tel/anchors and
+// scheme-relative URLs are left alone.
 func isTrackableLink(href string) bool {
-	return strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://")
+	l := strings.ToLower(strings.TrimSpace(href))
+	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")
 }

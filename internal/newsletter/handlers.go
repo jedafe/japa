@@ -1141,7 +1141,12 @@ func (h *Handlers) HandleTrackOpen(w http.ResponseWriter, r *http.Request) {
 	recipient := r.URL.Query().Get("e")
 	sig := r.URL.Query().Get("s")
 
+	// The e param is the opaque per-recipient tag minted at send time
+	// (hex HMAC over the normalized address — §62), never the raw email.
+	// Scanner/proxy User-Agents are served the pixel but not counted, so
+	// mailbox-provider prefetch doesn't inflate open rates.
 	if campaignID != "" && recipient != "" &&
+		!IsTrackingScanner(r.UserAgent()) &&
 		email.VerifyTracking(h.Service.TrackingSecret(), sig, TrackScopeOpen, campaignID, recipient) {
 		var cid pgtype.UUID
 		if err := cid.Scan(campaignID); err == nil {
@@ -1187,7 +1192,7 @@ func (h *Handlers) HandleTrackClick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cid pgtype.UUID
-	if err := cid.Scan(campaignID); err == nil {
+	if err := cid.Scan(campaignID); err == nil && !IsTrackingScanner(r.UserAgent()) {
 		if _, gerr := h.Service.GetCampaign(r.Context(), cid); gerr == nil {
 			if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeClick, campaignID, recipient, dest); err != nil {
 				slog.Warn("newsletter track: click increment failed", "campaign_id", campaignID, "error", err)

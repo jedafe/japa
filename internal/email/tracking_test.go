@@ -71,6 +71,19 @@ func TestInjectEmailTrackingRewritesLinksAndAppendsPixel(t *testing.T) {
 	}
 }
 
+func TestInjectEmailTrackingUppercaseScheme(t *testing.T) {
+	t.Parallel()
+
+	body := `<p><a href="HTTPS://japa.to/x">link</a></p>`
+	out := InjectEmailTracking(body, "", func(dest string) string {
+		return "https://api.test/track?u=" + dest
+	})
+
+	if !strings.Contains(out, `href="https://api.test/track?u=HTTPS://japa.to/x"`) {
+		t.Errorf("uppercase-scheme link not wrapped: %s", out)
+	}
+}
+
 func TestInjectEmailTrackingPreservesFragment(t *testing.T) {
 	t.Parallel()
 

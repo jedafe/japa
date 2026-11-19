@@ -180,6 +180,41 @@ func TestParseBounceEventsOriginalRecipientFallback(t *testing.T) {
 	}
 }
 
+func TestParseBounceEventsNestedMultipart(t *testing.T) {
+	t.Parallel()
+
+	// A relay can wrap the report inside multipart/mixed — the parser
+	// must recurse to find the delivery-status part.
+	raw := "From: relay@example\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"outer\"\r\n" +
+		"\r\n" +
+		"--outer\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"\r\n" +
+		"See attached report.\r\n" +
+		"\r\n" +
+		"--outer\r\n" +
+		"Content-Type: multipart/report; report-type=delivery-status; boundary=\"inner\"\r\n" +
+		"\r\n" +
+		"--inner\r\n" +
+		"Content-Type: message/delivery-status\r\n" +
+		"\r\n" +
+		"Reporting-MTA: dns; relay.example\r\n" +
+		"\r\n" +
+		"Final-Recipient: rfc822;nested@example.com\r\n" +
+		"Action: failed\r\n" +
+		"Status: 5.1.1\r\n" +
+		"\r\n" +
+		"--inner--\r\n" +
+		"\r\n" +
+		"--outer--\r\n"
+
+	events := parseBounceEvents([]byte(raw))
+	if len(events) != 1 || events[0].email != "nested@example.com" || events[0].kind != "bounced" {
+		t.Fatalf("nested DSN not parsed: %+v", events)
+	}
+}
+
 func TestParseFeedbackReportNonAbuseIgnored(t *testing.T) {
 	t.Parallel()
 

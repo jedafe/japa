@@ -76,11 +76,17 @@ func TestInjectNewsletterTrackingWrapsLinksAndPixel(t *testing.T) {
 	}
 
 	q := u.Query()
-	if q.Get("c") != cid.String() || q.Get("e") != recipient || q.Get("u") != "https://japa.to/a" {
+	if q.Get("c") != cid.String() || q.Get("u") != "https://japa.to/a" {
 		t.Errorf("click params wrong: %s", q.Encode())
 	}
 
-	if !email.VerifyTracking(testTrackingSecret, q.Get("s"), "click", cid.String(), recipient, "https://japa.to/a") {
+	// e is the opaque recipient tag — it must carry no raw address and
+	// the signature must verify over the tag as transmitted.
+	if rid := q.Get("e"); rid == "" || rid == recipient || len(rid) != 32 {
+		t.Errorf("e param = %q, want 32-char opaque tag (not %q)", rid, recipient)
+	}
+
+	if !email.VerifyTracking(testTrackingSecret, q.Get("s"), "click", cid.String(), q.Get("e"), "https://japa.to/a") {
 		t.Error("click signature does not verify")
 	}
 
@@ -103,7 +109,11 @@ func TestInjectNewsletterTrackingWrapsLinksAndPixel(t *testing.T) {
 	}
 
 	pq := pu.Query()
-	if !email.VerifyTracking(testTrackingSecret, pq.Get("s"), "open", cid.String(), recipient) {
+	if pq.Get("e") == recipient {
+		t.Error("open pixel e param leaks the raw recipient address")
+	}
+
+	if !email.VerifyTracking(testTrackingSecret, pq.Get("s"), "open", cid.String(), pq.Get("e")) {
 		t.Error("open signature does not verify")
 	}
 }

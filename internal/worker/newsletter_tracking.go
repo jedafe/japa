@@ -13,6 +13,7 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/email"
@@ -27,6 +28,15 @@ func newsletterTrackingSecret() string {
 	}
 
 	return os.Getenv("JC_NEWSLETTER_WEBHOOK_SECRET")
+}
+
+// newsletterRecipientTag derives the opaque per-recipient identifier
+// carried in tracking URLs' e param — hex(hmac(secret, "rid"|email))
+// truncated to 32 chars. Stable per (secret, address) so signature
+// verification and event dedupe work unchanged, but the raw address
+// never appears in URLs, redirects, or access logs (§62 privacy).
+func newsletterRecipientTag(secret, recipient string) string {
+	return email.SignTracking(secret, "rid", strings.ToLower(strings.TrimSpace(recipient)))[:32]
 }
 
 // injectNewsletterTracking rewrites a campaign HTML body for the given
@@ -45,18 +55,19 @@ func injectNewsletterTracking(ctx context.Context, campaignID pgtype.UUID, recip
 	}
 
 	cid := campaignID.String()
+	rid := newsletterRecipientTag(secret, recipient)
 	esc := url.QueryEscape
 
 	openURL := apiBase + "/newsletter/track/open" +
 		"?c=" + esc(cid) +
-		"&e=" + esc(recipient) +
-		"&s=" + email.SignTracking(secret, "open", cid, recipient)
+		"&e=" + rid +
+		"&s=" + email.SignTracking(secret, "open", cid, rid)
 
 	return email.InjectEmailTracking(htmlBody, openURL, func(dest string) string {
 		return apiBase + "/newsletter/track/click" +
 			"?c=" + esc(cid) +
-			"&e=" + esc(recipient) +
+			"&e=" + rid +
 			"&u=" + esc(dest) +
-			"&s=" + email.SignTracking(secret, "click", cid, recipient, dest)
+			"&s=" + email.SignTracking(secret, "click", cid, rid, dest)
 	})
 }
