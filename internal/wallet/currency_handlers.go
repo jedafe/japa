@@ -567,6 +567,10 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "credit_purchase_disabled", "Credit purchasing is currently disabled")
 			return
 		}
+		if errors.Is(err, ErrProviderNotConfigured) {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured", "This payment provider is not configured on this deployment")
+			return
+		}
 		if errors.Is(err, errPaymentInitiation) {
 			errpkg.WriteError(w, http.StatusBadGateway, "provider_error", "The payment provider could not start checkout")
 			return

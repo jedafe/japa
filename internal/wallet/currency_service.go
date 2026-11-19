@@ -23,6 +23,12 @@ var errCreditPurchaseDisabled = errors.New("credit purchasing is disabled")
 // internal/payments/handlers.go) instead of the generic 500 internal_error.
 var errPaymentInitiation = errors.New("payment initiation failed")
 
+// ErrProviderNotConfigured — the requested provider is a valid name but not
+// registered on this deployment. Translated from
+// payments.ErrProviderNotConfigured at the server adapter seam; mapped to
+// 503 provider_not_configured in the purchase handler.
+var ErrProviderNotConfigured = errors.New("provider_not_configured")
+
 // PurchaseCreditsInput holds parameters for initiating a credit purchase.
 type PurchaseCreditsInput struct {
 	CreditAmount int    // custom amount (ignored if PackID is set)

@@ -10591,6 +10591,12 @@ func (a *walletPaymentAdapter) CreatePayment(
 		DiscountCode: input.DiscountCode,
 	})
 	if err != nil {
+		// Payments-layer sentinels translate to wallet ones so the
+		// currency handler maps a distinct code rather than the
+		// errPaymentInitiation catch-all.
+		if errors.Is(err, payments.ErrProviderNotConfigured) {
+			return wallet.PaymentCreateResult{}, wallet.ErrProviderNotConfigured
+		}
 		return wallet.PaymentCreateResult{}, err
 	}
 

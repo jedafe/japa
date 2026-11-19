@@ -244,6 +244,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_party_size", "The party size exceeds the listing capacity")
 	case errors.Is(err, ErrPaymentPending):
 		errpkg.WriteError(w, http.StatusForbidden, "payment_pending", "The booking fee has not settled yet — the booking becomes actionable once payment succeeds")
+	case errors.Is(err, ErrProviderNotConfigured):
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured", "This payment provider is not configured on this deployment")
 	case errors.Is(err, ErrNotPackage):
 		errpkg.WriteError(w, http.StatusBadRequest, "not_package", "This listing is not a package")
 	case errors.Is(err, ErrInvalidItem):

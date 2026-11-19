@@ -112,6 +112,9 @@ func (a *serviceDirPaymentAdapter) CreatePayment(ctx context.Context, userID pgt
 		ReturnURL:   in.ReturnURL,
 	})
 	if err != nil {
+		if errors.Is(err, payments.ErrProviderNotConfigured) {
+			return servicedir.PaymentResult{}, servicedir.ErrProviderNotConfigured
+		}
 		return servicedir.PaymentResult{}, err
 	}
 

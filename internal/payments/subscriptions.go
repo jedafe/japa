@@ -41,6 +41,10 @@ var (
 	ErrAlreadySubscribed = errors.New("already_subscribed")
 	ErrPlanNotConfigured = errors.New("plan_not_configured")
 	ErrProviderFailure   = errors.New("provider_error")
+	// ErrProviderNotConfigured — the requested provider is a valid name but
+	// not registered on this deployment (missing credentials). Distinct
+	// from ErrProviderFailure: nothing ever reached the provider.
+	ErrProviderNotConfigured = errors.New("provider_not_configured")
 )
 
 // SubscriptionCheckoutResult is the response to POST /subscriptions — a
@@ -233,7 +237,11 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 		email = em
 	}
 
-	subProvider, ok := s.providers[input.Provider].(SubscriptionProvider)
+	prov := s.providers[input.Provider]
+	if prov == nil {
+		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: %s", ErrProviderNotConfigured, input.Provider)
+	}
+	subProvider, ok := prov.(SubscriptionProvider)
 	if !ok {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: %s is not a subscription provider", ErrProviderFailure, input.Provider)
 	}

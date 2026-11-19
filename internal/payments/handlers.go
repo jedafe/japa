@@ -313,6 +313,13 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrProviderNotConfigured) {
+		// Deployment can't serve that provider — same class as
+		// plan_not_configured, so 503 rather than a misleading 500.
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured",
+			"This payment provider is not configured on this deployment")
+		return
+	}
 	errpkg.HandleServiceError(w, err)
 }
 

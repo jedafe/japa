@@ -120,7 +120,7 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 	// checkout URL that nothing could ever settle. manual_transfer is the
 	// deliberate exception and is always registered.
 	if provider == nil {
-		return CreatePaymentResult{}, fmt.Errorf("payment provider %q is not configured", input.Provider)
+		return CreatePaymentResult{}, fmt.Errorf("%w: %q", ErrProviderNotConfigured, input.Provider)
 	}
 
 	resp, err := provider.InitiatePayment(ctx, PaymentRequest{

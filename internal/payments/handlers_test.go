@@ -3,9 +3,12 @@ package payments
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // stubProvider is a no-op Provider for registration-matrix tests — only
@@ -82,5 +85,24 @@ func TestListPaymentProvidersMirrorsRegistration(t *testing.T) {
 		if got != want.enabled {
 			t.Errorf("provider %q enabled = %v, want %v", want.id, got, want.enabled)
 		}
+	}
+}
+
+// CreatePayment on a valid-but-unregistered provider returns the
+// ErrProviderNotConfigured sentinel — handlers map it to 503
+// provider_not_configured, never a bare 500.
+func TestCreatePaymentUnregisteredProviderSentinel(t *testing.T) {
+	t.Parallel()
+
+	svc := &Service{}
+
+	_, err := svc.CreatePayment(t.Context(), pgtype.UUID{}, CreatePaymentInput{
+		Provider:    ProviderStripe, // valid enum, not registered
+		PurposeType: PurposeDonation,
+		Amount:      500,
+		Currency:    "NGN",
+	})
+	if !errors.Is(err, ErrProviderNotConfigured) {
+		t.Fatalf("err = %v, want ErrProviderNotConfigured", err)
 	}
 }

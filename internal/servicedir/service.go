@@ -761,6 +761,11 @@ var (
 	// ErrInvalidBookingTransition — the requested status transition is not
 	// legal from the booking's current state.
 	ErrInvalidBookingTransition = errors.New("invalid_booking_transition")
+	// ErrProviderNotConfigured — the booking's payment provider is a valid
+	// name but not registered on this deployment (503
+	// provider_not_configured). Translated from
+	// payments.ErrProviderNotConfigured at the adapter seam.
+	ErrProviderNotConfigured = errors.New("provider_not_configured")
 	// ErrBookingUnavailable — the listing does not accept bookings (wrong
 	// purchase_mode, unlisted, or suspended).
 	ErrBookingUnavailable = errors.New("listing does not accept bookings")
