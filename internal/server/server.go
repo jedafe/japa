@@ -10998,6 +10998,7 @@ func (a stablecoinTipReader) GetTip(ctx context.Context, id pgtype.UUID) (*stabl
 	return &stablecoin.Tip{
 		ID:              t.ID,
 		SenderUserID:    t.SenderUserID,
+		RecipientType:   t.RecipientType,
 		RecipientUserID: t.RecipientWalletUserID,
 		NetCredits:      t.NetCredits,
 		FeeAmount:       t.FeeAmount,

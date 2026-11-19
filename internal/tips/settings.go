@@ -379,8 +379,10 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner, viewer pgtype.U
 	// but is not advertised publicly. The rail itself is pilot-gated by
 	// tips.stablecoin: only viewers holding the grant see it — anonymous
 	// visitors and ungranted members would just hit not_eligible on send,
-	// so the button is hidden rather than baited.
-	if owner.Type != RecipientPlatform && st.AcceptCredits &&
+	// so the button is hidden rather than baited. Platform donations also
+	// ride this rail (net → treasury hot wallet — the platform's only
+	// wallet denomination), gated the same way.
+	if st.AcceptCredits &&
 		s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
 		methods := cfg.Methods[:0]
 		for _, m := range cfg.Methods {

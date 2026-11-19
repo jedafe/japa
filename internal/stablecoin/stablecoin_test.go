@@ -991,6 +991,69 @@ func TestProcessTipSettleSenderWalletGate(t *testing.T) {
 	}
 }
 
+// Platform tips have no member recipient — the net leg must land on the
+// treasury hot wallet (same custodial destination the fee leg uses), with
+// no member-wallet resolution or provisioning attempted.
+func TestProcessTipSettlePlatformTreasury(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	p := &fakeProvider{}
+	sender := newUUID()
+	sw := &Wallet{
+		ID: newUUID().String(), UserID: sender.String(), Status: WalletStatusActive,
+		Chain: "solana", Locator: "loc-s", Address: "addr-s",
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref", Scopes: []SignerScope{{Asset: AssetUSDC}}},
+	}
+	st.walletByUser[sender.String()] = sw
+	hot := &TreasuryWallet{ID: newUUID().String(), Role: TreasuryHot, Chain: "solana", Address: "treasury-hot-addr", Locator: "loc-hot"}
+	st.treasury["solana:"+TreasuryHot] = hot
+
+	tid := newUUID()
+	tips := &fakeTips{tips: map[string]*Tip{
+		// recipient_type='platform' carries no member wallet id.
+		tid.String(): {ID: tid, SenderUserID: sender, RecipientType: "platform", NetCredits: 950, FeeAmount: 50, Status: "pending"},
+	}}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{strs: map[string]string{"stablecoin.assets": `["usdc"]`}})
+	svc.SetTipReader(tips)
+	svc.SetCreditRater(&fakeRater{n: 100})
+
+	payload, _ := json.Marshal(TipSettlePayload{TipID: tid.String()})
+	if err := svc.ProcessTipSettle(context.Background(), payload); err != nil {
+		t.Fatalf("ProcessTipSettle: %v", err)
+	}
+	if len(p.transfers) != 1 {
+		t.Fatalf("expected 1 transfer, got %d", len(p.transfers))
+	}
+	tr := p.transfers[0]
+	if tr.RecipientAddr != hot.Address {
+		t.Fatalf("net leg must land on treasury hot, got %q", tr.RecipientAddr)
+	}
+	if tr.FeeAddr != hot.Address {
+		t.Fatalf("fee leg must land on treasury hot, got %q", tr.FeeAddr)
+	}
+	if len(tips.settled) != 1 || tips.tips[tid.String()].Status != "completed" {
+		t.Fatalf("tip should be settled, got settled=%v status=%q", tips.settled, tips.tips[tid.String()].Status)
+	}
+
+	// No treasury row → the tip stays pending for the sweep, never claimed.
+	st2 := newFakeStore()
+	st2.walletByUser[sender.String()] = sw
+	tid2 := newUUID()
+	tips2 := &fakeTips{tips: map[string]*Tip{
+		tid2.String(): {ID: tid2, SenderUserID: sender, RecipientType: "platform", NetCredits: 950, Status: "pending"},
+	}}
+	svc2 := newSvc(st2, p, newFakeVK(), &fakeSettings{strs: map[string]string{"stablecoin.assets": `["usdc"]`}})
+	svc2.SetTipReader(tips2)
+	svc2.SetCreditRater(&fakeRater{n: 100})
+	payload, _ = json.Marshal(TipSettlePayload{TipID: tid2.String()})
+	if err := svc2.ProcessTipSettle(context.Background(), payload); err == nil {
+		t.Fatal("missing treasury must error, not settle")
+	}
+	if tips2.tips[tid2.String()].Status != "pending" {
+		t.Fatalf("tip must stay pending, got %q", tips2.tips[tid2.String()].Status)
+	}
+}
+
 func TestSignerExpiringWithin(t *testing.T) {
 	t.Parallel()
 	cutoff := time.Now().Add(30 * 24 * time.Hour)

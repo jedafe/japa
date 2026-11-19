@@ -433,3 +433,42 @@ func TestCreateStablecoinTipSenderWalletGate(t *testing.T) {
 		t.Fatalf("nil checker should not gate: %v", err)
 	}
 }
+
+// Platform donations ride the §128 rail into the treasury hot wallet —
+// the row carries no member wallet owner but the sender gate still applies.
+func TestCreateStablecoinTipPlatformRecipient(t *testing.T) {
+	in := CreateTipInput{RecipientType: RecipientPlatform, Method: MethodStablecoin, CreditsAmount: 100}
+
+	fs := newFakeStore()
+	enabledRecipient(fs, PlatformOwner())
+	enq := &fakeTipEnqueuer{}
+	svc := stablecoinSvc(fs, fakeSenderWallets{ok: true}, enq)
+	res, err := svc.CreateTip(context.Background(), senderID, in, "k-plat")
+	if err != nil {
+		t.Fatalf("platform stablecoin should be creatable: %v", err)
+	}
+	if len(fs.inserted) != 1 {
+		t.Fatalf("expected 1 insert, got %d", len(fs.inserted))
+	}
+	tip := fs.inserted[0]
+	if tip.Method != MethodStablecoin || tip.Status != StatusPending || tip.RecipientType != RecipientPlatform {
+		t.Fatalf("wrong tip row: %+v", tip)
+	}
+	if tip.RecipientWalletUserID.Valid || tip.RecipientUserID.Valid {
+		t.Fatal("platform tip must carry no member recipient")
+	}
+	if len(enq.types) != 1 || enq.types[0] != taskSettleStablecoin {
+		t.Fatalf("expected settle fan-out, got %v", enq.types)
+	}
+	if res.Tip.Status != StatusPending {
+		t.Fatalf("result should be pending, got %q", res.Tip.Status)
+	}
+
+	// Unsettleable sender still gates platform donations.
+	fs = newFakeStore()
+	enabledRecipient(fs, PlatformOwner())
+	svc = stablecoinSvc(fs, fakeSenderWallets{ok: false}, &fakeTipEnqueuer{})
+	if _, err := svc.CreateTip(context.Background(), senderID, in, "k-plat2"); !errors.Is(err, ErrWalletNotReady) {
+		t.Fatalf("unsettleable sender = %v, want ErrWalletNotReady", err)
+	}
+}

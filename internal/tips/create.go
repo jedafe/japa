@@ -124,11 +124,10 @@ func (s *Service) createStablecoinTip(ctx context.Context, senderID pgtype.UUID,
 	if s.perms != nil && !s.perms.Can(ctx, senderID, "tips.stablecoin") {
 		return CreateTipResult{}, ErrNotEligible
 	}
-	// Platform has no wallet — onchain tips to it are invalid.
-	if owner.Type == RecipientPlatform {
-		return CreateTipResult{}, ErrMethodNotAccepted
-	}
-	if !walletOwner.Valid {
+	// Platform has no member wallet — its net leg settles to the treasury
+	// hot wallet instead, so walletOwner is legitimately invalid for it.
+	// Every other recipient kind must resolve a real wallet owner.
+	if !walletOwner.Valid && owner.Type != RecipientPlatform {
 		return CreateTipResult{}, ErrInvalidRecipient
 	}
 

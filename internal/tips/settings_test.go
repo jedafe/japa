@@ -747,3 +747,68 @@ func TestPublicConfigStablecoinViewerGate(t *testing.T) {
 		t.Fatalf("flag off should advertise credits: %v", cfg.Methods)
 	}
 }
+
+// Platform donations ride the same §128 rail — the treasury hot wallet is
+// the platform's only wallet denomination — pilot-gated like members'.
+func TestPublicConfigStablecoinPlatformGate(t *testing.T) {
+	pilot := uid(t, "22222222-2222-2222-2222-222222222222")
+	member := uid(t, "33333333-3333-3333-3333-333333333333")
+	owner := PlatformOwner()
+
+	newSvc := func() *Service {
+		fs := newFakeStore()
+		fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+			OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+			AcceptCredits: true, AcceptFiat: true,
+		}
+		return &Service{
+			store:    fs,
+			settings: fakeSettings{m: map[string]any{"tips.enabled": true}},
+			perms: fakePermsByUser{
+				pilot:  {"tips.stablecoin": true},
+				member: {},
+			},
+			features: fakeFeatures{on: map[string]bool{"feature.stablecoin_wallet": true}},
+		}
+	}
+	has := func(ms []string, m string) bool {
+		for _, x := range ms {
+			if x == m {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Pilot viewer → stablecoin advertised; credits never appears for
+	// platform (no member wallet exists to receive it).
+	cfg, err := newSvc().PublicConfig(context.Background(), owner, pilot)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if !has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
+		t.Fatalf("pilot should see stablecoin on /donate: %v", cfg.Methods)
+	}
+
+	// Ungranted member and anonymous → no wallet rail advertised.
+	for _, v := range []pgtype.UUID{member, {}} {
+		cfg, err = newSvc().PublicConfig(context.Background(), owner, v)
+		if err != nil {
+			t.Fatalf("PublicConfig: %v", err)
+		}
+		if has(cfg.Methods, MethodStablecoin) {
+			t.Fatalf("ungranted/anonymous viewer must not see stablecoin: %v", cfg.Methods)
+		}
+	}
+
+	// Flag off → platform still advertises no wallet rail at all.
+	svc := newSvc()
+	svc.features = fakeFeatures{on: map[string]bool{}}
+	cfg, err = svc.PublicConfig(context.Background(), owner, pilot)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
+		t.Fatalf("flag off = no wallet rail for platform: %v", cfg.Methods)
+	}
+}

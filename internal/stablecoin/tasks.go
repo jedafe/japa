@@ -253,26 +253,33 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if tip.Status != "pending" && tip.Status != "settling" && tip.Status != "failed" {
 		return nil // already settled/cancelled — idempotent replay
 	}
-	// Resolve the recipient's wallet BEFORE claiming — tips settle
-	// member→member onchain. Unprovisioned → auto-provision: the wallet is
-	// counterfactual (deploys on first tx, costs nothing dormant) and
-	// receiving needs no signer — same rule as SettleTipBacked's fiat path.
-	// A permanently-unprovisionable recipient must leave the tip 'pending'
-	// so the TTL sweep fails it and the sender isn't charged for nothing.
-	rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
-	if err != nil {
-		if !errors.Is(err, ErrWalletNotFound) {
-			return err
+	// Resolve the net-leg destination BEFORE claiming. Member recipients
+	// settle member→member onchain — unprovisioned → auto-provision: the
+	// wallet is counterfactual (deploys on first tx, costs nothing
+	// dormant) and receiving needs no signer — same rule as
+	// SettleTipBacked's fiat path. A permanently-unprovisionable recipient
+	// must leave the tip 'pending' so the TTL sweep fails it and the
+	// sender isn't charged for nothing. Platform donations have no member
+	// wallet — the net leg lands on the treasury hot wallet (resolved on
+	// the sender's chain below, matching the fee leg's own lookup).
+	var toAddr string
+	if tip.RecipientType != "platform" {
+		rw, err := s.store.GetWalletByUser(ctx, tip.RecipientUserID)
+		if err != nil {
+			if !errors.Is(err, ErrWalletNotFound) {
+				return err
+			}
+			if rw, err = s.ProvisionWallet(ctx, tip.RecipientUserID, ""); err != nil {
+				return fmt.Errorf("%s: recipient provision: %w", TaskTipSettleStablecoin, err)
+			}
 		}
-		if rw, err = s.ProvisionWallet(ctx, tip.RecipientUserID, ""); err != nil {
-			return fmt.Errorf("%s: recipient provision: %w", TaskTipSettleStablecoin, err)
+		if rw == nil {
+			return fmt.Errorf("%s: recipient wallet not provisioned", TaskTipSettleStablecoin)
 		}
-	}
-	if rw == nil {
-		return fmt.Errorf("%s: recipient wallet not provisioned", TaskTipSettleStablecoin)
-	}
-	if rw.Status == WalletStatusSuspended {
-		return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
+		if rw.Status == WalletStatusSuspended {
+			return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
+		}
+		toAddr = rw.Address
 	}
 	// Sender wallet pre-check BEFORE claiming: an unsettleable sender
 	// (unprovisioned, suspended, signer never activated) can never complete
@@ -292,6 +299,16 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 			return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
 		}
 		return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletNotSettleable)
+	}
+	if tip.RecipientType == "platform" {
+		hot, err := s.store.GetTreasuryWallet(ctx, sw.Chain, TreasuryHot)
+		if err != nil {
+			return fmt.Errorf("%s: treasury hot wallet: %w", TaskTipSettleStablecoin, err)
+		}
+		if hot == nil || hot.Address == "" {
+			return fmt.Errorf("%s: treasury hot wallet has no address", TaskTipSettleStablecoin)
+		}
+		toAddr = hot.Address
 	}
 	// Claim last, immediately before the send: pending/failed → 'settling'
 	// atomically excludes racing refunds/sweeps (they only touch 'pending')
@@ -321,7 +338,7 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	}
 	res, err := s.Settle(ctx, SettleInput{
 		FromUserID:  tip.SenderUserID,
-		ToAddress:   rw.Address,
+		ToAddress:   toAddr,
 		Asset:       asset,
 		AmountMinor: toMinor(tip.NetCredits),
 		FeeMinor:    toMinor(tip.FeeAmount),

@@ -112,9 +112,10 @@ type tipReader interface {
 type Tip struct {
 	ID              pgtype.UUID
 	SenderUserID    pgtype.UUID
-	RecipientUserID pgtype.UUID
-	NetCredits      int64 // tip − platform fee → recipient leg
-	FeeAmount       int64 // platform fee → treasury hot leg
+	RecipientType   string      // user|organization|space|platform
+	RecipientUserID pgtype.UUID // member wallet owner — invalid for platform
+	NetCredits      int64       // tip − platform fee → recipient leg
+	FeeAmount       int64       // platform fee → treasury hot leg
 	Method          string
 	Status          string
 }
