@@ -29,6 +29,7 @@ func fiatTip() gen.Tip {
 	return gen.Tip{
 		ID:              pgtype.UUID{Valid: true},
 		Status:          StatusPending,
+		Method:          "stripe",
 		RecipientType:   RecipientUser,
 		RecipientUserID: pgtype.UUID{Valid: true},
 		NetCredits:      950,
@@ -41,6 +42,89 @@ func backedSvc(fs *fakeStore, backed BackedSettler) *Service {
 		features:      fakeFeatures{on: map[string]bool{"feature.stablecoin_wallet": true}},
 		backedSettler: backed,
 	}
+}
+
+// §125 hardening: the payment-webhook seam refuses lifecycle ops when the
+// triggering payment isn't the tip's own §17 row — a stray payment (its
+// purpose_id names the tip, but payment_id is the authoritative link) must
+// not settle, fail, or claw back a tip it didn't pay for. The admin path
+// (invalid paymentID) skips the link check so credits/stablecoin rows stay
+// refundable.
+func TestPaymentLinkGuards(t *testing.T) {
+	ctx := context.Background()
+
+	mkTip := func() gen.Tip {
+		tip := fiatTip()
+		tip.PaymentID = pgtype.UUID{Valid: true, Bytes: [16]byte{9}}
+		return tip
+	}
+	strayPayment := pgtype.UUID{Valid: true, Bytes: [16]byte{7}}
+
+	t.Run("settle refuses foreign payment", func(t *testing.T) {
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = mkTip(), true
+		if err := (&Service{store: fs}).SettleFiatTip(ctx, fs.tip.ID, strayPayment); !errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("err = %v, want ErrInvalidStatus", err)
+		}
+	})
+
+	t.Run("settle refuses non-fiat method", func(t *testing.T) {
+		tip := mkTip()
+		tip.Method = MethodStablecoin
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = tip, true
+		if err := (&Service{store: fs}).SettleFiatTip(ctx, tip.ID, tip.PaymentID); !errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("err = %v, want ErrInvalidStatus", err)
+		}
+	})
+
+	t.Run("fail refuses foreign payment + stablecoin method", func(t *testing.T) {
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = mkTip(), true
+		svc := &Service{store: fs}
+		if err := svc.FailTip(ctx, fs.tip.ID, strayPayment); !errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("stray fail err = %v, want ErrInvalidStatus", err)
+		}
+		tip := mkTip()
+		tip.Method = MethodStablecoin
+		fs.tip = tip
+		if err := svc.FailTip(ctx, tip.ID, tip.PaymentID); !errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("stablecoin fail err = %v, want ErrInvalidStatus", err)
+		}
+	})
+
+	t.Run("fail accepts own payment", func(t *testing.T) {
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = mkTip(), true
+		if err := (&Service{store: fs}).FailTip(ctx, fs.tip.ID, fs.tip.PaymentID); err != nil {
+			t.Fatalf("own-payment fail err = %v", err)
+		}
+	})
+
+	t.Run("webhook clawback refuses foreign payment", func(t *testing.T) {
+		tip := mkTip()
+		tip.Status = StatusCompleted
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = tip, true
+		if err := (&Service{store: fs}).ClawbackTip(ctx, tip.ID, strayPayment); !errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("err = %v, want ErrInvalidStatus", err)
+		}
+	})
+
+	t.Run("admin clawback skips link check on non-fiat tip", func(t *testing.T) {
+		tip := mkTip()
+		tip.Method = MethodStablecoin
+		tip.PaymentID = pgtype.UUID{} // onchain rows never carry a §17 link
+		fs := newFakeStore()
+		fs.tip, fs.hasTip = tip, true
+		// invalid paymentID = admin path → past the gate it hits the
+		// pending arm (refundPendingTip) — anything but ErrInvalidStatus
+		// from the gate proves the guard skipped correctly.
+		err := (&Service{store: fs}).ClawbackTip(ctx, tip.ID, pgtype.UUID{})
+		if errors.Is(err, ErrInvalidStatus) {
+			t.Fatalf("admin-path err = %v, want no gate error", err)
+		}
+	})
 }
 
 // §128: with the rail live and a usable recipient wallet, a fiat tip marks

@@ -457,6 +457,17 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// donation is minted only by the tip checkout (POST /tips →
+	// createFiatTip) — its purpose_id IS the tip row and the payment worker
+	// keys settle/fail/clawback on it. A caller-supplied purpose_id would
+	// let a cheap self-made payment settle, fail, or claw back someone
+	// else's tip (same class as service_booking_fee above).
+	if input.PurposeType == PurposeDonation {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			"donation payments are created by the tip flow")
+		return
+	}
+
 	if input.Amount <= 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
 		return

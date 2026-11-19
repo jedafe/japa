@@ -16,8 +16,8 @@ import (
 // narrow so worker never imports the domain package directly.
 type TipSettlement interface {
 	SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUID) error
-	ClawbackTip(ctx context.Context, tipID pgtype.UUID) error
-	FailTip(ctx context.Context, tipID pgtype.UUID) error
+	ClawbackTip(ctx context.Context, tipID, paymentID pgtype.UUID) error
+	FailTip(ctx context.Context, tipID, paymentID pgtype.UUID) error
 	NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error
 	SyncOC(ctx context.Context) error
 	SyncBMC(ctx context.Context) error

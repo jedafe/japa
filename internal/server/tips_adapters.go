@@ -187,13 +187,13 @@ func (a tipsSettlementAdapter) SettleFiatTip(ctx context.Context, tipID, payment
 }
 
 // FailTip delegates.
-func (a tipsSettlementAdapter) FailTip(ctx context.Context, tipID pgtype.UUID) error {
-	return a.svc.FailTip(ctx, tipID)
+func (a tipsSettlementAdapter) FailTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
+	return a.svc.FailTip(ctx, tipID, paymentID)
 }
 
 // ClawbackTip delegates.
-func (a tipsSettlementAdapter) ClawbackTip(ctx context.Context, tipID pgtype.UUID) error {
-	return a.svc.ClawbackTip(ctx, tipID)
+func (a tipsSettlementAdapter) ClawbackTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
+	return a.svc.ClawbackTip(ctx, tipID, paymentID)
 }
 
 // NotifyTipReceived delegates, injecting the notifications dispatcher.

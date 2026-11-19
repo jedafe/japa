@@ -45,6 +45,18 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		return ErrInvalidStatus
 	}
 
+	// The triggering payment must be this tip's own §17 row — the
+	// payment's purpose_id names the tip, the tip's payment_id is the
+	// authoritative back-reference. Refuse cross-rail or mismatched links
+	// (defense-in-depth: donation payments are only minted by
+	// createFiatTip, which owns the link).
+	if !fiatMethods[tip.Method] {
+		return ErrInvalidStatus
+	}
+	if tip.PaymentID.Valid && paymentID.Valid && tip.PaymentID != paymentID {
+		return ErrInvalidStatus
+	}
+
 	walletOwner, err := s.walletOwnerFor(ctx, tip)
 	if err != nil {
 		return err
@@ -134,8 +146,19 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 }
 
 // FailTip marks a pending tip failed — the payment-failed/expired branch of
-// the fiat lifecycle. Idempotent: only pending rows transition.
-func (s *Service) FailTip(ctx context.Context, tipID pgtype.UUID) error {
+// the fiat lifecycle. Idempotent: only pending rows transition. The failing
+// payment must be the tip's own §17 row (payment_id back-reference) and the
+// tip must be a fiat-method row — onchain tips settle through
+// tips:settle_stablecoin and are owned by the TTL sweep, never by payment
+// webhooks.
+func (s *Service) FailTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
+	tip, err := s.store.getTip(ctx, tipID)
+	if err != nil {
+		return err
+	}
+	if !fiatMethods[tip.Method] || (tip.PaymentID.Valid && tip.PaymentID != paymentID) {
+		return ErrInvalidStatus
+	}
 	return s.store.failTip(ctx, tipID)
 }
 
@@ -174,10 +197,18 @@ func (s *Service) ClaimTipSettle(ctx context.Context, tipID pgtype.UUID) (bool, 
 
 // ClawbackTip reverses a settled tip's recipient credits and marks it
 // refunded — the §125 refund path (payment refunded upstream or admin).
-func (s *Service) ClawbackTip(ctx context.Context, tipID pgtype.UUID) error {
+// A valid paymentID marks the webhook path: the refunded payment must be
+// the tip's own §17 row (payment_id back-reference) and the tip a
+// fiat-method row, so a stray refunded payment can't debit an unrelated
+// recipient. The admin refund path passes the tip's stored payment_id —
+// invalid for credits/stablecoin rows — and skips the gate.
+func (s *Service) ClawbackTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
 	tip, err := s.store.getTip(ctx, tipID)
 	if err != nil {
 		return err
+	}
+	if paymentID.Valid && (!fiatMethods[tip.Method] || (tip.PaymentID.Valid && tip.PaymentID != paymentID)) {
+		return ErrInvalidStatus
 	}
 	if tip.Status == StatusRefunded {
 		return nil
@@ -274,7 +305,7 @@ func (s *Service) AdminRefundTip(ctx context.Context, tipID, adminID pgtype.UUID
 			slog.Warn("tips: provider refund skipped for pending tip", "tip_id", tipID.String(), "error", err)
 		}
 	}
-	if err := s.ClawbackTip(ctx, tipID); err != nil {
+	if err := s.ClawbackTip(ctx, tipID, tip.PaymentID); err != nil {
 		return err
 	}
 	if err := s.store.insertAuditLog(ctx, adminID, "tips.admin_refund", "tip", tipID.String(),

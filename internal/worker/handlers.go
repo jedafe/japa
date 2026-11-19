@@ -725,7 +725,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	// there is no other terminal transition for it.
 	if (payload.Status == "failed" || payload.Status == "expired") &&
 		p.PurposeType == "donation" && p.PurposeID.Valid && tipSettlement != nil {
-		if err := tipSettlement.FailTip(ctx, p.PurposeID); err != nil {
+		if err := tipSettlement.FailTip(ctx, p.PurposeID, p.ID); err != nil {
 			slog.Error("task:payment:process_webhook: failed to mark donation tip failed",
 				"payment_id", p.ID, "tip_id", p.PurposeID, "error", err)
 		}
@@ -1226,7 +1226,7 @@ func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 		// §125: a refunded donation tip claws back the recipient's net
 		// credits and marks the tip refunded (idempotent).
 		if p.PurposeID.Valid && tipSettlement != nil {
-			if err := tipSettlement.ClawbackTip(ctx, p.PurposeID); err != nil {
+			if err := tipSettlement.ClawbackTip(ctx, p.PurposeID, p.ID); err != nil {
 				return fmt.Errorf("clawback donation tip: %w", err)
 			}
 		}

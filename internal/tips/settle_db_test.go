@@ -385,7 +385,7 @@ func TestDBClawback(t *testing.T) {
 		t.Fatalf("pre-clawback balance %d", got)
 	}
 
-	if err := svc.ClawbackTip(ctx, res.Tip.ID); err != nil {
+	if err := svc.ClawbackTip(ctx, res.Tip.ID, res.Tip.PaymentID); err != nil {
 		t.Fatalf("ClawbackTip: %v", err)
 	}
 	if got := balance(t, ctx, d, recip, "credits"); got != 0 {
@@ -399,7 +399,7 @@ func TestDBClawback(t *testing.T) {
 		t.Fatalf("status = %s", status)
 	}
 	// Re-clawback is a no-op.
-	if err := svc.ClawbackTip(ctx, res.Tip.ID); err != nil {
+	if err := svc.ClawbackTip(ctx, res.Tip.ID, res.Tip.PaymentID); err != nil {
 		t.Fatalf("re-clawback: %v", err)
 	}
 }
