@@ -54,8 +54,8 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'language', labelKey: 'settings.nav.language', icon: 'globe', group: 'account', backendReady: true, component: LanguageSection },
 	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
 	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'mentorship', backendReady: true, component: MentorSection, featureFlag: 'mentorship.enabled' },
-	{ slug: 'federation', labelKey: 'settings.nav.federation', icon: 'at-sign', group: 'account', backendReady: true, component: FederationSection, featureFlag: 'feature.federation' },
-	{ slug: 'atproto', labelKey: 'settings.nav.atproto', icon: 'cloud', group: 'account', backendReady: true, component: AtprotoSection, featureFlag: 'feature.atproto' },
+	{ slug: 'federation', labelKey: 'settings.nav.federation', icon: 'at-sign', group: 'federation', backendReady: true, component: FederationSection, featureFlag: 'feature.federation' },
+	{ slug: 'atproto', labelKey: 'settings.nav.atproto', icon: 'cloud', group: 'federation', backendReady: true, component: AtprotoSection, featureFlag: 'feature.atproto' },
 	{ slug: 'ai', labelKey: 'settings.nav.ai', icon: 'brain', group: 'ai', backendReady: true, component: AiSection },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
@@ -78,7 +78,7 @@ export function resolveSection(slug: string): SectionMeta | null {
 	return SETTINGS_SECTIONS.find((s) => s.slug === slug) ?? null;
 }
 
-const GROUP_ORDER: HubGroup[] = ['account', 'mentorship', 'security', 'notifications', 'billing', 'wallet', 'ai', 'developer', 'danger'];
+const GROUP_ORDER: HubGroup[] = ['account', 'federation', 'mentorship', 'security', 'notifications', 'billing', 'wallet', 'ai', 'developer', 'danger'];
 
 /** Returns true when the section's feature flag is enabled (or it has no flag). */
 function sectionFeatureEnabled(s: SectionMeta, features?: Record<string, boolean>): boolean {

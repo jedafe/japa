@@ -614,6 +614,7 @@ export type HubGroup =
 	| 'billing'
 	| 'wallet'
 	| 'developer'
+	| 'federation'
 	| 'activity'
 	| 'danger';
 
