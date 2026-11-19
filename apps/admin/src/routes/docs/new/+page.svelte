@@ -22,7 +22,7 @@
 
 <PageHeader
 	title={t('docs.new_doc_page')}
-	description={t('docs.admin_documentation_pages_for_developer')}
+	description={t('docs.manage_documentation_pages_for_developer')}
 	actions={[{ label: t('common.back', 'Back'), variant: 'outline', onclick: () => goto(backTo) }]}
 />
 

@@ -755,7 +755,7 @@
 
 <PageHeader
 	title={t('docs.documentation')}
-	description={t('docs.admin_documentation_pages_for_developer')}
+	description={t('docs.manage_documentation_pages_for_developer')}
 	actions={[
 		...(canManageCategories
 			? [{ label: t('docs.categories_title', 'Categories'), icon: Tags, variant: 'outline' as const, onclick: () => goto('/docs/categories') }]

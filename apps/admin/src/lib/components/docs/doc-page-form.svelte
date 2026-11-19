@@ -41,11 +41,12 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 
-	let form = $state({
+	const INITIAL_FORM = {
 		title: '', slug: '', audience: 'users', status: 'draft',
 		category: '', subcategory: '', parentId: '', position: 0,
 		featureImageId: '', featureImageUrl: '', summary: ''
-	});
+	};
+	let form = $state({ ...INITIAL_FORM });
 
 	// Edit-mode state — the detail fetch populates the body + fresh lock token.
 	let editingOriginalStatus = $state('');
@@ -259,7 +260,9 @@
 	// accidental navigation, so warn before leaving with unsaved edits.
 	// dirty is DERIVED from a diff against the seeded snapshot: the seed
 	// itself (empty create form or the fetched page) is clean by definition.
-	let seededForm = $state<typeof form | null>(null);
+	// Baseline captured at INIT — setting it inside onMount after an await
+	// would let keystrokes typed during the fetch window become "clean".
+	let seededForm = $state<typeof form | null>({ ...INITIAL_FORM });
 	let editorDirty = $state(false);
 	const dirty = $derived.by(() => {
 		if (editorDirty) return true;
@@ -303,11 +306,7 @@
 			}
 		}
 
-		if (!docId) {
-			// Create mode — the empty form is the clean baseline.
-			seededForm = { ...form };
-			return;
-		}
+		if (!docId) return;
 		// Edit mode — one detail fetch seeds every field plus the body editor.
 		const detail = await docsApi.get(docId);
 		if (detail.ok && detail.data) {
