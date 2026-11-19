@@ -244,9 +244,16 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 		events := parseBounceEvents(raw)
 
 		if len(events) == 0 {
-			// Spec: unparseable mail is logged — not every UNSEEN message
-			// is a bounce (forwards, auto-replies land here too).
-			slog.Debug("task:newsletter:poll_bounces: no events extracted", "seq", msg.SeqNum)
+			// Spec: unparseable mail is logged — but severity depends on
+			// whether it *looked* like a bounce. A message with a report
+			// content-type or X-Failed-Recipients that still yielded no
+			// events is a parser gap worth investigating (Warn); ordinary
+			// non-bounce mail (forwards, auto-replies) is routine (Debug).
+			if looksLikeBounceReport(raw) {
+				slog.Warn("task:newsletter:poll_bounces: bounce-shaped message yielded no events", "seq", msg.SeqNum)
+			} else {
+				slog.Debug("task:newsletter:poll_bounces: no events extracted", "seq", msg.SeqNum)
+			}
 		}
 
 		for _, ev := range events {
@@ -390,6 +397,37 @@ func walkMultipart(r io.Reader, boundary string, depth int, add func(addr, kind 
 			}
 		}
 	}
+}
+
+// looksLikeBounceReport reports whether a zero-event message had a
+// shape that should always yield a suppression: an X-Failed-Recipients
+// header (addresses failed normalization) or a top-level ARF feedback
+// report (a complaint we couldn't attribute). Both signal a parser gap
+// worth a Warn. multipart/report and message/delivery-status are NOT
+// warn-worthy — transient/delayed (4.x) DSNs legitimately produce no
+// events, so they stay at debug alongside ordinary mailbox noise.
+func looksLikeBounceReport(raw []byte) bool {
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return false
+	}
+
+	if len(msg.Header["X-Failed-Recipients"]) > 0 {
+		return true
+	}
+
+	mediaType, params, _ := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if mediaType == "multipart/report" && params["report-type"] == "feedback-report" {
+		// The report-type param distinguishes ARF complaint reports from
+		// delivery-status reports at the top level — the actual
+		// message/feedback-report part is nested inside.
+		return true
+	}
+
+	// A Feedback-Type: abuse header anywhere in the message means a
+	// complaint was reported but no recipient could be attributed —
+	// parser gap. Non-abuse ARF types legitimately produce no events.
+	return bytes.Contains(bytes.ToLower(raw), []byte("feedback-type: abuse"))
 }
 
 // parseDeliveryStatus walks the per-recipient blocks of a

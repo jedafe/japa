@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -70,7 +71,13 @@ func (s *Service) RecordTrackEvent(ctx context.Context, kind, campaignID, recipi
 
 	if vk != nil {
 		set, err := vk.SetNX(ctx, dedupeKey, 1, trackDedupeTTL).Result()
-		if err == nil && !set {
+		if err != nil {
+			// Fail-open: count without dedupe rather than drop the event
+			// (same contract as the webhook path) — but make it visible
+			// so a Valkey outage is diagnosable from logs.
+			slog.Warn("newsletter track: dedupe check failed, counting without dedupe",
+				"kind", kind, "campaign_id", campaignID, "error", err)
+		} else if !set {
 			return nil // already counted inside the dedupe window
 		}
 	}

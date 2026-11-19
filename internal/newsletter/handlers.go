@@ -1144,10 +1144,13 @@ func (h *Handlers) HandleTrackOpen(w http.ResponseWriter, r *http.Request) {
 	// The e param is the opaque per-recipient tag minted at send time
 	// (hex HMAC over the normalized address — §62), never the raw email.
 	// Scanner/proxy User-Agents are served the pixel but not counted, so
-	// mailbox-provider prefetch doesn't inflate open rates. The counter
-	// UPDATE itself no-ops on a deleted/malformed campaign — no existence
-	// check needed.
+	// mailbox-provider prefetch doesn't inflate open rates. Counting is a
+	// state mutation, so it honors the feature.newsletter kill-switch —
+	// the pixel is still served either way (a 404/black pixel in already-
+	// sent mail is worse than a lost count). The counter UPDATE itself
+	// no-ops on a deleted/malformed campaign — no existence check needed.
 	if campaignID != "" && recipient != "" &&
+		h.Service.Enabled(r.Context()) &&
 		!IsTrackingScanner(r.UserAgent()) &&
 		email.VerifyTracking(h.Service.TrackingSecret(), sig, TrackScopeOpen, campaignID, recipient) {
 		if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeOpen, campaignID, recipient, ""); err != nil {
@@ -1189,8 +1192,10 @@ func (h *Handlers) HandleTrackClick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Counter UPDATE no-ops on deleted/malformed campaigns — the redirect
-	// fires regardless so a valid link never dead-ends.
-	if !IsTrackingScanner(r.UserAgent()) {
+	// fires regardless so a valid link never dead-ends. Counting honors
+	// the feature.newsletter kill-switch; the redirect still runs so
+	// already-sent links keep working while the feature is off.
+	if h.Service.Enabled(r.Context()) && !IsTrackingScanner(r.UserAgent()) {
 		if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeClick, campaignID, recipient, dest); err != nil {
 			slog.Warn("newsletter track: click increment failed", "campaign_id", campaignID, "error", err)
 		}
