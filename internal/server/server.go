@@ -713,6 +713,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	federationService.SetValkey(vkClient.Redis())
 	federationService.SetFlags(featureChecker) // §42: prune flag-gated content types from AP projections
 	worker.RegisterFederationService(federationService)
+
+	// §126: member-created spaces entering the public envelope auto-provision
+	// their Group actor. Feature-gated; ineligible spaces (opted out, not
+	// public, non-custom) resolve to a no-op so space writes never fail on
+	// federation state.
+	spaceService.SetGroupProvisioner(func(ctx context.Context, spaceID pgtype.UUID) error {
+		if !featureChecker.IsEnabled(ctx, "feature.federation") {
+			return nil
+		}
+		if _, err := federationService.ProvisionGroupActor(ctx, spaceID, pgtype.UUID{}); err != nil {
+			if errors.Is(err, federation.ErrConflict) {
+				return nil // space not in the Group envelope
+			}
+			return err
+		}
+		return nil
+	})
 	federationHandlers := federation.NewHandlers(federationService)
 
 	atprotoService := atproto.NewService(database, atproto.Config{

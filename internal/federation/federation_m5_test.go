@@ -155,6 +155,35 @@ func TestGroupDocumentFeaturedCollections(t *testing.T) {
 	}
 }
 
+func TestSpaceGroupEligibleOptOut(t *testing.T) {
+	base := func() gen.GetGroupActorDocBySlugRow {
+		var creator pgtype.UUID
+		if err := creator.Scan("00000000-0000-0000-0000-000000000002"); err != nil {
+			t.Fatal(err)
+		}
+		return gen.GetGroupActorDocBySlugRow{
+			SpaceStatus:         "active",
+			SpaceVisibility:     "public",
+			SpaceLevel:          "custom",
+			SpaceCreatorUserID:  creator,
+			SpaceFederateOptOut: false,
+		}
+	}
+	if !spaceGroupEligible(base()) {
+		t.Fatal("default public member-created space must be group-eligible")
+	}
+	opted := base()
+	opted.SpaceFederateOptOut = true
+	if spaceGroupEligible(opted) {
+		t.Fatal("federate_opt_out must drop the space out of the Group envelope")
+	}
+	priv := base()
+	priv.SpaceVisibility = "private"
+	if spaceGroupEligible(priv) {
+		t.Fatal("private space must stay ineligible")
+	}
+}
+
 func TestRemoteTimelineCursorShape(t *testing.T) {
 	// The cursor contract is base64(published_at|id) — the format the
 	// query's keyset predicate decodes. Pin both directions so a format

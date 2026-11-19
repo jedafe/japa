@@ -63,6 +63,11 @@
 	let presets = $state<PermissionPreset[]>([]);
 	let selectedPresetName = $state('');
 
+	// §126 — member spaces federate as fediverse Group actors by default;
+	// the owner can opt out here or later in space settings.
+	let federate = $state(true);
+	const federationEnabled = $derived(!!page.data.features?.['feature.federation']);
+
 	$effect(() => {
 		if (open) {
 			fetchSpaceTypes();
@@ -168,6 +173,7 @@
 				description: description.trim() || undefined
 			};
 			if (selectedPresetName) body.preset_name = selectedPresetName;
+			if (federationEnabled) body.federate_opt_out = !federate;
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);
 			if (res.data?.slug) {
@@ -196,6 +202,7 @@
 		description = '';
 		selectedSpaceTypeId = '';
 		selectedPresetName = '';
+		federate = true;
 		nameSuggestions = [];
 		showNameSuggestions = false;
 		error = '';
@@ -302,6 +309,18 @@
 								disabled={submitting}
 							/>
 						</div>
+					{/if}
+
+					{#if federationEnabled}
+						<label class="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
+							<input type="checkbox" bind:checked={federate} disabled={submitting} class="mt-0.5" />
+							<span>
+								{t('spaces.federate_label', 'Federate this space')}
+								<span class="block text-xs text-[var(--color-muted)]">
+									{t('spaces.federate_hint', 'Make the space followable from Mastodon and the fediverse. Public spaces federate by default.')}
+								</span>
+							</span>
+						</label>
 					{/if}
 
 					{#if ownedSpacesCount !== null}

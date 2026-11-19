@@ -1573,6 +1573,7 @@ const getGroupActorDocBySlug = `-- name: GetGroupActorDocBySlug :one
 SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem, fa.private_key_enc, fa.public_key_id, fa.status, fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.manually_approves_followers, fa.created_at, fa.updated_at, fa.key_rotated_at, fa.kind, fa.space_id, fa.moved_to_url, fa.moved_at, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
+       s.federate_opt_out AS space_federate_opt_out,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
@@ -1609,6 +1610,7 @@ type GetGroupActorDocBySlugRow struct {
 	SpaceDeletedAt            pgtype.Timestamptz `json:"space_deleted_at"`
 	SpaceLevel                string             `json:"space_level"`
 	SpaceCreatorUserID        pgtype.UUID        `json:"space_creator_user_id"`
+	SpaceFederateOptOut       bool               `json:"space_federate_opt_out"`
 	LogoBucket                *string            `json:"logo_bucket"`
 	LogoPath                  *string            `json:"logo_path"`
 	LogoMime                  *string            `json:"logo_mime"`
@@ -1654,6 +1656,7 @@ func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, slug string) (GetG
 		&i.SpaceDeletedAt,
 		&i.SpaceLevel,
 		&i.SpaceCreatorUserID,
+		&i.SpaceFederateOptOut,
 		&i.LogoBucket,
 		&i.LogoPath,
 		&i.LogoMime,
@@ -1882,6 +1885,7 @@ const getSpaceForGroupActor = `-- name: GetSpaceForGroupActor :one
 SELECT s.id, s.slug, s.name FROM spaces s
 WHERE s.id = $1 AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL
   AND s.level = 'custom' AND s.creator_user_id IS NOT NULL
+  AND s.federate_opt_out = false
 `
 
 type GetSpaceForGroupActorRow struct {

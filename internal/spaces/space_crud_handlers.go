@@ -852,6 +852,8 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		Description    *string  `json:"description"`
 		GeoCode        *string  `json:"geo_code"`
 		PresetName     string   `json:"preset_name"`
+		// §126: member-side opt-out — absent/nil keeps the default (federate).
+		FederateOptOut *bool `json:"federate_opt_out"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1047,6 +1049,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		CommentingPerm: axes.Commenting,
 		JoiningPerm:    axes.Joining,
 		Status:         StatusActive,
+		FederateOptOut: req.FederateOptOut,
 	}, user.UserID, parentSpaceUUIDs)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1117,6 +1120,8 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		Keywords       []string `json:"keywords"`
 		LogoMediaID    string   `json:"logo_media_id"`
 		HeaderImageID  *string  `json:"header_image_id"`
+		// §126: nil keeps the current flag; explicit true/false toggles it.
+		FederateOptOut *bool `json:"federate_opt_out"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1244,6 +1249,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		CommentingPerm: commentingPerm,
 		JoiningPerm:    joiningPerm,
 		Status:         status,
+		FederateOptOut: req.FederateOptOut,
 		ID:             id,
 	})
 	if err != nil {

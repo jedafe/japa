@@ -4534,6 +4534,7 @@ type Space struct {
 	Region         *string            `json:"region"`
 	Subregion      *string            `json:"subregion"`
 	SourceID       pgtype.UUID        `json:"source_id"`
+	FederateOptOut bool               `json:"federate_opt_out"`
 }
 
 type SpaceMember struct {

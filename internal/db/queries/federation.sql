@@ -776,6 +776,7 @@ RETURNING *;
 SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_description,
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
+       s.federate_opt_out AS space_federate_opt_out,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
@@ -788,7 +789,8 @@ WHERE fa.kind = 'group' AND lower(fa.preferred_username) = lower(@slug);
 -- a Group actor. Platform/geo spaces never federate as Groups.
 SELECT s.id, s.slug, s.name FROM spaces s
 WHERE s.id = @id AND s.status = 'active' AND s.visibility = 'public' AND s.deleted_at IS NULL
-  AND s.level = 'custom' AND s.creator_user_id IS NOT NULL;
+  AND s.level = 'custom' AND s.creator_user_id IS NOT NULL
+  AND s.federate_opt_out = false;
 
 -- name: ListGroupActors :many
 SELECT fa.*, s.slug AS space_slug, s.name AS space_name

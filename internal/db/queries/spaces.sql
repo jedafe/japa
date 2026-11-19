@@ -91,7 +91,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -129,7 +129,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -260,7 +260,7 @@ WHERE s.deleted_at IS NULL
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE spaces.level = @level AND deleted_at IS NULL
  AND status = 'active'
@@ -281,7 +281,7 @@ ORDER BY created_at DESC, id DESC;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
  AND status = 'active'
@@ -312,7 +312,7 @@ ORDER BY created_at DESC, id DESC;
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  cfv.value_text AS initials
 FROM spaces s
 LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
@@ -407,7 +407,7 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
@@ -532,7 +532,7 @@ GROUP BY r.space_id;
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -556,7 +556,7 @@ ORDER BY s.name ASC;
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -583,7 +583,7 @@ ORDER BY s.name ASC;
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  cfv.value_text AS initials
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
@@ -642,7 +642,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
  COALESCE(u.username, '') AS owner,
  COALESCE(u.id::text, '') AS owner_id,
  COALESCE(st.name, '') AS space_type
@@ -793,7 +793,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
@@ -810,7 +810,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @state_id AND s.level = 'city'
@@ -821,7 +821,7 @@ ORDER BY s.name;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.id = @id AND spaces.deleted_at IS NULL;
@@ -831,7 +831,7 @@ WHERE spaces.id = @id AND spaces.deleted_at IS NULL;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND deleted_at IS NULL
 LIMIT 1;
@@ -955,7 +955,7 @@ LIMIT 1;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE lower(name) = lower(@city_name)
  AND level = 'city'
@@ -969,7 +969,7 @@ LIMIT 1;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE lower(name) = lower(@state_name)
  AND level = 'state'
@@ -984,7 +984,7 @@ LIMIT 1;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.deleted_at IS NULL
@@ -1005,7 +1005,7 @@ WHERE spaces.deleted_at IS NULL
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.slug = @slug
@@ -1021,7 +1021,7 @@ WHERE spaces.slug = @slug
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
 FROM spaces
 WHERE geo_code = @geo_code
  AND level = 'country'
@@ -1033,23 +1033,26 @@ WHERE geo_code = @geo_code
 -- creator_user_id is the member-created discriminator (§05 amendment):
 -- member creation paths (CreateSpaceWithOwner) set it; platform-seeded
 -- paths (universities, geo, attractions) leave it NULL → is_primary.
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status, sqlc.narg(creator_user_id))
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status, sqlc.narg(creator_user_id), COALESCE(sqlc.narg(federate_opt_out), false))
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
+ federate_opt_out;
 
 -- name: UpdateSpace :one
 UPDATE spaces
 SET name = @name, description = sqlc.narg(description), wiki_content = sqlc.narg(wiki_content),
  geo_code = sqlc.narg(geo_code), visibility = @visibility, posting_perm = @posting_perm,
  replying_perm = @replying_perm, commenting_perm = @commenting_perm, joining_perm = @joining_perm,
- status = @status, updated_at = now()
+ status = @status, federate_opt_out = COALESCE(sqlc.narg(federate_opt_out), federate_opt_out),
+ updated_at = now()
 WHERE id = @id AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
+ federate_opt_out;
 
 -- name: UpdateSpaceSlug :one
 -- Updates only the slug of a space. Separate from UpdateSpace (which does not
@@ -1062,7 +1065,7 @@ WHERE id = @id AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out;
 
 -- name: UpdateSpaceKeywords :exec
 -- Updates only the keywords array on a space. Separate from UpdateSpace so
@@ -1310,7 +1313,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = @space_id AND s.deleted_at IS NULL
@@ -1322,7 +1325,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @parent_space_id AND s.deleted_at IS NULL
@@ -1443,7 +1446,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, sm.role AS member_role
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = @user_id
@@ -1473,7 +1476,7 @@ WHERE id = @id AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out;
 
 -- name: UpdateSpaceHeaderImageID :one
 -- Updates only the header_image_id on a space (banner image upload).
@@ -1483,7 +1486,7 @@ WHERE id = @id AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out;
 
 -- name: FindSpacesByKeywords :many
 -- Find primary (country/state/city) and public education spaces (including

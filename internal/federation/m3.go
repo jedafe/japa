@@ -424,7 +424,8 @@ func spaceGroupEligible(row gen.GetGroupActorDocBySlugRow) bool {
 		row.SpaceStatus == "active" &&
 		row.SpaceVisibility == "public" &&
 		row.SpaceLevel == "custom" &&
-		row.SpaceCreatorUserID.Valid
+		row.SpaceCreatorUserID.Valid &&
+		!row.SpaceFederateOptOut
 }
 
 func (s *Service) groupDocRow(ctx context.Context, slug string) (gen.GetGroupActorDocBySlugRow, error) {

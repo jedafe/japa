@@ -111,6 +111,12 @@
 	let keywords = $state<string>(untrack(() => initialKeywords.join(', ')));
 	let saving = $state(false);
 
+	// §126 — fediverse Group opt-out toggle. Only meaningful for member-created
+	// custom spaces; hidden entirely when feature.federation is off.
+	let federate = $state(untrack(() => !space.federate_opt_out));
+	const federationEnabled = $derived(!!page.data.features?.['feature.federation']);
+	const showFederationToggle = $derived(federationEnabled && space.level === 'custom');
+
 	// --- Tips & donations (§05 addendum; PATCH /spaces/{slug}/tip-settings) ---
 	// Owner-only for member-created custom spaces; mutually exclusive with a
 	// paid membership — the backend returns tips_not_allowed/monetization_conflict.
@@ -277,7 +283,8 @@
 				replying_perm: replyingPerm,
 				commenting_perm: commentingPerm,
 				joining_perm: joiningPerm,
-				keywords: keywordArray
+				keywords: keywordArray,
+				...(showFederationToggle ? { federate_opt_out: !federate } : {})
 			});
 			if (res.data) {
 				saved = true;
@@ -702,6 +709,23 @@
 				</label>
 			{/each}
 		</fieldset>
+
+		{#if showFederationToggle}
+			<fieldset class="rounded-lg border border-[var(--color-border)] p-5">
+				<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
+					{t('spaces.settings_federate', 'Fediverse')}
+				</legend>
+				<label class="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]">
+					<input type="checkbox" bind:checked={federate} class="mt-0.5" />
+					<span>
+						{t('spaces.federate_label', 'Federate this space')}
+						<span class="block text-xs text-[var(--color-muted)]">
+							{t('spaces.federate_hint', 'Make the space followable from Mastodon and the fediverse. Public spaces federate by default.')}
+						</span>
+					</span>
+				</label>
+			</fieldset>
+		{/if}
 
 		<!-- Who can post -->
 		<fieldset class="rounded-lg border border-[var(--color-border)] p-5">

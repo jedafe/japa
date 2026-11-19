@@ -893,6 +893,12 @@ func (s *Service) CreateSpaceWithOwner(
 
 	s.maybeCreateSourceForSpace(ctx, space, creatorUserID)
 
+	// §126: a member-created space born into the public envelope gets its
+	// Group actor immediately (unless federate_opt_out was set).
+	if space.Visibility == "public" && space.Level == LevelCustom && !space.FederateOptOut {
+		s.maybeProvisionGroupActor(ctx, space.ID)
+	}
+
 	return space, nil
 }
 
@@ -1170,6 +1176,12 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 	// Public/active gate mirrors the wiki anchor mint — a space that just
 	// closed takes its pages' public thread pages down with it.
 	s.dropThreadAnchorsIfClosed(ctx, space.ID)
+
+	// §126: a private→public flip (or clearing federate_opt_out) brings the
+	// space into the Group envelope — mint/revive its actor. Soft-fail.
+	if space.Visibility == "public" && space.Level == LevelCustom && !space.FederateOptOut {
+		s.maybeProvisionGroupActor(ctx, space.ID)
+	}
 
 	return space, nil
 }

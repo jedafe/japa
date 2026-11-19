@@ -1517,6 +1517,8 @@ export interface Space {
 	replying_perm: string;
 	commenting_perm: string;
 	joining_perm: string;
+	/** §126 — member-side opt-out; false/absent = public member spaces federate as a Group actor. */
+	federate_opt_out?: boolean;
 	status: string;
 	created_at: string;
 	updated_at: string;

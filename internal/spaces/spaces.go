@@ -264,6 +264,11 @@ type Service struct {
 	// threads and any content threads filed under it — when the space
 	// leaves public/active. Wired to comments.Service.DropAnchorsForSpace.
 	anchorDrop func(ctx context.Context, spaceID pgtype.UUID) error
+	// groupProvision mints (or revives) the space's fediverse Group actor —
+	// §126: member-created public spaces federate by default. Wired to
+	// federation.ProvisionGroupActor behind feature.federation; a no-op
+	// error for ineligible spaces makes the call site unconditional.
+	groupProvision func(ctx context.Context, spaceID pgtype.UUID) error
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
@@ -309,6 +314,28 @@ func (s *Service) dropThreadAnchorsIfClosed(ctx context.Context, spaceID pgtype.
 	}
 	if err := s.anchorDrop(ctx, spaceID); err != nil {
 		slog.Warn("spaces: thread-anchor drop failed",
+			"space_id", spaceID.String(), "error", err)
+	}
+}
+
+// SetGroupProvisioner wires the §126 Group-actor provisioner called when a
+// member-created space enters the public/active envelope — creation, a
+// private→public flip, or clearing federate_opt_out. Soft-fail: a
+// provisioning error must never break the space write that triggered it.
+func (s *Service) SetGroupProvisioner(fn func(ctx context.Context, spaceID pgtype.UUID) error) {
+	s.groupProvision = fn
+}
+
+// maybeProvisionGroupActor asks the federation service to mint/revive the
+// space's Group actor. The provisioner's own GetSpaceForGroupActor gate
+// re-checks the full eligibility envelope, so callers only pre-check the
+// cheap public/level predicates. Errors log-and-continue (§126).
+func (s *Service) maybeProvisionGroupActor(ctx context.Context, spaceID pgtype.UUID) {
+	if s.groupProvision == nil {
+		return
+	}
+	if err := s.groupProvision(ctx, spaceID); err != nil {
+		slog.Warn("spaces: group actor auto-provision failed",
 			"space_id", spaceID.String(), "error", err)
 	}
 }
