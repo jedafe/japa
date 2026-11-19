@@ -748,7 +748,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		OAuthLocalhostClients:  cfg.ATProtoOAuthLocalhostClients,
 	})
 	atprotoService.SetValkey(vkClient.Redis())
-	atprotoService.SetFlags(featureChecker) // §42: same federatable-type pruning as AP
+	atprotoService.SetFlags(featureChecker)     // §42: same federatable-type pruning as AP
+	atprotoService.SetSettings(settingsService) // §127 projection floor (federation.min_posts_discoverable)
 	worker.RegisterAtprotoService(atprotoService)
 	atprotoHandlers := atproto.NewHandlers(atprotoService)
 

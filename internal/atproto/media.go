@@ -14,7 +14,6 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
@@ -112,42 +111,6 @@ func (s *Service) imageEmbed(ctx context.Context, accountID, contentID pgtype.UU
 		return nil
 	}
 	return &bsky.FeedPost_Embed{EmbedImages: &bsky.EmbedImages{Images: images}}
-}
-
-// refreshProfileRecord re-derives a task-payload profile record from the
-// member's live row before the commit lands — the payload snapshot is
-// frozen at enqueue time, so back-to-back edits or a delayed media replay
-// would otherwise write stale text. Attach of avatar/banner blob refs
-// runs through the same live row. A missing profile row keeps the
-// payload fields (username-fallback record — the member has no stored
-// profile to be stale against).
-func (s *Service) refreshProfileRecord(ctx context.Context, accountID pgtype.UUID, rec *bsky.ActorProfile) {
-	profile, err := s.store.q.GetAtprotoUserProfileByAccount(ctx, accountID)
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("atproto: profile refresh", "account_id", accountID.String(), "error", err)
-		}
-		return
-	}
-	// createdAt stays payload-derived — atproto_accounts.created_at is
-	// immutable, so the snapshot can't be stale there.
-	fresh := profileRecord(profile.Username, gen.GetAtprotoUserProfileRow{
-		DisplayName: profile.DisplayName,
-		Bio:         profile.Bio,
-	}, time.Now())
-	rec.DisplayName = fresh.DisplayName
-	rec.Description = fresh.Description
-	s.enrichProfileBlobs(ctx, accountID, profile.AvatarMediaID, profile.BannerMediaID, rec)
-
-	// Profile tasks double as the identity-convergence point: a rename
-	// leaves the stored handle (and the network's #identity) stale until
-	// an unrelated read happens to re-sync — converge it deterministically
-	// on every profile write. Active-only: disabled/tombstone rows aren't
-	// re-enabled by an identity write.
-	if acct, err := s.store.q.GetAtprotoAccountByID(ctx, accountID); err == nil &&
-		acct.Status == AccountStatusActive {
-		s.syncHandle(ctx, acct.ID, acct.UserID, acct.Did, acct.Handle, profile.Username)
-	}
 }
 
 // enrichProfileBlobs attaches avatar/banner LexBlob refs to a profile

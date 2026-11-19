@@ -99,9 +99,27 @@ func startTestCompat(t *testing.T) valkeycompat.Cmdable {
 	return valkeycompat.NewAdapter(vk)
 }
 
+// floorSettings disables the §127 projection floor for tests that
+// predate it — the floor's own tests re-set the real value on the
+// returned service.
+type floorSettings struct{ minPosts int }
+
+func (f floorSettings) GetSetting(_ context.Context, _ string) (string, error) {
+	return "", errors.New("unset")
+}
+func (f floorSettings) GetSettingBool(_ context.Context, _ string) (bool, error) {
+	return false, errors.New("unset")
+}
+func (f floorSettings) GetSettingInt(_ context.Context, key string) (int, error) {
+	if key == "federation.min_posts_discoverable" {
+		return f.minPosts, nil
+	}
+	return 0, errors.New("unset")
+}
+
 func newAtprotoService(t *testing.T, d *db.DB) *Service {
 	t.Helper()
-	return NewService(d, Config{
+	svc := NewService(d, Config{
 		PDSURL:       "https://api.test.dev",
 		APIBase:      "https://api.test.dev",
 		SiteBase:     "https://test.dev",
@@ -115,6 +133,8 @@ func newAtprotoService(t *testing.T, d *db.DB) *Service {
 		// zero value.
 		OAuthReuseGraceSeconds: 30,
 	})
+	svc.SetSettings(floorSettings{0})
+	return svc
 }
 
 func TestDBEnableDisableAccount(t *testing.T) {
@@ -875,6 +895,80 @@ func TestDBRepoPublishAndDeletePost(t *testing.T) {
 	if err := d.Writer.QueryRow(ctx,
 		`SELECT COUNT(*) FROM atproto_records WHERE account_id = $1 AND collection = 'app.bsky.actor.profile'`, acct.ID).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("profile record missing after post delete (n=%d, err=%v)", n, err)
+	}
+}
+
+// §127 projection floor (federation.min_posts_discoverable): below the
+// floor the repo emits nothing — posts resolve as ineligible and the
+// profile is withheld — while the account + handle stay live. Crossing
+// the floor projects the withheld backlog together; dropping back
+// below tombstones everything.
+func TestDBRepoPostFloorGate(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	svc.SetSettings(floorSettings{3})
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+
+	countRecords := func(coll string) int {
+		t.Helper()
+		var n int
+		if err := d.Writer.QueryRow(ctx,
+			`SELECT COUNT(*) FROM atproto_records WHERE account_id = $1 AND collection = $2`,
+			acct.ID, coll).Scan(&n); err != nil {
+			t.Fatalf("count records: %v", err)
+		}
+		return n
+	}
+
+	// Enable ran below the floor: account active, no profile indexed.
+	if got := acct.Status; got != AccountStatusActive {
+		t.Fatalf("account status = %q, want active — identity is not gated", got)
+	}
+	if n := countRecords(CollectionProfile); n != 0 {
+		t.Fatalf("profile rows = %d below floor, want 0", n)
+	}
+
+	c1 := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	if _, err := svc.PublishContent(ctx, c1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PublishContent below floor err=%v, want ErrNotFound", err)
+	}
+	newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+	c3 := newAtprotoContent(t, ctx, d, userID, "discussion", "published", "public")
+
+	// At the floor the publish lands; the reconcile then converges the
+	// withheld backlog — profile + the two skipped posts — together.
+	if _, err := svc.PublishContent(ctx, c3); err != nil {
+		t.Fatalf("PublishContent at floor: %v", err)
+	}
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo: %v", err)
+	}
+	if n := countRecords(CollectionPost); n != 3 {
+		t.Fatalf("post rows = %d after crossing reconcile, want 3", n)
+	}
+	if n := countRecords(CollectionProfile); n != 1 {
+		t.Fatalf("profile rows = %d after crossing reconcile, want 1", n)
+	}
+
+	// Dropping below the floor converges back to an empty repo: posts
+	// tombstone via the reconcile stale-check (the floor makes the row
+	// read ineligible) and the profile comes down via publishProfile.
+	if _, err := d.Writer.Exec(ctx, `UPDATE contents SET status = 'draft' WHERE id = $1`, c3); err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if err := svc.ReconcileRepo(ctx, acct.ID); err != nil {
+		t.Fatalf("ReconcileRepo below floor: %v", err)
+	}
+	if n := countRecords(CollectionPost) + countRecords(CollectionProfile); n != 0 {
+		t.Fatalf("rows = %d below floor after reconcile, want 0", n)
+	}
+	if got := atprotoAccountFor(t, ctx, d, userID).Status; got != AccountStatusActive {
+		t.Fatalf("account status = %q, want active — floor must not disable identity", got)
 	}
 }
 

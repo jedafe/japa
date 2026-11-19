@@ -145,6 +145,7 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 	if err != nil {
 		return fmt.Errorf("atproto: reconcile list: %w", err)
 	}
+	minPosts := s.minPostsDiscoverable(ctx)
 	var errs error
 	perRow := func(err error) {
 		// Permanent per-row failures are skipped — the row already
@@ -154,9 +155,11 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 			errs = errors.Join(errs, err)
 		}
 	}
+	profileIndexed := false
 	for _, rec := range recs {
 		switch rec.Collection {
 		case CollectionProfile:
+			profileIndexed = true
 			perRow(s.publishProfile(ctx, &account))
 		case CollectionPost:
 			if !rec.ContentID.Valid {
@@ -169,6 +172,7 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 			if _, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 				ID:           rec.ContentID,
 				ContentTypes: s.federatableTypesFor(ctx),
+				MinPosts:     minPosts,
 			}); errors.Is(err, pgx.ErrNoRows) {
 				// Unpublished, private, deleted, opted-out, or a type that
 				// left the allowlist — the projected copy is stale.
@@ -197,6 +201,7 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 		UserID:       account.UserID,
 		AccountID:    accountID,
 		ContentTypes: s.federatableTypesFor(ctx),
+		MinPosts:     minPosts,
 	})
 	if err != nil {
 		return errors.Join(errs, fmt.Errorf("atproto: reconcile missing: %w", err))
@@ -204,6 +209,13 @@ func (s *Service) ReconcileRepo(ctx context.Context, accountID pgtype.UUID) erro
 	for _, contentID := range missing {
 		_, perr := s.PublishContent(ctx, contentID)
 		perRow(perr)
+	}
+	if !profileIndexed {
+		// A profile never projected — the account opted in below the
+		// §127 floor, or predates profiles — leaves no index row for the
+		// walk to see. publishProfile resolves the floor either way:
+		// met → upsert, unmet → no-op delete.
+		perRow(s.publishProfile(ctx, &account))
 	}
 	return errs
 }

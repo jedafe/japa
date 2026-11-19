@@ -28,6 +28,7 @@ import (
 	gen "github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/rss/model"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/rivo/uniseg"
 )
 
@@ -101,8 +102,20 @@ func (s *Service) federatableTypesFor(ctx context.Context) []string {
 	return out
 }
 
+// profileRecordURI is the canonical at:// address of the account's
+// app.bsky.actor.profile — rkey is always "self".
+func profileRecordURI(did string) string {
+	return fmt.Sprintf("at://%s/%s/%s", did, CollectionProfile, ProfileRkey)
+}
+
 // publishProfile writes the member's app.bsky.actor.profile — rkey
-// "self", so repeated calls are upserts, not duplicates.
+// "self", so repeated calls are upserts, not duplicates. The §127
+// projection floor applies: below federation.min_posts_discoverable
+// published posts the repo emits nothing, so the profile record is
+// deleted (a no-op when absent) rather than upserted — an author
+// dropping under the floor converges back to an empty repo the same
+// way a never-projected one stays empty. Identity (DID/handle) is not
+// part of the gate and still converges via syncHandle.
 func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccount) error {
 	if !s.featureOn(ctx) {
 		// Same freeze PublishContent enforces — reconcile_repo reaches
@@ -113,15 +126,19 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 	if err != nil {
 		return fmt.Errorf("atproto: profile user: %w", err)
 	}
+	// Profile writes double as the identity-convergence point — a
+	// rename leaves the stored handle stale until this sync. Handle
+	// resolution is identity, not discovery — it runs below the floor.
+	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
+	if !s.authorMeetsPostFloor(ctx, account.UserID) {
+		return s.DeleteRecordURI(ctx, account.ID, profileRecordURI(account.Did))
+	}
 	profile, err := s.store.q.GetAtprotoUserProfile(ctx, account.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("atproto: user profile: %w", err)
 	}
 	rec := profileRecord(user.Username, profile, account.CreatedAt.Time)
 	s.enrichProfileBlobs(ctx, account.ID, profile.AvatarMediaID, profile.BannerMediaID, rec)
-	// Same convergence the task path runs in refreshProfileRecord — a
-	// reconcile can be the first write after a rename.
-	account.Handle = s.syncHandle(ctx, account.ID, account.UserID, account.Did, account.Handle, user.Username)
 	if _, err := s.PutRecord(ctx, account.ID, CollectionProfile, ProfileRkey, rec, pgtype.UUID{}); err != nil {
 		return err
 	}
@@ -267,9 +284,11 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	if err != nil {
 		return "", fmt.Errorf("atproto: account for content: %w", err)
 	}
+	minPosts := s.minPostsDiscoverable(ctx)
 	row, err := s.store.q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 		ID:           contentID,
 		ContentTypes: s.federatableTypesFor(ctx),
+		MinPosts:     minPosts,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", permanent(ErrNotFound)
@@ -294,6 +313,7 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 		if _, err := q.GetAtprotoProjectableContent(ctx, gen.GetAtprotoProjectableContentParams{
 			ID:           contentID,
 			ContentTypes: s.federatableTypesFor(ctx),
+			MinPosts:     minPosts,
 		}); errors.Is(err, pgx.ErrNoRows) {
 			return nil, permanent(ErrNotFound)
 		} else if err != nil {
@@ -310,7 +330,37 @@ func (s *Service) PublishContent(ctx context.Context, contentID pgtype.UUID) (st
 	if errors.Is(err, ErrNotFound) {
 		return "", permanent(err)
 	}
+	if err == nil {
+		s.emitBacklogReconcile(ctx, accountID, row.AuthorID, minPosts)
+	}
 	return uri, err
+}
+
+// emitBacklogReconcile probes a just-published repo for unprojected
+// work and enqueues atproto:reconcile_repo when any exists — the §127
+// floor-crossing emit. Below the floor nothing projects, so a publish
+// can only succeed at or above it; whatever was withheld before the
+// crossing (earlier posts, the never-projected profile) is a backlog
+// the reconcile's missing-walk emits together. Steady-state authors
+// pay two indexed probes and enqueue nothing.
+func (s *Service) emitBacklogReconcile(ctx context.Context, accountID, authorID pgtype.UUID, minPosts int32) {
+	missing, err := s.store.q.ListAtprotoReconcileMissingPosts(ctx, gen.ListAtprotoReconcileMissingPostsParams{
+		UserID:       authorID,
+		AccountID:    accountID,
+		ContentTypes: s.federatableTypesFor(ctx),
+		MinPosts:     minPosts,
+	})
+	if err == nil && len(missing) > 0 {
+		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
+		return
+	}
+	account, aerr := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if aerr != nil {
+		return
+	}
+	if _, perr := s.store.q.GetAtprotoRecord(ctx, profileRecordURI(account.Did)); errors.Is(perr, pgx.ErrNoRows) {
+		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
+	}
 }
 
 // DeleteRecordURI removes the record addressed by an at:// URI —
@@ -421,12 +471,24 @@ func (s *Service) PublishRecordJSON(ctx context.Context, accountID pgtype.UUID, 
 	if err != nil {
 		return "", permanent(err)
 	}
-	// A4: profile records carry blob refs the pre-marshaled payload can't,
-	// and the payload's text fields can be stale by execution time
-	// (back-to-back edits, delayed media replays) — rebuild the whole
-	// record from the live row at write time.
-	if prof, ok := rec.(*bsky.ActorProfile); ok {
-		s.refreshProfileRecord(ctx, accountID, prof)
+	// A4: profile records converge through publishProfile — it rebuilds
+	// the record from the live rows (payload text is advisory: blob refs
+	// the pre-marshaled payload can't carry, and back-to-back edits or
+	// delayed media replays leave it stale by execution time), syncs the
+	// handle, and applies the §127 projection floor — below it the self
+	// record deletes instead of writing.
+	if _, ok := rec.(*bsky.ActorProfile); ok {
+		account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", permanent(ErrNotFound)
+		}
+		if err != nil {
+			return "", fmt.Errorf("atproto: profile account: %w", err)
+		}
+		if err := s.publishProfile(ctx, &account); err != nil {
+			return "", err
+		}
+		return profileRecordURI(account.Did), nil
 	}
 	// A record task carrying content_id must target the repo that owns
 	// the content — otherwise the index would link someone else's row

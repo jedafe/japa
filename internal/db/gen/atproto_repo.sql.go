@@ -132,6 +132,31 @@ func (q *Queries) GetAtprotoAccountStatusByID(ctx context.Context, id pgtype.UUI
 	return status, err
 }
 
+const getAtprotoAuthorMeetsPostFloor = `-- name: GetAtprotoAuthorMeetsPostFloor :one
+SELECT (SELECT COUNT(*) FROM (
+          SELECT 1 FROM contents pc
+          WHERE pc.author_id = $1
+            AND pc.status = 'published'
+            AND pc.deleted_at IS NULL
+          LIMIT $2) p) >= $2 AS meets_floor
+`
+
+type GetAtprotoAuthorMeetsPostFloorParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	MinPosts int32       `json:"min_posts"`
+}
+
+// §127 projection floor probe: true while the author's published
+// contents (any visibility — the same count the AP discoverable flag
+// uses) reach federation.min_posts_discoverable. LIMIT caps the scan
+// at the threshold; a floor of 0 disables the gate (0 >= 0).
+func (q *Queries) GetAtprotoAuthorMeetsPostFloor(ctx context.Context, arg GetAtprotoAuthorMeetsPostFloorParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getAtprotoAuthorMeetsPostFloor, arg.UserID, arg.MinPosts)
+	var meets_floor bool
+	err := row.Scan(&meets_floor)
+	return meets_floor, err
+}
+
 const getAtprotoBlob = `-- name: GetAtprotoBlob :one
 SELECT account_id, cid, mime, size, data, created_at FROM atproto_blobs
 WHERE account_id = $1 AND cid = $2
@@ -166,11 +191,24 @@ WHERE c.id = $1
   AND c.deleted_at IS NULL
   AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
+  -- §127 projection floor (federation.min_posts_discoverable): the
+  -- author's published contents (any visibility) must reach the floor
+  -- before anything projects to their repo. Below it the row reads as
+  -- ineligible — publish tasks no-op permanently and the reconcile
+  -- stale-check tombstones records already projected. LIMIT caps the
+  -- count at the threshold so the gate never scans past it.
+  AND (SELECT COUNT(*) FROM (
+         SELECT 1 FROM contents pc
+         WHERE pc.author_id = c.author_id
+           AND pc.status = 'published'
+           AND pc.deleted_at IS NULL
+         LIMIT $3) p) >= $3
 `
 
 type GetAtprotoProjectableContentParams struct {
 	ID           pgtype.UUID `json:"id"`
 	ContentTypes []string    `json:"content_types"`
+	MinPosts     int32       `json:"min_posts"`
 }
 
 type GetAtprotoProjectableContentRow struct {
@@ -191,7 +229,7 @@ type GetAtprotoProjectableContentRow struct {
 // eligibility as AP"). Also returns body (markdown) — feed.post text is
 // projected from the plain-text strip, not body_html.
 func (q *Queries) GetAtprotoProjectableContent(ctx context.Context, arg GetAtprotoProjectableContentParams) (GetAtprotoProjectableContentRow, error) {
-	row := q.db.QueryRow(ctx, getAtprotoProjectableContent, arg.ID, arg.ContentTypes)
+	row := q.db.QueryRow(ctx, getAtprotoProjectableContent, arg.ID, arg.ContentTypes, arg.MinPosts)
 	var i GetAtprotoProjectableContentRow
 	err := row.Scan(
 		&i.ID,
@@ -583,15 +621,22 @@ WHERE c.author_id = $1
   AND c.deleted_at IS NULL
   AND c.federate_opt_out = false
   AND c.content_type = ANY($2::text[])
+  AND (SELECT COUNT(*) FROM (
+         SELECT 1 FROM contents pc
+         WHERE pc.author_id = $1
+           AND pc.status = 'published'
+           AND pc.deleted_at IS NULL
+         LIMIT $3) p) >= $3
   AND NOT EXISTS (
     SELECT 1 FROM atproto_records r
-    WHERE r.content_id = c.id AND r.account_id = $3
+    WHERE r.content_id = c.id AND r.account_id = $4
   )
 `
 
 type ListAtprotoReconcileMissingPostsParams struct {
 	UserID       pgtype.UUID `json:"user_id"`
 	ContentTypes []string    `json:"content_types"`
+	MinPosts     int32       `json:"min_posts"`
 	AccountID    pgtype.UUID `json:"account_id"`
 }
 
@@ -601,7 +646,12 @@ type ListAtprotoReconcileMissingPostsParams struct {
 // so the index walk alone can't see it. Eligibility mirrors
 // GetAtprotoProjectableContent's predicate.
 func (q *Queries) ListAtprotoReconcileMissingPosts(ctx context.Context, arg ListAtprotoReconcileMissingPostsParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listAtprotoReconcileMissingPosts, arg.UserID, arg.ContentTypes, arg.AccountID)
+	rows, err := q.db.Query(ctx, listAtprotoReconcileMissingPosts,
+		arg.UserID,
+		arg.ContentTypes,
+		arg.MinPosts,
+		arg.AccountID,
+	)
 	if err != nil {
 		return nil, err
 	}

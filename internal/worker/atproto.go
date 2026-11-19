@@ -28,6 +28,7 @@ type atprotoRepoWriter interface {
 	AutoProvision(ctx context.Context, userID pgtype.UUID) error
 	ReconcileRepo(ctx context.Context, accountID pgtype.UUID) error
 	MigratePLC(ctx context.Context, accountID pgtype.UUID) error
+	EnqueueReconcileBelowPostFloor(ctx context.Context, accountID pgtype.UUID)
 }
 
 var atprotoSvc atprotoRepoWriter
@@ -368,6 +369,11 @@ func HandleAtprotoDeleteRecord(ctx context.Context, t *asynq.Task) error {
 			"account_id", payload.AccountID, "uri", payload.URI, "error", err)
 		return skipIfPermanent(err)
 	}
+	// A tombstone can drop the author under the §127 projection floor —
+	// the emit path only removes the deleted content's own record, so
+	// the profile (and any still-indexed siblings) need the reconcile
+	// walk to converge. Above the floor this no-ops.
+	atprotoSvc.EnqueueReconcileBelowPostFloor(ctx, accountID)
 	slog.Info("task:atproto:delete_record: committed", "uri", payload.URI)
 	return nil
 }

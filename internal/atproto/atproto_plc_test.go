@@ -28,13 +28,15 @@ import (
 // stub — plc tests assert against the stub's recorded ops.
 func newAtprotoServiceWithPLC(t *testing.T, d *db.DB, plcURL string) *Service {
 	t.Helper()
-	return NewService(d, Config{
+	svc := NewService(d, Config{
 		PDSURL:       "https://api.test.dev",
 		APIBase:      "https://api.test.dev",
 		SiteBase:     "https://test.dev",
 		HandleDomain: "test.dev",
 		PLCURL:       plcURL,
 	})
+	svc.SetSettings(floorSettings{0})
+	return svc
 }
 
 // TestPLCGenesisDIDDerivation reproduces the genesis DID of

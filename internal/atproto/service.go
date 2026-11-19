@@ -22,6 +22,15 @@ import (
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// SettingsReader is the hot-reloadable settings source — the same
+// contract federation's SettingsReader declares (injected via
+// SetSettings; optional, tests may leave nil).
+type SettingsReader interface {
+	GetSetting(ctx context.Context, key string) (string, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
+	GetSettingInt(ctx context.Context, key string) (int, error)
+}
+
 // Service holds the mini-PDS identity business logic.
 type Service struct {
 	cfg      Config
@@ -29,6 +38,7 @@ type Service struct {
 	store    *store
 	vk       valkeycompat.Cmdable
 	flags    features.FlagEvaluator
+	settings SettingsReader
 	media    MediaReader
 	notifier Notifier
 	jwtKey   []byte // A6-4 session HS256 secret (ephemeral when unconfigured)
@@ -63,6 +73,53 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 // content types (§42) from record projections — the same eligibility set
 // federation applies (§127: "same eligibility as AP").
 func (s *Service) SetFlags(c features.FlagEvaluator) { s.flags = c }
+
+// SetSettings wires the hot-reloadable system_settings source used for
+// the §127 projection floor — the shared
+// federation.min_posts_discoverable threshold (§126).
+func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
+
+// minPostsDiscoverable resolves federation.min_posts_discoverable —
+// the published-post floor an author's repo must reach before any
+// record projects (§127 projection floor). Missing/unreadable
+// settings fall back to the seeded default; 0 disables the gate.
+func (s *Service) minPostsDiscoverable(ctx context.Context) int32 {
+	const fallback = 3
+	if s.settings == nil {
+		return fallback
+	}
+	if n, err := s.settings.GetSettingInt(ctx, "federation.min_posts_discoverable"); err == nil && n >= 0 {
+		return int32(n)
+	}
+	return fallback
+}
+
+// authorMeetsPostFloor reports whether the author's published contents
+// (any visibility — the same count the AP discoverable flag uses)
+// reach the floor. The probe query caps the scan at the threshold.
+func (s *Service) authorMeetsPostFloor(ctx context.Context, userID pgtype.UUID) bool {
+	meets, err := s.store.q.GetAtprotoAuthorMeetsPostFloor(ctx, gen.GetAtprotoAuthorMeetsPostFloorParams{
+		UserID:   userID,
+		MinPosts: s.minPostsDiscoverable(ctx),
+	})
+	return err == nil && meets
+}
+
+// EnqueueReconcileBelowPostFloor is the atproto:delete_record
+// convergence hook (§127 projection floor): a tombstone can drop the
+// author under the floor, and emit paths only remove the deleted
+// content's own record — the profile and any still-indexed siblings
+// need the reconcile walk to converge. Above the floor, or on a
+// non-active account, this is a cheap no-op. Fire-and-forget (Rule 8).
+func (s *Service) EnqueueReconcileBelowPostFloor(ctx context.Context, accountID pgtype.UUID) {
+	account, err := s.store.q.GetAtprotoAccountByID(ctx, accountID)
+	if err != nil || account.Status != AccountStatusActive {
+		return
+	}
+	if !s.authorMeetsPostFloor(ctx, account.UserID) {
+		worker.EnqueueAtprotoReconcileRepo(ctx, accountID)
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Caching (jc:atp:* — valkey-keys-catalog)

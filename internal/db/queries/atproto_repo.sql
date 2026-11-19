@@ -113,7 +113,19 @@ WHERE c.id = @id
   AND c.visibility = 'public'
   AND c.deleted_at IS NULL
   AND c.federate_opt_out = false
-  AND c.content_type = ANY(@content_types::text[]);
+  AND c.content_type = ANY(@content_types::text[])
+  -- §127 projection floor (federation.min_posts_discoverable): the
+  -- author's published contents (any visibility) must reach the floor
+  -- before anything projects to their repo. Below it the row reads as
+  -- ineligible — publish tasks no-op permanently and the reconcile
+  -- stale-check tombstones records already projected. LIMIT caps the
+  -- count at the threshold so the gate never scans past it.
+  AND (SELECT COUNT(*) FROM (
+         SELECT 1 FROM contents pc
+         WHERE pc.author_id = c.author_id
+           AND pc.status = 'published'
+           AND pc.deleted_at IS NULL
+         LIMIT @min_posts) p) >= @min_posts;
 
 -- name: GetAtprotoRecordsByContent :many
 -- Content-keyed delete resolution: index rows are the durable proof a
@@ -197,10 +209,28 @@ WHERE c.author_id = @user_id
   AND c.deleted_at IS NULL
   AND c.federate_opt_out = false
   AND c.content_type = ANY(@content_types::text[])
+  AND (SELECT COUNT(*) FROM (
+         SELECT 1 FROM contents pc
+         WHERE pc.author_id = @user_id
+           AND pc.status = 'published'
+           AND pc.deleted_at IS NULL
+         LIMIT @min_posts) p) >= @min_posts
   AND NOT EXISTS (
     SELECT 1 FROM atproto_records r
     WHERE r.content_id = c.id AND r.account_id = @account_id
   );
+
+-- name: GetAtprotoAuthorMeetsPostFloor :one
+-- §127 projection floor probe: true while the author's published
+-- contents (any visibility — the same count the AP discoverable flag
+-- uses) reach federation.min_posts_discoverable. LIMIT caps the scan
+-- at the threshold; a floor of 0 disables the gate (0 >= 0).
+SELECT (SELECT COUNT(*) FROM (
+          SELECT 1 FROM contents pc
+          WHERE pc.author_id = @user_id
+            AND pc.status = 'published'
+            AND pc.deleted_at IS NULL
+          LIMIT @min_posts) p) >= @min_posts AS meets_floor;
 
 -- name: ListAtprotoBlobsByAccount :many
 -- CAR traversal sees embedded blob CIDs as DAG links — the blockstore
