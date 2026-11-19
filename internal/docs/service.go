@@ -163,13 +163,14 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 
 // ListAllDocPagesByAudience returns all pages (any status) for admin listing.
 func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]DocPage, error) {
-	return s.ListAllDocPagesByAudiencePaged(ctx, audience, 0, 0)
+	return s.ListAllDocPagesByAudiencePaged(ctx, audience, "", 0, 0)
 }
 
 // ListAllDocPagesByAudiencePaged is the limit/offset variant — a 0 limit
-// (LIMIT NULL) returns the full list.
-func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience string, limit, offset int32) ([]DocPage, error) {
-	rows, err := s.store.listAllByAudience(ctx, audience, limit, offset)
+// (LIMIT NULL) returns the full list; status "" lists every status (§44
+// amendment 2: ?status=draft|in_review|approved|published).
+func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience, status string, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAllByAudience(ctx, audience, status, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -201,12 +202,13 @@ func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience s
 
 // ListAllDocPages returns all pages (any status, any audience) for admin listing.
 func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
-	return s.ListAllDocPagesPaged(ctx, 0, 0)
+	return s.ListAllDocPagesPaged(ctx, "", 0, 0)
 }
 
-// ListAllDocPagesPaged is the limit/offset variant of ListAllDocPages.
-func (s *Service) ListAllDocPagesPaged(ctx context.Context, limit, offset int32) ([]DocPage, error) {
-	rows, err := s.store.listAll(ctx, limit, offset)
+// ListAllDocPagesPaged is the limit/offset variant of ListAllDocPages;
+// status "" lists every status (§44 amendment 2: ?status= filter).
+func (s *Service) ListAllDocPagesPaged(ctx context.Context, status string, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAll(ctx, status, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -1231,8 +1233,9 @@ func slugify(s string) string {
 }
 
 // GenerateDraft creates a doc page draft via the Content Agent (ADR-088).
-// The draft is inserted with ai_generated=true, review_status='draft'. It
-// requires HITL approval before publication.
+// The draft is inserted with ai_generated=true, review_status='in_review'
+// (§44 amendment 2) — it lands directly in the HITL review queue and
+// requires human approval before publication.
 // // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as content so a reviewer can
@@ -1290,8 +1293,18 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 		slog.Info("docs: AI Gateway generated draft", "title", input.Title, "audience", audience)
 	}
 
-	// Build TipTap JSON content from the generated text.
-	contentBytes := json.RawMessage(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
+	// Store the generated markdown as a JSON string body, not a TipTap doc:
+	// the Content Agent emits markdown, and stuffing it into a single
+	// paragraph node rendered the raw `##`/`-`/fence characters as one
+	// run-on paragraph. The docs renderer's string-content path (marked +
+	// sanitize) produces real headings/lists/code blocks, the admin editor
+	// round-trips string bodies verbatim ('markdown' kind), and the docs
+	// editor seeds from the rendered HTML — so structure survives the whole
+	// authoring loop.
+	contentBytes, err := json.Marshal(generatedText)
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("docs: marshal draft content: %w", err)
+	}
 
 	// Create the draft through CreateDocPage so slug/audience/taxonomy/
 	// content-size validation and cache invalidation stay in one place —
@@ -1302,7 +1315,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 		Audience:     audience,
 		Content:      contentBytes,
 		AIGenerated:  true,
-		ReviewStatus: "draft",
+		ReviewStatus: "in_review",
 		Position:     0,
 		Category:     &input.Category,
 		Subcategory:  &input.Subcategory,
@@ -1313,7 +1326,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 
 	return GenerateDraftResponse{
 		Status:  "accepted",
-		Message: "Content Agent draft created in 'draft' status. Review and approve to publish.",
+		Message: "Content Agent draft created in 'in_review' status. Review and approve to publish.",
 		PageID:  id.String(),
 	}, nil
 }

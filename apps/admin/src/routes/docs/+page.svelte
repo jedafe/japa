@@ -47,6 +47,9 @@
 	let showFormModal = $state(false);
 	let editingId = $state<string | null>(null);
 	let editingOriginalStatus = $state('');
+	// Optimistic lock token — sent as expected_updated_at so a stale admin
+	// form can't silently overwrite a concurrent docs-site save.
+	let editingUpdatedAt = $state('');
 	// True once openEdit's detail fetch populated the body — guards submit from
 	// writing an empty doc over stored content when the fetch failed.
 	let editContentReady = $state(false);
@@ -99,6 +102,14 @@
 	});
 
 	const audienceOptions = $derived(audiences.map((a) => ({ value: a, label: a })));
+	// Filter panel — all four statuses (the form's statusOptions is a
+	// reduced, forward-only list; the review-queue filter needs all of them).
+	const statusFilterOptions = $derived(
+		statuses.map((s) => ({
+			value: s,
+			label: t(`docs.status.${s}`, s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+		}))
+	);
 
 	// Category/subcategory suggestions — the managed catalog (docs.categories,
 	// public settings) merged with the taxonomy already in use on pages. Page
@@ -185,11 +196,11 @@
 	let generateSuccess = $state('');
 
 	const columns = [
-		{ key: 'title', label: t('docs.title_2') },
-		{ key: 'slug', label: t('docs.slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'audience', label: t('docs.audience'), render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
-		{ key: 'status', label: t('docs.status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
-		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` }
+		{ key: 'title', label: t('docs.title_2'), sortable: true },
+		{ key: 'slug', label: t('docs.slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'audience', label: t('docs.audience'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
+		{ key: 'status', label: t('docs.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
+		{ key: 'updated_at', label: t('docs.updated'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [
@@ -246,6 +257,7 @@
 		const q = searchQuery.toLowerCase().trim();
 		let result = source;
 		if (filterValue.audience) result = result.filter((d) => d.audience === filterValue.audience);
+		if (filterValue.status) result = result.filter((d) => d.status === filterValue.status);
 		if (q) result = result.filter((d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q));
 		return result;
 	});
@@ -298,6 +310,7 @@
 		errorMessage = '';
 		const params = new URLSearchParams();
 		if (filterValue.audience) params.set('audience', filterValue.audience);
+		if (filterValue.status) params.set('status', filterValue.status);
 		const result = await docsApi.list(params.toString());
 		if (result.ok) {
 			const raw = result.data as any[] | { data: any[] };
@@ -360,6 +373,7 @@
 	async function openEdit(item: DocPage) {
 		editingId = item.id;
 		editingOriginalStatus = item.status;
+		editingUpdatedAt = item.updated_at;
 		editContentReady = false;
 		editBodyKind = 'plain';
 		form = {
@@ -386,6 +400,7 @@
 			form.subcategory = d.subcategory ?? form.subcategory;
 			form.parentId = d.parent_id ?? '';
 			form.position = d.position ?? form.position;
+			editingUpdatedAt = d.updated_at ?? editingUpdatedAt;
 			editContentReady = true;
 		}
 	}
@@ -415,7 +430,13 @@
 				? undefined
 				: editBodyKind === 'markdown'
 					? form.body
-					: tiptapContent;
+					: editingId
+						? tiptapContent
+						: // Create stores the textarea verbatim as a markdown string body
+							// (the field is labelled "Body (Markdown)"): the docs renderer
+							// handles string content via marked, so headings/lists/fences
+							// work — TipTap paragraph-wrapping would render them literally.
+							form.body;
 		const payload = {
 			title: form.title.trim(),
 			slug,
@@ -428,7 +449,9 @@
 			category: form.category.trim(),
 			subcategory: form.subcategory.trim(),
 			parent_id: form.parentId,
-			position: Math.max(0, Math.trunc(form.position) || 0)
+			position: Math.max(0, Math.trunc(form.position) || 0),
+			// Optimistic lock — the docs-site editor uses the same contract.
+			...(editingId && editingUpdatedAt ? { expected_updated_at: editingUpdatedAt } : {})
 		};
 		const result = editingId ? await docsApi.update(editingId, payload) : await docsApi.create(payload);
 		if (result.ok) {
@@ -630,18 +653,27 @@
 	{loading}
 	searchable
 	onsearch={(q: string) => { searchQuery = q; }}
-	filters={[{ key: 'audience', label: t('docs.audience'), options: audienceOptions }]}
+	filters={[
+		{ key: 'audience', label: t('docs.audience'), options: audienceOptions },
+		{ key: 'status', label: t('docs.status'), options: statusFilterOptions }
+	]}
 	bind:filterValue
 	onfilterapply={loadDocs}
 	onrowclick={(row: DocPage) => openEdit(row)}
 	pageSize={25}
 	emptyMessage={t('docs.no_documentation_pages_found')}
-	showPagination={false}
 	actions={rowActions}
 />
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={showFormModal} title={editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')} size="lg">
+	<!-- Submit errors must render inside the modal — the page-level banner
+	     sits behind the dialog and is invisible while the form is open. -->
+	{#if errorMessage}
+		<div class="mb-3 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+			{errorMessage}
+		</div>
+	{/if}
 	<div class="space-y-3">
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>

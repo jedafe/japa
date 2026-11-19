@@ -171,10 +171,12 @@ func (s *Store) listByAudience(ctx context.Context, audience string) ([]gen.List
 	return rows, nil
 }
 
-// listAllByAudience returns all doc pages (any status) for an audience.
-func (s *Store) listAllByAudience(ctx context.Context, audience string, limit, offset int32) ([]gen.ListAllDocPagesByAudienceRow, error) {
+// listAllByAudience returns all doc pages for an audience, optionally
+// filtered to one review_status ("" = any status).
+func (s *Store) listAllByAudience(ctx context.Context, audience, status string, limit, offset int32) ([]gen.ListAllDocPagesByAudienceRow, error) {
 	rows, err := s.read.ListAllDocPagesByAudience(ctx, gen.ListAllDocPagesByAudienceParams{
 		Audience:     audience,
+		StatusFilter: status,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -185,9 +187,11 @@ func (s *Store) listAllByAudience(ctx context.Context, audience string, limit, o
 	return rows, nil
 }
 
-// listAll returns all doc pages (any status, any audience) for admin listing.
-func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]gen.ListAllDocPagesRow, error) {
+// listAll returns all doc pages (any audience) for admin listing, optionally
+// filtered to one review_status ("" = any status).
+func (s *Store) listAll(ctx context.Context, status string, limit, offset int32) ([]gen.ListAllDocPagesRow, error) {
 	rows, err := s.read.ListAllDocPages(ctx, gen.ListAllDocPagesParams{
+		StatusFilter: status,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})

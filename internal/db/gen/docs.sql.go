@@ -477,13 +477,15 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE ($1::text = '' OR p.review_status = $1)
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
-LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
+LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
 `
 
 type ListAllDocPagesParams struct {
-	ResultOffset int32 `json:"result_offset"`
-	ResultLimit  int32 `json:"result_limit"`
+	StatusFilter string `json:"status_filter"`
+	ResultOffset int32  `json:"result_offset"`
+	ResultLimit  int32  `json:"result_limit"`
 }
 
 type ListAllDocPagesRow struct {
@@ -507,7 +509,7 @@ type ListAllDocPagesRow struct {
 }
 
 func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams) ([]ListAllDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPages, arg.ResultOffset, arg.ResultLimit)
+	rows, err := q.db.Query(ctx, listAllDocPages, arg.StatusFilter, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -553,12 +555,14 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1
+  AND ($2::text = '' OR p.review_status = $2)
 ORDER BY p.position ASC, p.title ASC
-LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
+LIMIT NULLIF($4::int, 0) OFFSET COALESCE($3::int, 0)
 `
 
 type ListAllDocPagesByAudienceParams struct {
 	Audience     string `json:"audience"`
+	StatusFilter string `json:"status_filter"`
 	ResultOffset int32  `json:"result_offset"`
 	ResultLimit  int32  `json:"result_limit"`
 }
@@ -584,7 +588,12 @@ type ListAllDocPagesByAudienceRow struct {
 }
 
 func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocPagesByAudienceParams) ([]ListAllDocPagesByAudienceRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPagesByAudience, arg.Audience, arg.ResultOffset, arg.ResultLimit)
+	rows, err := q.db.Query(ctx, listAllDocPagesByAudience,
+		arg.Audience,
+		arg.StatusFilter,
+		arg.ResultOffset,
+		arg.ResultLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

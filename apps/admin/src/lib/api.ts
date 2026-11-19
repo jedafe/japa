@@ -345,9 +345,9 @@ export const impersonationApi = {
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
-	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string }) =>
+	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string }) =>
 		api('/admin/docs/pages', { method: 'POST', body }),
-	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string }) =>
+	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string; summary?: string; expected_updated_at?: string }) =>
 		api(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
 	approve: (id: string) =>
 		api(`/admin/docs/pages/${id}/approve`, { method: 'POST' }),

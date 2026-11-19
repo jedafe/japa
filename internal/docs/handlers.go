@@ -478,9 +478,15 @@ func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int3
 }
 
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
-// Returns all pages (any status) for admin listing. Optionally filters by ?audience=.
+// Returns all pages for admin listing. Optional filters: ?audience= and
+// ?status=draft|in_review|approved|published (§44 amendment 2).
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
+	status := r.URL.Query().Get("status")
+	if status != "" && !ValidReviewStatuses[status] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid review status")
+		return
+	}
 	if audience != "" {
 		if !ValidAudiences[audience] {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
@@ -495,7 +501,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, limit, offset)
+		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, status, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -510,7 +516,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), limit, offset)
+	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

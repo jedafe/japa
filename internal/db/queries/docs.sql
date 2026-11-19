@@ -47,6 +47,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience
+  AND (@status_filter::text = '' OR p.review_status = @status_filter)
 ORDER BY p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
@@ -58,6 +59,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE (@status_filter::text = '' OR p.review_status = @status_filter)
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
