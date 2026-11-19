@@ -10,7 +10,6 @@
 	import { t } from '#lib/i18n/index.js';
 	import { Modal } from '#lib/components/ui/index.js';
 	import { sendTip, newIdempotencyKey, fiatExponent, fiatMajor, getWalletBalance, getContentTipSummary, type TipConfig, type TipSummary } from '#lib/api/tips.js';
-	import { getAccessToken } from '#lib/api/token.svelte.js';
 	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn } from 'lucide-svelte';
 
 	interface Props {
@@ -266,7 +265,7 @@
 						<span class="text-xs font-normal text-muted-foreground">{balanceHint}</span>
 					{/if}
 				</span>
-				<input bind:value={amount} type="number" min="0" step={isFiat && exponent > 0 ? '0.01' : '1'} inputmode="decimal"
+				<input bind:value={amount} type="number" min="0" step={isFiat ? String(Math.pow(10, -exponent)) : '1'} inputmode="decimal"
 					class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
 			</label>
 			<label class="mb-3 block">

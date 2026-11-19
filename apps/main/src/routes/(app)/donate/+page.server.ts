@@ -13,7 +13,7 @@ export interface DonateConfig {
 	fiat_presets?: number[];
 	thank_you_message?: string | null;
 	oc_collective_slug?: string | null;
-	external_links?: { kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other'; label: string; url: string }[];
+	external_links?: { kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other' | 'product'; label: string; url: string }[];
 }
 
 export const load: PageServerLoad = async (event) => {

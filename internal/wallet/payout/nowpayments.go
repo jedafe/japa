@@ -370,13 +370,17 @@ func writeSortedJSON(buf *bytes.Buffer, v any) error {
 	}
 }
 
-// fiatExponent maps ISO-4217 minor-unit exponents (JPY=0; default 2).
-// Mirrors tips.currencyExponent — keep both in sync when adding currencies.
+// FiatExponent maps ISO-4217 minor-unit exponents (default 2). The
+// exponent-0 and exponent-3 lists cover every active ISO currency whose
+// minor unit differs from ×100 — mirrors wallet.CurrencyExponent (payout
+// can't delegate: wallet imports this package). Keep both in sync when
+// adding currencies.
 func FiatExponent(code string) int {
 	switch strings.ToUpper(code) {
-	case "JPY", "KRW", "VND", "XOF", "XAF":
+	case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+		"PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF":
 		return 0
-	case "BHD", "JOD", "KWD", "OMR":
+	case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND":
 		return 3
 	default:
 		return 2
