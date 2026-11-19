@@ -96,6 +96,10 @@ var (
 	ErrMessageTooLong      = errors.New("tip message is too long")
 	ErrOCAccess            = errors.New("token has no access to this collective")
 	ErrBMCAccess           = errors.New("token is invalid or lacks access")
+	// ErrWalletNotReady rejects an onchain tip whose sender wallet cannot
+	// originate a delegated-signer transfer — unprovisioned, suspended, or
+	// signer never activated (§128: activation is a member-only ceremony).
+	ErrWalletNotReady = errors.New("stablecoin wallet not ready")
 )
 
 // fiatMethods are the §17 payment providers usable for fiat tips.
@@ -403,7 +407,22 @@ type Service struct {
 	// spend-only bonus credits. Satisfied by *stablecoin.Service when the
 	// feature is live; nil keeps the legacy credits settle.
 	backedSettler BackedSettler
+	// senderWallets reports whether a member's §128 wallet can originate a
+	// delegated-signer transfer — the create-time gate for MethodStablecoin
+	// so an unsettleable sender fails fast instead of leaving a pending tip
+	// for the TTL sweep. Nil seam → no pre-create check (unit tests).
+	senderWallets SenderWalletChecker
 }
+
+// SenderWalletChecker reports whether a member's §128 wallet is ready to
+// send — provisioned, active, delegated signer registered (the same gate
+// stablecoin.Settle enforces at send time).
+type SenderWalletChecker interface {
+	WalletSettleable(ctx context.Context, userID pgtype.UUID) (bool, error)
+}
+
+// SetSenderWalletChecker injects the §128 sender-wallet seam.
+func (s *Service) SetSenderWalletChecker(c SenderWalletChecker) { s.senderWallets = c }
 
 // BackedSettler settles a fiat tip to the recipient's stablecoin wallet.
 // Returns (done true) when the onchain path applied; false → caller falls

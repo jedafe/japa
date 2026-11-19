@@ -274,6 +274,25 @@ func (s *Service) ProcessTipSettle(ctx context.Context, raw []byte) error {
 	if rw.Status == WalletStatusSuspended {
 		return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
 	}
+	// Sender wallet pre-check BEFORE claiming: an unsettleable sender
+	// (unprovisioned, suspended, signer never activated) can never complete
+	// the delegated transfer. Failing here leaves the tip 'pending' — the
+	// TTL sweep closes it — instead of deadlettering the task mid-claim
+	// with the tip stuck in 'settling', which the pending-only sweep never
+	// reclaims. The member can also fix the wallet between retries.
+	sw, err := s.store.GetWalletByUser(ctx, tip.SenderUserID)
+	if err != nil {
+		if !errors.Is(err, ErrWalletNotFound) {
+			return err
+		}
+		return fmt.Errorf("%s: sender wallet not provisioned", TaskTipSettleStablecoin)
+	}
+	if sw == nil || sw.Status != WalletStatusActive || sw.DelegatedSigner == nil {
+		if sw != nil && sw.Status == WalletStatusSuspended {
+			return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletSuspended)
+		}
+		return fmt.Errorf("%s: %w", TaskTipSettleStablecoin, ErrWalletNotSettleable)
+	}
 	// Claim last, immediately before the send: pending/failed → 'settling'
 	// atomically excludes racing refunds/sweeps (they only touch 'pending')
 	// while the onchain legs run outside any DB tx.

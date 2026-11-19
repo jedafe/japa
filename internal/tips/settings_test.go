@@ -310,7 +310,7 @@ func TestSettingsNeverExposeToken(t *testing.T) {
 
 func TestPublicConfigDisabled(t *testing.T) {
 	svc := &Service{store: newFakeStore()}
-	cfg, err := svc.PublicConfig(context.Background(), UserOwner(uid(t, "11111111-1111-1111-1111-111111111111")))
+	cfg, err := svc.PublicConfig(context.Background(), UserOwner(uid(t, "11111111-1111-1111-1111-111111111111")), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestPublicConfigMethods(t *testing.T) {
 	fs.links[settingID] = []gen.TipExternalLink{{Kind: "paypal", Label: "PayPal", Url: "https://paypal.me/x"}}
 
 	svc := &Service{store: fs, siteURL: "https://japa.example", perms: fakePerms{map[string]bool{"tips.receive": true}}}
-	cfg, err := svc.PublicConfig(context.Background(), owner)
+	cfg, err := svc.PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestPublicConfigSpaceGates(t *testing.T) {
 
 	// Eligible space + paying owner → enabled, external surfaces shown.
 	svc, _ := newSpaceSvc(true)
-	cfg, err := svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	cfg, err := svc.PublicConfig(context.Background(), SpaceOwner(spaceID), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestPublicConfigSpaceGates(t *testing.T) {
 	// Paying owner but ineligible space → disabled projection.
 	svc, fs := newSpaceSvc(true)
 	fs.spaceRecipient = pgtype.UUID{} // getSpaceTipRecipient → ErrNotFound
-	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -532,7 +532,7 @@ func TestPublicConfigSpaceGates(t *testing.T) {
 
 	// Eligible space but owner's tips.receive lapsed → enabled minus external.
 	svc, _ = newSpaceSvc(false)
-	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID))
+	cfg, err = svc.PublicConfig(context.Background(), SpaceOwner(spaceID), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	}
 	cfg, err := newSvc(fs, map[string]any{
 		"tips.enabled": true, "wallet.default_currency": "USD",
-	}).PublicConfig(context.Background(), owner)
+	}).PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -615,7 +615,7 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	}
 	cfg, err = newSvc(fs, map[string]any{
 		"tips.enabled": true, "wallet.default_currency": "NGN",
-	}).PublicConfig(context.Background(), owner)
+	}).PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -639,7 +639,7 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	}
 	cfg, err = newSvc(fs, map[string]any{
 		"tips.enabled": true, "wallet.default_currency": "XXX",
-	}).PublicConfig(context.Background(), owner)
+	}).PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -657,11 +657,87 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	}
 	cfg, err = newSvc(fs, map[string]any{
 		"tips.enabled": true, "wallet.default_currency": "ZZZ",
-	}).PublicConfig(context.Background(), owner)
+	}).PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
 	if cfg.FiatMinMinor != 0 || cfg.FiatMaxMinor != 0 || cfg.FiatPresets != nil {
 		t.Fatalf("inactive currency should omit fiat bounds: %+v", cfg)
+	}
+}
+
+// While feature.stablecoin_wallet is live the onchain rail replaces the
+// advertised 'credits' method — but only for viewers holding the pilot
+// tips.stablecoin grant. Anonymous visitors and ungranted members see no
+// wallet method at all (the create path would reject them anyway).
+func TestPublicConfigStablecoinViewerGate(t *testing.T) {
+	recipient := uid(t, "11111111-1111-1111-1111-111111111111")
+	pilot := uid(t, "22222222-2222-2222-2222-222222222222")
+	member := uid(t, "33333333-3333-3333-3333-333333333333")
+	owner := UserOwner(recipient)
+
+	newSvc := func() *Service {
+		fs := newFakeStore()
+		fs.mentor = true // recipient must be tips.receive-eligible
+		fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+			OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+			AcceptCredits: true,
+		}
+		return &Service{
+			store:    fs,
+			settings: fakeSettings{m: map[string]any{"tips.enabled": true}},
+			perms: fakePermsByUser{
+				recipient: {"tips.receive": true},
+				pilot:     {"tips.stablecoin": true},
+				member:    {},
+			},
+			features: fakeFeatures{on: map[string]bool{"feature.stablecoin_wallet": true}},
+		}
+	}
+	has := func(ms []string, m string) bool {
+		for _, x := range ms {
+			if x == m {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Pilot viewer → stablecoin advertised, credits replaced.
+	cfg, err := newSvc().PublicConfig(context.Background(), owner, pilot)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if !has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
+		t.Fatalf("pilot should see stablecoin (not credits): %v", cfg.Methods)
+	}
+
+	// Ungranted member → no wallet method at all.
+	cfg, err = newSvc().PublicConfig(context.Background(), owner, member)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
+		t.Fatalf("ungranted member should see no wallet method: %v", cfg.Methods)
+	}
+
+	// Anonymous viewer → same as ungranted.
+	cfg, err = newSvc().PublicConfig(context.Background(), owner, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
+		t.Fatalf("anonymous viewer should see no wallet method: %v", cfg.Methods)
+	}
+
+	// Flag off → the legacy credits rail is advertised to everyone.
+	svc := newSvc()
+	svc.features = fakeFeatures{on: map[string]bool{}}
+	cfg, err = svc.PublicConfig(context.Background(), owner, member)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if !has(cfg.Methods, MethodCredits) || has(cfg.Methods, MethodStablecoin) {
+		t.Fatalf("flag off should advertise credits: %v", cfg.Methods)
 	}
 }

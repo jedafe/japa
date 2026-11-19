@@ -309,3 +309,92 @@ func TestCreateTipInputFromRequest(t *testing.T) {
 		t.Fatal("expected invalid content_id error")
 	}
 }
+
+type fakeSenderWallets struct {
+	ok  bool
+	err error
+}
+
+func (f fakeSenderWallets) WalletSettleable(context.Context, pgtype.UUID) (bool, error) {
+	return f.ok, f.err
+}
+
+type fakeTipEnqueuer struct {
+	types []string
+	err   error
+}
+
+func (f *fakeTipEnqueuer) Enqueue(taskType string, _ []byte, _ ...interface{}) error {
+	f.types = append(f.types, taskType)
+	return f.err
+}
+
+func stablecoinSvc(fs *fakeStore, wallets SenderWalletChecker, enq *fakeTipEnqueuer) *Service {
+	return &Service{
+		store:         fs,
+		settings:      fakeSettings{m: map[string]any{"tips.enabled": true}},
+		perms:         fakePerms{map[string]bool{"tips.send": true, "tips.receive": true, "tips.stablecoin": true}},
+		features:      fakeFeatures{on: map[string]bool{"tips.enabled": true, "feature.stablecoin_wallet": true}},
+		senderWallets: wallets,
+		enqueuer:      enq,
+	}
+}
+
+func stablecoinInput() CreateTipInput {
+	return CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: MethodStablecoin, CreditsAmount: 100}
+}
+
+// An unsettleable sender wallet (unprovisioned, suspended, or signerless)
+// must fail the create fast — a pending tip would otherwise wait for the
+// TTL sweep, and a mid-claim settle failure strands the row in 'settling'.
+func TestCreateStablecoinTipSenderWalletGate(t *testing.T) {
+	// Not settleable → ErrWalletNotReady, no insert, no enqueue.
+	fs := newFakeStore()
+	enabledRecipient(fs, UserOwner(recipientID))
+	enq := &fakeTipEnqueuer{}
+	svc := stablecoinSvc(fs, fakeSenderWallets{ok: false}, enq)
+	if _, err := svc.CreateTip(context.Background(), senderID, stablecoinInput(), "k1"); !errors.Is(err, ErrWalletNotReady) {
+		t.Fatalf("unsettleable sender should be ErrWalletNotReady, got %v", err)
+	}
+	if len(fs.inserted) != 0 || len(enq.types) != 0 {
+		t.Fatalf("no tip/enqueue should happen for an unsettleable sender")
+	}
+
+	// Checker error propagates — never create a tip on an unknown state.
+	fs = newFakeStore()
+	enabledRecipient(fs, UserOwner(recipientID))
+	svc = stablecoinSvc(fs, fakeSenderWallets{err: errors.New("db down")}, &fakeTipEnqueuer{})
+	if _, err := svc.CreateTip(context.Background(), senderID, stablecoinInput(), "k2"); err == nil || errors.Is(err, ErrWalletNotReady) {
+		t.Fatalf("checker error should propagate, got %v", err)
+	}
+	if len(fs.inserted) != 0 {
+		t.Fatal("no insert on checker error")
+	}
+
+	// Settleable → pending tip inserted + settle task fanned out.
+	fs = newFakeStore()
+	enabledRecipient(fs, UserOwner(recipientID))
+	enq = &fakeTipEnqueuer{}
+	svc = stablecoinSvc(fs, fakeSenderWallets{ok: true}, enq)
+	res, err := svc.CreateTip(context.Background(), senderID, stablecoinInput(), "k3")
+	if err != nil {
+		t.Fatalf("CreateTip: %v", err)
+	}
+	if len(fs.inserted) != 1 || fs.inserted[0].Method != MethodStablecoin || fs.inserted[0].Status != StatusPending {
+		t.Fatalf("expected pending stablecoin insert, got %+v", fs.inserted)
+	}
+	if len(enq.types) != 1 || enq.types[0] != taskSettleStablecoin {
+		t.Fatalf("expected settle task fan-out, got %v", enq.types)
+	}
+	if res.Tip.Status != StatusPending {
+		t.Fatalf("result should be pending, got %q", res.Tip.Status)
+	}
+
+	// Nil seam → no gate (unit-test default).
+	fs = newFakeStore()
+	enabledRecipient(fs, UserOwner(recipientID))
+	svc = stablecoinSvc(fs, nil, &fakeTipEnqueuer{})
+	if _, err := svc.CreateTip(context.Background(), senderID, stablecoinInput(), "k4"); err != nil {
+		t.Fatalf("nil checker should not gate: %v", err)
+	}
+}

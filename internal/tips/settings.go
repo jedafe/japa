@@ -333,8 +333,10 @@ func niceMajor(v float64) float64 {
 	return n * mag
 }
 
-// PublicConfig returns the unauthenticated view of a recipient's tip config.
-func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, error) {
+// PublicConfig returns the public view of a recipient's tip config. viewer
+// is the optional authenticated requester (invalid UUID when anonymous) —
+// used to hide pilot-gated methods the viewer could never send.
+func (s *Service) PublicConfig(ctx context.Context, owner Owner, viewer pgtype.UUID) (PublicConfig, error) {
 	st, err := s.GetSettings(ctx, owner)
 	if err != nil {
 		return PublicConfig{}, err
@@ -370,7 +372,10 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	// §128 rail: while the stablecoin wallet feature is live, the onchain
 	// method is the advertised credits-denominated rail — the transitional
 	// 'credits' method stays creatable for tips.credits grantees (pilot)
-	// but is not advertised publicly.
+	// but is not advertised publicly. The rail itself is pilot-gated by
+	// tips.stablecoin: only viewers holding the grant see it — anonymous
+	// visitors and ungranted members would just hit not_eligible on send,
+	// so the button is hidden rather than baited.
 	if owner.Type != RecipientPlatform && st.AcceptCredits &&
 		s.features != nil && s.features.IsEnabled(ctx, "feature.stablecoin_wallet") {
 		methods := cfg.Methods[:0]
@@ -379,7 +384,10 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 				methods = append(methods, m)
 			}
 		}
-		cfg.Methods = append(methods, MethodStablecoin)
+		cfg.Methods = methods
+		if viewer.Valid && s.perms != nil && s.perms.Can(ctx, viewer, "tips.stablecoin") {
+			cfg.Methods = append(cfg.Methods, MethodStablecoin)
+		}
 	}
 	cfg.OCCollectiveSlug = st.OCCollectiveSlug
 	// Platform collective falls back to the control-panel setting when the

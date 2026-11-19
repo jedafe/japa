@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -60,7 +61,7 @@ func TestPublicConfigLinkURLRewrite(t *testing.T) {
 	}
 
 	svc := &Service{store: fs, siteURL: "https://japa.to", perms: fakePerms{map[string]bool{"tips.receive": true}}}
-	cfg, err := svc.PublicConfig(context.Background(), owner)
+	cfg, err := svc.PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestPublicConfigLinksHiddenWithoutSiteURL(t *testing.T) {
 	}
 
 	svc := &Service{store: fs, siteURL: "", perms: fakePerms{map[string]bool{"tips.receive": true}}}
-	cfg, err := svc.PublicConfig(context.Background(), owner)
+	cfg, err := svc.PublicConfig(context.Background(), owner, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)
 	}

@@ -31,6 +31,7 @@
 	let error = $state<string | null>(null);
 	let succeeded = $state(false);
 	let pendingTransfer = $state(false);
+	let settling = $state(false);
 	let idemKey = newIdempotencyKey();
 	let balance = $state<{ credits?: number }>({});
 	// §125 tip-summary — the public aggregate for the tipped content item
@@ -94,6 +95,7 @@
 			error = null;
 			succeeded = false;
 			pendingTransfer = false;
+			settling = false;
 			idemKey = newIdempotencyKey();
 			summary = null;
 			if (contentId) {
@@ -164,6 +166,11 @@
 			// Fiat method with no checkout URL (manual_transfer): the payment
 			// is pending off-platform settlement — show instructions state.
 			pendingTransfer = true;
+		} else if (method === 'stablecoin' && res.data.tip?.status !== 'completed') {
+			// The onchain rail settles async (tips:settle_stablecoin) — a
+			// pending tip is recorded, not landed. Show an in-flight state
+			// rather than claiming the thanks message prematurely.
+			settling = true;
 		} else {
 			succeeded = true;
 		}
@@ -197,6 +204,12 @@
 			<Clock class="size-10 text-amber-500" />
 			<p class="font-medium">{t('tips.transfer_pending', 'Tip created — complete the payment to settle it.')}</p>
 			<p class="text-sm text-muted-foreground">{t('tips.transfer_pending_hint', 'The tip is recorded once the payment is confirmed.')}</p>
+		</div>
+	{:else if settling}
+		<div class="flex flex-col items-center gap-3 py-6 text-center">
+			<Clock class="size-10 text-amber-500" />
+			<p class="font-medium">{t('tips.settling', 'Tip sent — settling onchain.')}</p>
+			<p class="text-sm text-muted-foreground">{t('tips.settling_hint', 'It lands in the recipient wallet once the transfer confirms.')}</p>
 		</div>
 	{:else if !authed}
 		<!-- Guests can see the dialog surface but must sign in to transact —

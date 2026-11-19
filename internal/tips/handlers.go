@@ -58,6 +58,15 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
+// viewerID resolves the optional-authed requester on public config routes
+// — anonymous requests get the zero UUID (no pilot-gated methods).
+func viewerID(r *http.Request) pgtype.UUID {
+	if user := auth.FromContext(r.Context()); user != nil {
+		return user.UserID
+	}
+	return pgtype.UUID{}
+}
+
 func writeTipError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTipsDisabled):
@@ -106,6 +115,8 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "oc_access_denied", "Token has no access to this collective")
 	case errors.Is(err, ErrBMCAccess):
 		errpkg.WriteError(w, http.StatusBadRequest, "bmc_access_denied", "Buy Me a Coffee token is invalid or lacks access")
+	case errors.Is(err, ErrWalletNotReady):
+		errpkg.WriteError(w, http.StatusConflict, "wallet_not_ready", "Activate your stablecoin wallet before sending onchain tips")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "The server encountered an error — please try again")
 	}
@@ -773,7 +784,7 @@ func (h *Handlers) PublicUserTipConfig(w http.ResponseWriter, r *http.Request) {
 		writeTipError(w, err)
 		return
 	}
-	cfg, err := h.service.PublicConfig(r.Context(), UserOwner(userID))
+	cfg, err := h.service.PublicConfig(r.Context(), UserOwner(userID), viewerID(r))
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -787,7 +798,7 @@ func (h *Handlers) PublicOrgTipConfig(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cfg, err := h.service.PublicConfig(r.Context(), OrgOwner(orgID))
+	cfg, err := h.service.PublicConfig(r.Context(), OrgOwner(orgID), viewerID(r))
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -797,7 +808,7 @@ func (h *Handlers) PublicOrgTipConfig(w http.ResponseWriter, r *http.Request) {
 
 // PublicDonate handles GET /api/v1/donate — the platform donation config.
 func (h *Handlers) PublicDonate(w http.ResponseWriter, r *http.Request) {
-	cfg, err := h.service.PublicConfig(r.Context(), PlatformOwner())
+	cfg, err := h.service.PublicConfig(r.Context(), PlatformOwner(), viewerID(r))
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -974,7 +985,7 @@ func (h *Handlers) GetSpaceTipSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok || !spaceTipReadGate(h, w, r, space) {
 		return
 	}
-	cfg, err := h.service.PublicConfig(r.Context(), SpaceOwner(space.ID))
+	cfg, err := h.service.PublicConfig(r.Context(), SpaceOwner(space.ID), viewerID(r))
 	if err != nil {
 		writeTipError(w, err)
 		return

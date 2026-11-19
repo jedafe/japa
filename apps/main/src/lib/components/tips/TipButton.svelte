@@ -5,6 +5,7 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { DropdownMenu } from 'bits-ui';
+	import { page } from '$app/state';
 	import { t } from '#lib/i18n/index.js';
 	import { getUserTipConfig, getOrgTipConfig, getSpaceTipConfig, type TipConfig } from '#lib/api/tips.js';
 	import TipDialog from './TipDialog.svelte';
@@ -50,7 +51,13 @@
 
 	async function click() {
 		const cfg = await ensureConfig();
-		if (cfg) {
+		// Don't open an empty dialog: the config may be enabled but carry
+		// no usable surface for THIS viewer (e.g. the pilot-gated stablecoin
+		// rail is hidden from ungranted members, leaving zero methods on a
+		// credits-only recipient). Guests still open — the sign-in prompt
+		// is their surface, and a fresh authed fetch happens after login.
+		const surfaces = (cfg?.methods?.length ?? 0) + (cfg?.external_links?.length ?? 0);
+		if (cfg && (surfaces > 0 || !!cfg.oc_collective_slug || !page.data.isAuthed)) {
 			open = true;
 		} else {
 			unavailable = true;

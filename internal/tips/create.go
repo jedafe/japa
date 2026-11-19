@@ -143,6 +143,21 @@ func (s *Service) createStablecoinTip(ctx context.Context, senderID pgtype.UUID,
 		return CreateTipResult{}, ErrBelowMinimum
 	}
 
+	// Fail fast when the sender's wallet can't originate the delegated
+	// transfer — an unprovisioned/suspended/signerless wallet can never
+	// settle, so without this gate the tip would sit pending until the TTL
+	// sweep fails it (or worse, deadletter mid-claim in 'settling'). Runs
+	// after input validation so request-level errors win the response.
+	if s.senderWallets != nil {
+		ok, err := s.senderWallets.WalletSettleable(ctx, senderID)
+		if err != nil {
+			return CreateTipResult{}, err
+		}
+		if !ok {
+			return CreateTipResult{}, ErrWalletNotReady
+		}
+	}
+
 	fee := amount * int64(s.feePercent(ctx)) / 100
 	net := amount - fee
 

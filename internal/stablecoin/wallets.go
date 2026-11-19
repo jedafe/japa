@@ -90,6 +90,22 @@ func (s *Service) GetWalletSummary(ctx context.Context, userID pgtype.UUID) (*Wa
 	return sum, nil
 }
 
+// WalletSettleable reports whether the member's wallet can originate a
+// delegated-signer transfer right now — the same gate Settle enforces
+// (active status + registered signer). §125 calls this at tip-create time
+// so an unsettleable sender fails fast instead of leaving a pending tip
+// for the TTL sweep. A missing wallet is a clean false, not an error.
+func (s *Service) WalletSettleable(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	w, err := s.store.GetWalletByUser(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ErrWalletNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return w != nil && w.Status == WalletStatusActive && w.DelegatedSigner != nil, nil
+}
+
 // RequestProvision enqueues stablecoin:provision_wallet — the lazy
 // bootstrap path used by GET /me/stablecoin-wallet (first wallet-surface
 // visit) and POST /me/stablecoin-wallet/provision. Fire-and-forget (Rule

@@ -1208,6 +1208,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// §128: fiat tips settle to the recipient's backed wallet when the
 	// stablecoin rail is live — real money never mints bonus credits.
 	tipsService.SetBackedSettler(stablecoinService)
+	// §128: onchain tips fail fast at create time when the sender's wallet
+	// can't originate the delegated transfer (unprovisioned/signerless).
+	tipsService.SetSenderWalletChecker(stablecoinService)
 	tipsService.SetSyncLocker(tipsSyncLockAdapter{rdb: vkClient.Redis()})
 	tipsService.SetClawbackNotifier(tipsNotifyDispatchAdapter{svc: notificationService})
 	tipsService.SetActivityEmitter(walletService) // ADR-136: tip.sent points for the sender
@@ -6160,7 +6163,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireVisibleProfileByUsername(usersService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)
-				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/donate", tipsHandlers.PublicDonate)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.send"),
 					mw.RateLimit(vkClient.Redis(), "tight"), mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
