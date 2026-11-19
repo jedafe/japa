@@ -319,7 +319,7 @@ func (s *Service) ProvisionGroupActor(ctx context.Context, spaceID, adminID pgty
 	// !{slug} handle — e.g. the slug was renamed away from an earlier
 	// federated space and reused (the handle stays bound to its original
 	// actor). Minting would only fail on the actor_url unique index.
-	if other, err := s.store.read.GetGroupActorDocBySlug(ctx, space.Slug); err == nil && other.SpaceID != space.ID {
+	if other, err := s.store.read.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: space.Slug, MinPosts: s.minPostsDiscoverable(ctx)}); err == nil && other.SpaceID != space.ID {
 		return gen.FederatedActor{}, ErrConflict
 	}
 	pubPEM, privPEM, err := generateActorKeyPair()
@@ -429,7 +429,7 @@ func spaceGroupEligible(row gen.GetGroupActorDocBySlugRow) bool {
 }
 
 func (s *Service) groupDocRow(ctx context.Context, slug string) (gen.GetGroupActorDocBySlugRow, error) {
-	row, err := s.store.read.GetGroupActorDocBySlug(ctx, slug)
+	row, err := s.store.read.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: slug, MinPosts: s.minPostsDiscoverable(ctx)})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return row, ErrNotFound
@@ -470,7 +470,7 @@ func (s *Service) GroupDocument(ctx context.Context, slug string) (map[string]an
 // GroupTombstone returns the 410 body for a tombstoned group actor —
 // mirrors GetActor's Tombstone branch.
 func (s *Service) GroupTombstone(ctx context.Context, slug string) map[string]any {
-	row, err := s.store.read.GetGroupActorDocBySlug(ctx, slug)
+	row, err := s.store.read.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: slug, MinPosts: s.minPostsDiscoverable(ctx)})
 	if err != nil || row.Status != ActorStatusTombstone {
 		return nil
 	}
@@ -510,7 +510,7 @@ func groupDocument(row gen.GetGroupActorDocBySlugRow, siteBase string) map[strin
 		"followers":                 row.FollowersUrl,
 		"following":                 row.FollowingUrl,
 		"manuallyApprovesFollowers": false,
-		"discoverable":              true,
+		"discoverable":              row.Discoverable,
 		"published":                 row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		"publicKey": map[string]any{
 			"id":           row.PublicKeyID,

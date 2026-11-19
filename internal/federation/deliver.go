@@ -367,7 +367,7 @@ func (s *Service) fanoutActorUpdate(ctx context.Context, actorID pgtype.UUID, en
 func (s *Service) actorDocForUpdate(ctx context.Context, author gen.FederatedActor) (map[string]any, error) {
 	switch author.Kind {
 	case ActorKindGroup:
-		row, err := s.store.read.GetGroupActorDocBySlug(ctx, author.PreferredUsername)
+		row, err := s.store.read.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: author.PreferredUsername, MinPosts: s.minPostsDiscoverable(ctx)})
 		if err != nil {
 			return nil, fmt.Errorf("group doc: %w", err)
 		}
@@ -380,7 +380,7 @@ func (s *Service) actorDocForUpdate(ctx context.Context, author gen.FederatedAct
 		if err != nil {
 			return nil, fmt.Errorf("load user: %w", err)
 		}
-		profile, err := s.store.actorProfile(ctx, user.Username)
+		profile, err := s.store.actorProfile(ctx, user.Username, s.minPostsDiscoverable(ctx))
 		if err != nil {
 			return nil, fmt.Errorf("profile: %w", err)
 		}

@@ -872,7 +872,15 @@ const getActorProfileByUsername = `-- name: GetActorProfileByUsername :one
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.moved_to_url,
        COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
-       COALESCE(ups.search_indexable, true) AS discoverable,
+       -- §126: discoverable to fediverse directories only when the member
+       -- stays search-indexable AND clears the published-post floor
+       -- (federation.min_posts_discoverable). The LIMIT caps the count
+       -- scan at the threshold itself.
+       COALESCE(ups.search_indexable, true) AND
+         (SELECT COUNT(*) FROM (
+            SELECT 1 FROM contents c
+            WHERE c.author_id = u.id AND c.status = 'published' AND c.deleted_at IS NULL
+            LIMIT $1) pc) >= $1 AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
@@ -880,12 +888,17 @@ FROM federated_actors fa
 JOIN users u ON u.id = fa.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
-WHERE (lower(fa.preferred_username) = lower($1) OR u.username = $1)
+WHERE (lower(fa.preferred_username) = lower($2) OR u.username = $2)
   AND fa.status = 'active'
   AND u.status = 'active'
-ORDER BY (u.username = $1) DESC, fa.created_at DESC
+ORDER BY (u.username = $2) DESC, fa.created_at DESC
 LIMIT 1
 `
+
+type GetActorProfileByUsernameParams struct {
+	MinPosts int32  `json:"min_posts"`
+	Username string `json:"username"`
+}
 
 type GetActorProfileByUsernameRow struct {
 	ActorID                   pgtype.UUID        `json:"actor_id"`
@@ -899,7 +912,7 @@ type GetActorProfileByUsernameRow struct {
 	FollowingUrl              string             `json:"following_url"`
 	MovedToUrl                *string            `json:"moved_to_url"`
 	ManuallyApprovesFollowers bool               `json:"manually_approves_followers"`
-	Discoverable              bool               `json:"discoverable"`
+	Discoverable              *bool              `json:"discoverable"`
 	Status                    string             `json:"status"`
 	ActorCreatedAt            pgtype.Timestamptz `json:"actor_created_at"`
 	Username                  string             `json:"username"`
@@ -915,8 +928,8 @@ type GetActorProfileByUsernameRow struct {
 // (no PII) in one join. manually_approves_followers derives live from the
 // member's profile_visibility ('followers' → true) so privacy changes
 // apply without touching the actor row.
-func (q *Queries) GetActorProfileByUsername(ctx context.Context, username string) (GetActorProfileByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, getActorProfileByUsername, username)
+func (q *Queries) GetActorProfileByUsername(ctx context.Context, arg GetActorProfileByUsernameParams) (GetActorProfileByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getActorProfileByUsername, arg.MinPosts, arg.Username)
 	var i GetActorProfileByUsernameRow
 	err := row.Scan(
 		&i.ActorID,
@@ -1574,12 +1587,24 @@ SELECT fa.id, fa.user_id, fa.actor_url, fa.preferred_username, fa.public_key_pem
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
        s.federate_opt_out AS space_federate_opt_out,
+       -- §126: Group ` + "`" + `discoverable` + "`" + ` shares the Person floor — the space
+       -- needs min_posts published contents (any visibility) before
+       -- fediverse directories may list it. Capped count, same as Person.
+       (SELECT COUNT(*) FROM (
+          SELECT 1 FROM contents c
+          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL
+          LIMIT $1) pc) >= $1 AS discoverable,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id
 LEFT JOIN media ml ON ml.id = s.logo_media_id AND ml.deleted_at IS NULL AND ml.confirmed = true
-WHERE fa.kind = 'group' AND lower(fa.preferred_username) = lower($1)
+WHERE fa.kind = 'group' AND lower(fa.preferred_username) = lower($2)
 `
+
+type GetGroupActorDocBySlugParams struct {
+	MinPosts int32  `json:"min_posts"`
+	Slug     string `json:"slug"`
+}
 
 type GetGroupActorDocBySlugRow struct {
 	ID                        pgtype.UUID        `json:"id"`
@@ -1611,6 +1636,7 @@ type GetGroupActorDocBySlugRow struct {
 	SpaceLevel                string             `json:"space_level"`
 	SpaceCreatorUserID        pgtype.UUID        `json:"space_creator_user_id"`
 	SpaceFederateOptOut       bool               `json:"space_federate_opt_out"`
+	Discoverable              bool               `json:"discoverable"`
 	LogoBucket                *string            `json:"logo_bucket"`
 	LogoPath                  *string            `json:"logo_path"`
 	LogoMime                  *string            `json:"logo_mime"`
@@ -1624,8 +1650,8 @@ type GetGroupActorDocBySlugRow struct {
 // never orphan the canonical actor URL, its WebFinger handle, or the
 // federation_follows edges keyed on it. idx_federated_actors_-
 // preferred_username (lower()) serves the lookup.
-func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, slug string) (GetGroupActorDocBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getGroupActorDocBySlug, slug)
+func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, arg GetGroupActorDocBySlugParams) (GetGroupActorDocBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getGroupActorDocBySlug, arg.MinPosts, arg.Slug)
 	var i GetGroupActorDocBySlugRow
 	err := row.Scan(
 		&i.ID,
@@ -1657,6 +1683,7 @@ func (q *Queries) GetGroupActorDocBySlug(ctx context.Context, slug string) (GetG
 		&i.SpaceLevel,
 		&i.SpaceCreatorUserID,
 		&i.SpaceFederateOptOut,
+		&i.Discoverable,
 		&i.LogoBucket,
 		&i.LogoPath,
 		&i.LogoMime,

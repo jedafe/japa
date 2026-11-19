@@ -401,7 +401,7 @@ func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objec
 		return actor, gen.GetActorProfileByUsernameRow{}, err
 	}
 	if slug, ok := strings.CutPrefix(objectID, base+"groups/"); ok && slug != "" && !strings.Contains(slug, "/") {
-		row, err := q.GetGroupActorDocBySlug(ctx, slug)
+		row, err := q.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: slug, MinPosts: s.minPostsDiscoverable(ctx)})
 		if err != nil {
 			return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, err
 		}
@@ -422,7 +422,7 @@ func (s *Service) localActorForObject(ctx context.Context, q *gen.Queries, objec
 	if err != nil {
 		return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, err
 	}
-	profile, err := q.GetActorProfileByUsername(ctx, username)
+	profile, err := q.GetActorProfileByUsername(ctx, gen.GetActorProfileByUsernameParams{Username: username, MinPosts: s.minPostsDiscoverable(ctx)})
 	if err != nil {
 		return gen.FederatedActor{}, gen.GetActorProfileByUsernameRow{}, err
 	}

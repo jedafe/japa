@@ -410,7 +410,7 @@ func (s *Service) flagTargetEntity(ctx context.Context, q *gen.Queries, targetID
 	// A Group actor URL flags the space itself.
 	if slug, ok := strings.CutPrefix(targetID, s.apiBase()+"/federation/groups/"); ok &&
 		slug != "" && !strings.Contains(slug, "/") {
-		row, err := s.store.read.GetGroupActorDocBySlug(ctx, slug)
+		row, err := s.store.read.GetGroupActorDocBySlug(ctx, gen.GetGroupActorDocBySlugParams{Slug: slug, MinPosts: s.minPostsDiscoverable(ctx)})
 		if err != nil || !row.SpaceID.Valid {
 			return "", pgtype.UUID{}, false
 		}

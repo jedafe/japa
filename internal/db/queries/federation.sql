@@ -36,7 +36,15 @@ WHERE fa.user_id = @user_id
 SELECT fa.id AS actor_id, fa.user_id, fa.actor_url, fa.public_key_pem, fa.public_key_id,
        fa.inbox_url, fa.outbox_url, fa.followers_url, fa.following_url, fa.moved_to_url,
        COALESCE(ups.profile_visibility = 'followers', false)::boolean AS manually_approves_followers,
-       COALESCE(ups.search_indexable, true) AS discoverable,
+       -- §126: discoverable to fediverse directories only when the member
+       -- stays search-indexable AND clears the published-post floor
+       -- (federation.min_posts_discoverable). The LIMIT caps the count
+       -- scan at the threshold itself.
+       COALESCE(ups.search_indexable, true) AND
+         (SELECT COUNT(*) FROM (
+            SELECT 1 FROM contents c
+            WHERE c.author_id = u.id AND c.status = 'published' AND c.deleted_at IS NULL
+            LIMIT @min_posts) pc) >= @min_posts AS discoverable,
        fa.status, fa.created_at AS actor_created_at,
        u.username, u.created_at AS user_created_at,
        up.display_name, up.bio, up.avatar_url, up.cover_url, up.website_url
@@ -777,6 +785,13 @@ SELECT fa.*, s.slug AS space_slug, s.name AS space_name, s.description AS space_
        s.visibility AS space_visibility, s.status AS space_status, s.deleted_at AS space_deleted_at,
        s.level AS space_level, s.creator_user_id AS space_creator_user_id,
        s.federate_opt_out AS space_federate_opt_out,
+       -- §126: Group `discoverable` shares the Person floor — the space
+       -- needs min_posts published contents (any visibility) before
+       -- fediverse directories may list it. Capped count, same as Person.
+       (SELECT COUNT(*) FROM (
+          SELECT 1 FROM contents c
+          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL
+          LIMIT @min_posts) pc) >= @min_posts AS discoverable,
        ml.storage_bucket AS logo_bucket, ml.storage_path AS logo_path, ml.mime_type AS logo_mime
 FROM federated_actors fa
 JOIN spaces s ON s.id = fa.space_id

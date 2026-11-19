@@ -159,6 +159,20 @@ func (s *Service) outboxPageSize(ctx context.Context) int32 {
 	return fallback
 }
 
+// minPostsDiscoverable is the §126 published-post floor a Person or Group
+// actor needs before its document reports `discoverable: true` to
+// fediverse directories. system_settings 'federation.min_posts_discoverable'.
+func (s *Service) minPostsDiscoverable(ctx context.Context) int32 {
+	const fallback = 3
+	if s.settings == nil {
+		return fallback
+	}
+	if n, err := s.settings.GetSettingInt(ctx, "federation.min_posts_discoverable"); err == nil && n > 0 {
+		return int32(n)
+	}
+	return fallback
+}
+
 // ---------------------------------------------------------------------------
 // WebFinger
 // ---------------------------------------------------------------------------
@@ -206,7 +220,7 @@ func (s *Service) Webfinger(ctx context.Context, resource string) (map[string]an
 	// The profile query carries the live users.username — the JRD subject
 	// echoes it, not the (possibly stale) preferred_username snapshot, so a
 	// renamed member's old handle resolves to their current acct address.
-	profile, err := s.store.actorProfile(ctx, username)
+	profile, err := s.store.actorProfile(ctx, username, s.minPostsDiscoverable(ctx))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -308,7 +322,7 @@ func (s *Service) ActorDocument(ctx context.Context, username string) (map[strin
 		return doc, nil
 	}
 
-	profile, err := s.store.actorProfile(ctx, username)
+	profile, err := s.store.actorProfile(ctx, username, s.minPostsDiscoverable(ctx))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

@@ -31,8 +31,8 @@ func (s *Store) actorByUsernameAnyStatus(ctx context.Context, username string) (
 	return s.read.GetFederatedActorByUsernameAnyStatus(ctx, username)
 }
 
-func (s *Store) actorProfile(ctx context.Context, username string) (gen.GetActorProfileByUsernameRow, error) {
-	return s.read.GetActorProfileByUsername(ctx, username)
+func (s *Store) actorProfile(ctx context.Context, username string, minPosts int32) (gen.GetActorProfileByUsernameRow, error) {
+	return s.read.GetActorProfileByUsername(ctx, gen.GetActorProfileByUsernameParams{Username: username, MinPosts: minPosts})
 }
 
 func (s *Store) actorByUserID(ctx context.Context, userID pgtype.UUID) (gen.FederatedActor, error) {
