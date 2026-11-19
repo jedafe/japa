@@ -14,11 +14,16 @@
 	let page = $state(1);
 	const pageSize = 20;
 	const totalPages = $derived(total != null ? Math.max(1, Math.ceil(total / pageSize)) : null);
+	// Rapid tab/page changes overlap loads — the last issuance wins so a
+	// slow response can't write the wrong tab's rows.
+	let loadSeq = 0;
 
 	async function load() {
+		const seq = ++loadSeq;
 		loading = true;
 		error = null;
 		const res = tab === 'received' ? await listTipsReceived(page, pageSize) : await listTipsSent(page, pageSize);
+		if (seq !== loadSeq) return;
 		loading = false;
 		if (res.error) {
 			error = res.error.message;

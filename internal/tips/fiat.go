@@ -48,9 +48,11 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 	}
 	// Validate the currency up front — an unknown code would create a tip +
 	// payment that can never settle (getCurrencyByCode fails inside the
-	// settle task and retries to the DLQ).
+	// settle task and retries to the DLQ). Inactive currencies are rejected
+	// the same way: every wallet entry point refuses them (§58), so a tip
+	// created in one could charge a payment ops deliberately disabled.
 	cur, err := s.store.getCurrencyByCode(ctx, currency)
-	if err != nil {
+	if err != nil || !cur.IsActive {
 		return CreateTipResult{}, ErrInvalidAmount
 	}
 

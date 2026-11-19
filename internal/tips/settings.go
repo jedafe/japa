@@ -267,7 +267,7 @@ func (s *Service) fiatPublicBounds(ctx context.Context, currency string, recipie
 		return 0, 0, nil
 	}
 	cur, err := s.store.getCurrencyByCode(ctx, currency)
-	if err != nil || cur.CreditsPerUnit <= 0 {
+	if err != nil || !cur.IsActive || cur.CreditsPerUnit <= 0 {
 		return 0, 0, nil
 	}
 	exp := currencyExponent(currency)

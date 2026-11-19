@@ -581,7 +581,7 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 
 	// USD at 100 cr/$: presets land at $5/$10/$25/$100 in minor units.
 	fs := newFakeStore()
-	fs.currencies["USD"] = gen.Currency{CreditsPerUnit: 100}
+	fs.currencies["USD"] = gen.Currency{CreditsPerUnit: 100, IsActive: true}
 	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
 		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
 		AcceptCredits: false, AcceptFiat: true,
@@ -608,7 +608,7 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	// NGN at ~0.065 cr/₦: the 100-credit floor forces ~₦1,539 minimum and
 	// only the ~$5-equivalent preset survives inside max_fiat_minor.
 	fs = newFakeStore()
-	fs.currencies["NGN"] = gen.Currency{CreditsPerUnit: 0.065}
+	fs.currencies["NGN"] = gen.Currency{CreditsPerUnit: 0.065, IsActive: true}
 	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
 		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
 		AcceptCredits: false, AcceptFiat: true,
@@ -645,5 +645,23 @@ func TestPublicConfigFiatBounds(t *testing.T) {
 	}
 	if cfg.FiatMinMinor != 0 || cfg.FiatMaxMinor != 0 || cfg.FiatPresets != nil {
 		t.Fatalf("unknown currency should omit fiat bounds: %+v", cfg)
+	}
+
+	// Inactive currency → same omission as unknown (create path rejects
+	// it too — advertising presets for an unpayable currency is a trap).
+	fs = newFakeStore()
+	fs.currencies["ZZZ"] = gen.Currency{CreditsPerUnit: 100, IsActive: false}
+	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
+		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
+		AcceptCredits: false, AcceptFiat: true,
+	}
+	cfg, err = newSvc(fs, map[string]any{
+		"tips.enabled": true, "wallet.default_currency": "ZZZ",
+	}).PublicConfig(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("PublicConfig: %v", err)
+	}
+	if cfg.FiatMinMinor != 0 || cfg.FiatMaxMinor != 0 || cfg.FiatPresets != nil {
+		t.Fatalf("inactive currency should omit fiat bounds: %+v", cfg)
 	}
 }
