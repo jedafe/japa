@@ -92,7 +92,7 @@ jobs:
             --tag "$IMAGE:${{ inputs.sha || github.sha }}" \
             --tag "$IMAGE:production" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,ignore-error=true" \
             --push $ARGS .
 
   deploy-production:

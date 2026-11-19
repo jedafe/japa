@@ -166,7 +166,7 @@ jobs:
             --tag "$IMAGE:${{ github.sha }}" \
             --tag "$IMAGE:staging" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
-            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,ignore-error=true" \
             --push ${{ steps.args.outputs.args }} .
 
   deploy-staging:
