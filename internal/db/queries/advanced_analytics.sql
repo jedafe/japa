@@ -109,12 +109,16 @@ LIMIT @top_n;
 -- =====================================================================
 
 -- name: AdvancedAnalyticsSubscriberGrowth :many
+-- subscriber_count is the current roster (no timestamp on the join row);
+-- new_subscribers is period-scoped via newsletter_subscribers.subscribed_at.
 SELECT
  nl.id AS list_id,
  nl.name AS list_name,
- COUNT(nls.subscriber_id) AS subscriber_count
+ COUNT(nls.subscriber_id) AS subscriber_count,
+ COUNT(nls.subscriber_id) FILTER (WHERE ns.subscribed_at >= now() - ($1::int * interval '1 day')) AS new_subscribers
 FROM newsletter_lists nl
 LEFT JOIN newsletter_list_subscribers nls ON nls.list_id = nl.id
+LEFT JOIN newsletter_subscribers ns ON ns.id = nls.subscriber_id
 
 GROUP BY nl.id, nl.name
 ORDER BY subscriber_count DESC;

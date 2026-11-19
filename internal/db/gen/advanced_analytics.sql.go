@@ -301,9 +301,11 @@ const advancedAnalyticsSubscriberGrowth = `-- name: AdvancedAnalyticsSubscriberG
 SELECT
  nl.id AS list_id,
  nl.name AS list_name,
- COUNT(nls.subscriber_id) AS subscriber_count
+ COUNT(nls.subscriber_id) AS subscriber_count,
+ COUNT(nls.subscriber_id) FILTER (WHERE ns.subscribed_at >= now() - ($1::int * interval '1 day')) AS new_subscribers
 FROM newsletter_lists nl
 LEFT JOIN newsletter_list_subscribers nls ON nls.list_id = nl.id
+LEFT JOIN newsletter_subscribers ns ON ns.id = nls.subscriber_id
 
 GROUP BY nl.id, nl.name
 ORDER BY subscriber_count DESC
@@ -313,13 +315,16 @@ type AdvancedAnalyticsSubscriberGrowthRow struct {
 	ListID          pgtype.UUID `json:"list_id"`
 	ListName        string      `json:"list_name"`
 	SubscriberCount int64       `json:"subscriber_count"`
+	NewSubscribers  int64       `json:"new_subscribers"`
 }
 
 // =====================================================================
 // Newsletter subscriber growth (total subscribers per list).
 // =====================================================================
-func (q *Queries) AdvancedAnalyticsSubscriberGrowth(ctx context.Context) ([]AdvancedAnalyticsSubscriberGrowthRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsSubscriberGrowth)
+// subscriber_count is the current roster (no timestamp on the join row);
+// new_subscribers is period-scoped via newsletter_subscribers.subscribed_at.
+func (q *Queries) AdvancedAnalyticsSubscriberGrowth(ctx context.Context, dollar_1 int32) ([]AdvancedAnalyticsSubscriberGrowthRow, error) {
+	rows, err := q.db.Query(ctx, advancedAnalyticsSubscriberGrowth, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +332,12 @@ func (q *Queries) AdvancedAnalyticsSubscriberGrowth(ctx context.Context) ([]Adva
 	var items []AdvancedAnalyticsSubscriberGrowthRow
 	for rows.Next() {
 		var i AdvancedAnalyticsSubscriberGrowthRow
-		if err := rows.Scan(&i.ListID, &i.ListName, &i.SubscriberCount); err != nil {
+		if err := rows.Scan(
+			&i.ListID,
+			&i.ListName,
+			&i.SubscriberCount,
+			&i.NewSubscribers,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

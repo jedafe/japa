@@ -1274,8 +1274,8 @@ export const analyticsAdminApi = {
 	getAdPerformance: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/ads${params ? `?${params}` : ''}`, opts),
 	getNewsletterEngagement: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/newsletter${params ? `?${params}` : ''}`, opts),
 	getRetention: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/retention${params ? `?${params}` : ''}`, opts),
-	exportCsv: (metric: string, period?: string) => {
-		const params = [metric && `metric=${metric}`, period && `period=${period}`].filter(Boolean).join('&');
+	exportCsv: (metric: string, period?: string, type?: string) => {
+		const params = [metric && `metric=${metric}`, period && `period=${period}`, type && `type=${type}`].filter(Boolean).join('&');
 		return fetchRaw(`/admin/analytics/export${params ? `?${params}` : ''}`);
 	},
 };

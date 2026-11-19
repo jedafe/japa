@@ -75,6 +75,14 @@
 	let secSeverity = $state("");
 	let secUnresolvedOnly = $state(false);
 
+	// monthly_revenue is the calendar month containing the range's `to` bound
+	// (today when unset) — name that month in the card label so the number
+	// can't be misread as "revenue across the whole selected range".
+	const revenueMonthLabel = $derived(
+		(to ? new Date(`${to}T00:00:00`) : new Date())
+			.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+	);
+
 	// NGN is the platform's settlement currency (payments.currency defaults to
 	// NGN); render major units with the naira symbol rather than a hardcoded $.
 	function fmtNaira(v: number | null | undefined): string {
@@ -231,9 +239,11 @@
 	}
 
 	// Section 66 — Export via the backend /admin/analytics/export route.
+	// top_content honors the active content-type filter; other metrics
+	// don't expose a type dimension so they export unfiltered.
 	async function handleAdvancedExport(metric: string) {
 		try {
-			const res = await analyticsAdminApi.exportCsv(metric, advancedPeriod);
+			const res = await analyticsAdminApi.exportCsv(metric, advancedPeriod, metric === 'top_content' ? advType || undefined : undefined);
 			if (!res.ok) throw new Error('Export failed');
 			// The backend returns CSV text; trigger a download.
 			const blob = new Blob([res.data as string], { type: 'text/csv' });
@@ -248,24 +258,33 @@
 		}
 	}
 
+	// Fetches only the newest finding — the probe the scan poller compares
+	// against so detection doesn't depend on which page/sort is loaded.
+	async function newestSecurityProbe(): Promise<{ id: string; total: number } | null> {
+		const res = await analyticsAdminApi.getSecurity('page_size=1&sort=created_at&dir=desc');
+		if (!res.ok) return null;
+		const d = res.data as { items?: Array<Record<string, unknown>>; total?: number };
+		return { id: String(d.items?.[0]?.id ?? ''), total: d.total ?? 0 };
+	}
+
 	async function runSecurityScan() {
 		scanning = true;
 		try {
+			// Baseline newest + count BEFORE enqueueing — the poller stops when
+			// either changes, so findings land detected regardless of which
+			// page or sort order the table is currently showing.
+			const baseline = await newestSecurityProbe();
 			const res = await analyticsAdminApi.runSecurityScan({});
 			if (!res.ok) throw new Error('Scan failed');
 			// The scan runs as an Asynq task — poll until new findings land
 			// (or ~20s elapses) instead of hoping a fixed sleep covers it.
-			const scanStart = Date.now();
-			const deadline = scanStart + 20000;
-			const baseline = security ?? [];
+			const deadline = Date.now() + 20000;
 			for (;;) {
 				await new Promise(r => setTimeout(r, 2000));
-				await loadSecurity();
-				const fresh = (security ?? []).some(
-					(s) => new Date(String(s.created_at ?? 0)).getTime() > scanStart - 5000
-				);
-				if ((security ?? []).length !== baseline.length || fresh || Date.now() > deadline) break;
+				const probe = await newestSecurityProbe();
+				if (!probe || probe.id !== baseline?.id || probe.total !== baseline?.total || Date.now() > deadline) break;
 			}
+			await loadSecurity();
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('analytics.scan_failed', 'Scan failed');
 		} finally {
@@ -607,7 +626,7 @@
 		}
 		if (revenueAnalytics) {
 			rows.push(`${csvCell('Total Revenue (NGN)')},${csvCell(revenueAnalytics.total_revenue)}`);
-			rows.push(`${csvCell('Monthly Revenue (NGN)')},${csvCell(revenueAnalytics.monthly_revenue)}`);
+			rows.push(`${csvCell(`Monthly Revenue (${revenueMonthLabel}, NGN)`)},${csvCell(revenueAnalytics.monthly_revenue)}`);
 			rows.push(`${csvCell('Active Subscriptions')},${csvCell(revenueAnalytics.active_subscriptions)}`);
 		}
 		const unresolved = (security ?? []).filter((s) => !s.resolved_at).length;
@@ -1002,7 +1021,7 @@
 	{#if !loading && activeTab === "revenue"}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<StatCard label={t('analytics.total_revenue', 'Total Revenue')} value={fmtNaira(revenueAnalytics?.total_revenue)} />
-			<StatCard label={t('analytics.monthly_revenue', 'Monthly Revenue')} value={fmtNaira(revenueAnalytics?.monthly_revenue)} />
+			<StatCard label={`${t('analytics.monthly_revenue', 'Monthly Revenue')} · ${revenueMonthLabel}`} value={fmtNaira(revenueAnalytics?.monthly_revenue)} />
 			<StatCard label={t('analytics.active_subscriptions', 'Active Subscriptions')} value={revenueAnalytics?.active_subscriptions ?? 0} />
 		</div>
 		<Card>
@@ -1185,7 +1204,8 @@
 						<DataTable
 							columns={[
 								{ key: "list_name", label: t('analytics.name', 'Name'), sortable: true },
-								{ key: "subscriber_count", label: t('analytics.subscribers', 'Subscribers'), sortable: true }
+								{ key: "subscriber_count", label: t('analytics.subscribers', 'Subscribers'), sortable: true },
+								{ key: "new_subscribers", label: t('analytics.new_in_period', 'New (period)'), sortable: true }
 							]}
 							data={newsletterEngagement?.lists ?? []}
 							pageSize={5}

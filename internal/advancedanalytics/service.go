@@ -117,8 +117,14 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, limit, days int) 
 }
 
 // GetSubscriberGrowth returns newsletter subscriber counts per list.
-func (s *Service) GetSubscriberGrowth(ctx context.Context) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
-	return s.store.SubscriberGrowth(ctx)
+// subscriber_count is the current roster; new_subscribers counts joins
+// within the last `days` days (clamped to a sane window).
+func (s *Service) GetSubscriberGrowth(ctx context.Context, days int) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
+	if days <= 0 || days > 3650 {
+		days = 30
+	}
+
+	return s.store.SubscriberGrowth(ctx, int32(days)) //nolint:gosec // days is clamped above.
 }
 
 // GetRetentionCohorts returns D1/D7/D30 retention cohorts. months>0 scopes
@@ -139,8 +145,9 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, limit, months int) ([
 	})
 }
 
-// ExportCSV exports analytics data as CSV.
-func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string, []string, error) {
+// ExportCSV exports analytics data as CSV. ctype optionally narrows the
+// top_content metric to one content type; other metrics ignore it.
+func (s *Service) ExportCSV(ctx context.Context, metric, period, ctype string) (string, []string, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, "analytics.export_enabled")
 	if err != nil || !enabled {
 		return "", nil, errors.New("advancedanalytics: CSV export is disabled")
@@ -148,7 +155,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 	switch metric {
 	case "top_content":
-		rows, err := s.GetTopContent(ctx, period, "", 100)
+		rows, err := s.GetTopContent(ctx, period, ctype, 100)
 		if err != nil {
 			return "", nil, err
 		}
@@ -501,7 +508,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	lists, err := h.svc.GetSubscriberGrowth(r.Context())
+	lists, err := h.svc.GetSubscriberGrowth(r.Context(), days)
 	if err != nil {
 		slog.Error("advancedanalytics: subscriber growth query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve subscriber growth")
@@ -563,7 +570,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csvData, _, err := h.svc.ExportCSV(r.Context(), metric, period)
+	csvData, _, err := h.svc.ExportCSV(r.Context(), metric, period, r.URL.Query().Get("type"))
 	if err != nil {
 		slog.Error("advancedanalytics: CSV export failed", "error", err, "metric", metric)
 		errpkg.WriteError(w, http.StatusBadRequest, "export_failed", "Export unavailable")
