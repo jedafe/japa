@@ -118,13 +118,24 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.filter.outputs.apps) }}
     env:
-      IMAGE: ${{ vars.REGISTRY_HOST }}/japa-${{ matrix.app }}
+      IMAGE: localhost:5000/japa-${{ matrix.app }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Open registry SSH tunnel
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/ci_registry
+          chmod 600 ~/.ssh/ci_registry
+          ssh -fN -i ~/.ssh/ci_registry \
+            -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
+            -L 5000:127.0.0.1:5000 root@${{ vars.VPS_HOST }}
+          timeout 15 bash -c 'until echo > /dev/tcp/127.0.0.1/5000 2>/dev/null; do sleep 1; done'
       - name: Log in to registry
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY_HOST }}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login localhost:5000 -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
       - name: Build args (staging PUBLIC_* vars)
         id: args
         env:
@@ -158,6 +169,12 @@ jobs:
           done
           echo "args=$A" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+          buildkitd-config-inline: |
+            [registry."localhost:5000"]
+              http = true
       - name: Build + push
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then DOCKERFILE=Dockerfile; else DOCKERFILE=apps/${{ matrix.app }}/Dockerfile; fi
