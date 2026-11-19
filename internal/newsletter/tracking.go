@@ -66,18 +66,30 @@ func (s *Service) RecordTrackEvent(ctx context.Context, kind, campaignID, recipi
 	sum := sha256.Sum256([]byte(digestInput))
 	dedupeKey := fmt.Sprintf("jc:newsletter_track:%s:%s:%s", kind, campaignID, hex.EncodeToString(sum[:]))
 
-	if vk := s.WebhookDedupe(); vk != nil {
+	vk := s.WebhookDedupe()
+
+	if vk != nil {
 		set, err := vk.SetNX(ctx, dedupeKey, 1, trackDedupeTTL).Result()
 		if err == nil && !set {
 			return nil // already counted inside the dedupe window
 		}
 	}
 
+	var err error
+
 	if kind == TrackScopeOpen {
-		return s.IncrementCampaignOpens(ctx, campaignID)
+		err = s.IncrementCampaignOpens(ctx, campaignID)
+	} else {
+		err = s.IncrementCampaignClicks(ctx, campaignID)
 	}
 
-	return s.IncrementCampaignClicks(ctx, campaignID)
+	if err != nil && vk != nil {
+		// Release the dedupe claim — otherwise a counted-but-failed event
+		// would be suppressed for the full TTL and never counted.
+		_, _ = vk.Del(ctx, dedupeKey).Result()
+	}
+
+	return err
 }
 
 // trackingScannerUAs are lowercase User-Agent substrings of known
@@ -89,16 +101,17 @@ func (s *Service) RecordTrackEvent(ctx context.Context, kind, campaignID, recipi
 // specific (never "mozilla") — over-matching only loses a count, while
 // under-matching inflates.
 var trackingScannerUAs = []string{
-	"googleimageproxy",    // Gmail image proxy
-	"yahoomailproxy",      // Yahoo image proxy
-	"outlook-ios-android", // Outlook app proxy fetcher
-	"barracuda",           // Barracuda link/image inspection
-	"proofpoint",          // Proofpoint URL Defense
-	"mimecast",            // Mimecast URL protection
-	"forcepoint",          // Forcepoint email security
-	"sophos",              // Sophos email gateway
-	"mcafee",              // McAfee/Skyhigh secure web gateway
-	"trendmicro",          // Trend Micro HES
+	"googleimageproxy", // Gmail image proxy
+	"yahoomailproxy",   // Yahoo image proxy
+	"outlook-ios",      // Outlook app image proxy fetcher
+	"outlook-android",
+	"barracuda",  // Barracuda link/image inspection
+	"proofpoint", // Proofpoint URL Defense
+	"mimecast",   // Mimecast URL protection
+	"forcepoint", // Forcepoint email security
+	"sophos",     // Sophos email gateway
+	"mcafee",     // McAfee/Skyhigh secure web gateway
+	"trendmicro", // Trend Micro HES
 	"trend micro",
 	"zscaler",  // Zscaler URL inspection
 	"defender", // Microsoft Defender SafeLinks

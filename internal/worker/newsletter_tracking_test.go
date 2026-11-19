@@ -137,6 +137,30 @@ func TestInjectNewsletterTrackingSkipsInvalidCampaign(t *testing.T) {
 	}
 }
 
+func TestNewsletterAPIBaseAppendsAPIPrefix(t *testing.T) {
+	// JC_API_PUBLIC_URL holds the API origin only (same convention as
+	// media.ServeURL) — the routes base must gain /api/v1 or every
+	// machine-targeted URL (List-Unsubscribe header, tracking links)
+	// 404s.
+	t.Setenv("JC_API_PUBLIC_URL", "https://api.japa.to")
+
+	if got := newsletterAPIBase("https://japa.to"); got != "https://api.japa.to/api/v1" {
+		t.Errorf("env branch = %q, want origin + /api/v1", got)
+	}
+}
+
+func TestNewsletterAPIBaseSiteFallback(t *testing.T) {
+	t.Setenv("JC_API_PUBLIC_URL", "")
+
+	if got := newsletterAPIBase("https://japa.to/"); got != "https://japa.to/api/v1" {
+		t.Errorf("site fallback = %q, want site base + /api/v1", got)
+	}
+
+	if got := newsletterAPIBase(""); got != "" {
+		t.Errorf("no site base = %q, want empty", got)
+	}
+}
+
 func TestNewsletterPollBouncesQueueTier(t *testing.T) {
 	t.Parallel()
 

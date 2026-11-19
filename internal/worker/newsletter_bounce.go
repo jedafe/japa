@@ -211,7 +211,15 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 		seqNums = seqNums[:cfg.batch]
 	}
 
-	bodySection := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierNone, Peek: true}
+	// Partial fetch caps each message at 1MB — delivery-status/feedback
+	// report parts sit at the front of a multipart/report, so the bound
+	// never loses a real event; it just stops a bloated original-message
+	// attachment (or a giant forwarded mail) from ballooning memory.
+	bodySection := &imap.FetchItemBodySection{
+		Specifier: imap.PartSpecifierNone,
+		Partial:   &imap.SectionPartial{Size: 1 << 20},
+		Peek:      true,
+	}
 
 	msgs, err := client.Fetch(imap.SeqSetNum(seqNums...), &imap.FetchOptions{
 		BodySection: []*imap.FetchItemBodySection{bodySection},
@@ -233,8 +241,15 @@ func pollBounceMailbox(ctx context.Context, cfg *bounceIMAPConfig) error {
 		}
 
 		markFailed := false
+		events := parseBounceEvents(raw)
 
-		for _, ev := range parseBounceEvents(raw) {
+		if len(events) == 0 {
+			// Spec: unparseable mail is logged — not every UNSEEN message
+			// is a bounce (forwards, auto-replies land here too).
+			slog.Debug("task:newsletter:poll_bounces: no events extracted", "seq", msg.SeqNum)
+		}
+
+		for _, ev := range events {
 			var markErr error
 
 			switch ev.kind {
@@ -327,7 +342,7 @@ func parseBounceEvents(raw []byte) []bounceEvent {
 
 	switch {
 	case strings.HasPrefix(mediaType, "multipart/"):
-		walkMultipart(msg.Body, params["boundary"], add)
+		walkMultipart(msg.Body, params["boundary"], 0, add)
 	case strings.HasPrefix(mediaType, "message/delivery-status"):
 		// Rare non-wrapped DSN — the whole body is the status report.
 		data, err := io.ReadAll(io.LimitReader(msg.Body, 1<<20))
@@ -344,8 +359,14 @@ func parseBounceEvents(raw []byte) []bounceEvent {
 // walkMultipart recurses a multipart body looking for report parts —
 // DSN/ARF parts can sit a level down when a relay wraps the report in
 // multipart/mixed. message/rfc822 parts (the bounced original) are NOT
-// descended: their content isn't a status report.
-func walkMultipart(r io.Reader, boundary string, add func(addr, kind string)) {
+// descended: their content isn't a status report. depth is capped so a
+// self-nesting MIME can't exhaust the stack — real reports sit within
+// 2-3 levels.
+func walkMultipart(r io.Reader, boundary string, depth int, add func(addr, kind string)) {
+	if boundary == "" || depth >= 8 {
+		return
+	}
+
 	mr := multipart.NewReader(r, boundary)
 
 	for {
@@ -358,7 +379,7 @@ func walkMultipart(r io.Reader, boundary string, add func(addr, kind string)) {
 
 		switch {
 		case strings.HasPrefix(partType, "multipart/"):
-			walkMultipart(part, partParams["boundary"], add)
+			walkMultipart(part, partParams["boundary"], depth+1, add)
 		case strings.HasPrefix(partType, "message/delivery-status"):
 			for _, ev := range parseDeliveryStatus(part) {
 				add(ev.email, ev.kind)

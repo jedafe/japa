@@ -1144,17 +1144,14 @@ func (h *Handlers) HandleTrackOpen(w http.ResponseWriter, r *http.Request) {
 	// The e param is the opaque per-recipient tag minted at send time
 	// (hex HMAC over the normalized address — §62), never the raw email.
 	// Scanner/proxy User-Agents are served the pixel but not counted, so
-	// mailbox-provider prefetch doesn't inflate open rates.
+	// mailbox-provider prefetch doesn't inflate open rates. The counter
+	// UPDATE itself no-ops on a deleted/malformed campaign — no existence
+	// check needed.
 	if campaignID != "" && recipient != "" &&
 		!IsTrackingScanner(r.UserAgent()) &&
 		email.VerifyTracking(h.Service.TrackingSecret(), sig, TrackScopeOpen, campaignID, recipient) {
-		var cid pgtype.UUID
-		if err := cid.Scan(campaignID); err == nil {
-			if _, gerr := h.Service.GetCampaign(r.Context(), cid); gerr == nil {
-				if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeOpen, campaignID, recipient, ""); err != nil {
-					slog.Warn("newsletter track: open increment failed", "campaign_id", campaignID, "error", err)
-				}
-			}
+		if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeOpen, campaignID, recipient, ""); err != nil {
+			slog.Warn("newsletter track: open increment failed", "campaign_id", campaignID, "error", err)
 		}
 	}
 
@@ -1191,12 +1188,11 @@ func (h *Handlers) HandleTrackClick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cid pgtype.UUID
-	if err := cid.Scan(campaignID); err == nil && !IsTrackingScanner(r.UserAgent()) {
-		if _, gerr := h.Service.GetCampaign(r.Context(), cid); gerr == nil {
-			if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeClick, campaignID, recipient, dest); err != nil {
-				slog.Warn("newsletter track: click increment failed", "campaign_id", campaignID, "error", err)
-			}
+	// Counter UPDATE no-ops on deleted/malformed campaigns — the redirect
+	// fires regardless so a valid link never dead-ends.
+	if !IsTrackingScanner(r.UserAgent()) {
+		if err := h.Service.RecordTrackEvent(r.Context(), TrackScopeClick, campaignID, recipient, dest); err != nil {
+			slog.Warn("newsletter track: click increment failed", "campaign_id", campaignID, "error", err)
 		}
 	}
 

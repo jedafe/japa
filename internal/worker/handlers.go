@@ -510,7 +510,14 @@ func resolveBaseURL(ctx context.Context) string {
 
 	row, err := q.GetSettingValue(ctx, "site.base_url")
 	if err == nil && len(row) > 0 {
-		return string(row)
+		// system_settings stores values as jsonb — a plain string
+		// setting arrives with literal quotes ("https://x") and must be
+		// unmarshalled, matching config.GetStringOr. Anything that
+		// doesn't decode to a non-empty string falls through to env.
+		var s string
+		if json.Unmarshal(row, &s) == nil && s != "" {
+			return s
+		}
 	}
 
 	return os.Getenv("JC_SITE_URL")
@@ -585,13 +592,16 @@ func newsletterUnsubscribeLink(ctx context.Context, base, apiBase, recipient str
 	return url, headers
 }
 
-// newsletterAPIBase resolves the public API base URL for URLs that must
-// reach the API server directly (List-Unsubscribe header URI, tracking
-// endpoints): JC_API_PUBLIC_URL first, then the already-resolved site
-// base + "/api/v1" — matching the §62 self-hosted transport contract.
+// newsletterAPIBase resolves the public API routes base (origin +
+// "/api/v1") for URLs that must reach the API server directly
+// (List-Unsubscribe header URI, tracking endpoints): JC_API_PUBLIC_URL
+// first, then the already-resolved site base — matching the §62
+// self-hosted transport contract. JC_API_PUBLIC_URL holds the API
+// origin only (same convention as media.ServeURL), so "/api/v1" is
+// appended in both branches.
 func newsletterAPIBase(siteBase string) string {
 	if v := os.Getenv("JC_API_PUBLIC_URL"); v != "" {
-		return strings.TrimRight(v, "/")
+		return strings.TrimRight(v, "/") + "/api/v1"
 	}
 
 	if siteBase == "" {
@@ -4382,8 +4392,7 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 	// and must carry List-Unsubscribe headers. The HTML <a> footer only
 	// applies to HTML bodies; a plain-text template override gets a bare
 	// URL line instead.
-	digestBase := resolveBaseURL(ctx)
-	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, digestBase, newsletterAPIBase(digestBase), email)
+	unsubURL, unsubHeaders := newsletterUnsubscribeLink(ctx, siteBase, newsletterAPIBase(siteBase), email)
 	if unsubURL != "" {
 		if isHTML {
 			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
