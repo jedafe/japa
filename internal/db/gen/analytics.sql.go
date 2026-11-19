@@ -11,6 +11,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countDailyContentStats = `-- name: CountDailyContentStats :one
+SELECT COUNT(*)::bigint AS total
+FROM contents c
+WHERE c.status != 'draft'
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2)
+`
+
+type CountDailyContentStatsParams struct {
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+}
+
+func (q *Queries) CountDailyContentStats(ctx context.Context, arg CountDailyContentStatsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDailyContentStats, arg.Column1, arg.Column2)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const countDailySpaceStats = `-- name: CountDailySpaceStats :one
+SELECT COUNT(*)::bigint AS total
+FROM spaces s
+WHERE s.deleted_at IS NULL
+ AND ($1::date IS NULL OR s.created_at::date >= $1)
+ AND ($2::date IS NULL OR s.created_at::date <= $2)
+`
+
+type CountDailySpaceStatsParams struct {
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+}
+
+func (q *Queries) CountDailySpaceStats(ctx context.Context, arg CountDailySpaceStatsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDailySpaceStats, arg.Column1, arg.Column2)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countGenerationsToday = `-- name: CountGenerationsToday :one
 SELECT COUNT(*)::int FROM studio_jobs
 WHERE created_at >= date_trunc('day', NOW())
@@ -61,6 +101,67 @@ func (q *Queries) CountPendingReviews(ctx context.Context) (int32, error) {
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const countPlatformEvents = `-- name: CountPlatformEvents :one
+SELECT COUNT(*)::bigint AS total
+FROM platform_events
+WHERE ($1::text = '' OR event_type = $1)
+ AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $2)
+ AND ($3::text = '' OR entity_type = $3)
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
+ AND ($5::timestamptz IS NULL OR created_at <= $5)
+`
+
+type CountPlatformEventsParams struct {
+	Column1 string             `json:"column_1"`
+	Column2 pgtype.UUID        `json:"column_2"`
+	Column3 string             `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
+}
+
+// Total row count for the same filter set as ListPlatformEvents, returned as
+// meta.total so the admin UI can server-paginate the event log.
+func (q *Queries) CountPlatformEvents(ctx context.Context, arg CountPlatformEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlatformEvents,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const countSecurityScanResults = `-- name: CountSecurityScanResults :one
+SELECT COUNT(*)::bigint AS total
+FROM security_scan_results
+WHERE ($1::text = '' OR severity = $1)
+ AND ($2::bool = false OR resolved_at IS NULL)
+ AND ($3::timestamptz IS NULL OR created_at >= $3)
+ AND ($4::timestamptz IS NULL OR created_at <= $4)
+`
+
+type CountSecurityScanResultsParams struct {
+	Column1 string             `json:"column_1"`
+	Column2 bool               `json:"column_2"`
+	Column3 pgtype.Timestamptz `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+}
+
+func (q *Queries) CountSecurityScanResults(ctx context.Context, arg CountSecurityScanResultsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSecurityScanResults,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const countSpamQueue = `-- name: CountSpamQueue :one
@@ -152,7 +253,10 @@ updated AS (
  SET severity = $2,
  finding = $3,
  meta = $4,
- created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END
+ created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END,
+ -- Re-surface a resolved finding when the rescan reports a different
+ -- severity — the condition materially changed and needs fresh triage.
+ resolved_at = CASE WHEN s.severity <> $2 THEN NULL ELSE s.resolved_at END
  FROM target
  WHERE s.id = target.id
  RETURNING s.id, s.scan_type, s.severity, s.finding, s.meta, s.resolved_at, s.created_at
@@ -247,6 +351,49 @@ func (q *Queries) GetActiveUsers(ctx context.Context) (int32, error) {
 	return column_1, err
 }
 
+const getAdminUserCounts = `-- name: GetAdminUserCounts :one
+SELECT
+ (SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false) AS total_users,
+ (SELECT COUNT(DISTINCT uid)::integer FROM (
+ SELECT pe.user_id AS uid FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT u2.id FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+ ) t) AS active_users,
+ (SELECT COUNT(*)::integer FROM users
+ WHERE is_synthetic = false
+ AND ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)) AS new_users
+`
+
+type GetAdminUserCountsParams struct {
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+}
+
+type GetAdminUserCountsRow struct {
+	TotalUsers  int32 `json:"total_users"`
+	ActiveUsers int32 `json:"active_users"`
+	NewUsers    int32 `json:"new_users"`
+}
+
+// Range-aware user counts for the admin Users tab. total_users is all-time;
+// active_users logged in or generated an event inside the window;
+// new_users registered inside the window (falls back to "today" callers use
+// GetNewUsersToday when no window is supplied).
+func (q *Queries) GetAdminUserCounts(ctx context.Context, arg GetAdminUserCountsParams) (GetAdminUserCountsRow, error) {
+	row := q.db.QueryRow(ctx, getAdminUserCounts, arg.Column1, arg.Column2)
+	var i GetAdminUserCountsRow
+	err := row.Scan(&i.TotalUsers, &i.ActiveUsers, &i.NewUsers)
+	return i, err
+}
+
 const getContentAuthorID = `-- name: GetContentAuthorID :one
 
 SELECT author_id FROM contents
@@ -263,6 +410,60 @@ func (q *Queries) GetContentAuthorID(ctx context.Context, id pgtype.UUID) (pgtyp
 	var author_id pgtype.UUID
 	err := row.Scan(&author_id)
 	return author_id, err
+}
+
+const getContentStatsTotals = `-- name: GetContentStatsTotals :one
+SELECT
+ COUNT(*)::bigint AS total_content,
+ COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
+ COALESCE(SUM(c.comment_count), 0)::bigint AS total_comments,
+ COALESCE(SUM(c.share_count + c.reshare_count), 0)::bigint AS total_shares,
+ (SELECT COUNT(*)::bigint FROM reactions r
+ JOIN contents c2 ON c2.id = r.entity_id AND r.entity_type = 'content'
+ WHERE c2.status != 'draft'
+ AND ($1::date IS NULL OR c2.created_at::date >= $1)
+ AND ($2::date IS NULL OR c2.created_at::date <= $2)) AS total_reactions,
+ (SELECT COUNT(DISTINCT ucv.user_id)::bigint FROM user_content_views ucv
+ JOIN contents c3 ON c3.id = ucv.content_id
+ WHERE c3.status != 'draft' AND ucv.user_id IS NOT NULL
+ AND ($1::date IS NULL OR c3.created_at::date >= $1)
+ AND ($2::date IS NULL OR c3.created_at::date <= $2)) AS total_unique_viewers
+FROM contents c
+WHERE c.status != 'draft'
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2)
+`
+
+type GetContentStatsTotalsParams struct {
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+}
+
+type GetContentStatsTotalsRow struct {
+	TotalContent       int64 `json:"total_content"`
+	TotalViews         int64 `json:"total_views"`
+	TotalComments      int64 `json:"total_comments"`
+	TotalShares        int64 `json:"total_shares"`
+	TotalReactions     int64 `json:"total_reactions"`
+	TotalUniqueViewers int64 `json:"total_unique_viewers"`
+}
+
+// Window-wide aggregates for the content analytics header cards. The rows
+// are filtered by content creation date; the metrics themselves are
+// lifetime counters (view_count, comment_count, etc. are cumulative), which
+// is intentional — the UI labels them accordingly.
+func (q *Queries) GetContentStatsTotals(ctx context.Context, arg GetContentStatsTotalsParams) (GetContentStatsTotalsRow, error) {
+	row := q.db.QueryRow(ctx, getContentStatsTotals, arg.Column1, arg.Column2)
+	var i GetContentStatsTotalsRow
+	err := row.Scan(
+		&i.TotalContent,
+		&i.TotalViews,
+		&i.TotalComments,
+		&i.TotalShares,
+		&i.TotalReactions,
+		&i.TotalUniqueViewers,
+	)
+	return i, err
 }
 
 const getContentVolumeOverTime = `-- name: GetContentVolumeOverTime :many
@@ -306,12 +507,21 @@ func (q *Queries) GetContentVolumeOverTime(ctx context.Context, arg GetContentVo
 }
 
 const getDailyActiveUsers = `-- name: GetDailyActiveUsers :many
-SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
-FROM users
-WHERE is_synthetic = false
- AND last_login_at IS NOT NULL
- AND ($1::timestamptz IS NULL OR last_login_at >= $1)
- AND ($2::timestamptz IS NULL OR last_login_at <= $2)
+SELECT day, COUNT(DISTINCT uid)::bigint AS dau
+FROM (
+ SELECT date_trunc('day', pe.created_at)::date AS day, pe.user_id AS uid
+ FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT date_trunc('day', u2.last_login_at)::date, u2.id
+ FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+) t
 GROUP BY 1
 ORDER BY 1 DESC
 `
@@ -326,6 +536,10 @@ type GetDailyActiveUsersRow struct {
 	Dau int64       `json:"dau"`
 }
 
+// "Active" = generated a platform event that day OR logged in that day.
+// last_login_at alone undercounts (a user counts on at most one day); the
+// events union captures same-day activity regardless of when they last
+// logged in. Synthetic users/events are excluded per ADR-068 §4 (P10).
 func (q *Queries) GetDailyActiveUsers(ctx context.Context, arg GetDailyActiveUsersParams) ([]GetDailyActiveUsersRow, error) {
 	rows, err := q.db.Query(ctx, getDailyActiveUsers, arg.Column1, arg.Column2)
 	if err != nil {
@@ -359,13 +573,31 @@ WHERE c.status != 'draft'
  AND ($1::date IS NULL OR c.created_at::date >= $1)
  AND ($2::date IS NULL OR c.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $3)
-ORDER BY day DESC, views DESC
+ORDER BY
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'asc' THEN c.title END ASC NULLS LAST,
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'desc' THEN c.title END DESC NULLS LAST,
+ CASE WHEN $4::text = 'views' AND $5::text = 'asc' THEN views END ASC,
+ CASE WHEN $4::text = 'views' AND $5::text = 'desc' THEN views END DESC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'asc' THEN reactions END ASC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'desc' THEN reactions END DESC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'asc' THEN comments END ASC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'desc' THEN comments END DESC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'asc' THEN unique_viewers END ASC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'desc' THEN unique_viewers END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN day END DESC,
+ day DESC, views DESC
+LIMIT NULLIF($6::int, 0) OFFSET $7
 `
 
 type GetDailyContentStatsParams struct {
 	Column1 pgtype.Date `json:"column_1"`
 	Column2 pgtype.Date `json:"column_2"`
 	Column3 pgtype.UUID `json:"column_3"`
+	Column4 string      `json:"column_4"`
+	Column5 string      `json:"column_5"`
+	Column6 int32       `json:"column_6"`
+	Offset  int32       `json:"offset"`
 }
 
 type GetDailyContentStatsRow struct {
@@ -387,7 +619,15 @@ type GetDailyContentStatsRow struct {
 // table, comments from comment_count, shares from share_count+reshare_count,
 // unique_viewers from user_content_views distinct count).
 func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentStatsParams) ([]GetDailyContentStatsRow, error) {
-	rows, err := q.db.Query(ctx, getDailyContentStats, arg.Column1, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getDailyContentStats,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -425,13 +665,27 @@ WHERE s.deleted_at IS NULL
  AND ($1::date IS NULL OR s.created_at::date >= $1)
  AND ($2::date IS NULL OR s.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $3)
-ORDER BY day DESC
+ORDER BY
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'asc' THEN s.name END ASC NULLS LAST,
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'desc' THEN s.name END DESC NULLS LAST,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'asc' THEN joins END ASC,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'desc' THEN joins END DESC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'asc' THEN posts END ASC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'desc' THEN posts END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN day END DESC,
+ joins DESC, space_name ASC
+LIMIT NULLIF($6::int, 0) OFFSET $7
 `
 
 type GetDailySpaceStatsParams struct {
 	Column1 pgtype.Date `json:"column_1"`
 	Column2 pgtype.Date `json:"column_2"`
 	Column3 pgtype.UUID `json:"column_3"`
+	Column4 string      `json:"column_4"`
+	Column5 string      `json:"column_5"`
+	Column6 int32       `json:"column_6"`
+	Offset  int32       `json:"offset"`
 }
 
 type GetDailySpaceStatsRow struct {
@@ -444,7 +698,15 @@ type GetDailySpaceStatsRow struct {
 }
 
 func (q *Queries) GetDailySpaceStats(ctx context.Context, arg GetDailySpaceStatsParams) ([]GetDailySpaceStatsRow, error) {
-	rows, err := q.db.Query(ctx, getDailySpaceStats, arg.Column1, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getDailySpaceStats,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -513,12 +775,21 @@ func (q *Queries) GetEventCountsByType(ctx context.Context, arg GetEventCountsBy
 }
 
 const getMonthlyActiveUsers = `-- name: GetMonthlyActiveUsers :many
-SELECT date_trunc('month', last_login_at)::date AS month, COUNT(*) AS mau
-FROM users
-WHERE is_synthetic = false
- AND last_login_at IS NOT NULL
- AND ($1::timestamptz IS NULL OR last_login_at >= $1)
- AND ($2::timestamptz IS NULL OR last_login_at <= $2)
+SELECT month, COUNT(DISTINCT uid)::bigint AS mau
+FROM (
+ SELECT date_trunc('month', pe.created_at)::date AS month, pe.user_id AS uid
+ FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT date_trunc('month', u2.last_login_at)::date, u2.id
+ FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+) t
 GROUP BY 1
 ORDER BY 1 DESC
 `
@@ -612,11 +883,18 @@ const getRevenueSummary = `-- name: GetRevenueSummary :one
 
 SELECT
  COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
- COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', NOW()) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
+ COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', COALESCE($2::timestamptz, NOW())) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
  (SELECT COUNT(*)::integer FROM subscriptions s WHERE s.status = 'active') AS active_subscriptions
 FROM payments p
 WHERE p.status = 'succeeded'
+ AND ($1::timestamptz IS NULL OR p.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR p.created_at <= $2)
 `
+
+type GetRevenueSummaryParams struct {
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+}
 
 type GetRevenueSummaryRow struct {
 	TotalRevenue        int64 `json:"total_revenue"`
@@ -627,8 +905,11 @@ type GetRevenueSummaryRow struct {
 // =====================
 // Revenue Analytics (P5.6)
 // =====================
-func (q *Queries) GetRevenueSummary(ctx context.Context) (GetRevenueSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getRevenueSummary)
+// Window-aware: total = succeeded payments inside [from, to]; monthly = the
+// calendar month containing the window's `to` (or the current month when the
+// window is open-ended). active_subscriptions is a point-in-time count.
+func (q *Queries) GetRevenueSummary(ctx context.Context, arg GetRevenueSummaryParams) (GetRevenueSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getRevenueSummary, arg.Column1, arg.Column2)
 	var i GetRevenueSummaryRow
 	err := row.Scan(&i.TotalRevenue, &i.MonthlyRevenue, &i.ActiveSubscriptions)
 	return i, err
@@ -683,6 +964,45 @@ func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.U
 		&i.FollowerCount,
 		&i.PostsLast30d,
 	)
+	return i, err
+}
+
+const getSpaceStatsTotals = `-- name: GetSpaceStatsTotals :one
+SELECT
+ COUNT(*)::bigint AS total_spaces,
+ (SELECT COUNT(*)::bigint FROM space_members sm
+ JOIN spaces s2 ON s2.id = sm.space_id
+ WHERE s2.deleted_at IS NULL
+ AND ($1::date IS NULL OR s2.created_at::date >= $1)
+ AND ($2::date IS NULL OR s2.created_at::date <= $2)) AS total_joins,
+ (SELECT COUNT(*)::bigint FROM contents c
+ JOIN spaces s3 ON s3.id = c.space_id
+ WHERE s3.deleted_at IS NULL AND c.status != 'draft'
+ AND ($1::date IS NULL OR s3.created_at::date >= $1)
+ AND ($2::date IS NULL OR s3.created_at::date <= $2)) AS total_posts
+FROM spaces s
+WHERE s.deleted_at IS NULL
+ AND ($1::date IS NULL OR s.created_at::date >= $1)
+ AND ($2::date IS NULL OR s.created_at::date <= $2)
+`
+
+type GetSpaceStatsTotalsParams struct {
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+}
+
+type GetSpaceStatsTotalsRow struct {
+	TotalSpaces int64 `json:"total_spaces"`
+	TotalJoins  int64 `json:"total_joins"`
+	TotalPosts  int64 `json:"total_posts"`
+}
+
+// Window-wide join/post aggregates over spaces created in the range.
+// joins/posts are lifetime counters on the space — see content totals note.
+func (q *Queries) GetSpaceStatsTotals(ctx context.Context, arg GetSpaceStatsTotalsParams) (GetSpaceStatsTotalsRow, error) {
+	row := q.db.QueryRow(ctx, getSpaceStatsTotals, arg.Column1, arg.Column2)
+	var i GetSpaceStatsTotalsRow
+	err := row.Scan(&i.TotalSpaces, &i.TotalJoins, &i.TotalPosts)
 	return i, err
 }
 
@@ -1226,21 +1546,27 @@ SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)
+ AND ($3::timestamptz IS NULL OR created_at >= $3)
+ AND ($4::timestamptz IS NULL OR created_at <= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $3 OFFSET $4
+LIMIT $5 OFFSET $6
 `
 
 type ListSecurityScanResultsParams struct {
-	Column1 string `json:"column_1"`
-	Column2 bool   `json:"column_2"`
-	Limit   int32  `json:"limit"`
-	Offset  int32  `json:"offset"`
+	Column1 string             `json:"column_1"`
+	Column2 bool               `json:"column_2"`
+	Column3 pgtype.Timestamptz `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Limit   int32              `json:"limit"`
+	Offset  int32              `json:"offset"`
 }
 
 func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]SecurityScanResult, error) {
 	rows, err := q.db.Query(ctx, listSecurityScanResults,
 		arg.Column1,
 		arg.Column2,
+		arg.Column3,
+		arg.Column4,
 		arg.Limit,
 		arg.Offset,
 	)

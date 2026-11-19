@@ -14,7 +14,7 @@ import type { ExistingPage } from '#lib/server/docs-author.js';
  * (ADR-060 — never client checks). 303, not 308: access decisions are
  * dynamic and must never be cached as permanent redirects.
  *
- * §44 amendment 2: docs.manage holders additionally see this audience's
+ * §44 amendment 2: docs.admin holders additionally see this audience's
  * non-published pages (draft/in_review/approved) so drafts stay reachable
  * and reviewable in-app instead of disappearing from every surface.
  */
@@ -45,9 +45,9 @@ export const load: PageServerLoad = async (event) => {
 		pages = [];
 	}
 
-	// docs.manage holders get the "New page" affordance and the unpublished
+	// docs.admin holders get the "New page" affordance and the unpublished
 	// listing merge (§44 in-app authoring).
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 
 	let unpublishedPages: DocNavItem[] = [];
 	if (canEditDocs) {

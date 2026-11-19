@@ -31,13 +31,15 @@ SELECT
  END AS ctr
 FROM ad_campaigns ac
 LEFT JOIN ad_events ae ON ae.campaign_id = ac.id
-WHERE ($1::text = '' OR ac.status = $1)
+ AND ($1::int <= 0 OR ae.created_at >= now() - make_interval(days => $1::int))
+WHERE ($2::text = '' OR ac.status = $2)
 GROUP BY ac.id, ac.name, ac.status, ac.budget_credits, ac.spent
 ORDER BY ac.spent DESC
-LIMIT $2
+LIMIT $3
 `
 
 type AdvancedAnalyticsAdPerformanceParams struct {
+	Days   int32  `json:"days"`
 	Status string `json:"status"`
 	TopN   int32  `json:"top_n"`
 }
@@ -57,7 +59,7 @@ type AdvancedAnalyticsAdPerformanceRow struct {
 // Ad campaign aggregate performance.
 // =====================================================================
 func (q *Queries) AdvancedAnalyticsAdPerformance(ctx context.Context, arg AdvancedAnalyticsAdPerformanceParams) ([]AdvancedAnalyticsAdPerformanceRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsAdPerformance, arg.Status, arg.TopN)
+	rows, err := q.db.Query(ctx, advancedAnalyticsAdPerformance, arg.Days, arg.Status, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +116,16 @@ SELECT
 FROM newsletter_campaigns nc
 LEFT JOIN newsletter_send_state nss ON nss.campaign_id = nc.id
 WHERE nc.sent_at IS NOT NULL
+ AND ($1::int <= 0 OR nc.sent_at >= now() - make_interval(days => $1::int))
 GROUP BY nc.id, nc.name, nc.subject, nc.sent_at
 ORDER BY nc.sent_at DESC
-LIMIT $1
+LIMIT $2
 `
+
+type AdvancedAnalyticsNewsletterEngagementParams struct {
+	Days int32 `json:"days"`
+	TopN int32 `json:"top_n"`
+}
 
 type AdvancedAnalyticsNewsletterEngagementRow struct {
 	CampaignID   pgtype.UUID        `json:"campaign_id"`
@@ -134,8 +142,8 @@ type AdvancedAnalyticsNewsletterEngagementRow struct {
 // =====================================================================
 // Newsletter engagement: open rates, click rates, subscriber growth.
 // =====================================================================
-func (q *Queries) AdvancedAnalyticsNewsletterEngagement(ctx context.Context, topN int32) ([]AdvancedAnalyticsNewsletterEngagementRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsNewsletterEngagement, topN)
+func (q *Queries) AdvancedAnalyticsNewsletterEngagement(ctx context.Context, arg AdvancedAnalyticsNewsletterEngagementParams) ([]AdvancedAnalyticsNewsletterEngagementRow, error) {
+	rows, err := q.db.Query(ctx, advancedAnalyticsNewsletterEngagement, arg.Days, arg.TopN)
 	if err != nil {
 		return nil, err
 	}

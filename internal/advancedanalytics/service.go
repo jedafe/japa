@@ -69,19 +69,29 @@ func periodToDays(period string) int {
 	}
 }
 
-// GetRevenueStreams returns monthly revenue breakdown by stream.
+// GetRevenueStreams returns monthly revenue breakdown by stream. The
+// dashboard's period selector maps to a look-back window in months.
 func (s *Service) GetRevenueStreams(ctx context.Context, period string) ([]gen.MvRevenueStream, error) {
-	// Default: last 12 months
-	fromMonth := pgtype.Date{Time: time.Now().AddDate(-1, 0, 0), Valid: true}
-	if period == "quarterly" {
-		fromMonth = pgtype.Date{Time: time.Now().AddDate(-2, 0, 0), Valid: true}
+	months := 12
+	switch period {
+	case Period7d:
+		months = 3
+	case Period30d:
+		months = 6
+	case Period90d:
+		months = 12
+	case "quarterly":
+		months = 24
 	}
+
+	fromMonth := pgtype.Date{Time: time.Now().AddDate(0, -months, 0), Valid: true}
 
 	return s.store.RevenueStreams(ctx, fromMonth)
 }
 
-// GetAdPerformance returns ad campaign aggregate performance.
-func (s *Service) GetAdPerformance(ctx context.Context, status string, limit int) ([]gen.AdvancedAnalyticsAdPerformanceRow, error) {
+// GetAdPerformance returns ad campaign aggregate performance. days>0 scopes
+// the event counts to the last N days; days<=0 means all-time.
+func (s *Service) GetAdPerformance(ctx context.Context, status string, limit, days int) ([]gen.AdvancedAnalyticsAdPerformanceRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -89,16 +99,21 @@ func (s *Service) GetAdPerformance(ctx context.Context, status string, limit int
 	return s.store.AdPerformance(ctx, gen.AdvancedAnalyticsAdPerformanceParams{
 		Status: status,
 		TopN:   int32(limit), // #nosec
+		Days:   int32(days),  // #nosec
 	})
 }
 
-// GetNewsletterEngagement returns newsletter open/click rates.
-func (s *Service) GetNewsletterEngagement(ctx context.Context, limit int) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
+// GetNewsletterEngagement returns newsletter open/click rates. days>0 scopes
+// to campaigns sent within the last N days; days<=0 means all-time.
+func (s *Service) GetNewsletterEngagement(ctx context.Context, limit, days int) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
-	return s.store.NewsletterEngagement(ctx, int32(limit)) //nolint:gosec // G115: limit is clamped to 1..100.
+	return s.store.NewsletterEngagement(ctx, gen.AdvancedAnalyticsNewsletterEngagementParams{
+		TopN: int32(limit), //nolint:gosec // G115: limit is clamped to 1..100.
+		Days: int32(days),  //nolint:gosec // G115: days is clamped by the caller.
+	})
 }
 
 // GetSubscriberGrowth returns newsletter subscriber counts per list.
@@ -106,13 +121,17 @@ func (s *Service) GetSubscriberGrowth(ctx context.Context) ([]gen.AdvancedAnalyt
 	return s.store.SubscriberGrowth(ctx)
 }
 
-// GetRetentionCohorts returns D1/D7/D30 retention cohorts.
-func (s *Service) GetRetentionCohorts(ctx context.Context, limit int) ([]gen.AdvancedAnalyticsRetentionCohortsRow, error) {
+// GetRetentionCohorts returns D1/D7/D30 retention cohorts. months>0 scopes
+// the cohort window; months<=0 defaults to 3 months.
+func (s *Service) GetRetentionCohorts(ctx context.Context, limit, months int) ([]gen.AdvancedAnalyticsRetentionCohortsRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 30
 	}
+	if months <= 0 || months > 36 {
+		months = 3
+	}
 
-	fromDate := pgtype.Timestamptz{Time: time.Now().AddDate(0, -3, 0), Valid: true}
+	fromDate := pgtype.Timestamptz{Time: time.Now().AddDate(0, -months, 0), Valid: true}
 
 	return s.store.RetentionCohorts(ctx, gen.AdvancedAnalyticsRetentionCohortsParams{
 		FromDate: fromDate,
@@ -207,7 +226,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 		return csvStr, headers, nil
 
 	case "ad_performance":
-		rows, err := s.GetAdPerformance(ctx, "", 100)
+		rows, err := s.GetAdPerformance(ctx, "", 100, periodToDays(period))
 		if err != nil {
 			return "", nil, err
 		}
@@ -236,7 +255,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 		return csvStr, headers, nil
 
 	case "newsletter":
-		campaigns, err := s.GetNewsletterEngagement(ctx, 100)
+		campaigns, err := s.GetNewsletterEngagement(ctx, 100, periodToDays(period))
 		if err != nil {
 			return "", nil, err
 		}
@@ -271,7 +290,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 		return csvStr, headers, nil
 
 	case "retention":
-		cohorts, err := s.GetRetentionCohorts(ctx, 100)
+		cohorts, err := s.GetRetentionCohorts(ctx, 100, 0)
 		if err != nil {
 			return "", nil, err
 		}
@@ -415,7 +434,29 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"revenue": nonNil(rows)}})
+	// Convert minor units (kobo/cents) to major units, matching the §40
+	// /admin/analytics/revenue endpoint so both surfaces display the same
+	// amounts.
+	type revenueRow struct {
+		Month               pgtype.Date `json:"month"`
+		SubscriptionRevenue int64       `json:"subscription_revenue"`
+		CourseRevenue       int64       `json:"course_revenue"`
+		AdRevenue           int64       `json:"ad_revenue"`
+		CreditRevenue       int64       `json:"credit_revenue"`
+	}
+
+	converted := make([]revenueRow, 0, len(rows))
+	for _, r := range rows {
+		converted = append(converted, revenueRow{
+			Month:               r.Month,
+			SubscriptionRevenue: r.SubscriptionRevenue / 100,
+			CourseRevenue:       r.CourseRevenue / 100,
+			AdRevenue:           r.AdRevenue / 100,
+			CreditRevenue:       r.CreditRevenue / 100,
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"revenue": converted}})
 }
 
 // HandleAdPerformance returns ad campaign aggregate stats.
@@ -428,8 +469,9 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	days := periodToDays(r.URL.Query().Get("period"))
 
-	rows, err := h.svc.GetAdPerformance(r.Context(), status, limit)
+	rows, err := h.svc.GetAdPerformance(r.Context(), status, limit, days)
 	if err != nil {
 		slog.Error("advancedanalytics: ad performance query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve ad performance")
@@ -449,8 +491,9 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	days := periodToDays(r.URL.Query().Get("period"))
 
-	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), limit)
+	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), limit, days)
 	if err != nil {
 		slog.Error("advancedanalytics: newsletter engagement query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve newsletter engagement")
@@ -481,8 +524,19 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	// Retention cohorts need a month-scale window; map the dashboard period
+	// to months (7d→2, 30d→3, 90d→6) so the selector drives this table too.
+	var months int
+	switch periodToDays(r.URL.Query().Get("period")) {
+	case 7:
+		months = 2
+	case 30:
+		months = 3
+	case 90:
+		months = 6
+	}
 
-	rows, err := h.svc.GetRetentionCohorts(r.Context(), limit)
+	rows, err := h.svc.GetRetentionCohorts(r.Context(), limit, months)
 	if err != nil {
 		slog.Error("advancedanalytics: retention cohorts query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve retention cohorts")

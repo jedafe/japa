@@ -130,7 +130,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// Authoring parity: same edit payload contract as /docs/[audience]/[slug]
 	// — fetched lazily so it only ships when the editor is actually open.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 	const wantsEdit = event.url.searchParams.get('edit') === '1';
 	const editor = canEditDocs && wantsEdit ? await editorData(event, page, editHtml) : null;
 

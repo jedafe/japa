@@ -7647,6 +7647,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public docs nav + search (P5.6 — Task 3)
 			r.Get("/docs/nav", docsHandlers.ListDocNav)
 			r.Get("/docs/search", docsHandlers.SearchDocPages)
+			// Aggregate summaries for the docs landing changelog — one call
+			// across all requester-accessible audiences (replaces N+1 fan-out).
+			r.Get("/docs/summaries", docsHandlers.ListDocSummaries)
 			// Public lookup endpoints used by the docs app and admin UI (DOC-009).
 			// DOC-007: audience-gates returned from backend so the docs app mirrors RBAC exactly.
 			r.Get("/docs/audience-gates", docsHandlers.ListDocAudienceGates)
@@ -7656,44 +7659,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// caller's vote; POST upserts idempotently.
 			r.Get("/docs/{audience}/{slug}/feedback", docsHandlers.GetDocFeedback)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/docs/{audience}/{slug}/feedback", docsHandlers.SubmitDocPageFeedback)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).Get("/docs/statuses", docsHandlers.ListDocStatuses)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).Get("/docs/statuses", docsHandlers.ListDocStatuses)
 
 			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
 			// §44 amendment 2: editor draft preview — by-slug lookup, any status.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/page", docsHandlers.GetAdminDocPageBySlug)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/pages/{id}", docsHandlers.GetAdminDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages", docsHandlers.CreateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Patch("/admin/docs/pages/{id}", docsHandlers.UpdateDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs/pages/{id}/move", docsHandlers.MoveDocPage)
 			// Soft delete by default; ?force=true hard-deletes a trashed row —
 			// gated by admin.hard_delete via rbac.RequireForceDelete (Rule 11).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage"), rbac.RequireForceDelete(rbacResolver)).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/docs/pages/{id}", docsHandlers.DeleteDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages/{id}/restore", docsHandlers.RestoreDocPage)
 			// Doc page approve/publish (§44 — dedicated handlers with reviewer tracking)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages/{id}/approve", docsHandlers.ApproveDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages/{id}/publish", docsHandlers.PublishDocPage)
 			// Revision history (§44 amendment 5 — view/restore/delete/clear)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/pages/{id}/revisions", docsHandlers.ListDocPageRevisions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Delete("/admin/docs/pages/{id}/revisions", docsHandlers.ClearDocRevisions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/pages/{id}/revisions/{revId}/restore", docsHandlers.RestoreDocRevision)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/revisions/{revId}", docsHandlers.GetDocRevision)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Delete("/admin/docs/revisions/{revId}", docsHandlers.DeleteDocRevision)
 			// AI doc generation (P5.6 — Task 3 — stub, delegates to ai/generate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
 
 			// Japa Academy routes (Section 36)

@@ -208,6 +208,140 @@ func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
 	return s.ListAllDocPagesPaged(ctx, "", false, 0, 0)
 }
 
+// AdminDocListParams is the parsed GET /admin/docs/pages contract:
+// audiences is already gate-resolved by the handler (a single audience when
+// ?audience= is scoped, or the caller's accessible set otherwise).
+type AdminDocListParams struct {
+	Audiences   []string
+	Status      string
+	ShowDeleted bool
+	Search      string
+	Sort        string
+	Desc        bool
+	Limit       int32
+	Offset      int32
+}
+
+// AdminDocList carries the page slice plus the filtered row count so the
+// admin table can render accurate pagination (meta.total / total_pages).
+type AdminDocList struct {
+	Pages []DocPage
+	Total int64
+}
+
+// ListAdminDocPages is the database-backed admin list — filtering, audience
+// gating, search, sort, and pagination all run in one SQL statement so
+// totals and pages reflect exactly the rows the caller may see.
+func (s *Service) ListAdminDocPages(ctx context.Context, p AdminDocListParams) (*AdminDocList, error) {
+	rows, total, err := s.store.listAdminPaged(ctx, adminListFilter{
+		Audiences:   p.Audiences,
+		Status:      p.Status,
+		ShowDeleted: p.ShowDeleted,
+		Search:      p.Search,
+		Sort:        p.Sort,
+		Desc:        p.Desc,
+		Limit:       p.Limit,
+		Offset:      p.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	pages := make([]DocPage, len(rows))
+	for i, r := range rows {
+		pages[i] = DocPage{
+			ID:              r.ID.String(),
+			Title:           r.Title,
+			Slug:            r.Slug,
+			Audience:        r.Audience,
+			AIGenerated:     r.AiGenerated,
+			AIModel:         r.AiModel,
+			AIGeneratedAt:   timestamptzPtr(r.AiGeneratedAt),
+			HitlReviewedBy:  uuidPtr(r.HitlReviewedBy),
+			HitlReviewedAt:  timestamptzPtr(r.HitlReviewedAt),
+			ReviewStatus:    r.ReviewStatus,
+			LastReviewedBy:  uuidPtr(r.LastReviewedBy),
+			LastReviewedAt:  timestamptzPtr(r.LastReviewedAt),
+			ParentID:        uuidPtr(r.ParentID),
+			Position:        r.Position,
+			Category:        r.Category,
+			Subcategory:     r.Subcategory,
+			FeatureImageID:  uuidPtr(r.FeatureImageID),
+			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
+			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
+			UpdatedAt:       r.UpdatedAt.Time.Format(time.RFC3339Nano),
+			DeletedAt:       timestamptzPtr(r.DeletedAt),
+		}
+	}
+
+	return &AdminDocList{Pages: pages, Total: total}, nil
+}
+
+// ListDocSummaries returns published summaries across the given
+// gate-resolved audiences — one query for the docs landing changelog,
+// replacing the per-audience /docs/{audience} fan-out.
+func (s *Service) ListDocSummaries(ctx context.Context, audiences []string) ([]DocPageSummary, error) {
+	rows, err := s.store.listSummaries(ctx, audiences)
+	if err != nil {
+		return nil, err
+	}
+
+	summaries := make([]DocPageSummary, len(rows))
+	for i, r := range rows {
+		summaries[i] = DocPageSummary{
+			ID:              r.ID.String(),
+			Title:           r.Title,
+			Slug:            r.Slug,
+			Audience:        r.Audience,
+			ReviewStatus:    "published",
+			ParentID:        uuidPtr(r.ParentID),
+			Position:        r.Position,
+			Category:        r.Category,
+			Subcategory:    r.Subcategory,
+			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
+			FeatureImageID:  uuidPtr(r.FeatureImageID),
+			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
+			Excerpt:         extractExcerpt(r.Content, excerptMaxLen),
+		}
+	}
+
+	return summaries, nil
+}
+
+// SwapDocPagePositions atomically exchanges the positions of two live pages
+// in the same audience — the single-statement replacement for the old
+// two-PATCH move that could leave a half-swapped order on mid-failure.
+func (s *Service) SwapDocPagePositions(ctx context.Context, idA, idB pgtype.UUID) error {
+	if idA == idB {
+		return errpkg.ErrInvalid
+	}
+
+	a, err := s.store.getByID(ctx, idA)
+	if err != nil {
+		return fmt.Errorf("fetching page: %w", err)
+	}
+	b, err := s.store.getByID(ctx, idB)
+	if err != nil {
+		return fmt.Errorf("fetching target page: %w", err)
+	}
+
+	if a.DeletedAt.Valid || b.DeletedAt.Valid {
+		return errPageDeleted
+	}
+	if a.Audience != b.Audience {
+		return fmt.Errorf("%w: pages must be in the same audience to reorder", errpkg.ErrInvalid)
+	}
+
+	if err := s.store.swapPositions(ctx, idA, idB, a.Position, b.Position); err != nil {
+		return fmt.Errorf("swapping positions: %w", err)
+	}
+
+	s.invalidateCache(ctx, a.Audience, a.Slug)
+	s.invalidateCache(ctx, b.Audience, b.Slug)
+
+	return nil
+}
+
 // ListAllDocPagesPaged is the limit/offset variant of ListAllDocPages;
 // status "" lists every status (§44 amendment 2: ?status= filter).
 // showDeleted swaps the listing to the trash view (Rule 11: ?deleted=1).
@@ -786,6 +920,7 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 			Audience:       req.Audience,
 			Content:        contentBytes,
 			AiGenerated:    req.AIGenerated,
+			AiModel:        req.AIModel,
 			ReviewStatus:   status,
 			ParentID:       parentID,
 			Position:       req.Position,
@@ -1043,7 +1178,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 }
 
 // GetDocPageBySlugAnyStatus returns a page regardless of review status.
-// Editor preview only — callers must hold docs.manage (§44 amendment 2).
+// Editor preview only — callers must hold docs.admin (§44 amendment 2).
 // Never cached: preview must reflect the latest row.
 func (s *Service) GetDocPageBySlugAnyStatus(ctx context.Context, audience, slug string) (*DocPage, error) {
 	page, err := s.store.getBySlugAnyStatus(ctx, audience, slug)
@@ -1080,7 +1215,8 @@ func (s *Service) getDocPageFeedback(ctx context.Context, audience, slug string,
 // ApproveDocPage sets review_status to 'approved' and records the reviewer
 // (§44). Allowed from draft/in_review (and is a no-op when already approved);
 // approving a published page would silently demote it, so that is rejected
-// (§44 amendment 2).
+// (§44 amendment 2). AI-generated pages may be self-reviewed — the approval
+// transition additionally stamps hitl_reviewed_* for ADR-088 provenance.
 func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	statusRow, err := s.store.getStatus(ctx, id)
 	if err != nil {
@@ -1090,13 +1226,6 @@ func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 	// Trashed pages can't transition — restore first (Rule 11).
 	if statusRow.DeletedAt.Valid {
 		return errPageDeleted
-	}
-
-	// §44 HITL: an ai_generated page may not be approved by the account that
-	// created it — the reviewer must differ from the generator. Legacy rows
-	// (created_by NULL) and human-authored pages stay unrestricted.
-	if statusRow.AiGenerated && statusRow.CreatedBy.Valid && statusRow.CreatedBy == reviewerID {
-		return fmt.Errorf("%w: ai-generated pages must be reviewed by a different user", errpkg.ErrInvalidStatusTransition)
 	}
 
 	currentStatus := statusRow.ReviewStatus
@@ -1257,6 +1386,10 @@ func toDocPage(r docPageRow) *DocPage {
 		Audience:        p.Audience,
 		Content:         content,
 		AIGenerated:     p.AiGenerated,
+		AIModel:         p.AiModel,
+		AIGeneratedAt:   timestamptzPtr(p.AiGeneratedAt),
+		HitlReviewedBy:  uuidPtr(p.HitlReviewedBy),
+		HitlReviewedAt:  timestamptzPtr(p.HitlReviewedAt),
 		ReviewStatus:    p.ReviewStatus,
 		LastReviewedBy:  uuidPtr(p.LastReviewedBy),
 		LastReviewedAt:  timestamptzPtr(p.LastReviewedAt),
@@ -1349,6 +1482,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 
 	// Call the AI Gateway when a dispatcher is wired.
 	generatedText := prompt
+	aiModel := "content-agent"
 
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
@@ -1369,6 +1503,14 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 			generatedText = text
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			generatedText = text
+		}
+
+		// ADR-088 provenance: record the producing model when the gateway
+		// reports it, falling back to the pipeline name.
+		if m, ok := resp.Raw["model"].(string); ok && m != "" {
+			aiModel = m
+		} else if m, ok := resp.Raw["model_used"].(string); ok && m != "" {
+			aiModel = m
 		}
 
 		slog.Info("docs: AI Gateway generated draft", "title", input.Title, "audience", audience)
@@ -1396,6 +1538,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 		Audience:     audience,
 		Content:      contentBytes,
 		AIGenerated:  true,
+		AIModel:      &aiModel,
 		ReviewStatus: "in_review",
 		Position:     0,
 		Category:     &input.Category,

@@ -92,9 +92,9 @@ export const load: PageServerLoad = async (event) => {
 	});
 
 	// Authoring parity with the other audience landings (§44 amendment 2):
-	// docs.manage holders get the "New page" affordance and the unpublished
+	// docs.admin holders get the "New page" affordance and the unpublished
 	// drafts listing.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 
 	let unpublishedPages: DocNavItem[] = [];
 	if (canEditDocs) {

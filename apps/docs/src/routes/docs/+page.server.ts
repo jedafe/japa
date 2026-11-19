@@ -34,16 +34,12 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd: webSiteLd({ siteName: site, name: title, description })
 	});
 
+	// One aggregate call replaces the per-accessible-audience /docs/{audience}
+	// fan-out — the backend already filters to the requester's readable
+	// audiences, so the changelog needs no per-audience round trips.
 	const ctx = apiContext(event);
-	const results = await Promise.allSettled(
-		event.locals.accessibleAudiences.map((audience) =>
-			apiGet<DocPageSummary[]>(ctx, `/docs/${audience}`)
-		)
-	);
-	const summaries: DocPageSummary[] = [];
-	for (const r of results) {
-		if (r.status === 'fulfilled' && Array.isArray(r.value)) summaries.push(...r.value);
-	}
+	const summaries =
+		(await apiGet<DocPageSummary[]>(ctx, '/docs/summaries').catch(() => null)) ?? [];
 
 	return { meta, summaries };
 };

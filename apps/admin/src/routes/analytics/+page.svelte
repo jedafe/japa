@@ -44,7 +44,7 @@
 
 	let overview = $state<OverviewData | null>(null);
 	let security = $state<Array<Record<string, unknown>> | null>(null);
-	let userAnalytics = $state<{ total_users?: number; active_users?: number; new_users_today?: number } | null>(null);
+	let userAnalytics = $state<{ total_users?: number; active_users?: number; new_users?: number } | null>(null);
 	let contentAnalytics = $state<{ content_stats?: Array<Record<string, unknown>>; total_content?: number; total_views?: number; total_reactions?: number; total_comments?: number; total_unique_viewers?: number } | null>(null);
 	let spaceAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let revenueAnalytics = $state<{ total_revenue?: number; monthly_revenue?: number; active_subscriptions?: number; periods?: Array<{ period: string; revenue: number; transactions: number }> } | null>(null);
@@ -54,6 +54,31 @@
 	let deleteModalOpen = $state(false);
 	let pendingDeleteScan = $state<Record<string, unknown> | null>(null);
 	let deleting = $state(false);
+	let notice = $state("");
+
+	// Server-paginated table state (content / spaces / security). The backend
+	// returns { items, total } envelopes; sort is applied server-side via
+	// allowlisted CASE ordering (?sort=&dir=).
+	let contentPage = $state(0);
+	let contentPageSize = $state(10);
+	let contentTotal = $state(0);
+	let contentSort = $state<{ key: string | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'desc' });
+	let spacePage = $state(0);
+	let spacePageSize = $state(10);
+	let spaceTotal = $state(0);
+	let spaceSort = $state<{ key: string | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'desc' });
+	let spaceTotals = $state<{ total_spaces?: number; total_joins?: number; total_posts?: number } | null>(null);
+	let secPage = $state(0);
+	let secPageSize = $state(10);
+	let secTotal = $state(0);
+	let secSeverity = $state("");
+	let secUnresolvedOnly = $state(false);
+
+	// NGN is the platform's settlement currency (payments.currency defaults to
+	// NGN); render major units with the naira symbol rather than a hardcoded $.
+	function fmtNaira(v: number | null | undefined): string {
+		return `₦${Number(v ?? 0).toLocaleString()}`;
+	}
 
 	// Section 66 — Advanced Analytics state (ADR-084)
 	let advancedPeriod = $state("7d");
@@ -64,6 +89,7 @@
 	let retentionCohorts = $state<Array<Record<string, unknown>> | null>(null);
 	let advancedLoading = $state(false);
 	let advancedError = $state("");
+	let advType = $state("");
 	// Set once the advanced tab has attempted its first fetch — the lazy-load
 	// effect below must not refire on every state change (infinite loop when
 	// any request fails, since a failed call leaves its slice null).
@@ -80,23 +106,24 @@
 		// Pass the ?from=&to= range to every windowed endpoint so the date
 		// picker drives all tabs, not just the overview.
 		const rangeParams = [f && `from=${f}`, toVal && `to=${toVal}`].filter(Boolean).join("&") || undefined;
-		const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
-			analyticsAdminApi.getOverview(rangeParams),
-			analyticsAdminApi.getSecurity(rangeParams),
-			analyticsAdminApi.getUsers(rangeParams),
-			analyticsAdminApi.getContent(rangeParams),
-			analyticsAdminApi.getSpaces(rangeParams),
-			analyticsAdminApi.getRevenue(rangeParams),
-			analyticsAdminApi.getSearch(rangeParams)
+		const [overviewRes, usersRes, revenueRes, searchRes] = await Promise.allSettled([
+			analyticsAdminApi.getOverview(rangeParams, { signal }),
+			analyticsAdminApi.getUsers(rangeParams, { signal }),
+			analyticsAdminApi.getRevenue(rangeParams, { signal }),
+			analyticsAdminApi.getSearch(rangeParams, { signal })
 		]);
-			
+		// Server-paginated slices fetch independently so table controls can
+		// refetch a single dataset without re-running the whole batch.
+		await Promise.allSettled([
+			loadSecurity(f, toVal, signal),
+			loadContent(f, toVal, signal),
+			loadSpaces(f, toVal, signal)
+		]);
+
 			if (signal.aborted) return;
 
 			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as OverviewData) : null;
-			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as Array<Record<string, unknown>>) : null;
-			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as { total_users?: number; active_users?: number; new_users_today?: number }) : null;
-			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? (contentRes.value.data as { content_stats?: Array<Record<string, unknown>>; total_content?: number; total_views?: number; total_reactions?: number; total_comments?: number; total_unique_viewers?: number }) : null;
-			spaceAnalytics = spacesRes.status === 'fulfilled' && spacesRes.value.ok ? (spacesRes.value.data as Array<Record<string, unknown>>) : null;
+			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as { total_users?: number; active_users?: number; new_users?: number }) : null;
 			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as { total_revenue?: number; monthly_revenue?: number; active_subscriptions?: number; periods?: Array<{ period: string; revenue: number; transactions: number }> }) : null;
 			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? (searchRes.value.data as Array<Record<string, unknown>>) : null;
 		} catch (e) {
@@ -107,6 +134,58 @@
 		}
 	}
 
+	// Server-paginated loaders — each refetches only its own slice so a table
+	// page/sort/filter change doesn't re-run the whole dashboard batch.
+	function rangeQS(f = from, t = to): string {
+		return [f && `from=${f}`, t && `to=${t}`].filter(Boolean).join("&");
+	}
+
+	async function loadSecurity(f = from, t = to, signal?: AbortSignal) {
+		const params = [
+			rangeQS(f, t),
+			`page_size=${secPageSize}`,
+			`offset=${secPage * secPageSize}`,
+			secSeverity && `severity=${secSeverity}`,
+			secUnresolvedOnly && `unresolved=true`
+		].filter(Boolean).join("&");
+		const res = await analyticsAdminApi.getSecurity(params, { signal });
+		if (res.ok) {
+			const d = res.data as { items?: Array<Record<string, unknown>>; total?: number };
+			security = d.items ?? [];
+			secTotal = d.total ?? 0;
+		}
+	}
+
+	async function loadContent(f = from, t = to, signal?: AbortSignal) {
+		const params = [
+			rangeQS(f, t),
+			`page_size=${contentPageSize}`,
+			`offset=${contentPage * contentPageSize}`,
+			contentSort.key && `sort=${contentSort.key}&dir=${contentSort.dir}`
+		].filter(Boolean).join("&");
+		const res = await analyticsAdminApi.getContent(params, { signal });
+		if (res.ok) {
+			contentAnalytics = res.data as typeof contentAnalytics;
+			contentTotal = (res.data as { total?: number }).total ?? 0;
+		}
+	}
+
+	async function loadSpaces(f = from, t = to, signal?: AbortSignal) {
+		const params = [
+			rangeQS(f, t),
+			`page_size=${spacePageSize}`,
+			`offset=${spacePage * spacePageSize}`,
+			spaceSort.key && `sort=${spaceSort.key}&dir=${spaceSort.dir}`
+		].filter(Boolean).join("&");
+		const res = await analyticsAdminApi.getSpaces(params, { signal });
+		if (res.ok) {
+			const d = res.data as { items?: Array<Record<string, unknown>>; total?: number; total_spaces?: number; total_joins?: number; total_posts?: number };
+			spaceAnalytics = d.items ?? [];
+			spaceTotal = d.total ?? 0;
+			spaceTotals = { total_spaces: d.total, total_joins: d.total_joins, total_posts: d.total_posts };
+		}
+	}
+
 	// Section 66 — Load advanced analytics from the §66 backend routes.
 	async function loadAdvancedAnalytics(period = advancedPeriod) {
 		advancedLoading = true;
@@ -114,11 +193,11 @@
 		try {
 			const periodParam = `period=${period}`;
 			const results = await Promise.allSettled([
-				analyticsAdminApi.getTopContent(periodParam),
+				analyticsAdminApi.getTopContent(`${periodParam}${advType ? `&type=${advType}` : ''}`),
 				analyticsAdminApi.getRevenueStreams(periodParam),
-				analyticsAdminApi.getAdPerformance(),
-				analyticsAdminApi.getNewsletterEngagement(),
-				analyticsAdminApi.getRetention()
+				analyticsAdminApi.getAdPerformance(periodParam),
+				analyticsAdminApi.getNewsletterEngagement(periodParam),
+				analyticsAdminApi.getRetention(periodParam)
 			]);
 			const [topRes, revRes, adsRes, newsRes, retRes] = results;
 			topContent = topRes.status === 'fulfilled' && topRes.value.ok ? (topRes.value.data as { content?: Array<Record<string, unknown>> })?.content ?? null : null;
@@ -161,11 +240,19 @@
 		try {
 			const res = await analyticsAdminApi.runSecurityScan({});
 			if (!res.ok) throw new Error('Scan failed');
-			// Wait a moment for the async scan to process, then reload security data
-			await new Promise(r => setTimeout(r, 2000));
-			const params = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined;
-			const secRes = await analyticsAdminApi.getSecurity(params);
-			security = secRes.ok ? (secRes.data as Array<Record<string, unknown>>) : [];
+			// The scan runs as an Asynq task — poll until new findings land
+			// (or ~20s elapses) instead of hoping a fixed sleep covers it.
+			const scanStart = Date.now();
+			const deadline = scanStart + 20000;
+			const baseline = security ?? [];
+			for (;;) {
+				await new Promise(r => setTimeout(r, 2000));
+				await loadSecurity();
+				const fresh = (security ?? []).some(
+					(s) => new Date(String(s.created_at ?? 0)).getTime() > scanStart - 5000
+				);
+				if ((security ?? []).length !== baseline.length || fresh || Date.now() > deadline) break;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('analytics.scan_failed', 'Scan failed');
 		} finally {
@@ -263,7 +350,11 @@
 		{ value: "revenue", label: t('analytics.tab_revenue', 'Revenue'), icon: DollarSign },
 		{ value: "search", label: t('analytics.tab_search', 'Search'), icon: Search },
 		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield },
-		{ value: "advanced", label: t('analytics.tab_advanced', 'Advanced'), icon: BarChart3 }
+		// §66 endpoints require the analytics.advanced node — hide the tab
+		// entirely for operators who would only see permission errors.
+		...(hasPermission('analytics.advanced')
+			? [{ value: "advanced", label: t('analytics.tab_advanced', 'Advanced'), icon: BarChart3 }]
+			: [])
 	]);
 	
 	// Analytics series arrive in mixed orders (DAU/content are newest-first,
@@ -328,6 +419,14 @@
 		}
 	]);
 
+	// Content-type filter options for the Advanced tab, seeded from the
+	// fetched leaderboard rows (the same values the backend ?type= accepts).
+	const advTypeOptions = $derived([
+		{ value: '', label: t('analytics.all_types', 'All types') },
+		...Array.from(new Set((topContent ?? []).map((r) => String(r.content_type ?? '')).filter(Boolean)))
+			.map((ct) => ({ value: ct, label: ct }))
+	]);
+
 	// Top Content table columns for the Overview tab.
 	const topContentColumns = $derived([
 		{ key: "content_title", label: t('analytics.content_title', 'Content Title'), sortable: true, render: (v: string) => v ? `<span class="font-medium">${v}</span>` : '—' },
@@ -340,9 +439,9 @@
 	// Map the user analytics summary object into metric/value rows for the
 	// Users tab DataTable (backend returns an object, not an array).
 	const userRows = $derived([
-		{ metric: t('analytics.total_users', 'Total Users'), value: userAnalytics?.total_users ?? 0 },
-		{ metric: t('analytics.active_users', 'Active Users'), value: userAnalytics?.active_users ?? 0 },
-		{ metric: t('analytics.new_users_today', 'New Users Today'), value: userAnalytics?.new_users_today ?? 0 }
+		{ metric: t('analytics.total_users', 'Total Users (all time)'), value: userAnalytics?.total_users ?? 0 },
+		{ metric: t('analytics.active_users', 'Active Users (in range)'), value: userAnalytics?.active_users ?? 0 },
+		{ metric: t('analytics.new_users_today', 'New Users (in range)'), value: userAnalytics?.new_users ?? 0 }
 	]);
 
 	// LayerChart Axis format: dates on the x-axis, numbers on the y-axis.
@@ -390,9 +489,16 @@
 	async function handleFlushCache() {
 		flushing = true;
 		try {
-			const res = await analyticsAdminApi.flushCache({ scope: "all" });
+			// "analytics" scope only — the backend clamps to jc:cache:analytics:*
+			// regardless, but sending the right scope keeps intent explicit.
+			const res = await analyticsAdminApi.flushCache({ scope: "analytics" });
 			if (!res.ok) throw new Error(res.error ?? 'flush failed');
 			flushModalOpen = false;
+			const deleted = (res.data as { deleted?: number })?.deleted;
+			notice = deleted != null
+				? t('analytics.cache_flushed_count', 'Analytics cache flushed ({n} keys)').replace('{n}', String(deleted))
+				: t('analytics.cache_flushed', 'Analytics cache flushed');
+			setTimeout(() => { notice = ""; }, 6000);
 			// Refetch in place — a goto back to /analytics would drop the
 			// active ?tab and leave stale data (the load effect only fires
 			// when ?from/?to change).
@@ -404,11 +510,28 @@
 			flushing = false;
 		}
 	}
-	
+
+	// Enqueue a materialized-view refresh (POST /admin/analytics/refresh).
+	async function handleRefreshViews() {
+		const res = await analyticsAdminApi.refresh({});
+		if (res.ok) {
+			notice = t('analytics.refresh_queued', 'Analytics refresh queued');
+			setTimeout(() => { notice = ""; }, 6000);
+		} else {
+			error = res.error ?? t('analytics.failed_to_load', 'Refresh failed');
+		}
+	}
+
 	// PageHeader actions — Flush Cache is gated on the analytics.cache.flush
-	// node (POST /admin/analytics/cache/flush requires it).
+	// node, Refresh Views on analytics.admin, Export on analytics.export
+	// (matching the backend route permissions).
 	const pageActions = $derived([
-		{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" as const },
+		...(hasPermission('analytics.export')
+			? [{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" as const }]
+			: []),
+		...(hasPermission('analytics.admin')
+			? [{ label: t('analytics.refresh_views', 'Refresh Views'), icon: RefreshCw, onclick: handleRefreshViews, variant: "ghost" as const }]
+			: []),
 		...(hasPermission('analytics.cache.flush')
 			? [{ label: t('analytics.flush_cache', 'Flush Cache'), icon: RefreshCw, onclick: () => { flushModalOpen = true; }, variant: "ghost" as const }]
 			: [])
@@ -423,18 +546,16 @@
 			return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 		};
 		const rows: string[] = ['Metric,Value'];
-		if (overview?.daily_active_users?.length) {
-			const latest = overview.daily_active_users[overview.daily_active_users.length - 1];
-			rows.push(`${csvCell('Daily Active Users')},${csvCell(latest.dau)}`);
-		}
-		if (overview?.monthly_active_users?.length) {
-			const latest = overview.monthly_active_users[overview.monthly_active_users.length - 1];
-			rows.push(`${csvCell('Monthly Active Users')},${csvCell(latest.mau)}`);
-		}
-		if (overview?.user_growth?.length) {
-			const latest = overview.user_growth[overview.user_growth.length - 1];
-			rows.push(`${csvCell('New Signups (Latest)')},${csvCell(latest.new_users)}`);
-		}
+		const range = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join(' ');
+		if (range) rows.push(`${csvCell('Range')},${csvCell(range)}`);
+		// Series arrive newest-first — sort ascending before taking "latest",
+		// same normalization as the stat cards.
+		const dau = sortAsc(overview?.daily_active_users, 'day').at(-1);
+		if (dau) rows.push(`${csvCell('Daily Active Users')},${csvCell(dau.dau)}`);
+		const mau = sortAsc(overview?.monthly_active_users, 'month').at(-1);
+		if (mau) rows.push(`${csvCell('Monthly Active Users')},${csvCell(mau.mau)}`);
+		const signups = sortAsc(overview?.user_growth, 'day').at(-1);
+		if (signups) rows.push(`${csvCell('New Signups (Latest)')},${csvCell(signups.new_users)}`);
 		if (overview?.content_over_time?.length) {
 			const total = overview.content_over_time.reduce((sum, d) => sum + d.content_count, 0);
 			rows.push(`${csvCell('Total Content Items')},${csvCell(total)}`);
@@ -442,6 +563,21 @@
 		if (overview?.event_counts?.length) {
 			const total = overview.event_counts.reduce((sum, e) => sum + e.count, 0);
 			rows.push(`${csvCell('Total Events')},${csvCell(total)}`);
+		}
+		if (userAnalytics) {
+			rows.push(`${csvCell('Total Users')},${csvCell(userAnalytics.total_users)}`);
+			rows.push(`${csvCell('Active Users')},${csvCell(userAnalytics.active_users)}`);
+			rows.push(`${csvCell('New Users')},${csvCell(userAnalytics.new_users)}`);
+		}
+		if (revenueAnalytics) {
+			rows.push(`${csvCell('Total Revenue (NGN)')},${csvCell(revenueAnalytics.total_revenue)}`);
+			rows.push(`${csvCell('Monthly Revenue (NGN)')},${csvCell(revenueAnalytics.monthly_revenue)}`);
+			rows.push(`${csvCell('Active Subscriptions')},${csvCell(revenueAnalytics.active_subscriptions)}`);
+		}
+		const unresolved = (security ?? []).filter((s) => !s.resolved_at).length;
+		rows.push(`${csvCell('Unresolved Security Findings')},${csvCell(unresolved)}`);
+		for (const q of (searchAnalytics ?? []).slice(0, 10)) {
+			rows.push(`${csvCell(`Top Search: ${q.query}`)},${csvCell(q.count)}`);
 		}
 		const csv = rows.join('\n');
 		const blob = new Blob([csv], { type: 'text/csv' });
@@ -488,6 +624,9 @@
 
 	{#if error}
 		<div class="rounded-lg p-3 text-sm" style="background: var(--color-danger); color: var(--color-white)">{error}</div>
+	{/if}
+	{#if notice}
+		<div class="rounded-lg p-3 text-sm" style="background: var(--color-success); color: var(--color-white)">{notice}</div>
 	{/if}
 
 	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={['from', 'to']} />
@@ -614,34 +753,88 @@
 						columns={topContentColumns}
 						data={overview?.top_content ?? []}
 						pageSize={5}
+						bulkExport={false}
 						emptyMessage={t('analytics.no_top_content', 'No top content data')}
 					/>
 				</CardContent>
 			</Card>
 		</div>
+
+		{#if (overview?.event_counts ?? []).length > 0}
+			<Card>
+				<CardHeader>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.events_by_type', 'Events by Type')}</h3>
+				</CardHeader>
+				<CardContent>
+					<DataTable
+						columns={[
+							{ key: "event_type", label: t('analytics.type', 'Type'), sortable: true },
+							{ key: "count", label: t('analytics.count', 'Count'), sortable: true, render: (v: number) => Number(v).toLocaleString() }
+						]}
+						data={[...(overview?.event_counts ?? [])].sort((a, b) => b.count - a.count)}
+						pageSize={8}
+						urlSync={false}
+						rowKey={(r) => String(r.event_type)}
+						bulkExport={false}
+						emptyMessage={t('analytics.no_data_available', 'No data available')}
+					/>
+				</CardContent>
+			</Card>
+		{/if}
 	{/if}
 
-	{#if activeTab === "security"}
+	{#if !loading && activeTab === "security"}
 		<Card>
 			<CardHeader>
 				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
-					<Button onclick={runSecurityScan} disabled={scanning || !hasPermission('analytics.admin')}>
-						{#if scanning}
-							<RefreshCw class="me-2 h-4 w-4 animate-spin" />
-							{t('analytics.scanning', 'Scanning...')}
-						{:else}
-							<Shield class="me-2 h-4 w-4" />
-							{t('analytics.run_scan', 'Run Scan')}
-						{/if}
-					</Button>
+					<div class="flex items-center gap-2 flex-wrap">
+						<AutocompleteSelect
+							id="security-severity"
+							value={secSeverity}
+							onValueChange={(v) => { secSeverity = v; secPage = 0; loadSecurity(); }}
+							options={[
+								{ value: '', label: t('analytics.all_severities', 'All severities') },
+								{ value: 'info', label: 'Info' },
+								{ value: 'warning', label: 'Warning' },
+								{ value: 'low', label: 'Low' },
+								{ value: 'medium', label: 'Medium' },
+								{ value: 'high', label: 'High' },
+								{ value: 'critical', label: 'Critical' }
+							]}
+						/>
+						<AutocompleteSelect
+							id="security-status"
+							value={secUnresolvedOnly ? 'unresolved' : 'all'}
+							onValueChange={(v) => { secUnresolvedOnly = v === 'unresolved'; secPage = 0; loadSecurity(); }}
+							options={[
+								{ value: 'all', label: t('analytics.all_findings', 'All findings') },
+								{ value: 'unresolved', label: t('analytics.unresolved', 'Unresolved') }
+							]}
+						/>
+						<Button onclick={runSecurityScan} disabled={scanning || !hasPermission('analytics.admin')}>
+							{#if scanning}
+								<RefreshCw class="me-2 h-4 w-4 animate-spin" />
+								{t('analytics.scanning', 'Scanning...')}
+							{:else}
+								<Shield class="me-2 h-4 w-4" />
+								{t('analytics.run_scan', 'Run Scan')}
+							{/if}
+						</Button>
+					</div>
 				</div>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={securityColumns}
 					data={security ?? []}
-					pageSize={10}
+					serverSide
+					bind:page={secPage}
+					bind:pageSize={secPageSize}
+					totalRows={secTotal}
+					rowKey={(r) => String(r.id)}
+					onpagechange={() => loadSecurity()}
+					onpagesizechange={() => { secPage = 0; loadSecurity(); }}
 					actions={securityActions}
 					emptyMessage={t('analytics.no_security_scans', 'No security scans found. Click "Run Scan" to start a security scan.')}
 				/>
@@ -649,7 +842,7 @@
 		</Card>
 	{/if}
 	
-	{#if activeTab === "users"}
+	{#if !loading && activeTab === "users"}
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.user_analytics', 'User Analytics')}</h3>
@@ -661,20 +854,47 @@
 						{ key: "value", label: t('analytics.value', 'Value'), sortable: true, render: (v: number) => Number(v).toLocaleString() }
 					]}
 					data={userRows}
+					bulkExport={false}
 					emptyMessage={t('analytics.no_user_analytics', 'No user analytics data')}
 				/>
 			</CardContent>
 		</Card>
+		<Card>
+			<CardHeader>
+				<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.user_growth', 'User Growth')}</h3>
+			</CardHeader>
+			<CardContent>
+				{#if (overview?.user_growth ?? []).length > 0}
+					<div class="h-64">
+						<LineChart
+							data={sortAsc(overview?.user_growth, 'day').map((d) => ({ date: new Date(d.day), count: d.new_users }))}
+							x="date"
+							y="count"
+							cRange={['var(--chart-1)']}
+							axis={chartAxisFormat}
+							props={{ spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--chart-1)' } }}
+						/>
+					</div>
+				{:else}
+					<div class="flex h-64 items-center justify-center">
+						<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available', 'No data available')}</p>
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 	{/if}
 	
-	{#if activeTab === "content"}
+	{#if !loading && activeTab === "content"}
 		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-			<StatCard label={t('analytics.total_content', 'Total Content')} value={contentAnalytics?.total_content ?? 0} />
+			<StatCard label={t('analytics.total_content', 'Content in Range')} value={contentAnalytics?.total_content ?? 0} />
 			<StatCard label={t('analytics.views', 'Views')} value={contentAnalytics?.total_views ?? 0} />
 			<StatCard label={t('analytics.reactions', 'Reactions')} value={contentAnalytics?.total_reactions ?? 0} />
 			<StatCard label={t('analytics.comments', 'Comments')} value={contentAnalytics?.total_comments ?? 0} />
 			<StatCard label={t('analytics.unique_viewers', 'Unique Viewers')} value={contentAnalytics?.total_unique_viewers ?? 0} />
 		</div>
+		<p class="text-xs" style="color: var(--color-muted)">
+			{t('analytics.lifetime_stats_note', 'Rows and totals cover content created inside the selected range; engagement figures are lifetime counters on those items.')}
+		</p>
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.content_analytics', 'Content Analytics')}</h3>
@@ -690,13 +910,30 @@
 						{ key: "unique_viewers", label: t('analytics.unique_viewers', 'Unique Viewers'), sortable: true }
 					]}
 					data={contentAnalytics?.content_stats ?? []}
+					serverSide
+					bind:page={contentPage}
+					bind:pageSize={contentPageSize}
+					totalRows={contentTotal}
+					rowKey={(r) => String(r.content_id)}
+					urlSync={false}
+					onpagechange={() => loadContent()}
+					onpagesizechange={() => { contentPage = 0; loadContent(); }}
+					onsortchange={(s) => { contentSort = { key: s.key, dir: s.dir }; contentPage = 0; loadContent(); }}
 					emptyMessage={t('analytics.no_content_analytics', 'No content analytics data')}
 				/>
 			</CardContent>
 		</Card>
 	{/if}
 	
-	{#if activeTab === "spaces"}
+	{#if !loading && activeTab === "spaces"}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<StatCard label={t('analytics.spaces_in_range', 'Spaces Created in Range')} value={spaceTotals?.total_spaces ?? 0} />
+			<StatCard label={t('analytics.total_joins', 'Joins (lifetime)')} value={spaceTotals?.total_joins ?? 0} />
+			<StatCard label={t('analytics.total_posts', 'Posts (lifetime)')} value={spaceTotals?.total_posts ?? 0} />
+		</div>
+		<p class="text-xs" style="color: var(--color-muted)">
+			{t('analytics.lifetime_stats_note', 'Rows and totals cover spaces created inside the selected range; join/post figures are lifetime counters on those spaces.')}
+		</p>
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.space_analytics', 'Space Analytics')}</h3>
@@ -709,17 +946,25 @@
 						{ key: "total_posts", label: t('analytics.total_posts', 'Total Posts'), sortable: true }
 					]}
 					data={spaceAnalytics ?? []}
-					pageSize={10}
+					serverSide
+					bind:page={spacePage}
+					bind:pageSize={spacePageSize}
+					totalRows={spaceTotal}
+					rowKey={(r) => String(r.space_id)}
+					urlSync={false}
+					onpagechange={() => loadSpaces()}
+					onpagesizechange={() => { spacePage = 0; loadSpaces(); }}
+					onsortchange={(s) => { spaceSort = { key: s.key, dir: s.dir }; spacePage = 0; loadSpaces(); }}
 					emptyMessage={t('analytics.no_space_analytics', 'No space analytics data')}
 				/>
 			</CardContent>
 		</Card>
 	{/if}
 	
-	{#if activeTab === "revenue"}
+	{#if !loading && activeTab === "revenue"}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-			<StatCard label={t('analytics.total_revenue', 'Total Revenue')} value={`$${(revenueAnalytics?.total_revenue ?? 0).toLocaleString()}`} />
-			<StatCard label={t('analytics.monthly_revenue', 'Monthly Revenue')} value={`$${(revenueAnalytics?.monthly_revenue ?? 0).toLocaleString()}`} />
+			<StatCard label={t('analytics.total_revenue', 'Total Revenue')} value={fmtNaira(revenueAnalytics?.total_revenue)} />
+			<StatCard label={t('analytics.monthly_revenue', 'Monthly Revenue')} value={fmtNaira(revenueAnalytics?.monthly_revenue)} />
 			<StatCard label={t('analytics.active_subscriptions', 'Active Subscriptions')} value={revenueAnalytics?.active_subscriptions ?? 0} />
 		</div>
 		<Card>
@@ -730,17 +975,18 @@
 				<DataTable
 					columns={[
 						{ key: "period", label: t('analytics.period', 'Period'), sortable: true },
-						{ key: "revenue", label: t('analytics.revenue', 'Revenue'), sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
+						{ key: "revenue", label: t('analytics.revenue', 'Revenue'), sortable: true, render: (v: number) => fmtNaira(v) },
 						{ key: "transactions", label: t('analytics.transactions', 'Transactions'), sortable: true }
 					]}
 					data={revenueAnalytics?.periods ?? []}
+					bulkExport={false}
 					emptyMessage={t('analytics.no_revenue_analytics', 'No revenue analytics data')}
 				/>
 			</CardContent>
 		</Card>
 	{/if}
 	
-	{#if activeTab === "search"}
+	{#if !loading && activeTab === "search"}
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.search_analytics', 'Search Analytics')}</h3>
@@ -750,16 +996,19 @@
 					columns={[
 						{ key: "query", label: t('analytics.query', 'Query'), sortable: true },
 						{ key: "count", label: t('analytics.count', 'Count'), sortable: true },
-						{ key: "avg_results", label: t('analytics.avg_results', 'Avg Results'), sortable: true }
+						{ key: "avg_results", label: t('analytics.avg_results', 'Avg Results'), sortable: true },
+						{ key: "zero_result_count", label: t('analytics.zero_result', 'Zero Results'), sortable: true,
+							render: (v: number) => Number(v ?? 0) > 0 ? `<span class="font-medium" style="color: var(--color-warning)">${v}</span>` : '0' }
 					]}
 					data={searchAnalytics ?? []}
+					rowKey={(r) => String(r.query)}
 					emptyMessage={t('analytics.no_search_analytics', 'No search analytics data')}
 				/>
 			</CardContent>
 		</Card>
 	{/if}
 
-	{#if activeTab === "advanced"}
+	{#if !loading && activeTab === "advanced"}
 		<!-- Section 66 — Advanced Analytics Dashboard (ADR-084) -->
 		<div class="flex flex-wrap items-center gap-2">
 			<label for="advanced-period" class="text-xs font-medium" style="color: var(--color-muted)">{t('analytics.period', 'Period')}</label>
@@ -767,15 +1016,23 @@
 				id="advanced-period"
 				value={advancedPeriod}
 				onValueChange={(v) => { advancedPeriod = v; loadAdvancedAnalytics(v); }}
-				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }]}
+				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }, { value: '12m', label: '12m' }]}
 			/>
-			<div class="ms-auto flex gap-2">
-				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('top_content')}>{t('analytics.export_top_content', 'Export Top Content')}</Button>
-				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('revenue_streams')}>{t('analytics.export_revenue', 'Export Revenue')}</Button>
-				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('ad_performance')}>{t('analytics.export_ads', 'Export Ads')}</Button>
-				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('newsletter')}>{t('analytics.export_newsletter', 'Export Newsletter')}</Button>
-				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('retention')}>{t('analytics.export_retention', 'Export Retention')}</Button>
-			</div>
+			<AutocompleteSelect
+				id="advanced-type"
+				value={advType}
+				onValueChange={(v) => { advType = v; loadAdvancedAnalytics(); }}
+				options={advTypeOptions}
+			/>
+			{#if hasPermission('analytics.export')}
+				<div class="ms-auto flex gap-2">
+					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('top_content')}>{t('analytics.export_top_content', 'Export Top Content')}</Button>
+					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('revenue_streams')}>{t('analytics.export_revenue', 'Export Revenue')}</Button>
+					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('ad_performance')}>{t('analytics.export_ads', 'Export Ads')}</Button>
+					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('newsletter')}>{t('analytics.export_newsletter', 'Export Newsletter')}</Button>
+					<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('retention')}>{t('analytics.export_retention', 'Export Retention')}</Button>
+				</div>
+			{/if}
 		</div>
 
 		{#if advancedError}
@@ -809,6 +1066,8 @@
 						]}
 						data={topContent ?? []}
 						pageSize={10}
+						urlSync={false}
+						rowKey={(r) => String(r.content_id)}
 						emptyMessage={t('analytics.no_top_content', 'No top content data')}
 					/>
 				</CardContent>
@@ -823,13 +1082,16 @@
 					<DataTable
 						columns={[
 							{ key: "month", label: t('analytics.month', 'Month'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString(locale.current, { year: 'numeric', month: 'short' }) : '—' },
-							{ key: "subscription_revenue", label: t('analytics.subscription', 'Subscription'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
-							{ key: "course_revenue", label: t('analytics.course', 'Course'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
-							{ key: "ad_revenue", label: t('analytics.ad_revenue', 'Ads'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` },
-							{ key: "credit_revenue", label: t('analytics.credits', 'Credits'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` }
+							{ key: "subscription_revenue", label: t('analytics.subscription', 'Subscription'), sortable: true, render: (v: number) => fmtNaira(v) },
+							{ key: "course_revenue", label: t('analytics.course', 'Course'), sortable: true, render: (v: number) => fmtNaira(v) },
+							{ key: "ad_revenue", label: t('analytics.ad_revenue', 'Ads'), sortable: true, render: (v: number) => fmtNaira(v) },
+							{ key: "credit_revenue", label: t('analytics.credits', 'Credits'), sortable: true, render: (v: number) => fmtNaira(v) }
 						]}
 						data={revenueStreams ?? []}
 						pageSize={12}
+						urlSync={false}
+						rowKey={(r) => String(r.month)}
+						bulkExport={false}
 						emptyMessage={t('analytics.no_revenue_streams', 'No revenue stream data')}
 					/>
 				</CardContent>
@@ -848,10 +1110,12 @@
 							{ key: "impressions", label: t('analytics.impressions', 'Impressions'), sortable: true },
 							{ key: "clicks", label: t('analytics.clicks', 'Clicks'), sortable: true },
 							{ key: "ctr", label: t('analytics.ctr', 'CTR %'), sortable: true },
-							{ key: "spent", label: t('analytics.spent', 'Spent'), sortable: true, render: (v: number) => `$${Number(v ?? 0).toLocaleString()}` }
+							{ key: "spent", label: t('analytics.spent_credits', 'Spent (credits)'), sortable: true, render: (v: number) => `${Number(v ?? 0).toLocaleString()}` }
 						]}
 						data={adPerformance ?? []}
 						pageSize={10}
+						urlSync={false}
+						rowKey={(r) => String(r.campaign_id)}
 						emptyMessage={t('analytics.no_ad_performance', 'No ad performance data')}
 					/>
 				</CardContent>
@@ -874,8 +1138,25 @@
 						]}
 						data={newsletterEngagement?.campaigns ?? []}
 						pageSize={10}
+						urlSync={false}
+						rowKey={(r) => String(r.campaign_id)}
 						emptyMessage={t('analytics.no_newsletter_engagement', 'No newsletter engagement data')}
 					/>
+					{#if (newsletterEngagement?.lists ?? []).length > 0}
+						<h4 class="mb-2 mt-6 text-sm font-medium" style="color: var(--color-muted)">{t('analytics.top_lists', 'Top Lists')}</h4>
+						<DataTable
+							columns={[
+								{ key: "list_name", label: t('analytics.name', 'Name'), sortable: true },
+								{ key: "subscriber_count", label: t('analytics.subscribers', 'Subscribers'), sortable: true }
+							]}
+							data={newsletterEngagement?.lists ?? []}
+							pageSize={5}
+							urlSync={false}
+							rowKey={(r) => String(r.list_id)}
+							bulkExport={false}
+							emptyMessage={t('analytics.no_data_available', 'No data available')}
+						/>
+					{/if}
 				</CardContent>
 			</Card>
 
@@ -898,6 +1179,9 @@
 						]}
 						data={retentionCohorts ?? []}
 						pageSize={12}
+						urlSync={false}
+						rowKey={(r) => String(r.cohort_date)}
+						bulkExport={false}
 						emptyMessage={t('analytics.no_retention_cohorts', 'No retention cohort data')}
 					/>
 				</CardContent>

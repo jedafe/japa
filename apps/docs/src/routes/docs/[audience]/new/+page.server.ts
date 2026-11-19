@@ -10,7 +10,7 @@ import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 /**
  * /docs/{audience}/new — in-app page authoring (§44 amendment 2).
  * Server-side gated: requires both read access to the audience and the
- * docs.manage permission node. The shared docs-author module owns the form
+ * docs.admin permission node. The shared docs-author module owns the form
  * contract so /docs/api/new stays identical.
  */
 export const load: PageServerLoad = async (event) => {

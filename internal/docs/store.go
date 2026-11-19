@@ -93,7 +93,7 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRo
 }
 
 // getBySlugAnyStatus returns a doc page by audience+slug regardless of
-// review status. Editor preview only — callers must gate on docs.manage
+// review status. Editor preview only — callers must gate on docs.admin
 // (§44 amendment 2).
 func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (docPageRow, error) {
 	row, err := s.read.GetDocPageBySlugAnyStatus(ctx, gen.GetDocPageBySlugAnyStatusParams{
@@ -111,6 +111,10 @@ func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (
 		Audience:       row.Audience,
 		Content:        row.Content,
 		AiGenerated:    row.AiGenerated,
+		AiModel:        row.AiModel,
+		AiGeneratedAt:  row.AiGeneratedAt,
+		HitlReviewedBy: row.HitlReviewedBy,
+		HitlReviewedAt: row.HitlReviewedAt,
 		ReviewStatus:   row.ReviewStatus,
 		LastReviewedBy: row.LastReviewedBy,
 		LastReviewedAt: row.LastReviewedAt,
@@ -156,6 +160,10 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (docPageRow, error)
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 		DeletedAt:      row.DeletedAt,
+		AiModel:        row.AiModel,
+		AiGeneratedAt:  row.AiGeneratedAt,
+		HitlReviewedBy: row.HitlReviewedBy,
+		HitlReviewedAt: row.HitlReviewedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
 }
 
@@ -188,6 +196,131 @@ func (s *Store) listAllByAudience(ctx context.Context, audience, status string, 
 	}
 
 	return rows, nil
+}
+
+// adminListFilter carries the parsed GET /admin/docs/pages parameters.
+type adminListFilter struct {
+	// Audiences is the gate-resolved set of audiences the caller may see —
+	// pushed to SQL so counts and pages never include unreadable rows.
+	Audiences   []string
+	Status      string
+	ShowDeleted bool
+	Search      string
+	Sort        string
+	Desc        bool
+	Limit       int32
+	Offset      int32
+}
+
+// adminListSortColumns maps client sort keys to ORDER BY expressions. The
+// whitelist is exhaustive — user input is never interpolated.
+var adminListSortColumns = map[string]string{
+	"title":      "p.title",
+	"slug":       "p.slug",
+	"audience":   "p.audience",
+	"position":   "p.position",
+	"status":     "p.review_status",
+	"created_at": "p.created_at",
+	"updated_at": "p.updated_at",
+}
+
+// listAdminPaged returns the filtered+sorted page slice plus the total row
+// count under the same filters, so the admin table can render accurate
+// pagination metadata.
+func (s *Store) listAdminPaged(ctx context.Context, f adminListFilter) ([]docPageRow, int64, error) {
+	conds := []string{"($1::boolean = (p.deleted_at IS NOT NULL))"}
+	args := []any{f.ShowDeleted}
+
+	args = append(args, f.Audiences)
+	conds = append(conds, fmt.Sprintf("p.audience = ANY($%d::text[])", len(args)))
+
+	if f.Status != "" {
+		args = append(args, f.Status)
+		conds = append(conds, fmt.Sprintf("p.review_status = $%d", len(args)))
+	}
+	if f.Search != "" {
+		args = append(args, "%"+likeEscaper.Replace(f.Search)+"%")
+		conds = append(conds, fmt.Sprintf("(p.title ILIKE $%d OR p.slug ILIKE $%d)", len(args), len(args)))
+	}
+
+	orderBy := "p.audience ASC, p.position ASC, p.title ASC"
+	if col, ok := adminListSortColumns[f.Sort]; ok {
+		dir := "ASC"
+		if f.Desc {
+			dir = "DESC"
+		}
+		orderBy = col + " " + dir + ", p.title ASC"
+	}
+
+	args = append(args, f.Limit)
+	limIdx := len(args)
+	args = append(args, f.Offset)
+	offIdx := len(args)
+
+	query := fmt.Sprintf(`SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model,
+  p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
+  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+  p.feature_image_id,
+  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+  p.created_at, p.updated_at, p.deleted_at, count(*) OVER() AS total
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE %s
+ORDER BY %s
+LIMIT NULLIF($%d::int, 0) OFFSET COALESCE($%d::int, 0)`,
+		strings.Join(conds, "\n  AND "), orderBy, limIdx, offIdx)
+
+	rows, err := s.pool.Reader.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing admin doc pages: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]docPageRow, 0, f.Limit)
+	var total int64
+	for rows.Next() {
+		var r docPageRow
+		var n int64
+		if err := rows.Scan(
+			&r.ID, &r.Title, &r.Slug, &r.Audience, &r.AiGenerated, &r.AiModel,
+			&r.AiGeneratedAt, &r.HitlReviewedBy, &r.HitlReviewedAt, &r.ReviewStatus,
+			&r.LastReviewedBy, &r.LastReviewedAt, &r.ParentID, &r.Position, &r.Category, &r.Subcategory,
+			&r.FeatureImageID, &r.FeatureImageBucket, &r.FeatureImagePath,
+			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt, &n,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning admin doc page: %w", err)
+		}
+		total = n
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating admin doc pages: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// listSummaries returns published summaries across the given (already
+// gate-filtered) audiences — one aggregate query for the docs landing
+// changelog, replacing the per-audience fan-out.
+func (s *Store) listSummaries(ctx context.Context, audiences []string) ([]gen.ListDocSummariesRow, error) {
+	rows, err := s.read.ListDocSummaries(ctx, audiences)
+	if err != nil {
+		return nil, fmt.Errorf("listing doc summaries: %w", err)
+	}
+
+	return rows, nil
+}
+
+// swapPositions atomically exchanges the positions of two live pages —
+// a single UPDATE so a mid-failure can't leave a half-swapped order.
+func (s *Store) swapPositions(ctx context.Context, idA, idB pgtype.UUID, posA, posB int32) error {
+	return s.write.SwapDocPagePositions(ctx, gen.SwapDocPagePositionsParams{
+		IDA:       idA,
+		IDB:       idB,
+		PositionA: posA,
+		PositionB: posB,
+	})
 }
 
 // listAll returns all doc pages (any audience) for admin listing, optionally

@@ -11,8 +11,9 @@ WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published
 
 -- name: GetDocPageBySlugAnyStatus :one
 -- Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
--- agnostic. Callers MUST gate on docs.manage — never expose to public readers.
-SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+-- agnostic. Callers MUST gate on docs.admin — never expose to public readers.
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
+ p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -35,14 +36,29 @@ WHERE p.audience = @audience AND p.review_status = 'published'
 ORDER BY p.position ASC, p.title ASC;
 
 -- name: ListDocPagesTree :many
-SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
+SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory, created_at
 FROM doc_pages
 WHERE audience = @audience AND review_status = 'published'
   AND deleted_at IS NULL
 ORDER BY position ASC;
 
+-- name: ListDocSummaries :many
+-- Single aggregate for the docs landing changelog — replaces the
+-- per-accessible-audience /docs/{audience} fan-out (N+1). content is selected
+-- so the service can derive the summary excerpt; it is never returned raw.
+SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.content
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.review_status = 'published'
+  AND p.deleted_at IS NULL
+  AND p.audience = ANY(@audiences::text[])
+ORDER BY p.created_at DESC, p.title ASC;
+
 -- name: ListAllDocPagesByAudience :many
-SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status, p.last_reviewed_by,
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -56,7 +72,7 @@ ORDER BY p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: ListAllDocPages :many
-SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status, p.last_reviewed_by,
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -69,7 +85,8 @@ ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: GetDocPageByID :one
-SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
+ p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -79,7 +96,9 @@ LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.id = @id;
 
 -- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES (@title, @slug, @audience, @content, @ai_generated, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid, sqlc.narg(feature_image_id)::uuid)
+-- ai_generated_at stamps when the draft was generated (ADR-088); ai_model
+-- records the producing model for provenance. Both NULL on human-authored rows.
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES (@title, @slug, @audience, @content, @ai_generated, sqlc.narg(ai_model)::text, CASE WHEN @ai_generated THEN COALESCE(sqlc.narg(ai_generated_at)::timestamptz, now()) ELSE NULL END, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid, sqlc.narg(feature_image_id)::uuid)
 
 RETURNING id;
 
@@ -119,8 +138,27 @@ SET review_status = @review_status,
   WHEN @review_status = 'approved' AND review_status <> 'approved' THEN now()
   ELSE last_reviewed_at
  END,
+ -- ADR-088: the HITL stamp records the first human review of an
+ -- AI-generated page — written on the first transition into 'approved'
+ -- and preserved afterwards.
+ hitl_reviewed_by = CASE
+  WHEN @review_status = 'approved' AND review_status <> 'approved' AND ai_generated THEN @last_reviewed_by
+  ELSE hitl_reviewed_by
+ END,
+ hitl_reviewed_at = CASE
+  WHEN @review_status = 'approved' AND review_status <> 'approved' AND ai_generated THEN now()
+  ELSE hitl_reviewed_at
+ END,
  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: SwapDocPagePositions :exec
+-- Atomic position swap for adjacent-page reorder — replaces the two-PATCH
+-- move flow which could leave positions half-swapped on a mid-failure.
+UPDATE doc_pages
+SET position = CASE id WHEN @id_a::uuid THEN @position_b::int ELSE @position_a::int END,
+    updated_at = now()
+WHERE id IN (@id_a::uuid, @id_b::uuid) AND deleted_at IS NULL;
 
 -- name: GetDocPageStatus :one
 SELECT review_status, created_by, ai_generated, deleted_at FROM doc_pages WHERE id = @id;

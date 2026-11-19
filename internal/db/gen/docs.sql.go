@@ -23,26 +23,30 @@ func (q *Queries) CountDocPageRevisions(ctx context.Context, docPageID pgtype.UU
 }
 
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::uuid, $12::uuid)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES ($1, $2, $3, $4, $5, $6::text, CASE WHEN $5 THEN COALESCE($7::timestamptz, now()) ELSE NULL END, $8, $9, $10, $11, $12, $13::uuid, $14::uuid)
 
 RETURNING id
 `
 
 type CreateDocPageParams struct {
-	Title          string      `json:"title"`
-	Slug           string      `json:"slug"`
-	Audience       string      `json:"audience"`
-	Content        []byte      `json:"content"`
-	AiGenerated    bool        `json:"ai_generated"`
-	ReviewStatus   string      `json:"review_status"`
-	ParentID       pgtype.UUID `json:"parent_id"`
-	Position       int32       `json:"position"`
-	Category       *string     `json:"category"`
-	Subcategory    *string     `json:"subcategory"`
-	CreatedBy      pgtype.UUID `json:"created_by"`
-	FeatureImageID pgtype.UUID `json:"feature_image_id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	Content        []byte             `json:"content"`
+	AiGenerated    bool               `json:"ai_generated"`
+	AiModel        *string            `json:"ai_model"`
+	AiGeneratedAt  pgtype.Timestamptz `json:"ai_generated_at"`
+	ReviewStatus   string             `json:"review_status"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
 }
 
+// ai_generated_at stamps when the draft was generated (ADR-088); ai_model
+// records the producing model for provenance. Both NULL on human-authored rows.
 func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createDocPage,
 		arg.Title,
@@ -50,6 +54,8 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 		arg.Audience,
 		arg.Content,
 		arg.AiGenerated,
+		arg.AiModel,
+		arg.AiGeneratedAt,
 		arg.ReviewStatus,
 		arg.ParentID,
 		arg.Position,
@@ -110,7 +116,8 @@ func (q *Queries) DeleteDocPageVote(ctx context.Context, arg DeleteDocPageVotePa
 }
 
 const getDocPageByID = `-- name: GetDocPageByID :one
-SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
+ p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -127,6 +134,10 @@ type GetDocPageByIDRow struct {
 	Audience           string             `json:"audience"`
 	Content            []byte             `json:"content"`
 	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	ReviewStatus       string             `json:"review_status"`
 	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
 	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
@@ -154,6 +165,10 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.Audience,
 		&i.Content,
 		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
 		&i.ReviewStatus,
 		&i.LastReviewedBy,
 		&i.LastReviewedAt,
@@ -242,7 +257,8 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 }
 
 const getDocPageBySlugAnyStatus = `-- name: GetDocPageBySlugAnyStatus :one
-SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
+ p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -264,6 +280,10 @@ type GetDocPageBySlugAnyStatusRow struct {
 	Audience           string             `json:"audience"`
 	Content            []byte             `json:"content"`
 	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	ReviewStatus       string             `json:"review_status"`
 	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
 	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
@@ -281,7 +301,7 @@ type GetDocPageBySlugAnyStatusRow struct {
 }
 
 // Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
-// agnostic. Callers MUST gate on docs.manage — never expose to public readers.
+// agnostic. Callers MUST gate on docs.admin — never expose to public readers.
 func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageBySlugAnyStatusParams) (GetDocPageBySlugAnyStatusRow, error) {
 	row := q.db.QueryRow(ctx, getDocPageBySlugAnyStatus, arg.Audience, arg.Slug)
 	var i GetDocPageBySlugAnyStatusRow
@@ -292,6 +312,10 @@ func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageB
 		&i.Audience,
 		&i.Content,
 		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
 		&i.ReviewStatus,
 		&i.LastReviewedBy,
 		&i.LastReviewedAt,
@@ -486,7 +510,7 @@ func (q *Queries) InsertDocPageRevision(ctx context.Context, arg InsertDocPageRe
 }
 
 const listAllDocPages = `-- name: ListAllDocPages :many
-SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status, p.last_reviewed_by,
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -512,6 +536,10 @@ type ListAllDocPagesRow struct {
 	Slug               string             `json:"slug"`
 	Audience           string             `json:"audience"`
 	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	ReviewStatus       string             `json:"review_status"`
 	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
 	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
@@ -547,6 +575,10 @@ func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams
 			&i.Slug,
 			&i.Audience,
 			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiGeneratedAt,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
 			&i.ReviewStatus,
 			&i.LastReviewedBy,
 			&i.LastReviewedAt,
@@ -572,7 +604,7 @@ func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams
 }
 
 const listAllDocPagesByAudience = `-- name: ListAllDocPagesByAudience :many
-SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status, p.last_reviewed_by,
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
@@ -600,6 +632,10 @@ type ListAllDocPagesByAudienceRow struct {
 	Slug               string             `json:"slug"`
 	Audience           string             `json:"audience"`
 	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	ReviewStatus       string             `json:"review_status"`
 	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
 	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
@@ -636,6 +672,10 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocP
 			&i.Slug,
 			&i.Audience,
 			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiGeneratedAt,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
 			&i.ReviewStatus,
 			&i.LastReviewedBy,
 			&i.LastReviewedAt,
@@ -773,7 +813,7 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) (
 }
 
 const listDocPagesTree = `-- name: ListDocPagesTree :many
-SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
+SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory, created_at
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
   AND deleted_at IS NULL
@@ -781,15 +821,16 @@ ORDER BY position ASC
 `
 
 type ListDocPagesTreeRow struct {
-	ID           pgtype.UUID `json:"id"`
-	Title        string      `json:"title"`
-	Slug         string      `json:"slug"`
-	Audience     string      `json:"audience"`
-	ParentID     pgtype.UUID `json:"parent_id"`
-	Position     int32       `json:"position"`
-	ReviewStatus string      `json:"review_status"`
-	Category     *string     `json:"category"`
-	Subcategory  *string     `json:"subcategory"`
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Audience     string             `json:"audience"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Position     int32              `json:"position"`
+	ReviewStatus string             `json:"review_status"`
+	Category     *string            `json:"category"`
+	Subcategory  *string            `json:"subcategory"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]ListDocPagesTreeRow, error) {
@@ -811,6 +852,73 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]List
 			&i.ReviewStatus,
 			&i.Category,
 			&i.Subcategory,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDocSummaries = `-- name: ListDocSummaries :many
+SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.content
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.review_status = 'published'
+  AND p.deleted_at IS NULL
+  AND p.audience = ANY($1::text[])
+ORDER BY p.created_at DESC, p.title ASC
+`
+
+type ListDocSummariesRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Content            []byte             `json:"content"`
+}
+
+// Single aggregate for the docs landing changelog — replaces the
+// per-accessible-audience /docs/{audience} fan-out (N+1). content is selected
+// so the service can derive the summary excerpt; it is never returned raw.
+func (q *Queries) ListDocSummaries(ctx context.Context, audiences []string) ([]ListDocSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listDocSummaries, audiences)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDocSummariesRow
+	for rows.Next() {
+		var i ListDocSummariesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Audience,
+			&i.ParentID,
+			&i.Position,
+			&i.Category,
+			&i.Subcategory,
+			&i.FeatureImageID,
+			&i.FeatureImageBucket,
+			&i.FeatureImagePath,
+			&i.CreatedAt,
+			&i.Content,
 		); err != nil {
 			return nil, err
 		}
@@ -1102,6 +1210,32 @@ func (q *Queries) SoftDeleteDocPage(ctx context.Context, id pgtype.UUID) (int64,
 	return result.RowsAffected(), nil
 }
 
+const swapDocPagePositions = `-- name: SwapDocPagePositions :exec
+UPDATE doc_pages
+SET position = CASE id WHEN $1::uuid THEN $2::int ELSE $3::int END,
+    updated_at = now()
+WHERE id IN ($1::uuid, $4::uuid) AND deleted_at IS NULL
+`
+
+type SwapDocPagePositionsParams struct {
+	IDA       pgtype.UUID `json:"id_a"`
+	PositionB int32       `json:"position_b"`
+	PositionA int32       `json:"position_a"`
+	IDB       pgtype.UUID `json:"id_b"`
+}
+
+// Atomic position swap for adjacent-page reorder — replaces the two-PATCH
+// move flow which could leave positions half-swapped on a mid-failure.
+func (q *Queries) SwapDocPagePositions(ctx context.Context, arg SwapDocPagePositionsParams) error {
+	_, err := q.db.Exec(ctx, swapDocPagePositions,
+		arg.IDA,
+		arg.PositionB,
+		arg.PositionA,
+		arg.IDB,
+	)
+	return err
+}
+
 const updateDocPage = `-- name: UpdateDocPage :execrows
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
@@ -1171,6 +1305,17 @@ SET review_status = $1,
  last_reviewed_at = CASE
   WHEN $1 = 'approved' AND review_status <> 'approved' THEN now()
   ELSE last_reviewed_at
+ END,
+ -- ADR-088: the HITL stamp records the first human review of an
+ -- AI-generated page — written on the first transition into 'approved'
+ -- and preserved afterwards.
+ hitl_reviewed_by = CASE
+  WHEN $1 = 'approved' AND review_status <> 'approved' AND ai_generated THEN $2
+  ELSE hitl_reviewed_by
+ END,
+ hitl_reviewed_at = CASE
+  WHEN $1 = 'approved' AND review_status <> 'approved' AND ai_generated THEN now()
+  ELSE hitl_reviewed_at
  END,
  updated_at = now()
 WHERE id = $3 AND deleted_at IS NULL

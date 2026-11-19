@@ -429,12 +429,12 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, from time.Time, to 
 		return AdminDashboard{}, fmt.Errorf("fetching top content: %w", err)
 	}
 
-	contentStats, err := s.store.GetDailyContentStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	contentStats, err := s.store.GetDailyContentStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true}, "", "", 0, 0)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content stats: %w", err)
 	}
 
-	spaceStats, err := s.store.GetDailySpaceStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	spaceStats, err := s.store.GetDailySpaceStats(ctx, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true}, "", "", 0, 0)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching space stats: %w", err)
 	}
@@ -588,7 +588,7 @@ type RevenueAnalytics struct {
 
 // GetRevenueAnalytics returns aggregated revenue data for the admin dashboard.
 func (s *Service) GetRevenueAnalytics(ctx context.Context, from time.Time, to *time.Time) (RevenueAnalytics, error) {
-	summary, err := s.store.GetRevenueSummary(ctx)
+	summary, err := s.store.GetRevenueSummary(ctx, &from, to)
 	if err != nil {
 		return RevenueAnalytics{}, fmt.Errorf("fetching revenue summary: %w", err)
 	}

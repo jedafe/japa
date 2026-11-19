@@ -32,7 +32,7 @@
 		await persistNavCollapse(collapsed);
 	}
 
-	// Inline editing (§44 in-app authoring): docs.manage only, ?edit=1 in the
+	// Inline editing (§44 in-app authoring): docs.admin only, ?edit=1 in the
 	// URL so edit mode is deep-linkable and Cancel is just a link back.
 	let canEdit = $derived(data.canEditDocs === true);
 	let editing = $derived(canEdit && page.url.searchParams.get('edit') === '1');
@@ -194,9 +194,6 @@
 						{t(`new_page.status.${data.page.review_status}`, data.page.review_status)}
 					</span>
 				{/if}
-				{#if data.page.ai_generated}
-					<span class="ai-flag">{t('page.ai_assisted_draft')}</span>
-				{/if}
 				{#if canEdit}
 					<a href="?edit=1" class="meta-edit-link">
 						<Pencil size={13} />
@@ -234,7 +231,7 @@
 		</header>
 
 		{#if editing}
-			<!-- Inline edit mode (§44 in-app authoring — docs.manage). -->
+			<!-- Inline edit mode (§44 in-app authoring — docs.admin). -->
 			<DocEditForm
 				page={data.page}
 				statuses={data.statuses}
@@ -377,18 +374,6 @@
 		color: var(--method-patch);
 		background: var(--method-patch-bg);
 		border-color: transparent;
-	}
-	.ai-flag {
-		display: inline-flex;
-		align-items: center;
-		font-size: 0.6875rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--method-patch);
-		background: var(--method-patch-bg);
-		padding: 0.125rem 0.5rem;
-		border-radius: 4px;
-		font-weight: 600;
 	}
 	.preview-banner {
 		display: flex;

@@ -828,6 +828,13 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			asynq.TaskID(taskID),
 		)
 		if err != nil {
+			// DOC-014: deterministic task IDs dedupe repeats — a conflict
+			// means generation for this slug is already queued/running.
+			if errors.Is(err, asynq.ErrTaskIDConflict) {
+				errpkg.WriteError(w, http.StatusConflict, "generation_in_progress", "Generation for this page is already in progress")
+				return
+			}
+
 			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
 

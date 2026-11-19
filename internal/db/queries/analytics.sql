@@ -17,6 +17,17 @@ WHERE ($1::text = '' OR event_type = $1)
 ORDER BY created_at DESC, id DESC
 LIMIT $6 OFFSET $7;
 
+-- name: CountPlatformEvents :one
+-- Total row count for the same filter set as ListPlatformEvents, returned as
+-- meta.total so the admin UI can server-paginate the event log.
+SELECT COUNT(*)::bigint AS total
+FROM platform_events
+WHERE ($1::text = '' OR event_type = $1)
+ AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $2)
+ AND ($3::text = '' OR entity_type = $3)
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
+ AND ($5::timestamptz IS NULL OR created_at <= $5);
+
 -- name: GetEventCountsByType :many
 -- Ref: ADR-068 §4 (P10) — real-metric reporting excludes synthetic events
 -- (persona-originated activity) so admin dashboards reflect real user engagement.
@@ -37,18 +48,66 @@ ORDER BY count DESC;
 -- BUG-ANALYTICS-01 fix: corrected column mapping (reactions from reactions
 -- table, comments from comment_count, shares from share_count+reshare_count,
 -- unique_viewers from user_content_views distinct count).
-SELECT date_trunc('day', c.created_at)::date AS day, c.id AS content_id, c.title AS content_title,
+SELECT * FROM (
+ SELECT date_trunc('day', c.created_at)::date AS day, c.id AS content_id, c.title AS content_title,
  c.view_count AS views,
  (SELECT COUNT(*)::int FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
  c.comment_count AS comments,
  (c.share_count + c.reshare_count) AS shares,
  (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
-FROM contents c
-WHERE c.status != 'draft'
+ FROM contents c
+ WHERE c.status != 'draft'
  AND ($1::date IS NULL OR c.created_at::date >= $1)
  AND ($2::date IS NULL OR c.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $3)
-ORDER BY day DESC, views DESC;
+) s
+ORDER BY
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'asc' THEN s.content_title END ASC NULLS LAST,
+ CASE WHEN $4::text = 'content_title' AND $5::text = 'desc' THEN s.content_title END DESC NULLS LAST,
+ CASE WHEN $4::text = 'views' AND $5::text = 'asc' THEN s.views END ASC,
+ CASE WHEN $4::text = 'views' AND $5::text = 'desc' THEN s.views END DESC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'asc' THEN s.reactions END ASC,
+ CASE WHEN $4::text = 'reactions' AND $5::text = 'desc' THEN s.reactions END DESC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'asc' THEN s.comments END ASC,
+ CASE WHEN $4::text = 'comments' AND $5::text = 'desc' THEN s.comments END DESC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'asc' THEN s.unique_viewers END ASC,
+ CASE WHEN $4::text = 'unique_viewers' AND $5::text = 'desc' THEN s.unique_viewers END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN s.day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN s.day END DESC,
+ s.day DESC, s.views DESC
+LIMIT NULLIF($6::int, 0) OFFSET $7;
+
+-- name: CountDailyContentStats :one
+SELECT COUNT(*)::bigint AS total
+FROM contents c
+WHERE c.status != 'draft'
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2);
+
+-- name: GetContentStatsTotals :one
+-- Window-wide aggregates for the content analytics header cards. The rows
+-- are filtered by content creation date; the metrics themselves are
+-- lifetime counters (view_count, comment_count, etc. are cumulative), which
+-- is intentional — the UI labels them accordingly.
+SELECT
+ COUNT(*)::bigint AS total_content,
+ COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
+ COALESCE(SUM(c.comment_count), 0)::bigint AS total_comments,
+ COALESCE(SUM(c.share_count + c.reshare_count), 0)::bigint AS total_shares,
+ (SELECT COUNT(*)::bigint FROM reactions r
+ JOIN contents c2 ON c2.id = r.entity_id AND r.entity_type = 'content'
+ WHERE c2.status != 'draft'
+ AND ($1::date IS NULL OR c2.created_at::date >= $1)
+ AND ($2::date IS NULL OR c2.created_at::date <= $2)) AS total_reactions,
+ (SELECT COUNT(DISTINCT ucv.user_id)::bigint FROM user_content_views ucv
+ JOIN contents c3 ON c3.id = ucv.content_id
+ WHERE c3.status != 'draft' AND ucv.user_id IS NOT NULL
+ AND ($1::date IS NULL OR c3.created_at::date >= $1)
+ AND ($2::date IS NULL OR c3.created_at::date <= $2)) AS total_unique_viewers
+FROM contents c
+WHERE c.status != 'draft'
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2);
 
 -- name: GetTopContentByViews :many
 -- BUG-ANALYTICS-02 fix: corrected column mapping (total_reactions from
@@ -111,16 +170,55 @@ ORDER BY impressions DESC
 LIMIT $4;
 
 -- name: GetDailySpaceStats :many
-SELECT date_trunc('day', s.created_at)::date AS day, s.id AS space_id, s.name AS space_name,
+SELECT * FROM (
+ SELECT date_trunc('day', s.created_at)::date AS day, s.id AS space_id, s.name AS space_name,
  (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
  (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
  (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
-FROM spaces s
-WHERE s.deleted_at IS NULL
+ FROM spaces s
+ WHERE s.deleted_at IS NULL
  AND ($1::date IS NULL OR s.created_at::date >= $1)
  AND ($2::date IS NULL OR s.created_at::date <= $2)
  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $3)
-ORDER BY day DESC;
+) sp
+ORDER BY
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'asc' THEN sp.space_name END ASC NULLS LAST,
+ CASE WHEN $4::text = 'space_name' AND $5::text = 'desc' THEN sp.space_name END DESC NULLS LAST,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'asc' THEN sp.joins END ASC,
+ CASE WHEN $4::text = 'joins' AND $5::text = 'desc' THEN sp.joins END DESC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'asc' THEN sp.posts END ASC,
+ CASE WHEN $4::text = 'posts' AND $5::text = 'desc' THEN sp.posts END DESC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'asc' THEN sp.day END ASC,
+ CASE WHEN $4::text = 'day' AND $5::text = 'desc' THEN sp.day END DESC,
+ sp.joins DESC, sp.space_name ASC
+LIMIT NULLIF($6::int, 0) OFFSET $7;
+
+-- name: CountDailySpaceStats :one
+SELECT COUNT(*)::bigint AS total
+FROM spaces s
+WHERE s.deleted_at IS NULL
+ AND ($1::date IS NULL OR s.created_at::date >= $1)
+ AND ($2::date IS NULL OR s.created_at::date <= $2);
+
+-- name: GetSpaceStatsTotals :one
+-- Window-wide join/post aggregates over spaces created in the range.
+-- joins/posts are lifetime counters on the space — see content totals note.
+SELECT
+ COUNT(*)::bigint AS total_spaces,
+ (SELECT COUNT(*)::bigint FROM space_members sm
+ JOIN spaces s2 ON s2.id = sm.space_id
+ WHERE s2.deleted_at IS NULL
+ AND ($1::date IS NULL OR s2.created_at::date >= $1)
+ AND ($2::date IS NULL OR s2.created_at::date <= $2)) AS total_joins,
+ (SELECT COUNT(*)::bigint FROM contents c
+ JOIN spaces s3 ON s3.id = c.space_id
+ WHERE s3.deleted_at IS NULL AND c.status != 'draft'
+ AND ($1::date IS NULL OR s3.created_at::date >= $1)
+ AND ($2::date IS NULL OR s3.created_at::date <= $2)) AS total_posts
+FROM spaces s
+WHERE s.deleted_at IS NULL
+ AND ($1::date IS NULL OR s.created_at::date >= $1)
+ AND ($2::date IS NULL OR s.created_at::date <= $2);
 
 -- name: GetUserEngagementStats :many
 -- Section 40 user dashboard: daily engagement computed directly from the
@@ -290,22 +388,44 @@ SELECT
  AND c.created_at >= now() - interval '30 days')::int AS posts_last_30d;
 
 -- name: GetDailyActiveUsers :many
-SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
-FROM users
-WHERE is_synthetic = false
- AND last_login_at IS NOT NULL
- AND ($1::timestamptz IS NULL OR last_login_at >= $1)
- AND ($2::timestamptz IS NULL OR last_login_at <= $2)
+-- "Active" = generated a platform event that day OR logged in that day.
+-- last_login_at alone undercounts (a user counts on at most one day); the
+-- events union captures same-day activity regardless of when they last
+-- logged in. Synthetic users/events are excluded per ADR-068 §4 (P10).
+SELECT day, COUNT(DISTINCT uid)::bigint AS dau
+FROM (
+ SELECT date_trunc('day', pe.created_at)::date AS day, pe.user_id AS uid
+ FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT date_trunc('day', u2.last_login_at)::date, u2.id
+ FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+) t
 GROUP BY 1
 ORDER BY 1 DESC;
 
 -- name: GetMonthlyActiveUsers :many
-SELECT date_trunc('month', last_login_at)::date AS month, COUNT(*) AS mau
-FROM users
-WHERE is_synthetic = false
- AND last_login_at IS NOT NULL
- AND ($1::timestamptz IS NULL OR last_login_at >= $1)
- AND ($2::timestamptz IS NULL OR last_login_at <= $2)
+SELECT month, COUNT(DISTINCT uid)::bigint AS mau
+FROM (
+ SELECT date_trunc('month', pe.created_at)::date AS month, pe.user_id AS uid
+ FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT date_trunc('month', u2.last_login_at)::date, u2.id
+ FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+) t
 GROUP BY 1
 ORDER BY 1 DESC;
 
@@ -343,6 +463,30 @@ SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false AND last_login_at
 -- name: GetNewUsersToday :one
 SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false AND created_at::date = CURRENT_DATE;
 
+-- name: GetAdminUserCounts :one
+-- Range-aware user counts for the admin Users tab. total_users is all-time;
+-- active_users logged in or generated an event inside the window;
+-- new_users registered inside the window (falls back to "today" callers use
+-- GetNewUsersToday when no window is supplied).
+SELECT
+ (SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false) AS total_users,
+ (SELECT COUNT(DISTINCT uid)::integer FROM (
+ SELECT pe.user_id AS uid FROM platform_events pe
+ JOIN users u ON u.id = pe.user_id
+ WHERE pe.is_synthetic = false AND u.is_synthetic = false
+ AND ($1::timestamptz IS NULL OR pe.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR pe.created_at <= $2)
+ UNION
+ SELECT u2.id FROM users u2
+ WHERE u2.is_synthetic = false AND u2.last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR u2.last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR u2.last_login_at <= $2)
+ ) t) AS active_users,
+ (SELECT COUNT(*)::integer FROM users
+ WHERE is_synthetic = false
+ AND ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)) AS new_users;
+
 -- =====================
 -- Security Scan Results
 -- =====================
@@ -376,7 +520,10 @@ updated AS (
  SET severity = $2,
  finding = $3,
  meta = $4,
- created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END
+ created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END,
+ -- Re-surface a resolved finding when the rescan reports a different
+ -- severity — the condition materially changed and needs fresh triage.
+ resolved_at = CASE WHEN s.severity <> $2 THEN NULL ELSE s.resolved_at END
  FROM target
  WHERE s.id = target.id
  RETURNING s.id, s.scan_type, s.severity, s.finding, s.meta, s.resolved_at, s.created_at
@@ -396,8 +543,18 @@ SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)
+ AND ($3::timestamptz IS NULL OR created_at >= $3)
+ AND ($4::timestamptz IS NULL OR created_at <= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $3 OFFSET $4;
+LIMIT $5 OFFSET $6;
+
+-- name: CountSecurityScanResults :one
+SELECT COUNT(*)::bigint AS total
+FROM security_scan_results
+WHERE ($1::text = '' OR severity = $1)
+ AND ($2::bool = false OR resolved_at IS NULL)
+ AND ($3::timestamptz IS NULL OR created_at >= $3)
+ AND ($4::timestamptz IS NULL OR created_at <= $4);
 
 -- name: ResolveSecurityScanResult :exec
 UPDATE security_scan_results
@@ -422,12 +579,17 @@ ORDER BY created_at DESC;
 -- =====================
 
 -- name: GetRevenueSummary :one
+-- Window-aware: total = succeeded payments inside [from, to]; monthly = the
+-- calendar month containing the window's `to` (or the current month when the
+-- window is open-ended). active_subscriptions is a point-in-time count.
 SELECT
  COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
- COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', NOW()) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
+ COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', COALESCE($2::timestamptz, NOW())) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
  (SELECT COUNT(*)::integer FROM subscriptions s WHERE s.status = 'active') AS active_subscriptions
 FROM payments p
-WHERE p.status = 'succeeded';
+WHERE p.status = 'succeeded'
+ AND ($1::timestamptz IS NULL OR p.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR p.created_at <= $2);
 
 -- name: GetRevenueByPeriod :many
 SELECT

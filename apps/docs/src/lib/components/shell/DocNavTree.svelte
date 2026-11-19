@@ -148,10 +148,10 @@
 		return activePath === hrefFor(audience, item.slug);
 	}
 
-	// Editor affordance: docs.manage holders get a per-section "new page"
+	// Editor affordance: docs.admin holders get a per-section "new page"
 	// shortcut (§44 in-app authoring). Group-name checks are unreliable —
 	// the permission node is canonical (DOC-007).
-	const canManageDocs = $derived(page.data?.user?.permissions?.includes('docs.manage') ?? false);
+	const canManageDocs = $derived(page.data?.user?.permissions?.includes('docs.admin') ?? false);
 </script>
 
 <aside class="nav" class:collapsed data-tour="docs-nav">

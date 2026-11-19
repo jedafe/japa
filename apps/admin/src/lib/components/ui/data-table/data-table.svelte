@@ -24,8 +24,26 @@
   import BulkBar from "./bulk-bar.svelte";
   import type { ActionItem, FilterDef, BulkAction } from "./types";
 
+  // Stable fallback ids for rows lacking .id when no rowKey is supplied —
+  // WeakMap keeps the id consistent across re-renders without mutating rows.
+  const fallbackIds = new WeakMap<object, string>();
+  let fallbackSeq = 0;
   function extractId(row: any): string {
-    return String(row?.id ?? '').split('::')[0] || String(row ?? '');
+    if (rowKey) {
+      const k = rowKey(row);
+      if (k != null && k !== '') return String(k).split('::')[0];
+    }
+    const own = String(row?.id ?? '').split('::')[0];
+    if (own) return own;
+    if (row && typeof row === 'object') {
+      let id = fallbackIds.get(row);
+      if (!id) {
+        id = `row-${++fallbackSeq}`;
+        fallbackIds.set(row, id);
+      }
+      return id;
+    }
+    return String(row ?? '');
   }
 
   // Write query params to the URL without triggering a SvelteKit navigation.

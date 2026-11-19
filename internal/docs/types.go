@@ -12,7 +12,14 @@ type DocPage struct {
 	Slug           string          `json:"slug"`
 	Audience       string          `json:"audience"`
 	Content        json.RawMessage `json:"content"`
-	AIGenerated    bool            `json:"ai_generated"`
+	// AI provenance (ADR-088) — admin-only; public endpoints strip these
+	// fields so generated-page metadata never leaks into the docs app.
+	AIGenerated   bool    `json:"ai_generated,omitempty"`
+	AIModel       *string `json:"ai_model,omitempty"`
+	AIGeneratedAt *string `json:"ai_generated_at,omitempty"`
+	// HitlReviewed* records the first human review of an AI-generated page.
+	HitlReviewedBy *string `json:"hitl_reviewed_by,omitempty"`
+	HitlReviewedAt *string `json:"hitl_reviewed_at,omitempty"`
 	ReviewStatus   string          `json:"review_status"`
 	LastReviewedBy *string         `json:"last_reviewed_by,omitempty"`
 	LastReviewedAt *string         `json:"last_reviewed_at,omitempty"`
@@ -31,6 +38,17 @@ type DocPage struct {
 	UpdatedAt       string  `json:"updated_at"`
 	// Rule 11: set when the page is in the admin trash; absent on live pages.
 	DeletedAt *string `json:"deleted_at,omitempty"`
+}
+
+// stripAI zeroes the AI provenance fields so public endpoints never expose
+// generation metadata — the fields are admin-only (ADR-088) and carry
+// omitempty tags, so stripping removes them from the payload entirely.
+func (p *DocPage) stripAI() {
+	p.AIGenerated = false
+	p.AIModel = nil
+	p.AIGeneratedAt = nil
+	p.HitlReviewedBy = nil
+	p.HitlReviewedAt = nil
 }
 
 // DocPageSummary is a lightweight listing item (no content body).
@@ -59,6 +77,9 @@ type CreateDocPageRequest struct {
 	Audience     string          `json:"audience"`
 	Content      json.RawMessage `json:"content"`
 	AIGenerated  bool            `json:"ai_generated"`
+	// AIModel is set by the Content Agent draft path (ADR-088) — human
+	// creates leave it empty.
+	AIModel *string `json:"ai_model,omitempty"`
 	ReviewStatus string          `json:"review_status"`
 	ParentID     *string         `json:"parent_id,omitempty"`
 	Position     int32           `json:"position"`

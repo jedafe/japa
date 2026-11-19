@@ -31,6 +31,31 @@ let audienceMetaCache: {
 	order: DocAudience[];
 	expiresAt: number;
 } | null = null;
+
+/**
+ * The double-submit CSRF token is stable per access token — fetching /csrf
+ * on every SSR request cost a serial round-trip in hooks before any layout
+ * ran. Cache per token for 5 minutes; expiry is refreshed by the backend's
+ * own cookie lifetime. Entries sweep lazily on insert.
+ */
+const CSRF_TTL_MS = 5 * 60_000;
+const csrfTokenCache = new Map<string, { token: string; expiresAt: number }>();
+function cachedCsrfToken(accessToken: string): string | null {
+	const hit = csrfTokenCache.get(accessToken);
+	if (!hit) return null;
+	if (hit.expiresAt <= Date.now()) {
+		csrfTokenCache.delete(accessToken);
+		return null;
+	}
+	return hit.token;
+}
+function storeCsrfToken(accessToken: string, token: string) {
+	if (csrfTokenCache.size > 500) {
+		const now = Date.now();
+		for (const [k, v] of csrfTokenCache) if (v.expiresAt <= now) csrfTokenCache.delete(k);
+	}
+	csrfTokenCache.set(accessToken, { token, expiresAt: Date.now() + CSRF_TTL_MS });
+}
 import type { SessionUser, DocAudience } from '#lib/types/index.js';
 import { AUDIENCE_ORDER } from '#lib/types/index.js';
 
@@ -258,22 +283,28 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Ref: japa-bugs-hunters.md §5.2 (CSRF) — audit finding C1.
 	event.locals.csrfToken = null;
 	if (event.locals.token && !building) {
-		try {
-			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
-			event.locals.csrfToken = csrf?.csrfToken ?? null;
-			if (event.locals.csrfToken) {
-				// `secure` must be false in local HTTP dev so the browser accepts
-				// the csrf_token cookie; production HTTPS still sets it securely.
-				const isHttps = event.url.protocol === 'https:';
-				event.cookies.set('csrf_token', event.locals.csrfToken, {
-					path: '/',
-					httpOnly: false,
-					secure: isHttps,
-					sameSite: 'lax'
-				});
+		event.locals.csrfToken = cachedCsrfToken(event.locals.token);
+		if (!event.locals.csrfToken) {
+			try {
+				const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
+				event.locals.csrfToken = csrf?.csrfToken ?? null;
+				if (event.locals.csrfToken) {
+					storeCsrfToken(event.locals.token, event.locals.csrfToken);
+				}
+			} catch {
+				event.locals.csrfToken = null;
 			}
-		} catch {
-			event.locals.csrfToken = null;
+		}
+		if (event.locals.csrfToken) {
+			// `secure` must be false in local HTTP dev so the browser accepts
+			// the csrf_token cookie; production HTTPS still sets it securely.
+			const isHttps = event.url.protocol === 'https:';
+			event.cookies.set('csrf_token', event.locals.csrfToken, {
+				path: '/',
+				httpOnly: false,
+				secure: isHttps,
+				sameSite: 'lax'
+			});
 		}
 	}
 

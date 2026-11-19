@@ -12,7 +12,7 @@ import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
  *
  * Audience gating is server-side: an inaccessible audience redirects to
  * /docs/access-denied; a 403 from the page fetch does the same (ADR-060).
- * §44 amendment 2: docs.manage holders get a draft preview when the public
+ * §44 amendment 2: docs.admin holders get a draft preview when the public
  * lookup 404s — the page renders with a preview banner + noindex.
  */
 export const load: PageServerLoad = async (event) => {
@@ -64,10 +64,10 @@ export const load: PageServerLoad = async (event) => {
 	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02); previews always do.
 	const isGated = event.locals.audienceGates[audience] != null || preview;
 
-	// Permission-based edit affordance (§44). The docs.manage node is canonical;
+	// Permission-based edit affordance (§44). The docs.admin node is canonical;
 	// edit-only data (editSeed, statuses, sibling pages) loads only when the
 	// editor is actually open (?edit=1) so it never ships in the reading payload.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 	const wantsEdit = event.url.searchParams.get('edit') === '1';
 	const editor = canEditDocs && wantsEdit ? await editorData(event, page, editHtml) : null;
 

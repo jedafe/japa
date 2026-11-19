@@ -343,7 +343,12 @@ export const impersonationApi = {
 };
 
 export const docsApi = {
-	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
+	// apiRaw: the admin list is database-paginated — the response envelope
+	// carries meta {total, total_pages, limit, offset} alongside data.
+	list: (params?: string) => apiRaw<{ data: any[]; meta?: { total: number; total_pages: number; limit: number; offset: number } }>(`/admin/docs/pages${params ? `?${params}` : ''}`),
+	// Atomic position swap — single statement instead of two PATCHes.
+	move: (id: string, targetId: string) =>
+		api(`/admin/docs/pages/${id}/move`, { method: 'POST', body: { target_id: targetId } }),
 	get: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
 	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string; feature_image_id?: string; summary?: string }) =>
 		api('/admin/docs/pages', { method: 'POST', body }),
@@ -1248,14 +1253,14 @@ export const aiAdminApi = {
 };
 
 export const analyticsAdminApi = {
-	getOverview: (params?: string) => api<unknown>(`/admin/analytics/overview${params ? `?${params}` : ''}`),
-	getUsers: (params?: string) => api<unknown>(`/admin/analytics/users${params ? `?${params}` : ''}`),
-	getSpaces: (params?: string) => api<unknown>(`/admin/analytics/spaces${params ? `?${params}` : ''}`),
-	getContent: (params?: string) => api<unknown>(`/admin/analytics/content${params ? `?${params}` : ''}`),
-	getEvents: (params?: string) => api<unknown>(`/admin/analytics/events${params ? `?${params}` : ''}`),
-	getRevenue: (params?: string) => api<unknown>(`/admin/analytics/revenue${params ? `?${params}` : ''}`),
-	getSearch: (params?: string) => api<unknown>(`/admin/analytics/search${params ? `?${params}` : ''}`),
-	getSecurity: (params?: string) => api<unknown>(`/admin/analytics/security${params ? `?${params}` : ''}`),
+	getOverview: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/overview${params ? `?${params}` : ''}`, opts),
+	getUsers: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/users${params ? `?${params}` : ''}`, opts),
+	getSpaces: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/spaces${params ? `?${params}` : ''}`, opts),
+	getContent: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/content${params ? `?${params}` : ''}`, opts),
+	getEvents: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/events${params ? `?${params}` : ''}`, opts),
+	getRevenue: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/revenue${params ? `?${params}` : ''}`, opts),
+	getSearch: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/search${params ? `?${params}` : ''}`, opts),
+	getSecurity: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/security${params ? `?${params}` : ''}`, opts),
 	flushCache: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/cache/flush', { method: 'POST', body }),
 	refresh: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/refresh', { method: 'POST', body }),
 	runSecurityScan: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/security/scan', { method: 'POST', body }),
@@ -1264,11 +1269,11 @@ export const analyticsAdminApi = {
 	deleteSecurityItem: (id: string) =>
 		api<unknown>(`/admin/analytics/security/${id}`, { method: 'DELETE' }),
 	// Section 66 — Advanced Analytics Dashboard (ADR-084)
-	getTopContent: (params?: string) => api<unknown>(`/admin/analytics/top-content${params ? `?${params}` : ''}`),
-	getRevenueStreams: (params?: string) => api<unknown>(`/admin/analytics/revenue-streams${params ? `?${params}` : ''}`),
-	getAdPerformance: (params?: string) => api<unknown>(`/admin/analytics/ads${params ? `?${params}` : ''}`),
-	getNewsletterEngagement: (params?: string) => api<unknown>(`/admin/analytics/newsletter${params ? `?${params}` : ''}`),
-	getRetention: (params?: string) => api<unknown>(`/admin/analytics/retention${params ? `?${params}` : ''}`),
+	getTopContent: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/top-content${params ? `?${params}` : ''}`, opts),
+	getRevenueStreams: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/revenue-streams${params ? `?${params}` : ''}`, opts),
+	getAdPerformance: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/ads${params ? `?${params}` : ''}`, opts),
+	getNewsletterEngagement: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/newsletter${params ? `?${params}` : ''}`, opts),
+	getRetention: (params?: string, opts?: FetchOptions) => api<unknown>(`/admin/analytics/retention${params ? `?${params}` : ''}`, opts),
 	exportCsv: (metric: string, period?: string) => {
 		const params = [metric && `metric=${metric}`, period && `period=${period}`].filter(Boolean).join('&');
 		return fetchRaw(`/admin/analytics/export${params ? `?${params}` : ''}`);

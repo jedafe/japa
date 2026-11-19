@@ -2116,6 +2116,10 @@ type DocPage struct {
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	AiModel        *string            `json:"ai_model"`
+	AiGeneratedAt  pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 type DocPageRevision struct {

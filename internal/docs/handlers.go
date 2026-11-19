@@ -196,7 +196,7 @@ func publicAudiences() []string {
 
 // checkPageAudienceGate fetches the page and verifies the requester may read
 // its audience. Admin-side reads and writes into gated audiences require the
-// same access as public reads — docs.manage alone must not expose or mutate
+// same access as public reads — docs.admin alone must not expose or mutate
 // admin/superadmin documentation.
 func (h *Handlers) checkPageAudienceGate(w http.ResponseWriter, r *http.Request, id pgtype.UUID) bool {
 	page, err := h.Service.GetDocPageByID(r.Context(), id)
@@ -288,7 +288,25 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &page)
 
+	// AI provenance is admin-only (ADR-088) — strip it from the public DTO
+	// so the docs app never sees generation metadata.
+	page.stripAI()
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// ListDocSummaries handles GET /api/v1/docs/summaries.
+// Returns published summaries across every audience the requester may read —
+// one aggregate for the docs landing changelog, replacing the
+// per-accessible-audience /docs/{audience} fan-out.
+func (h *Handlers) ListDocSummaries(w http.ResponseWriter, r *http.Request) {
+	summaries, err := h.Service.ListDocSummaries(r.Context(), h.accessibleAudiences(r))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
 }
 
 // ListDocNav handles GET /api/v1/docs/nav.
@@ -455,7 +473,7 @@ func (h *Handlers) ListDocAudiences(w http.ResponseWriter, r *http.Request) {
 
 // ListDocStatuses handles GET /api/v1/docs/statuses.
 // Returns the canonical ordered list of doc page review statuses.
-// Gated by docs.manage at the route level (DOC-009).
+// Gated by docs.admin at the route level (DOC-009).
 func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.Service.ListStatuses()})
 }
@@ -491,40 +509,26 @@ func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int3
 }
 
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
-// Returns all pages for admin listing. Optional filters: ?audience= and
-// ?status=draft|in_review|approved|published (§44 amendment 2). ?deleted=1
-// swaps the listing to the trash view — soft-deleted pages pending restore
-// or hard delete (Rule 11).
+// Database-paginated listing: ?audience=, ?status=, ?deleted=1 (trash view,
+// Rule 11), ?q= (title/slug search), ?sort= + ?dir= (whitelisted keys),
+// ?limit=/?offset=. Audience gating is applied inside the query so totals
+// and pages never include rows the caller can't read. Response:
+// {data: [...], meta: {total, total_pages, limit, offset}}.
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
-	audience := r.URL.Query().Get("audience")
-	status := r.URL.Query().Get("status")
-	showDeleted := r.URL.Query().Get("deleted") == "1" || r.URL.Query().Get("deleted") == "true"
+	q := r.URL.Query()
+	audience := q.Get("audience")
+	status := q.Get("status")
+	showDeleted := q.Get("deleted") == "1" || q.Get("deleted") == "true"
+	search := strings.TrimSpace(q.Get("q"))
+	sort := q.Get("sort")
+	desc := q.Get("dir") == "desc"
+
 	if status != "" && !ValidReviewStatuses[status] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid review status")
 		return
 	}
-	if audience != "" {
-		if !ValidAudiences[audience] {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
-			return
-		}
-
-		if !h.checkAudienceGate(w, r, audience) {
-			return
-		}
-
-		limit, offset, ok := adminListPaging(w, r)
-		if !ok {
-			return
-		}
-		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, status, showDeleted, limit, offset)
-		if err != nil {
-			handleServiceError(w, err)
-			return
-		}
-
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
-
+	if sort != "" && !adminListSortKeys[sort] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "Invalid sort key")
 		return
 	}
 
@@ -533,40 +537,103 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch the full (status-filtered) list, then apply the audience gate
-	// BEFORE slicing — paginating first and filtering after produced sparse,
-	// misaligned pages for docs.manage holders who lack gated-audience read
-	// permission.
-	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, showDeleted, 0, 0)
+	var audiences []string
+	if audience != "" {
+		if !ValidAudiences[audience] {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+			return
+		}
+		if !h.checkAudienceGate(w, r, audience) {
+			return
+		}
+		audiences = []string{audience}
+	} else {
+		// docs.admin holders without a gated audience's permission must not
+		// see that audience's pages — the allowed set goes to SQL so counts
+		// and pages reflect only readable rows.
+		audiences = h.accessibleAudiences(r)
+	}
+
+	if len(audiences) == 0 {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": []DocPage{},
+			"meta": map[string]any{"total": 0, "total_pages": 0, "limit": limit, "offset": offset},
+		})
+		return
+	}
+
+	result, err := h.Service.ListAdminDocPages(r.Context(), AdminDocListParams{
+		Audiences:   audiences,
+		Status:      status,
+		ShowDeleted: showDeleted,
+		Search:      search,
+		Sort:        sort,
+		Desc:        desc,
+		Limit:       limit,
+		Offset:      offset,
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// docs.manage holders without a gated audience's permission must not see
-	// that audience's pages — filter the unscoped list the same way the
-	// public nav is filtered.
-	allowed := h.accessibleAudiences(r)
-	allowedSet := make(map[string]bool, len(allowed))
-	for _, a := range allowed {
-		allowedSet[a] = true
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (result.Total + int64(limit) - 1) / int64(limit)
 	}
 
-	filtered := make([]DocPage, 0, len(pages))
-	for _, p := range pages {
-		if allowedSet[p.Audience] {
-			filtered = append(filtered, p)
-		}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": result.Pages,
+		"meta": map[string]any{
+			"total":       result.Total,
+			"total_pages": totalPages,
+			"limit":       limit,
+			"offset":      offset,
+		},
+	})
+}
+
+// adminListSortKeys is the public contract for ?sort= on the admin list —
+// mirrored by store-level column whitelist (never interpolated raw).
+var adminListSortKeys = map[string]bool{
+	"title": true, "slug": true, "audience": true, "position": true,
+	"status": true, "created_at": true, "updated_at": true,
+}
+
+// MoveDocPage handles POST /api/v1/admin/docs/pages/{id}/move.
+// Atomically swaps the page's position with target_id — one statement, so a
+// mid-failure can't leave a half-swapped order (replaces the two-PATCH move).
+func (h *Handlers) MoveDocPage(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
 	}
 
-	if offset > 0 {
-		filtered = filtered[min(int(offset), len(filtered)):]
+	var input struct {
+		TargetID string `json:"target_id"`
 	}
-	if limit > 0 && int(limit) < len(filtered) {
-		filtered = filtered[:limit]
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	var targetID pgtype.UUID
+	if err := targetID.Scan(input.TargetID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_target", "Invalid target page ID")
+		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
+	// Same gate as writes — the page's audience must be readable+writable.
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	if err := h.Service.SwapDocPagePositions(r.Context(), id, targetID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
 }
 
 // CreateDocPage handles POST /api/v1/admin/docs/pages.
@@ -582,7 +649,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Writes into a gated audience require read access to it — docs.manage
+	// Writes into a gated audience require read access to it — docs.admin
 	// alone does not cover admin/superadmin documentation.
 	if !h.checkAudienceGate(w, r, req.Audience) {
 		return
@@ -634,7 +701,7 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 
 // GetAdminDocPageBySlug handles GET /api/v1/admin/docs/page?audience=&slug=.
 // Returns a page by audience+slug regardless of status — powers the docs
-// app's editor draft preview (§44 amendment 2). Route is docs.manage-gated.
+// app's editor draft preview (§44 amendment 2). Route is docs.admin-gated.
 func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
 	slug := r.URL.Query().Get("slug")
@@ -813,7 +880,7 @@ func (h *Handlers) RestoreDocPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Revision history (§44 amendment 5) — docs.manage via the route group;
+// Revision history (§44 amendment 5) — docs.admin via the route group;
 // each handler also enforces the page's audience gate.
 // ---------------------------------------------------------------------------
 

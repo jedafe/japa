@@ -21,10 +21,10 @@
 	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon, RotateCcw, Eye, Eraser } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
-	const canEdit = $derived(hasPermission('docs.manage'));
-	const canDelete = $derived(hasPermission('docs.manage'));
-	const canPublish = $derived(hasPermission('docs.manage'));
-	const canGenerate = $derived(hasPermission('docs.manage'));
+	const canEdit = $derived(hasPermission('docs.admin'));
+	const canDelete = $derived(hasPermission('docs.admin'));
+	const canPublish = $derived(hasPermission('docs.admin'));
+	const canGenerate = $derived(hasPermission('docs.admin'));
 	// Rule 11: ?force=true hard deletes are gated by a dedicated node —
 	// super_admin by default, assignable to selected groups.
 	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
@@ -64,6 +64,17 @@
 	let errorMessage = $state('');
 	let filterValue = $state<Record<string, string>>({});
 	let searchQuery = $state('');
+	// Server-side table state — every change re-fetches the current slice.
+	let tblPage = $state(0);
+	let tblPageSize = $state(25);
+	let sortKey = $state('');
+	let sortDir = $state<'asc' | 'desc'>('asc');
+	let serverTotal = $state(0);
+	let serverPages = $state(1);
+	// Timestamp of the last AI-generate enqueue — the poll only counts a
+	// matching slug as "arrived" when the row is AI-generated AND created
+	// after the request (a pre-existing page isn't a false positive).
+	let generateStartedAt = '';
 
 	// Create/Edit Modal
 	let showFormModal = $state(false);
@@ -113,7 +124,7 @@
 	let clearBusy = $state(false);
 
 	// Read-only view modal — the spec's View affordance. Row-click opens this
-	// for admins without docs.manage (edit form stays docs.manage-gated).
+	// for admins without docs.admin (edit form stays docs.admin-gated).
 	let showViewModal = $state(false);
 	let viewRow = $state<(DocPage & { content?: unknown; created_at?: string; last_reviewed_at?: string | null }) | null>(null);
 	let viewLoading = $state(false);
@@ -134,7 +145,7 @@
 	let statuses = $state<string[]>(['draft', 'in_review', 'approved', 'published']);
 
 	// §44 amendment 2: PATCH may only set draft/in_review — approve/publish are
-	// dedicated endpoints (and record the reviewer). Editors with docs.manage
+	// dedicated endpoints (and record the reviewer). Editors with docs.admin
 	// can still *select* approved/published here — submit() chains the
 	// dedicated endpoints after the write so a logged-in admin can approve or
 	// publish directly from the form. Backward transitions (e.g. published →
@@ -225,8 +236,7 @@
 		parentLoadedFor = '';
 		const res = await docsApi.list(`audience=${encodeURIComponent(audience)}`);
 		if (res.ok) {
-			const raw = res.data as any[] | { data?: any[] };
-			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
+			const rows = res.data?.data ?? [];
 			parentCandidates = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft' }));
 		} else {
 			// Degrade to the loaded list rather than an empty picker.
@@ -380,14 +390,11 @@
 		}
 	];
 
-	const filteredDocs = $derived.by(() => {
-		// audience/status/deleted are applied server-side by loadDocs —
-		// re-filtering them here was redundant double work. Only the search
-		// box (unsupported by the backend list endpoint) filters client-side.
-		const q = searchQuery.toLowerCase().trim();
-		if (!q) return docs;
-		return docs.filter((d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q));
-	});
+	function onSort(sort: { key: string | null; dir: 'asc' | 'desc' }) {
+		sortKey = sort.key ?? '';
+		sortDir = sort.dir;
+		tblPage = 0;
+	}
 
 	function slugify(text: string): string {
 		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -408,6 +415,7 @@
 		// The $effect below re-runs loadDocs when filterValue changes — only
 		// the URL sync is needed here.
 		syncFilterUrl();
+		tblPage = 0;
 	}
 
 	onMount(async () => {
@@ -419,6 +427,16 @@
 			...(sp.get('status') ? { status: sp.get('status')! } : {}),
 			...(sp.get('deleted') === '1' || sp.get('deleted') === 'true' ? { deleted: 'true' } : {})
 		};
+
+		// Seed the server-side table state from the URL (q/sort/dir/page/
+		// pageSize are the table's shareable params).
+		searchQuery = sp.get('q') ?? '';
+		if (sp.get('sort')) sortKey = sp.get('sort')!;
+		if (sp.get('dir') === 'desc') sortDir = 'desc';
+		const urlPage = parseInt(sp.get('page') ?? '1', 10);
+		if (urlPage > 1) tblPage = urlPage - 1;
+		const urlSize = parseInt(sp.get('pageSize') ?? '', 10);
+		if (urlSize > 0) tblPageSize = urlSize;
 
 		const [audResult, statusResult] = await Promise.all([docsApi.audiences(), docsApi.statuses()]);
 		if (audResult.ok && Array.isArray(audResult.data) && audResult.data.length > 0) {
@@ -451,10 +469,18 @@
 		if (filterValue.audience) params.set('audience', filterValue.audience);
 		if (filterValue.status) params.set('status', filterValue.status);
 		if (filterValue.deleted === 'true') params.set('deleted', '1');
+		if (searchQuery.trim()) params.set('q', searchQuery.trim());
+		if (sortKey) {
+			params.set('sort', sortKey);
+			params.set('dir', sortDir);
+		}
+		params.set('limit', String(tblPageSize));
+		params.set('offset', String(tblPage * tblPageSize));
 		const result = await docsApi.list(params.toString());
 		if (result.ok) {
-			const raw = result.data as any[] | { data: any[] };
-			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
+			const rows = result.data?.data ?? [];
+			serverTotal = result.data?.meta?.total ?? rows.length;
+			serverPages = Math.max(result.data?.meta?.total_pages ?? 1, 1);
 			docs = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft', body: d.body ?? d.content ?? '' }));
 			// Selection can't outlive the dataset — stale ids would bulk-act on
 			// rows the admin can no longer see.
@@ -645,22 +671,10 @@
 		const neighbor = sibs[idx + dir];
 		if (!neighbor) return;
 		errorMessage = '';
-		const a = item.position ?? idx;
-		const b = neighbor.position ?? idx + dir;
-		// Ties need a synthesized gap — but never write a negative position:
-		// a tied move-up at position 0 instead pushes the neighbor down.
-		let itemPos = a === b ? a + dir : b;
-		let neighborPos = a;
-		if (itemPos < 0) {
-			itemPos = a;
-			neighborPos = a + 1;
-		}
-		const [r1, r2] = await Promise.all([
-			docsApi.update(item.id, { position: itemPos }),
-			docsApi.update(neighbor.id, { position: neighborPos })
-		]);
-		if (!r1.ok) errorMessage = r1.error;
-		else if (!r2.ok) errorMessage = r2.error;
+		// One atomic swap server-side — the old two-PATCH move could leave a
+		// half-swapped order if the second update failed.
+		const res = await docsApi.move(item.id, neighbor.id);
+		if (!res.ok) errorMessage = res.error;
 		loadDocs();
 	}
 
@@ -862,6 +876,7 @@
 			.split(',')
 			.map((s) => s.trim())
 			.filter(Boolean);
+		generateStartedAt = new Date().toISOString();
 		const result = await docsApi.generate({
 			category: 'docs',
 			prompt: generatePrompt.trim(),
@@ -893,14 +908,16 @@
 
 	// After the queue accepts a generation, poll the admin list until the
 	// draft materializes (worker latency is a few seconds) — no silent wait.
+	// Only an AI-generated row created after our request counts: a
+	// pre-existing page with the same slug is not our draft.
 	async function pollForGeneratedPage(slug: string, audience: string) {
+		const started = Date.parse(generateStartedAt || new Date().toISOString());
 		for (let i = 0; i < 12; i++) {
 			await new Promise((r) => setTimeout(r, 3000));
 			const res = await docsApi.list(`audience=${encodeURIComponent(audience)}`);
 			if (res.ok) {
-				const raw = res.data as any[] | { data?: any[] };
-				const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
-				if (rows.some((d) => d.slug === slug)) {
+				const rows = res.data?.data ?? [];
+				if (rows.some((d) => d.slug === slug && d.ai_generated && Date.parse(d.created_at ?? '') >= started - 5000)) {
 					loadDocs();
 					return;
 				}
@@ -919,7 +936,7 @@
 
 <PageHeader
 	title={t('docs.documentation')}
-	description={t('docs.manage_documentation_pages_for_developer')}
+	description={t('docs.admin_documentation_pages_for_developer')}
 	actions={[
 		...(canManageCategories
 			? [{ label: t('docs.categories_title', 'Categories'), icon: Tags, variant: 'outline' as const, onclick: () => goto('/docs/categories') }]
@@ -939,10 +956,18 @@
 
 <DataTable
 	columns={columns}
-	data={filteredDocs}
+	data={docs}
 	{loading}
 	searchable
-	onsearch={(q: string) => { searchQuery = q; }}
+	serverSide
+	totalRows={serverTotal}
+	totalPages={serverPages}
+	bind:page={tblPage}
+	bind:pageSize={tblPageSize}
+	onpagechange={(p: number) => { tblPage = p; }}
+	onpagesizechange={() => { tblPage = 0; }}
+	onsortchange={onSort}
+	onsearch={(q: string) => { searchQuery = q; tblPage = 0; }}
 	filters={[
 		{ key: 'audience', label: t('docs.audience'), options: audienceOptions },
 		{ key: 'status', label: t('docs.status'), options: statusFilterOptions },
@@ -951,7 +976,7 @@
 	bind:filterValue
 	onfilterapply={applyFilters}
 	onrowclick={(row: DocPage) => { if (row.deleted_at) return; if (canEdit) openEdit(row); else openView(row); }}
-	pageSize={25}
+	pageSizeOptions={[10, 25, 50, 100]}
 	emptyMessage={t('docs.no_documentation_pages_found')}
 	actions={rowActions}
 	selectable={canDelete}
@@ -1215,7 +1240,7 @@
 	</div>
 </Modal>
 
-<!-- View Modal — read-only detail for admins without docs.manage -->
+<!-- View Modal — read-only detail for admins without docs.admin -->
 <Modal bind:open={showViewModal} title={viewRow?.title ?? t('common.view', 'View')} size="lg">
 	{#if viewRow}
 		<div class="space-y-4">

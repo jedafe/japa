@@ -26,10 +26,10 @@ export interface ExistingPage {
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** Editor gate: docs.manage + read access to the audience. 303 — access
+/** Editor gate: docs.admin + read access to the audience. 303 — access
  *  decisions are dynamic and must never be cached as permanent redirects. */
 export function assertDocEditor(event: RequestEvent, audience: string): void {
-	const canEdit = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 	if (!canEdit || !event.locals.accessibleAudiences.includes(audience as DocAudience)) {
 		throw redirect(303, '/docs/access-denied');
 	}
@@ -59,7 +59,7 @@ export async function fetchAuthoringData(
 	return { statuses, existingPages };
 }
 
-/** Statuses the edit select offers a docs.manage editor: the PATCH-writable
+/** Statuses the edit select offers a docs.admin editor: the PATCH-writable
  *  set plus approved/published, which the save action chains through the
  *  dedicated transition endpoints so reviewer metadata stays truthful
  *  (§44 amendment 2). The current status stays selectable for re-saves. */
@@ -99,7 +99,7 @@ export async function loadDocPage(
 	editHtml: string;
 }> {
 	const ctx = apiContext(event);
-	const canEdit = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 
 	let page: DocPage;
 	let preview = false;
@@ -168,7 +168,7 @@ export async function loadDocPage(
 }
 
 /**
- * Editor payload for the doc-page loads — only computed for docs.manage so
+ * Editor payload for the doc-page loads — only computed for docs.admin so
  * edit-only data never ships in the anonymous SSR payload.
  */
 export async function editorData(
@@ -221,7 +221,7 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 		return fail(400, { ...values, error: 'slug_invalid' });
 	}
 
-	// approved/published are endpoint-only transitions — a docs.manage author
+	// approved/published are endpoint-only transitions — a docs.admin author
 	// may still pick them at create time; we create a draft then chain the
 	// dedicated endpoints so reviewer metadata stays truthful (§44 am. 2).
 	const desired = reviewStatus === 'approved' || reviewStatus === 'published' ? reviewStatus : null;
@@ -286,7 +286,7 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 /** The shared inline-save action — PATCH /admin/docs/pages/{id} with the
  *  full update contract (slug/parent/position + optimistic lock). */
 export async function saveDocPageAction(event: RequestEvent, audience: string, slug: string) {
-	const canEdit = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 	if (!canEdit) {
 		throw redirect(303, '/docs/access-denied');
 	}
@@ -414,7 +414,7 @@ export function reviewAction(kind: 'approve' | 'publish') {
 	return async (event: RequestEvent) => {
 		const audience = event.params.audience ?? 'api';
 		const slug = event.params.slug ?? '';
-		const canEdit = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+		const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 		if (!canEdit) {
 			throw redirect(303, '/docs/access-denied');
 		}

@@ -61,6 +61,7 @@ SELECT
  END AS ctr
 FROM ad_campaigns ac
 LEFT JOIN ad_events ae ON ae.campaign_id = ac.id
+ AND (@days::int <= 0 OR ae.created_at >= now() - make_interval(days => @days::int))
 WHERE (@status::text = '' OR ac.status = @status)
 GROUP BY ac.id, ac.name, ac.status, ac.budget_credits, ac.spent
 ORDER BY ac.spent DESC
@@ -98,6 +99,7 @@ SELECT
 FROM newsletter_campaigns nc
 LEFT JOIN newsletter_send_state nss ON nss.campaign_id = nc.id
 WHERE nc.sent_at IS NOT NULL
+ AND (@days::int <= 0 OR nc.sent_at >= now() - make_interval(days => @days::int))
 GROUP BY nc.id, nc.name, nc.subject, nc.sent_at
 ORDER BY nc.sent_at DESC
 LIMIT @top_n;

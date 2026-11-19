@@ -59,9 +59,18 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 	h.cache = c
 }
 
-// analyticsCacheKey builds jc:cache:analytics:{}:{endpoint}:{period}.
-func analyticsCacheKey(endpoint, period string) string {
-	return vkcache.MustKey("cache:analytics:%s:%s:%s", "", endpoint, period)
+// analyticsCacheKey builds jc:cache:analytics:{}:{endpoint}:{period}:{from}:{to}.
+// The window bounds are part of the key — without them two different
+// ?from=&to= ranges collide on the constant "30d" default and the second
+// request silently receives the first request's cached data.
+func analyticsCacheKey(endpoint, period string, from time.Time, to *time.Time) string {
+	toKey := "open"
+	if to != nil {
+		toKey = to.Format("2006-01-02")
+	}
+
+	return vkcache.MustKey("cache:analytics:%s:%s:%s", "", endpoint,
+		fmt.Sprintf("%s:%s:%s", period, from.Format("2006-01-02"), toKey))
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +229,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 		period = "30d"
 	}
 
-	cacheKey := analyticsCacheKey("overview", period)
+	cacheKey := analyticsCacheKey("overview", period, from, to)
 
 	dashboard, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) (any, error) {
 		return h.Service.GetAdminDashboardData(ctx, from, to)
@@ -249,6 +258,14 @@ func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, err
 		parsed, err := parseFlexibleTime(toRaw)
 		if err != nil {
 			return time.Time{}, nil, fmt.Errorf("parsing to: %w", err)
+		}
+
+		// A date-only `to` (YYYY-MM-DD) means "through that day" — expand it
+		// to end-of-day so timestamptz `<=` comparisons include the day the
+		// operator picked, matching the `::date` queries' inclusive bound.
+		// RFC3339 input carries an explicit time and is respected as-is.
+		if len(toRaw) == len("2006-01-02") {
+			parsed = parsed.Add(24*time.Hour - time.Nanosecond)
 		}
 
 		to = &parsed
@@ -300,6 +317,36 @@ func parseFlexibleTime(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
 
+// endOfDay parses a date-only string and returns the last instant of that
+// day — the inclusive upper bound for `end_date` filter params.
+func endOfDay(s string) (time.Time, error) {
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return t.Add(24*time.Hour - time.Nanosecond), nil
+}
+
+// parseSortParams reads and allowlists ?sort=&dir= against the columns a
+// CASE-armed ORDER BY supports. Unknown values fall back to empty strings,
+// which selects the query's default ordering.
+func parseSortParams(r *http.Request, allowed ...string) (string, string) {
+	sort := r.URL.Query().Get("sort")
+	for _, a := range allowed {
+		if sort == a {
+			dir := r.URL.Query().Get("dir")
+			if dir != "asc" {
+				dir = "desc"
+			}
+
+			return sort, dir
+		}
+	}
+
+	return "", ""
+}
+
 // ListEvents handles GET /api/v1/admin/analytics/events.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	filter := EventFilter{
@@ -317,7 +364,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v := r.URL.Query().Get("end_date"); v != "" {
-		if t, err := parseTimeParam(v); err == nil {
+		if t, err := endOfDay(v); err == nil {
 			filter.EndDate = &t
 		}
 	}
@@ -328,10 +375,22 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": events})
+	total, err := h.Service.store.CountPlatformEvents(r.Context(), filter)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"items": events,
+		"total": total,
+	}})
 }
 
 // ListSecurityScanResults handles GET /api/v1/admin/analytics/security.
+// Supports severity/unresolved filters, a created_at window via ?from=&to=
+// (same contract as the other admin analytics endpoints), and server-side
+// pagination via ?page_size=&offset= with a total count in the envelope.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
 	filter := SecurityScanFilter{
 		Severity:   r.URL.Query().Get("severity"),
@@ -340,13 +399,38 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		Limit:      parsePageSize(r),
 	}
 
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := parseFlexibleTime(v); err == nil {
+			filter.StartDate = &t
+		}
+	}
+
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := parseFlexibleTime(v); err == nil {
+			if len(v) == len("2006-01-02") {
+				t = t.Add(24*time.Hour - time.Nanosecond)
+			}
+
+			filter.EndDate = &t
+		}
+	}
+
 	results, err := h.Service.ListSecurityScanResults(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
+	total, err := h.Service.store.CountSecurityScanResults(r.Context(), filter)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"items": results,
+		"total": total,
+	}})
 }
 
 // ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve.
@@ -423,9 +507,13 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// This endpoint is analytics-scoped by definition — clamp every request
+	// to FlushAnalytics. An empty or "all" scope must NOT become jc:* (that
+	// pattern covers sessions, permission caches, rate limits and locks
+	// platform-wide, not just analytics data).
 	scope := FlushScope(input.Scope)
-	if scope == "" {
-		scope = FlushAll
+	if scope != FlushAnalytics {
+		scope = FlushAnalytics
 	}
 
 	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope)
@@ -506,13 +594,14 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		period = "30d"
 	}
 
-	cacheKey := analyticsCacheKey("search", period)
+	cacheKey := analyticsCacheKey("search", period, from, to)
 
 	// Convert to frontend-friendly format
 	type SearchResult struct {
-		Query      string `json:"query"`
-		Count      int64  `json:"count"`
-		AvgResults int32  `json:"avg_results"`
+		Query           string `json:"query"`
+		Count           int64  `json:"count"`
+		AvgResults      int32  `json:"avg_results"`
+		ZeroResultCount int64  `json:"zero_result_count"`
 	}
 
 	searchResults, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
@@ -531,9 +620,10 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		mapped := make([]SearchResult, 0, len(results))
 		for _, row := range results {
 			mapped = append(mapped, SearchResult{
-				Query:      row.Query,
-				Count:      row.SearchCount,
-				AvgResults: row.AvgResults,
+				Query:           row.Query,
+				Count:           row.SearchCount,
+				AvgResults:      row.AvgResults,
+				ZeroResultCount: row.ZeroResultCount,
 			})
 		}
 
@@ -548,6 +638,10 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
+// Server-side pagination (?page_size=&offset=) and sorting (?sort=&dir= on
+// space_name/joins/posts/day) with a total count and window-wide aggregates
+// in the envelope. joins/posts are lifetime counters for spaces created in
+// the range — the frontend labels them as such.
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
@@ -562,13 +656,36 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	sort, sortDir := parseSortParams(r, "space_name", "joins", "posts", "day", "total_joins", "total_posts")
+	// Map the frontend's column keys to the query's CASE arms.
+	switch sort {
+	case "total_joins":
+		sort = "joins"
+	case "total_posts":
+		sort = "posts"
+	}
+
+	pageSize := parsePageSize(r)
+	offset := parseOffset(r)
+
+	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true}, sort, sortDir, pageSize, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// Aggregate by space
+	total, err := h.Service.store.CountDailySpaceStats(r.Context(), &startDate, endDate)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	totals, err := h.Service.store.GetSpaceStatsTotals(r.Context(), &startDate, endDate)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	type SpaceSummary struct {
 		SpaceID    string `json:"space_id"`
 		SpaceName  string `json:"space_name"`
@@ -576,35 +693,48 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		TotalPosts int64  `json:"total_posts"`
 	}
 
-	spaceMap := make(map[string]*SpaceSummary)
-
+	// One row per space (the query's "day" is the creation date) — map
+	// directly, preserving the SQL ORDER BY instead of a map iteration so
+	// output order is deterministic.
+	spaces := make([]SpaceSummary, 0, len(spaceStats))
 	for _, ss := range spaceStats {
-		sid := ss.SpaceID.String()
-		if _, ok := spaceMap[sid]; !ok {
-			spaceMap[sid] = &SpaceSummary{SpaceID: sid, SpaceName: ss.SpaceName}
-		}
-
-		spaceMap[sid].TotalJoins += ss.Joins
-		spaceMap[sid].TotalPosts += ss.Posts
+		spaces = append(spaces, SpaceSummary{
+			SpaceID:    ss.SpaceID.String(),
+			SpaceName:  ss.SpaceName,
+			TotalJoins: ss.Joins,
+			TotalPosts: ss.Posts,
+		})
 	}
 
-	spaces := make([]SpaceSummary, 0, len(spaceMap))
-	for _, s := range spaceMap {
-		spaces = append(spaces, *s)
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"items":       spaces,
+		"total":       total,
+		"total_joins": totals.TotalJoins,
+		"total_posts": totals.TotalPosts,
+	}})
 }
 
 // GetUserAnalytics handles GET /admin/analytics/users (P5.6).
+// Range-aware: active/new users are counted inside [from, to]; total_users
+// stays all-time.
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
-	ua, err := h.Service.GetUserAnalytics(r.Context())
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	counts, err := h.Service.store.GetAdminUserCounts(r.Context(), &from, to)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ua})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_users":  counts.TotalUsers,
+		"active_users": counts.ActiveUsers,
+		"new_users":    counts.NewUsers,
+	}})
 }
 
 // GetContentAnalytics handles GET /content/:id/analytics (P5.6).
@@ -654,7 +784,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	stats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, contentID)
+	stats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, contentID, "", "", 0, 0)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -697,35 +827,38 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	sort, sortDir := parseSortParams(r, "content_title", "views", "reactions", "comments", "unique_viewers", "day")
+	pageSize := parsePageSize(r)
+	offset := parseOffset(r)
+
+	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true}, sort, sortDir, pageSize, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// Aggregate real content engagement totals across the window. The daily
-	// content stats are per-content-per-day rows; dedupe by content_id for the
-	// unique content count and sum the engagement metrics.
-	contentIDs := make(map[string]struct{}, len(contentStats))
-
-	var totalViews, totalReactions, totalComments, totalUniqueViewers int64
-
-	for _, cs := range contentStats {
-		contentIDs[cs.ContentID.String()] = struct{}{}
-		totalViews += int64(cs.Views)
-		totalReactions += int64(cs.Reactions)
-		totalComments += int64(cs.Comments)
-		totalUniqueViewers += int64(cs.UniqueViewers)
+	total, err := h.Service.store.CountDailyContentStats(r.Context(), &startDate, endDate)
+	if err != nil {
+		handleServiceError(w, err)
+		return
 	}
 
-	// Build response with per-content-per-day engagement stats and totals.
+	// Window-wide aggregates — computed over the full range, not the page.
+	totals, err := h.Service.store.GetContentStatsTotals(r.Context(), &startDate, endDate)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	result := map[string]any{
 		"content_stats":        contentStats,
-		"total_content":        len(contentIDs),
-		"total_views":          totalViews,
-		"total_reactions":      totalReactions,
-		"total_comments":       totalComments,
-		"total_unique_viewers": totalUniqueViewers,
+		"total":                total,
+		"total_content":        totals.TotalContent,
+		"total_views":          totals.TotalViews,
+		"total_reactions":      totals.TotalReactions,
+		"total_comments":       totals.TotalComments,
+		"total_shares":         totals.TotalShares,
+		"total_unique_viewers": totals.TotalUniqueViewers,
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})

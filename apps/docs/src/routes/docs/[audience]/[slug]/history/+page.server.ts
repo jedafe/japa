@@ -9,13 +9,13 @@ import type { DocAudience, DocPage, DocRevision } from '#lib/types/index.js';
 
 /**
  * Revision history for a doc page (§44 amendment 5). Editor-only surface —
- * docs.manage + audience access are enforced server-side, the revision
+ * docs.admin + audience access are enforced server-side, the revision
  * endpoints are admin API calls that never reach an unprivileged browser.
  */
 export const load: PageServerLoad = async (event) => {
 	const audience = event.params.audience as DocAudience;
 	const slug = event.params.slug;
-	const canEdit = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
 
 	if (!event.locals.audienceOrder.includes(audience)) {
 		throw error(404, { code: 'not_found', message: 'Audience not found' });

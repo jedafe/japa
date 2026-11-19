@@ -169,6 +169,8 @@ type EventFilter struct {
 type SecurityScanFilter struct {
 	Severity   string
 	Unresolved bool
+	StartDate  *time.Time
+	EndDate    *time.Time
 	Page       int32
 	Limit      int32
 }

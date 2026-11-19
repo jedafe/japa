@@ -65,9 +65,24 @@ func (s *Store) GetEventCountsByType(ctx context.Context, startDate, endDate *ti
 	return s.read.GetEventCountsByType(ctx, gen.GetEventCountsByTypeParams{Column1: nullableTimestamptz(startDate), Column2: nullableTimestamptz(endDate)})
 }
 
-// GetDailyContentStats returns per-content daily stats.
-func (s *Store) GetDailyContentStats(ctx context.Context, startDate, endDate *pgtype.Date, contentID pgtype.UUID) ([]gen.GetDailyContentStatsRow, error) {
-	return s.read.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate), Column3: contentID})
+// GetDailyContentStats returns per-content daily stats. sort/sortDir are
+// allowlisted by CASE arms in the query; limit<=0 disables LIMIT.
+func (s *Store) GetDailyContentStats(ctx context.Context, startDate, endDate *pgtype.Date, contentID pgtype.UUID, sort, sortDir string, limit, offset int32) ([]gen.GetDailyContentStatsRow, error) {
+	return s.read.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{
+		Column1: nullableDate(startDate), Column2: nullableDate(endDate), Column3: contentID,
+		Column4: sort, Column5: sortDir, Column6: limit, Offset: offset,
+	})
+}
+
+// CountDailyContentStats returns the number of non-draft contents created in
+// the range — used as meta.total for server-side pagination.
+func (s *Store) CountDailyContentStats(ctx context.Context, startDate, endDate *pgtype.Date) (int64, error) {
+	return s.read.CountDailyContentStats(ctx, gen.CountDailyContentStatsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate)})
+}
+
+// GetContentStatsTotals returns window-wide content engagement aggregates.
+func (s *Store) GetContentStatsTotals(ctx context.Context, startDate, endDate *pgtype.Date) (gen.GetContentStatsTotalsRow, error) {
+	return s.read.GetContentStatsTotals(ctx, gen.GetContentStatsTotalsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate)})
 }
 
 // GetTopContentByViews returns the top N content items by views.
@@ -75,9 +90,24 @@ func (s *Store) GetTopContentByViews(ctx context.Context, startDate, endDate *pg
 	return s.read.GetTopContentByViews(ctx, gen.GetTopContentByViewsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate), Limit: limit})
 }
 
-// GetDailySpaceStats returns per-space daily stats.
-func (s *Store) GetDailySpaceStats(ctx context.Context, startDate, endDate *pgtype.Date, spaceID pgtype.UUID) ([]gen.GetDailySpaceStatsRow, error) {
-	return s.read.GetDailySpaceStats(ctx, gen.GetDailySpaceStatsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate), Column3: spaceID})
+// GetDailySpaceStats returns per-space daily stats (one row per space —
+// the "day" is the space's creation date). sort/sortDir are allowlisted by
+// CASE arms in the query; limit<=0 disables LIMIT.
+func (s *Store) GetDailySpaceStats(ctx context.Context, startDate, endDate *pgtype.Date, spaceID pgtype.UUID, sort, sortDir string, limit, offset int32) ([]gen.GetDailySpaceStatsRow, error) {
+	return s.read.GetDailySpaceStats(ctx, gen.GetDailySpaceStatsParams{
+		Column1: nullableDate(startDate), Column2: nullableDate(endDate), Column3: spaceID,
+		Column4: sort, Column5: sortDir, Column6: limit, Offset: offset,
+	})
+}
+
+// CountDailySpaceStats returns the number of spaces created in the range.
+func (s *Store) CountDailySpaceStats(ctx context.Context, startDate, endDate *pgtype.Date) (int64, error) {
+	return s.read.CountDailySpaceStats(ctx, gen.CountDailySpaceStatsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate)})
+}
+
+// GetSpaceStatsTotals returns window-wide space join/post aggregates.
+func (s *Store) GetSpaceStatsTotals(ctx context.Context, startDate, endDate *pgtype.Date) (gen.GetSpaceStatsTotalsRow, error) {
+	return s.read.GetSpaceStatsTotals(ctx, gen.GetSpaceStatsTotalsParams{Column1: nullableDate(startDate), Column2: nullableDate(endDate)})
 }
 
 // GetUserEngagementStats returns daily user engagement directly from the
@@ -179,8 +209,18 @@ func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecuri
 // ListSecurityScanResults returns scan results matching filters.
 func (s *Store) ListSecurityScanResults(ctx context.Context, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
 	return s.read.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
-		Column1: filter.Severity, Column2: filter.Unresolved, Limit: filter.Limit,
-		Offset: filter.Page * filter.Limit,
+		Column1: filter.Severity, Column2: filter.Unresolved,
+		Column3: nullableTimestamptz(filter.StartDate), Column4: nullableTimestamptz(filter.EndDate),
+		Limit: filter.Limit, Offset: filter.Page * filter.Limit,
+	})
+}
+
+// CountSecurityScanResults returns the total matching the same filter set —
+// used as meta.total for server-side pagination.
+func (s *Store) CountSecurityScanResults(ctx context.Context, filter SecurityScanFilter) (int64, error) {
+	return s.read.CountSecurityScanResults(ctx, gen.CountSecurityScanResultsParams{
+		Column1: filter.Severity, Column2: filter.Unresolved,
+		Column3: nullableTimestamptz(filter.StartDate), Column4: nullableTimestamptz(filter.EndDate),
 	})
 }
 
@@ -269,9 +309,31 @@ func (s *Store) GetSearchAnalytics(ctx context.Context, startDate, endDate *time
 	})
 }
 
-// GetRevenueSummary returns total revenue, monthly revenue, and active subscription count.
-func (s *Store) GetRevenueSummary(ctx context.Context) (gen.GetRevenueSummaryRow, error) {
-	return s.read.GetRevenueSummary(ctx)
+// GetRevenueSummary returns total revenue, monthly revenue, and active
+// subscription count for the [start, end] window (nil bounds = unbounded).
+func (s *Store) GetRevenueSummary(ctx context.Context, startDate, endDate *time.Time) (gen.GetRevenueSummaryRow, error) {
+	return s.read.GetRevenueSummary(ctx, gen.GetRevenueSummaryParams{Column1: nullableTimestamptz(startDate), Column2: nullableTimestamptz(endDate)})
+}
+
+// CountPlatformEvents returns the total events matching the filter set —
+// used as meta.total for server-side pagination of the admin event log.
+func (s *Store) CountPlatformEvents(ctx context.Context, filter EventFilter) (int64, error) {
+	var userID pgtype.UUID
+	if filter.UserID != "" {
+		if err := userID.Scan(filter.UserID); err != nil {
+			return 0, fmt.Errorf("invalid user_id filter: %w", err)
+		}
+	}
+
+	return s.read.CountPlatformEvents(ctx, gen.CountPlatformEventsParams{
+		Column1: filter.EventType, Column2: userID, Column3: filter.EntityType,
+		Column4: nullableTimestamptz(filter.StartDate), Column5: nullableTimestamptz(filter.EndDate),
+	})
+}
+
+// GetAdminUserCounts returns range-aware user counts for the admin Users tab.
+func (s *Store) GetAdminUserCounts(ctx context.Context, startDate, endDate *time.Time) (gen.GetAdminUserCountsRow, error) {
+	return s.read.GetAdminUserCounts(ctx, gen.GetAdminUserCountsParams{Column1: nullableTimestamptz(startDate), Column2: nullableTimestamptz(endDate)})
 }
 
 // GetRevenueByPeriod returns revenue aggregated by month for the given time window.

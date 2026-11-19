@@ -107,7 +107,8 @@ export interface DocPage {
 	audience: DocAudience;
 	/** TipTap JSON document (raw). Rendered to HTML server-side via @tiptap/html. */
 	content: unknown;
-	ai_generated: boolean;
+	// AI-generation metadata is deliberately absent — the public endpoints
+	// strip it; it is admin-surface only.
 	review_status: string;
 	last_reviewed_by?: string | null;
 	last_reviewed_at?: string | null;
@@ -195,7 +196,7 @@ export interface DocSearchResult {
 	excerpt: string;
 }
 
-/** POST /api/v1/admin/docs/pages — create a doc page (docs.manage). */
+/** POST /api/v1/admin/docs/pages — create a doc page (docs.admin). */
 export interface DocPageCreateRequest {
 	title: string;
 	slug: string;
@@ -211,7 +212,7 @@ export interface DocPageCreateRequest {
 	summary?: string;
 }
 
-/** PATCH /api/v1/admin/docs/pages/{id} — update a doc page (docs.manage). */
+/** PATCH /api/v1/admin/docs/pages/{id} — update a doc page (docs.admin). */
 export interface DocPageUpdateRequest {
 	title: string;
 	/** TipTap JSON document object. */
