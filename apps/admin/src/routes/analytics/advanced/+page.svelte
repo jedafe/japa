@@ -9,7 +9,7 @@
 	import { Button } from "#lib/components/ui/button/index.js";
 	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import {
-		BarChart3, Download, ArrowLeft, DollarSign,
+		Download, ArrowLeft, DollarSign,
 		Megaphone, Mail, Repeat2, ListOrdered
 	} from "lucide-svelte";
 	import { analyticsAdminApi } from "#lib/api.js";
@@ -33,9 +33,14 @@
 	let retentionCohorts = $state<Array<Record<string, unknown>> | null>(null);
 	let tabLoading = $state(false);
 	let tabError = $state("");
-	// Datasets already fetched with the current period/type — cleared whenever
-	// either filter changes so each tab refetches on next activation.
+	// Datasets already fetched, keyed by the params they were fetched with —
+	// a load finishing after a filter change adds the stale key, so it can
+	// never mark the new params' view as fresh.
 	let loadedTabs = $state(new Set<string>());
+	// Type only narrows top_content — other datasets have no type dimension,
+	// so their keys exclude it and survive a type change untouched.
+	const loadKey = (tab: string) =>
+		tab === "top_content" ? `${tab}|${period}|${advType}` : `${tab}|${period}`;
 
 	// Content-type options accumulate from every fetched leaderboard — deriving
 	// from the *filtered* rows would collapse the picker to just the active
@@ -101,11 +106,15 @@
 	async function loadDataset(tab = activeTab) {
 		tabLoading = true;
 		tabError = "";
+		const key = loadKey(tab);
 		const ok = await fetchDataset(tab).catch(() => false);
+		// Mark the tab attempted either way — leaving it unloaded on failure
+		// would make the lazy effect retry in an endless loop. Recovery goes
+		// through the error banner's Retry button (or a filter change, which
+		// resets loadedTabs).
+		loadedTabs = new Set(loadedTabs).add(key);
 		tabLoading = false;
-		if (ok) {
-			loadedTabs = new Set(loadedTabs).add(tab);
-		} else {
+		if (!ok) {
 			tabError = t('analytics.failed_to_load', 'Failed to load advanced analytics');
 		}
 	}
@@ -113,7 +122,7 @@
 	// Lazy per-tab fetch — only the active dataset is requested; the set is
 	// reset by filter changes below so stale views can't linger.
 	$effect(() => {
-		if (!loadedTabs.has(activeTab) && !tabLoading) {
+		if (!loadedTabs.has(loadKey(activeTab)) && !tabLoading) {
 			loadDataset(activeTab);
 		}
 	});
@@ -135,7 +144,8 @@
 
 	function changeType(v: string) {
 		advType = v;
-		loadedTabs = new Set();
+		// loadKey embeds the type only for top_content, so that key changes on
+		// its own — no manual invalidation needed for other tabs.
 		syncFilterUrl();
 	}
 
