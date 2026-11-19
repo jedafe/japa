@@ -196,10 +196,17 @@ type LinkInput struct {
 
 // PublicConfig is what unauthenticated viewers learn about a recipient.
 type PublicConfig struct {
-	Enabled      bool     `json:"enabled"`
-	Methods      []string `json:"methods"`
-	MinTipAmount int64    `json:"min_tip_amount"`
-	FiatCurrency string   `json:"fiat_currency,omitempty"`
+	Enabled bool     `json:"enabled"`
+	Methods []string `json:"methods"`
+	// AcceptCredits/AcceptFiat mirror the stored settings row — owner-facing
+	// surfaces (the space settings form) derive their initial toggles from
+	// the public config because spaces have no owner GET route. They are
+	// honest metadata: the advertised method list implies the same thing
+	// for viewers who can use those rails.
+	AcceptCredits bool   `json:"accept_credits"`
+	AcceptFiat    bool   `json:"accept_fiat"`
+	MinTipAmount  int64  `json:"min_tip_amount"`
+	FiatCurrency  string `json:"fiat_currency,omitempty"`
 	// Fiat bounds and presets are minor units of FiatCurrency — emitted only
 	// when a fiat method is advertised. They are currency-aware (derived
 	// from currencies.credits_per_unit + the tips.min/max_fiat_* settings)

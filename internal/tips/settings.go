@@ -341,7 +341,11 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner, viewer pgtype.U
 	if err != nil {
 		return PublicConfig{}, err
 	}
-	cfg := PublicConfig{MinTipAmount: st.MinTipAmount}
+	cfg := PublicConfig{
+		MinTipAmount:  st.MinTipAmount,
+		AcceptCredits: st.AcceptCredits,
+		AcceptFiat:    st.AcceptFiat,
+	}
 	if s.settings != nil {
 		cfg.FiatCurrency = s.settings.GetStringOr(ctx, "wallet.default_currency", "USD")
 	}

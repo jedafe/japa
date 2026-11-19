@@ -14,6 +14,11 @@ export interface TipExternalLink {
 export interface TipConfig {
 	enabled: boolean;
 	methods: string[];
+	/** Stored settings flags — owner-facing surfaces (space settings form)
+	 *  derive toggles from these, NOT from the viewer-filtered methods list
+	 *  (the stablecoin flag swaps credits↔stablecoin in methods). */
+	accept_credits?: boolean;
+	accept_fiat?: boolean;
 	min_tip_amount?: number;
 	fiat_currency?: string;
 	/** Effective fiat bounds + presets in minor units of fiat_currency —

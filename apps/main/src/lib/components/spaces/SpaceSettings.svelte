@@ -138,16 +138,18 @@
 
 	// A space advertises fiat when the public config's methods carry anything
 	// beyond credits/opencollective — provider-agnostic (any §17 provider).
-	const isFiatMethod = (m: string) => m !== 'credits' && m !== 'opencollective';
-
+	// The owner form reads the stored accept_credits/accept_fiat flags, NOT
+	// the viewer-filtered methods list: the §128 flag swaps 'credits' for
+	// 'stablecoin' there and hides it from ungranted viewers entirely, so
+	// method-list derivation would wipe the owner's toggles on the next save.
 	$effect(() => {
 		if (isOwner && space.level === 'custom' && tipsFeatureEnabled && !tipsLoaded) {
 			void (async () => {
 				const res = await api.get<TipConfig>(`/spaces/${space.slug}/tip-settings`);
 				if (!res.error && res.data) {
 					tipsEnabled = res.data.enabled ?? false;
-					acceptCredits = res.data.methods?.includes('credits') ?? true;
-					acceptFiat = res.data.methods?.some(isFiatMethod) ?? false;
+					acceptCredits = res.data.accept_credits ?? true;
+					acceptFiat = res.data.accept_fiat ?? false;
 					minTip = res.data.min_tip_amount ?? 0;
 					thankYou = res.data.thank_you_message ?? '';
 				}

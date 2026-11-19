@@ -711,6 +711,12 @@ func TestPublicConfigStablecoinViewerGate(t *testing.T) {
 	if !has(cfg.Methods, MethodStablecoin) || has(cfg.Methods, MethodCredits) {
 		t.Fatalf("pilot should see stablecoin (not credits): %v", cfg.Methods)
 	}
+	// The stored accept flags are emitted verbatim regardless of the
+	// viewer's grant — owner surfaces derive toggles from them, not from
+	// the filtered method list.
+	if !cfg.AcceptCredits {
+		t.Fatal("accept_credits must mirror the stored row even for pilots")
+	}
 
 	// Ungranted member → no wallet method at all.
 	cfg, err = newSvc().PublicConfig(context.Background(), owner, member)
