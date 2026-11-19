@@ -5,6 +5,7 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
 	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
@@ -181,7 +182,10 @@
 	}
 
 	async function submit() {
-		if (!form.title.trim()) return;
+		if (!form.title.trim()) {
+			errorMessage = t('docs.title_required', 'Title is required');
+			return;
+		}
 		saving = true;
 		errorMessage = '';
 		// Flush any pending editor transaction so the JSON reflects the latest
@@ -352,7 +356,9 @@
 		{t('docs.loading')}
 	</div>
 {:else}
-	<div class="space-y-3">
+	<Card>
+		<CardContent>
+	<div class="space-y-3 pt-4 sm:pt-6">
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
 				<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
@@ -493,6 +499,8 @@
 			</Button>
 		</div>
 	</div>
+		</CardContent>
+	</Card>
 {/if}
 
 <MediaPickerModal

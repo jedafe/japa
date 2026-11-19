@@ -2195,6 +2195,7 @@
   "docs.summary_label": "Edit summary (optional)",
   "docs.summary_placeholder": "Briefly describe your changes",
   "docs.title": "Documentation",
+  "docs.title_required": "Title is required",
   "docs.title_2": "Title",
   "docs.unpublish": "Unpublish",
   "docs.update": "Update",

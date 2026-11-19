@@ -2195,6 +2195,7 @@
   "docs.summary_label": "Résumé des modifications (optionnel)",
   "docs.summary_placeholder": "Décrivez brièvement vos modifications",
   "docs.title": "Documentation",
+  "docs.title_required": "Le titre est requis",
   "docs.title_2": "Titre",
   "docs.unpublish": "Dépublier",
   "docs.update": "Mettre à jour",
