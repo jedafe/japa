@@ -1249,12 +1249,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	oauthHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService}) // ADR-136: OAuth signup + login
 	reportsService.SetActivityEmitter(walletService)                           // ADR-136: report.upheld / content.flagged_removed
 
-	// Register payment providers so InitiatePayment can call real provider APIs.
-	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
-	stripeProvider := payments.NewStripeProvider(cfg.StripeSecretKey)
-	stripeProvider.SetWebhookSecret(cfg.StripeWebhookSecret)
-	paymentService.SetProvider(stripeProvider)
-	paymentService.SetProvider(payments.NewNOWPaymentsProvider(cfg.NOWPaymentsIPNSecret))
+	// Register payment providers so InitiatePayment can call real provider
+	// APIs. Providers with no credentials configured are NOT registered —
+	// ProviderNames() (which §125 tip configs consult) must reflect only
+	// usable rails; an advertised-but-uncredentialed provider surfaces as
+	// an InitiatePayment error on every attempt. Stripe/NOWPayments need
+	// their webhook credential too or payments could never settle —
+	// matching the production-credential pairing config.Validate enforces.
+	if cfg.PaystackSecretKey != "" {
+		paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
+	}
+	if cfg.StripeSecretKey != "" && cfg.StripeWebhookSecret != "" {
+		stripeProvider := payments.NewStripeProvider(cfg.StripeSecretKey)
+		stripeProvider.SetWebhookSecret(cfg.StripeWebhookSecret)
+		paymentService.SetProvider(stripeProvider)
+	}
+	if cfg.NOWPaymentsAPIKey != "" && cfg.NOWPaymentsIPNSecret != "" {
+		paymentService.SetProvider(payments.NewNOWPaymentsProvider(cfg.NOWPaymentsAPIKey))
+	}
 	paymentService.SetProvider(payments.NewManualTransferProvider())
 
 	paymentHandlers := payments.NewHandlers(paymentService)

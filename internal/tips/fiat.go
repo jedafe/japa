@@ -22,6 +22,13 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 	if !st.AcceptFiat {
 		return CreateTipResult{}, ErrMethodNotAccepted
 	}
+	// Parity with the advertised method list: a provider that isn't
+	// registered (no credentials) can never initiate checkout, so the tip
+	// would die pending after a pointless row — reject like any other
+	// method the recipient doesn't accept.
+	if !s.providerConfigured(in.Method) {
+		return CreateTipResult{}, ErrMethodNotAccepted
+	}
 
 	amount := in.FiatAmount
 	if amount <= 0 {

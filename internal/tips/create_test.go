@@ -241,6 +241,37 @@ func TestCreateTipIdempotentReplay(t *testing.T) {
 	}
 }
 
+// A fiat method whose provider isn't registered at boot (no credentials)
+// can never initiate checkout — reject at create time, matching what the
+// advertised method list already told the client.
+func TestCreateFiatTipUnconfiguredProvider(t *testing.T) {
+	fs := newFakeStore()
+	enabledRecipient(fs, UserOwner(recipientID))
+	pay := &fakePayments{}
+	svc := baseSvc(fs)
+	svc.payments = pay
+	svc.providers = fakeProviderLister{"manual_transfer"}
+
+	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: "nowpayments", FiatAmount: 500, FiatCurrency: "USD"}
+	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); !errors.Is(err, ErrMethodNotAccepted) {
+		t.Fatalf("unconfigured provider should be method_not_accepted, got %v", err)
+	}
+	if pay.called != 0 || len(fs.inserted) != 0 {
+		t.Fatal("no payment/tip should be created for an unconfigured provider")
+	}
+
+	// The registered provider reaches the currency validation stage.
+	svc.providers = fakeProviderLister{"manual_transfer", "nowpayments"}
+	fs.currencies = map[string]gen.Currency{"USD": {Code: "USD", IsActive: true, CreditsPerUnit: 100}}
+	in.Method = "nowpayments"
+	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); err != nil {
+		t.Fatalf("configured provider should proceed: %v", err)
+	}
+	if pay.called != 1 || len(fs.inserted) != 1 {
+		t.Fatalf("expected payment + pending tip, got called=%d inserted=%d", pay.called, len(fs.inserted))
+	}
+}
+
 // Space tips must store recipient_space_id AND a recipient_user_id snapshot
 // of the wallet owner — tips_recipient_check rejects inserts missing either.
 func TestCreateTipSpaceRecipientSnapshot(t *testing.T) {
@@ -309,6 +340,10 @@ func TestCreateTipInputFromRequest(t *testing.T) {
 		t.Fatal("expected invalid content_id error")
 	}
 }
+
+type fakeProviderLister []string
+
+func (f fakeProviderLister) ProviderNames() []string { return f }
 
 type fakeSenderWallets struct {
 	ok  bool

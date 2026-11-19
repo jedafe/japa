@@ -114,26 +114,31 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 	// Initiate payment with external provider (Paystack, Stripe, NOWPayments).
 	provider := s.providers[input.Provider]
 
-	var providerRef, checkoutURL string
-
-	if provider != nil {
-		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
-			UserID:      userID.String(),
-			Email:       input.Email,
-			Amount:      netAmount,
-			Currency:    currency,
-			PurposeType: input.PurposeType,
-			PurposeID:   input.PurposeID,
-			Metadata:    input.Metadata,
-			ReturnURL:   input.ReturnURL,
-		})
-		if err != nil {
-			return CreatePaymentResult{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
-		}
-
-		providerRef = resp.Reference
-		checkoutURL = resp.CheckoutURL
+	// An unregistered provider (uncredentialed at boot or unknown name)
+	// cannot initiate checkout — erroring is strictly better than the old
+	// silent path, which wrote a pending row with no provider ref and no
+	// checkout URL that nothing could ever settle. manual_transfer is the
+	// deliberate exception and is always registered.
+	if provider == nil {
+		return CreatePaymentResult{}, fmt.Errorf("payment provider %q is not configured", input.Provider)
 	}
+
+	resp, err := provider.InitiatePayment(ctx, PaymentRequest{
+		UserID:      userID.String(),
+		Email:       input.Email,
+		Amount:      netAmount,
+		Currency:    currency,
+		PurposeType: input.PurposeType,
+		PurposeID:   input.PurposeID,
+		Metadata:    input.Metadata,
+		ReturnURL:   input.ReturnURL,
+	})
+	if err != nil {
+		return CreatePaymentResult{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
+	}
+
+	providerRef := resp.Reference
+	checkoutURL := resp.CheckoutURL
 
 	p, err := s.createPaymentRow(ctx, userID, input, currency, providerRef, checkoutURL, input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
 	if err != nil {
