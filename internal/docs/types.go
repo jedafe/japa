@@ -29,6 +29,8 @@ type DocPage struct {
 	FeatureImageURL string  `json:"feature_image_url"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+	// Rule 11: set when the page is in the admin trash; absent on live pages.
+	DeletedAt *string `json:"deleted_at,omitempty"`
 }
 
 // DocPageSummary is a lightweight listing item (no content body).

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -380,5 +381,26 @@ func TestRevisionRequired(t *testing.T) {
 	}
 	if !revisionRequired(base, "T", same, pgtype.UUID{Bytes: [16]byte{9}, Valid: true}) {
 		t.Fatal("feature_image change must version")
+	}
+}
+
+// Rule 11: toDocPage surfaces deleted_at so the admin trash view can render
+// the flag and gate row actions on it.
+func TestToDocPageDeletedAt(t *testing.T) {
+	p := docPageRow{DocPage: gen.DocPage{
+		ID:        pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
+		Title:     "T",
+		Slug:      "t",
+		Audience:  "users",
+		DeletedAt: pgtype.Timestamptz{Time: time.Unix(1_700_000_000, 0).UTC(), Valid: true},
+	}}
+	got := toDocPage(p)
+	if got.DeletedAt == nil {
+		t.Fatal("deleted_at must be set for a trashed page")
+	}
+
+	live := toDocPage(docPageRow{DocPage: gen.DocPage{ID: pgtype.UUID{Bytes: [16]byte{4}, Valid: true}}})
+	if live.DeletedAt != nil {
+		t.Fatalf("live page deleted_at = %v", *live.DeletedAt)
 	}
 }

@@ -6,7 +6,8 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published';
+WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published'
+  AND p.deleted_at IS NULL;
 
 -- name: GetDocPageBySlugAnyStatus :one
 -- Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
@@ -18,7 +19,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE p.audience = @audience AND p.slug = @slug;
+WHERE p.audience = @audience AND p.slug = @slug AND p.deleted_at IS NULL;
 
 -- name: ListDocPagesByAudience :many
 -- content is selected so the service can derive a plain-text excerpt for
@@ -30,12 +31,14 @@ SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.positi
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience AND p.review_status = 'published'
+  AND p.deleted_at IS NULL
 ORDER BY p.position ASC, p.title ASC;
 
 -- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
 FROM doc_pages
 WHERE audience = @audience AND review_status = 'published'
+  AND deleted_at IS NULL
 ORDER BY position ASC;
 
 -- name: ListAllDocPagesByAudience :many
@@ -43,11 +46,12 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience
   AND (@status_filter::text = '' OR p.review_status = @status_filter)
+  AND (@show_deleted::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
@@ -56,10 +60,11 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE (@status_filter::text = '' OR p.review_status = @status_filter)
+  AND (@show_deleted::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
@@ -68,7 +73,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.id = @id;
@@ -94,21 +99,35 @@ SET title = @title, content = @content, review_status = @review_status,
  last_reviewed_at = CASE WHEN sqlc.narg(clear_review)::boolean THEN NULL ELSE last_reviewed_at END,
  updated_at = now()
 WHERE id = @id
+  AND deleted_at IS NULL
   AND (sqlc.narg(expected_updated_at)::timestamptz IS NULL
        OR updated_at = sqlc.narg(expected_updated_at)::timestamptz);
 
 -- name: UpdateDocPageStatus :exec
--- Approve/publish transitions only — records the reviewer (§44).
+-- Approve/publish transitions only — records the reviewer (§44). Trashed
+-- pages can't transition (Rule 11: restore first).
 UPDATE doc_pages
 SET review_status = @review_status, last_reviewed_by = @last_reviewed_by,
  last_reviewed_at = now(), updated_at = now()
-WHERE id = @id;
+WHERE id = @id AND deleted_at IS NULL;
 
 -- name: GetDocPageStatus :one
-SELECT review_status, created_by, ai_generated FROM doc_pages WHERE id = @id;
+SELECT review_status, created_by, ai_generated, deleted_at FROM doc_pages WHERE id = @id;
+
+-- name: SoftDeleteDocPage :execrows
+-- Rule 11: DELETE /admin/docs/pages/{id} soft-deletes — the row keeps its
+-- (audience, slug) claim and stays restorable until a force delete.
+UPDATE doc_pages SET deleted_at = now() WHERE id = @id AND deleted_at IS NULL;
+
+-- name: RestoreDocPage :execrows
+-- Undo a soft delete; 0 rows means the page wasn't in the trash.
+UPDATE doc_pages SET deleted_at = NULL WHERE id = @id AND deleted_at IS NOT NULL;
 
 -- name: DeleteDocPage :exec
-DELETE FROM doc_pages WHERE id = @id;
+-- Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
+-- rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
+-- live page is by design: soft-delete first.
+DELETE FROM doc_pages WHERE id = @id AND deleted_at IS NOT NULL;
 
 -- name: ClearDocPageParent :exec
 -- Orphan children before their parent is deleted — parent_id is not an FK.
@@ -118,14 +137,15 @@ UPDATE doc_pages SET parent_id = NULL, updated_at = now() WHERE parent_id = @id;
 UPDATE doc_pages
 SET helpful_yes = helpful_yes + CASE WHEN @vote = 'up' THEN 1 ELSE 0 END,
  helpful_no = helpful_no + CASE WHEN @vote = 'down' THEN 1 ELSE 0 END
-WHERE audience = @audience AND slug = @slug;
+WHERE audience = @audience AND slug = @slug AND deleted_at IS NULL;
 
 -- name: GetDocPageFeedback :one
 -- Aggregate counts + the requesting user's recorded vote (§44 amendment 2).
 SELECT p.id AS page_id, p.helpful_yes, p.helpful_no, v.vote AS my_vote
 FROM doc_pages p
 LEFT JOIN doc_page_votes v ON v.page_id = p.id AND v.user_id = @user_id::uuid
-WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published';
+WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published'
+  AND p.deleted_at IS NULL;
 
 -- name: SetDocPageVote :execrows
 -- Atomic vote upsert + counter adjustment (§44 amendment 2). The CTEs see the
@@ -175,6 +195,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
+  AND p.deleted_at IS NULL
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
@@ -182,6 +203,7 @@ LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
+ AND deleted_at IS NULL
  AND (sqlc.narg(audience)::text IS NULL OR audience = sqlc.narg(audience))
  AND (title ILIKE '%' || @query::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || @query::text || '%')
@@ -195,6 +217,7 @@ LIMIT @result_limit;
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
+ AND deleted_at IS NULL
  AND audience = ANY(@audiences::text[])
  AND (title ILIKE '%' || @query::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || @query::text || '%')

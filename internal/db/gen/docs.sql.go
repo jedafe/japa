@@ -74,9 +74,12 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 }
 
 const deleteDocPage = `-- name: DeleteDocPage :exec
-DELETE FROM doc_pages WHERE id = $1
+DELETE FROM doc_pages WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
+// Hard delete — Rule 11 restricts permanent removal to already-soft-deleted
+// rows via ?force=true admin calls (admin.hard_delete-gated). 0 rows on a
+// live page is by design: soft-delete first.
 func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteDocPage, id)
 	return err
@@ -133,7 +136,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.helpful_yes, p.helpful_no, p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.id = $1
@@ -160,6 +163,7 @@ type GetDocPageByIDRow struct {
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPageByIDRow, error) {
@@ -186,6 +190,7 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.FeatureImagePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -199,6 +204,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1 AND p.slug = $2 AND p.review_status = 'published'
+  AND p.deleted_at IS NULL
 `
 
 type GetDocPageBySlugParams struct {
@@ -265,7 +271,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_st
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE p.audience = $1 AND p.slug = $2
+WHERE p.audience = $1 AND p.slug = $2 AND p.deleted_at IS NULL
 `
 
 type GetDocPageBySlugAnyStatusParams struct {
@@ -331,6 +337,7 @@ SELECT p.id AS page_id, p.helpful_yes, p.helpful_no, v.vote AS my_vote
 FROM doc_pages p
 LEFT JOIN doc_page_votes v ON v.page_id = p.id AND v.user_id = $1::uuid
 WHERE p.audience = $2 AND p.slug = $3 AND p.review_status = 'published'
+  AND p.deleted_at IS NULL
 `
 
 type GetDocPageFeedbackParams struct {
@@ -394,19 +401,25 @@ func (q *Queries) GetDocPageRevision(ctx context.Context, id pgtype.UUID) (DocPa
 }
 
 const getDocPageStatus = `-- name: GetDocPageStatus :one
-SELECT review_status, created_by, ai_generated FROM doc_pages WHERE id = $1
+SELECT review_status, created_by, ai_generated, deleted_at FROM doc_pages WHERE id = $1
 `
 
 type GetDocPageStatusRow struct {
-	ReviewStatus string      `json:"review_status"`
-	CreatedBy    pgtype.UUID `json:"created_by"`
-	AiGenerated  bool        `json:"ai_generated"`
+	ReviewStatus string             `json:"review_status"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	AiGenerated  bool               `json:"ai_generated"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) GetDocPageStatus(ctx context.Context, id pgtype.UUID) (GetDocPageStatusRow, error) {
 	row := q.db.QueryRow(ctx, getDocPageStatus, id)
 	var i GetDocPageStatusRow
-	err := row.Scan(&i.ReviewStatus, &i.CreatedBy, &i.AiGenerated)
+	err := row.Scan(
+		&i.ReviewStatus,
+		&i.CreatedBy,
+		&i.AiGenerated,
+		&i.DeletedAt,
+	)
 	return i, err
 }
 
@@ -414,7 +427,7 @@ const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
 UPDATE doc_pages
 SET helpful_yes = helpful_yes + CASE WHEN $1 = 'up' THEN 1 ELSE 0 END,
  helpful_no = helpful_no + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END
-WHERE audience = $2 AND slug = $3
+WHERE audience = $2 AND slug = $3 AND deleted_at IS NULL
 `
 
 type IncrementDocPageHelpfulParams struct {
@@ -474,16 +487,18 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE ($1::text = '' OR p.review_status = $1)
+  AND ($2::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
-LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
+LIMIT NULLIF($4::int, 0) OFFSET COALESCE($3::int, 0)
 `
 
 type ListAllDocPagesParams struct {
 	StatusFilter string `json:"status_filter"`
+	ShowDeleted  bool   `json:"show_deleted"`
 	ResultOffset int32  `json:"result_offset"`
 	ResultLimit  int32  `json:"result_limit"`
 }
@@ -506,10 +521,16 @@ type ListAllDocPagesRow struct {
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams) ([]ListAllDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPages, arg.StatusFilter, arg.ResultOffset, arg.ResultLimit)
+	rows, err := q.db.Query(ctx, listAllDocPages,
+		arg.StatusFilter,
+		arg.ShowDeleted,
+		arg.ResultOffset,
+		arg.ResultLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -535,6 +556,7 @@ func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams
 			&i.FeatureImagePath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -551,18 +573,20 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.las
  p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
  p.feature_image_id,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
- p.created_at, p.updated_at
+ p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1
   AND ($2::text = '' OR p.review_status = $2)
+  AND ($3::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.position ASC, p.title ASC
-LIMIT NULLIF($4::int, 0) OFFSET COALESCE($3::int, 0)
+LIMIT NULLIF($5::int, 0) OFFSET COALESCE($4::int, 0)
 `
 
 type ListAllDocPagesByAudienceParams struct {
 	Audience     string `json:"audience"`
 	StatusFilter string `json:"status_filter"`
+	ShowDeleted  bool   `json:"show_deleted"`
 	ResultOffset int32  `json:"result_offset"`
 	ResultLimit  int32  `json:"result_limit"`
 }
@@ -585,12 +609,14 @@ type ListAllDocPagesByAudienceRow struct {
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocPagesByAudienceParams) ([]ListAllDocPagesByAudienceRow, error) {
 	rows, err := q.db.Query(ctx, listAllDocPagesByAudience,
 		arg.Audience,
 		arg.StatusFilter,
+		arg.ShowDeleted,
 		arg.ResultOffset,
 		arg.ResultLimit,
 	)
@@ -619,6 +645,7 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocP
 			&i.FeatureImagePath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -684,6 +711,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.positi
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1 AND p.review_status = 'published'
+  AND p.deleted_at IS NULL
 ORDER BY p.position ASC, p.title ASC
 `
 
@@ -745,6 +773,7 @@ const listDocPagesTree = `-- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
+  AND deleted_at IS NULL
 ORDER BY position ASC
 `
 
@@ -798,6 +827,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
+  AND p.deleted_at IS NULL
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
@@ -874,10 +904,24 @@ func (q *Queries) PruneDocPageRevisions(ctx context.Context, docPageID pgtype.UU
 	return err
 }
 
+const restoreDocPage = `-- name: RestoreDocPage :execrows
+UPDATE doc_pages SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL
+`
+
+// Undo a soft delete; 0 rows means the page wasn't in the trash.
+func (q *Queries) RestoreDocPage(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreDocPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
+ AND deleted_at IS NULL
  AND ($1::text IS NULL OR audience = $1)
  AND (title ILIKE '%' || $2::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')
@@ -939,6 +983,7 @@ const searchDocPagesInAudiences = `-- name: SearchDocPagesInAudiences :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
+ AND deleted_at IS NULL
  AND audience = ANY($1::text[])
  AND (title ILIKE '%' || $2::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')
@@ -1040,6 +1085,20 @@ func (q *Queries) SetDocPageVote(ctx context.Context, arg SetDocPageVoteParams) 
 	return result.RowsAffected(), nil
 }
 
+const softDeleteDocPage = `-- name: SoftDeleteDocPage :execrows
+UPDATE doc_pages SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL
+`
+
+// Rule 11: DELETE /admin/docs/pages/{id} soft-deletes — the row keeps its
+// (audience, slug) claim and stays restorable until a force delete.
+func (q *Queries) SoftDeleteDocPage(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteDocPage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateDocPage = `-- name: UpdateDocPage :execrows
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
@@ -1052,6 +1111,7 @@ SET title = $1, content = $2, review_status = $3,
  last_reviewed_at = CASE WHEN $11::boolean THEN NULL ELSE last_reviewed_at END,
  updated_at = now()
 WHERE id = $12
+  AND deleted_at IS NULL
   AND ($13::timestamptz IS NULL
        OR updated_at = $13::timestamptz)
 `
@@ -1102,7 +1162,7 @@ const updateDocPageStatus = `-- name: UpdateDocPageStatus :exec
 UPDATE doc_pages
 SET review_status = $1, last_reviewed_by = $2,
  last_reviewed_at = now(), updated_at = now()
-WHERE id = $3
+WHERE id = $3 AND deleted_at IS NULL
 `
 
 type UpdateDocPageStatusParams struct {
@@ -1111,7 +1171,8 @@ type UpdateDocPageStatusParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-// Approve/publish transitions only — records the reviewer (§44).
+// Approve/publish transitions only — records the reviewer (§44). Trashed
+// pages can't transition (Rule 11: restore first).
 func (q *Queries) UpdateDocPageStatus(ctx context.Context, arg UpdateDocPageStatusParams) error {
 	_, err := q.db.Exec(ctx, updateDocPageStatus, arg.ReviewStatus, arg.LastReviewedBy, arg.ID)
 	return err

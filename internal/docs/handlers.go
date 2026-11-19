@@ -221,6 +221,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errRevisionIsLatest):
 		errpkg.WriteError(w, http.StatusConflict, "revision_is_latest", "The latest revision cannot be deleted")
+	case errors.Is(err, errPageDeleted):
+		errpkg.WriteError(w, http.StatusConflict, "doc_page_deleted", "This page is in the trash — restore it before editing or publishing")
+	case errors.Is(err, errPageNotDeleted):
+		errpkg.WriteError(w, http.StatusConflict, "doc_page_not_deleted", "This action requires the page to be in the trash first")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -481,10 +485,13 @@ func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int3
 
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
 // Returns all pages for admin listing. Optional filters: ?audience= and
-// ?status=draft|in_review|approved|published (§44 amendment 2).
+// ?status=draft|in_review|approved|published (§44 amendment 2). ?deleted=1
+// swaps the listing to the trash view — soft-deleted pages pending restore
+// or hard delete (Rule 11).
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
 	status := r.URL.Query().Get("status")
+	showDeleted := r.URL.Query().Get("deleted") == "1" || r.URL.Query().Get("deleted") == "true"
 	if status != "" && !ValidReviewStatuses[status] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid review status")
 		return
@@ -503,7 +510,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, status, limit, offset)
+		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, status, showDeleted, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -523,7 +530,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	// BEFORE slicing — paginating first and filtering after produced sparse,
 	// misaligned pages for docs.manage holders who lack gated-audience read
 	// permission.
-	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, 0, 0)
+	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), status, showDeleted, 0, 0)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -739,7 +746,10 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "published"}})
 }
 
-// DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
+// DeleteDocPage handles DELETE /api/v1/admin/docs/pages/{id}. Default is a
+// soft delete (Rule 11 — the page moves to the trash, restorable). ?force=true
+// permanently removes an already-trashed row; the route stacks
+// rbac.RequireForceDelete so only admin.hard_delete holders may force.
 func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
@@ -751,7 +761,13 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteDocPage(r.Context(), id); err != nil {
+	var err error
+	if r.URL.Query().Get("force") == "true" {
+		err = h.Service.HardDeleteDocPage(r.Context(), id)
+	} else {
+		err = h.Service.DeleteDocPage(r.Context(), id)
+	}
+	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -760,6 +776,33 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	h.enqueueSearchIndex(id, "delete")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// RestoreDocPage handles POST /api/v1/admin/docs/pages/{id}/restore — clears
+// the trash flag, returning the page to live lists/nav/search (Rule 11).
+func (h *Handlers) RestoreDocPage(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	page, err := h.Service.RestoreDocPage(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// A restored published page re-enters search immediately.
+	if page.ReviewStatus == "published" {
+		h.enqueueSearchIndex(id, "index")
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "restored"}})
 }
 
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
@@ -163,14 +164,15 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 
 // ListAllDocPagesByAudience returns all pages (any status) for admin listing.
 func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]DocPage, error) {
-	return s.ListAllDocPagesByAudiencePaged(ctx, audience, "", 0, 0)
+	return s.ListAllDocPagesByAudiencePaged(ctx, audience, "", false, 0, 0)
 }
 
 // ListAllDocPagesByAudiencePaged is the limit/offset variant — a 0 limit
 // (LIMIT NULL) returns the full list; status "" lists every status (§44
-// amendment 2: ?status=draft|in_review|approved|published).
-func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience, status string, limit, offset int32) ([]DocPage, error) {
-	rows, err := s.store.listAllByAudience(ctx, audience, status, limit, offset)
+// amendment 2: ?status=draft|in_review|approved|published). showDeleted
+// swaps the listing to the trash view (Rule 11: ?deleted=1).
+func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience, status string, showDeleted bool, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAllByAudience(ctx, audience, status, showDeleted, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +196,7 @@ func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience, 
 			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
 			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
 			UpdatedAt:       r.UpdatedAt.Time.Format(time.RFC3339Nano),
+			DeletedAt:       timestamptzPtr(r.DeletedAt),
 		}
 	}
 
@@ -202,13 +205,14 @@ func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience, 
 
 // ListAllDocPages returns all pages (any status, any audience) for admin listing.
 func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
-	return s.ListAllDocPagesPaged(ctx, "", 0, 0)
+	return s.ListAllDocPagesPaged(ctx, "", false, 0, 0)
 }
 
 // ListAllDocPagesPaged is the limit/offset variant of ListAllDocPages;
 // status "" lists every status (§44 amendment 2: ?status= filter).
-func (s *Service) ListAllDocPagesPaged(ctx context.Context, status string, limit, offset int32) ([]DocPage, error) {
-	rows, err := s.store.listAll(ctx, status, limit, offset)
+// showDeleted swaps the listing to the trash view (Rule 11: ?deleted=1).
+func (s *Service) ListAllDocPagesPaged(ctx context.Context, status string, showDeleted bool, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAll(ctx, status, showDeleted, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +236,7 @@ func (s *Service) ListAllDocPagesPaged(ctx context.Context, status string, limit
 			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
 			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
 			UpdatedAt:       r.UpdatedAt.Time.Format(time.RFC3339Nano),
+			DeletedAt:       timestamptzPtr(r.DeletedAt),
 		}
 	}
 
@@ -823,6 +828,11 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 		return fmt.Errorf("fetching existing page: %w", err)
 	}
 
+	// Trashed pages are read-only — restore before editing (Rule 11).
+	if existing.DeletedAt.Valid {
+		return errPageDeleted
+	}
+
 	// Status: absent preserves the stored status (§44 amendment 2 — an absent
 	// status silently resetting to draft was the unpublish bug).
 	status := existing.ReviewStatus
@@ -1077,6 +1087,11 @@ func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 		return fmt.Errorf("fetching current status: %w", err)
 	}
 
+	// Trashed pages can't transition — restore first (Rule 11).
+	if statusRow.DeletedAt.Valid {
+		return errPageDeleted
+	}
+
 	// §44 HITL: an ai_generated page may not be approved by the account that
 	// created it — the reviewer must differ from the generator. Legacy rows
 	// (created_by NULL) and human-authored pages stay unrestricted.
@@ -1118,6 +1133,11 @@ func (s *Service) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 		return fmt.Errorf("fetching current status: %w", err)
 	}
 
+	// Trashed pages can't transition — restore first (Rule 11).
+	if statusRow.DeletedAt.Valid {
+		return errPageDeleted
+	}
+
 	currentStatus := statusRow.ReviewStatus
 
 	if currentStatus != "approved" {
@@ -1144,7 +1164,9 @@ func (s *Service) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 	return nil
 }
 
-// DeleteDocPage removes a documentation page.
+// DeleteDocPage soft-deletes a documentation page (Rule 11): the row keeps
+// its (audience, slug) claim, drops out of every public read path, and stays
+// restorable until an admin.hard_delete-gated ?force=true call removes it.
 func (s *Service) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 	// Fetch the page before deleting so we can invalidate its cache.
 	existing, err := s.store.getByID(ctx, id)
@@ -1154,11 +1176,54 @@ func (s *Service) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 		s.invalidateAllPageCaches(ctx)
 	}
 
-	if err := s.store.delete(ctx, id); err != nil {
+	rows, err := s.store.softDelete(ctx, id)
+	if err != nil {
 		return err
+	}
+	if rows == 0 {
+		// Already trashed or unknown ID — reads treat it as gone either way.
+		return pgx.ErrNoRows
 	}
 
 	return nil
+}
+
+// HardDeleteDocPage permanently removes a page — Rule 11 restricts this to
+// rows already in the trash; the route additionally gates on admin.hard_delete
+// via rbac.RequireForceDelete. Revisions and votes cascade with the row.
+func (s *Service) HardDeleteDocPage(ctx context.Context, id pgtype.UUID) error {
+	existing, err := s.store.getByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !existing.DeletedAt.Valid {
+		return errPageNotDeleted
+	}
+
+	s.invalidateCache(ctx, existing.Audience, existing.Slug)
+
+	return s.store.hardDelete(ctx, id)
+}
+
+// RestoreDocPage clears deleted_at, returning the page to its prior
+// audience/slug/nav position. The handler re-enqueues a search index for
+// published pages after a successful restore.
+func (s *Service) RestoreDocPage(ctx context.Context, id pgtype.UUID) (*DocPage, error) {
+	existing, err := s.store.getByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !existing.DeletedAt.Valid {
+		return nil, errPageNotDeleted
+	}
+
+	if _, err := s.store.restore(ctx, id); err != nil {
+		return nil, err
+	}
+
+	s.invalidateCache(ctx, existing.Audience, existing.Slug)
+
+	return toDocPage(existing), nil
 }
 
 // toDocPage converts a docPageRow to our API type, resolving the media
@@ -1194,6 +1259,7 @@ func toDocPage(r docPageRow) *DocPage {
 		ContentLang: "en",
 		CreatedAt:   p.CreatedAt.Time.Format(time.RFC3339Nano),
 		UpdatedAt:   p.UpdatedAt.Time.Format(time.RFC3339Nano),
+		DeletedAt:   timestamptzPtr(p.DeletedAt),
 	}
 }
 
@@ -1566,6 +1632,10 @@ func (s *Service) RestoreDocPageRevision(ctx context.Context, pageID, revID pgty
 // the latest anchors history to the live page and is undeletable. The
 // handler maps it to 409 revision_is_latest.
 var errRevisionIsLatest = errors.New("latest revision cannot be deleted")
+
+// Deletion-state sentinels (Rule 11) — mapped to 409s in handleServiceError.
+var errPageDeleted = errors.New("page is in the trash — restore it first")
+var errPageNotDeleted = errors.New("page must be soft-deleted before this action")
 
 // DeleteDocPageRevision removes a non-latest revision (§44 amendment 5).
 func (s *Service) DeleteDocPageRevision(ctx context.Context, revID pgtype.UUID) error {

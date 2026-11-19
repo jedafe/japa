@@ -155,6 +155,7 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (docPageRow, error)
 		FeatureImageID: row.FeatureImageID,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
+		DeletedAt:      row.DeletedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
 }
 
@@ -172,11 +173,13 @@ func (s *Store) listByAudience(ctx context.Context, audience string) ([]gen.List
 }
 
 // listAllByAudience returns all doc pages for an audience, optionally
-// filtered to one review_status ("" = any status).
-func (s *Store) listAllByAudience(ctx context.Context, audience, status string, limit, offset int32) ([]gen.ListAllDocPagesByAudienceRow, error) {
+// filtered to one review_status ("" = any status). showDeleted swaps the
+// live-page view for the trash view (Rule 11).
+func (s *Store) listAllByAudience(ctx context.Context, audience, status string, showDeleted bool, limit, offset int32) ([]gen.ListAllDocPagesByAudienceRow, error) {
 	rows, err := s.read.ListAllDocPagesByAudience(ctx, gen.ListAllDocPagesByAudienceParams{
 		Audience:     audience,
 		StatusFilter: status,
+		ShowDeleted:  showDeleted,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -188,10 +191,12 @@ func (s *Store) listAllByAudience(ctx context.Context, audience, status string, 
 }
 
 // listAll returns all doc pages (any audience) for admin listing, optionally
-// filtered to one review_status ("" = any status).
-func (s *Store) listAll(ctx context.Context, status string, limit, offset int32) ([]gen.ListAllDocPagesRow, error) {
+// filtered to one review_status ("" = any status). showDeleted swaps the
+// live-page view for the trash view (Rule 11).
+func (s *Store) listAll(ctx context.Context, status string, showDeleted bool, limit, offset int32) ([]gen.ListAllDocPagesRow, error) {
 	rows, err := s.read.ListAllDocPages(ctx, gen.ListAllDocPagesParams{
 		StatusFilter: status,
+		ShowDeleted:  showDeleted,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -252,10 +257,35 @@ func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (gen.GetDocPageSt
 	return row, nil
 }
 
-// delete removes a doc page and orphans its children. parent_id is an FK to
-// doc_pages, so children must be unlinked before the delete or the FK would
-// reject it; the nav tree promotes orphans to roots.
-func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
+// softDelete marks a doc page deleted (Rule 11). parent_id is left intact —
+// the nav tree hides the row while trashed and restore brings the whole
+// subtree back with its hierarchy. Returns rows affected; 0 means the page
+// was already trashed or doesn't exist.
+func (s *Store) softDelete(ctx context.Context, id pgtype.UUID) (int64, error) {
+	rows, err := s.write.SoftDeleteDocPage(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("soft-deleting doc page: %w", err)
+	}
+
+	return rows, nil
+}
+
+// restore clears deleted_at on a trashed page. Returns rows affected; 0
+// means the page wasn't in the trash.
+func (s *Store) restore(ctx context.Context, id pgtype.UUID) (int64, error) {
+	rows, err := s.write.RestoreDocPage(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("restoring doc page: %w", err)
+	}
+
+	return rows, nil
+}
+
+// hardDelete permanently removes a doc page and orphans its children.
+// parent_id is not an FK, so children must be unlinked before the delete;
+// the nav tree promotes orphans to roots. The query itself only matches
+// rows where deleted_at IS NOT NULL — Rule 11's soft-delete-first gate.
+func (s *Store) hardDelete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.ClearDocPageParent(ctx, id); err != nil {
 		return fmt.Errorf("unlinking doc page children: %w", err)
 	}

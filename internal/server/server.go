@@ -7670,8 +7670,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/docs/pages", docsHandlers.CreateDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Patch("/admin/docs/pages/{id}", docsHandlers.UpdateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+			// Soft delete by default; ?force=true hard-deletes a trashed row —
+			// gated by admin.hard_delete via rbac.RequireForceDelete (Rule 11).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/docs/pages/{id}", docsHandlers.DeleteDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Post("/admin/docs/pages/{id}/restore", docsHandlers.RestoreDocPage)
 			// Doc page approve/publish (§44 — dedicated handlers with reviewer tracking)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/pages/{id}/approve", docsHandlers.ApproveDocPage)

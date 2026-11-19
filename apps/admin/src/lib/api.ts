@@ -353,8 +353,12 @@ export const docsApi = {
 		api(`/admin/docs/pages/${id}/approve`, { method: 'POST' }),
 	publish: (id: string) =>
 		api(`/admin/docs/pages/${id}/publish`, { method: 'POST' }),
-	delete: (id: string) =>
-		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
+	// Rule 11: plain DELETE soft-deletes (restorable); force=true permanently
+	// removes a trashed page — backend gates it on admin.hard_delete.
+	delete: (id: string, opts?: { force?: boolean }) =>
+		api(`/admin/docs/pages/${id}${opts?.force ? '?force=true' : ''}`, { method: 'DELETE' }),
+	restore: (id: string) =>
+		api(`/admin/docs/pages/${id}/restore`, { method: 'POST' }),
 	revisions: (id: string) =>
 		api<unknown>(`/admin/docs/pages/${id}/revisions`),
 	deleteRevision: (revId: string) =>

@@ -2115,6 +2115,7 @@ type DocPage struct {
 	Subcategory    *string            `json:"subcategory"`
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type DocPageRevision struct {

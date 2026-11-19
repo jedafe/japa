@@ -10,7 +10,7 @@
 	import { DataTable } from '#lib/components/ui/data-table/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Modal } from '#lib/components/ui/modal/index.js';
-	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { api, docsApi } from '#lib/api.js';
 	import { goto, replaceState } from '$app/navigation';
 	import { page as pageState } from '$app/state';
@@ -18,13 +18,16 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 	import { RichTextEditor } from '@japaconnect/ui';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, Image as ImageIcon, RotateCcw } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.manage'));
 	const canDelete = $derived(hasPermission('docs.manage'));
 	const canPublish = $derived(hasPermission('docs.manage'));
 	const canGenerate = $derived(hasPermission('docs.manage'));
+	// Rule 11: ?force=true hard deletes are gated by a dedicated node —
+	// super_admin by default, assignable to selected groups.
+	const canHardDelete = $derived(hasPermission('admin.hard_delete'));
 
 	type DocPage = {
 		id: string;
@@ -41,6 +44,7 @@
 		ai_generated?: boolean;
 		feature_image_id?: string | null;
 		feature_image_url?: string | null;
+		deleted_at?: string | null;
 	};
 
 	type DocRevision = {
@@ -102,9 +106,15 @@
 	let revisionsLoading = $state(false);
 	let revisionBusy = $state('');
 
-	// Delete confirmation Modal
+	// Delete confirmation Modal — shared by single-row and bulk deletes.
+	// 'soft' moves to the trash (restorable); 'hard' permanently removes a
+	// trashed page (admin.hard_delete-gated ?force=true, Rule 11).
 	let showDeleteConfirm = $state(false);
-	let deleteTargetId = $state<string | null>(null);
+	let deleteMode = $state<'soft' | 'hard'>('soft');
+	let deleteTargetIds = $state<string[]>([]);
+	let deleteBusy = $state(false);
+	// Bulk selection — bound to the DataTable checkboxes.
+	let selectedIds = $state<Set<string>>(new Set());
 
 	// DOC-009: audience/status options are loaded from the API.
 	let audiences = $state<string[]>(['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin']);
@@ -245,37 +255,37 @@
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
 			onclick: (row) => openEdit(row),
-			show: () => canEdit
+			show: (row: DocPage) => canEdit && !row.deleted_at
 		},
 		{
 			label: t('docs.history', 'History'),
 			icon: History,
 			onclick: (row) => openHistory(row),
-			show: () => canEdit
+			show: (row: DocPage) => canEdit && !row.deleted_at
 		},
 		{
 			label: t('docs.approve', 'Approve'),
 			icon: CheckCircle2,
 			onclick: (row) => approvePage(row),
-			show: (row: DocPage) => canPublish && (row.status === 'draft' || row.status === 'in_review')
+			show: (row: DocPage) => canPublish && !row.deleted_at && (row.status === 'draft' || row.status === 'in_review')
 		},
 		{
 			label: t('docs.publish', 'Publish'),
 			icon: Send,
 			onclick: (row) => togglePublish(row),
-			show: (row: DocPage) => canPublish && row.status === 'approved'
+			show: (row: DocPage) => canPublish && !row.deleted_at && row.status === 'approved'
 		},
 		{
 			label: t('docs.unpublish', 'Unpublish'),
 			icon: FileDown,
 			onclick: (row) => togglePublish(row),
-			show: (row: DocPage) => canPublish && row.status === 'published'
+			show: (row: DocPage) => canPublish && !row.deleted_at && row.status === 'published'
 		},
 		{
 			label: t('docs.move_up', 'Move up'),
 			icon: ArrowUp,
 			onclick: (row) => movePage(row, -1),
-			show: (row: DocPage) => canEdit && siblingsOf(row).findIndex((d) => d.id === row.id) > 0
+			show: (row: DocPage) => canEdit && !row.deleted_at && siblingsOf(row).findIndex((d) => d.id === row.id) > 0
 		},
 		{
 			label: t('docs.move_down', 'Move down'),
@@ -283,15 +293,28 @@
 			onclick: (row) => movePage(row, 1),
 			show: (row: DocPage) => {
 				const sibs = siblingsOf(row);
-				return canEdit && sibs.findIndex((d) => d.id === row.id) < sibs.length - 1;
+				return canEdit && !row.deleted_at && sibs.findIndex((d) => d.id === row.id) < sibs.length - 1;
 			}
 		},
 		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
-			onclick: (row) => confirmDelete(row.id),
-			show: () => canDelete
+			onclick: (row) => confirmDelete([row.id], 'soft'),
+			show: (row: DocPage) => canDelete && !row.deleted_at
+		},
+		{
+			label: t('docs.restore', 'Restore'),
+			icon: RotateCcw,
+			onclick: (row) => restorePage(row.id),
+			show: (row: DocPage) => canDelete && !!row.deleted_at
+		},
+		{
+			label: t('docs.delete_permanently', 'Delete Permanently'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row) => confirmDelete([row.id], 'hard'),
+			show: (row: DocPage) => canHardDelete && !!row.deleted_at
 		}
 	];
 
@@ -313,7 +336,7 @@
 	// a filtered review queue stays shareable and back-nav restores it.
 	function syncFilterUrl() {
 		const url = new URL(pageState.url.href);
-		for (const key of ['audience', 'status'] as const) {
+		for (const key of ['audience', 'status', 'deleted'] as const) {
 			if (filterValue[key]) url.searchParams.set(key, filterValue[key]);
 			else url.searchParams.delete(key);
 		}
@@ -332,7 +355,8 @@
 		const sp = pageState.url.searchParams;
 		filterValue = {
 			...(sp.get('audience') ? { audience: sp.get('audience')! } : {}),
-			...(sp.get('status') ? { status: sp.get('status')! } : {})
+			...(sp.get('status') ? { status: sp.get('status')! } : {}),
+			...(sp.get('deleted') === '1' || sp.get('deleted') === 'true' ? { deleted: 'true' } : {})
 		};
 
 		const [audResult, statusResult] = await Promise.all([docsApi.audiences(), docsApi.statuses()]);
@@ -365,11 +389,15 @@
 		const params = new URLSearchParams();
 		if (filterValue.audience) params.set('audience', filterValue.audience);
 		if (filterValue.status) params.set('status', filterValue.status);
+		if (filterValue.deleted === 'true') params.set('deleted', '1');
 		const result = await docsApi.list(params.toString());
 		if (result.ok) {
 			const raw = result.data as any[] | { data: any[] };
 			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
 			docs = rows.map((d: any) => ({ ...d, status: d.review_status ?? d.status ?? 'draft', body: d.body ?? d.content ?? '' }));
+			// Selection can't outlive the dataset — stale ids would bulk-act on
+			// rows the admin can no longer see.
+			selectedIds = new Set();
 		} else {
 			errorMessage = result.error;
 		}
@@ -606,22 +634,78 @@
 		revisionBusy = '';
 	}
 
-	function confirmDelete(id: string) {
-		deleteTargetId = id;
+	// Trash view: bulk actions swap to restore + permanent delete (Rule 11).
+	const bulkActions = $derived.by((): BulkAction[] => {
+		if (filterValue.deleted === 'true') {
+			return [
+				{ label: t('docs.bulk_restore', 'Restore Selected'), icon: RotateCcw, onclick: (ids) => bulkRestore(ids) },
+				...(canHardDelete
+					? [
+							{
+								label: t('docs.bulk_hard_delete', 'Delete Permanently'),
+								icon: Trash2,
+								variant: 'destructive' as const,
+								onclick: (ids: Set<string>) => confirmDelete([...ids], 'hard')
+							}
+						]
+					: [])
+			];
+		}
+		return [
+			{
+				label: t('docs.bulk_delete', 'Move to Trash'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (ids: Set<string>) => confirmDelete([...ids], 'soft')
+			}
+		];
+	});
+
+	function confirmDelete(ids: string[], mode: 'soft' | 'hard') {
+		deleteTargetIds = ids;
+		deleteMode = mode;
 		showDeleteConfirm = true;
 	}
 
 	async function executeDelete() {
-		if (!deleteTargetId) return;
+		if (deleteTargetIds.length === 0 || deleteBusy) return;
+		deleteBusy = true;
 		errorMessage = '';
-		const result = await docsApi.delete(deleteTargetId);
+		const total = deleteTargetIds.length;
+		const force = deleteMode === 'hard';
+		const results = await Promise.all(deleteTargetIds.map((id) => docsApi.delete(id, { force })));
+		const failed = results.filter((r) => !r.ok).length;
+		deleteBusy = false;
+		showDeleteConfirm = false;
+		deleteTargetIds = [];
+		selectedIds = new Set();
+		if (failed > 0) {
+			errorMessage = t('docs.bulk_action_partial', '{n} of {total} actions failed').replace('{n}', String(failed)).replace('{total}', String(total));
+		}
+		loadDocs();
+	}
+
+	async function restorePage(id: string) {
+		errorMessage = '';
+		const result = await docsApi.restore(id);
 		if (result.ok) {
-			showDeleteConfirm = false;
-			deleteTargetId = null;
 			loadDocs();
 		} else {
 			errorMessage = result.error;
 		}
+	}
+
+	async function bulkRestore(ids: Set<string>) {
+		const idArr = [...ids];
+		if (idArr.length === 0) return;
+		errorMessage = '';
+		const results = await Promise.all(idArr.map((id) => docsApi.restore(id)));
+		const failed = results.filter((r) => !r.ok).length;
+		selectedIds = new Set();
+		if (failed > 0) {
+			errorMessage = t('docs.bulk_action_partial', '{n} of {total} actions failed').replace('{n}', String(failed)).replace('{total}', String(idArr.length));
+		}
+		loadDocs();
 	}
 
 	function openGenerate() {
@@ -740,14 +824,18 @@
 	onsearch={(q: string) => { searchQuery = q; }}
 	filters={[
 		{ key: 'audience', label: t('docs.audience'), options: audienceOptions },
-		{ key: 'status', label: t('docs.status'), options: statusFilterOptions }
+		{ key: 'status', label: t('docs.status'), options: statusFilterOptions },
+		{ key: 'deleted', label: t('docs.deleted', 'Deleted'), options: [{ value: 'true', label: t('docs.deleted_only', 'In trash') }] }
 	]}
 	bind:filterValue
 	onfilterapply={applyFilters}
-	onrowclick={(row: DocPage) => openEdit(row)}
+	onrowclick={(row: DocPage) => { if (!row.deleted_at) openEdit(row); }}
 	pageSize={25}
 	emptyMessage={t('docs.no_documentation_pages_found')}
 	actions={rowActions}
+	selectable={canDelete}
+	bind:selectedIds
+	bulkActionsList={bulkActions}
 />
 
 <!-- Create/Edit Modal -->
@@ -994,11 +1082,15 @@
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteConfirm} title={t('docs.confirm_delete')} size="sm">
-	<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
+<Modal bind:open={showDeleteConfirm} title={deleteMode === 'hard' ? t('docs.confirm_hard_delete', 'Delete permanently') : t('docs.confirm_delete')} size="sm">
+	{#if deleteMode === 'hard'}
+		<p class="text-sm" style="color: var(--color-muted)">{t('docs.hard_delete_warning', 'This permanently deletes {n} page(s) — including their revision history — and cannot be undone.').replace('{n}', String(deleteTargetIds.length))}</p>
+	{:else}
+		<p class="text-sm" style="color: var(--color-muted)">{t('docs.soft_delete_warning', 'This moves {n} page(s) to the trash. You can restore them later from the Deleted filter.').replace('{n}', String(deleteTargetIds.length))}</p>
+	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('docs.cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete}>{t('docs.confirm_delete')}</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={deleteBusy}>{deleteMode === 'hard' ? t('docs.delete_permanently', 'Delete Permanently') : t('docs.confirm_delete')}</Button>
 	</div>
 </Modal>
 
