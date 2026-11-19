@@ -126,6 +126,14 @@ func (s *Service) publishProfile(ctx context.Context, account *gen.AtprotoAccoun
 	if err != nil {
 		return fmt.Errorf("atproto: profile user: %w", err)
 	}
+	if account.Status != AccountStatusActive {
+		// Disabled/tombstone repos are frozen — syncHandle would emit
+		// PLC ops, #identity events, and handle rewrites for an account
+		// that must not be touched (the refreshProfileRecord active-only
+		// invariant this path inherits). withRepoWrite refuses the write
+		// anyway; refuse the side effects too.
+		return permanent(ErrNotFound)
+	}
 	// Profile writes double as the identity-convergence point — a
 	// rename leaves the stored handle stale until this sync. Handle
 	// resolution is identity, not discovery — it runs below the floor.

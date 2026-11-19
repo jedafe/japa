@@ -972,6 +972,28 @@ func TestDBRepoPostFloorGate(t *testing.T) {
 	}
 }
 
+// A profile task landing on a disabled/tombstone account must end
+// permanently without touching identity — syncHandle emits PLC ops,
+// #identity events, and handle rewrites, none of which may run on a
+// frozen repo (the refreshProfileRecord active-only invariant).
+func TestDBPublishProfileInactiveAccount(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _ := newAtprotoUser(t, ctx, d, "active")
+	svc := newAtprotoService(t, d)
+	if _, err := svc.EnableAccount(ctx, userID); err != nil {
+		t.Fatalf("EnableAccount: %v", err)
+	}
+	acct := atprotoAccountFor(t, ctx, d, userID)
+	if _, err := svc.DisableAccount(ctx, userID); err != nil {
+		t.Fatalf("DisableAccount: %v", err)
+	}
+	acct = atprotoAccountFor(t, ctx, d, userID) // stale fetch reads 'active'
+	if err := svc.publishProfile(ctx, &acct); !isPermanentErr(err) {
+		t.Fatalf("publishProfile on disabled account err=%v, want permanent", err)
+	}
+}
+
 // The CAR export must re-ingest into a valid repo: every record readable,
 // commit signature verifiable against the account's K-256 key. This is
 // the conformance property getRepo (A3) depends on.
