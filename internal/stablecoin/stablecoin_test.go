@@ -910,6 +910,87 @@ func TestProcessTipSettleLifecycle(t *testing.T) {
 	}
 }
 
+// WalletSettleable mirrors the Settle sender gate — §125 calls it at
+// tip-create time to reject senders who can never settle.
+func TestWalletSettleable(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	svc := newSvc(st, &fakeProvider{}, newFakeVK(), &fakeSettings{})
+
+	missing, active, provisioned, suspended := newUUID(), newUUID(), newUUID(), newUUID()
+	st.walletByUser[active.String()] = &Wallet{
+		ID: newUUID().String(), UserID: active.String(), Status: WalletStatusActive,
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref"},
+	}
+	st.walletByUser[provisioned.String()] = &Wallet{
+		ID: newUUID().String(), UserID: provisioned.String(), Status: WalletStatusProvisioned,
+	}
+	st.walletByUser[suspended.String()] = &Wallet{
+		ID: newUUID().String(), UserID: suspended.String(), Status: WalletStatusSuspended,
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref"},
+	}
+
+	for _, tc := range []struct {
+		name string
+		u    pgtype.UUID
+		want bool
+	}{
+		{"missing wallet", missing, false},
+		{"active + signer", active, true},
+		{"provisioned, no signer", provisioned, false},
+		{"suspended", suspended, false},
+	} {
+		got, err := svc.WalletSettleable(context.Background(), tc.u)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("%s: settleable = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A permanently-unsettleable sender (no wallet / no signer) must fail the
+// task BEFORE the claim — a claimed-then-deadlettered tip strands in
+// 'settling', which the pending-only sweep never reclaims.
+func TestProcessTipSettleSenderWalletGate(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	p := &fakeProvider{}
+	sender, recip := newUUID(), newUUID()
+	// Recipient is fine — provisioned + active.
+	rw := &Wallet{
+		ID: newUUID().String(), UserID: recip.String(), Status: WalletStatusActive,
+		Chain: "solana", Locator: "loc", Address: "addr-r",
+		DelegatedSigner: &DelegatedSigner{SignerRef: "ref", Scopes: []SignerScope{{Asset: AssetUSDC}}},
+	}
+	st.walletByUser[recip.String()] = rw
+	st.walletByAddr[rw.Address] = rw
+	// Sender has a wallet row but never ran the signer ceremony.
+	st.walletByUser[sender.String()] = &Wallet{
+		ID: newUUID().String(), UserID: sender.String(), Status: WalletStatusProvisioned,
+	}
+	tid := newUUID()
+	tips := &fakeTips{tips: map[string]*Tip{
+		tid.String(): {ID: tid, SenderUserID: sender, RecipientUserID: recip, NetCredits: 950, FeeAmount: 50, Status: "pending"},
+	}}
+	svc := newSvc(st, p, newFakeVK(), &fakeSettings{strs: map[string]string{"stablecoin.assets": `["usdc"]`}})
+	svc.SetTipReader(tips)
+	svc.SetCreditRater(&fakeRater{n: 100})
+
+	payload, _ := json.Marshal(TipSettlePayload{TipID: tid.String()})
+	err := svc.ProcessTipSettle(context.Background(), payload)
+	if !errors.Is(err, ErrWalletNotSettleable) {
+		t.Fatalf("signerless sender = %v, want ErrWalletNotSettleable", err)
+	}
+	if tips.tips[tid.String()].Status != "pending" {
+		t.Fatalf("tip must stay pending for the sweep, got %q", tips.tips[tid.String()].Status)
+	}
+	if len(p.transfers) != 0 || len(tips.settled) != 0 {
+		t.Fatal("no transfer/settle may run for an unsettleable sender")
+	}
+}
+
 func TestSignerExpiringWithin(t *testing.T) {
 	t.Parallel()
 	cutoff := time.Now().Add(30 * 24 * time.Hour)
