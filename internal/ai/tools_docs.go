@@ -231,11 +231,19 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("cannot_publish_directly", "review_status accepts 'draft'/'in_review' only; use docs.approve and docs.publish for the reviewer transitions"), nil
 		}
 
+		// Only normalize when content was actually supplied — the service
+		// preserves the stored body on nil, and turning an absent field
+		// into an empty doc would silently wipe it.
+		var content json.RawMessage
+		if len(a.Content) > 0 {
+			content = normalizeDocContent(a.Content)
+		}
+
 		// §44 amendment 2: an absent review_status preserves the stored status
 		// (defaulting to draft here would silently unpublish live pages).
 		if err := deps.Docs.UpdateDocPage(ctx, docID, DocsUpdatePageRequest{
 			Title:        a.Title,
-			Content:      normalizeDocContent(a.Content),
+			Content:      content,
 			ReviewStatus: a.ReviewStatus,
 			ParentID:     a.ParentID,
 			Position:     a.Position,
@@ -477,8 +485,17 @@ func normalizeDocContent(raw json.RawMessage) json.RawMessage {
 		if trimmed == "" {
 			return json.RawMessage(`{"type":"doc","content":[]}`)
 		}
-		if json.Valid([]byte(trimmed)) {
-			return json.RawMessage(trimmed)
+		// Unwrap only structured JSON — a bare "123"/"true"/"null" is a
+		// valid JSON scalar but not a document, so it falls through to the
+		// plain-text wrap below.
+		var v any
+		if err := json.Unmarshal([]byte(trimmed), &v); err == nil {
+			switch v.(type) {
+			case map[string]any:
+				return json.RawMessage(trimmed)
+			case []any:
+				return json.RawMessage(`{"type":"doc","content":` + trimmed + `}`)
+			}
 		}
 		// Plain-text body — wrap it in a minimal document.
 		b, _ := json.Marshal(map[string]any{

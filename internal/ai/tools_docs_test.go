@@ -148,6 +148,83 @@ func TestDocsUpdateHandler_TaxonomyAndHierarchy(t *testing.T) {
 	}
 }
 
+func TestDocsUpdateHandler_AbsentContentPreservesBody(t *testing.T) {
+	svc := &stubDocsService{}
+	h := DocsUpdateHandler(&ToolDeps{Docs: svc})
+
+	// An update that only touches metadata must pass nil content so the
+	// service keeps the stored body — normalizing an absent field into an
+	// empty doc would wipe it.
+	res, err := h(t.Context(), mustJSON(t, map[string]any{
+		"doc_id": "11111111-1111-1111-1111-111111111111",
+		"title":  "New Title",
+	}), mustUUID(t, "33333333-3333-3333-3333-333333333333"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if res.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %s, want success", res.Status)
+	}
+
+	if svc.updateReq.Content != nil {
+		t.Errorf("content = %s, want nil (preserve stored body)", svc.updateReq.Content)
+	}
+}
+
+func TestDocsUpdateHandler_StringEncodedContentUnwraps(t *testing.T) {
+	svc := &stubDocsService{}
+	h := DocsUpdateHandler(&ToolDeps{Docs: svc})
+
+	doc := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hi"}]}]}`
+
+	res, err := h(t.Context(), mustJSON(t, map[string]any{
+		"doc_id":  "11111111-1111-1111-1111-111111111111",
+		"content": doc,
+	}), mustUUID(t, "33333333-3333-3333-3333-333333333333"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if res.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %s, want success", res.Status)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(svc.updateReq.Content, &parsed); err != nil {
+		t.Fatalf("stored content not JSON: %v", err)
+	}
+	if parsed["type"] != "doc" {
+		t.Fatalf("content type = %v, want doc object, not quoted string", parsed["type"])
+	}
+}
+
+func TestDocsUpdateHandler_ScalarStringWrapsAsText(t *testing.T) {
+	svc := &stubDocsService{}
+	h := DocsUpdateHandler(&ToolDeps{Docs: svc})
+
+	// "123" is valid JSON but a scalar — it must not be stored as a bare
+	// number document; it becomes paragraph text instead.
+	res, err := h(t.Context(), mustJSON(t, map[string]any{
+		"doc_id":  "11111111-1111-1111-1111-111111111111",
+		"content": "123",
+	}), mustUUID(t, "33333333-3333-3333-3333-333333333333"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if res.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %s, want success", res.Status)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(svc.updateReq.Content, &parsed); err != nil {
+		t.Fatalf("content not a doc object: %v — scalar strings must wrap as text", err)
+	}
+	if parsed["type"] != "doc" {
+		t.Fatalf("type = %v, want doc", parsed["type"])
+	}
+}
+
 func TestDocsApproveHandler_RecordsReviewer(t *testing.T) {
 	svc := &stubDocsService{}
 	h := DocsApproveHandler(&ToolDeps{Docs: svc})
