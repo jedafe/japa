@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -160,10 +161,7 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 			reviewStatus = "draft"
 		}
 
-		content := a.Content
-		if len(content) == 0 {
-			content = json.RawMessage(`""`)
-		}
+		content := normalizeDocContent(a.Content)
 
 		id, err := deps.Docs.CreateDocPage(ctx, DocsCreatePageRequest{
 			Title:        a.Title,
@@ -237,7 +235,7 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 		// (defaulting to draft here would silently unpublish live pages).
 		if err := deps.Docs.UpdateDocPage(ctx, docID, DocsUpdatePageRequest{
 			Title:        a.Title,
-			Content:      a.Content,
+			Content:      normalizeDocContent(a.Content),
 			ReviewStatus: a.ReviewStatus,
 			ParentID:     a.ParentID,
 			Position:     a.Position,
@@ -461,4 +459,36 @@ func docsPageToMap(p DocsPage) map[string]any {
 	}
 
 	return m
+}
+
+// normalizeDocContent decodes the content argument into canonical TipTap
+// JSON. The tool schema declares content as a string, so callers pass the
+// document JSON-encoded — storing it raw would persist a jsonb *string*
+// (rendered as literal text by editors instead of a document). Unwrap the
+// string to the real object; pass through anything already an object, and
+// default to an empty doc when absent.
+func normalizeDocContent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{"type":"doc","content":[]}`)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			return json.RawMessage(`{"type":"doc","content":[]}`)
+		}
+		if json.Valid([]byte(trimmed)) {
+			return json.RawMessage(trimmed)
+		}
+		// Plain-text body — wrap it in a minimal document.
+		b, _ := json.Marshal(map[string]any{
+			"type": "doc",
+			"content": []any{map[string]any{
+				"type":    "paragraph",
+				"content": []any{map[string]any{"type": "text", "text": s}},
+			}},
+		})
+		return json.RawMessage(b)
+	}
+	return raw
 }

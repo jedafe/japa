@@ -69,8 +69,13 @@ services:
       # reachable as `stalwart:587` (submission) and `stalwart:993`
       # (IMAPS bounce polling) from japa-api without any public port.
       coolify:
+        # `stalwart` for convenience; `mail.japa.to` so the worker can
+        # dial the PUBLIC hostname — docker DNS resolves it internally
+        # here, and the STARTTLS cert (CN=mail.japa.to) verifies with
+        # the codebase's strict `tls.Config{ServerName: host}` check.
         aliases:
           - stalwart
+          - mail.japa.to
     # Image carries its own HEALTHCHECK (tries :443 then :8080 during
     # bootstrap) — nothing extra needed here.
 
