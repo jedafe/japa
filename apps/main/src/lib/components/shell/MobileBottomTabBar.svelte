@@ -18,7 +18,8 @@
 		/** Admin-managed menu (bottom_bar placement, fetched as
 		 *  /menus/mobile_bottom_bar in the root layout). When it has active
 		 *  items it replaces the built-in tab set. An item whose url is the
-		 *  literal `compose` renders the elevated compose button in place. */
+		 *  literal `compose` renders the elevated compose button in place;
+		 *  `account` renders the avatar account dropdown tab. */
 		menu?: Menu | null;
 	}
 
@@ -53,7 +54,9 @@
 			return items.map<NavEntry>((i) =>
 				i.url === 'compose'
 					? { kind: 'compose' }
-					: {
+					: i.url === 'account'
+						? { kind: 'account' }
+						: {
 							kind: 'link',
 							href: i.url,
 							icon: resolveIcon(i.icon),
