@@ -1,6 +1,7 @@
 import { error, redirect, fail } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { apiContext, apiGet, apiPost, apiPatch, ApiError } from '#lib/server/api.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 import { renderDocContent, extractTocHeadings, ensureHeadingIds, injectHeadingAnchors } from '#lib/tiptap/serialize.js';
 import type { TocHeading } from '#lib/tiptap/serialize.js';
 import type { DocPage, DocPageCreateRequest, DocPageUpdateRequest, DocAudience, DocFeedback } from '#lib/types/index.js';
@@ -29,7 +30,7 @@ export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Editor gate: docs.admin + read access to the audience. 303 — access
  *  decisions are dynamic and must never be cached as permanent redirects. */
 export function assertDocEditor(event: RequestEvent, audience: string): void {
-	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEdit = hasDocsAdmin(event.locals.user?.permissions);
 	if (!canEdit || !event.locals.accessibleAudiences.includes(audience as DocAudience)) {
 		throw redirect(303, '/docs/access-denied');
 	}
@@ -99,7 +100,7 @@ export async function loadDocPage(
 	editHtml: string;
 }> {
 	const ctx = apiContext(event);
-	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEdit = hasDocsAdmin(event.locals.user?.permissions);
 
 	let page: DocPage;
 	let preview = false;
@@ -286,7 +287,7 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 /** The shared inline-save action — PATCH /admin/docs/pages/{id} with the
  *  full update contract (slug/parent/position + optimistic lock). */
 export async function saveDocPageAction(event: RequestEvent, audience: string, slug: string) {
-	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEdit = hasDocsAdmin(event.locals.user?.permissions);
 	if (!canEdit) {
 		throw redirect(303, '/docs/access-denied');
 	}
@@ -414,7 +415,7 @@ export function reviewAction(kind: 'approve' | 'publish') {
 	return async (event: RequestEvent) => {
 		const audience = event.params.audience ?? 'api';
 		const slug = event.params.slug ?? '';
-		const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+		const canEdit = hasDocsAdmin(event.locals.user?.permissions);
 		if (!canEdit) {
 			throw redirect(303, '/docs/access-denied');
 		}

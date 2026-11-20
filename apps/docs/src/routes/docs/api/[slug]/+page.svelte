@@ -163,14 +163,14 @@
 	user={data.user}
 	collapsed={collapsed}
 	onToggleCollapse={toggleCollapse}
-	variant="api"
+	variant={data.operation && !editing ? 'api' : 'doc'}
 >
+	<!-- The 420px 'api' pane exists for endpoint code samples only — a plain
+	     doc page renders its TOC through the standard-width sidebar snippet
+	     instead of stretching the code pane's column. -->
 	{#snippet apiPane()}
 		<div class="api-pane">
-			{#if editing}
-				<!-- No TOC while editing — it reflects the published content, not
-				     the in-progress draft. -->
-			{:else if data.operation}
+			{#if data.operation}
 				<div class="api-pane-head">
 					<MethodBadge method={method} />
 					<code class="api-pane-path">{path}</code>
@@ -183,11 +183,15 @@
 					responseSample={responseSample}
 					exampleSample={exampleSample}
 				/>
-			{:else}
-				<TableOfContents headings={data.toc} />
 			{/if}
 		</div>
 	{/snippet}
+
+	{#if !editing && !data.operation && data.toc.length > 0}
+		{#snippet sidebar()}
+			<TableOfContents headings={data.toc} />
+		{/snippet}
+	{/if}
 
 	<article class="doc-article">
 		<header class="doc-header">

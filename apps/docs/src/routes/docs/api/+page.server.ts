@@ -5,6 +5,7 @@ import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
 import type { DocPageSummary, DocNavItem } from '#lib/types/index.js';
 import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 import type { ExistingPage } from '#lib/server/docs-author.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 
 type ApiEndpoint = { method: string; path: string; summary: string; tag: string };
 
@@ -94,7 +95,7 @@ export const load: PageServerLoad = async (event) => {
 	// Authoring parity with the other audience landings (§44 amendment 2):
 	// docs.admin holders get the "New page" affordance and the unpublished
 	// drafts listing.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEditDocs = hasDocsAdmin(event.locals.user?.permissions);
 
 	let unpublishedPages: DocNavItem[] = [];
 	if (canEditDocs) {

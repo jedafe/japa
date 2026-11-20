@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, API_BASE, JC_SURFACE } from '#lib/server/api.js';
 import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '#lib/server/docs-author.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
 import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
@@ -130,7 +131,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// Authoring parity: same edit payload contract as /docs/[audience]/[slug]
 	// — fetched lazily so it only ships when the editor is actually open.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEditDocs = hasDocsAdmin(event.locals.user?.permissions);
 	const wantsEdit = event.url.searchParams.get('edit') === '1';
 	const editor = canEditDocs && wantsEdit ? await editorData(event, page, editHtml) : null;
 

@@ -6,6 +6,7 @@ import type { DocPageSummary, DocAudience, DocNavItem } from '#lib/types/index.j
 import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
 import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 import type { ExistingPage } from '#lib/server/docs-author.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 
 /**
  * Audience landing: lists published pages for the given audience. Gated
@@ -47,7 +48,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// docs.admin holders get the "New page" affordance and the unpublished
 	// listing merge (§44 in-app authoring).
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEditDocs = hasDocsAdmin(event.locals.user?.permissions);
 
 	let unpublishedPages: DocNavItem[] = [];
 	if (canEditDocs) {

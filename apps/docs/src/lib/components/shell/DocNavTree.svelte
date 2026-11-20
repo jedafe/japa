@@ -10,6 +10,7 @@
 	import { groupNavItems } from '#lib/docs/grouping.js';
 	import { collectCategories, categoryHref, parsePinnedPages, resolvePinnedPages } from '#lib/docs/catalog.js';
 	import { categoryIcon } from '#lib/category-meta.js';
+	import { hasDocsAdmin } from '#lib/permissions.js';
 
 	interface Props {
 		nav: DocNavTreeType[];
@@ -151,7 +152,7 @@
 	// Editor affordance: docs.admin holders get a per-section "new page"
 	// shortcut (§44 in-app authoring). Group-name checks are unreliable —
 	// the permission node is canonical (DOC-007).
-	const canManageDocs = $derived(page.data?.user?.permissions?.includes('docs.admin') ?? false);
+	const canManageDocs = $derived(hasDocsAdmin(page.data?.user?.permissions));
 </script>
 
 <aside class="nav" class:collapsed data-tour="docs-nav">

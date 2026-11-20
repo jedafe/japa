@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '#lib/server/docs-author.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
 import type { DocAudience } from '#lib/types/index.js';
 import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
@@ -67,7 +68,7 @@ export const load: PageServerLoad = async (event) => {
 	// Permission-based edit affordance (§44). The docs.admin node is canonical;
 	// edit-only data (editSeed, statuses, sibling pages) loads only when the
 	// editor is actually open (?edit=1) so it never ships in the reading payload.
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEditDocs = hasDocsAdmin(event.locals.user?.permissions);
 	const wantsEdit = event.url.searchParams.get('edit') === '1';
 	const editor = canEditDocs && wantsEdit ? await editorData(event, page, editHtml) : null;
 

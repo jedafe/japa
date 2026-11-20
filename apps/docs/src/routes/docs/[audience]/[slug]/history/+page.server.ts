@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiDelete, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
+import { hasDocsAdmin } from '#lib/permissions.js';
 import { renderDocContent } from '#lib/tiptap/serialize.js';
 import { buildMeta } from '#lib/seo/meta.js';
 import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
@@ -15,7 +16,7 @@ import type { DocAudience, DocPage, DocRevision } from '#lib/types/index.js';
 export const load: PageServerLoad = async (event) => {
 	const audience = event.params.audience as DocAudience;
 	const slug = event.params.slug;
-	const canEdit = event.locals.user?.permissions?.includes('docs.admin') ?? false;
+	const canEdit = hasDocsAdmin(event.locals.user?.permissions);
 
 	if (!event.locals.audienceOrder.includes(audience)) {
 		throw error(404, { code: 'not_found', message: 'Audience not found' });
