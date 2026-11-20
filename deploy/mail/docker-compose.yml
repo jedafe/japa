@@ -1,0 +1,64 @@
+# deploy/mail/docker-compose.yml — Stalwart MTA for JapaConnect
+# (§62 self-hosted transport, ADR-015/ADR-080).
+#
+# This is the PRODUCTION mail stack: SMTP submission for outbound
+# transactional/marketing mail, plus the IMAP bounce/complaint mailbox
+# that `newsletter:poll_bounces` reads (JC_BOUNCE_IMAP_* on the api
+# container). It carries none of the JapaConnect code — deploy it
+# independently of app releases.
+#
+# Deploy either way:
+#   a) Coolify "Docker Compose" resource pointing at this file — set the
+#      env vars below in the resource's environment, never in the file.
+#   b) Plain docker on the mail host:
+#        docker compose -f deploy/mail/docker-compose.yml up -d
+#
+# First boot runs the setup wizard in bootstrap mode (plain HTTP on
+# 8080, bound to loopback only — reach it via
+# `ssh -L 8080:127.0.0.1:8080 <host>`). Temporary admin credentials are
+# printed in the container logs unless STALWART_RECOVERY_ADMIN pins
+# them. The wizard writes /etc/stalwart/config.json and provisions the
+# permanent admin account; afterwards the admin UI lives at
+# https://<hostname>/admin.
+#
+# Host firewall requirements (all TCP):
+#   25   — world-open; remote MTAs deliver bounces/DSNs here.
+#   587  — the japa-api worker egress IP (submission).
+#   993  — the japa-api worker egress IP (bounce polling).
+#   443  — admin IPs only (WebUI + JMAP).
+#   80   — only while ACME/HTTP-01 issues certificates; prefer DNS-01.
+#
+# Pin policy: the image tag is a release, not `latest` — bump
+# deliberately (Stalwart's config format has changed across releases).
+
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:v1.1.1
+    init: true
+    restart: unless-stopped
+    environment:
+      # Optional: pin the bootstrap credential as `admin:<password>`
+      # before first boot. Unset → a one-time password is printed to
+      # the container log. Set via Coolify env, never committed.
+      - STALWART_RECOVERY_ADMIN
+      - TZ=UTC
+    ports:
+      - "25:25"     # SMTP — must be world-reachable (DSN delivery)
+      - "465:465"   # SMTPS submission (587 is sufficient; kept for clients that require it)
+      - "587:587"   # submission — restrict to the worker egress IP in the host firewall
+      - "993:993"   # IMAPS — bounce poller; restrict to the worker egress IP
+      - "443:443"   # admin WebUI + JMAP — restrict to admin IPs
+      - "127.0.0.1:8080:8080"  # bootstrap wizard — loopback only, always
+    volumes:
+      # /etc/stalwart holds config.json — lose it and the server boots
+      # back into the setup wizard. /var/lib/stalwart is the RocksDB
+      # store: mail, accounts, DKIM keys, every setting. Both must be
+      # persistent AND backed up; the data volume is the whole server.
+      - stalwart-etc:/etc/stalwart
+      - stalwart-data:/var/lib/stalwart
+    # Image carries its own HEALTHCHECK (tries :443 then :8080 during
+    # bootstrap) — nothing extra needed here.
+
+volumes:
+  stalwart-etc:
+  stalwart-data:
