@@ -10,7 +10,9 @@
 // JC_SUPPORT_IMAP_USER, JC_SUPPORT_IMAP_PASS, JC_SUPPORT_IMAP_MAILBOX
 // (INBOX), JC_SUPPORT_IMAP_TLS (true — false refused in production),
 // JC_SUPPORT_IMAP_BATCH (200), JC_SUPPORT_TICKET_TYPE (slug,
-// "demo-ticket-type-general" — the seeded General Support type).
+// "demo-ticket-type-general" — the seeded General Support type),
+// JC_SUPPORT_REPLY_TO (Reply-To on ticket mail; defaults to the polled
+// _USER mailbox).
 //
 // Ref: japaconnect-engineering/sections/38-ticket-system.md
 package worker
@@ -104,6 +106,17 @@ func readSupportIMAPConfig() *supportIMAPConfig {
 // ticketRefRe matches the human ticket reference (JC-1042) carried in
 // confirmation-mail subjects and user replies.
 var ticketRefRe = regexp.MustCompile(`(?i)\bJC-(\d+)\b`)
+
+// supportReplyTo is the address ticket mail (confirmation, staff
+// response) is replyable to — JC_SUPPORT_REPLY_TO, falling back to the
+// polled JC_SUPPORT_IMAP_USER mailbox so replies always land where the
+// poller reads.
+func supportReplyTo() string {
+	if v := strings.TrimSpace(os.Getenv("JC_SUPPORT_REPLY_TO")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("JC_SUPPORT_IMAP_USER"))
+}
 
 // SupportTicketInput carries one inbound message to file as a ticket.
 type SupportTicketInput struct {

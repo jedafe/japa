@@ -1518,7 +1518,14 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 		},
 	}, "Ticket Confirmation - "+ticket.Subject, body, true)
 
-	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, subject, resolvedBody, isHTML); err != nil {
+	// §38: reply-to the support mailbox so user replies thread back onto
+	// the ticket via the JC-<n> ref (support:poll_inbox).
+	var headers map[string]string
+	if rt := supportReplyTo(); rt != "" {
+		headers = map[string]string{"Reply-To": rt}
+	}
+
+	if err := sendEmailWithCategory(ctx, *ticket.SubmitterEmail, subject, resolvedBody, isHTML, "transactional", headers); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed", "ticket_id", payload.TicketID, "error", err)
 		return err
 	}
@@ -1543,6 +1550,7 @@ type emailSendPayload struct {
 	HTML         bool   `json:"html"`
 	Type         string `json:"type,omitempty"`
 	TemplateSlug string `json:"template_slug,omitempty"`
+	ReplyTo      string `json:"reply_to,omitempty"`
 
 	TemplateData     map[string]any `json:"template_data,omitempty"`
 	TemplateSiteName string         `json:"template_site_name,omitempty"`
@@ -1585,7 +1593,22 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:email:send: to and subject are required: %w", asynq.SkipRetry)
 	}
 
-	if err := sendEmailWithContext(ctx, payload.To, subject, body, isHTML); err != nil {
+	// §38 inbound email bridge: ticket mail (confirmation, staff response)
+	// must be replyable — a user replying to their ticket email should land
+	// in the support IMAP mailbox so support:poll_inbox threads it onto the
+	// ticket via the JC-<n> ref in the subject. Explicit reply_to wins;
+	// ticket_* templates default to the configured support address.
+	replyTo := payload.ReplyTo
+	if replyTo == "" && strings.HasPrefix(payload.TemplateSlug, "ticket_") {
+		replyTo = supportReplyTo()
+	}
+
+	var headers map[string]string
+	if replyTo != "" {
+		headers = map[string]string{"Reply-To": replyTo}
+	}
+
+	if err := sendEmailWithCategory(ctx, payload.To, subject, body, isHTML, "transactional", headers); err != nil {
 		slog.Error("task:email:send: failed", "to", payload.To, "type", payload.Type, "error", err)
 		return err
 	}
