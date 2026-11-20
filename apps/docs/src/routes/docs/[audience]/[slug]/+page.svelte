@@ -146,6 +146,10 @@
 	<SeoHead meta={data.meta} gated={data.isGated} />
 </svelte:head>
 
+{#snippet tocSidebar()}
+	<TableOfContents headings={data.toc} />
+{/snippet}
+
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
@@ -157,12 +161,8 @@
 	user={data.user}
 	collapsed={collapsed}
 	onToggleCollapse={toggleCollapse}
+	sidebar={!editing && data.toc.length > 0 ? tocSidebar : undefined}
 >
-	{#if !editing && data.toc.length > 0}
-		{#snippet sidebar()}
-			<TableOfContents headings={data.toc} />
-		{/snippet}
-	{/if}
 
 	<article class="doc-article">
 		<header class="doc-header">

@@ -152,6 +152,10 @@
 	<SeoHead meta={data.meta} gated={data.isGated} />
 </svelte:head>
 
+{#snippet tocSidebar()}
+	<TableOfContents headings={data.toc} />
+{/snippet}
+
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
@@ -164,10 +168,13 @@
 	collapsed={collapsed}
 	onToggleCollapse={toggleCollapse}
 	variant={data.operation && !editing ? 'api' : 'doc'}
+	sidebar={!editing && !data.operation && data.toc.length > 0 ? tocSidebar : undefined}
 >
 	<!-- The 420px 'api' pane exists for endpoint code samples only — a plain
-	     doc page renders its TOC through the standard-width sidebar snippet
-	     instead of stretching the code pane's column. -->
+	     doc page renders its TOC through the standard-width sidebar prop
+	     instead of stretching the code pane's column. Snippets are passed as
+	     an explicit prop here: a {#snippet} declared inside {#if} stays
+	     block-scoped and never registers as a component prop. -->
 	{#snippet apiPane()}
 		<div class="api-pane">
 			{#if data.operation}
@@ -186,12 +193,6 @@
 			{/if}
 		</div>
 	{/snippet}
-
-	{#if !editing && !data.operation && data.toc.length > 0}
-		{#snippet sidebar()}
-			<TableOfContents headings={data.toc} />
-		{/snippet}
-	{/if}
 
 	<article class="doc-article">
 		<header class="doc-header">

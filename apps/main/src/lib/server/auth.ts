@@ -487,7 +487,7 @@ export function resolvePostLoginRedirect(
  * backend's JC_MCP_PUBLIC_URL origin; it defaults to API_BASE for the common
  * single-host/dev case.
  */
-const API_PUBLIC_ORIGIN = PRIVATE_API_PUBLIC_ORIGIN ?? API_BASE;
+const API_PUBLIC_ORIGIN = PRIVATE_API_PUBLIC_ORIGIN || API_BASE;
 
 /**
  * Sanitize a user-supplied post-login redirect target. Allowed: relative
@@ -503,25 +503,25 @@ export function sanitizePostLoginTarget(target: string | null): string {
 		if (target.includes('\\')) return '/';
 		return target;
 	}
+	let u: URL;
 	try {
-		const u = new URL(target);
-		const apiOrigin = new URL(API_PUBLIC_ORIGIN).origin;
-		if ((u.protocol === 'https:' || u.protocol === 'http:') && u.origin === apiOrigin) {
-			return u.toString();
-		}
-		// Sibling surfaces (docs./academy./admin.{base}) share the
-		// SESSION_COOKIE_DOMAIN session — a login bounce returning there
-		// keeps the user in the same authenticated session.
-		const siblingBase = SESSION_COOKIE_DOMAIN.replace(/^\./, '');
-		if (
-			(u.protocol === 'https:' || u.protocol === 'http:') &&
-			siblingBase &&
-			(u.hostname === siblingBase || u.hostname.endsWith('.' + siblingBase))
-		) {
-			return u.toString();
-		}
+		u = new URL(target);
 	} catch {
 		// Unparseable — treat as unsafe.
+		return '/';
+	}
+	if (u.protocol !== 'https:' && u.protocol !== 'http:') return '/';
+	try {
+		if (u.origin === new URL(API_PUBLIC_ORIGIN).origin) return u.toString();
+	} catch {
+		// Misconfigured API origin — the sibling check below still applies.
+	}
+	// Sibling surfaces (docs./academy./admin.{base}) share the
+	// SESSION_COOKIE_DOMAIN session — a login bounce returning there
+	// keeps the user in the same authenticated session.
+	const siblingBase = SESSION_COOKIE_DOMAIN.replace(/^\./, '');
+	if (siblingBase && (u.hostname === siblingBase || u.hostname.endsWith('.' + siblingBase))) {
+		return u.toString();
 	}
 	return '/';
 }
