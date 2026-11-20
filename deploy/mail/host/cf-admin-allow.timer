@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-resolve DDNS admin exceptions every 2 minutes
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

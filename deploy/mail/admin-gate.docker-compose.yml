@@ -8,9 +8,12 @@
 #
 # Public reachability is gated by the host's CFLOCK4 origin lockdown
 # (DOCKER-USER allows only Cloudflare IPs to :80/:443, built by
-# cf-lockdown.service / /usr/local/sbin/cf-origin-lockdown.sh). Admin access is
-# granted persistently via the script's EXTRA_ALLOW_V4 exception list — scoped
-# to the operator's source IP on :443. Ad-hoc equivalent:
+# cf-lockdown.service / cf-origin-lockdown.sh). Admin access rides the
+# EXTRA4/EXTRA6 exception chains jumped to before the DROPs, populated by
+# cf-admin-allow.{service,timer} every 2 min from static CIDRs + the
+# gate-admin.japa.to DDNS record (kept current by japa-gate-ddns.sh on the
+# operator machine) — so access follows IP changes automatically. Host-side
+# copies of all four files live in deploy/mail/host/. Ad-hoc equivalent:
 #   iptables -I CFLOCK4 16 -p tcp --dport 443 -s <your-ip>/32 -j RETURN  # open
 #   iptables -D CFLOCK4 -p tcp --dport 443 -s <your-ip>/32 -j RETURN     # close
 # (requires the Hostinger cloud-firewall TCP 443 rule as well; mail flow and
