@@ -78,7 +78,7 @@ jobs:
 
       # Warm dep store for hosted runners (no-op cost on self-hosted,
       # whose disk persists anyway).
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
@@ -123,7 +123,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload coverage
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
