@@ -162,7 +162,10 @@ func HandleSupportPollInbox(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Singleton lock — same rationale as the bounce poller: the scheduler
-	// fires on every replica, only one should hold the IMAP session.
+	// fires on every replica, only one should hold the IMAP session. The
+	// 10m TTL is crash-safety only — the lock is released on completion,
+	// otherwise it would outlive the 5m cron and self-skip every other
+	// tick.
 	if rdb != nil {
 		taskID, _ := asynq.GetTaskID(ctx)
 		if taskID == "" {
@@ -175,6 +178,17 @@ func HandleSupportPollInbox(ctx context.Context, t *asynq.Task) error {
 		} else if !ok {
 			slog.Info("task:support:poll_inbox: another replica holds the lock, skipping")
 			return nil
+		} else {
+			defer func() {
+				// Release only if we still own the lock — a poll running
+				// past the 10m TTL may have already been superseded.
+				bctx := context.Background()
+				if v, gerr := rdb.Get(bctx, "jc:support:inbox_poll_lock").Result(); gerr == nil && v == taskID {
+					if _, err := rdb.Del(bctx, "jc:support:inbox_poll_lock").Result(); err != nil {
+						slog.Debug("task:support:poll_inbox: lock release failed", "error", err)
+					}
+				}
+			}()
 		}
 	}
 
