@@ -17,7 +17,7 @@
 	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { RichTextEditor } from '@japaconnect/ui';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, RotateCcw, Eye, Eraser } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown, History, RotateCcw, Eye, Eraser, ListChecks } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.admin'));
@@ -108,6 +108,29 @@
 	let restoreBusy = $state(false);
 	// Bulk selection — bound to the DataTable checkboxes.
 	let selectedIds = $state<Set<string>>(new Set());
+
+	// Bulk status modal — "Change Status" applies a target review_status to
+	// every eligible selected row (§44 draft → in_review → approved →
+	// published). Forward hops go through the dedicated approve/publish
+	// endpoints so reviewer metadata stays truthful; backward hops PATCH
+	// review_status directly (the only statuses UpdateDocPage allows).
+	let showStatusModal = $state(false);
+	let statusTarget = $state('approved');
+	let statusBusy = $state(false);
+
+	// Which current statuses may move TO each target. Rows already at the
+	// target are no-op skips; published → approved is rejected server-side
+	// ("unpublish to draft first"), so it isn't offered as eligible either.
+	const STATUS_FLOW: Record<string, string[]> = {
+		draft: ['in_review', 'approved', 'published'],
+		in_review: ['draft', 'approved', 'published'],
+		approved: ['draft', 'in_review'],
+		published: ['draft', 'in_review', 'approved']
+	};
+
+	const selectedRows = $derived(docs.filter((d) => selectedIds.has(d.id) && !d.deleted_at));
+	const bulkEligible = $derived(selectedRows.filter((d) => (STATUS_FLOW[statusTarget] ?? []).includes(d.status)));
+	const bulkSkipped = $derived(selectedRows.length - bulkEligible.length);
 
 	// DOC-009: audience/status options are loaded from the API.
 	let audiences = $state<string[]>(['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin']);
@@ -595,6 +618,18 @@
 			];
 		}
 		return [
+			...(canPublish
+				? [
+						{
+							label: t('docs.bulk_status', 'Change Status'),
+							icon: ListChecks,
+							onclick: () => {
+								statusTarget = 'approved';
+								showStatusModal = true;
+							}
+						}
+					]
+				: []),
 			{
 				label: t('docs.bulk_delete', 'Move to Trash'),
 				icon: Trash2,
@@ -642,6 +677,38 @@
 		} finally {
 			restoreBusy = false;
 		}
+	}
+
+	// One row's transition to the modal's target status. Publishing a
+	// not-yet-approved row chains approve → publish — the publish endpoint
+	// rejects anything that isn't approved first (§44).
+	async function transitionTo(row: DocPage, target: string): Promise<{ ok: boolean; error?: string }> {
+		if (target === 'approved') return docsApi.approve(row.id);
+		if (target === 'published') {
+			if (row.status !== 'approved') {
+				const a = await docsApi.approve(row.id);
+				if (!a.ok) return a;
+			}
+			return docsApi.publish(row.id);
+		}
+		return docsApi.update(row.id, { review_status: target });
+	}
+
+	async function runBulkStatus() {
+		if (statusBusy || bulkEligible.length === 0) return;
+		statusBusy = true;
+		errorMessage = '';
+		const target = statusTarget;
+		const total = bulkEligible.length;
+		const results = await Promise.all(bulkEligible.map((row) => transitionTo(row, target)));
+		const failed = results.filter((r) => !r.ok).length;
+		statusBusy = false;
+		showStatusModal = false;
+		selectedIds = new Set();
+		if (failed > 0) {
+			errorMessage = t('docs.bulk_action_partial', '{n} of {total} actions failed').replace('{n}', String(failed)).replace('{total}', String(total));
+		}
+		loadDocs();
 	}
 
 	async function bulkRestore(ids: Set<string>) {
@@ -901,6 +968,36 @@
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('docs.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={deleteBusy}>{deleteMode === 'hard' ? t('docs.delete_permanently', 'Delete Permanently') : t('docs.confirm_delete')}</Button>
+	</div>
+</Modal>
+
+<!-- Bulk Status Modal — apply a review_status to eligible selected rows -->
+<Modal bind:open={showStatusModal} title={t('docs.bulk_status_title', 'Change status')} size="sm">
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('docs.bulk_status_desc', 'Apply a new status to the selected pages. Rows that cannot make the transition are skipped.')}
+		</p>
+		<div>
+			<label for="bulk-status-target" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
+			<Select options={statusFilterOptions} bind:value={statusTarget} />
+		</div>
+		{#if statusTarget === 'published'}
+			<p class="text-xs" style="color: var(--color-muted)">
+				{t('docs.bulk_status_publish_note', 'Pages that are not yet approved will be approved first, then published.')}
+			</p>
+		{/if}
+		<p class="text-sm">
+			{t('docs.bulk_status_count', '{n} of {total} selected pages will change; {skipped} skipped.')
+				.replace('{n}', String(bulkEligible.length))
+				.replace('{total}', String(selectedRows.length))
+				.replace('{skipped}', String(bulkSkipped))}
+		</p>
+	</div>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => { showStatusModal = false; }}>{t('docs.cancel')}</Button>
+		<Button onclick={runBulkStatus} disabled={statusBusy || bulkEligible.length === 0}>
+			{statusBusy ? t('docs.applying', 'Applying…') : t('docs.apply_status', 'Apply')}
+		</Button>
 	</div>
 </Modal>
 
