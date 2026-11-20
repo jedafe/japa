@@ -17,8 +17,34 @@ import (
 const targetsJSON = `[
   {"key":"mail_admin","label":"Stalwart Admin","kind":"service","uuid":"svc-1","domain":"mail.japa.to"},
   {"key":"control","label":"Control Panel","kind":"application","uuid":"app-1","domain":"control.japa.to"},
-  {"key":"admin","label":"Admin Panel","kind":"application","uuid":"app-2","domain":"admin.japa.to"}
+  {"key":"admin","label":"Admin Panel","kind":"application","uuid":"app-2","domain":"admin.japa.to"},
+  {"key":"control_api","label":"Control API","kind":"api_surface","prefix":"/control","flag":"feature.control_api_lockdown","domain":"api.japa.to"}
 ]`
+
+// fakeFlags is an in-memory FlagIO for tests.
+type fakeFlags struct {
+	mu    sync.Mutex
+	flags map[string]bool
+	err   error
+}
+
+func (f *fakeFlags) IsEnabled(_ context.Context, key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.flags[key]
+}
+
+func (f *fakeFlags) SetEnabled(_ context.Context, key string, enabled bool, _ pgtype.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.flags[key] = enabled
+	return nil
+}
+
+func testFlags() *fakeFlags { return &fakeFlags{flags: map[string]bool{}} }
 
 // mockCoolify serves /api/v1/{applications|services}/{uuid}[/start|stop]
 // from an in-memory status map.
@@ -82,7 +108,7 @@ func newTestService(t *testing.T, m *mockCoolify) (*Service, *httptest.Server) {
 	t.Helper()
 	srv := httptest.NewServer(m.handler())
 	t.Cleanup(srv.Close)
-	svc, err := New(srv.URL, m.token, targetsJSON)
+	svc, err := New(srv.URL, m.token, targetsJSON, testFlags())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -92,19 +118,20 @@ func newTestService(t *testing.T, m *mockCoolify) (*Service, *httptest.Server) {
 	return svc, srv
 }
 
-func TestNewDisabledWithoutConfig(t *testing.T) {
-	for _, args := range [][3]string{
-		{"", "tok", targetsJSON},
-		{"https://coolify", "", targetsJSON},
-		{"https://coolify", "tok", ""},
-	} {
-		svc, err := New(args[0], args[1], args[2])
+func TestNewDisabledWithoutTargets(t *testing.T) {
+	for _, doc := range []string{"", "[]"} {
+		svc, err := New("https://coolify", "tok", doc, testFlags())
 		if err != nil {
-			t.Fatalf("New(%v): unexpected error %v", args, err)
+			t.Fatalf("New(%q): unexpected error %v", doc, err)
 		}
 		if svc != nil {
-			t.Fatalf("New(%v): expected nil service", args)
+			t.Fatalf("New(%q): expected nil service", doc)
 		}
+	}
+	// Missing Coolify creds no longer disables the feature — Coolify-kind
+	// targets report unknown; api_surface still works.
+	if svc, err := New("", "", targetsJSON, testFlags()); err != nil || svc == nil {
+		t.Fatalf("mixed config without coolify creds: svc=%v err=%v", svc, err)
 	}
 }
 
@@ -119,7 +146,7 @@ func TestNewValidation(t *testing.T) {
 		{"duplicate key", `[{"key":"a","kind":"application","uuid":"u1"},{"key":"a","kind":"service","uuid":"u2"}]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := New("https://coolify", "tok", tc.doc); err == nil {
+			if _, err := New("https://coolify", "tok", tc.doc, testFlags()); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -137,7 +164,7 @@ func TestListMapsStatuses(t *testing.T) {
 	}
 	svc, _ := newTestService(t, m)
 	got := svc.List(context.Background())
-	want := map[string]string{"mail_admin": "on", "control": "off", "admin": "transitioning"}
+	want := map[string]string{"mail_admin": "on", "control": "off", "admin": "transitioning", "control_api": "on"}
 	for _, st := range got {
 		if want[st.Key] != st.State {
 			t.Fatalf("gate %q: state %q, want %q", st.Key, st.State, want[st.Key])
@@ -150,8 +177,12 @@ func TestListUnknownOnBackendError(t *testing.T) {
 	svc, _ := newTestService(t, m)
 	got := svc.List(context.Background())
 	for _, st := range got {
-		if st.State != "unknown" {
-			t.Fatalf("gate %q: expected unknown, got %q", st.Key, st.State)
+		want := "unknown"
+		if st.Key == "control_api" {
+			want = "on" // flag-driven, not dependent on Coolify
+		}
+		if st.State != want {
+			t.Fatalf("gate %q: expected %q, got %q", st.Key, want, st.State)
 		}
 	}
 }
@@ -159,7 +190,7 @@ func TestListUnknownOnBackendError(t *testing.T) {
 func TestToggleStopsRunningTarget(t *testing.T) {
 	m := &mockCoolify{token: "tok", statuses: map[string]string{"services/svc-1": "running:healthy"}}
 	svc, _ := newTestService(t, m)
-	st, err := svc.Toggle(context.Background(), "mail_admin")
+	st, err := svc.Toggle(context.Background(), "mail_admin", pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -180,7 +211,7 @@ func TestToggleStopsRunningTarget(t *testing.T) {
 func TestToggleStartsStoppedTarget(t *testing.T) {
 	m := &mockCoolify{token: "tok", statuses: map[string]string{"applications/app-1": "exited"}}
 	svc, _ := newTestService(t, m)
-	st, err := svc.Toggle(context.Background(), "control")
+	st, err := svc.Toggle(context.Background(), "control", pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -201,7 +232,7 @@ func TestToggleStartsStoppedTarget(t *testing.T) {
 func TestToggleUnknownKey(t *testing.T) {
 	m := &mockCoolify{token: "tok", statuses: map[string]string{}}
 	svc, _ := newTestService(t, m)
-	_, err := svc.Toggle(context.Background(), "nope")
+	_, err := svc.Toggle(context.Background(), "nope", pgtype.UUID{})
 	if !IsUnknownKey(err) {
 		t.Fatalf("expected unknown-key error, got %v", err)
 	}
@@ -213,7 +244,7 @@ func TestToggleSerialized(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); _, _ = svc.Toggle(context.Background(), "mail_admin") }()
+		go func() { defer wg.Done(); _, _ = svc.Toggle(context.Background(), "mail_admin", pgtype.UUID{}) }()
 	}
 	wg.Wait()
 	// Serialized mutex means GET→POST pairs never interleave: count
@@ -300,7 +331,7 @@ func TestHandlersAuthZ(t *testing.T) {
 	var body struct {
 		Gates []Status `json:"gates"`
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil || len(body.Gates) != 3 {
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil || len(body.Gates) != 4 {
 		t.Fatalf("bad body: %v %s", err, rr.Body.String())
 	}
 	// super admin toggle → 200
@@ -322,5 +353,107 @@ func TestHandlersDisabled(t *testing.T) {
 	rr := callHandler(t, h, http.MethodGet, "/admin/access-gates", "", regularCtx)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("regular user on disabled feature: got %d, want 403", rr.Code)
+	}
+}
+
+// --- api_surface (flag lockdown) ---
+
+func TestToggleAPISurface(t *testing.T) {
+	m := &mockCoolify{token: "tok", statuses: map[string]string{}}
+	srv := httptest.NewServer(m.handler())
+	t.Cleanup(srv.Close)
+	flags := testFlags()
+	svc, err := New(srv.URL, m.token, targetsJSON, flags)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// open → lock
+	st, err := svc.Toggle(context.Background(), "control_api", pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("Toggle: %v", err)
+	}
+	if st.State != "off" || st.Raw != "locked" {
+		t.Fatalf("expected off/locked, got %s/%s", st.State, st.Raw)
+	}
+	if !flags.flags["feature.control_api_lockdown"] {
+		t.Fatal("flag not set")
+	}
+	// locked → unlock
+	st, err = svc.Toggle(context.Background(), "control_api", pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("Toggle: %v", err)
+	}
+	if st.State != "on" || st.Raw != "open" {
+		t.Fatalf("expected on/open, got %s/%s", st.State, st.Raw)
+	}
+}
+
+func TestAPISurfaceListState(t *testing.T) {
+	m := &mockCoolify{token: "tok", statuses: map[string]string{}}
+	srv := httptest.NewServer(m.handler())
+	t.Cleanup(srv.Close)
+	flags := testFlags()
+	flags.flags["feature.control_api_lockdown"] = true
+	svc, _ := New(srv.URL, m.token, targetsJSON, flags)
+	for _, st := range svc.List(context.Background()) {
+		if st.Key == "control_api" && st.State != "off" {
+			t.Fatalf("locked surface should read off, got %q", st.State)
+		}
+	}
+}
+
+func TestNewAPISurfaceRequiresFlags(t *testing.T) {
+	if _, err := New("", "", `[{"key":"a","kind":"api_surface","prefix":"/x","flag":"f.x"}]`, nil); err == nil {
+		t.Fatal("expected error when flag store missing")
+	}
+}
+
+// --- probe ---
+
+func TestProbe(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
+	t.Cleanup(up.Close)
+	t.Cleanup(down.Close)
+	svc := &Service{probe: up.Client(), probeCache: map[string]probeResult{}}
+	if ok, st := svc.probeURL(context.Background(), up.URL); !ok || st != "200" {
+		t.Fatalf("up: %v %q", ok, st)
+	}
+	if ok, st := svc.probeURL(context.Background(), down.URL); ok || st != "503" {
+		t.Fatalf("down: %v %q", ok, st)
+	}
+	// unreachable host → timeout/error
+	if ok, _ := svc.probeURL(context.Background(), "http://127.0.0.1:1/"); ok {
+		t.Fatal("expected unreachable")
+	}
+}
+
+// --- middleware ---
+
+func TestRequireSurfaceOpen(t *testing.T) {
+	flags := testFlags()
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })
+	mw := RequireSurfaceOpen(flags, "feature.control_api_lockdown")(next)
+
+	rr := httptest.NewRecorder()
+	mw.ServeHTTP(rr, httptest.NewRequest("GET", "/control/x", nil))
+	if rr.Code != 204 {
+		t.Fatalf("open: got %d", rr.Code)
+	}
+
+	flags.flags["feature.control_api_lockdown"] = true
+	rr = httptest.NewRecorder()
+	mw.ServeHTTP(rr, httptest.NewRequest("GET", "/control/x", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("locked: got %d", rr.Code)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &body)
+	if body.Error.Code != "surface_locked" {
+		t.Fatalf("code: %s", body.Error.Code)
 	}
 }

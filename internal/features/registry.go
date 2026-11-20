@@ -180,6 +180,10 @@ var Registry = []Feature{
 	// established baseline; operators opt out deliberately.
 	{Key: "ai.env_providers", Label: "AI Env Providers Fallback", Description: "Environment-configured AI providers act as the fallback behind DB-managed providers — disable to run only control-plane-managed AI providers", Default: true, Category: "AI"},
 	{Key: "email.env_providers", Label: "Email Env Providers Fallback", Description: "Environment-configured SMTP acts as the fallback behind DB-managed email providers — disable to run only control-plane-managed email providers", Default: true, Category: "Platform"},
+	// §123 ops access gates — inverted semantics: enabled = the /control/*
+	// API surface is locked down (503 surface_locked). Written by
+	// POST /admin/access-gates/control_api/toggle, not managed via Extensions.
+	{Key: "feature.control_api_lockdown", Label: "Control API Lockdown", Description: "Ops access gate: while enabled, every /control/* route answers 503 (§123)", Default: false, Category: "Platform"},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

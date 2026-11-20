@@ -39,10 +39,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleToggle is POST /admin/access-gates/{key}/toggle.
 func (h *Handlers) HandleToggle(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
 	if !h.allow(w, r) {
 		return
 	}
-	st, err := h.svc.Toggle(r.Context(), chi.URLParam(r, "key"))
+	st, err := h.svc.Toggle(r.Context(), chi.URLParam(r, "key"), user.UserID)
 	if err != nil {
 		if IsUnknownKey(err) {
 			errpkg.WriteError(w, http.StatusNotFound, "gate_not_found", "Unknown access gate")

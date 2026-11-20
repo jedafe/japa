@@ -13,8 +13,12 @@ export interface AccessGate {
 	domain?: string;
 	/** on | off | transitioning | unknown */
 	state: string;
-	/** Raw Coolify resource status, e.g. "running:unknown". */
+	/** Raw backend status, e.g. "running:unknown", "open", "locked". */
 	status: string;
+	/** Live route probe — true when the URL answered below 500. */
+	route_reachable?: boolean;
+	/** Probe outcome: HTTP status code, "timeout", or "error". */
+	route_status?: string;
 }
 
 function requireSuperAdmin(event: RequestEvent) {

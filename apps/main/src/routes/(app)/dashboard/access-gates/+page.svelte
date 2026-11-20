@@ -89,6 +89,22 @@
 								>
 									{t(STATE_LABEL[gate.state] ?? STATE_LABEL.unknown)}
 								</span>
+								{#if gate.route_reachable !== undefined}
+									<span
+										class="inline-flex shrink-0 items-center gap-1 text-xs {gate.route_reachable
+											? 'text-emerald-600 dark:text-emerald-400'
+											: 'text-red-600 dark:text-red-400'}"
+									>
+										<span
+											class="h-1.5 w-1.5 rounded-full {gate.route_reachable
+												? 'bg-emerald-500'
+												: 'bg-red-500'}"
+											aria-hidden="true"
+										></span>
+										{t(gate.route_reachable ? 'access_gates.route_up' : 'access_gates.route_down')}
+										{#if gate.route_status}<span class="text-[var(--color-muted)]/70">({gate.route_status})</span>{/if}
+									</span>
+								{/if}
 							</div>
 							<p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
 								{#if gate.domain}

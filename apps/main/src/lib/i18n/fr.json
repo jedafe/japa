@@ -33,6 +33,8 @@
 	"access_gates.state.on": "En ligne",
 	"access_gates.state.off": "Hors ligne",
 	"access_gates.page_title": "Portes d'accès",
+	"access_gates.route_down": "route inactive",
+	"access_gates.route_up": "route active",
 	"access_gates.open_link": "Ouvrir {label}",
 	"access_gates.not_configured": "Les portes d'accès ne sont pas configurées sur ce déploiement (JC_COOLIFY_* / JC_ACCESS_GATES non définis).",
 	"access_gates.note": "Mettre une surface hors ligne supprime complètement sa route publique. La distribution du courrier n'est pas affectée. Le site principal et ce tableau de bord restent toujours accessibles.",

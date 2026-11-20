@@ -552,8 +552,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	featureChecker.SetAudienceResolver(audienceResolverAdapter{rbac: rbacResolver})
 
 	// Ops access gates (§123): super-admin start/stop toggles for admin
-	// surfaces via the Coolify API. nil service = envs unset = feature off.
-	gatesService, err := gates.New(cfg.CoolifyURL, cfg.CoolifyToken, cfg.AccessGatesJSON)
+	// surfaces via the Coolify API + api_surface flag lockdowns. nil service
+	// = no JC_ACCESS_GATES targets = feature off.
+	gatesService, err := gates.New(cfg.CoolifyURL, cfg.CoolifyToken, cfg.AccessGatesJSON, featureChecker)
 	if err != nil {
 		slog.Error("access gates: invalid configuration, feature disabled", "error", err)
 	}
@@ -10156,6 +10157,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Platform-scoped, requires auth + control.panel.access permission.
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
+		// §123 api_surface lockdown — when feature.control_api_lockdown is
+		// enabled every /control/* request answers 503 surface_locked, before
+		// auth reveals anything about the surface.
+		r.Use(gates.RequireSurfaceOpen(featureChecker, "feature.control_api_lockdown"))
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
 		// Audit finding C1: enforce double-submit CSRF on all mutating /control/* requests.
