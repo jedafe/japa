@@ -427,6 +427,8 @@ var taskTier = func() map[string]string {
 		TypeFederationPruneDeliveries,
 		// §127 projection floor — daily drift probe, low tier.
 		TypeAtprotoReconcileSweep,
+		// §38 inbound email bridge — 5-min support mailbox poll, low tier.
+		TypeSupportPollInbox,
 	} {
 		m[t] = QueueLow
 	}

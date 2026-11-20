@@ -184,6 +184,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// JC_BOUNCE_IMAP_HOST is unset.
 	schedule("*/15 * * * *", TypeNewsletterPollBounces, 15*time.Minute)
 
+	// §38 inbound email bridge: poll the support IMAP mailbox every 5 min —
+	// inbound mail files as tickets (registered-user replies thread onto the
+	// referenced ticket). Singleton via jc:support:inbox_poll_lock; no-ops
+	// when JC_SUPPORT_IMAP_HOST is unset.
+	schedule("*/5 * * * *", TypeSupportPollInbox, 5*time.Minute)
+
 	// Hourly: trending, llms.txt, analytics views, RSS, GDPR retention sweep.
 	schedule("0 * * * *", TypeComputeTrending, 1*time.Hour)
 	schedule("0 * * * *", TypeMaintenanceRegenerateLLMsTxt, 1*time.Hour)

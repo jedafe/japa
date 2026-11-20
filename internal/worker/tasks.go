@@ -76,6 +76,7 @@ const (
 	TypeWalletReprocessEvents        = "wallet:reprocess_events"
 	TypeNewsletterSend               = "newsletter:send"
 	TypeNewsletterPollBounces        = "newsletter:poll_bounces" // §62 self-hosted MTA transport — IMAP DSN/ARF ingestion
+	TypeSupportPollInbox             = "support:poll_inbox"      // §38 inbound email bridge — IMAP support mailbox → tickets
 	TypeScholarshipSyncFromGuide     = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage             = "docs:generate_page"
 	TypeFormFireSubmissionTriggers   = "form:fire_submission_triggers"
@@ -336,6 +337,7 @@ var handlerRegistry = []struct {
 	{TypeDBManualVacuum, HandleDBManualVacuum},
 	{TypeNewsletterDigest, HandleNewsletterDigest},
 	{TypeNewsletterPollBounces, HandleNewsletterPollBounces},
+	{TypeSupportPollInbox, HandleSupportPollInbox},
 	{TypeComputeTrending, HandleComputeTrending},
 	{TypeComputeSuggestions, HandleComputeSuggestions},
 	// Missing Phase 31 task handlers (catalog amendments)

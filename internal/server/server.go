@@ -1324,6 +1324,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ticketHandlers := tickets.NewHandlers(ticketService)
 	ticketHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in tickets responses
 
+	// §38 inbound email bridge: let the support:poll_inbox worker file
+	// inbound support mail as tickets — worker cannot import tickets.
+	worker.RegisterSupportTicketBridge(supportTicketBridge{svc: ticketService})
+
 	// Public Product Roadmap subsystem (Section 113, ADR-127).
 	roadmapService := roadmap.NewServiceWithEnqueuer(database, taskEnqueuer)
 	roadmapService.SetSettings(settingsService)
