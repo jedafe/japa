@@ -1,34 +1,35 @@
 # Stalwart admin gate — a stoppable public route to the Stalwart WebUI/JMAP.
 #
-# Deployed as its own Coolify docker-compose service so it can be started and
-# stopped independently of the MTA: mail.japa.to -> Traefik :443 -> this
-# container -> https://stalwart:443 (same shared `coolify` network). Stopping
-# the service drops the Traefik route, so the admin surface is only reachable
-# while the gate runs. The Stalwart container itself never restarts and mail
-# flow (:25, :587, :993) is unaffected.
+# Traefik TLS-passthrough: HostSNI(`mail.japa.to`) on the :443 entrypoint is
+# routed as raw TCP to this container, which forwards to stalwart:443. TLS
+# terminates at Stalwart with its own Let's Encrypt certificate, so the
+# canonical OAuth issuer (https://mail.japa.to) matches exactly — no Traefik
+# cert, no HTTP-01 requirement, no port suffix.
 #
-# The route is defined by Traefik labels on the container (Docker provider);
-# Coolify's proxy issues the mail.japa.to LE cert via HTTP-01 on first request.
+# Public reachability is gated by the host's CFLOCK4 origin lockdown
+# (DOCKER-USER allows only Cloudflare IPs to :80/:443). Opening admin access =
+# inserting one scoped exception, e.g.:
+#   iptables -I CFLOCK4 16 -p tcp --dport 443 -s <your-ip>/32 -j RETURN
+# Closing = deleting it:
+#   iptables -D CFLOCK4 -p tcp --dport 443 -s <your-ip>/32 -j RETURN
+# (requires the Hostinger cloud-firewall TCP 443 rule as well; mail flow and
+# the Stalwart container are never touched either way)
 
 services:
   admin-gate:
-    image: caddy:2.9-alpine
+    image: alpine/socat:1.8.0.3
     restart: unless-stopped
     expose:
-      - "80"
-    # reverse-proxy preserves the inbound Host header; --insecure skips
-    # upstream cert verification (upstream cert is issued for mail.japa.to,
-    # not the `stalwart` docker alias — the hop never leaves the host).
-    command: >-
-      caddy reverse-proxy --from :80 --to https://stalwart:443 --insecure
-      --access-log
+      - "443"
+    command:
+      - TCP-LISTEN:443,fork,reuseaddr
+      - TCP:stalwart:443
     labels:
       - traefik.enable=true
-      - traefik.http.routers.mail-admin-gate.rule=Host(`mail.japa.to`)
-      - traefik.http.routers.mail-admin-gate.entrypoints=https
-      - traefik.http.routers.mail-admin-gate.tls=true
-      - traefik.http.routers.mail-admin-gate.tls.certresolver=letsencrypt
-      - traefik.http.services.mail-admin-gate.loadbalancer.server.port=80
+      - traefik.tcp.routers.mail-admin-gate.rule=HostSNI(`mail.japa.to`)
+      - traefik.tcp.routers.mail-admin-gate.entrypoints=https
+      - traefik.tcp.routers.mail-admin-gate.tls.passthrough=true
+      - traefik.tcp.services.mail-admin-gate.loadbalancer.server.port=443
     networks:
       - coolify
 
