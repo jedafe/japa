@@ -64,6 +64,19 @@ func bodyToTipTap(raw json.RawMessage) ([]byte, error) {
 	}
 
 	if s, isStr := probe.(string); isStr {
+		// A JSON-encoded TipTap doc or node array can arrive as a string
+		// when the caller double-encodes (the parameter accepts both
+		// forms). Unwrap it rather than quoting the JSON as literal
+		// paragraph text — the same normalization docs content gets.
+		var inner any
+		if err := json.Unmarshal([]byte(s), &inner); err == nil {
+			if _, isObj := inner.(map[string]any); isObj {
+				return json.RawMessage(s), nil
+			}
+			if _, isArr := inner.([]any); isArr {
+				return []byte(fmt.Sprintf(`{"type":"doc","content":%s}`, s)), nil
+			}
+		}
 		return tiptapFromText(s), nil
 	}
 

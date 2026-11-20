@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -147,6 +148,33 @@ func TestSettingsSetHandler_WritesWithCatalogPublic(t *testing.T) {
 	}
 	if cat.validatedRaw == "" {
 		t.Error("expected catalog validation to run")
+	}
+}
+
+func TestSettingsSetHandler_UnwrapsStringEncodedJSON(t *testing.T) {
+	deps := settingsDeps()
+	store := deps.SettingsStore.(*stubSettingsStore)
+	h := SettingsSetHandler(deps)
+
+	// JSON-typed setting with the value double-encoded as a string — the
+	// stored bytes must be the array, not a quoted JSON string.
+	res, err := h(t.Context(), mustJSON(t, map[string]any{
+		"key":   "docs.categories",
+		"value": `[{"name":"Getting Started","subcategories":[]}]`,
+	}), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if res.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %s, want success", res.Status)
+	}
+	got := store.pending["docs.categories"]
+	var parsed any
+	if err := json.Unmarshal(got, &parsed); err != nil {
+		t.Fatalf("stored value not JSON: %v", err)
+	}
+	if _, isArr := parsed.([]any); !isArr {
+		t.Fatalf("stored value type = %T, want array — string-encoded JSON should unwrap", parsed)
 	}
 }
 

@@ -2467,6 +2467,15 @@ func normalizeWikiContent(raw json.RawMessage) (json.RawMessage, error) {
 
 	switch val := v.(type) {
 	case string:
+		// A JSON-encoded TipTap doc can arrive as a string when callers
+		// double-encode (e.g. the MCP agent boundary). Re-dispatch through
+		// the object path rather than storing the JSON as literal text.
+		var inner any
+		if err := json.Unmarshal([]byte(val), &inner); err == nil {
+			if _, isObj := inner.(map[string]any); isObj {
+				return normalizeWikiContent(json.RawMessage(val))
+			}
+		}
 		// Raw string content — sanitize as HTML and wrap in a TipTap doc.
 		sanitized := contentpkg.SanitizeHTML(val)
 		doc := map[string]any{

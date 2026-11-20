@@ -196,8 +196,23 @@ func SettingsSetHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
+		stored := a.Value
+		// A JSON-typed setting can arrive double-encoded (value as a
+		// string containing object/array JSON). Unwrap it so the stored
+		// value is the object itself, not a quoted JSON string — the same
+		// normalization docs content gets.
+		if info.Type == "json" && s != "" {
+			var inner any
+			if err := json.Unmarshal([]byte(s), &inner); err == nil {
+				switch inner.(type) {
+				case map[string]any, []any:
+					stored = json.RawMessage(s)
+				}
+			}
+		}
+
 		if err := deps.SettingsStore.UpdateSettingsBatchWithPublic(ctx,
-			map[string][]byte{key: a.Value},
+			map[string][]byte{key: stored},
 			map[string]bool{key: info.Public},
 		); err != nil {
 			return errorToolResult("settings_set_failed", err.Error()), nil
@@ -206,7 +221,7 @@ func SettingsSetHandler(deps *ToolDeps) ToolHandler {
 		return successToolResult(map[string]any{
 			"key":   key,
 			"set":   true,
-			"value": json.RawMessage(a.Value),
+			"value": json.RawMessage(stored),
 		}), nil
 	}
 }
