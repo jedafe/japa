@@ -174,7 +174,8 @@
 
 	<nav class="nav-body" aria-label={t('a11y.main_nav')}>
 		{#if collapsed}
-			<!-- Collapsed: brand icon + home + audience initials as icons. -->
+			<!-- Collapsed: brand icon + home + per-audience icons (same
+			     AUDIENCE_ICON map the expanded section headers use). -->
 			<ul class="rail">
 				<li>
 					<a href="/" class="rail-item" title={t('nav.home')}>
@@ -187,6 +188,7 @@
 					</a>
 				</li>
 				{#each groupSections as tree (tree.audience)}
+					{@const RailIcon = AUDIENCE_ICON[tree.audience]}
 					<li>
 						<a
 							href="/docs/{tree.audience}"
@@ -194,7 +196,7 @@
 							class:active={activeAudience === tree.audience}
 							title={t(AUDIENCE_LABEL_KEY[tree.audience], tree.audience)}
 						>
-							<BookOpen size={18} />
+							<RailIcon size={18} />
 						</a>
 					</li>
 				{/each}
