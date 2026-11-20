@@ -34,7 +34,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if !h.allow(w, r) {
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"gates": h.svc.List(r.Context())})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"gates": h.svc.List(r.Context())}})
 }
 
 // HandleToggle is POST /admin/access-gates/{key}/toggle.
@@ -52,7 +52,7 @@ func (h *Handlers) HandleToggle(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadGateway, "gate_backend_error", "The infrastructure provider rejected the operation")
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, st)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // allow enforces auth + super_admin group membership (§123) and the

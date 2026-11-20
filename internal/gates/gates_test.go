@@ -329,9 +329,11 @@ func TestHandlersAuthZ(t *testing.T) {
 		t.Fatalf("super: got %d body %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Gates []Status `json:"gates"`
+		Data struct {
+			Gates []Status `json:"gates"`
+		} `json:"data"`
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil || len(body.Gates) != 4 {
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil || len(body.Data.Gates) != 4 {
 		t.Fatalf("bad body: %v %s", err, rr.Body.String())
 	}
 	// super admin toggle → 200
