@@ -23,10 +23,12 @@
 #
 # Host firewall requirements (all TCP):
 #   25   — world-open; remote MTAs deliver bounces/DSNs here.
-#   587  — the japa-api worker egress IP (submission).
-#   993  — the japa-api worker egress IP (bounce polling).
 #   443  — admin IPs only (WebUI + JMAP).
 #   80   — only while ACME/HTTP-01 issues certificates; prefer DNS-01.
+# 587/993 need NO firewall rule when the app shares the Docker `coolify`
+# network — the worker reaches `stalwart:587` / `stalwart:993` internally
+# (the public host mappings below stay as a fallback path for workers on
+# other hosts; scope them to the worker egress IP if you open them).
 #
 # Pin policy: the image tag is a release, not `latest` — bump
 # deliberately (Stalwart's config format has changed across releases).
@@ -45,10 +47,15 @@ services:
     ports:
       - "25:25"     # SMTP — must be world-reachable (DSN delivery)
       - "465:465"   # SMTPS submission (587 is sufficient; kept for clients that require it)
-      - "587:587"   # submission — restrict to the worker egress IP in the host firewall
-      - "993:993"   # IMAPS — bounce poller; restrict to the worker egress IP
-      - "443:443"   # admin WebUI + JMAP — restrict to admin IPs
-      - "127.0.0.1:8080:8080"  # bootstrap wizard — loopback only, always
+      - "587:587"   # submission — internal `coolify` net is preferred; if
+                    # opened publicly, restrict to the worker egress IP
+      - "993:993"   # IMAPS — bounce poller; same: internal `coolify` net or
+                    # restrict to the worker egress IP
+      - "8443:443"  # admin WebUI + JMAP on host :8443 — Coolify's proxy owns
+                    # :443 on the shared host; restrict 8443 to admin IPs
+      - "127.0.0.1:18080:8080"  # bootstrap wizard — loopback only, remapped
+                               # off :8080 (also taken by the Coolify proxy);
+                               # ssh -L 18080:127.0.0.1:18080 <host>
     volumes:
       # /etc/stalwart holds config.json — lose it and the server boots
       # back into the setup wizard. /var/lib/stalwart is the RocksDB
@@ -56,8 +63,22 @@ services:
       # persistent AND backed up; the data volume is the whole server.
       - stalwart-etc:/etc/stalwart
       - stalwart-data:/var/lib/stalwart
+    networks:
+      # `coolify` is the shared network every app container on the
+      # Coolify host already joins — attaching here makes the MTA
+      # reachable as `stalwart:587` (submission) and `stalwart:993`
+      # (IMAPS bounce polling) from japa-api without any public port.
+      coolify:
+        aliases:
+          - stalwart
     # Image carries its own HEALTHCHECK (tries :443 then :8080 during
     # bootstrap) — nothing extra needed here.
+
+networks:
+  # Coolify creates this shared network on the host; we only attach to it.
+  coolify:
+    external: true
+    name: coolify
 
 volumes:
   stalwart-etc:
