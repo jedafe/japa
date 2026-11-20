@@ -83,6 +83,7 @@ import (
 	"github.com/jedafe/japa/internal/forum"
 	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/gamification"
+	"github.com/jedafe/japa/internal/gates"
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/honcho"
@@ -549,6 +550,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// audience resolver so features.Gate and the flags endpoints can apply
 	// group/permission/super_admin overlays per caller.
 	featureChecker.SetAudienceResolver(audienceResolverAdapter{rbac: rbacResolver})
+
+	// Ops access gates (§123): super-admin start/stop toggles for admin
+	// surfaces via the Coolify API. nil service = envs unset = feature off.
+	gatesService, err := gates.New(cfg.CoolifyURL, cfg.CoolifyToken, cfg.AccessGatesJSON)
+	if err != nil {
+		slog.Error("access gates: invalid configuration, feature disabled", "error", err)
+	}
+	gatesHandlers := gates.NewHandlers(gatesService, rbacResolver)
 
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
@@ -4488,6 +4497,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/admin/feature-flags/{flag_name}", featureHandlers.UpdateFeatureFlag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
 				Delete("/admin/feature-flags/{flag_name}", featureHandlers.DeleteFeatureFlag)
+
+			// Ops access gates (§123) — super_admin group membership enforced
+			// inside the handlers; no permission node, so the surface cannot
+			// be delegated through roles.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/admin/access-gates", gatesHandlers.HandleList)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/admin/access-gates/{key}/toggle", gatesHandlers.HandleToggle)
 
 			// Custom field group routes
 			// Read (require auth)

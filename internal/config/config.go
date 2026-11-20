@@ -114,6 +114,9 @@ type Config struct {
 	StockCacheMaxEntries         int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
 	StockHTTPTimeoutSec          int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 30)
 	OwnerEmail                   string // JC_OWNER_EMAIL — email of the platform owner account; grants super_admin on registration and owner-only super_admin lifecycle control (§03 owner amendment)
+	CoolifyURL                   string // JC_COOLIFY_URL — Coolify API base URL for ops access gates (§123); empty disables the feature
+	CoolifyToken                 string // JC_COOLIFY_TOKEN — Coolify API bearer token; server-side only (§123)
+	AccessGatesJSON              string // JC_ACCESS_GATES — JSON array of gate targets [{key,label,kind,uuid,domain}] (§123)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -229,6 +232,9 @@ func Load() (Config, error) {
 		StockCacheMaxEntries:         getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
 		StockHTTPTimeoutSec:          getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 30),
 		OwnerEmail:                   strings.ToLower(strings.TrimSpace(os.Getenv("JC_OWNER_EMAIL"))),
+		CoolifyURL:                   strings.TrimRight(strings.TrimSpace(os.Getenv("JC_COOLIFY_URL")), "/"),
+		CoolifyToken:                 os.Getenv("JC_COOLIFY_TOKEN"),
+		AccessGatesJSON:              os.Getenv("JC_ACCESS_GATES"),
 	}
 
 	if err := applyDefaults(&cfg); err != nil {
