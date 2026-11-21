@@ -427,9 +427,19 @@
 			preview_text: (r.preview_text as string) ?? '',
 			segment: (r.segment as string) ?? 'all',
 			segment_id: (r.segment_id as string) ?? '',
-			scheduled_at: (r.scheduled_at as string) ?? ''
+			scheduled_at: toLocalDatetime(r.scheduled_at as string)
 		};
 		showEditModal = true;
+	}
+
+	// datetime-local inputs need YYYY-MM-DDTHH:mm in local time — the API
+	// returns ISO-8601 UTC, so convert or the field renders blank (F-09).
+	function toLocalDatetime(iso: string | undefined | null): string {
+		if (!iso) return '';
+		const d = new Date(iso);
+		if (isNaN(d.getTime())) return '';
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	}
 
 	async function saveEditCampaign() {
@@ -514,6 +524,20 @@
 			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats');
+		}
+
+		// Campaign tab badge: fetch the total cheaply (page_size=1) on mount —
+		// it previously stayed 0 until the analytics tab was opened.
+		try {
+			const c = await api<{ items: Campaign[]; total: number } | Campaign[]>(
+				'/admin/newsletter/campaigns?page_size=1&offset=0'
+			);
+			if (c.ok && c.data) {
+				stats.campaigns = Array.isArray(c.data) ? c.data.length : (c.data.total ?? 0);
+			}
+		} catch {
+			// Badge-only fetch — a failure leaves the count at 0 without
+			// blocking the page (audit F-09).
 		}
 	}
 
@@ -639,7 +663,7 @@
 					</div>
 				{:else}
 					<div class="flex h-64 items-center justify-center rounded-lg bg-surface">
-						<p class="text-muted">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
+						<p class="text-muted">{t('app.newsletter.analytics_empty', 'No sent campaigns yet — performance charts appear after your first send.')}</p>
 					</div>
 				{/if}
 			</CardContent>
@@ -716,9 +740,9 @@
 <Modal bind:open={showImportModal} title={t('app.newsletter.modal_import_subscribers', 'Import Subscribers')} size="lg">
 	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-muted)">
-			{t('app.newsletter.import_hint', 'Paste email addresses below, one per line. Optionally add a name after a comma: email@example.com, John Doe')}
+			{t('app.newsletter.import_hint', 'Paste email addresses below, one per line.')}
 		</p>
-		<textarea class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="10" bind:value={importText} placeholder={"user1@example.com\nuser2@example.com, Jane Doe\nuser3@example.com"}></textarea>
+		<textarea class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="10" bind:value={importText} placeholder={"user1@example.com\nuser2@example.com\nuser3@example.com"}></textarea>
 		{#if importResult}
 			<div class="rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface)">
 				<p style="color: var(--color-success)">{t('app.newsletter.import_success', 'Imported')}: {importResult.success}</p>
