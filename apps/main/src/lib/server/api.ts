@@ -128,7 +128,7 @@ export function apiContext(event: RequestEvent): ApiContext {
  * Verbatim client-forwarding headers for backend fetches made outside
  * apiContext (feed/well-known proxy endpoints). Spread into the request
  * headers: composed XFF chain (inbound value + observed client, RFC 7239),
- * X-Real-IP, and CF-Connecting-IP when present. The values are never
+ * X-Real-IP, CF-Connecting-IP, and User-Agent when present. The values are never
  * synthesized — the backend's trusted-proxy resolver (internal/clientip,
  * §37) decides their weight and the CDN-edge recovery can tell
  * CDN-transited traffic from direct hits.
@@ -152,6 +152,8 @@ export function forwardingHeaders(
 	if (xff) headers['x-forwarded-for'] = xff;
 	if (inXri?.trim()) headers['x-real-ip'] = inXri.trim();
 	if (inCf?.trim()) headers['cf-connecting-ip'] = inCf.trim();
+	const ua = event.request.headers.get('user-agent');
+	if (ua?.trim()) headers['user-agent'] = ua.trim();
 	return headers;
 }
 
