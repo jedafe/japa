@@ -455,7 +455,7 @@
 		font-size: 0.875rem;
 		font-family: var(--font-sans);
 	}
-	.ef-input:focus { outline: none; border-color: var(--color-primary); }
+	.ef-input:focus { outline: none; border-color: var(--color-primary-text, var(--color-primary)); }
 	.ef-title { font-size: 1.25rem; font-weight: 600; }
 	.ef-mono { font-family: var(--font-mono); font-size: 0.8125rem; }
 	.ef-hint { font-size: 0.75rem; color: var(--color-muted); }

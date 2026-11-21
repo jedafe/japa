@@ -111,7 +111,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
 	.category-title-row {
@@ -126,7 +126,7 @@
 		width: 2.75rem;
 		border-radius: var(--radius-card);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		flex-shrink: 0;
 	}
 	.category-title-body h1 {
@@ -184,11 +184,11 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.doc-card:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 	}
 	.doc-card :global(.doc-icon) { color: var(--color-muted); flex-shrink: 0; }
-	.doc-card:hover :global(.doc-icon) { color: var(--color-primary); }
+	.doc-card:hover :global(.doc-icon) { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-title {
 		font-size: 0.9375rem;
 		font-weight: 600;
@@ -196,9 +196,9 @@
 		flex: 1;
 		min-width: 0;
 	}
-	.doc-card:hover .doc-title { color: var(--color-primary); }
+	.doc-card:hover .doc-title { color: var(--color-primary-text, var(--color-primary)); }
 	:global(.doc-arrow) { color: var(--color-muted); flex-shrink: 0; }
-	.doc-card:hover :global(.doc-arrow) { color: var(--color-primary); }
+	.doc-card:hover :global(.doc-arrow) { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-thumb {
 		width: 56px;
 		height: 40px;

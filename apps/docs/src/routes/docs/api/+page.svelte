@@ -258,7 +258,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.back-link:hover { color: var(--color-primary); }
+	.back-link:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.audience-header h1 {
 		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
@@ -285,7 +285,7 @@
 		text-decoration: none;
 		margin-bottom: 1.5rem;
 		transition: background 0.15s;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.playground-card:hover { background: var(--color-surface-subtle); }
 	.spec-download-card {
@@ -303,7 +303,7 @@
 	}
 	.spec-download-card:hover {
 		background: var(--color-surface-subtle);
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 	}
 	.spec-download-card .pg-title {
 		display: block;
@@ -378,7 +378,7 @@
 		font-size: 0.875rem;
 		outline: none;
 	}
-	.ep-search:focus { border-color: var(--color-primary); }
+	.ep-search:focus { border-color: var(--color-primary-text, var(--color-primary)); }
 	.endpoint-filters :global(.ep-method-select) {
 		width: 9rem;
 		flex-shrink: 0;
@@ -414,11 +414,11 @@
 		text-decoration: none;
 		transition: border-color 0.15s;
 	}
-	.endpoint-item:hover { border-color: var(--color-primary); }
+	.endpoint-item:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.endpoint-cta {
 		font-size: 0.75rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		white-space: nowrap;
 		flex-shrink: 0;
 	}
@@ -469,13 +469,13 @@
 		border-radius: var(--radius);
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-size: 0.8125rem;
 		font-weight: 600;
 		text-decoration: none;
 		transition: border-color 0.15s;
 	}
-	.new-page-link:hover { border-color: var(--color-primary); }
+	.new-page-link:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.cat-section { margin-top: 2rem; }
 	.cat-title {
 		font-family: var(--font-heading, var(--font-sans));
@@ -515,11 +515,11 @@
 		text-decoration: none;
 	}
 	.doc-card-link:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 	}
 	.doc-card-link :global(.doc-link-icon) { color: var(--color-muted); flex-shrink: 0; }
-	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary); }
+	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-title {
 		font-size: 0.9375rem;
 		font-weight: 600;
@@ -528,7 +528,7 @@
 		min-width: 0;
 	}
 	.doc-card-group { display: flex; flex-direction: column; }
-	.doc-card-group:hover { border-color: var(--color-primary); }
+	.doc-card-group:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-head {
 		display: flex;
 		align-items: center;
@@ -537,7 +537,7 @@
 		padding: 1rem 1.125rem;
 		text-decoration: none;
 	}
-	.doc-card-head:hover .doc-card-title { color: var(--color-primary); }
+	.doc-card-head:hover .doc-card-title { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-children {
 		list-style: none;
 		padding: 0.25rem 0.375rem 0.625rem;
@@ -569,7 +569,7 @@
 	.doc-card-head:hover :global(.doc-card-arrow),
 	.doc-card-link:hover :global(.doc-card-arrow),
 	.doc-child-link:hover :global(.doc-child-arrow) {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.unpublished-section .cat-title {
 		display: flex;

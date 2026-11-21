@@ -106,8 +106,8 @@
 		cursor: pointer;
 	}
 	:global(.tab-trigger[data-state="active"]) {
-		color: var(--color-primary);
-		border-bottom-color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
+		border-bottom-color: var(--color-primary-text, var(--color-primary));
 	}
 	:global(.tab-content) { padding-top: 0.25rem; }
 	.tab-empty { color: var(--color-muted); font-size: 0.8125rem; padding: 0.5rem 0; }

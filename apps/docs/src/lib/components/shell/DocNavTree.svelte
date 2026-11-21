@@ -459,7 +459,7 @@
 	}
 	.api-hint {
 		font-size: 0.8125rem;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 	}
 	.api-hint:hover {
@@ -481,7 +481,7 @@
 	}
 	.home-link:hover { color: var(--color-text); background: var(--color-surface-subtle); }
 	.home-link.active {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		border-inline-start: 2px solid var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 	}
@@ -521,7 +521,7 @@
 	.rail-item-img { width: 18px; height: 18px; object-fit: contain; }
 	.rail-item.active {
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 
 	/* Audience / category section rows */
@@ -542,7 +542,7 @@
 		color: var(--color-muted);
 		flex-shrink: 0;
 	}
-	.new-page-btn:hover { background: var(--color-surface-subtle); color: var(--color-primary); }
+	.new-page-btn:hover { background: var(--color-surface-subtle); color: var(--color-primary-text, var(--color-primary)); }
 
 	.section-header {
 		display: flex;
@@ -567,9 +567,9 @@
 		flex-shrink: 0;
 	}
 	.section-header:hover { color: var(--color-text); background: var(--color-surface-subtle); }
-	.section-header:hover :global(.section-icon) { color: var(--color-primary); }
-	.section-header.active { color: var(--color-primary); }
-	.section-header.active :global(.section-icon) { color: var(--color-primary); }
+	.section-header:hover :global(.section-icon) { color: var(--color-primary-text, var(--color-primary)); }
+	.section-header.active { color: var(--color-primary-text, var(--color-primary)); }
+	.section-header.active :global(.section-icon) { color: var(--color-primary-text, var(--color-primary)); }
 	:global(.chevron) { transition: transform 0.15s; flex-shrink: 0; }
 	:global(.chevron.rot) { transform: rotate(180deg); }
 
@@ -613,14 +613,14 @@
 	}
 	.page-link:hover { color: var(--color-text); background: var(--color-surface-subtle); }
 	.page-link.active {
-		color: var(--color-primary);
-		border-inline-start-color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
+		border-inline-start-color: var(--color-primary-text, var(--color-primary));
 		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 		font-weight: 500;
 	}
 	.page-link.sub { padding-inline-start: 2rem; }
 	.page-link.view-all {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-weight: 500;
 	}
 	/* Get Started pins — icon rows, slightly tighter than tree links. */
@@ -632,7 +632,7 @@
 	}
 	.pin-link :global(.pin-icon) { color: var(--color-muted); flex-shrink: 0; }
 	.pin-link:hover :global(.pin-icon), .pin-link.active :global(.pin-icon) {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.pin-label {
 		overflow: hidden;
@@ -682,7 +682,7 @@
 		width: 2rem;
 		border-radius: var(--radius);
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.new-card-title {
 		font-size: 0.875rem;
@@ -701,7 +701,7 @@
 		margin-top: 0.375rem;
 		font-size: 0.8125rem;
 		font-weight: 600;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 	}
 	.new-card-cta:hover { text-decoration: underline; }

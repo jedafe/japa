@@ -630,7 +630,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.back-link:hover { color: var(--color-primary); }
+	.back-link:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.keys-header h1 {
 		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;
@@ -803,7 +803,7 @@
 		color: var(--color-text-subtle);
 		cursor: pointer;
 	}
-	.row-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+	.row-btn:hover { color: var(--color-primary-text, var(--color-primary)); border-color: var(--color-primary-text, var(--color-primary)); }
 	.row-btn.danger { color: var(--method-delete); }
 	.row-btn.danger:hover { border-color: var(--method-delete); }
 
@@ -818,7 +818,7 @@
 		padding: 0.25rem;
 	}
 	.copy-btn.small { padding: 0.125rem; }
-	.copy-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+	.copy-btn:hover { color: var(--color-primary-text, var(--color-primary)); border-color: var(--color-primary-text, var(--color-primary)); }
 
 	.scope-help {
 		margin-top: 2.5rem;
@@ -842,7 +842,7 @@
 	.scope-help dt code {
 		font-family: var(--font-mono);
 		font-size: 0.75rem;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.scope-help dd {
 		margin: 0;
@@ -907,7 +907,7 @@
 		font-size: 0.875rem;
 		outline: none;
 	}
-	.dialog input:focus { border-color: var(--color-primary); }
+	.dialog input:focus { border-color: var(--color-primary-text, var(--color-primary)); }
 	.dialog-actions {
 		display: flex;
 		justify-content: flex-end;

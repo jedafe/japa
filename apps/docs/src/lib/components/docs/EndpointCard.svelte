@@ -202,7 +202,7 @@
 		flex: 1;
 	}
 	.path-param {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-weight: 600;
 	}
 	.auth-badge {
@@ -271,7 +271,7 @@
 	.params-table code {
 		font-family: var(--font-mono);
 		font-size: 0.75rem;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.schema-block, .example-block {
 		font-family: var(--font-mono);
@@ -302,5 +302,5 @@
 		font-size: 0.75rem;
 		cursor: pointer;
 	}
-	.copy-curl-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+	.copy-curl-btn:hover { color: var(--color-primary-text, var(--color-primary)); border-color: var(--color-primary-text, var(--color-primary)); }
 </style>

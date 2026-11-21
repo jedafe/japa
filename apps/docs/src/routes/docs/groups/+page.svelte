@@ -94,7 +94,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
 	h1 {
@@ -126,7 +126,7 @@
 		transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 	}
 	.group-card:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 		transform: translateY(-2px);
 		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-text) 6%, transparent);
 	}
@@ -144,7 +144,7 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.group-card:hover .group-name { color: var(--color-primary); }
+	.group-card:hover .group-name { color: var(--color-primary-text, var(--color-primary)); }
 	.group-desc {
 		font-size: 0.8125rem;
 		color: var(--color-text-subtle);
@@ -159,5 +159,5 @@
 	}
 	.group-count { font-size: 0.75rem; color: var(--color-muted); }
 	:global(.card-arrow) { color: var(--color-muted); transition: transform 0.15s, color 0.15s; }
-	.group-card:hover :global(.card-arrow) { color: var(--color-primary); transform: translateX(2px); }
+	.group-card:hover :global(.card-arrow) { color: var(--color-primary-text, var(--color-primary)); transform: translateX(2px); }
 </style>

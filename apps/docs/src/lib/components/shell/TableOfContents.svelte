@@ -87,8 +87,8 @@
 	}
 	.toc-link:hover { color: var(--color-text); }
 	.toc-link.active {
-		color: var(--color-primary);
-		border-inline-start-color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
+		border-inline-start-color: var(--color-primary-text, var(--color-primary));
 		font-weight: 500;
 	}
 	.toc-link.level-3 { padding-inline-start: 1.5rem; font-size: 0.75rem; }

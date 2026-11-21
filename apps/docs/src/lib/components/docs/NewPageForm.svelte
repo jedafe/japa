@@ -435,7 +435,7 @@
 		margin-bottom: 1.5rem;
 	}
 	.crumb { color: var(--color-muted); text-decoration: none; }
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
 
@@ -452,7 +452,7 @@
 		width: 2.75rem;
 		border-radius: var(--radius-card);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		flex-shrink: 0;
 	}
 	.page-header h1 {
@@ -503,7 +503,7 @@
 		font-size: 0.875rem;
 		font-family: var(--font-sans);
 	}
-	.field-input:focus { outline: none; border-color: var(--color-primary); }
+	.field-input:focus { outline: none; border-color: var(--color-primary-text, var(--color-primary)); }
 	.field-mono { font-family: var(--font-mono); font-size: 0.8125rem; }
 	.field-hint {
 		font-size: 0.75rem;

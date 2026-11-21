@@ -348,7 +348,7 @@
 		margin-inline-start: auto;
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 		padding: 0.25rem 0.625rem;
 		border-radius: var(--radius);
@@ -420,7 +420,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	/* Mobile TOC — hidden on desktop where the right sidebar shows it. */
 	.mobile-toc { display: none; }
@@ -459,7 +459,7 @@
 			color: var(--color-text-subtle);
 			text-decoration: none;
 		}
-		.mobile-toc a:hover { color: var(--color-primary); }
+		.mobile-toc a:hover { color: var(--color-primary-text, var(--color-primary)); }
 		.mobile-toc li.level-3 a { padding-inline-start: 1rem; font-size: 0.8125rem; }
 	}
 	.prev-next {
@@ -480,7 +480,7 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.pn-card:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 	}
 	.pn-placeholder { visibility: hidden; }
@@ -494,7 +494,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
-	.pn-card:hover .pn-label { color: var(--color-primary); }
+	.pn-card:hover .pn-label { color: var(--color-primary-text, var(--color-primary)); }
 	.pn-next .pn-label { justify-content: flex-end; }
 	.pn-title {
 		font-size: 0.9375rem;

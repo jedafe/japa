@@ -126,7 +126,7 @@
 {#if bar}
 	{@const BarIcon = nextActionIcon(bar.icon)}
 	<div class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-primary)]/8 px-4 py-2 text-sm" role="region" aria-label={t('a11y.suggestion', 'Suggestion')}>
-		<BarIcon size={15} class="shrink-0 text-[var(--color-primary)]" />
+		<BarIcon size={15} class="shrink-0 text-[var(--color-primary-text,var(--color-primary))]" />
 		<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">
 			<strong class="font-medium">{bar.title}</strong>
 			{#if bar.body}<span class="ms-1 hidden text-[var(--color-text-muted)] sm:inline">{bar.body}</span>{/if}
@@ -164,7 +164,7 @@
 					</Dialog.Close>
 				</div>
 				<div class="px-5 pb-5 pt-4">
-					<p class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+					<p class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-primary-text,var(--color-primary))]">
 						{popup.badge || t('nextaction.next_step', 'Your next step')}
 					</p>
 					<Dialog.Title class="mt-2 text-lg font-semibold leading-snug text-[var(--color-text)]">{popup.title}</Dialog.Title>
@@ -201,7 +201,7 @@
 		<div class="flex items-start justify-between gap-3">
 			<div class="min-w-0">
 				<p class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-					<InlineIcon size={15} class="shrink-0 text-[var(--color-primary)]" />{inlineAction.title}
+					<InlineIcon size={15} class="shrink-0 text-[var(--color-primary-text,var(--color-primary))]" />{inlineAction.title}
 				</p>
 				{#if inlineAction.body}<p class="mt-1 text-sm text-[var(--color-text-muted)]">{inlineAction.body}</p>{/if}
 				<a href={inlineAction.cta_url} onclick={() => cta(inlineAction!)} class="mt-2 inline-block rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]">{inlineAction.cta_label}</a>

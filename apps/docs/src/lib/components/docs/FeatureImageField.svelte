@@ -117,8 +117,8 @@
 		cursor: pointer;
 	}
 	.fif-choose:hover:not(:disabled) {
-		border-color: var(--color-primary);
-		color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.fif-choose:disabled {
 		opacity: 0.5;

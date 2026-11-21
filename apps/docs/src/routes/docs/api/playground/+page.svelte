@@ -463,7 +463,7 @@
 		text-decoration: none;
 		white-space: nowrap;
 	}
-	.pg-back:hover { color: var(--color-primary); }
+	.pg-back:hover { color: var(--color-primary-text, var(--color-primary)); }
 
 	.pg-warning {
 		display: flex;
@@ -520,7 +520,7 @@
 		font-size: 0.875rem;
 		outline: none;
 	}
-	input:focus { border-color: var(--color-primary); }
+	input:focus { border-color: var(--color-primary-text, var(--color-primary)); }
 	.field-label { display: block; font-size: 0.75rem; color: var(--color-muted); margin-bottom: 0.25rem; }
 	.body-header {
 		display: flex;
@@ -542,7 +542,7 @@
 		font-size: 0.75rem;
 		cursor: pointer;
 	}
-	.format-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+	.format-btn:hover { color: var(--color-primary-text, var(--color-primary)); border-color: var(--color-primary-text, var(--color-primary)); }
 	.body-disabled {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
@@ -574,7 +574,7 @@
 	.toggle-label input { width: auto; }
 	.manage-keys-link {
 		font-size: 0.75rem;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 		white-space: nowrap;
 	}
@@ -612,7 +612,7 @@
 		gap: 0.375rem;
 		font-size: 0.75rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--color-primary);
@@ -645,7 +645,7 @@
 		font-size: 0.75rem;
 		text-align: start;
 	}
-	.history-item:hover { border-color: var(--color-primary); }
+	.history-item:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.history-url {
 		font-family: var(--font-mono);
 		flex: 1;
@@ -683,7 +683,7 @@
 		gap: 0.25rem;
 		background: none;
 		border: none;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-size: 0.8125rem;
 		cursor: pointer;
 		padding: 0;
@@ -742,7 +742,7 @@
 		background: var(--color-bg);
 		cursor: pointer;
 	}
-	.quick-chip:hover { border-color: var(--color-primary); }
+	.quick-chip:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.quick-path {
 		font-family: var(--font-mono);
 		font-size: 0.75rem;

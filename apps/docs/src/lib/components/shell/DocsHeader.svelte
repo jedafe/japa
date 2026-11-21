@@ -118,7 +118,7 @@
 					<button
 						type="button"
 						{...props}
-						class="select-btn"
+						class="select-btn version-select"
 						aria-label={`${t('header.version')}: ${versions[0].label}`}
 					>
 						<span class="select-label">{versions[0].label}</span>
@@ -152,7 +152,7 @@
 				{#each langList as lang (lang)}
 					<MenuItem onSelect={() => switchLanguage(lang)}>
 						<span class="flex-1">{localeLabel(lang)}</span>
-						{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+						{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary-text,var(--color-primary))]" />{/if}
 					</MenuItem>
 				{/each}
 			</Menu>
@@ -252,7 +252,7 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.search-field:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 	}
 	.search-label {
 		flex: 1;
@@ -329,5 +329,13 @@
 		/* Wordmark + full control cluster exceeds the row anywhere below
 		   ~502px — keep the mark, drop the text for the whole mobile band. */
 		.brand-name { display: none; }
+	}
+
+	@media (max-width: 479px) {
+		/* Left (menu + logo ~135px) + right cluster (~252px) exceed ~347px of
+		   inner header width — everything is flex-shrink:0, so the row
+		   overflows. The version switcher is the lowest-value control on
+		   phones; drop it (language/search/theme/sign-in stay). */
+		.version-select { display: none; }
 	}
 </style>

@@ -211,7 +211,7 @@
 		font-size: 0.9375rem;
 		outline: none;
 	}
-	.input-wrap input:focus { border-color: var(--color-primary); }
+	.input-wrap input:focus { border-color: var(--color-primary-text, var(--color-primary)); }
 	.submit-btn {
 		padding: 0.625rem 1.25rem;
 		border: 1px solid var(--color-border);
@@ -222,7 +222,7 @@
 		font-weight: 500;
 		cursor: pointer;
 	}
-	.submit-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+	.submit-btn:hover { border-color: var(--color-primary-text, var(--color-primary)); color: var(--color-primary-text, var(--color-primary)); }
 
 	.filter-row {
 		display: flex;
@@ -270,7 +270,7 @@
 	.chip.active {
 		background: var(--color-primary);
 		color: var(--color-primary-contrast);
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 	}
 
 	.hint {
@@ -332,14 +332,14 @@
 		background: var(--color-surface);
 		text-decoration: none;
 	}
-	.result:hover { border-color: var(--color-primary); }
+	.result:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.result-title { font-size: 0.9375rem; font-weight: 500; color: var(--color-text); }
 	.result-meta { display: flex; align-items: center; gap: 0.5rem; }
 	.result-audience {
 		font-size: 0.6875rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-weight: 600;
 	}
 	.result-excerpt {

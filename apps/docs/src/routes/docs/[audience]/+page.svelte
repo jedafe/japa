@@ -221,7 +221,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
 	.audience-title-row {
@@ -236,7 +236,7 @@
 		width: 2.75rem;
 		border-radius: var(--radius-card);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		flex-shrink: 0;
 	}
 	.audience-title-body { min-width: 0; }
@@ -270,13 +270,13 @@
 		border-radius: var(--radius);
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		font-size: 0.8125rem;
 		font-weight: 600;
 		text-decoration: none;
 		transition: border-color 0.15s;
 	}
-	.new-page-link:hover { border-color: var(--color-primary); }
+	.new-page-link:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.created-notice {
 		margin: 0 0 1.5rem;
 		padding: 0.75rem 1rem;
@@ -333,11 +333,11 @@
 		text-decoration: none;
 	}
 	.doc-card-link:hover {
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 	}
 	.doc-card-link :global(.doc-link-icon) { color: var(--color-muted); flex-shrink: 0; }
-	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary); }
+	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-title {
 		font-size: 0.9375rem;
 		font-weight: 600;
@@ -346,7 +346,7 @@
 		min-width: 0;
 	}
 	.doc-card-group { display: flex; flex-direction: column; }
-	.doc-card-group:hover { border-color: var(--color-primary); }
+	.doc-card-group:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-head {
 		display: flex;
 		align-items: center;
@@ -355,7 +355,7 @@
 		padding: 1rem 1.125rem;
 		text-decoration: none;
 	}
-	.doc-card-head:hover .doc-card-title { color: var(--color-primary); }
+	.doc-card-head:hover .doc-card-title { color: var(--color-primary-text, var(--color-primary)); }
 	.doc-card-children {
 		list-style: none;
 		padding: 0.25rem 0.375rem 0.625rem;
@@ -387,7 +387,7 @@
 	.doc-card-head:hover :global(.doc-card-arrow),
 	.doc-card-link:hover :global(.doc-card-arrow),
 	.doc-child-link:hover :global(.doc-child-arrow) {
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.unpublished-section .cat-title {
 		display: flex;

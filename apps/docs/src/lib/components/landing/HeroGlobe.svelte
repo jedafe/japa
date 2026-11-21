@@ -72,7 +72,7 @@
 		border-radius: 50%;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		box-shadow: 0 4px 14px rgb(0 0 0 / 0.08);
 	}
 	.float-card {
@@ -98,7 +98,7 @@
 		width: 1.5rem;
 		border-radius: var(--radius);
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.fc-api { top: 8%; inset-inline-start: 0; animation-delay: 0s; }
 	.fc-members { top: 14%; inset-inline-end: -4%; animation-delay: 1.5s; }

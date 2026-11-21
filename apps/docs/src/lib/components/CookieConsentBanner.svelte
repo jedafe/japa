@@ -134,10 +134,10 @@
 				class="flex w-full max-w-2xl flex-col gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
 			>
 				<div class="flex items-start gap-2.5">
-					<Cookie size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+					<Cookie size={18} class="mt-0.5 shrink-0 text-[var(--color-primary-text,var(--color-primary))]" />
 					<p class="text-sm leading-snug text-[var(--color-muted)]">
 						{t('cookies.banner.customize_body', 'Choose which optional cookies we may use.')}
-						<a href={policyUrl()} class="text-[var(--color-primary)] underline underline-offset-2 hover:opacity-80">
+						<a href={policyUrl()} class="text-[var(--color-primary-text,var(--color-primary))] underline underline-offset-2 hover:opacity-80">
 							{t('cookies.banner.learn_more', 'Learn more')}
 						</a>
 					</p>
@@ -219,13 +219,13 @@
 				class="flex w-full max-w-2xl flex-col gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg sm:flex-row sm:items-center"
 			>
 				<div class="flex min-w-0 flex-1 items-start gap-2.5">
-					<Cookie size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+					<Cookie size={18} class="mt-0.5 shrink-0 text-[var(--color-primary-text,var(--color-primary))]" />
 					<p class="text-sm leading-snug text-[var(--color-muted)]">
 						{t(
 							'cookies.banner.body',
 							'We use cookies to keep you signed in and remember your preferences, plus optional analytics that help us improve the platform.'
 						)}
-						<a href={policyUrl()} class="text-[var(--color-primary)] underline underline-offset-2 hover:opacity-80">
+						<a href={policyUrl()} class="text-[var(--color-primary-text,var(--color-primary))] underline underline-offset-2 hover:opacity-80">
 							{t('cookies.banner.learn_more', 'Learn more')}
 						</a>
 					</p>

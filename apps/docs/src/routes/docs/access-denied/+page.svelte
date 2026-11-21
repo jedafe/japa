@@ -118,7 +118,7 @@
 	.btn.primary {
 		background: var(--color-primary);
 		color: var(--color-primary-contrast);
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 	}
 	.btn.primary:hover { background: var(--color-primary-hover); }
 	.accessible {
@@ -150,5 +150,5 @@
 		font-size: 0.875rem;
 		text-transform: capitalize;
 	}
-	.accessible a:hover { background: var(--color-surface-subtle); color: var(--color-primary); }
+	.accessible a:hover { background: var(--color-surface-subtle); color: var(--color-primary-text, var(--color-primary)); }
 </style>

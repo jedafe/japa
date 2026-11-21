@@ -181,7 +181,7 @@
 			{#each langList as lang (lang)}
 				<MenuItem onSelect={() => switchLanguage(lang)}>
 					<span class="flex-1">{localeLabel(lang)}</span>
-					{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+					{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary-text,var(--color-primary))]" />{/if}
 				</MenuItem>
 			{/each}
 		</Menu>
@@ -206,7 +206,7 @@
 	{#if newsletterEnabled}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div class="mb-3 flex items-center gap-2">
-				<Mail size={18} class="text-[var(--color-primary)]" />
+				<Mail size={18} class="text-[var(--color-primary-text,var(--color-primary))]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter', 'Subscribe')}</h2>
 			</div>
 			{#if typeof widgetProps.description === 'string' && widgetProps.description}
@@ -246,7 +246,7 @@
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			{#if title}
 				<div class="mb-3 flex items-center gap-2">
-					<Share2 size={18} class="text-[var(--color-primary)]" />
+					<Share2 size={18} class="text-[var(--color-primary-text,var(--color-primary))]" />
 					<h2 class="text-sm font-medium text-[var(--color-text)]">{title}</h2>
 				</div>
 			{/if}
@@ -274,7 +274,7 @@
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
 				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
 				: ctaVariant === 'outline'
-					? 'border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
+					? 'border border-[var(--color-primary)] text-[var(--color-primary-text,var(--color-primary))] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
 					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 		>
 			<MousePointerClick size={16} />

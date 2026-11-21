@@ -231,9 +231,9 @@
 		background-color: var(--color-surface-subtle);
 	}
 	:global(.jc-tour .driver-popover-next-btn) {
-		background-color: var(--color-primary);
+		background-color: var(--color-primary-text, var(--color-primary));
 		color: var(--color-primary-contrast);
-		border-color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
 	}
 	:global(.jc-tour .driver-popover-next-btn:hover),
 	:global(.jc-tour .driver-popover-next-btn:focus) {

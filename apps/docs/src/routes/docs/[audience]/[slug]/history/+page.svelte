@@ -277,7 +277,7 @@
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.crumb:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary-text, var(--color-primary)); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); }
 	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
 	.history-header {
@@ -390,7 +390,7 @@
 		font-size: 0.6875rem;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 		padding: 0.125rem 0.5rem;
 		border-radius: 4px;
@@ -440,7 +440,7 @@
 		font-size: 0.75rem;
 		cursor: pointer;
 	}
-	.action-btn:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+	.action-btn:hover:not(:disabled) { border-color: var(--color-primary-text, var(--color-primary)); color: var(--color-primary-text, var(--color-primary)); }
 	.action-btn.danger:hover:not(:disabled) {
 		border-color: var(--color-danger, #dc2626);
 		color: var(--color-danger, #dc2626);
@@ -473,7 +473,7 @@
 	}
 	.pager-link {
 		font-size: 0.8125rem;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 	}
 	.pager-status {

@@ -199,8 +199,8 @@
 	}
 	.vote-btn:hover { border-color: var(--color-border-input-hover); color: var(--color-text); }
 	.vote-btn.active {
-		border-color: var(--color-primary);
-		color: var(--color-primary);
+		border-color: var(--color-primary-text, var(--color-primary));
+		color: var(--color-primary-text, var(--color-primary));
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 	}
 	.btn-count {
@@ -220,7 +220,7 @@
 	.vote-thanks {
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 	}
 	.signin-link {
 		display: inline-flex;
@@ -228,13 +228,13 @@
 		gap: 0.375rem;
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text, var(--color-primary));
 		text-decoration: none;
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 	}
-	.signin-link:hover { border-color: var(--color-primary); }
+	.signin-link:hover { border-color: var(--color-primary-text, var(--color-primary)); }
 	.reviewed {
 		margin: 0.75rem 0 0;
 		font-size: 0.75rem;
