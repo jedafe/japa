@@ -150,6 +150,12 @@ type CreateGuideInput struct {
 // UpdateGuideInput holds the mutable fields for updating a housing guide.
 // Only non-nil/zero-value-applicable fields are applied by the caller.
 type UpdateGuideInput struct {
+	DestinationSpaceID pgtype.UUID
+	CitySpaceID        pgtype.UUID
+	// ClearCitySpaceID sets city_space_id = NULL (demote to a
+	// country-level row) — a NULL-able column can't express "clear"
+	// through CitySpaceID alone.
+	ClearCitySpaceID     bool
 	AccommodationType    *string
 	SearchPlatforms      []byte
 	LandlordRequirements *string
@@ -453,6 +459,20 @@ func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, input UpdateGui
 		args   []any
 		argIdx = 1
 	)
+
+	if input.DestinationSpaceID.Valid {
+		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		args = append(args, input.DestinationSpaceID)
+		argIdx++
+	}
+
+	if input.ClearCitySpaceID {
+		sets = append(sets, "city_space_id = NULL")
+	} else if input.CitySpaceID.Valid {
+		sets = append(sets, fmt.Sprintf("city_space_id = $%d", argIdx))
+		args = append(args, input.CitySpaceID)
+		argIdx++
+	}
 
 	if input.AccommodationType != nil {
 		sets = append(sets, fmt.Sprintf("accommodation_type = $%d", argIdx))

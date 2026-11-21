@@ -79,6 +79,11 @@ type CreateGuideRequest struct {
 // UpdateGuideRequest is the request body for PATCH /admin/housing-guides/:id.
 // All fields are optional; only provided fields are applied.
 type UpdateGuideRequest struct {
+	DestinationSpaceID *string `json:"destination_space_id"`
+	// city_space_id uses the same clear semantics as last_verified_at:
+	// absent = untouched, "" = demote to a country-level row (NULL),
+	// a UUID = retarget the city.
+	CitySpaceID          *string         `json:"city_space_id"`
 	AccommodationType    *string         `json:"accommodation_type"`
 	SearchPlatforms      json.RawMessage `json:"search_platforms"`
 	LandlordRequirements *string         `json:"landlord_requirements"`
@@ -655,8 +660,14 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 	// Publishing via PATCH would bypass the HITL reviewer stamps and the
 	// last_verified_at verification date that approve sets — force the
 	// lifecycle through the approve endpoint (ADR-088, ecaguide precedent).
+	// 'rejected' is gated for the same reason: RejectGuide stamps the
+	// reviewer and notes; a bare PATCH would record a review outcome
+	// with no reviewer.
 	if input.Status != nil && *input.Status == StatusPublished {
 		return GuideDTO{}, fmt.Errorf("%w: publishing requires PATCH /admin/housing-guides/{id}/approve", errpkg.ErrInvalid)
+	}
+	if input.Status != nil && *input.Status == StatusRejected {
+		return GuideDTO{}, fmt.Errorf("%w: rejecting requires PATCH /admin/housing-guides/{id}/reject", errpkg.ErrInvalid)
 	}
 
 	if input.Status != nil && !validGuideStatus(*input.Status) {
@@ -676,6 +687,27 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 		AIModel:              input.AIModel,
 		AIPromptHash:         input.AIPromptHash,
 		ScamCategories:       input.ScamCategories,
+	}
+
+	if input.DestinationSpaceID != nil {
+		var destSpaceID pgtype.UUID
+		if err := destSpaceID.Scan(*input.DestinationSpaceID); err != nil {
+			return GuideDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
+		}
+		storeInput.DestinationSpaceID = destSpaceID
+	}
+
+	if input.CitySpaceID != nil {
+		v := strings.TrimSpace(*input.CitySpaceID)
+		if v == "" {
+			storeInput.ClearCitySpaceID = true
+		} else {
+			var citySpaceID pgtype.UUID
+			if err := citySpaceID.Scan(v); err != nil {
+				return GuideDTO{}, fmt.Errorf("%w: invalid city_space_id", errpkg.ErrInvalid)
+			}
+			storeInput.CitySpaceID = citySpaceID
+		}
 	}
 
 	if input.LastVerifiedAt != nil {
@@ -716,10 +748,14 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 			return GuideDTO{}, pgx.ErrNoRows
 		}
 
-		// Changing accommodation_type can collide with an existing
-		// natural key (destination × city × type is unique).
+		// Changing accommodation_type/destination/city can collide with
+		// an existing natural key (destination × city × type is unique).
 		if errpkg.IsUniqueViolation(err) {
 			return GuideDTO{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type", errpkg.ErrDuplicate)
+		}
+
+		if errpkg.IsFKViolation(err) {
+			return GuideDTO{}, fmt.Errorf("%w: destination_space_id or city_space_id does not reference an existing space", errpkg.ErrInvalid)
 		}
 
 		return GuideDTO{}, fmt.Errorf("housingguide: update: %w", err)

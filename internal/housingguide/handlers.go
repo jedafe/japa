@@ -143,6 +143,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accommodationType := r.URL.Query().Get("type")
+	if accommodationType != "" && !validAccommodationType(accommodationType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "Invalid accommodation type")
+		return
+	}
+
 	page, limit := parsePageParams(r)
 
 	guides, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, accommodationType, page, limit)
@@ -216,7 +221,17 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
+	if status != "" && !validGuideStatus(status) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid status filter")
+		return
+	}
+
 	accommodationType := r.URL.Query().Get("type")
+	if accommodationType != "" && !validAccommodationType(accommodationType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "Invalid accommodation type filter")
+		return
+	}
+
 	q := r.URL.Query().Get("q")
 
 	var destSpaceID pgtype.UUID
