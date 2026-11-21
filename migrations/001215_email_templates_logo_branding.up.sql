@@ -30,7 +30,7 @@ SET html_body = replace(
 -- row is the branded shell. Idempotent on slug.
 
 INSERT INTO email_templates (type, name, slug, subject, html_body, plain_text_body, variables, is_active)
-SELECT 'notification', 'Notification', '{{.Title}}',
+SELECT 'notification', 'Notification', 'notification', '{{.Title}}',
  '<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -86,7 +86,7 @@ WHERE NOT EXISTS (SELECT 1 FROM email_templates WHERE slug = 'notification');
 -- Idempotent on slug.
 
 INSERT INTO email_templates (type, name, slug, subject, html_body, plain_text_body, variables, is_active)
-SELECT 'community_digest', 'Community Digest', 'Weekly Community Digest — {{.SiteName}}',
+SELECT 'community_digest', 'Community Digest', 'community_digest', 'Weekly Community Digest — {{.SiteName}}',
  '<!DOCTYPE html>
 <html lang="en">
 <head>
