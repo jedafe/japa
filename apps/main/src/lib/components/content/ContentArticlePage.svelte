@@ -482,24 +482,6 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			</div>
 		{/if}
 
-		<!-- §97 editorial→tool cross-link: attestation guides carry a CTA into
-		     the interactive pathway tool, deep-linked via pathway_id or the
-		     corridor fields. -->
-		{#if attestationToolHref}
-			<div class="mt-4">
-				<a
-					href={attestationToolHref}
-					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
-				>
-					<Stamp size={18} />
-					{t('attestation_guide.open_tool', 'Open the interactive attestation tool')}
-				</a>
-				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
-					{t('attestation_guide.open_tool_desc', 'Check live fees, turnaround times, and community-verified updates for your corridor.')}
-				</p>
-			</div>
-		{/if}
-
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if article.author_name}
 				{@const authorName = article.author_name}
@@ -661,6 +643,25 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{:else}
 			<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
 				{@html bodyToc.html}
+			</div>
+		{/if}
+
+		<!-- §97 editorial→tool cross-link: attestation guides carry a CTA into
+		     the interactive pathway tool, deep-linked via pathway_id or the
+		     corridor fields. It sits after the body, leading into the
+		     pathway steps card below. -->
+		{#if attestationToolHref}
+			<div class="mt-8">
+				<a
+					href={attestationToolHref}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<Stamp size={18} />
+					{t('attestation_guide.open_tool', 'Open the interactive attestation tool')}
+				</a>
+				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+					{t('attestation_guide.open_tool_desc', 'Check live fees, turnaround times, and community-verified updates for your corridor.')}
+				</p>
 			</div>
 		{/if}
 
