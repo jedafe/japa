@@ -425,14 +425,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.UpdateGuide(r.Context(), id, input); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
-			return
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("ecaguide: update failed", "id", id, "error", err)
 		}
-
-		slog.Error("ecaguide: update failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update guide")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -540,7 +536,13 @@ func (h *Handlers) HandleAdminModerateUpdate(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		errpkg.WriteError(w, http.StatusBadRequest, "moderate_failed", err.Error())
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.HandleServiceError(w, err)
+			return
+		}
+
+		slog.Error("ecaguide: moderate update failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "moderate_failed", "Failed to moderate update")
 
 		return
 	}
@@ -709,14 +711,10 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.service.UpdateProvider(r.Context(), id, input); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Provider not found")
-			return
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("ecaguide: update provider failed", "id", id, "error", err)
 		}
-
-		slog.Error("ecaguide: update provider failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update provider")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

@@ -289,6 +289,18 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 	return s.store.GetProfessionBySlug(ctx, slug)
 }
 
+// validPathwayStatuses is the credential_pathways.status enum minus
+// 'published' — publication requires the approve endpoint; the column
+// has no CHECK constraint so service-side validation is the only guard.
+var validPathwayStatuses = map[string]bool{
+	StatusDraft:    true,
+	StatusAIDraft:  true,
+	StatusPending:  true,
+	StatusRejected: true,
+}
+
+func validPathwayStatus(s string) bool { return validPathwayStatuses[s] }
+
 // validProfessionCategories mirrors the taxonomy the admin form and
 // the seed use — anything else would land as an unfilterable
 // free-text category (the column has no CHECK constraint).
@@ -486,15 +498,21 @@ func (s *Service) GetPathway(ctx context.Context, id pgtype.UUID) (PathwayDetail
 // (credential_checker.manage permission checked at route level).
 func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (PathwayDTO, error) {
 	if req.RegulatoryBody == "" {
-		return PathwayDTO{}, errors.New("regulatory_body is required")
+		return PathwayDTO{}, fmt.Errorf("%w: regulatory_body is required", errpkg.ErrInvalid)
 	}
 
 	if req.PathwayDescription == "" {
-		return PathwayDTO{}, errors.New("pathway_description is required")
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_description is required", errpkg.ErrInvalid)
 	}
 
 	if req.PathwayType == "" {
-		return PathwayDTO{}, errors.New("pathway_type is required")
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_type is required", errpkg.ErrInvalid)
+	}
+
+	// pathway_type is unconstrained text — an out-of-enum value would
+	// store fine but be unreachable via any filter (§94 enum).
+	if !validPathwayTypes[strings.ToLower(strings.TrimSpace(req.PathwayType))] {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_type must be one of direct, bridging_exam, supervised_practice, full_requalification", errpkg.ErrInvalid)
 	}
 
 	if len(req.PathwaySteps) > 0 && !isJSONArray(req.PathwaySteps) {
@@ -507,6 +525,10 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 		return PathwayDTO{}, fmt.Errorf("%w: publishing requires the approve endpoint", errpkg.ErrInvalid)
 	}
 
+	if req.Status != "" && !validPathwayStatus(req.Status) {
+		return PathwayDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, rejected", errpkg.ErrInvalid)
+	}
+
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
 		return PathwayDTO{}, fmt.Errorf("%w: invalid issuing_space_id", errpkg.ErrInvalid)
@@ -515,6 +537,10 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
 		return PathwayDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
+	}
+
+	if issuingSpaceID == destSpaceID {
+		return PathwayDTO{}, fmt.Errorf("%w: issuing and destination must differ", errpkg.ErrInvalid)
 	}
 
 	input := CreatePathwayInput{
@@ -569,6 +595,11 @@ func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (
 
 	id, err := s.store.CreatePathway(ctx, input)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return PathwayDTO{}, fmt.Errorf("%w: a pathway already exists for this profession/corridor", errpkg.ErrAlreadyExists)
+		}
+
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: create pathway: %w", err)
 	}
 
@@ -591,8 +622,16 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 		return PathwayDTO{}, fmt.Errorf("%w: publishing requires POST /admin/credentials/{id}/approve", errpkg.ErrInvalid)
 	}
 
+	if req.Status != nil && !validPathwayStatus(*req.Status) {
+		return PathwayDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, rejected", errpkg.ErrInvalid)
+	}
+
 	if req.PathwaySteps != nil && !isJSONArray(*req.PathwaySteps) {
 		return PathwayDTO{}, fmt.Errorf("%w: pathway_steps must be a JSON array", errpkg.ErrInvalid)
+	}
+
+	if req.PathwayType != nil && !validPathwayTypes[strings.ToLower(strings.TrimSpace(*req.PathwayType))] {
+		return PathwayDTO{}, fmt.Errorf("%w: pathway_type must be one of direct, bridging_exam, supervised_practice, full_requalification", errpkg.ErrInvalid)
 	}
 
 	input := UpdatePathwayInput{
@@ -651,6 +690,10 @@ func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdateP
 	if err := s.store.UpdatePathway(ctx, id, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return PathwayDTO{}, fmt.Errorf("%w: a pathway already exists for this profession/corridor", errpkg.ErrAlreadyExists)
 		}
 
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: update pathway: %w", err)

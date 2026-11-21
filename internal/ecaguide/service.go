@@ -376,6 +376,10 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 		return nil, fmt.Errorf("%w: publishing requires the approve endpoint", errpkg.ErrInvalid)
 	}
 
+	if in.Status != "" && !validGuideStatus(in.Status) {
+		return nil, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, rejected", errpkg.ErrInvalid)
+	}
+
 	row := GuideRow{
 		Purpose: in.Purpose,
 		Status:  orDefault(in.Status, StatusDraft),
@@ -407,6 +411,11 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 
 	id, err := s.store.CreateGuide(ctx, row)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, fmt.Errorf("%w: a guide already exists for this destination/provider/purpose", errpkg.ErrAlreadyExists)
+		}
+
 		return nil, err
 	}
 
@@ -423,6 +432,10 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideRequest) error {
 	if in.Status == StatusPublished {
 		return fmt.Errorf("%w: publishing requires POST /admin/eca-guides/{id}/approve", errpkg.ErrInvalid)
+	}
+
+	if in.Status != "" && !validGuideStatus(in.Status) {
+		return fmt.Errorf("%w: status must be one of draft, ai_draft, pending, rejected", errpkg.ErrInvalid)
 	}
 
 	if in.Purpose != "" && !validPurpose(in.Purpose) {
@@ -458,6 +471,11 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 	}
 
 	if err := s.store.UpdateGuide(ctx, id, row); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("%w: a guide already exists for this destination/provider/purpose", errpkg.ErrAlreadyExists)
+		}
+
 		return err
 	}
 
@@ -502,7 +520,7 @@ func (s *Service) AdminListUpdates(ctx context.Context, status, sort, q string, 
 // ModerateUpdate approves or rejects a community update.
 func (s *Service) ModerateUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
 	if status != StatusApproved && status != StatusRejected {
-		return errors.New("status must be approved or rejected")
+		return fmt.Errorf("%w: status must be approved or rejected", errpkg.ErrInvalid)
 	}
 
 	return s.store.ModerateUpdate(ctx, id, reviewerID, status)
@@ -651,6 +669,19 @@ var validPurposes = map[string]bool{
 
 func validPurpose(p string) bool { return validPurposes[p] }
 
+// validGuideStatus is the eca_guides.status enum minus 'published' —
+// publication requires the approve endpoint (HITL stamps + index
+// enqueue); the status column has no CHECK constraint so service-side
+// validation is the only guard.
+var validGuideStatuses = map[string]bool{
+	StatusDraft:    true,
+	StatusAIDraft:  true,
+	StatusPending:  true,
+	StatusRejected: true,
+}
+
+func validGuideStatus(s string) bool { return validGuideStatuses[s] }
+
 // purposeList renders the enum for validation error messages and AI
 // prompts — single source so a new value never drifts the strings.
 func purposeList() string {
@@ -724,6 +755,8 @@ func (s *Service) AdminListProviders(ctx context.Context, sort, q string, page, 
 
 // CreateProvider inserts a provider (admin).
 func (s *Service) CreateProvider(ctx context.Context, in ProviderRequest) (ProviderDTO, error) {
+	in.Slug = strings.ToLower(strings.TrimSpace(in.Slug))
+	in.Name = strings.TrimSpace(in.Name)
 	if in.Slug == "" || in.Name == "" {
 		return ProviderDTO{}, fmt.Errorf("%w: slug and name are required", errpkg.ErrInvalid)
 	}
@@ -740,6 +773,11 @@ func (s *Service) CreateProvider(ctx context.Context, in ProviderRequest) (Provi
 
 	id, err := s.store.CreateProvider(ctx, in.Slug, in.Name, website, active)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ProviderDTO{}, fmt.Errorf("%w: a provider with this slug already exists", errpkg.ErrAlreadyExists)
+		}
+
 		return ProviderDTO{}, err
 	}
 
@@ -763,7 +801,17 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, in Provide
 		active = pgtype.Bool{Bool: *in.IsActive, Valid: true}
 	}
 
-	return s.store.UpdateProvider(ctx, id, in.Slug, in.Name, website, active)
+	slug := strings.ToLower(strings.TrimSpace(in.Slug))
+	if err := s.store.UpdateProvider(ctx, id, slug, strings.TrimSpace(in.Name), website, active); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("%w: a provider with this slug already exists", errpkg.ErrAlreadyExists)
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // DeleteProvider removes a provider with no referencing guides.

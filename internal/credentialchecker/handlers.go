@@ -360,14 +360,10 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 
 	pathway, err := h.service.CreatePathway(r.Context(), input)
 	if err != nil {
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) {
+			slog.Error("credentialchecker: admin create failed", "error", err)
 		}
-
-		slog.Error("credentialchecker: admin create failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create pathway")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -513,19 +509,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 	pathway, err := h.service.UpdatePathway(r.Context(), id, input)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
-			return
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("credentialchecker: admin update failed", "error", err)
 		}
-
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
-		}
-
-		slog.Error("credentialchecker: admin update failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update pathway")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
