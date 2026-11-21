@@ -75,7 +75,11 @@
         </div>
       {/if}
       
-      <div class="min-h-0 overflow-y-auto overscroll-contain">
+      <!-- overflow-y:auto also clips horizontally — without bleed room the
+           scroll edge shaves field borders and focus rings on both sides.
+           Padding opens the clip edge; the negative margin keeps field
+           geometry identical. -->
+      <div class="-m-1 min-h-0 overflow-y-auto overscroll-contain p-1">
         {@render children?.()}
       </div>
 
