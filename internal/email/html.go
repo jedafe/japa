@@ -13,6 +13,7 @@ package email
 //   - {{.ActionURL}}   — the primary action link (reset password, verify email)
 //   - {{.Expiry}}      — human-readable expiry string (e.g. "1 hour", "24 hours")
 //   - {{.SupportURL}}  — link to the support/help page
+//   - {{.LogoURL}}     — absolute URL of the brand logo (optional; empty omits the image)
 
 // passwordResetHTML is the HTML body for the password reset email.
 //
@@ -35,6 +36,7 @@ const passwordResetHTML = `<!DOCTYPE html>
         <!-- Header -->
         <tr>
           <td style="background-color: #0f766e; padding: 24px 32px; text-align: center;">
+            {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto 8px; border: 0; outline: none; text-decoration: none;" /><br />{{end}}
             <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600; letter-spacing: -0.02em;">{{.SiteName}}</h1>
           </td>
         </tr>
@@ -88,6 +90,7 @@ const emailVerifyHTML = `<!DOCTYPE html>
         <!-- Header -->
         <tr>
           <td style="background-color: #0f766e; padding: 24px 32px; text-align: center;">
+            {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto 8px; border: 0; outline: none; text-decoration: none;" /><br />{{end}}
             <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600; letter-spacing: -0.02em;">{{.SiteName}}</h1>
           </td>
         </tr>
@@ -141,6 +144,7 @@ const welcomeHTML = `<!DOCTYPE html>
         <!-- Header -->
         <tr>
           <td style="background-color: #0f766e; padding: 24px 32px; text-align: center;">
+            {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto 8px; border: 0; outline: none; text-decoration: none;" /><br />{{end}}
             <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600; letter-spacing: -0.02em;">Welcome to {{.SiteName}}</h1>
           </td>
         </tr>

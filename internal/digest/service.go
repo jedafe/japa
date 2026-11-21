@@ -601,7 +601,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	subject := s.emailSubject(ctx)
 	// §14: resolve {{...}} placeholders before HTML render so outbound
 	// email never contains raw literals.
-	htmlBody := renderDigestEmail(s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
+	htmlBody := s.renderEditionEmailBody(ctx, s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
 
 	// Page recipients like newsletter:send (audit DG-11) — the full
 	// digest-enabled list is never materialized at once.
@@ -724,13 +724,150 @@ func (s *Service) unsubscribeLink(ctx context.Context, recipient, baseURL string
 		return "", nil
 	}
 
+	// The visible footer link is the human-facing frontend page; the
+	// List-Unsubscribe header URI is the API endpoint so RFC 8058
+	// one-click POSTs from mail clients land on the machine route
+	// (mirrors worker.newsletterUnsubscribeLink — §62 Compliance).
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
+
+	headerURL := url
+	if apiBase := digestAPIBase(base); apiBase != "" {
+		headerURL = apiBase + "/newsletter/unsubscribe?token=" + token
+	}
+
 	headers := map[string]string{
-		"List-Unsubscribe":      "<" + url + ">",
+		"List-Unsubscribe":      "<" + headerURL + ">",
 		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	}
 
 	return url, headers
+}
+
+// digestAPIBase resolves the public API routes base (origin + "/api/v1")
+// for URLs that must reach the API server directly (the List-Unsubscribe
+// header URI): JC_API_PUBLIC_URL first, then site base — mirrors
+// worker.newsletterAPIBase.
+func digestAPIBase(siteBase string) string {
+	if v := os.Getenv("JC_API_PUBLIC_URL"); v != "" {
+		return strings.TrimRight(v, "/") + "/api/v1"
+	}
+
+	if siteBase == "" {
+		return ""
+	}
+
+	return strings.TrimRight(siteBase, "/") + "/api/v1"
+}
+
+// resolveLogoURL resolves the absolute brand-logo URL rendered as
+// {{.LogoURL}} in the digest email header. Order: appearance.logo_url_dark
+// (designed for the dark teal header), then appearance.logo_url, then the
+// bundled /logos/logo-dark.png asset. Empty when no base URL resolves —
+// the shell guards with {{if .LogoURL}}.
+// // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
+func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
+	if s.settings != nil {
+		if v := s.settings.GetStringOr(ctx, "appearance.logo_url_dark", ""); v != "" {
+			return v
+		}
+		if v := s.settings.GetStringOr(ctx, "appearance.logo_url", ""); v != "" {
+			return v
+		}
+	}
+
+	if baseURL == "" {
+		return ""
+	}
+
+	return strings.TrimRight(baseURL, "/") + "/logos/logo-dark.png"
+}
+
+// renderEditionEmailBody renders the edition content into the email body.
+// The §84 section HTML goes through the seeded `community_digest`
+// email_templates row ({{.DigestContent}}) so the branded shell — logo
+// header, footer — wraps it and admin edits take effect without a deploy
+// (ADR-055). The inline branded shell is the fallback when the row is
+// missing/inactive or fails to render.
+func (s *Service) renderEditionEmailBody(ctx context.Context, content []byte, baseURL string) string {
+	inner := renderDigestEmail(content, baseURL)
+	logoURL := s.resolveLogoURL(ctx, baseURL)
+
+	if tmpl, err := s.store.GetEmailTemplateBySlug(ctx, "community_digest"); err == nil {
+		data := map[string]any{
+			"SiteName":      brand.Get(),
+			"DigestContent": template.HTML(inner),
+			"SiteURL":       baseURL,
+			"SupportURL":    strings.TrimRight(baseURL, "/") + "/support",
+			"LogoURL":       logoURL,
+		}
+		if s.settings != nil {
+			if v := s.settings.GetStringOr(ctx, "general.site_name", ""); v != "" {
+				data["SiteName"] = v
+			}
+		}
+
+		t, err := template.New("community_digest").Parse(tmpl.HtmlBody)
+		if err == nil {
+			var out strings.Builder
+			if err := t.Execute(&out, data); err == nil {
+				return out.String()
+			}
+		}
+
+		slog.Warn("task:digest:send_email: community_digest template render failed — using inline shell")
+	}
+
+	return digestEmailShell(inner, logoURL)
+}
+
+// digestEmailShell is the inline branded fallback shell for the community
+// digest email — the same table layout as the seeded community_digest
+// template so a missing/inactive row does not degrade branding.
+func digestEmailShell(innerHTML, logoURL string) string {
+	const tmpl = `<!DOCTYPE html>
+<html lang="en">
+<body style="margin: 0; padding: 0; background-color: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f7; padding: 32px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+      <tr>
+        <td style="background-color: #0f766e; padding: 24px 32px; text-align: center;">
+          {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto 8px; border: 0;" /><br />{{end}}
+          <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600;">{{.SiteName}}</h1>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 32px; color: #333333; font-size: 15px; line-height: 1.6;">
+          <h2 style="margin: 0 0 16px 0; font-size: 18px;">Weekly Community Digest</h2>
+          {{.DigestContent}}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 24px 32px; text-align: center; font-size: 12px; color: #999999; border-top: 1px solid #eeeeee; background-color: #fafafa;">
+          <p style="margin: 0 0 8px 0;">&copy; {{.SiteName}} &mdash; Your journey, connected.</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`
+
+	t, err := template.New("digest_shell").Parse(tmpl)
+	if err != nil {
+		return innerHTML
+	}
+
+	var out strings.Builder
+	if err := t.Execute(&out, struct {
+		SiteName      string
+		LogoURL       string
+		DigestContent template.HTML
+	}{SiteName: brand.Get(), LogoURL: logoURL, DigestContent: template.HTML(innerHTML)}); err != nil {
+		return innerHTML
+	}
+
+	return out.String()
 }
 
 // renderDigestEmail renders the edition content JSON into an HTML email
@@ -741,7 +878,6 @@ func renderDigestEmail(content []byte, baseURL string) string {
 	_ = json.Unmarshal(content, &c)
 
 	const tmpl = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-<h2>Weekly Community Digest</h2>
 {{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/thread/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/content/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}

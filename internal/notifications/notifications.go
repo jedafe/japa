@@ -353,7 +353,11 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.U
 	}
 
 	// BUG-023: subject-only notification emails had no CTA — append the deep
-	// link so the message is actionable.
+	// link so the message is actionable. The clean body is passed separately
+	// in template_data so the `notification` DB template renders it inside
+	// the branded shell with a real CTA button (ADR-055); the appended
+	// "View:" text remains for the raw-body fallback when the row is absent.
+	cleanBody := body
 	if actionURL != "" {
 		body = strings.TrimSpace(body + "\n\nView: " + actionURL)
 	}
@@ -364,6 +368,12 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.U
 		Body:      body,
 		Type:      nType,
 		ActionURL: actionURL,
+		TemplateSlug: "notification",
+		TemplateData: map[string]any{
+			"title":      title,
+			"body":       cleanBody,
+			"action_url": actionURL,
+		},
 	})
 	if err != nil {
 		slog.Error("notifications: failed to marshal email payload", "error", err)
@@ -417,6 +427,11 @@ type EmailSendPayload struct {
 	Body      string `json:"body"`
 	Type      string `json:"type"`
 	ActionURL string `json:"action_url,omitempty"`
+	// TemplateSlug/TemplateData route the email through the ADR-055
+	// DB-template chain (the seeded `notification` template) so
+	// notification mail ships in the branded shell.
+	TemplateSlug string         `json:"template_slug,omitempty"`
+	TemplateData map[string]any `json:"template_data,omitempty"`
 }
 
 // PushSubscription is the public view of a browser push subscription.

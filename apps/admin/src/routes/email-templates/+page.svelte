@@ -41,6 +41,9 @@
 		ActionURL: 'https://japa.to/reset-password?token=abc123',
 		Expiry: '1 hour',
 		SupportURL: 'https://japa.to/support',
+		LogoURL: 'https://japa.to/logos/logo-dark.png',
+		Title: 'New reply to your thread',
+		Body: 'Someone replied to a thread you follow.',
 	};
 
 	function renderPreview(html: string): string {

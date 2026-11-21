@@ -611,6 +611,37 @@ func newsletterAPIBase(siteBase string) string {
 	return strings.TrimRight(siteBase, "/") + "/api/v1"
 }
 
+// resolveEmailLogoURL resolves the absolute brand-logo URL rendered as
+// {{.LogoURL}} in email template headers. Order: appearance.logo_url_dark
+// (designed for the dark teal header), then appearance.logo_url, then the
+// bundled /logos/logo-dark.png asset on the site base. Empty when no base
+// URL can be resolved — templates must guard with {{if .LogoURL}}.
+// // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
+func resolveEmailLogoURL(ctx context.Context, siteBase string) string {
+	if dbPool != nil {
+		q := gen.New(dbPool.Reader)
+		for _, key := range []string{"appearance.logo_url_dark", "appearance.logo_url"} {
+			row, err := q.GetSettingValue(ctx, key)
+			if err != nil || len(row) == 0 {
+				continue
+			}
+			var s string
+			if json.Unmarshal(row, &s) == nil && s != "" {
+				return s
+			}
+		}
+	}
+
+	if siteBase == "" {
+		siteBase = resolveBaseURL(ctx)
+	}
+	if siteBase == "" {
+		return ""
+	}
+
+	return strings.TrimRight(siteBase, "/") + "/logos/logo-dark.png"
+}
+
 // newsletterGenerateUnsubscribeToken generates a 32-byte hex token for
 // one-click unsubscribe. Mirrors internal/newsletter.GenerateUnsubscribeToken
 // without importing the newsletter package (worker uses gen directly).
@@ -1579,6 +1610,15 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	body := payload.Body
 	isHTML := payload.HTML
 
+	// Brand logo is a platform value, not caller data — inject it so every
+	// templated email can render {{.LogoURL}} without each producer wiring it.
+	if payload.TemplateData == nil {
+		payload.TemplateData = map[string]any{}
+	}
+	if _, ok := payload.TemplateData["logo_url"]; !ok {
+		payload.TemplateData["logo_url"] = resolveEmailLogoURL(ctx, "")
+	}
+
 	// When a template_slug is provided, look up the DB-stored template and
 	// render it with html/template for XSS safety.
 	subject, body, isHTML = resolveEmailTemplate(ctx, payload, subject, body, isHTML)
@@ -1730,6 +1770,7 @@ func builtinEmailFallback(payload emailSendPayload) (string, string, bool) {
 		ActionURL:  get("action_url"),
 		Expiry:     get("expiry"),
 		SupportURL: get("support_url"),
+		LogoURL:    get("logo_url"),
 	}
 
 	var (
@@ -1818,11 +1859,13 @@ func templateDataFromMap(siteName string, m map[string]any) map[string]any {
 
 	for k, v := range m {
 		val := pascalizeTemplateValue(v)
-		// Convention: the digest_content key carries pre-rendered HTML
-		// (system-generated, never user input) — mark it template.HTML so
-		// html/template does not entity-escape the markup. All other keys
-		// stay escaped (XSS-safe by default).
-		if k == "digest_content" {
+		// Convention: the digest_content and content keys carry pre-rendered
+		// HTML — digest_content is system-generated, content is the
+		// admin-authored campaign body sanitized at save (content.SanitizeHTML);
+		// neither is user input. Both are marked template.HTML so html/template
+		// does not entity-escape the markup. All other keys stay escaped
+		// (XSS-safe by default).
+		if k == "digest_content" || k == "content" {
 			if s, ok := v.(string); ok {
 				val = template.HTML(s)
 			}
@@ -3960,6 +4003,30 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	subject, htmlBody := campaign.Subject, campaign.Html
 
+	// ADR-055: render the campaign body inside the seeded `newsletter`
+	// email_templates row ({{.Subject}} + {{.Content}}) so the branded
+	// shell — logo header, footer — wraps admin-authored campaign HTML.
+	// The raw campaign.Html remains the body when the row is missing or
+	// fails to render, and admin edits to the template take effect
+	// without a deploy.
+	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "newsletter"); terr == nil {
+		campaignBase := resolveBaseURL(ctx)
+		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, emailSendPayload{
+			TemplateSlug: "newsletter",
+			TemplateData: map[string]any{
+				"subject":     campaign.Subject,
+				"content":     campaign.Html,
+				"site_url":    campaignBase,
+				"support_url": strings.TrimRight(campaignBase, "/") + "/support",
+				"logo_url":    resolveEmailLogoURL(ctx, campaignBase),
+			},
+		}); ok {
+			htmlBody = rendered
+		} else {
+			slog.Warn("task:newsletter:send: newsletter template render failed — sending raw campaign body", "newsletter_id", payload.NewsletterID)
+		}
+	}
+
 	// Resolve the batch size from system_settings (§62, default 500).
 	batchSize := newsletterBatchSize(ctx)
 
@@ -4394,6 +4461,8 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 	templateVars := map[string]any{
 		"digest_content": body.String(),
 		"site_url":       siteBase,
+		"support_url":    strings.TrimRight(siteBase, "/") + "/support",
+		"logo_url":       resolveEmailLogoURL(ctx, siteBase),
 		"period":         period,
 	}
 	// The bulk path supplies the username from the recipients join; a
@@ -5370,6 +5439,28 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	subject := "Weekly Digest — " + name
 	body := buildDigestBody(ctx, subject, digestItems)
 
+	// ADR-055: render the digest items inside the seeded `weekly_digest`
+	// email_templates row ({{.DigestContent}}) so the branded shell —
+	// logo header, footer — wraps the list and admin edits take effect
+	// without a deploy. The inline body stays the fallback when the row
+	// is missing or fails to render.
+	digestBase := resolveBaseURL(ctx)
+	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "weekly_digest"); terr == nil {
+		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, emailSendPayload{
+			TemplateSlug: "weekly_digest",
+			TemplateData: map[string]any{
+				"digest_content": digestItemsHTML(digestBase, digestItems),
+				"site_url":       digestBase,
+				"support_url":    strings.TrimRight(digestBase, "/") + "/support",
+				"logo_url":       resolveEmailLogoURL(ctx, digestBase),
+			},
+		}); ok {
+			body = rendered
+		} else {
+			slog.Warn("task:newsletter:digest: weekly_digest template render failed — sending inline body")
+		}
+	}
+
 	// Weekly GC of spent unsubscribe/confirm tokens (§62 Compliance):
 	// unsubscribe tokens >90d, confirm tokens >7d — without a sweep the
 	// table grows unboundedly.
@@ -5386,8 +5477,8 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	q := gen.New(dbPool.Reader)
 
 	// Base URLs are invariant for the whole run — resolve once rather
-	// than per recipient (system_settings read each call).
-	digestBase := resolveBaseURL(ctx)
+	// than per recipient (system_settings read each call). digestBase was
+	// already resolved above for the template render.
 	digestAPIBase := newsletterAPIBase(digestBase)
 
 	for lastEmail := ""; ; {
@@ -5482,12 +5573,11 @@ var digestContentRoutePrefix = map[string]string{
 	"list":            "/list",
 }
 
-// buildDigestBody renders the HTML weekly-digest body listing each recent
-// content item as a link. Rendered via html/template — titles are
-// user-generated and must be escaped (audit NL-06).
-func buildDigestBody(ctx context.Context, subject string, digestItems []gen.ListPublishedContentForDigestRow) string {
-	base := resolveBaseURL(ctx)
-
+// digestItemsHTML renders the weekly-digest item list as an HTML <ul> —
+// used as {{.DigestContent}} inside the seeded weekly_digest template.
+// Rendered via html/template — titles are user-generated and must be
+// escaped (audit NL-06).
+func digestItemsHTML(base string, digestItems []gen.ListPublishedContentForDigestRow) string {
 	type item struct {
 		Title string
 		URL   string
@@ -5502,12 +5592,35 @@ func buildDigestBody(ctx context.Context, subject string, digestItems []gen.List
 		items = append(items, item{Title: it.Title, URL: base + prefix + "/" + it.Slug})
 	}
 
+	tmpl, err := template.New("digest_items").Parse(`<ul>
+{{range .Items}}  <li><a href="{{.URL}}">{{.Title}}</a></li>
+{{end}}</ul>`)
+	if err != nil {
+		slog.Error("task:newsletter:digest: items template parse failed", "error", err)
+		return ""
+	}
+
+	var out strings.Builder
+	if err := tmpl.Execute(&out, struct{ Items []item }{Items: items}); err != nil {
+		slog.Error("task:newsletter:digest: items template render failed", "error", err)
+		return ""
+	}
+
+	return out.String()
+}
+
+// buildDigestBody renders the HTML weekly-digest body listing each recent
+// content item as a link. Rendered via html/template — titles are
+// user-generated and must be escaped (audit NL-06).
+func buildDigestBody(ctx context.Context, subject string, digestItems []gen.ListPublishedContentForDigestRow) string {
+	base := resolveBaseURL(ctx)
+
+	items := digestItemsHTML(base, digestItems)
+
 	tmpl, err := template.New("weekly_digest").Parse(`<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
 <h2>{{.Subject}}</h2>
 <p>Here's a roundup of recent content you might have missed:</p>
-<ul>
-{{range .Items}}  <li><a href="{{.URL}}">{{.Title}}</a></li>
-{{end}}</ul>
+{{.Items}}
 </div>`)
 	if err != nil {
 		slog.Error("task:newsletter:digest: template parse failed", "error", err)
@@ -5517,8 +5630,8 @@ func buildDigestBody(ctx context.Context, subject string, digestItems []gen.List
 	var body strings.Builder
 	if err := tmpl.Execute(&body, struct {
 		Subject string
-		Items   []item
-	}{Subject: subject, Items: items}); err != nil {
+		Items   template.HTML
+	}{Subject: subject, Items: template.HTML(items)}); err != nil {
 		slog.Error("task:newsletter:digest: template render failed", "error", err)
 		return ""
 	}

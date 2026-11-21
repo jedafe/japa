@@ -27,6 +27,7 @@ type TemplateData struct {
 	ActionURL  string // Primary action link (reset password, verify email, dashboard)
 	Expiry     string // Human-readable expiry for the action link (e.g. "1 hour", "24 hours")
 	SupportURL string // Link to the support/help page shown in the footer
+	LogoURL    string // Absolute URL of the brand logo rendered in the header; empty omits the image
 }
 
 // Parsed templates — compiled once at package init, safe for concurrent use.

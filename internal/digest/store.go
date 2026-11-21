@@ -951,6 +951,13 @@ func (s *Store) GetDigestSubscriberEmailsPage(ctx context.Context, afterEmail st
 	return emails, nil
 }
 
+// GetEmailTemplateBySlug returns the active email_templates row for the
+// slug (ADR-055). Returns an error (pgx.ErrNoRows when absent/inactive) —
+// callers fall back to the inline branded shell.
+func (s *Store) GetEmailTemplateBySlug(ctx context.Context, slug string) (gen.GetEmailTemplateBySlugRow, error) {
+	return gen.New(s.pool.Reader).GetEmailTemplateBySlug(ctx, slug)
+}
+
 // CreateUnsubscribeTokenForEmail resolves the newsletter subscriber by email
 // and creates a one-click unsubscribe token, returning the token string.
 // Returns ("", nil) if the subscriber is not found (best-effort — the email
