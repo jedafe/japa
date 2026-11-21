@@ -570,9 +570,13 @@ LIMIT 200
 // CreatePathway inserts a new credential_pathways row and returns the
 // inserted id.
 func (s *Store) CreatePathway(ctx context.Context, input CreatePathwayInput) (pgtype.UUID, error) {
+	// Empty status must land as draft, never published — publication is
+	// an approve-endpoint decision with HITL stamps (ADR-088). The column
+	// DEFAULT 'published' is a schema trap for raw inserts; every Go
+	// caller sends an explicit status.
 	status := input.Status
 	if status == "" {
-		status = StatusPublished
+		status = StatusDraft
 	}
 
 	const q = `
@@ -744,7 +748,7 @@ SET hitl_reviewed_by = $2,
     status = 'published',
     is_active = true,
     updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND status IN ('draft','ai_draft','pending')
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
@@ -771,7 +775,7 @@ SET hitl_reviewed_by = $2,
     status = 'rejected',
     is_active = false,
     updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND status IN ('draft','ai_draft','pending')
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
