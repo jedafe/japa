@@ -1,0 +1,43 @@
+# Snappymail webmail — read/reply the raw Stalwart mailboxes (admin@,
+# support@) without a separate client. Reachable at webmail.japa.to
+# (Cloudflare-proxied → Traefik TLS → :8888). Registered as an access gate
+# target (gates §123) — keep it stopped, toggle on only when needed.
+#
+# Mail flow: IMAP mail.japa.to:993 (TLS, CN matches via the docker-network
+# alias on the stalwart container) and SMTP mail.japa.to:587 STARTTLS.
+# Data/config lives in the webmail-data volume — losing it resets the
+# admin password and per-domain mail config.
+
+services:
+  webmail:
+    image: djmaze/snappymail:v2.38.2.1
+    restart: unless-stopped
+    expose:
+      - "8888"
+    volumes:
+      - webmail-data:/var/lib/snappymail
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.gzip.compress=true
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.routers.http-0-webmail.entryPoints=http
+      - traefik.http.routers.http-0-webmail.middlewares=redirect-to-https
+      - traefik.http.routers.http-0-webmail.rule=Host(`webmail.japa.to`) && PathPrefix(`/`)
+      - traefik.http.routers.http-0-webmail.service=http-0-webmail
+      - traefik.http.routers.https-0-webmail.entryPoints=https
+      - traefik.http.routers.https-0-webmail.middlewares=gzip
+      - traefik.http.routers.https-0-webmail.rule=Host(`webmail.japa.to`) && PathPrefix(`/`)
+      - traefik.http.routers.https-0-webmail.service=https-0-webmail
+      - traefik.http.routers.https-0-webmail.tls=true
+      - traefik.http.routers.https-0-webmail.tls.certresolver=letsencrypt
+      - traefik.http.services.http-0-webmail.loadbalancer.server.port=8888
+      - traefik.http.services.https-0-webmail.loadbalancer.server.port=8888
+    networks:
+      - coolify
+
+volumes:
+  webmail-data:
+
+networks:
+  coolify:
+    external: true
