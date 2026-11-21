@@ -576,7 +576,9 @@ func (s *Service) CreateAPIKeyForUser(ctx context.Context, callerID, ownerID pgt
 		return CreateAPIKeyResponse{}, fmt.Errorf("count api keys: %w", err)
 	}
 
-	if currentCount >= limit {
+	// Negative limit means unlimited (tiers.QuotaLimit convention, e.g. the
+	// super_admin default of -1) — skip enforcement entirely.
+	if limit >= 0 && currentCount >= limit {
 		return CreateAPIKeyResponse{}, fmt.Errorf("%w: maximum %d keys per user", errpkg.ErrForbidden, limit)
 	}
 
@@ -1178,7 +1180,9 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	// The old key is still active (will be expired in the tx below), and the
 	// new key adds 1. So the post-rotation active count is currentCount + 1.
 	// We allow rotation if currentCount + 1 <= limit, i.e., currentCount < limit.
-	if currentCount >= limit {
+	// Negative limit means unlimited (tiers.QuotaLimit convention) — skip
+	// enforcement entirely.
+	if limit >= 0 && currentCount >= limit {
 		return nil, fmt.Errorf("%w: maximum %d keys per user", errpkg.ErrForbidden, limit)
 	}
 
