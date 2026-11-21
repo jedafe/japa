@@ -56,7 +56,7 @@ type GuideDTO struct {
 	ReviewerName         string          `json:"reviewer_name,omitempty"`
 	// Detail payload only (§96 editorial integration) — slug of the
 	// published accommodation-category guide that claims this row.
-	GuideSlug            string          `json:"guide_slug,omitempty"`
+	GuideSlug string `json:"guide_slug,omitempty"`
 }
 
 // CreateGuideRequest is the request body for POST /admin/housing-guides.
@@ -498,29 +498,29 @@ func rentRangesWithCFV(rentRanges json.RawMessage, cfv map[string]any) json.RawM
 // Create creates a new housing guide (admin). Returns the created guide.
 func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return GuideDTO{}, errors.New("destination_space_id is required")
+		return GuideDTO{}, fmt.Errorf("%w: destination_space_id is required", errpkg.ErrInvalid)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return GuideDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GuideDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	var citySpaceID pgtype.UUID
 	if input.CitySpaceID != "" {
 		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
-			return GuideDTO{}, fmt.Errorf("invalid city_space_id: %w", err)
+			return GuideDTO{}, fmt.Errorf("%w: invalid city_space_id", errpkg.ErrInvalid)
 		}
 	}
 
 	searchPlatforms, err := normalizeJSONB(input.SearchPlatforms, []byte("[]"))
 	if err != nil {
-		return GuideDTO{}, fmt.Errorf("invalid search_platforms: %w", err)
+		return GuideDTO{}, fmt.Errorf("%w: invalid search_platforms", errpkg.ErrInvalid)
 	}
 
 	rentRanges, err := normalizeJSONB(input.RentRanges, []byte("{}"))
 	if err != nil {
-		return GuideDTO{}, fmt.Errorf("invalid rent_ranges: %w", err)
+		return GuideDTO{}, fmt.Errorf("%w: invalid rent_ranges", errpkg.ErrInvalid)
 	}
 
 	storeInput := CreateGuideInput{
@@ -576,6 +576,11 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: create: fetch created: %w", err)
 	}
+
+	// The index gate makes this a no-op for drafts; a row created
+	// directly as published must reach Meilisearch without waiting
+	// for a later lifecycle event.
+	s.enqueueIndex(id)
 
 	return rowToDTO(row), nil
 }
@@ -752,18 +757,18 @@ func (s *Service) AdminList(ctx context.Context, status, accommodationType, q st
 // a reviewer can fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, input GenerateGuideRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
+		return GenerateDraftResponse{}, fmt.Errorf("%w: destination_space_id is required", errpkg.ErrInvalid)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GenerateDraftResponse{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	var citySpaceID pgtype.UUID
 	if input.CitySpaceID != "" {
 		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
-			return GenerateDraftResponse{}, fmt.Errorf("invalid city_space_id: %w", err)
+			return GenerateDraftResponse{}, fmt.Errorf("%w: invalid city_space_id", errpkg.ErrInvalid)
 		}
 	}
 

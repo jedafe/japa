@@ -4,6 +4,8 @@
 // {tier: {studio, 1bed, 2bed, currency}}; both pages render the same
 // shapes, so the parsing lives here rather than being duplicated.
 
+import { safeHttpUrl } from './safeUrl.js';
+
 /** One search platform entry after normalization. */
 export interface HousingPlatform {
 	name: string;
@@ -59,7 +61,10 @@ export function housingPlatforms(input: unknown): HousingPlatform[] {
 
 	const fromObject = (o: Record<string, unknown>) => {
 		const name = str(o.name) || str(o.title) || str(o.label);
-		const url = str(o.url) || str(o.link) || str(o.href);
+		// safeHttpUrl: platform rows are admin-entered JSONB with no
+		// backend URL validation — a javascript:/data: value must never
+		// reach an href (same sink rule as jobs application_url).
+		const url = safeHttpUrl(str(o.url) || str(o.link) || str(o.href));
 		const description = str(o.description) || str(o.notes) || str(o.note);
 		if (name || url) out.push({ name: name || url, url: url || undefined, description: description || undefined });
 	};
@@ -80,9 +85,9 @@ export function housingPlatforms(input: unknown): HousingPlatform[] {
 		// Legacy {name: url} or {name: {url, description}} map.
 		for (const [key, val] of Object.entries(input)) {
 			if (typeof val === 'string') {
-				out.push({ name: key, url: val });
+				out.push({ name: key, url: safeHttpUrl(val) || undefined });
 			} else if (isRecord(val)) {
-				const url = str(val.url) || str(val.link);
+				const url = safeHttpUrl(str(val.url) || str(val.link));
 				const description = str(val.description) || str(val.notes);
 				out.push({ name: key, url: url || undefined, description: description || undefined });
 			}

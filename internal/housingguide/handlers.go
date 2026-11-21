@@ -294,7 +294,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	guide, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		slog.Error("housingguide: admin create failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create housing guide")
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}
@@ -330,7 +330,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.GenerateDraft(r.Context(), input)
 	if err != nil {
 		slog.Error("housingguide: admin generate failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}
