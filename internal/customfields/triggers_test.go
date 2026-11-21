@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // send_email dispatches the configured subject/body through the wired sender
@@ -28,7 +30,7 @@ func TestFireSendEmailPassesTemplateAndExpandsValues(t *testing.T) {
 	}
 	values := map[string]any{"form_name": "Intake", "email": "u@x.com", "id": "42"}
 
-	if err := d.fireSendEmail(context.Background(), cfg, values); err != nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, cfg, values); err != nil {
 		t.Fatalf("fireSendEmail: %v", err)
 	}
 
@@ -63,7 +65,7 @@ func TestFireSendEmailToPlaceholder(t *testing.T) {
 	cfg := map[string]any{"to": "{{email}}", "subject": "s"}
 	values := map[string]any{"email": "submitter@example.com"}
 
-	if err := d.fireSendEmail(context.Background(), cfg, values); err != nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, cfg, values); err != nil {
 		t.Fatalf("fireSendEmail: %v", err)
 	}
 	if got.To != "submitter@example.com" {
@@ -81,7 +83,7 @@ func TestFireSendEmailToPlaceholderBadValue(t *testing.T) {
 	cfg := map[string]any{"to": "{{email}}"}
 	values := map[string]any{"email": "not-an-address"}
 
-	if err := d.fireSendEmail(context.Background(), cfg, values); err == nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, cfg, values); err == nil {
 		t.Fatal("expected invalid-address error")
 	}
 	if called {
@@ -91,14 +93,14 @@ func TestFireSendEmailToPlaceholderBadValue(t *testing.T) {
 
 func TestFireSendEmailNoSenderSkips(t *testing.T) {
 	d := &TriggerDispatcher{}
-	if err := d.fireSendEmail(context.Background(), map[string]any{"to": "a@b.com"}, nil); err != nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, map[string]any{"to": "a@b.com"}, nil); err != nil {
 		t.Fatalf("unwired sender should skip, got %v", err)
 	}
 }
 
 func TestFireSendEmailRequiresTo(t *testing.T) {
 	d := &TriggerDispatcher{emailSender: func(context.Context, TriggerEmail) error { return nil }}
-	if err := d.fireSendEmail(context.Background(), map[string]any{}, nil); err == nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, map[string]any{}, nil); err == nil {
 		t.Fatal("missing to should error")
 	}
 }
@@ -111,7 +113,7 @@ func TestFireSendEmailRejectsInvalidTemplateSlug(t *testing.T) {
 	}
 
 	cfg := map[string]any{"to": "a@b.com", "template_slug": "Bad Slug!"}
-	if err := d.fireSendEmail(context.Background(), cfg, nil); err == nil {
+	if err := d.fireSendEmail(context.Background(), pgtype.UUID{}, cfg, nil); err == nil {
 		t.Fatal("invalid template_slug should error")
 	}
 	if called {

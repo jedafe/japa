@@ -277,6 +277,13 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 			"to":            input.Email,
 			"template_slug": tmpl.Slug,
 
+			// Fallback leg: when the DB row is inactive or missing and the
+			// slug has no builtin fallback, the caller subject/body is what
+			// ships — without them a test send delivers an empty email.
+			"subject": "Email template test — " + tmpl.Slug,
+			"body": "This is a test send of the '" + tmpl.Slug + "' email template. " +
+				"If you see this plain message instead of branded content, the template row is inactive or missing.",
+
 			"template_site_name": h.Service.TestSiteName(r.Context()),
 			"template_data":      h.Service.SampleTemplateData(r.Context(), tmpl.Variables),
 		}

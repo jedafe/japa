@@ -2,6 +2,7 @@ package customfields
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -192,7 +193,7 @@ func (d *TriggerDispatcher) dispatchOne(
 		return d.fireAssignUserGroup(ctx, cfg, submitterUserID)
 
 	case "send_email":
-		return d.fireSendEmail(ctx, cfg, values)
+		return d.fireSendEmail(ctx, trig.ID, cfg, values)
 
 	case "send_webhook":
 		return d.fireSendWebhook(ctx, cfg, submissionID, values)
@@ -249,7 +250,7 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 // placeholders (a {{email}} 'to' mails the submitter), and an optional
 // template_slug selecting the email_templates row that wraps the message
 // (the sender's default applies when unset).
-func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[string]any) error {
+func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, triggerID pgtype.UUID, cfg, values map[string]any) error {
 	if d.emailSender == nil {
 		slog.Warn("customfields: send_email trigger — no email sender wired, skipping")
 		return nil
@@ -277,6 +278,20 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 	// posture as the send_webhook URL allowlist (CF14).
 	if slug != "" && !guideCategorySlugRe.MatchString(slug) {
 		return fmt.Errorf("send_email: invalid template_slug %q", slug)
+	}
+
+	// CF-S6: throttle to one delivery per recipient per trigger per hour.
+	// A {{field_key}} 'to' lets a submitter direct the email anywhere —
+	// without this, repeated submissions turn a form into a relay that
+	// spams an arbitrary address with branded mail. Fail-open on cache
+	// errors, same posture as the form_trigger_fired dedupe above.
+	if d.service != nil && d.service.cache != nil {
+		key := valkey.MustKey("form_trigger_email_sent:%s:%s", triggerID.String(), sha256Sum(to))
+		if acquired, err := d.service.cache.SetNX(ctx, key, "1", time.Hour).Result(); err == nil && !acquired {
+			slog.Info("customfields: send_email trigger throttled — recipient already mailed recently",
+				"trigger_id", triggerID.String())
+			return nil
+		}
 	}
 
 	return d.emailSender(ctx, TriggerEmail{
@@ -410,4 +425,10 @@ func expandTemplate(s string, values map[string]any) string {
 	}
 
 	return s
+}
+
+// sha256Sum returns the lowercase hex SHA-256 of s — used to keep raw email
+// addresses out of Valkey keys.
+func sha256Sum(s string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
 }
