@@ -2,8 +2,11 @@
 # filesystem and the SeaweedFS media bucket.
 #
 # Deployed as an independent Coolify "Docker Compose" service — carries no
-# JapaConnect code. Keep it STOPPED; toggle on from /dashboard/access-gates
-# when file access is needed (registered gate target `file_manager` below).
+# JapaConnect code and is fully self-contained (no bind-mounted config
+# files), so it works from a `docker_compose_raw` resource or a plain
+# `docker compose -f deploy/files/docker-compose.yml up -d` checkout.
+# Keep it STOPPED; toggle on from /dashboard/access-gates when file access
+# is needed (registered gate target `file_manager` below).
 #
 # GATING — same model as the Stalwart admin gate (deploy/mail/admin-gate):
 #
@@ -24,8 +27,11 @@
 # non-proxied hostnames (the same reason Stalwart uses DNS-01).
 #
 # Coolify env to set before first start:
-#   CF_DNS_API_TOKEN — Cloudflare API token with Zone.DNS:Edit on japa.to
-#                      (consumed by acme.sh's dns_cf hook; never committed)
+#   CF_API_KEY + CF_EMAIL — Cloudflare Global API Key pair (the .env pair
+#                      already used for zone automation), OR
+#   CF_DNS_API_TOKEN   — a scoped token with Zone.DNS:Edit on japa.to
+#                      (preferred when it exists; acme.sh picks whichever
+#                      credential is present)
 #   CF_ACCOUNT_ID    — optional; lets dns_cf pick the token/zone pair cleanly
 #   ACME_EMAIL       — optional; Let's Encrypt account contact
 #   SFTPGO_ADMIN_USER / SFTPGO_ADMIN_PASSWORD — optional; seeds the first
@@ -99,17 +105,38 @@ services:
   acme:
     image: neilpang/acme.sh:3.1.7
     restart: unless-stopped
-    entrypoint: ["/acme-entrypoint.sh"]
+    # Self-contained bootstrap: issue (or reuse) the cert via DNS-01, then
+    # hand off to the image's `daemon` entrypoint for cron renewal.
+    # DNS-01 is required — CFLOCK4 drops inbound HTTP-01/TLS-ALPN-01
+    # validation for DNS-only hostnames; api.cloudflare.com is outbound
+    # only, which the lockdown doesn't touch.
+    # RSA 4096 keeps the cert dir at /acme.sh/<domain>/ (no _ecc suffix) —
+    # the layout the SFTPGO_*_CERTIFICATE_* paths above expect.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        DOMAIN="$${FILES_DOMAIN:?FILES_DOMAIN env required}"
+        if [ -n "$${ACME_EMAIL:-}" ]; then
+          acme.sh --register-account -m "$$ACME_EMAIL" --server letsencrypt || true
+        fi
+        # Exit 2 = "domains not changed — skip"; other failures are left
+        # for the renewal cron to retry.
+        acme.sh --issue --dns dns_cf -d "$$DOMAIN" --keylength 4096 --server letsencrypt || \
+          echo "acme.sh --issue for $$DOMAIN non-fatal (skip or retry via cron)"
+        exec /entry.sh daemon
     environment:
       FILES_DOMAIN: files.japa.to
       ACME_EMAIL: ${ACME_EMAIL:-}
-      # acme.sh dns_cf credentials — token auth, Zone.DNS:Edit on japa.to.
-      CF_Token: ${CF_DNS_API_TOKEN}
+      # acme.sh dns_cf credentials — whichever pair is set wins.
+      CF_Token: ${CF_DNS_API_TOKEN:-}
+      CF_Key: ${CF_API_KEY:-}
+      CF_Email: ${CF_EMAIL:-}
       CF_Account_ID: ${CF_ACCOUNT_ID:-}
       AUTO_UPGRADE: "0" # pinned tag — renewal must not pull a newer acme.sh
     volumes:
       - sftpgo-certs:/acme.sh # cert + LE account home, shared with sftpgo
-      - ./acme-entrypoint.sh:/acme-entrypoint.sh:ro
     networks:
       - coolify
 
