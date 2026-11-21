@@ -58,7 +58,7 @@
 		{ value: 'flatshare', label: 'Flatshare' },
 		{ value: 'student', label: 'Student' },
 		{ value: 'employer_provided', label: 'Employer-provided' },
-		{ value: 'all', label: 'All' }
+		{ value: 'all', label: 'General (all types)' }
 	];
 
 	function openGenerate() {

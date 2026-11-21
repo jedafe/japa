@@ -2542,7 +2542,7 @@
 	"housing_guide.type_flatshare": "Colocation",
 	"housing_guide.type_student": "Logement étudiant",
 	"housing_guide.type_employer": "Logement fourni par l'employeur",
-	"housing_guide.type_all": "Tous les types",
+	"housing_guide.type_all": "Général (tous types)",
 	"housing_guide.read_guide": "Lire le guide détaillé",
 	"housing_guide.back": "Retour au guide du logement",
 	"housing_guide.country_level": "Guide national",

@@ -210,8 +210,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "housing_guide_unavailable", "Housing guide not configured")
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
@@ -245,9 +245,6 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
-	if limit > 200 {
-		limit = 200
-	}
 
 	guides, total, err := h.service.AdminList(r.Context(), status, accommodationType, q, destSpaceID, citySpaceID, activePtr, page, limit)
 	if err != nil {

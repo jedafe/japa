@@ -427,6 +427,7 @@ func (d *GuideDTO) scrubInternal() {
 	d.HITLReviewedAt = ""
 	d.HITLReviewNotes = ""
 	d.AIPromptHash = ""
+	d.ReviewerName = ""
 }
 
 // GetByID returns a single published, active housing guide by id —
@@ -561,6 +562,13 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 		return GuideDTO{}, fmt.Errorf("%w: invalid rent_ranges", errpkg.ErrInvalid)
 	}
 
+	// Direct-publish on create would skip the HITL stamps and the
+	// last_verified_at verification date — publication must go through
+	// approve (ADR-088, ecaguide precedent).
+	if input.Status == StatusPublished {
+		return GuideDTO{}, fmt.Errorf("%w: publishing requires the approve endpoint", errpkg.ErrInvalid)
+	}
+
 	if input.Status != "" && !validGuideStatus(input.Status) {
 		return GuideDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, published, rejected", errpkg.ErrInvalid)
 	}
@@ -615,6 +623,12 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 			return GuideDTO{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type", errpkg.ErrDuplicate)
 		}
 
+		// FK violation: destination_space_id/city_space_id doesn't
+		// reference an existing space — client-correctable input.
+		if errpkg.IsFKViolation(err) {
+			return GuideDTO{}, fmt.Errorf("%w: destination_space_id or city_space_id does not reference an existing space", errpkg.ErrInvalid)
+		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: create: %w", err)
 	}
 
@@ -623,9 +637,8 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 		return GuideDTO{}, fmt.Errorf("housingguide: create: fetch created: %w", err)
 	}
 
-	// The index gate makes this a no-op for drafts; a row created
-	// directly as published must reach Meilisearch without waiting
-	// for a later lifecycle event.
+	// The index gate makes this a no-op for drafts — the row only
+	// reaches Meilisearch on approval or a later publish transition.
 	s.enqueueIndex(id)
 
 	return rowToDTO(row), nil
@@ -634,6 +647,13 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 // Update updates an existing housing guide (admin). Only provided fields
 // are applied.
 func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideRequest) (GuideDTO, error) {
+	// Publishing via PATCH would bypass the HITL reviewer stamps and the
+	// last_verified_at verification date that approve sets — force the
+	// lifecycle through the approve endpoint (ADR-088, ecaguide precedent).
+	if input.Status != nil && *input.Status == StatusPublished {
+		return GuideDTO{}, fmt.Errorf("%w: publishing requires PATCH /admin/housing-guides/{id}/approve", errpkg.ErrInvalid)
+	}
+
 	if input.Status != nil && !validGuideStatus(*input.Status) {
 		return GuideDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, published, rejected", errpkg.ErrInvalid)
 	}
@@ -689,6 +709,12 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 	if err := s.store.UpdateGuide(ctx, id, storeInput); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
+		}
+
+		// Changing accommodation_type can collide with an existing
+		// natural key (destination × city × type is unique).
+		if errpkg.IsUniqueViolation(err) {
+			return GuideDTO{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type", errpkg.ErrDuplicate)
 		}
 
 		return GuideDTO{}, fmt.Errorf("housingguide: update: %w", err)
@@ -936,6 +962,10 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateGuideRequest)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GenerateDraftResponse{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type — review it in the queue instead of regenerating", errpkg.ErrDuplicate)
+		}
+
+		if errpkg.IsFKViolation(err) {
+			return GenerateDraftResponse{}, fmt.Errorf("%w: destination_space_id or city_space_id does not reference an existing space", errpkg.ErrInvalid)
 		}
 
 		return GenerateDraftResponse{}, fmt.Errorf("housingguide: generate draft: %w", err)

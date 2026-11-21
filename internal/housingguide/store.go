@@ -547,13 +547,16 @@ WHERE id = $%d
 	return nil
 }
 
-// ApproveGuide marks a housing guide as reviewed and published by an
-// admin (HITL approval). Sets hitl_reviewed_by, hitl_reviewed_at=now(),
-// status='published', and optional review notes.
+// ApproveGuide marks a housing guide as reviewed, active, and published
+// by an admin (HITL approval). Sets hitl_reviewed_by,
+// hitl_reviewed_at=now(), status='published', is_active=true, and
+// optional review notes.
 func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	// status != 'published' matches the attestation ApprovePathway guard:
 	// re-approving a live guide must not silently re-stamp the reviewer.
-	// last_verified_at is stamped by the same act — HITL approval IS the
+	// is_active = true revives AI drafts (GenerateDraft lands them
+	// is_active=false) — approval must make the row publicly visible, and
+	// last_verified_at is stamped by the same act: HITL approval IS the
 	// content verification that ADR-104's freshness display reports.
 	const q = `
 UPDATE housing_guides
@@ -561,6 +564,7 @@ SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     hitl_review_notes = $3,
     status = 'published',
+    is_active = true,
     last_verified_at = CURRENT_DATE,
     updated_at = now()
 WHERE id = $1
@@ -866,6 +870,22 @@ func (s *Store) LinkGuideToContent(ctx context.Context, guideID, contentID pgtyp
 		return fmt.Errorf("housingguide: backfill guide guide_id: %w", err)
 	}
 
+	// Re-claim hygiene: a previous guide that still holds this row in
+	// field_values.guide_id would keep matching the tool's slug resolver
+	// even though the row's own guide_id column now points here. Strip the
+	// stale field-side claim so exactly one guide owns the link.
+	if _, err := tx.Exec(ctx, `
+		UPDATE contents
+		SET field_values = field_values - 'guide_id',
+		    updated_at = now()
+		WHERE id != $1
+		  AND content_type = 'guide'
+		  AND guide_category = 'accommodation'
+		  AND deleted_at IS NULL
+		  AND field_values->>'guide_id' = $2`, contentID, guideID.String()); err != nil {
+		return fmt.Errorf("housingguide: clear stale guide_id claims: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("housingguide: link tx commit: %w", err)
 	}
@@ -919,7 +939,9 @@ WHERE c.content_type = 'guide'
           AND LOWER(COALESCE(BTRIM(c.field_values->>'accommodation_type'), '')) = LOWER(COALESCE($4::text, ''))
       )
   )
-ORDER BY (c.field_values->>'guide_id' = $1) DESC, c.created_at, c.id
+ORDER BY (c.id = (SELECT guide_id FROM housing_guides WHERE id = $1::uuid)) DESC,
+         (c.field_values->>'guide_id' = $1) DESC,
+         c.created_at, c.id
 LIMIT 1
 `
 
