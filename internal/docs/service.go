@@ -91,12 +91,33 @@ type GenerateDraftResponse struct {
 	PageID  string `json:"page_id"`
 }
 
-// GetDocPageBySlug returns a published page by audience and slug. Checks the
-// Valkey cache first (jc:cache:page:docs:{audience}:{slug}:{}, TTL 5min)
-// and falls back to the DB on miss (VALKEY-003). Cache key is platform-scoped
-// to prevent cross-platform data bleed (Rule 4, §4.2).
-func (s *Service) GetDocPageBySlug(ctx context.Context, audience, slug string) (*DocPage, error) {
-	cacheKey := valkey.MustKey("cache:page:docs:%s:%s:", audience, slug)
+// docLangRe is the accepted lang_code shape (Phase 08.03): ISO-639-1.
+var docLangRe = regexp.MustCompile(`^[a-z]{2}$`)
+
+// normalizeDocLang defaults empty lang to 'en' and rejects malformed codes.
+func normalizeDocLang(lang string) (string, error) {
+	if lang == "" {
+		return "en", nil
+	}
+	if !docLangRe.MatchString(lang) {
+		return "", fmt.Errorf("%w: lang %q", errpkg.ErrInvalid, lang)
+	}
+	return lang, nil
+}
+
+// GetDocPageBySlug returns a published page by audience and slug. lang picks
+// the translated row — the query falls back to the 'en' source and reports
+// content_lang='en' so the reader sees a "not yet translated" notice
+// (Phase 08.03). Checks the Valkey cache first
+// (jc:cache:page:docs:{audience}:{slug}:{lang}, TTL 5min) and falls back to
+// the DB on miss (VALKEY-003). Cache key is platform-scoped to prevent
+// cross-platform data bleed (Rule 4, §4.2).
+func (s *Service) GetDocPageBySlug(ctx context.Context, audience, slug, lang string) (*DocPage, error) {
+	lang, err := normalizeDocLang(lang)
+	if err != nil {
+		return nil, err
+	}
+	cacheKey := valkey.MustKey("cache:page:docs:%s:%s:%s:", audience, slug, lang)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var page DocPage
@@ -106,7 +127,7 @@ func (s *Service) GetDocPageBySlug(ctx context.Context, audience, slug string) (
 		}
 	}
 
-	page, err := s.store.getBySlug(ctx, audience, slug)
+	page, err := s.store.getBySlug(ctx, audience, slug, lang)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +540,8 @@ func (s *Service) SubmitDocPageFeedback(ctx context.Context, audience, slug, vot
 	}
 
 	// Resolve the published page — feedback on missing/draft pages is 404.
-	page, err := s.store.getBySlug(ctx, audience, slug)
+	// Votes live on the canonical 'en' row regardless of display language.
+	page, err := s.store.getBySlug(ctx, audience, slug, "en")
 	if err != nil {
 		return nil, err
 	}
@@ -680,12 +702,30 @@ func (s *Service) invalidateCache(ctx context.Context, audience, slug string) {
 	}
 
 	keys := []string{valkey.MustKey("cache:page:docs:nav:")}
-	if audience != "" && slug != "" {
-		keys = append(keys, valkey.MustKey("cache:page:docs:%s:%s:", audience, slug))
-	}
-
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("docs: failed to invalidate cache", "keys", keys, "error", err)
+	}
+
+	if audience == "" || slug == "" {
+		return
+	}
+	// Page caches are keyed per language (…:{slug}:{lang}) — a write must
+	// flush every variant, so scan the slug prefix rather than one key.
+	pattern := valkey.MustKey("cache:page:docs:%s:%s:*", audience, slug)
+	var cursor uint64
+	for {
+		found, next, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("docs: failed to scan page cache for invalidation", "pattern", pattern, "error", err)
+			return
+		}
+		if len(found) > 0 {
+			s.cache.Del(ctx, found...)
+		}
+		if next == 0 {
+			return
+		}
+		cursor = next
 	}
 }
 
@@ -908,6 +948,14 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 		createdBy = u.UserID
 	}
 
+	langCode, err := normalizeDocLang("")
+	if req.LangCode != nil {
+		langCode, err = normalizeDocLang(*req.LangCode)
+	}
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
 	// Page insert + the v1 revision snapshot share one transaction (§44
 	// amendment 5) — a revision must never exist without its page write.
 	var id pgtype.UUID
@@ -927,6 +975,7 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 			Category:       category,
 			Subcategory:    subcategory,
 			FeatureImageID: featureImage,
+			LangCode:       &langCode,
 		})
 		if cerr != nil {
 			return fmt.Errorf("creating doc page: %w", mapWriteErr(cerr))
@@ -1180,8 +1229,12 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 // GetDocPageBySlugAnyStatus returns a page regardless of review status.
 // Editor preview only — callers must hold docs.admin (§44 amendment 2).
 // Never cached: preview must reflect the latest row.
-func (s *Service) GetDocPageBySlugAnyStatus(ctx context.Context, audience, slug string) (*DocPage, error) {
-	page, err := s.store.getBySlugAnyStatus(ctx, audience, slug)
+func (s *Service) GetDocPageBySlugAnyStatus(ctx context.Context, audience, slug, lang string) (*DocPage, error) {
+	lang, err := normalizeDocLang(lang)
+	if err != nil {
+		return nil, err
+	}
+	page, err := s.store.getBySlugAnyStatus(ctx, audience, slug, lang)
 	if err != nil {
 		return nil, err
 	}
@@ -1407,10 +1460,10 @@ func toDocPage(r docPageRow) *DocPage {
 		HelpfulNo:       p.HelpfulNo,
 		FeatureImageID:  uuidPtr(p.FeatureImageID),
 		FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
-		// Phase 8 (i18n) will persist translated variants. Until then the API
-		// always reports the source language as English, including when a
-		// ?lang query parameter is supplied.
-		ContentLang: "en",
+		// Phase 08.03: the row's actual language — 'en' when the query fell
+		// back to the source row, which the docs app reads as "not yet
+		// translated".
+		ContentLang: p.LangCode,
 		CreatedAt:   p.CreatedAt.Time.Format(time.RFC3339Nano),
 		UpdatedAt:   p.UpdatedAt.Time.Format(time.RFC3339Nano),
 		DeletedAt:   timestamptzPtr(p.DeletedAt),

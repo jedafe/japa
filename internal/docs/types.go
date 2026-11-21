@@ -89,6 +89,9 @@ type CreateDocPageRequest struct {
 	// recorded on the created revision.
 	FeatureImageID *string `json:"feature_image_id,omitempty"`
 	Summary        *string `json:"summary,omitempty"`
+	// Phase 08.03: ISO-639-1 row language — nil/'en' is the canonical source
+	// row; 'fr' creates the French variant of the same (audience, slug).
+	LangCode *string `json:"lang_code,omitempty"`
 }
 
 // UpdateDocPageRequest is the JSON body for PATCH /api/v1/admin/docs/{id}.

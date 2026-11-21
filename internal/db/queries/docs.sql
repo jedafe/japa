@@ -1,13 +1,19 @@
 -- name: GetDocPageBySlug :one
+-- Phase 08.03: rows carry lang_code; the requested language wins, the 'en'
+-- source row is the fallback so callers can flag content_lang='en' and show
+-- a "not yet translated" notice.
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published'
-  AND p.deleted_at IS NULL;
+  AND p.deleted_at IS NULL
+  AND (p.lang_code = @lang OR p.lang_code = 'en')
+ORDER BY (p.lang_code = @lang) DESC
+LIMIT 1;
 
 -- name: GetDocPageBySlugAnyStatus :one
 -- Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
@@ -15,12 +21,15 @@ WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
  p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE p.audience = @audience AND p.slug = @slug AND p.deleted_at IS NULL;
+WHERE p.audience = @audience AND p.slug = @slug AND p.deleted_at IS NULL
+  AND (p.lang_code = @lang OR p.lang_code = 'en')
+ORDER BY (p.lang_code = @lang) DESC
+LIMIT 1;
 
 -- name: ListDocPagesByAudience :many
 -- content is selected so the service can derive a plain-text excerpt for
@@ -32,14 +41,14 @@ SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.positi
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience AND p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
 ORDER BY p.position ASC, p.title ASC;
 
 -- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory, created_at
 FROM doc_pages
 WHERE audience = @audience AND review_status = 'published'
-  AND deleted_at IS NULL
+  AND deleted_at IS NULL AND lang_code = 'en'
 ORDER BY position ASC;
 
 -- name: ListDocSummaries :many
@@ -53,7 +62,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
   AND p.audience = ANY(@audiences::text[])
 ORDER BY p.created_at DESC, p.title ASC;
 
@@ -66,6 +75,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_gener
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = @audience
+  AND p.lang_code = 'en'
   AND (@status_filter::text = '' OR p.review_status = @status_filter)
   AND (@show_deleted::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.position ASC, p.title ASC
@@ -79,7 +89,8 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_gener
  p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE (@status_filter::text = '' OR p.review_status = @status_filter)
+WHERE p.lang_code = 'en'
+  AND (@status_filter::text = '' OR p.review_status = @status_filter)
   AND (@show_deleted::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
@@ -88,7 +99,7 @@ LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
  p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
@@ -98,7 +109,7 @@ WHERE p.id = @id;
 -- name: CreateDocPage :one
 -- ai_generated_at stamps when the draft was generated (ADR-088); ai_model
 -- records the producing model for provenance. Both NULL on human-authored rows.
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES (@title, @slug, @audience, @content, @ai_generated, sqlc.narg(ai_model)::text, CASE WHEN @ai_generated THEN COALESCE(sqlc.narg(ai_generated_at)::timestamptz, now()) ELSE NULL END, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid, sqlc.narg(feature_image_id)::uuid)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id, lang_code) VALUES (@title, @slug, @audience, @content, @ai_generated, sqlc.narg(ai_model)::text, CASE WHEN @ai_generated THEN COALESCE(sqlc.narg(ai_generated_at)::timestamptz, now()) ELSE NULL END, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid, sqlc.narg(feature_image_id)::uuid, COALESCE(sqlc.narg(lang_code)::text, 'en'))
 
 RETURNING id;
 
@@ -198,7 +209,7 @@ SELECT count(*)::int AS deleted_rows FROM deleted;
 UPDATE doc_pages
 SET helpful_yes = helpful_yes + CASE WHEN @vote = 'up' THEN 1 ELSE 0 END,
  helpful_no = helpful_no + CASE WHEN @vote = 'down' THEN 1 ELSE 0 END
-WHERE audience = @audience AND slug = @slug AND deleted_at IS NULL;
+WHERE audience = @audience AND slug = @slug AND lang_code = 'en' AND deleted_at IS NULL;
 
 -- name: GetDocPageFeedback :one
 -- Aggregate counts + the requesting user's recorded vote (§44 amendment 2).
@@ -206,7 +217,7 @@ SELECT p.id AS page_id, p.helpful_yes, p.helpful_no, v.vote AS my_vote
 FROM doc_pages p
 LEFT JOIN doc_page_votes v ON v.page_id = p.id AND v.user_id = @user_id::uuid
 WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published'
-  AND p.deleted_at IS NULL;
+  AND p.lang_code = 'en' AND p.deleted_at IS NULL;
 
 -- name: SetDocPageVote :execrows
 -- Atomic vote upsert + counter adjustment (§44 amendment 2). The CTEs see the
@@ -256,7 +267,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
@@ -264,7 +275,7 @@ LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
- AND deleted_at IS NULL
+ AND deleted_at IS NULL AND lang_code = 'en'
  AND (sqlc.narg(audience)::text IS NULL OR audience = sqlc.narg(audience))
  AND (title ILIKE '%' || @query::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || @query::text || '%')
@@ -278,7 +289,7 @@ LIMIT @result_limit;
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
- AND deleted_at IS NULL
+ AND deleted_at IS NULL AND lang_code = 'en'
  AND audience = ANY(@audiences::text[])
  AND (title ILIKE '%' || @query::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || @query::text || '%')

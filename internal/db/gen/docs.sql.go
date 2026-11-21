@@ -23,7 +23,7 @@ func (q *Queries) CountDocPageRevisions(ctx context.Context, docPageID pgtype.UU
 }
 
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES ($1, $2, $3, $4, $5, $6::text, CASE WHEN $5 THEN COALESCE($7::timestamptz, now()) ELSE NULL END, $8, $9, $10, $11, $12, $13::uuid, $14::uuid)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, ai_model, ai_generated_at, review_status, parent_id, position, category, subcategory, created_by, feature_image_id, lang_code) VALUES ($1, $2, $3, $4, $5, $6::text, CASE WHEN $5 THEN COALESCE($7::timestamptz, now()) ELSE NULL END, $8, $9, $10, $11, $12, $13::uuid, $14::uuid, COALESCE($15::text, 'en'))
 
 RETURNING id
 `
@@ -43,6 +43,7 @@ type CreateDocPageParams struct {
 	Subcategory    *string            `json:"subcategory"`
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
+	LangCode       *string            `json:"lang_code"`
 }
 
 // ai_generated_at stamps when the draft was generated (ADR-088); ai_model
@@ -63,6 +64,7 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 		arg.Subcategory,
 		arg.CreatedBy,
 		arg.FeatureImageID,
+		arg.LangCode,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -119,7 +121,7 @@ const getDocPageByID = `-- name: GetDocPageByID :one
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
  p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
@@ -148,6 +150,7 @@ type GetDocPageByIDRow struct {
 	HelpfulYes         int32              `json:"helpful_yes"`
 	HelpfulNo          int32              `json:"helpful_no"`
 	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	LangCode           string             `json:"lang_code"`
 	FeatureImageBucket *string            `json:"feature_image_bucket"`
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
@@ -179,6 +182,7 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.HelpfulYes,
 		&i.HelpfulNo,
 		&i.FeatureImageID,
+		&i.LangCode,
 		&i.FeatureImageBucket,
 		&i.FeatureImagePath,
 		&i.CreatedAt,
@@ -191,18 +195,22 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 const getDocPageBySlug = `-- name: GetDocPageBySlug :one
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1 AND p.slug = $2 AND p.review_status = 'published'
   AND p.deleted_at IS NULL
+  AND (p.lang_code = $3 OR p.lang_code = 'en')
+ORDER BY (p.lang_code = $3) DESC
+LIMIT 1
 `
 
 type GetDocPageBySlugParams struct {
 	Audience string `json:"audience"`
 	Slug     string `json:"slug"`
+	Lang     string `json:"lang"`
 }
 
 type GetDocPageBySlugRow struct {
@@ -222,14 +230,18 @@ type GetDocPageBySlugRow struct {
 	HelpfulYes         int32              `json:"helpful_yes"`
 	HelpfulNo          int32              `json:"helpful_no"`
 	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	LangCode           string             `json:"lang_code"`
 	FeatureImageBucket *string            `json:"feature_image_bucket"`
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Phase 08.03: rows carry lang_code; the requested language wins, the 'en'
+// source row is the fallback so callers can flag content_lang='en' and show
+// a "not yet translated" notice.
 func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugParams) (GetDocPageBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getDocPageBySlug, arg.Audience, arg.Slug)
+	row := q.db.QueryRow(ctx, getDocPageBySlug, arg.Audience, arg.Slug, arg.Lang)
 	var i GetDocPageBySlugRow
 	err := row.Scan(
 		&i.ID,
@@ -248,6 +260,7 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 		&i.HelpfulYes,
 		&i.HelpfulNo,
 		&i.FeatureImageID,
+		&i.LangCode,
 		&i.FeatureImageBucket,
 		&i.FeatureImagePath,
 		&i.CreatedAt,
@@ -260,17 +273,21 @@ const getDocPageBySlugAnyStatus = `-- name: GetDocPageBySlugAnyStatus :one
 SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.ai_model,
  p.ai_generated_at, p.hitl_reviewed_by, p.hitl_reviewed_at, p.review_status,
  p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
- p.helpful_yes, p.helpful_no, p.feature_image_id,
+ p.helpful_yes, p.helpful_no, p.feature_image_id, p.lang_code,
  m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
  p.created_at, p.updated_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1 AND p.slug = $2 AND p.deleted_at IS NULL
+  AND (p.lang_code = $3 OR p.lang_code = 'en')
+ORDER BY (p.lang_code = $3) DESC
+LIMIT 1
 `
 
 type GetDocPageBySlugAnyStatusParams struct {
 	Audience string `json:"audience"`
 	Slug     string `json:"slug"`
+	Lang     string `json:"lang"`
 }
 
 type GetDocPageBySlugAnyStatusRow struct {
@@ -294,6 +311,7 @@ type GetDocPageBySlugAnyStatusRow struct {
 	HelpfulYes         int32              `json:"helpful_yes"`
 	HelpfulNo          int32              `json:"helpful_no"`
 	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	LangCode           string             `json:"lang_code"`
 	FeatureImageBucket *string            `json:"feature_image_bucket"`
 	FeatureImagePath   *string            `json:"feature_image_path"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
@@ -303,7 +321,7 @@ type GetDocPageBySlugAnyStatusRow struct {
 // Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
 // agnostic. Callers MUST gate on docs.admin — never expose to public readers.
 func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageBySlugAnyStatusParams) (GetDocPageBySlugAnyStatusRow, error) {
-	row := q.db.QueryRow(ctx, getDocPageBySlugAnyStatus, arg.Audience, arg.Slug)
+	row := q.db.QueryRow(ctx, getDocPageBySlugAnyStatus, arg.Audience, arg.Slug, arg.Lang)
 	var i GetDocPageBySlugAnyStatusRow
 	err := row.Scan(
 		&i.ID,
@@ -326,6 +344,7 @@ func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageB
 		&i.HelpfulYes,
 		&i.HelpfulNo,
 		&i.FeatureImageID,
+		&i.LangCode,
 		&i.FeatureImageBucket,
 		&i.FeatureImagePath,
 		&i.CreatedAt,
@@ -339,7 +358,7 @@ SELECT p.id AS page_id, p.helpful_yes, p.helpful_no, v.vote AS my_vote
 FROM doc_pages p
 LEFT JOIN doc_page_votes v ON v.page_id = p.id AND v.user_id = $1::uuid
 WHERE p.audience = $2 AND p.slug = $3 AND p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.lang_code = 'en' AND p.deleted_at IS NULL
 `
 
 type GetDocPageFeedbackParams struct {
@@ -454,7 +473,7 @@ const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
 UPDATE doc_pages
 SET helpful_yes = helpful_yes + CASE WHEN $1 = 'up' THEN 1 ELSE 0 END,
  helpful_no = helpful_no + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END
-WHERE audience = $2 AND slug = $3 AND deleted_at IS NULL
+WHERE audience = $2 AND slug = $3 AND lang_code = 'en' AND deleted_at IS NULL
 `
 
 type IncrementDocPageHelpfulParams struct {
@@ -517,7 +536,8 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_gener
  p.created_at, p.updated_at, p.deleted_at
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
-WHERE ($1::text = '' OR p.review_status = $1)
+WHERE p.lang_code = 'en'
+  AND ($1::text = '' OR p.review_status = $1)
   AND ($2::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF($4::int, 0) OFFSET COALESCE($3::int, 0)
@@ -612,6 +632,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.ai_model, p.ai_gener
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1
+  AND p.lang_code = 'en'
   AND ($2::text = '' OR p.review_status = $2)
   AND ($3::boolean = (p.deleted_at IS NOT NULL))
 ORDER BY p.position ASC, p.title ASC
@@ -754,7 +775,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.positi
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.audience = $1 AND p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
 ORDER BY p.position ASC, p.title ASC
 `
 
@@ -816,7 +837,7 @@ const listDocPagesTree = `-- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory, created_at
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
-  AND deleted_at IS NULL
+  AND deleted_at IS NULL AND lang_code = 'en'
 ORDER BY position ASC
 `
 
@@ -872,7 +893,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
   AND p.audience = ANY($1::text[])
 ORDER BY p.created_at DESC, p.title ASC
 `
@@ -938,7 +959,7 @@ SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p
 FROM doc_pages p
 LEFT JOIN media m ON m.id = p.feature_image_id
 WHERE p.review_status = 'published'
-  AND p.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND p.lang_code = 'en'
 ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
@@ -1032,7 +1053,7 @@ const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
- AND deleted_at IS NULL
+ AND deleted_at IS NULL AND lang_code = 'en'
  AND ($1::text IS NULL OR audience = $1)
  AND (title ILIKE '%' || $2::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')
@@ -1094,7 +1115,7 @@ const searchDocPagesInAudiences = `-- name: SearchDocPagesInAudiences :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
- AND deleted_at IS NULL
+ AND deleted_at IS NULL AND lang_code = 'en'
  AND audience = ANY($1::text[])
  AND (title ILIKE '%' || $2::text || '%'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')

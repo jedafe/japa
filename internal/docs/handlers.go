@@ -280,7 +280,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.GetDocPageBySlug(r.Context(), audience, slug)
+	page, err := h.Service.GetDocPageBySlug(r.Context(), audience, slug, r.URL.Query().Get("lang"))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -718,7 +718,7 @@ func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	page, err := h.Service.GetDocPageBySlugAnyStatus(r.Context(), audience, slug)
+	page, err := h.Service.GetDocPageBySlugAnyStatus(r.Context(), audience, slug, r.URL.Query().Get("lang"))
 	if err != nil {
 		handleServiceError(w, err)
 		return

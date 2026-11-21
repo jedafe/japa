@@ -2120,6 +2120,7 @@ type DocPage struct {
 	AiGeneratedAt  pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	LangCode       string             `json:"lang_code"`
 }
 
 type DocPageRevision struct {

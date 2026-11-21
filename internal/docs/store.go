@@ -59,11 +59,14 @@ func (s *Store) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return s.pool.Writer.Begin(ctx)
 }
 
-// getBySlug returns a published doc page by audience and slug.
-func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRow, error) {
+// getBySlug returns a published doc page by audience and slug. lang picks the
+// translated row; the query falls back to the 'en' source when the language
+// doesn't exist yet (Phase 08.03).
+func (s *Store) getBySlug(ctx context.Context, audience, slug, lang string) (docPageRow, error) {
 	row, err := s.read.GetDocPageBySlug(ctx, gen.GetDocPageBySlugParams{
 		Audience: audience,
 		Slug:     slug,
+		Lang:     lang,
 	})
 	if err != nil {
 		return docPageRow{}, fmt.Errorf("getting doc page by slug: %w", err)
@@ -87,6 +90,7 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRo
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
 		FeatureImageID: row.FeatureImageID,
+		LangCode:       row.LangCode,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
@@ -95,10 +99,11 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRo
 // getBySlugAnyStatus returns a doc page by audience+slug regardless of
 // review status. Editor preview only — callers must gate on docs.admin
 // (§44 amendment 2).
-func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (docPageRow, error) {
+func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug, lang string) (docPageRow, error) {
 	row, err := s.read.GetDocPageBySlugAnyStatus(ctx, gen.GetDocPageBySlugAnyStatusParams{
 		Audience: audience,
 		Slug:     slug,
+		Lang:     lang,
 	})
 	if err != nil {
 		return docPageRow{}, fmt.Errorf("getting doc page by slug (any status): %w", err)
@@ -125,6 +130,7 @@ func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
 		FeatureImageID: row.FeatureImageID,
+		LangCode:       row.LangCode,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
@@ -157,6 +163,7 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (docPageRow, error)
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
 		FeatureImageID: row.FeatureImageID,
+		LangCode:       row.LangCode,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 		DeletedAt:      row.DeletedAt,
