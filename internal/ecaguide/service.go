@@ -272,6 +272,8 @@ func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (*GuideDetailDTO
 	// detail payload the way a missing slug silently skips the back-link.
 	if slug, serr := s.store.GuideSlugForGuide(ctx, g); serr == nil {
 		dto.GuideSlug = slug
+	} else {
+		slog.Warn("ecaguide: guide_slug resolution failed", "id", g.ID.String(), "error", serr)
 	}
 
 	return &GuideDetailDTO{Guide: dto, Updates: updateDTOs(updates)}, nil

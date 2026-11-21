@@ -900,9 +900,9 @@ WHERE c.content_type = 'guide'
       OR c.id = (SELECT guide_id FROM eca_guides WHERE id = $1::uuid)
       OR (
           COALESCE(BTRIM(c.field_values->>'guide_id'), '') = ''
-          AND UPPER(c.field_values->>'destination_country') = UPPER($3::text)
-          AND LOWER(c.field_values->>'provider') = LOWER($4::text)
-          AND LOWER(c.field_values->>'purpose') = LOWER($5::text)
+          AND UPPER(c.field_values->>'destination_country') = UPPER($2::text)
+          AND LOWER(c.field_values->>'provider') = LOWER($3::text)
+          AND LOWER(c.field_values->>'purpose') = LOWER($4::text)
       )
   )
 ORDER BY (c.field_values->>'guide_id' = $1) DESC, c.created_at, c.id
@@ -910,7 +910,7 @@ LIMIT 1
 `
 
 	var slug string
-	err := s.pool.Reader.QueryRow(ctx, q, g.ID.String(), g.ID, destGeo, providerSlug, g.Purpose).Scan(&slug)
+	err := s.pool.Reader.QueryRow(ctx, q, g.ID.String(), destGeo, providerSlug, g.Purpose).Scan(&slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
