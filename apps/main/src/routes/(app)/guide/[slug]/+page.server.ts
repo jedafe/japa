@@ -73,8 +73,13 @@ export const load: PageServerLoad = async (event) => {
 	let attestationToolHref: string | null = null;
 	let ecaToolHref: string | null = null;
 	let credentialToolHref: string | null = null;
+	let housingToolHref: string | null = null;
 	const guideCategory = data.article.guide_category;
-	const needsGeo = guideCategory === 'attestation' || guideCategory === 'eca' || guideCategory === 'credential';
+	const needsGeo =
+		guideCategory === 'attestation' ||
+		guideCategory === 'eca' ||
+		guideCategory === 'credential' ||
+		guideCategory === 'accommodation';
 	const { features } = await event.parent();
 	if (needsGeo) {
 		geoCountries = await apiList<GeoCountry>(ctx, '/geo/countries')
@@ -190,5 +195,55 @@ export const load: PageServerLoad = async (event) => {
 		if (s) credentialToolHref = `/tools/credential-checker${s ? `?${s}` : ''}`;
 	}
 
-	return { ...data, scholarship, geoCountries, attestationToolHref, ecaToolHref, credentialToolHref };
+	// §96 — accommodation-category guides deep-link into the housing tool on
+	// its natural key (destination geo code + city + accommodation_type).
+	// An explicit guide_id deep-links to the tool detail when the row
+	// resolves (validated against the public endpoint); otherwise a single
+	// natural-key match deep-links, and anything else lands on the
+	// dest+type-filtered tool landing.
+	if (guideCategory === 'accommodation' && features['housing_guide.enabled']) {
+		const guid = typeof fv.guide_id === 'string' ? fv.guide_id.trim() : '';
+		let linked = false;
+		if (uuidRe.test(guid)) {
+			try {
+				await apiGet(ctx, `/housing-guide/${guid}`);
+				housingToolHref = `/tools/housing-guide/${guid}`;
+				linked = true;
+			} catch {
+				// Stale/unpublished guide id — fall through to resolution.
+			}
+		}
+		if (!linked) {
+			const destId = spaceIdOf(fv.destination_country);
+			const accomType =
+				typeof fv.accommodation_type === 'string' ? fv.accommodation_type.trim().toLowerCase() : '';
+			const cityName = typeof fv.city === 'string' ? fv.city.trim() : '';
+			if (destId) {
+				try {
+					const qs = new URLSearchParams({ dest: destId, page_size: '50' });
+					if (accomType) qs.set('type', accomType);
+					const res = await apiList<{ id: string; city_space_name?: string | null }>(
+						ctx,
+						`/housing-guide?${qs}`
+					);
+					const matches = res.items.filter(
+						(g) => (g.city_space_name ?? '').toLowerCase() === cityName.toLowerCase()
+					);
+					if (matches.length === 1) {
+						housingToolHref = `/tools/housing-guide/${matches[0].id}`;
+						linked = true;
+					}
+				} catch {
+					// Lookup failure — land on the corridor-filtered tool page.
+				}
+				if (!linked) {
+					const q = new URLSearchParams({ dest: destId });
+					if (accomType) q.set('type', accomType);
+					housingToolHref = `/tools/housing-guide?${q}`;
+				}
+			}
+		}
+	}
+
+	return { ...data, scholarship, geoCountries, attestationToolHref, ecaToolHref, credentialToolHref, housingToolHref };
 };

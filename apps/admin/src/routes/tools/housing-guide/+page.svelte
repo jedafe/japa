@@ -92,16 +92,27 @@
 		}
 	}
 
+	// ── Approve modal state (HITL review notes — ADR-088) ──────────────────
+	let showApproveModal = $state(false);
+	let approveTarget = $state<HousingGuideItem | null>(null);
+	let approveNotes = $state('');
+
 	async function approveItem(item: HousingGuideItem) {
-		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
-		if (item.ai_generated && !item.hitl_reviewed_by) {
-			pageError = t('app.housing_guide.hitl_required', 'Cannot approve AI-generated content without HITL review');
-			return;
-		}
+		// Approving IS the HITL act (ADR-088): it stamps hitl_reviewed_by/at
+		// server-side. Prompt for optional review notes first.
+		approveTarget = item;
+		approveNotes = '';
+		showApproveModal = true;
+	}
+
+	async function confirmApprove() {
+		const item = approveTarget;
+		if (!item) return;
+		showApproveModal = false;
 		acting = true;
 		pageError = '';
 		try {
-			const result = await housingGuideAdminApi.approve(item.id);
+			const result = await housingGuideAdminApi.approve(item.id, approveNotes.trim() || undefined);
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -111,6 +122,7 @@
 			pageError = t('common.error', 'An error occurred');
 		} finally {
 			acting = false;
+			approveTarget = null;
 		}
 	}
 
@@ -175,6 +187,30 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'draft', label: t('common.status_draft', 'Draft') },
+					{ value: 'ai_draft', label: t('common.status_ai_draft', 'AI Draft') },
+					{ value: 'pending', label: t('common.status_pending', 'Pending') },
+					{ value: 'published', label: t('common.status_published', 'Published') },
+					{ value: 'rejected', label: t('common.status_rejected', 'Rejected') }
+				]
+			},
+			{
+				key: 'type',
+				label: t('app.tools.col_accommodation_type', 'Accommodation Type'),
+				options: accommodationTypes
+			},
+			{
+				key: 'active',
+				label: t('common.active', 'Active'),
+				options: [
+					{ value: 'true', label: t('common.yes', 'Yes') },
+					{ value: 'false', label: t('common.no', 'No') }
+				]
 			}
 		];
 	});
@@ -243,6 +279,7 @@
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.type) qs.set('type', params.filter.type);
+			if (params.filter?.active !== undefined && params.filter?.active !== '') qs.set('active', params.filter.active);
 			const result = await housingGuideAdminApi.list(`?${qs.toString()}`);
 			if (result.ok) {
 				const data = (result.data.data as HousingGuideItem[]) ?? [];
@@ -311,6 +348,37 @@
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={confirmGenerate} disabled={acting}>
 			{acting ? t('app.tools.generating', 'Generating...') : t('app.tools.generate', 'Generate')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Approve modal (HITL review notes — ADR-088) ─────────────────────── -->
+<Modal bind:open={showApproveModal} title={t('app.tools.approve_guide_title', 'Approve housing guide')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t(
+				'app.tools.approve_guide_desc',
+				'Approving publishes this guide and stamps the HITL review fields. Optionally attach review notes.'
+			)}
+		</p>
+		<div>
+			<label for="approve-notes" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.tools.review_notes', 'Review notes (optional)')}
+			</label>
+			<textarea
+				id="approve-notes"
+				rows="3"
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={approveNotes}
+				placeholder={t('app.tools.review_notes_placeholder', 'What did you verify?')}
+			></textarea>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showApproveModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmApprove} disabled={acting}>
+			{acting ? t('common.saving', 'Saving...') : t('common.approve', 'Approve')}
 		</Button>
 	</div>
 </Modal>

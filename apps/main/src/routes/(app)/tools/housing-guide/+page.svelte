@@ -45,11 +45,22 @@
 	let guides = $state<HousingGuideWithAi[]>(untrack(() => data.guides));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
+	let selectedType = $state<string>(untrack(() => data.initialType ?? ''));
 	let loading = $state(false);
 	let expandedId = $state<string | null>(null);
 
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
+
+	// §96 accommodation_type enum — mirrors the admin page's list; the
+	// backend stores the value verbatim on housing_guides rows.
+	const accommodationTypes = [
+		{ value: 'private_rental', labelKey: 'housing_guide.type_private_rental', label: 'Private rental' },
+		{ value: 'flatshare', labelKey: 'housing_guide.type_flatshare', label: 'Flatshare' },
+		{ value: 'student', labelKey: 'housing_guide.type_student', label: 'Student housing' },
+		{ value: 'employer_provided', labelKey: 'housing_guide.type_employer', label: 'Employer-provided' },
+		{ value: 'all', labelKey: 'housing_guide.type_all', label: 'All types' }
+	];
 
 	async function loadGuides() {
 		if (!selectedDestId) {
@@ -57,23 +68,33 @@
 			return;
 		}
 		loading = true;
-		const res = await api.get<HousingGuideWithAi[]>(
-			`/housing-guide?dest=${selectedDestId}`
-		);
+		const qs = new URLSearchParams({ dest: selectedDestId });
+		if (selectedType) qs.set('type', selectedType);
+		const res = await api.get<HousingGuideWithAi[]>(`/housing-guide?${qs}`);
 		loading = false;
 		if (!res.error) guides = res.data ?? [];
 		else guides = [];
+	}
+
+	function syncUrl() {
+		const url = new URL(page.url.href);
+		if (selectedDestId) url.searchParams.set('dest', selectedDestId); else url.searchParams.delete('dest');
+		if (selectedType) url.searchParams.set('type', selectedType); else url.searchParams.delete('type');
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function onDestChange(id: string) {
 		expandedId = null;
 		selectedDestId = id;
 		// Update URL for shareability (shallow — SvelteKit replaceState keeps page.url in sync)
-		const url = new URL(page.url.href);
+		syncUrl();
+		loadGuides();
+	}
 
-		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
-
-		goto(url, { shallow: true, replace: true });
+	function onTypeChange(e: Event) {
+		expandedId = null;
+		selectedType = (e.target as HTMLSelectElement).value;
+		syncUrl();
 		loadGuides();
 	}
 
@@ -188,6 +209,20 @@
 					onClear={() => onDestChange('')}
 				/>
 			</div>
+			<label for="hg-type" class="mt-3 block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+				{t('housing_guide.accommodation_type', 'Accommodation type')}
+			</label>
+			<select
+				id="hg-type"
+				value={selectedType}
+				onchange={onTypeChange}
+				class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+			>
+				<option value="">{t('housing_guide.all_types', 'All types')}</option>
+				{#each accommodationTypes as at (at.value)}
+					<option value={at.value}>{t(at.labelKey, at.label)}</option>
+				{/each}
+			</select>
 		</div>
 
 		{#if !authed}
@@ -358,12 +393,24 @@
 										{t('housing_guide.reviewed_by', 'Reviewed by')} {guide.reviewer_name}
 									</p>
 								{/if}
-								<a
-									href="/tools/housing-guide/{guide.id}"
-									class="inline-flex items-center gap-1.5 pt-2 text-sm text-[var(--color-primary-text)] hover:underline"
-								>
-									{t('common.view_details', 'View details')}
-								</a>
+								<div class="flex flex-wrap items-center gap-4 pt-2">
+									<a
+										href="/tools/housing-guide/{guide.id}"
+										class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
+									>
+										{t('common.view_details', 'View details')}
+									</a>
+									<!-- §96 editorial cross-link — the in-depth guide that
+									     claims this row (guide_slug on the detail DTO). -->
+									{#if guide.guide_slug}
+										<a
+											href="/guide/{guide.guide_slug}"
+											class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
+										>
+											{t('housing_guide.read_guide', 'Read the in-depth guide')}
+										</a>
+									{/if}
+								</div>
 							</div>
 						{/if}
 					</div>

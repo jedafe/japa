@@ -53,6 +53,9 @@ type GuideDTO struct {
 	CitySpaceName        string          `json:"city_space_name,omitempty"`
 	CitySpaceCode        string          `json:"city_space_code,omitempty"`
 	ReviewerName         string          `json:"reviewer_name,omitempty"`
+	// Detail payload only (§96 editorial integration) — slug of the
+	// published accommodation-category guide that claims this row.
+	GuideSlug            string          `json:"guide_slug,omitempty"`
 }
 
 // CreateGuideRequest is the request body for POST /admin/housing-guides.
@@ -366,7 +369,9 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 
 	dtos := make([]GuideDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dto := rowToDTO(r)
+		dto.scrubInternal()
+		dtos = append(dtos, dto)
 	}
 
 	s.mergeGuideFieldValues(ctx, dtos)
@@ -374,9 +379,21 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	return dtos, total, nil
 }
 
-// GetByID returns a single published housing guide by id.
+// scrubInternal clears fields that are internal provenance/audit data —
+// they must not leak through public reads (§97 precedent). The admin
+// queue consumes the un-scrubbed DTO.
+func (d *GuideDTO) scrubInternal() {
+	d.HITLReviewedBy = ""
+	d.HITLReviewedAt = ""
+	d.HITLReviewNotes = ""
+	d.AIPromptHash = ""
+}
+
+// GetByID returns a single published, active housing guide by id —
+// the public-detail read (§97 precedent: drafts/ai_drafts must not be
+// publicly fetchable by id).
 func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (GuideDTO, error) {
-	row, err := s.store.GetGuideByID(ctx, id)
+	row, err := s.store.GetPublishedGuideByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
@@ -385,7 +402,20 @@ func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (GuideDTO, error)
 		return GuideDTO{}, fmt.Errorf("housingguide: get by id: %w", err)
 	}
 
-	return s.mergeGuideFieldValue(ctx, rowToDTO(row)), nil
+	dto := s.mergeGuideFieldValue(ctx, rowToDTO(row))
+	dto.scrubInternal()
+
+	// §96 editorial cross-link — the slug of the published accommodation-
+	// category guide that claims this row. A resolution error must not fail
+	// the detail payload the way a missing slug silently skips the
+	// back-link.
+	if slug, serr := s.store.GuideSlugForGuide(ctx, row); serr == nil {
+		dto.GuideSlug = slug
+	} else {
+		slog.Warn("housingguide: guide_slug resolution failed", "id", row.ID.String(), "error", serr)
+	}
+
+	return dto, nil
 }
 
 // mergeGuideFieldValues overlays each guide's community field values onto

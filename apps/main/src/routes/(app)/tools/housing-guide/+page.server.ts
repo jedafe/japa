@@ -39,19 +39,28 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
-	// If ?dest= is present, fetch housing guides for that destination so the
-	// page renders with content on first paint (SSR). Otherwise the user picks
-	// a destination client-side.
+	// ?dest= takes a space id; ?dest_geo= takes a geo code — the editorial
+	// guide cross-link convention (§97 pattern: guide field_values store
+	// geo codes, the tool landing resolves them to space ids). ?type=
+	// forwards the accommodation_type filter.
 	const destParam = event.url.searchParams.get('dest');
-	const initialDestId =
-		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+	const destGeoParam = event.url.searchParams.get('dest_geo');
+	const typeParam = event.url.searchParams.get('type');
+	const initialDestId = destParam && destinations.some((d) => d.id === destParam)
+		? destParam
+		: (destGeoParam
+			? (destinations.find(
+					(d) => d.geo_code?.toUpperCase() === destGeoParam.trim().toUpperCase()
+				)?.id ?? null)
+			: null);
+	const initialType = typeParam?.trim().toLowerCase() || null;
 
 	let guides: HousingGuideWithAi[] = [];
 	if (initialDestId) {
 		try {
-			guides = (
-				await apiList<HousingGuideWithAi>(ctx, `/housing-guide?dest=${initialDestId}`)
-			).items;
+			const qs = new URLSearchParams({ dest: initialDestId });
+			if (initialType) qs.set('type', initialType);
+			guides = (await apiList<HousingGuideWithAi>(ctx, `/housing-guide?${qs}`)).items;
 		} catch {
 			guides = [];
 		}
@@ -61,6 +70,7 @@ export const load: PageServerLoad = async (event) => {
 		destinations,
 		guides,
 		initialDestId,
+		initialType,
 		disabled,
 		authed
 	};

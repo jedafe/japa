@@ -2593,8 +2593,11 @@ export const housingGuideAdminApi = {
 		api<unknown>(`/admin/housing-guides`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/housing-guides/${id}`, { method: 'PATCH', body }),
-	approve: (id: string) =>
-		api<unknown>(`/admin/housing-guides/${id}/approve`, { method: 'PATCH', body: {} }),
+	approve: (id: string, notes?: string) =>
+		api<unknown>(`/admin/housing-guides/${id}/approve`, {
+			method: 'PATCH',
+			body: notes ? { notes } : {}
+		}),
 	reject: (id: string, body: { reason?: string } = {}) =>
 		api<unknown>(`/admin/housing-guides/${id}/reject`, { method: 'PATCH', body }),
 	generate: (body: Record<string, unknown>) =>

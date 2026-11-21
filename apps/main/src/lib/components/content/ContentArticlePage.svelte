@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
-	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2, Stamp } from 'lucide-svelte';
+	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2, Stamp, House } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
@@ -75,6 +75,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		attestationToolHref?: string | null;
 		ecaToolHref?: string | null;
 		credentialToolHref?: string | null;
+		housingToolHref?: string | null;
 	}
 
 	type PageData = ContentArticlePageData;
@@ -133,7 +134,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// geo_countries field semantics and the pathway_steps card shape.
 	const isEcaGuide = $derived(article.content_type === 'guide' && article.guide_category === 'eca');
 	const isCredentialGuide = $derived(article.content_type === 'guide' && article.guide_category === 'credential');
-	const isToolGuide = $derived(isAttestationGuide || isEcaGuide || isCredentialGuide);
+	// §96 — accommodation guides share the geo_countries semantics (no
+	// pathway_steps); the tool CTA deep-links into the housing tool.
+	const isAccommodationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'accommodation');
+	const isToolGuide = $derived(isAttestationGuide || isEcaGuide || isCredentialGuide || isAccommodationGuide);
 
 	const guideDetails = $derived.by(() => {
 		if (article.content_type !== 'guide' || !article.field_values) return [] as { key: string; label: string; value: string }[];
@@ -171,6 +175,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	const attestationToolHref = $derived(data.attestationToolHref ?? null);
 	const ecaToolHref = $derived(data.ecaToolHref ?? null);
 	const credentialToolHref = $derived(data.credentialToolHref ?? null);
+	const housingToolHref = $derived(data.housingToolHref ?? null);
 	const attestationSteps = $derived.by((): unknown[] => {
 		if (!isToolGuide) return [];
 		const raw = article.field_values?.pathway_steps;
@@ -702,6 +707,21 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				</a>
 				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 					{t('credential_checker.open_tool_desc', 'Check the regulator, licensing steps, costs, and community notes for your corridor.')}
+				</p>
+			</div>
+		{/if}
+
+		{#if housingToolHref}
+			<div class="mt-8">
+				<a
+					href={housingToolHref}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<House size={18} />
+					{t('housing_guide.open_tool', 'Open the interactive housing guide')}
+				</a>
+				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+					{t('housing_guide.open_tool_desc', 'See search platforms, landlord requirements, rent ranges, and scam warnings for this destination.')}
 				</p>
 			</div>
 		{/if}

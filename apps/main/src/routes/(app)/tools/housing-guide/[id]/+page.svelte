@@ -3,7 +3,7 @@
 	import { toolOgCard } from '#lib/seo/og.js';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { Home, ArrowLeft, Globe, AlertTriangle, ShieldCheck, MapPin } from 'lucide-svelte';
+	import { Home, ArrowLeft, Globe, AlertTriangle, ShieldCheck, MapPin, BookOpen } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	/**
@@ -165,6 +165,18 @@
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('housing_guide.tips', 'Tips')}</h2>
 				<p class="text-sm text-[var(--color-text-subtle)] whitespace-pre-line">{guide.tips}</p>
 			</div>
+		{/if}
+
+		<!-- §96 editorial cross-link — the in-depth guide that claims this
+		     row (guide_slug on the detail DTO). -->
+		{#if guide.guide_slug}
+			<a
+				href="/guide/{guide.guide_slug}"
+				class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+			>
+				<BookOpen size={18} />
+				{t('housing_guide.read_guide', 'Read the in-depth guide')}
+			</a>
 		{/if}
 
 		{#if guide.reviewer_name}

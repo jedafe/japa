@@ -5187,6 +5187,9 @@ export interface HousingGuide {
 	is_active: boolean;
 	last_verified_at?: string | null;
 	reviewer_name?: string | null;
+	// Detail payload only (§96) — slug of the editorial guide that
+	// claims this housing guide.
+	guide_slug?: string;
 	created_at: string;
 	updated_at: string;
 }

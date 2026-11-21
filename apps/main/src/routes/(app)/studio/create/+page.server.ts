@@ -337,7 +337,19 @@ export const load: PageServerLoad = async (event) => {
 	// selector's default entry — so an unknown value is ignored the same
 	// way ?type and ?space are.
 	const requestedCategory = event.url.searchParams.get('category') ?? '';
-	const selectedMeta = composerTypes.find((t) => t.value === initialType) ?? composerTypes[0];
+
+	// A bare ?category that matches a guide category implies type=guide —
+	// /studio/create?category=accommodation must land in the guide
+	// composer, not silently drop the category onto the default type.
+	let effectiveType = initialType;
+	if (!effectiveType && requestedCategory) {
+		const guideMeta = composerTypes.find((t) => t.value === 'guide');
+		if (guideMeta?.hasCategory && guideMeta.categories?.some((c) => c.Slug === requestedCategory)) {
+			effectiveType = 'guide';
+		}
+	}
+
+	const selectedMeta = composerTypes.find((t) => t.value === effectiveType) ?? composerTypes[0];
 	const initialCategory =
 		selectedMeta?.hasCategory &&
 		selectedMeta.categories?.some((c) => c.Slug === requestedCategory)
@@ -394,7 +406,7 @@ export const load: PageServerLoad = async (event) => {
 		coverMedia,
 		draftSeriesId,
 		draftSpaces,
-		initialType,
+		initialType: effectiveType,
 		initialCategory,
 		initialSpaceId,
 		initialTitle: sharedTitle,

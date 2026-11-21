@@ -143,6 +143,8 @@ type CreateGuideInput struct {
 	AIModel              *string
 	AIPromptHash         *string
 	LastVerifiedAt       pgtype.Date
+	GuideID              pgtype.UUID // editorial guide cross-link (§96)
+	HITLReviewNotes      *string     // auto-provision provenance
 }
 
 // UpdateGuideInput holds the mutable fields for updating a housing guide.
@@ -307,7 +309,10 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetGuideByID returns a single housing guide by its id.
+// GetGuideByID returns a single housing guide by its id — any status
+// (used by admin flows and the editorial claim lookup). Public handlers
+// must use GetPublishedGuideByID so drafts/ai_drafts stay invisible
+// (§97 precedent, geo-aware pattern "AI drafts must not be visible").
 func (s *Store) GetGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
 	const q = `
 SELECT hg.id, hg.destination_space_id, hg.city_space_id,
@@ -328,6 +333,38 @@ WHERE hg.id = $1
 LIMIT 1
 `
 
+	return s.scanGuideRow(ctx, q, id)
+}
+
+// GetPublishedGuideByID returns a single PUBLISHED, ACTIVE housing guide
+// by id — the only read the public GET /housing-guide/:id handler may
+// use. Non-published rows resolve as pgx.ErrNoRows → 404.
+func (s *Store) GetPublishedGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
+	const q = `
+SELECT hg.id, hg.destination_space_id, hg.city_space_id,
+       hg.accommodation_type, hg.search_platforms, hg.landlord_requirements,
+       hg.rent_ranges, hg.scam_categories, hg.tips, hg.status, hg.is_active,
+       hg.ai_generated, hg.ai_model, hg.ai_prompt_hash,
+       hg.hitl_reviewed_by, hg.hitl_reviewed_at, hg.hitl_review_notes,
+       hg.last_verified_at, hg.is_japabot_indexed,
+       hg.created_at, hg.updated_at,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       u.username AS reviewer_name
+FROM housing_guides hg
+LEFT JOIN spaces ds ON ds.id = hg.destination_space_id
+LEFT JOIN spaces cs ON cs.id = hg.city_space_id
+LEFT JOIN users u ON u.id = hg.hitl_reviewed_by
+WHERE hg.id = $1
+  AND hg.status = 'published'
+  AND hg.is_active = true
+LIMIT 1
+`
+
+	return s.scanGuideRow(ctx, q, id)
+}
+
+func (s *Store) scanGuideRow(ctx context.Context, q string, id pgtype.UUID) (GuideRow, error) {
 	var r GuideRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
@@ -377,8 +414,8 @@ INSERT INTO housing_guides (
     destination_space_id, city_space_id, accommodation_type,
     search_platforms, landlord_requirements, rent_ranges, scam_categories,
     tips, status, is_active, ai_generated, ai_model, ai_prompt_hash,
-    last_verified_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    last_verified_at, guide_id, hitl_review_notes
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15,'')::uuid, $16)
 RETURNING id
 `
 
@@ -390,7 +427,7 @@ RETURNING id
 		input.AccommodationType, searchPlatforms, input.LandlordRequirements,
 		rentRanges, input.ScamCategories, input.Tips, status,
 		input.IsActive, input.AIGenerated, input.AIModel, input.AIPromptHash,
-		input.LastVerifiedAt,
+		input.LastVerifiedAt, uuidOrEmpty(input.GuideID), input.HITLReviewNotes,
 	).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("housingguide: create guide: %w", err)
@@ -702,4 +739,185 @@ WHERE %s
 	}
 
 	return out, total, nil
+}
+
+// ── Editorial integration helpers (§96 — /studio/create?type=guide) ────
+// Mirror the §97 attestation / §109 ECA pattern: guide→tool resolution runs
+// on the (destination_space, city_space, accommodation_type) natural key;
+// the tool→guide half resolves an explicit claim (contents.field_values.
+// guide_id or housing_guides.guide_id) before falling back to the
+// combination match.
+
+// SpaceIDByCountryGeoCode resolves a country-level geo space by its
+// geo_code (case-insensitive) — the reverse of the /geo/countries list
+// the editorial guide fields are sourced from.
+func (s *Store) SpaceIDByCountryGeoCode(ctx context.Context, geoCode string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM spaces
+WHERE level = 'country'
+  AND UPPER(geo_code) = UPPER($1)
+  AND deleted_at IS NULL
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, geoCode).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// CitySpaceIDByName resolves a city-level space by name inside the given
+// destination country. The spaces hierarchy is city → state → country via
+// parent_id, so a city matches when its parent is the destination or its
+// parent's parent is. Returns pgx.ErrNoRows when no city matches — the
+// caller treats that as a country-level guide (NULL city_space_id).
+func (s *Store) CitySpaceIDByName(ctx context.Context, destSpaceID pgtype.UUID, name string) (pgtype.UUID, error) {
+	const q = `
+SELECT c.id FROM spaces c
+LEFT JOIN spaces p ON p.id = c.parent_id
+WHERE c.level = 'city'
+  AND LOWER(BTRIM(c.name)) = LOWER(BTRIM($2))
+  AND c.deleted_at IS NULL
+  AND (c.parent_id = $1 OR p.parent_id = $1)
+ORDER BY c.created_at, c.id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, destSpaceID, name).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// GuideIDForCombination returns the id of the guide matching the
+// (destination, city, accommodation_type) natural key, in any status — a
+// draft still claims the combination so the publish hook never
+// duplicates it. NULL-safe on city_space_id/accommodation_type: an unset
+// city is part of the key (country-level guide). Read off Writer: this
+// feeds a write decision. Returns pgx.ErrNoRows when no guide matches.
+func (s *Store) GuideIDForCombination(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM housing_guides
+WHERE destination_space_id = $1
+  AND city_space_id IS NOT DISTINCT FROM $2
+  AND COALESCE(accommodation_type, '') = COALESCE($3, '')
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var typeArg *string
+	if accommodationType != "" {
+		typeArg = &accommodationType
+	}
+
+	var id pgtype.UUID
+	if err := s.pool.Writer.QueryRow(ctx, q, destSpaceID, citySpaceID, typeArg).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// LinkGuideToContent stamps the bidirectional editorial link: the
+// housing_guides row's guide_id points at the guide content, and the
+// guide's field_values.guide_id is backfilled so the link becomes
+// explicit rather than computed (§97 precedent). field_values is
+// JSONB-merged, not rewritten — concurrent edits to other keys survive.
+func (s *Store) LinkGuideToContent(ctx context.Context, guideID, contentID pgtype.UUID) error {
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE housing_guides SET guide_id = $2, updated_at = now()
+		WHERE id = $1`, guideID, contentID); err != nil {
+		return fmt.Errorf("housingguide: link guide to content: %w", err)
+	}
+
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE contents
+		SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('guide_id', $2::text),
+		    updated_at = now()
+		WHERE id = $1
+		  AND content_type = 'guide'
+		  AND guide_category = 'accommodation'
+		  AND deleted_at IS NULL`, contentID, guideID.String()); err != nil {
+		return fmt.Errorf("housingguide: backfill guide guide_id: %w", err)
+	}
+
+	return nil
+}
+
+// GuideSlugForGuide returns the slug of the published editorial guide
+// (guide_category='accommodation') linked to the given housing_guides row
+// — the tool→guide half of the cross-link. A guide claims the row either
+// explicitly (field_values.guide_id, or the row's guide_id column
+// pointing at the content) or via the matching natural key (destination
+// geo code + city name + accommodation_type). Explicit claims win over
+// combination matches. Returns "" with nil error when unclaimed.
+func (s *Store) GuideSlugForGuide(ctx context.Context, g GuideRow) (string, error) {
+	if !g.ID.Valid {
+		return "", nil
+	}
+
+	var destGeo, cityName *string
+	if err := s.pool.Reader.QueryRow(ctx, `
+		SELECT geo_code FROM spaces WHERE id = $1`, g.DestinationSpaceID).Scan(&destGeo); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("housingguide: dest geo lookup: %w", err)
+	}
+	if g.CitySpaceID.Valid {
+		if err := s.pool.Reader.QueryRow(ctx, `
+			SELECT name FROM spaces WHERE id = $1`, g.CitySpaceID).Scan(&cityName); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("housingguide: city name lookup: %w", err)
+		}
+	}
+
+	// The combination arm matches on the editorial field values. City is
+	// symmetric: a country-level row (NULL city) requires an empty guide
+	// city field; a city row requires the same city name. An unset/empty
+	// accommodation_type on either side means "not type-scoped" and only
+	// matches the same emptiness — an editorial guide typed 'flatshare'
+	// must not claim the generic country guide.
+	const q = `
+SELECT c.slug FROM contents c
+WHERE c.content_type = 'guide'
+  AND c.guide_category = 'accommodation'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND (
+      c.field_values->>'guide_id' = $1
+      OR c.id = (SELECT guide_id FROM housing_guides WHERE id = $1::uuid)
+      OR (
+          COALESCE(BTRIM(c.field_values->>'guide_id'), '') = ''
+          AND UPPER(c.field_values->>'destination_country') = UPPER($2::text)
+          AND LOWER(COALESCE(BTRIM(c.field_values->>'city'), '')) = LOWER(COALESCE($3::text, ''))
+          AND LOWER(COALESCE(BTRIM(c.field_values->>'accommodation_type'), '')) = LOWER(COALESCE($4::text, ''))
+      )
+  )
+ORDER BY (c.field_values->>'guide_id' = $1) DESC, c.created_at, c.id
+LIMIT 1
+`
+
+	var slug string
+	err := s.pool.Reader.QueryRow(ctx, q, g.ID.String(), destGeo, cityName, g.AccommodationType).Scan(&slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("housingguide: guide slug for guide: %w", err)
+	}
+
+	return slug, nil
+}
+
+// uuidOrEmpty renders a pgtype.UUID for NULLIF inserts — an invalid UUID
+// yields "" so the column lands NULL instead of a zero-value.
+func uuidOrEmpty(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+
+	return id.String()
 }

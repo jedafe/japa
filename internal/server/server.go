@@ -2350,13 +2350,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// §97 pattern extended: publishing a tool-category guide auto-provisions
 	// a draft row for its natural key in whichever tool owns the category —
 	// attestation (document_type + corridor), eca (provider + destination +
-	// purpose), credential (profession + corridor). The fan-out replaces the
+	// purpose), credential (profession + corridor), housing (destination +
+	// optional city + accommodation_type). The fan-out replaces the
 	// single attestation hook; each service early-returns on foreign
 	// categories and no-ops when its feature flag is off.
 	contentService.SetGuidePublishHook(guidePublishFanout{hooks: []content.GuidePublishHook{
 		attestationGuideService,
 		ecaGuideService,
 		credentialCheckerService,
+		housingGuideService,
 	}})
 
 	sopGeneratorStore := sopgenerator.NewStore(database)
