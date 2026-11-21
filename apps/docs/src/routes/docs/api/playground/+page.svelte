@@ -527,6 +527,10 @@
 		gap: 1.25rem;
 	}
 	.pg-section {
+		/* Grid items default to min-width:auto — the CodeMirror editor's
+		   min-content width (long unbroken JSON lines) would propagate up
+		   and blow the track out past the viewport. */
+		min-width: 0;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-card);

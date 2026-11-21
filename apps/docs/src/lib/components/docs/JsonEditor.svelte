@@ -46,6 +46,11 @@
 				json(),
 				linter(jsonParseLinter()),
 				EditorView.editable.of(!readonly),
+				// Long unbroken JSON lines (minified bodies, big strings) would
+				// otherwise size .cm-content to the line's full width — its
+				// min-content propagates up and overflows the page. Wrapping
+				// keeps the editor at container width (no horizontal scroll).
+				EditorView.lineWrapping,
 				EditorView.theme({
 					'&': {
 						fontSize: '0.8125rem',
