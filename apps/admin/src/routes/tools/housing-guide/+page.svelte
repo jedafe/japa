@@ -8,7 +8,7 @@
 	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
-	import { Eye, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Sparkles, BadgeCheck } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { housingGuideAdminApi } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
@@ -143,6 +143,27 @@
 		}
 	}
 
+	// ADR-104 re-verification — stamps last_verified_at = today so a
+	// reviewer who fact-checked a live guide can clear the >90-day stale
+	// warning without a full edit round-trip.
+	async function verifyItem(item: HousingGuideItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const today = new Date().toISOString().slice(0, 10);
+			const result = await housingGuideAdminApi.update(item.id, { last_verified_at: today });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -161,6 +182,12 @@
 				onclick: rejectItem,
 				variant: 'destructive',
 				show: (row: HousingGuideItem) => row.status !== 'published' && row.status !== 'rejected'
+			});
+			acts.push({
+				label: t('app.tools.mark_verified', 'Mark as verified'),
+				icon: BadgeCheck,
+				onclick: verifyItem,
+				show: (row: HousingGuideItem) => row.status === 'published'
 			});
 		}
 		return acts;

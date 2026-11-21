@@ -161,6 +161,9 @@ type UpdateGuideInput struct {
 	AIModel              *string
 	AIPromptHash         *string
 	LastVerifiedAt       pgtype.Date
+	// ClearLastVerified sets last_verified_at = NULL — needed because a
+	// NULL-able date can't express "clear" through LastVerifiedAt alone.
+	ClearLastVerified bool
 	// is_japabot_indexed is GENERATED (status × is_active) — not writable.
 }
 
@@ -515,6 +518,8 @@ func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, input UpdateGui
 		sets = append(sets, fmt.Sprintf("last_verified_at = $%d", argIdx))
 		args = append(args, input.LastVerifiedAt)
 		argIdx++
+	} else if input.ClearLastVerified {
+		sets = append(sets, "last_verified_at = NULL")
 	}
 
 	if len(sets) == 0 {
@@ -546,14 +551,20 @@ WHERE id = $%d
 // admin (HITL approval). Sets hitl_reviewed_by, hitl_reviewed_at=now(),
 // status='published', and optional review notes.
 func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
+	// status != 'published' matches the attestation ApprovePathway guard:
+	// re-approving a live guide must not silently re-stamp the reviewer.
+	// last_verified_at is stamped by the same act — HITL approval IS the
+	// content verification that ADR-104's freshness display reports.
 	const q = `
 UPDATE housing_guides
 SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     hitl_review_notes = $3,
     status = 'published',
+    last_verified_at = CURRENT_DATE,
     updated_at = now()
 WHERE id = $1
+  AND status != 'published'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
@@ -829,13 +840,22 @@ LIMIT 1
 // explicit rather than computed (§97 precedent). field_values is
 // JSONB-merged, not rewritten — concurrent edits to other keys survive.
 func (s *Store) LinkGuideToContent(ctx context.Context, guideID, contentID pgtype.UUID) error {
-	if _, err := s.pool.Writer.Exec(ctx, `
+	// Both writes commit together (attestation tx precedent): a
+	// half-applied link would leave the housing row claiming a guide
+	// that has no backfilled guide_id to claim it back.
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("housingguide: link tx begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
 		UPDATE housing_guides SET guide_id = $2, updated_at = now()
 		WHERE id = $1`, guideID, contentID); err != nil {
 		return fmt.Errorf("housingguide: link guide to content: %w", err)
 	}
 
-	if _, err := s.pool.Writer.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		UPDATE contents
 		SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('guide_id', $2::text),
 		    updated_at = now()
@@ -844,6 +864,10 @@ func (s *Store) LinkGuideToContent(ctx context.Context, guideID, contentID pgtyp
 		  AND guide_category = 'accommodation'
 		  AND deleted_at IS NULL`, contentID, guideID.String()); err != nil {
 		return fmt.Errorf("housingguide: backfill guide guide_id: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("housingguide: link tx commit: %w", err)
 	}
 
 	return nil

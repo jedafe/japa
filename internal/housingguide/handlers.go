@@ -364,13 +364,8 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 	guide, err := h.service.Update(r.Context(), id, input)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
-			return
-		}
-
 		slog.Error("housingguide: admin update failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update housing guide")
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}
@@ -406,13 +401,8 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 	guide, err := h.service.Approve(r.Context(), id, user.UserID, input)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
-			return
-		}
-
 		slog.Error("housingguide: admin approve failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve housing guide")
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}
@@ -448,13 +438,8 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 
 	guide, err := h.service.Reject(r.Context(), id, user.UserID, input.Reason)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found or not pending review")
-			return
-		}
-
 		slog.Error("housingguide: admin reject failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject housing guide")
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}

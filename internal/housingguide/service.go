@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -88,6 +89,9 @@ type UpdateGuideRequest struct {
 	IsActive             *bool           `json:"is_active"`
 	AIModel              *string         `json:"ai_model"`
 	AIPromptHash         *string         `json:"ai_prompt_hash"`
+	// YYYY-MM-DD; parsed leniently — an unparseable value is a 400, an
+	// absent field leaves the existing verification date untouched.
+	LastVerifiedAt *string `json:"last_verified_at"`
 	// is_japabot_indexed is deliberately absent — it is a GENERATED column
 	// (status × is_active), so accepting it here would 500 the UPDATE.
 }
@@ -342,6 +346,40 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	return sb.String(), citations
 }
 
+// validGuideStatus gates the PATCH body — there is no CHECK constraint on
+// housing_guides.status, so the API is the only thing stopping a bogus
+// value from silently corrupting the lifecycle (and the
+// is_japabot_indexed derivation with it).
+func validGuideStatus(s string) bool {
+	switch s {
+	case StatusDraft, StatusAIDraft, StatusPending, StatusPublished, StatusRejected:
+		return true
+	}
+	return false
+}
+
+// validAccommodationTypes is the §96 enum the column was normalized to in
+// 001222 — 'all' is a real value (guide covers every type), NULL stays
+// type-unscoped and is validated by the caller, not here.
+var validAccommodationTypes = map[string]bool{
+	"private_rental":    true,
+	"flatshare":         true,
+	"student":           true,
+	"employer_provided": true,
+	"all":               true,
+}
+
+func validAccommodationType(t string) bool { return validAccommodationTypes[t] }
+
+func accommodationTypeList() string {
+	keys := make([]string, 0, len(validAccommodationTypes))
+	for k := range validAccommodationTypes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
 // List returns a paginated, filtered list of published housing guides.
 func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, accommodationType string, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
@@ -523,6 +561,14 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 		return GuideDTO{}, fmt.Errorf("%w: invalid rent_ranges", errpkg.ErrInvalid)
 	}
 
+	if input.Status != "" && !validGuideStatus(input.Status) {
+		return GuideDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, published, rejected", errpkg.ErrInvalid)
+	}
+
+	if input.AccommodationType != "" && !validAccommodationType(input.AccommodationType) {
+		return GuideDTO{}, fmt.Errorf("%w: accommodation_type must be one of %s", errpkg.ErrInvalid, accommodationTypeList())
+	}
+
 	storeInput := CreateGuideInput{
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
@@ -588,6 +634,14 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 // Update updates an existing housing guide (admin). Only provided fields
 // are applied.
 func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideRequest) (GuideDTO, error) {
+	if input.Status != nil && !validGuideStatus(*input.Status) {
+		return GuideDTO{}, fmt.Errorf("%w: status must be one of draft, ai_draft, pending, published, rejected", errpkg.ErrInvalid)
+	}
+
+	if input.AccommodationType != nil && !validAccommodationType(*input.AccommodationType) {
+		return GuideDTO{}, fmt.Errorf("%w: accommodation_type must be one of %s", errpkg.ErrInvalid, accommodationTypeList())
+	}
+
 	storeInput := UpdateGuideInput{
 		AccommodationType:    input.AccommodationType,
 		LandlordRequirements: input.LandlordRequirements,
@@ -599,10 +653,25 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 		ScamCategories:       input.ScamCategories,
 	}
 
+	if input.LastVerifiedAt != nil {
+		v := strings.TrimSpace(*input.LastVerifiedAt)
+		if v == "" {
+			// Explicit empty clears the verification date — the row
+			// drops back to "not yet verified" rather than staying
+			// frozen on a stale stamp.
+			storeInput.LastVerifiedAt = pgtype.Date{Valid: false}
+			storeInput.ClearLastVerified = true
+		} else if t, err := time.Parse("2006-01-02", v); err == nil {
+			storeInput.LastVerifiedAt = pgtype.Date{Time: t, Valid: true}
+		} else {
+			return GuideDTO{}, fmt.Errorf("%w: last_verified_at must be YYYY-MM-DD", errpkg.ErrInvalid)
+		}
+	}
+
 	if input.SearchPlatforms != nil {
 		sp, err := normalizeJSONB(input.SearchPlatforms, []byte("[]"))
 		if err != nil {
-			return GuideDTO{}, fmt.Errorf("invalid search_platforms: %w", err)
+			return GuideDTO{}, fmt.Errorf("%w: invalid search_platforms", errpkg.ErrInvalid)
 		}
 
 		storeInput.SearchPlatforms = sp
@@ -611,7 +680,7 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 	if input.RentRanges != nil {
 		rr, err := normalizeJSONB(input.RentRanges, []byte("{}"))
 		if err != nil {
-			return GuideDTO{}, fmt.Errorf("invalid rent_ranges: %w", err)
+			return GuideDTO{}, fmt.Errorf("%w: invalid rent_ranges", errpkg.ErrInvalid)
 		}
 
 		storeInput.RentRanges = rr
@@ -770,6 +839,10 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateGuideRequest)
 		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("%w: invalid city_space_id", errpkg.ErrInvalid)
 		}
+	}
+
+	if input.AccommodationType != "" && !validAccommodationType(input.AccommodationType) {
+		return GenerateDraftResponse{}, fmt.Errorf("%w: accommodation_type must be one of %s", errpkg.ErrInvalid, accommodationTypeList())
 	}
 
 	// Look up the destination (and optional city) names so the prompt and

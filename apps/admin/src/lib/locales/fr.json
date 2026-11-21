@@ -1270,6 +1270,7 @@
   "app.tools.dest_country_placeholder": "Sélectionnez un pays de destination",
   "app.tools.housing_guide_heading": "File de révision du guide du logement",
   "app.tools.housing_guide_desc": "Réviser et approuver les guides du logement générés par IA",
+  "app.tools.mark_verified": "Marquer comme vérifié",
   "app.tools.housing_guide_page_title": "File de révision du guide du logement — {site} Admin",
   "app.tools.generate_housing_guide": "Générer un guide du logement",
   "app.tools.col_filled": "Rempli / Total",

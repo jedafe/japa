@@ -1270,6 +1270,7 @@
   "app.tools.dest_country_placeholder": "Select a destination country",
   "app.tools.housing_guide_heading": "Housing Guide Review Queue",
   "app.tools.housing_guide_desc": "Review and approve AI-generated housing guides",
+  "app.tools.mark_verified": "Mark as verified",
   "app.tools.housing_guide_page_title": "Housing Guide Review Queue — {site} Admin",
   "app.tools.generate_housing_guide": "Generate Housing Guide",
   "app.tools.col_filled": "Filled / Total",
