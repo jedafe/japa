@@ -5,7 +5,8 @@
 	import { t } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
-	import { Plus, X, Send, AlertTriangle, History, KeyRound, AlignLeft } from 'lucide-svelte';
+	import { Plus, X, Send, AlertTriangle, History, KeyRound, AlignLeft, LoaderCircle } from 'lucide-svelte';
+	import { onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -38,6 +39,11 @@
 	let respBody = $state('');
 	let sending = $state(false);
 	let guardError = $state('');
+	// In-flight request abort: a hanging endpoint would otherwise pin the UI
+	// at "Sending…" forever — no timeout and no way to cancel (the page
+	// looks unresponsive). The Send button swaps to Cancel while in-flight.
+	let abortCtrl: AbortController | null = null;
+	onDestroy(() => abortCtrl?.abort());
 
 	// Request history (Ref: §47 ROADMAP 04.10) — last 10 requests in
 	// component state (not persisted). Click to re-populate the form.
@@ -151,6 +157,7 @@
 		respStatus = null;
 		respTime = null;
 		respBody = '';
+		abortCtrl = new AbortController();
 		const start = performance.now();
 		try {
 			const reqHeaders: Record<string, string> = {};
@@ -162,7 +169,8 @@
 			const res = await fetch(fullUrl, {
 				method,
 				headers: reqHeaders,
-				body: method === 'GET' || method === 'DELETE' ? undefined : body || undefined
+				body: method === 'GET' || method === 'DELETE' ? undefined : body || undefined,
+				signal: abortCtrl.signal
 			});
 			respStatus = res.status;
 			respTime = Math.round(performance.now() - start);
@@ -173,10 +181,18 @@
 				respBody = text;
 			}
 		} catch (e) {
+			// User-cancelled: no status badge, note it in the body instead of
+			// the generic network-error text. (respStatus stays null → no
+			// history entry, status shows as pending.)
+			if (e instanceof DOMException && e.name === 'AbortError') {
+				respBody = `// ${t('api.request_cancelled', 'Request cancelled')}`;
+				return;
+			}
 			respStatus = 0;
 			respBody = `Network error: ${e instanceof Error ? e.message : String(e)}`;
 		} finally {
 			sending = false;
+			abortCtrl = null;
 			// Record in history (Ref: §47 ROADMAP 04.10) — keep last 10.
 			if (respStatus !== null) {
 				historyId++;
@@ -191,6 +207,11 @@
 	function replayHistory(h: HistoryEntry) {
 		method = h.method;
 		url = h.url;
+	}
+
+	/** Abort the in-flight request (Send button swaps to Cancel). */
+	function cancelSend() {
+		abortCtrl?.abort();
 	}
 
 	function useQuick(q: { method: HttpMethod; path: string }) {
@@ -374,10 +395,17 @@
 					<p class="body-disabled">{t('api.no_body_for_method', 'No body needed for GET/DELETE')}</p>
 				{/if}
 
-				<button type="button" class="send-btn" onclick={send} disabled={sending}>
-					<Send class="rtl:-scale-x-100" size={14} />
-					{sending ? t('api.sending') : t('api.send')}
-				</button>
+				{#if sending}
+					<button type="button" class="send-btn cancel-btn" onclick={cancelSend}>
+						<LoaderCircle size={14} class="pg-spin" />
+						{t('api.cancel', 'Cancel')}
+					</button>
+				{:else}
+					<button type="button" class="send-btn" onclick={send}>
+						<Send class="rtl:-scale-x-100" size={14} />
+						{t('api.send')}
+					</button>
+				{/if}
 			</section>
 
 			<section class="pg-section">
@@ -391,7 +419,10 @@
 					{#if respTime !== null}<span class="time">{t('api.time')}: {respTime}ms</span>{/if}
 				</div>
 				<JsonEditor
-					value={respBody || `// ${t('api.no_response')}`}
+					value={respBody ||
+						(respStatus === null
+							? `// ${t('api.no_response')}`
+							: `// ${t('api.empty_response', 'Empty response body')}`)}
 					readonly={true}
 					minHeight={200}
 				/>
@@ -705,6 +736,14 @@
 	}
 	.send-btn:hover { background: var(--color-primary-hover); }
 	.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.cancel-btn {
+		background: var(--color-surface);
+		color: var(--method-delete);
+		border: 1px solid var(--method-delete);
+	}
+	.cancel-btn:hover { background: var(--method-delete-bg, rgba(220, 38, 38, 0.1)); }
+	:global(.pg-spin) { animation: pg-spin 0.9s linear infinite; }
+	@keyframes pg-spin { to { transform: rotate(360deg); } }
 
 	.resp-meta {
 		display: flex;

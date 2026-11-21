@@ -132,6 +132,8 @@
   "api.status": "Statut",
   "api.time": "Durée",
   "api.no_response": "Aucune requête envoyée",
+  "api.request_cancelled": "Requête annulée",
+  "api.empty_response": "Corps de réponse vide",
   "api.api_key": "Clé API",
   "api.api_key_help": "Votre clé API personnelle. Stockée uniquement dans cet onglet — jamais envoyée ailleurs qu’à l’API {site}.",
   "api.api_key_placeholder": "jc_…",

@@ -132,6 +132,8 @@
   "api.status": "Status",
   "api.time": "Time",
   "api.no_response": "No request sent yet",
+  "api.request_cancelled": "Request cancelled",
+  "api.empty_response": "Empty response body",
   "api.api_key": "API Key",
   "api.api_key_help": "Your personal API key. Stored only in this browser tab — never sent anywhere except the {site} API.",
   "api.api_key_placeholder": "jc_…",
