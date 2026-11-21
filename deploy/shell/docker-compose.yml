@@ -1,0 +1,158 @@
+# deploy/shell/docker-compose.yml — web terminal on the VPS host shell,
+# behind the §123 access gate (same model as deploy/files + the mail admin).
+#
+# Deployed as an independent Coolify "Docker Compose" service — carries no
+# JapaConnect code and is fully self-contained, so it works from a
+# `docker_compose_raw` resource. Keep it STOPPED; toggle on from
+# /dashboard/access-gates when host access is needed (gate target
+# `terminal` below).
+#
+# GATING — identical to the SFTPGo mail/file gates:
+#
+#   shell.japa.to is DNS-ONLY (gray cloud — NOT Cloudflare-proxied), so
+#   browser traffic hits the host directly on :443, where the CFLOCK4 origin
+#   lockdown drops every non-Cloudflare source. The EXTRA4/EXTRA6 exception
+#   chains (gate-admin.japa.to DDNS + static CIDRs, refreshed every 2 min by
+#   cf-admin-allow.timer) admit only allow-listed operator IPs — the same
+#   allow-list, no new firewall work.
+#
+#   Layer 2 is route existence: this service registers as a §123 access-gate
+#   target, so Coolify start/stop makes the Traefik route appear/disappear.
+#
+# Traefik TLS-passthrough: HostSNI(`shell.japa.to`) on :443 forwards raw TCP
+# to ttyd:8443, which terminates TLS itself with a Let's Encrypt cert issued
+# by the `acme` sidecar via DNS-01 + the Cloudflare API — required because
+# CFLOCK4 blocks inbound HTTP-01/TLS-ALPN-01 validation for non-proxied
+# hostnames.
+#
+# THE SHELL IS THE REAL HOST. ttyd runs privileged with the host PID
+# namespace; each browser session nsenter's into PID 1's namespaces, landing
+# in a login shell as root on the VPS itself — apt installs, docker, systemd
+# all operate on the host. Commands run under `tmux new -A -s main` executed
+# on the host, so the tmux server outlives the connection: closing the
+# browser or losing mobile signal detaches the client but never kills the
+# session — reconnecting resumes it.
+#
+# AUTH LAYER: HTTP basic auth (TTYD_USER/TTYD_PASS) — the only credential
+# between an allow-listed visitor and a root shell. Keep the gate off when
+# not in use.
+#
+# Coolify env to set before first start:
+#   CF_API_KEY + CF_EMAIL — Cloudflare Global API Key pair (the .env pair
+#                      already used for zone automation), OR
+#   CF_DNS_API_TOKEN   — a scoped token with Zone.DNS:Edit on japa.to
+#   CF_ACCOUNT_ID      — optional; lets dns_cf pick the token/zone pair
+#   ACME_EMAIL         — optional; Let's Encrypt account contact
+#   TTYD_USER / TTYD_PASS — required; the basic-auth gate
+#
+# JC_ACCESS_GATES entry to register (uuid = this Coolify service):
+#   {"key":"terminal","label":"Host Terminal (ttyd)","kind":"service",
+#    "uuid":"…","domain":"shell.japa.to","probe_url":"https://shell.japa.to/"}
+#
+# Cert renewal: acme.sh renews ~60 days in and the install-cert reloadcmd
+# keeps key perms readable. ttyd does not reload cert files — toggle the
+# gate to pick up a renewed cert.
+
+services:
+  ttyd:
+    image: tsl0922/ttyd:1.7.7-alpine
+    restart: unless-stopped
+    # privileged + host PID ns: `nsenter -t 1` joins the host namespaces so
+    # the terminal is a real host login shell, not a container shell.
+    privileged: true
+    pid: host
+    depends_on:
+      - acme
+    expose:
+      - "8443"
+    environment:
+      TTYD_USER: ${TTYD_USER:?required — basic-auth gate}
+      TTYD_PASS: ${TTYD_PASS:?required — basic-auth gate}
+      TZ: UTC
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # util-linux provides nsenter (not in the ttyd image).
+        apk add --no-cache util-linux >/dev/null
+        # One-time host prep: tmux must exist on the VPS — the session
+        # lives server-side so disconnects never kill running work.
+        nsenter -t 1 -m -u -i -n -p sh -c \
+          'command -v tmux >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq tmux; }' || true
+        exec ttyd \
+          --port 8443 --ssl \
+          --ssl-cert /certs/shell.japa.to/fullchain.cer \
+          --ssl-key /certs/shell.japa.to/shell.japa.to.key \
+          --credential "$${TTYD_USER}:$${TTYD_PASS}" \
+          --writable \
+          -t titleFixed='japa-vps' \
+          nsenter -t 1 -m -u -i -n -p su - root -c 'exec tmux new -A -s main'
+    volumes:
+      - shell-certs:/certs:ro
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.shell-gate.rule=HostSNI(`shell.japa.to`)
+      - traefik.tcp.routers.shell-gate.entrypoints=https
+      - traefik.tcp.routers.shell-gate.tls.passthrough=true
+      - traefik.tcp.services.shell-gate.loadbalancer.server.port=8443
+    networks:
+      - coolify
+
+  acme:
+    image: neilpang/acme.sh:3.1.7
+    restart: unless-stopped
+    # Self-contained bootstrap: issue (or reuse) the cert via DNS-01, install
+    # it into the shared cert dir with ttyd-readable perms, then hand off to
+    # the image's `daemon` entrypoint for cron renewal. DNS-01 is required —
+    # CFLOCK4 drops inbound HTTP-01/TLS-ALPN-01 validation for DNS-only
+    # hostnames; api.cloudflare.com is outbound only.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        DOMAIN="$${SHELL_DOMAIN:?SHELL_DOMAIN env required}"
+        CERT_DIR="/certs/$$DOMAIN"
+        mkdir -p "$$CERT_DIR"
+        if [ -n "$${ACME_EMAIL:-}" ]; then
+          acme.sh --register-account -m "$$ACME_EMAIL" --server letsencrypt || true
+        fi
+        # Exit 2 = "domains not changed — skip"; other failures are left
+        # for the renewal cron to retry.
+        acme.sh --issue --dns dns_cf -d "$$DOMAIN" --keylength 4096 --server letsencrypt || \
+          echo "acme.sh --issue for $$DOMAIN non-fatal (skip or retry via cron)"
+        # acme.sh keys land 0600; reloadcmd chmod runs now and is recorded
+        # in the domain conf, so renewal installs stay readable.
+        acme.sh --install-cert -d "$$DOMAIN" \
+          --key-file "$$CERT_DIR/$$DOMAIN.key" \
+          --fullchain-file "$$CERT_DIR/fullchain.cer" \
+          --ca-file "$$CERT_DIR/ca.cer" \
+          --reloadcmd "chmod 0644 '$$CERT_DIR/$$DOMAIN.key' '$$CERT_DIR/fullchain.cer' '$$CERT_DIR/ca.cer'" || \
+          echo "acme.sh --install-cert non-fatal"
+        exec /entry.sh daemon
+    environment:
+      SHELL_DOMAIN: shell.japa.to
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # acme.sh dns_cf credentials — whichever pair is set wins.
+      CF_Token: ${CF_DNS_API_TOKEN:-}
+      CF_Key: ${CF_API_KEY:-}
+      CF_Email: ${CF_EMAIL:-}
+      CF_Account_ID: ${CF_ACCOUNT_ID:-}
+      AUTO_UPGRADE: "0" # pinned tag — renewal must not pull a newer acme.sh
+    volumes:
+      - shell-acme:/acme.sh   # LE account + domain confs (private to acme)
+      - shell-certs:/certs    # install target — shared with ttyd
+    networks:
+      - coolify
+
+volumes:
+  shell-certs:
+  shell-acme:
+
+networks:
+  # Shared network every container on the Coolify host joins — puts ttyd
+  # behind the same Traefik as every other service.
+  coolify:
+    external: true
+    name: coolify
