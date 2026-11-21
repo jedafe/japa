@@ -42,25 +42,21 @@ func TestNormalizeEditorialSteps(t *testing.T) {
 			`[]`,
 		},
 		{
-			"not an array returns input",
+			// pathway_steps is NOT NULL — non-array input must yield '[]',
+			// not a verbatim pass-through that would violate the constraint.
+			"non-array input yields empty array",
 			`{"a":1}`,
-			`{"a":1}`,
+			`[]`,
 		},
 		{
-			"empty input",
+			"empty input yields empty array",
 			``,
-			``,
+			`[]`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := normalizeEditorialSteps(json.RawMessage(tt.input))
-			if tt.input == "" {
-				if len(got) != 0 {
-					t.Errorf("normalizeEditorialSteps(empty) = %q, want empty", got)
-				}
-				return
-			}
 
 			// Compare semantically — map marshal order is not stable.
 			var gotV, wantV any

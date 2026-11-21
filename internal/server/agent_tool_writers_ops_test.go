@@ -89,7 +89,7 @@ func TestToolWriterOpsMatrix(t *testing.T) {
 		// migration 000788. Re-enable only when a backing method lands.
 		"attestation_guide":     {"create": true},
 		"embassy":               {"create": true, "update": true},
-		"housing_guide":         {"create": true, "update": true},
+		"housing_guide":         {"create": true, "update": true, "assign_geo": true},
 		"mentorship_connection": {"create": true},
 		"scam_report":           {"create": true, "update": true, "assign_geo": true},
 		"wiki_page":             cud,
