@@ -1,6 +1,9 @@
 package worker
 
-import "testing"
+import (
+	"html/template"
+	"testing"
+)
 
 // TestSnakeToPascal_Initialisms guards the seeded-template variable
 // contract: declared names use full initialisms (SiteURL, TransactionID,
@@ -51,7 +54,7 @@ func TestPascalizeTemplateValue_PointerDeref(t *testing.T) {
 // and nested maps are pascalized recursively.
 func TestTemplateDataFromMap(t *testing.T) {
 	device := "Safari"
-	data := templateDataFromMap("JapaConnect", map[string]any{
+	data := templateDataFromMap("JapaConnect", "notification", map[string]any{
 		"user_name":   "jane",
 		"device_info": &device,
 		"site_url":    "https://japa.example",
@@ -70,8 +73,42 @@ func TestTemplateDataFromMap(t *testing.T) {
 		t.Errorf("SiteURL = %v, want https://japa.example", data["SiteURL"])
 	}
 
-	brandFallback := templateDataFromMap("", nil)
+	brandFallback := templateDataFromMap("", "notification", nil)
 	if brandFallback["SiteName"] == "" || brandFallback["SiteName"] == nil {
 		t.Error("SiteName fallback to brand.Get() produced empty value")
+	}
+}
+
+// Trusted-HTML keys are slug-scoped: 'content' is only unescaped inside the
+// newsletter campaign wrapper, 'digest_content' only inside the digest
+// slugs — under any other slug the same key renders as an escaped string so
+// a future producer passing user input cannot inject markup.
+func TestTemplateDataTrustedHTMLSlugScope(t *testing.T) {
+	mk := func(slug string) map[string]any {
+		return templateDataFromMap("", slug, map[string]any{
+			"content":        "<p>x</p>",
+			"digest_content": "<p>x</p>",
+		})
+	}
+
+	if _, ok := mk("newsletter")["Content"].(template.HTML); !ok {
+		t.Error("content should be trusted HTML inside newsletter")
+	}
+	if _, ok := mk("newsletter")["DigestContent"].(template.HTML); ok {
+		t.Error("digest_content must NOT be trusted inside newsletter")
+	}
+	if _, ok := mk("weekly_digest")["DigestContent"].(template.HTML); !ok {
+		t.Error("digest_content should be trusted HTML inside weekly_digest")
+	}
+	if _, ok := mk("weekly_digest")["Content"].(template.HTML); ok {
+		t.Error("content must NOT be trusted inside weekly_digest")
+	}
+	for _, slug := range []string{"notification", "welcome", ""} {
+		if _, ok := mk(slug)["Content"].(template.HTML); ok {
+			t.Errorf("content must stay escaped under slug %q", slug)
+		}
+		if _, ok := mk(slug)["DigestContent"].(template.HTML); ok {
+			t.Errorf("digest_content must stay escaped under slug %q", slug)
+		}
 	}
 }

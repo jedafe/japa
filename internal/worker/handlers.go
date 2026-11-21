@@ -1820,7 +1820,7 @@ func renderSubjectTemplate(subject string, payload emailSendPayload) (string, bo
 	}
 
 	var buf bytes.Buffer
-	if err := tmplParsed.Execute(&buf, templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)); err != nil {
+	if err := tmplParsed.Execute(&buf, templateDataFromMap(payload.TemplateSiteName, payload.TemplateSlug, payload.TemplateData)); err != nil {
 		slog.Error("task:email:send: failed to render subject template", "template_slug", payload.TemplateSlug, "error", err)
 		return "", false
 	}
@@ -1839,7 +1839,7 @@ func renderEmailTemplate(htmlBody string, payload emailSendPayload) (string, boo
 		return "", false
 	}
 
-	data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)
+	data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateSlug, payload.TemplateData)
 
 	var buf bytes.Buffer
 	if err := tmplParsed.Execute(&buf, data); err != nil {
@@ -1855,7 +1855,7 @@ func renderEmailTemplate(htmlBody string, payload emailSendPayload) (string, boo
 // converting snake_case map keys to PascalCase so all 22 template type
 // variables (SiteName, UserName, ActionURL, DeviceInfo, Amount, Currency,
 // TicketID, etc.) are resolved generically without a fixed struct.
-func templateDataFromMap(siteName string, m map[string]any) map[string]any {
+func templateDataFromMap(siteName, slug string, m map[string]any) map[string]any {
 	if m == nil {
 		m = make(map[string]any)
 	}
@@ -1867,15 +1867,16 @@ func templateDataFromMap(siteName string, m map[string]any) map[string]any {
 	data := make(map[string]any, len(m)+1)
 	data["SiteName"] = siteName
 
+	trusted := trustedHTMLKeys(slug)
+
 	for k, v := range m {
 		val := pascalizeTemplateValue(v)
-		// Convention: the digest_content and content keys carry pre-rendered
-		// HTML — digest_content is system-generated, content is the
-		// admin-authored campaign body sanitized at save (content.SanitizeHTML);
-		// neither is user input. Both are marked template.HTML so html/template
-		// does not entity-escape the markup. All other keys stay escaped
-		// (XSS-safe by default).
-		if k == "digest_content" || k == "content" {
+		// Convention: trusted keys carry pre-rendered HTML and are marked
+		// template.HTML so html/template does not entity-escape the markup —
+		// but only for the slugs whose producers are known to pass
+		// non-user-input HTML (see trustedHTMLKeys). Every other key renders
+		// escaped (XSS-safe by default).
+		if trusted[k] {
 			if s, ok := v.(string); ok {
 				val = template.HTML(s)
 			}
@@ -1884,6 +1885,56 @@ func templateDataFromMap(siteName string, m map[string]any) map[string]any {
 	}
 
 	return data
+}
+
+// digestFallbackTmpl is the last-resort shell for per-user digest sends when
+// the daily/weekly email_templates row is absent or inactive — same branded
+// card layout as the seeds (logo header, white body card, footer) so even a
+// fallback mail stays on-brand.
+var digestFallbackTmpl = template.Must(template.New("digestFallback").Parse(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:32px 0;"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+<tr><td style="background-color:#0f766e;padding:24px 32px;text-align:center;">{{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="32" style="display:inline-block;height:32px;width:auto;">{{else}}<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:600;">{{.SiteName}}</h1>{{end}}</td></tr>
+<tr><td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">{{.Content}}</td></tr>
+<tr><td style="padding:16px 32px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;"><a href="{{.SiteURL}}" style="color:#0f766e;text-decoration:none;">{{.SiteName}}</a></td></tr>
+</table></td></tr></table></body></html>`))
+
+// digestFallbackBody wraps the minimal digest items list in the branded
+// shell for the fallback leg. inner is system-generated markup from the
+// compiled item list — its titles are already escaped — so marking it
+// template.HTML is safe.
+func digestFallbackBody(inner, logoURL, siteURL, siteName string) string {
+	var b strings.Builder
+	if err := digestFallbackTmpl.Execute(&b, struct {
+		LogoURL  string
+		SiteName string
+		SiteURL  string
+		Content  template.HTML
+	}{logoURL, siteName, siteURL, template.HTML(inner)}); err != nil {
+		return inner
+	}
+
+	return b.String()
+}
+
+// trustedHTMLKeys returns the template_data keys that may carry pre-rendered
+// HTML for a given template slug. The scope is deliberate: 'digest_content'
+// is trusted only inside digest templates (system-generated markup), and
+// 'content' only inside the newsletter campaign wrapper (admin-authored
+// body sanitized at save with content.SanitizeHTML). Any other slug renders
+// these keys escaped like all user data, so a future producer accidentally
+// passing user input under a trusted name cannot inject markup.
+func trustedHTMLKeys(slug string) map[string]bool {
+	switch slug {
+	case "newsletter":
+		return map[string]bool{"content": true}
+	case "daily_digest", "weekly_digest", "community_digest":
+		return map[string]bool{"digest_content": true}
+	default:
+		return nil
+	}
 }
 
 // pascalizeTemplateValue converts snake_case keys inside nested maps (and
@@ -4498,7 +4549,7 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 	subject, htmlBody, isHTML := renderEmailTemplateRow(tmpl, tmplErr, emailSendPayload{
 		TemplateSlug: slug,
 		TemplateData: templateVars,
-	}, fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)), body.String(), true)
+	}, fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)), digestFallbackBody(body.String(), logoURL, siteBase, brand.Get()), true)
 
 	// Bulk subscriber digest is marketing-category mail (ADR-015/ADR-080)
 	// and must carry List-Unsubscribe headers. The HTML <a> footer only
