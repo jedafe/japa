@@ -903,6 +903,10 @@ func (s *Service) GeneratePathwayDraft(ctx context.Context, req GeneratePathwayR
 		return GeneratePathwayResponse{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
+	if issuingSpaceID == destSpaceID {
+		return GeneratePathwayResponse{}, fmt.Errorf("%w: issuing and destination space must differ", errpkg.ErrInvalid)
+	}
+
 	// Fetch profession and space names to build a rich prompt.
 	prof, err := s.store.GetProfessionByID(ctx, req.ProfessionID)
 	if err != nil {
@@ -960,8 +964,8 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 	}
 
 	pathwayType := PathwayDirect
-	if parsed.PathwayType != "" {
-		pathwayType = parsed.PathwayType
+	if t := strings.ToLower(strings.TrimSpace(parsed.PathwayType)); validPathwayTypes[t] {
+		pathwayType = t
 	}
 
 	var aiModel *string

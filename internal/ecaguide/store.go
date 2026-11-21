@@ -577,6 +577,7 @@ func (s *Store) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, not
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE eca_guides
 		SET status = 'rejected', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
+		    is_active = false,
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
 		WHERE id = $1 AND status IN ('draft','ai_draft','pending')`, id, reviewerID, notes)
 	if err != nil {
