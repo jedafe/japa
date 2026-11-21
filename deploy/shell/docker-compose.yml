@@ -54,6 +54,39 @@
 # gate to pick up a renewed cert.
 
 services:
+  # TLS terminator in front of ttyd — ttyd's bundled libwebsockets is
+  # mbedTLS-based and sends only the leaf cert; Caddy serves the full
+  # chain and proxies the terminal's websocket upstream natively.
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    depends_on:
+      - acme
+      - ttyd
+    expose:
+      - "8443"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '%s\n' \
+          ':8443 {' \
+          '  tls /certs/shell.japa.to/fullchain.cer /certs/shell.japa.to/shell.japa.to.key' \
+          '  reverse_proxy ttyd:7681' \
+          '}' > /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - shell-certs:/certs:ro
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.shell-gate.rule=HostSNI(`shell.japa.to`)
+      - traefik.tcp.routers.shell-gate.entrypoints=https
+      - traefik.tcp.routers.shell-gate.tls.passthrough=true
+      - traefik.tcp.services.shell-gate.loadbalancer.server.port=8443
+    networks:
+      - coolify
+      - shell
+
   ttyd:
     image: tsl0922/ttyd:1.7.7-alpine
     restart: unless-stopped
@@ -61,10 +94,8 @@ services:
     # the terminal is a real host login shell, not a container shell.
     privileged: true
     pid: host
-    depends_on:
-      - acme
     expose:
-      - "8443"
+      - "7681"
     environment:
       TTYD_USER: ${TTYD_USER:?required — basic-auth gate}
       TTYD_PASS: ${TTYD_PASS:?required — basic-auth gate}
@@ -81,23 +112,13 @@ services:
         nsenter -t 1 -m -u -i -n -p sh -c \
           'command -v tmux >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq tmux; }' || true
         exec ttyd \
-          --port 8443 --ssl \
-          --ssl-cert /certs/shell.japa.to/fullchain.cer \
-          --ssl-key /certs/shell.japa.to/shell.japa.to.key \
+          --port 7681 \
           --credential "$${TTYD_USER}:$${TTYD_PASS}" \
           --writable \
           -t titleFixed='japa-vps' \
           nsenter -t 1 -m -u -i -n -p su - root -c 'exec tmux new -A -s main'
-    volumes:
-      - shell-certs:/certs:ro
-    labels:
-      - traefik.enable=true
-      - traefik.tcp.routers.shell-gate.rule=HostSNI(`shell.japa.to`)
-      - traefik.tcp.routers.shell-gate.entrypoints=https
-      - traefik.tcp.routers.shell-gate.tls.passthrough=true
-      - traefik.tcp.services.shell-gate.loadbalancer.server.port=8443
     networks:
-      - coolify
+      - shell
 
   acme:
     image: neilpang/acme.sh:3.1.7
@@ -151,8 +172,11 @@ volumes:
   shell-acme:
 
 networks:
-  # Shared network every container on the Coolify host joins — puts ttyd
-  # behind the same Traefik as every other service.
+  # Shared network every container on the Coolify host joins — Traefik
+  # reaches the caddy terminator through it.
   coolify:
     external: true
     name: coolify
+  # Isolated net for the ttyd upstream — only caddy can reach the plain-HTTP
+  # terminal port.
+  shell:

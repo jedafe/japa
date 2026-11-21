@@ -123,3 +123,4 @@ screenshot/
 .coolify-provision.json
 api.log
 .sftpgo-admin-pw
+.ttyd-pw
