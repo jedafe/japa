@@ -35,6 +35,10 @@
 		topbarWidgets?: HeaderWidget[];
 		/** Show the mobile drawer button (hidden for the full-width variant). */
 		showMenuButton?: boolean;
+		/** Emit §09 product-tour targets. Off for the full-width variant —
+		 *  with no targets visible the tour skips the page (stays armed)
+		 *  instead of dimming it behind a click-blocking overlay. */
+		tourTargets?: boolean;
 		onOpenMenu?: () => void;
 	}
 
@@ -44,6 +48,7 @@
 		logoDarkUrl = '',
 		topbarWidgets = [],
 		showMenuButton = true,
+		tourTargets = true,
 		onOpenMenu
 	}: Props = $props();
 
@@ -79,7 +84,7 @@
 				class="icon-btn menu-btn"
 				onclick={onOpenMenu}
 				aria-label={t('a11y.open_menu')}
-				data-tour="docs-nav"
+				data-tour={tourTargets ? 'docs-nav' : undefined}
 			>
 				<MenuIcon size={20} />
 			</button>
@@ -95,14 +100,14 @@
 	</div>
 
 	<div class="header-center">
-		<button type="button" class="search-field" onclick={() => (searchOpen = true)} data-tour="docs-search">
+		<button type="button" class="search-field" onclick={() => (searchOpen = true)} data-tour={tourTargets ? 'docs-search' : undefined}>
 			<Search size={16} />
 			<span class="search-label">{t('search.placeholder')}</span>
 			<kbd class="search-kbd">⌘K</kbd>
 		</button>
 	</div>
 
-	<div class="header-right" data-tour="docs-topbar">
+	<div class="header-right" data-tour={tourTargets ? 'docs-topbar' : undefined}>
 		<button
 			type="button"
 			class="icon-btn search-icon-btn"

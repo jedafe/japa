@@ -145,6 +145,7 @@
 			logoDarkUrl={resolvedLogoDarkUrl}
 			{topbarWidgets}
 			showMenuButton={false}
+			tourTargets={false}
 		/>
 		<main class="full-main">
 			{@render children()}
