@@ -634,7 +634,14 @@
 		gap: 1rem;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
+		scroll-padding: 1rem;
 		scrollbar-width: none;
+		/* overflow-x:auto forces overflow-y:auto — without bleed room the
+		   container clips the hover translateY lift, border, and shadow. The
+		   negative margin keeps card geometry identical while the padding
+		   gives those effects space to paint. */
+		margin: -1rem;
+		padding: 1rem;
 	}
 	.group-track::-webkit-scrollbar { display: none; }
 	.group-card {
