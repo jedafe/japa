@@ -160,7 +160,15 @@ export const load: PageServerLoad = async (event) => {
 		}
 		if (
 			typeof fv.purpose === 'string' &&
-			['immigration', 'study', 'employment', 'professional_licensure'].includes(fv.purpose)
+			[
+				'immigration',
+				'study',
+				'scholarship',
+				'employment',
+				'professional_licensure',
+				'professional_membership',
+				'pension_recognition'
+			].includes(fv.purpose)
 		) {
 			q.set('purpose', fv.purpose);
 		}

@@ -156,6 +156,7 @@
 		{ key: 'purpose', label: t('eca.purpose', 'Purpose'), type: 'select', required: true, options: [
 			{ value: 'immigration', label: t('eca.purpose_immigration', 'Immigration') }, { value: 'study', label: t('eca.purpose_study', 'Study') },
 			{ value: 'employment', label: t('eca.purpose_employment', 'Employment') }, { value: 'professional_licensure', label: t('eca.purpose_licensure', 'Professional licensure') },
+			{ value: 'scholarship', label: t('eca.purpose_scholarship', 'Scholarship') }, { value: 'professional_membership', label: t('eca.purpose_membership', 'Professional membership') }, { value: 'pension_recognition', label: t('eca.purpose_pension', 'Pension recognition') },
 		]},
 		{ key: 'pathway_steps', label: t('eca.field_pathway_steps', 'Pathway steps (JSON)'), type: 'json', required: true },
 		{ key: 'documents_required', label: t('eca.field_documents', 'Documents required (JSON)'), type: 'json' },
@@ -236,8 +237,11 @@
 		{ value: '', label: t('eca.purpose_any', 'Any purpose') },
 		{ value: 'immigration', label: t('eca.purpose_immigration', 'Immigration') },
 		{ value: 'study', label: t('eca.purpose_study', 'Study') },
+		{ value: 'scholarship', label: t('eca.purpose_scholarship', 'Scholarship') },
 		{ value: 'employment', label: t('eca.purpose_employment', 'Employment') },
-		{ value: 'professional_licensure', label: t('eca.purpose_licensure', 'Professional licensure') }
+		{ value: 'professional_licensure', label: t('eca.purpose_licensure', 'Professional licensure') },
+		{ value: 'professional_membership', label: t('eca.purpose_membership', 'Professional membership') },
+		{ value: 'pension_recognition', label: t('eca.purpose_pension', 'Pension recognition') }
 	];
 
 	async function generateGuideDraft() {

@@ -74,6 +74,7 @@
 		{ value: '', label: t('eca_guide.all_purposes', 'All purposes') },
 		{ value: 'immigration', label: t('eca_guide.purpose_immigration', 'Immigration') },
 		{ value: 'study', label: t('eca_guide.purpose_study', 'Study') },
+		{ value: 'scholarship', label: t('eca_guide.purpose_scholarship', 'Scholarship') },
 		{
 			value: 'employment',
 			label: t('eca_guide.purpose_employment', 'Employment')
@@ -82,6 +83,14 @@
 		{
 			value: 'professional_licensure',
 			label: t('eca_guide.purpose_professional_licensure', 'Professional licensure')
+		},
+		{
+			value: 'professional_membership',
+			label: t('eca_guide.purpose_professional_membership', 'Professional membership')
+		},
+		{
+			value: 'pension_recognition',
+			label: t('eca_guide.purpose_pension_recognition', 'Pension recognition')
 		}
 	]);
 

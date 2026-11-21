@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -362,7 +363,7 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 	}
 
 	if !validPurpose(in.Purpose) {
-		return nil, fmt.Errorf("%w: purpose must be one of immigration, study, employment, professional_licensure", errpkg.ErrInvalid)
+		return nil, fmt.Errorf("%w: purpose must be one of %s", errpkg.ErrInvalid, purposeList())
 	}
 
 	if !isJSONArray(*in.PathwaySteps) {
@@ -425,7 +426,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, in GuideReque
 	}
 
 	if in.Purpose != "" && !validPurpose(in.Purpose) {
-		return fmt.Errorf("%w: purpose must be one of immigration, study, employment, professional_licensure", errpkg.ErrInvalid)
+		return fmt.Errorf("%w: purpose must be one of %s", errpkg.ErrInvalid, purposeList())
 	}
 
 	if in.PathwaySteps != nil && !isJSONArray(*in.PathwaySteps) {
@@ -641,11 +642,25 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 var validPurposes = map[string]bool{
 	"immigration":            true,
 	"study":                  true,
+	"scholarship":            true,
 	"employment":             true,
 	"professional_licensure": true,
+	"professional_membership": true,
+	"pension_recognition":    true,
 }
 
 func validPurpose(p string) bool { return validPurposes[p] }
+
+// purposeList renders the enum for validation error messages and AI
+// prompts — single source so a new value never drifts the strings.
+func purposeList() string {
+	keys := make([]string, 0, len(validPurposes))
+	for k := range validPurposes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
 
 // isJSONArray reports whether raw is a JSON array — pathway_steps drives
 // the public step list and the step_index bound on community updates, so
@@ -792,7 +807,7 @@ func (s *Service) GenerateGuideDraft(ctx context.Context, params map[string]stri
 
 	systemPrompt := "You are the " + brand.Get() + " Content Agent. Produce an ECA guide as " +
 		"STRICT JSON (no markdown fences): " +
-		`{"purpose":"immigration|study|employment|professional_licensure",` +
+		`{"purpose":"` + strings.ReplaceAll(purposeList(), ", ", "|") + `",` +
 		`"pathway_steps":[{"step":1,"title":"...","detail":"...","duration":"..."}],` +
 		`"fee_estimate":"...","currency":"ISO-4217","timeline_estimate":"...",` +
 		`"documents_required":["..."],"accepted_for":["..."],"official_url":"https://..."}. ` +
