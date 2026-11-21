@@ -1,0 +1,127 @@
+# deploy/files/docker-compose.yml — SFTPGo file manager for the VPS host
+# filesystem and the SeaweedFS media bucket.
+#
+# Deployed as an independent Coolify "Docker Compose" service — carries no
+# JapaConnect code. Keep it STOPPED; toggle on from /dashboard/access-gates
+# when file access is needed (registered gate target `file_manager` below).
+#
+# GATING — same model as the Stalwart admin gate (deploy/mail/admin-gate):
+#
+#   files.japa.to is DNS-ONLY (gray cloud — NOT Cloudflare-proxied), so
+#   browser traffic hits the host directly on :443, where the CFLOCK4 origin
+#   lockdown drops every non-Cloudflare source. The EXTRA4/EXTRA6 exception
+#   chains (gate-admin.japa.to DDNS + static CIDRs, refreshed every 2 min by
+#   cf-admin-allow.timer) admit only allow-listed operator IPs — the same
+#   allow-list the mail admin uses, no new firewall work.
+#
+#   Layer 2 is route existence: this service registers as a §123 access-gate
+#   target, so Coolify start/stop makes the Traefik route appear/disappear.
+#
+# Traefik TLS-passthrough: HostSNI(`files.japa.to`) on :443 forwards raw TCP
+# to sftpgo:8443, which terminates TLS itself with a Let's Encrypt cert
+# issued by the `acme` sidecar via DNS-01 + the Cloudflare API — required
+# because CFLOCK4 blocks inbound HTTP-01/TLS-ALPN-01 validation for
+# non-proxied hostnames (the same reason Stalwart uses DNS-01).
+#
+# Coolify env to set before first start:
+#   CF_DNS_API_TOKEN — Cloudflare API token with Zone.DNS:Edit on japa.to
+#                      (consumed by acme.sh's dns_cf hook; never committed)
+#   CF_ACCOUNT_ID    — optional; lets dns_cf pick the token/zone pair cleanly
+#   ACME_EMAIL       — optional; Let's Encrypt account contact
+#   SFTPGO_ADMIN_USER / SFTPGO_ADMIN_PASSWORD — optional; seeds the first
+#                      web-admin account (otherwise the admin UI prompts to
+#                      create one on first visit)
+#
+# JC_ACCESS_GATES entry to register (uuid = this Coolify service):
+#   {"key":"file_manager","label":"File Manager (SFTPGo)","kind":"service",
+#    "uuid":"…","domain":"files.japa.to",
+#    "probe_url":"https://files.japa.to/web/admin"}
+#
+# First boot: `acme` issues files.japa.to (~30–60s via DNS-01 — watch its
+# logs). Until the cert exists sftpgo may restart-loop; it converges once
+# /certs/files.japa.to/ is populated. Then https://files.japa.to serves the
+# SFTPGo web client + /web/admin console to allow-listed IPs only.
+#
+# In the web admin UI:
+#   • user "host"      — Local filesystem, home dir /host (the VPS root,
+#     mounted read-write below; narrow the mount to /srv, /opt etc. for less)
+#   • virtual folder "seaweedfs" — S3 (S3-compatible) filesystem pointed at
+#     the production bucket: endpoint = the same value as JC_S3_ENDPOINT on
+#     the api container (e.g. http://seaweedfs:8333 — both services share the
+#     `coolify` network), region/bucket/access+secret from JC_S3_*.
+#
+# Cert renewal: acme.sh renews ~60 days in. SFTPGo reloads cert files on
+# SIGHUP — after a renewal run `docker kill -s HUP <sftpgo-container>` or
+# restart the service (which the access gate does on every toggle anyway).
+#
+# SFTP protocol is bound to loopback only — reach it with
+#   ssh -L 2022:127.0.0.1:2022 <host>  then  sftp -P 2022 user@127.0.0.1
+# or publish it behind the same EXTRA4 model if ever needed.
+
+services:
+  sftpgo:
+    image: drakkan/sftpgo:v2.7.6-alpine
+    restart: unless-stopped
+    depends_on:
+      - acme
+    expose:
+      - "8443"
+    ports:
+      - "127.0.0.1:2022:2022" # sftp — loopback only; tunnel via ssh
+    environment:
+      SFTPGO_HTTPD__BINDINGS__0__ADDRESS: ""
+      SFTPGO_HTTPD__BINDINGS__0__PORT: "8443"
+      SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_FILE: /certs/files.japa.to/fullchain.cer
+      SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_KEY_FILE: /certs/files.japa.to/files.japa.to.key
+      SFTPGO_HTTPD__BINDINGS__0__MIN_TLS_VERSION: "12"
+      SFTPGO_SFTPD__BINDINGS__0__PORT: "2022"
+      SFTPGO_DEFAULT_ADMIN_USERNAME: ${SFTPGO_ADMIN_USER:-}
+      SFTPGO_DEFAULT_ADMIN_PASSWORD: ${SFTPGO_ADMIN_PASSWORD:-}
+      TZ: UTC
+    volumes:
+      - sftpgo-data:/var/lib/sftpgo # provider DB (sqlite) + service state
+      - sftpgo-etc:/etc/sftpgo      # config dir — keeps sftp host keys stable
+      - sftpgo-certs:/certs:ro      # acme.sh home; cert reads only
+      - sftpgo-home:/srv/sftpgo     # default user home / upload staging
+      # The VPS filesystem, mounted rw — this IS the thing being managed.
+      # Narrow to /srv, /opt, /var/lib/docker/volumes etc. for a smaller
+      # blast radius.
+      - /:/host
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.files-gate.rule=HostSNI(`files.japa.to`)
+      - traefik.tcp.routers.files-gate.entrypoints=https
+      - traefik.tcp.routers.files-gate.tls.passthrough=true
+      - traefik.tcp.services.files-gate.loadbalancer.server.port=8443
+    networks:
+      - coolify
+
+  acme:
+    image: neilpang/acme.sh:3.1.7
+    restart: unless-stopped
+    entrypoint: ["/acme-entrypoint.sh"]
+    environment:
+      FILES_DOMAIN: files.japa.to
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # acme.sh dns_cf credentials — token auth, Zone.DNS:Edit on japa.to.
+      CF_Token: ${CF_DNS_API_TOKEN}
+      CF_Account_ID: ${CF_ACCOUNT_ID:-}
+      AUTO_UPGRADE: "0" # pinned tag — renewal must not pull a newer acme.sh
+    volumes:
+      - sftpgo-certs:/acme.sh # cert + LE account home, shared with sftpgo
+      - ./acme-entrypoint.sh:/acme-entrypoint.sh:ro
+    networks:
+      - coolify
+
+volumes:
+  sftpgo-data:
+  sftpgo-etc:
+  sftpgo-certs:
+  sftpgo-home:
+
+networks:
+  # Shared network every container on the Coolify host joins — gives SFTPGo
+  # a direct route to the SeaweedFS S3 endpoint with no public port.
+  coolify:
+    external: true
+    name: coolify
