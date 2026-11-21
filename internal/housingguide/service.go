@@ -351,10 +351,10 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	return sb.String(), citations
 }
 
-// validGuideStatus gates the PATCH body — there is no CHECK constraint on
-// housing_guides.status, so the API is the only thing stopping a bogus
-// value from silently corrupting the lifecycle (and the
-// is_japabot_indexed derivation with it).
+// validGuideStatus gates the PATCH body — chk_housing_guides_status
+// (001223) is the hard floor, but service-side validation turns a
+// constraint hit into a friendly 400 rather than a 500 and keeps the
+// lifecycle guards (publish/reject via endpoints) in one place.
 func validGuideStatus(s string) bool {
 	switch s {
 	case StatusDraft, StatusAIDraft, StatusPending, StatusPublished, StatusRejected:
