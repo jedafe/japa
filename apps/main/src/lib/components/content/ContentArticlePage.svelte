@@ -589,42 +589,6 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			</dl>
 		{/if}
 
-		<!-- §97 attestation guides — the pathway_steps repeater renders as an
-		     ordered card using the same step helpers as the interactive tool. -->
-		{#if attestationSteps.length > 0}
-			<div class="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('attestation_guide.pathway_steps', 'Pathway steps')}</h2>
-				<ol class="space-y-3">
-					{#each attestationSteps as step, i (i)}
-						<li class="flex items-start gap-3">
-							<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">{i + 1}</span>
-							<div class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
-								{#if isStepObject(step)}
-									<p class="font-medium">{stepHeadline(step, i)}</p>
-									{#each stepFields(step) as field (field.label)}
-										<div class="mt-0.5 flex items-start gap-1.5">
-											<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
-											{#if field.items}
-												<ul class="list-disc space-y-0.5 pl-4 text-[var(--color-text-subtle)]">
-													{#each field.items as item}<li>{item}</li>{/each}
-												</ul>
-											{:else if field.url}
-												<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
-											{:else}
-												<span class="text-[var(--color-text-subtle)]">{field.value}</span>
-											{/if}
-										</div>
-									{/each}
-								{:else}
-									<span class="text-[var(--color-text-subtle)]">{stepValueText(step)}</span>
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ol>
-			</div>
-		{/if}
-
 		<!-- Series navigation (Phase 06.10) — dev.to style part list, same as
 		     the blog single; part links stay inside this route family. -->
 		{#if article.series_id && article.series_title && article.series_slug}
@@ -697,6 +661,44 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{:else}
 			<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
 				{@html bodyToc.html}
+			</div>
+		{/if}
+
+		<!-- §97 attestation guides — the pathway_steps repeater renders as an
+		     ordered card using the same step helpers as the interactive tool.
+		     It sits after the body so the editorial content flows first and
+		     the structured pathway closes the article. -->
+		{#if attestationSteps.length > 0}
+			<div class="mt-8 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('attestation_guide.pathway_steps', 'Pathway steps')}</h2>
+				<ol class="space-y-3">
+					{#each attestationSteps as step, i (i)}
+						<li class="flex items-start gap-3">
+							<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">{i + 1}</span>
+							<div class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
+								{#if isStepObject(step)}
+									<p class="font-medium">{stepHeadline(step, i)}</p>
+									{#each stepFields(step) as field (field.label)}
+										<div class="mt-0.5 flex items-start gap-1.5">
+											<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{field.label}:</span>
+											{#if field.items}
+												<ul class="list-disc space-y-0.5 pl-4 text-[var(--color-text-subtle)]">
+													{#each field.items as item}<li>{item}</li>{/each}
+												</ul>
+											{:else if field.url}
+												<a href={field.url} target="_blank" rel="noopener noreferrer" class="break-all text-[var(--color-primary-text)] hover:underline">{field.value}</a>
+											{:else}
+												<span class="text-[var(--color-text-subtle)]">{field.value}</span>
+											{/if}
+										</div>
+									{/each}
+								{:else}
+									<span class="text-[var(--color-text-subtle)]">{stepValueText(step)}</span>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ol>
 			</div>
 		{/if}
 
