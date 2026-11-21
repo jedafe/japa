@@ -640,13 +640,13 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 // validPurposes is the §109 purpose enum — guides outside this set are
 // unreachable via the public purpose filter and the admin form options.
 var validPurposes = map[string]bool{
-	"immigration":            true,
-	"study":                  true,
-	"scholarship":            true,
-	"employment":             true,
-	"professional_licensure": true,
+	"immigration":             true,
+	"study":                   true,
+	"scholarship":             true,
+	"employment":              true,
+	"professional_licensure":  true,
 	"professional_membership": true,
-	"pension_recognition":    true,
+	"pension_recognition":     true,
 }
 
 func validPurpose(p string) bool { return validPurposes[p] }

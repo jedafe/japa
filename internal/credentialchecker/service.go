@@ -70,9 +70,9 @@ type PathwayDTO struct {
 	// GuideSlug is populated on the detail payload only — the editorial
 	// guide (guide_category='credential') that claims this pathway, so
 	// the public page can link back (§94 editorial integration).
-	GuideSlug  string `json:"guide_slug,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	GuideSlug string `json:"guide_slug,omitempty"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // CommunityNoteDTO is the API response shape for a single community note.
@@ -289,19 +289,49 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 	return s.store.GetProfessionBySlug(ctx, slug)
 }
 
-// CreateProfession creates a new credential profession. credential_professions
-// is a global table and ignores the supplied .
+// validProfessionCategories mirrors the taxonomy the admin form and
+// the seed use — anything else would land as an unfilterable
+// free-text category (the column has no CHECK constraint).
+var validProfessionCategories = map[string]bool{
+	"medical":     true,
+	"engineering": true,
+	"legal":       true,
+	"finance":     true,
+	"education":   true,
+	"other":       true,
+}
+
 func (s *Service) CreateProfession(ctx context.Context, input CreateProfessionInput) (ProfessionDTO, error) {
+	input.Slug = strings.ToLower(strings.TrimSpace(input.Slug))
+	input.Name = strings.TrimSpace(input.Name)
+	cat := "other"
+	if input.Category != nil {
+		cat = strings.ToLower(strings.TrimSpace(*input.Category))
+		if cat == "" {
+			cat = "other"
+		}
+	}
+
 	if input.Slug == "" {
-		return ProfessionDTO{}, errors.New("slug is required")
+		return ProfessionDTO{}, fmt.Errorf("%w: slug is required", errpkg.ErrInvalid)
 	}
 
 	if input.Name == "" {
-		return ProfessionDTO{}, errors.New("name is required")
+		return ProfessionDTO{}, fmt.Errorf("%w: name is required", errpkg.ErrInvalid)
 	}
+
+	if !validProfessionCategories[cat] {
+		return ProfessionDTO{}, fmt.Errorf("%w: category must be one of medical, engineering, legal, finance, education, other", errpkg.ErrInvalid)
+	}
+	input.Category = &cat
 
 	row, err := s.store.CreateProfession(ctx, input)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ProfessionDTO{}, fmt.Errorf("%w: a profession with this slug already exists", errpkg.ErrAlreadyExists)
+		}
+
 		return ProfessionDTO{}, fmt.Errorf("credentialchecker: create profession: %w", err)
 	}
 
@@ -311,11 +341,43 @@ func (s *Service) CreateProfession(ctx context.Context, input CreateProfessionIn
 // UpdateProfession updates a credential profession by id.
 func (s *Service) UpdateProfession(ctx context.Context, id pgtype.UUID, input UpdateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == nil && input.Name == nil && input.Category == nil {
-		return ProfessionDTO{}, errors.New("no fields to update")
+		return ProfessionDTO{}, fmt.Errorf("%w: no fields to update", errpkg.ErrInvalid)
+	}
+
+	if input.Slug != nil {
+		slug := strings.ToLower(strings.TrimSpace(*input.Slug))
+		if slug == "" {
+			return ProfessionDTO{}, fmt.Errorf("%w: slug must not be empty", errpkg.ErrInvalid)
+		}
+		input.Slug = &slug
+	}
+
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		if name == "" {
+			return ProfessionDTO{}, fmt.Errorf("%w: name must not be empty", errpkg.ErrInvalid)
+		}
+		input.Name = &name
+	}
+
+	if input.Category != nil {
+		cat := strings.ToLower(strings.TrimSpace(*input.Category))
+		if !validProfessionCategories[cat] {
+			return ProfessionDTO{}, fmt.Errorf("%w: category must be one of medical, engineering, legal, finance, education, other", errpkg.ErrInvalid)
+		}
+		input.Category = &cat
 	}
 
 	row, err := s.store.UpdateProfession(ctx, id, input)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ProfessionDTO{}, fmt.Errorf("%w: a profession with this slug already exists", errpkg.ErrAlreadyExists)
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProfessionDTO{}, err
+		}
+
 		return ProfessionDTO{}, fmt.Errorf("credentialchecker: update profession: %w", err)
 	}
 
@@ -325,6 +387,14 @@ func (s *Service) UpdateProfession(ctx context.Context, id pgtype.UUID, input Up
 // DeleteProfession deletes a credential profession by id.
 func (s *Service) DeleteProfession(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeleteProfession(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001") {
+			return fmt.Errorf("%w: profession is still referenced by pathways", errpkg.ErrInUse)
+		}
+
 		return fmt.Errorf("credentialchecker: delete profession: %w", err)
 	}
 

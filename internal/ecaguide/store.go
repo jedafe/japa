@@ -229,6 +229,30 @@ func (s *Store) GetGuide(ctx context.Context, id pgtype.UUID) (GuideRow, error) 
 	return guides[0], nil
 }
 
+// GetGuideAnyStatus returns a guide by id regardless of status — the
+// editorial hook's explicit guide_id claim must resolve draft rows too:
+// a draft owns its combination even before publication (attestation
+// precedent: GetPathwayByID is any-status).
+func (s *Store) GetGuideAnyStatus(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
+	rows, err := s.pool.Reader.Query(ctx, guideSelect+` WHERE g.id = $1`, id)
+	if err != nil {
+		return GuideRow{}, err
+	}
+
+	defer rows.Close()
+
+	guides, err := scanGuides(rows)
+	if err != nil {
+		return GuideRow{}, err
+	}
+
+	if len(guides) == 0 {
+		return GuideRow{}, pgx.ErrNoRows
+	}
+
+	return guides[0], nil
+}
+
 // CompareGuides returns published guides for a destination across a set
 // of provider ids (side-by-side comparison).
 func (s *Store) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, providerIDs []pgtype.UUID) ([]GuideRow, error) {

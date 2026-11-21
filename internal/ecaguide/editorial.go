@@ -123,11 +123,12 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 
 	// An explicit guide_id is authoritative when it resolves — the
 	// editor chose that row. A stale/unresolvable id falls through to
-	// combination resolution exactly like an empty field.
+	// combination resolution exactly like an empty field. The lookup is
+	// any-status: a draft still owns its combination.
 	if gid := strings.TrimSpace(guideString(fv.GuideID)); gid != "" {
 		var id pgtype.UUID
 		if err := id.Scan(gid); err == nil {
-			if _, err := s.store.GetGuide(ctx, id); err == nil {
+			if _, err := s.store.GetGuideAnyStatus(ctx, id); err == nil {
 				return s.store.LinkGuideToContent(ctx, id, contentID)
 			}
 		}

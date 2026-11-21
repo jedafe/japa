@@ -30,7 +30,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -640,21 +639,12 @@ func (h *Handlers) HandleAdminCreateProfession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if input.Slug == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
-		return
-	}
-
-	if input.Name == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
-		return
-	}
-
 	profession, err := h.service.CreateProfession(r.Context(), input)
 	if err != nil {
-		slog.Error("credentialchecker: admin create profession failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create profession")
-
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) {
+			slog.Error("credentialchecker: admin create profession failed", "error", err)
+		}
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -687,14 +677,10 @@ func (h *Handlers) HandleAdminUpdateProfession(w http.ResponseWriter, r *http.Re
 
 	profession, err := h.service.UpdateProfession(r.Context(), id, input)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "profession_not_found", "Profession not found")
-			return
+		if !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrAlreadyExists) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("credentialchecker: admin update profession failed", "error", err)
 		}
-
-		slog.Error("credentialchecker: admin update profession failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update profession")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -721,17 +707,10 @@ func (h *Handlers) HandleAdminDeleteProfession(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.service.DeleteProfession(r.Context(), id); err != nil {
-		var pgErr *pgconn.PgError
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			errpkg.WriteError(w, http.StatusNotFound, "profession_not_found", "Profession not found")
-		case errors.As(err, &pgErr) && pgErr.Code == "23503":
-			errpkg.WriteError(w, http.StatusConflict, "profession_in_use", "Profession is still referenced by pathways")
-		default:
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInUse) {
 			slog.Error("credentialchecker: admin delete profession failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete profession")
 		}
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
