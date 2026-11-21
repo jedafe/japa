@@ -164,6 +164,83 @@ func TestOnGuidePublished_ProvisionsDraftOnNaturalKey(t *testing.T) {
 	}
 }
 
+// Re-claim: a second guide claiming a row must own the link — the row's
+// guide_id repoints, the new guide's field_values is backfilled, the old
+// guide's stale field-side claim is stripped, and the slug resolver
+// prefers the row's own column.
+func TestOnGuidePublished_ReclaimClearsStaleClaim(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	svc := NewService(NewStore(d), nil)
+	svc.SetFeatureChecker(alwaysOn{})
+
+	fv := `{"destination_country": "CO", "accommodation_type": "student"}`
+	guideA := seedAccommodationGuide(t, ctx, d, fv)
+	if err := svc.OnGuidePublished(ctx, guideA, "accommodation", []byte(fv)); err != nil {
+		t.Fatalf("OnGuidePublished A: %v", err)
+	}
+
+	var dest pgtype.UUID
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT id FROM spaces WHERE level='country' AND UPPER(geo_code)='CO'`).Scan(&dest); err != nil {
+		t.Fatalf("resolving CO space: %v", err)
+	}
+	rowID, err := svc.store.GuideIDForCombination(ctx, dest, pgtype.UUID{}, "student")
+	if err != nil {
+		t.Fatalf("combination lookup: %v", err)
+	}
+	cleanupGuide(t, d, rowID)
+
+	// Guide B explicitly claims the same row (editor picked it by id).
+	fvB := fmt.Sprintf(`{"destination_country": "CO", "guide_id": "%s"}`, rowID.String())
+	guideB := seedAccommodationGuide(t, ctx, d, fvB)
+	if err := svc.OnGuidePublished(ctx, guideB, "accommodation", []byte(fvB)); err != nil {
+		t.Fatalf("OnGuidePublished B: %v", err)
+	}
+
+	var rowGuide *string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT guide_id::text FROM housing_guides WHERE id = $1`, rowID).Scan(&rowGuide); err != nil {
+		t.Fatalf("reading row guide_id: %v", err)
+	}
+	if rowGuide == nil || *rowGuide != guideB.String() {
+		t.Errorf("row guide_id = %v, want %s", rowGuide, guideB)
+	}
+
+	var claimA, claimB *string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT field_values->>'guide_id' FROM contents WHERE id = $1`, guideA).Scan(&claimA); err != nil {
+		t.Fatalf("reading A claim: %v", err)
+	}
+	if claimA != nil {
+		t.Errorf("guide A stale claim = %q, want stripped (NULL)", *claimA)
+	}
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT field_values->>'guide_id' FROM contents WHERE id = $1`, guideB).Scan(&claimB); err != nil {
+		t.Fatalf("reading B claim: %v", err)
+	}
+	if claimB == nil || *claimB != rowID.String() {
+		t.Errorf("guide B claim = %v, want %s", claimB, rowID)
+	}
+
+	// The row's own column wins the slug even before the strip mattered.
+	row, err := svc.store.GetGuideByID(ctx, rowID)
+	if err != nil {
+		t.Fatalf("GetGuideByID: %v", err)
+	}
+	slug, err := svc.store.GuideSlugForGuide(ctx, row)
+	if err != nil {
+		t.Fatalf("GuideSlugForGuide: %v", err)
+	}
+	var wantSlug string
+	if err := d.Reader.QueryRow(ctx, `SELECT slug FROM contents WHERE id = $1`, guideB).Scan(&wantSlug); err != nil {
+		t.Fatalf("reading B slug: %v", err)
+	}
+	if slug != wantSlug {
+		t.Errorf("guide_slug = %q, want %q (row-side claim wins)", slug, wantSlug)
+	}
+}
+
 func TestOnGuidePublished_SkipsForeignCategoryAndFeatureOff(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

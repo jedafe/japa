@@ -601,6 +601,11 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 		storeInput.Status = input.Status
 	}
 
+	// Default active like the auto-provisioned rows (editorial.go seeds
+	// IsActive: true) — is_active means "not disabled", while status owns
+	// visibility. A false default would land a hand-created draft in the
+	// queue already disabled, inconsistent with provisioned rows.
+	storeInput.IsActive = true
 	if input.IsActive != nil {
 		storeInput.IsActive = *input.IsActive
 	}
