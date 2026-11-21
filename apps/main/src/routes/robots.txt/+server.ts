@@ -15,7 +15,7 @@
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 import type { RequestHandler } from './$types';
 import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
-import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
+import { API_BASE, JC_SURFACE, forwardingHeaders } from '#lib/server/api.js';
 
 // Fails open: only explicitly non-production environments are blocked, so a
 // misconfigured production deploy cannot accidentally deindex itself.
@@ -92,10 +92,9 @@ export const GET: RequestHandler = async ({ request, url, getClientAddress }) =>
 			// Identify this surface for scoped feature-flag resolution.
 			'x-jc-surface': JC_SURFACE
 		};
-		// Forward the real client IP so the backend's GeoIP middleware can
-		// resolve the visitor's country for geo-aware personalization (ADR-064).
-		const clientIP = getClientAddress();
-		if (clientIP) headers['x-forwarded-for'] = clientIP;
+		// Forward the verbatim client trail so the backend's
+		// trusted-proxy resolver sees the real visitor IP (§37).
+		Object.assign(headers, forwardingHeaders({ request, getClientAddress }));
 		const res = await fetch(backendURL, {
 			headers,
 			signal: request.signal

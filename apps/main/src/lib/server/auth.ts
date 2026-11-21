@@ -115,9 +115,11 @@ function extractRefreshToken(res: Response): string | null {
 /**
  * Shared request headers for the direct backend auth calls below. Mirrors the
  * transport headers request() in $lib/server/api.ts builds: host forwarding,
- * X-JC-Surface for scoped feature-flag resolution, and X-Forwarded-For so the
- * backend's GeoIP middleware resolves the visitor's country rather than the
- * app server's egress IP (ADR-064). Pass `json: false` for calls with no body.
+ * X-JC-Surface for scoped feature-flag resolution, the verbatim client
+ * forwarding trail so the backend resolves the visitor's real IP (ADR-064 /
+ * §37) rather than this server's, and the inbound User-Agent so sessions
+ * record the real device for login/device alerts. Pass `json: false` for
+ * calls with no body.
  */
 function authHeaders(ctx: ApiContext, opts: { json?: boolean } = {}): Record<string, string> {
 	const headers: Record<string, string> = {
@@ -126,7 +128,10 @@ function authHeaders(ctx: ApiContext, opts: { json?: boolean } = {}): Record<str
 		'x-jc-surface': JC_SURFACE
 	};
 	if (opts.json !== false) headers['content-type'] = 'application/json';
-	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
+	if (ctx.forwardedFor) headers['x-forwarded-for'] = ctx.forwardedFor;
+	if (ctx.realIP) headers['x-real-ip'] = ctx.realIP;
+	if (ctx.cfConnectingIP) headers['cf-connecting-ip'] = ctx.cfConnectingIP;
+	if (ctx.userAgent) headers['user-agent'] = ctx.userAgent;
 	return headers;
 }
 

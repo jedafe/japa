@@ -1,6 +1,6 @@
 import { PRIVATE_API_BASE_URL } from '$app/env/private';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { JC_SURFACE } from '#lib/server/api.js';
+import { JC_SURFACE, forwardingHeaders } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -19,10 +19,9 @@ export const GET: RequestHandler = async ({ fetch, params, url, request, getClie
 		// Identify this surface for scoped feature-flag resolution.
 		'x-jc-surface': JC_SURFACE
 	};
-	// Forward the real client IP so the backend's GeoIP middleware can
-	// resolve the visitor's country for geo-aware personalization (ADR-064).
-	const clientIP = getClientAddress();
-	if (clientIP) headers['x-forwarded-for'] = clientIP;
+	// Forward the verbatim client trail so the backend's
+	// trusted-proxy resolver sees the real visitor IP (§37).
+	Object.assign(headers, forwardingHeaders({ request, getClientAddress }));
 	const ifNoneMatch = request.headers.get('if-none-match');
 	if (ifNoneMatch) headers['if-none-match'] = ifNoneMatch;
 	const res = await fetch(buildApiUrl(`/users/${encodeURIComponent(params.username)}/feed.xml`, apiBase, { version: '' }), { headers });

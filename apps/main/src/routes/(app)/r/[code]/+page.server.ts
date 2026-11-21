@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
+import { API_BASE, JC_SURFACE, forwardingHeaders } from '#lib/server/api.js';
 import { buildApiUrl } from '@japaconnect/api-url';
 
 /**
@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 		method: 'GET',
 		headers: {
 			'x-jc-surface': JC_SURFACE,
-			'x-forwarded-for': event.getClientAddress()
+			...forwardingHeaders(event)
 		},
 		redirect: 'manual'
 	});

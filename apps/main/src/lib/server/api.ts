@@ -41,11 +41,27 @@ export interface ApiContext {
 	/** Hostname with the port stripped — forwarded to the backend for host-based routing. */
 	host: string;
 	/**
-	 * The real client IP address (from event.getClientAddress()). Forwarded
-	 * as X-Forwarded-For so the backend's GeoIP middleware can resolve the
-	 * visitor's country for geo-aware personalization (ADR-064).
+	 * Best-guess client IP for cache keys and geo hints — resolved from
+	 * CF-Connecting-IP / X-Forwarded-For / X-Real-IP / socket in that order.
+	 * Authoritative resolution stays backend-side (internal/clientip, §37);
+	 * this is never a security control.
 	 */
 	clientIP: string | null;
+	/**
+	 * Composed X-Forwarded-For chain: the inbound header verbatim plus the
+	 * socket-observed client appended (RFC 7239). Forwarded verbatim so the
+	 * backend's trusted-proxy walker sees every hop — synthesizing a single
+	 * "real client" IP here would let direct clients smuggle spoofed
+	 * CF-Connecting-IP values straight into sessions/audit/geo.
+	 */
+	forwardedFor: string | null;
+	/** Inbound X-Real-IP, forwarded verbatim. */
+	realIP: string | null;
+	/** Inbound CF-Connecting-IP, forwarded verbatim. */
+	cfConnectingIP: string | null;
+	/** Inbound User-Agent — forwarded so the backend records the real device
+	 * on sessions (login/device alerts) instead of the SSR runtime's. */
+	userAgent: string | null;
 	/**
 	 * Double-submit CSRF token (Ref: §5.2). Attached as X-CSRF-Token on every
 	 * non-GET request so the backend's csrf.Middleware accepts the mutation.
@@ -70,21 +86,73 @@ export function apiContext(event: RequestEvent): ApiContext {
 	// getClientAddress() throws (not null) when the runtime can't read the
 	// socket address — dev-server restarts, exotic proxies. A null IP only
 	// weakens IP-based backend heuristics; an unhandled throw 500s the load.
-	let clientIP: string | null = null;
+	let observed: string | null = null;
 	try {
-		clientIP = event.getClientAddress();
+		observed = event.getClientAddress();
 	} catch {
-		clientIP = null;
+		observed = null;
 	}
+
+	const inHeaders = event.request.headers;
+	const inXff = inHeaders.get('x-forwarded-for');
+	const inXri = inHeaders.get('x-real-ip');
+	const inCfIp = inHeaders.get('cf-connecting-ip');
+
+	// Best-guess resolution — the CDN edge's origin header carries the real
+	// client when the request transited Cloudflare; the socket peer is the
+	// last resort (ADR-134 §5).
+	const clientIP =
+		inCfIp?.trim() || inXff?.split(',')[0]?.trim() || inXri?.trim() || observed;
+
+	// Preserve the inbound forwarding trail verbatim and append the client
+	// this server observed (RFC 7239) — the backend's trusted-proxy walker
+	// needs every hop to distinguish CDN-transited requests from direct ones.
+	const forwardedFor = [inXff?.trim(), observed].filter(Boolean).join(', ') || null;
+
 	return {
 		fetch: event.fetch,
 		token: event.locals.token,
 		host: event.locals.requestHost,
 		clientIP,
+		forwardedFor,
+		realIP: inXri?.trim() || null,
+		cfConnectingIP: inCfIp?.trim() || null,
+		userAgent: inHeaders.get('user-agent'),
 		csrfToken: event.locals.csrfToken ?? null,
 		refreshCookie: event.cookies.get('jc_refresh') ?? null,
 		journeyCookie: event.cookies.get('jc_journey_token') ?? null
 	};
+}
+
+/**
+ * Verbatim client-forwarding headers for backend fetches made outside
+ * apiContext (feed/well-known proxy endpoints). Spread into the request
+ * headers: composed XFF chain (inbound value + observed client, RFC 7239),
+ * X-Real-IP, and CF-Connecting-IP when present. The values are never
+ * synthesized — the backend's trusted-proxy resolver (internal/clientip,
+ * §37) decides their weight and the CDN-edge recovery can tell
+ * CDN-transited traffic from direct hits.
+ */
+export function forwardingHeaders(
+	event: Pick<RequestEvent, 'request' | 'getClientAddress'>
+): Record<string, string> {
+	let observed: string | null = null;
+	try {
+		observed = event.getClientAddress();
+	} catch {
+		observed = null;
+	}
+
+	const inXff = event.request.headers.get('x-forwarded-for');
+	const inXri = event.request.headers.get('x-real-ip');
+	const inCf = event.request.headers.get('cf-connecting-ip');
+
+	const headers: Record<string, string> = {};
+	const xff = [inXff?.trim(), observed].filter(Boolean).join(', ');
+	if (xff) headers['x-forwarded-for'] = xff;
+	if (inXri?.trim()) headers['x-real-ip'] = inXri.trim();
+	if (inCf?.trim()) headers['cf-connecting-ip'] = inCf.trim();
+	return headers;
 }
 
 /**
@@ -211,9 +279,15 @@ async function requestUncached<T>(
 		// Identify this surface for scoped feature-flag resolution.
 		'x-jc-surface': JC_SURFACE
 	};
-	// Forward the real client IP so the backend's GeoIP middleware can
-	// resolve the visitor's country for geo-aware personalization (ADR-064).
-	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
+	// Forward the real client trail so the backend's GeoIP middleware and
+	// IP-based controls resolve the visitor's address, not this server's
+	// (ADR-064 / §37). The headers are the inbound values verbatim — never
+	// synthesized — so the backend's trusted-proxy model decides their
+	// weight, and the real device reaches session/device tracking.
+	if (ctx.forwardedFor) headers['x-forwarded-for'] = ctx.forwardedFor;
+	if (ctx.realIP) headers['x-real-ip'] = ctx.realIP;
+	if (ctx.cfConnectingIP) headers['cf-connecting-ip'] = ctx.cfConnectingIP;
+	if (ctx.userAgent) headers['user-agent'] = ctx.userAgent;
 	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
 	// Attach the double-submit CSRF token on every mutating request so the
 	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.

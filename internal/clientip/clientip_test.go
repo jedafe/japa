@@ -223,6 +223,124 @@ func TestIsTrustedProxy_NilIP(t *testing.T) {
 	}
 }
 
+// --- CF-Connecting-IP edge recovery (ADR-134 §5) ---
+// These tests are NOT parallel — they mutate the global trusted-proxy cache
+// via resetForTesting and JC_TRUSTED_PROXIES, mirroring the production set
+// (private ranges + published Cloudflare ranges).
+
+const cfEnv = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,172.64.0.0/13,141.101.64.0/18"
+
+func TestFromRequest_CFConnectingIP_AllTrustedTrailAtCFEdge(t *testing.T) {
+	// Production shape: Traefik overwrote XFF with its CF peer, so the whole
+	// trail is trusted proxies ending at a Cloudflare edge. The real client
+	// only survives in CF-Connecting-IP.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For":  "172.64.0.1",
+		"X-Real-IP":        "172.64.0.1",
+		"CF-Connecting-IP": "203.0.113.50",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.50" {
+		t.Fatalf("expected CF-Connecting-IP client, got %q", got)
+	}
+}
+
+func TestFromRequest_CFConnectingIP_MultiHopTrailAtCFEdge(t *testing.T) {
+	// SSR-proxied chain: peer is an internal proxy, XFF lists the CF edge
+	// plus internal hops — leftmost trusted hop is still the CF edge.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("[fc00::1]:4321", map[string]string{
+		"X-Forwarded-For":  "172.64.0.1, 10.0.0.7",
+		"CF-Connecting-IP": "198.51.100.23",
+	})
+
+	if got := FromRequest(r); got != "198.51.100.23" {
+		t.Fatalf("expected CF-Connecting-IP client past internal hops, got %q", got)
+	}
+}
+
+func TestFromRequest_CFConnectingIP_IgnoredWithoutCFHop(t *testing.T) {
+	// The trail ends at a private proxy — no Cloudflare hop — so a
+	// client-supplied CF-Connecting-IP must not be honoured.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For":  "10.0.0.3",
+		"X-Real-IP":        "10.0.0.3",
+		"CF-Connecting-IP": "203.0.113.50",
+	})
+
+	if got := FromRequest(r); got != "10.0.0.3" {
+		t.Fatalf("expected X-Real-IP fallback, not spoofed CF header, got %q", got)
+	}
+}
+
+func TestFromRequest_CFConnectingIP_IgnoredFromUntrustedPeer(t *testing.T) {
+	// A direct client cannot smuggle the header at all — the peer is not a
+	// trusted proxy so forwarding headers are never consulted.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("203.0.113.9:4321", map[string]string{
+		"CF-Connecting-IP": "198.51.100.77",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.9" {
+		t.Fatalf("expected peer address, got %q", got)
+	}
+}
+
+func TestFromRequest_CFConnectingIP_UntrustedXFFWins(t *testing.T) {
+	// When the XFF chain still carries the real client (trusted ingress
+	// preserved it), the untrusted entry wins — CF-Connecting-IP is only a
+	// recovery path for collapsed trails.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For":  "203.0.113.10, 172.64.0.1",
+		"CF-Connecting-IP": "198.51.100.99",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.10" {
+		t.Fatalf("expected untrusted XFF entry to win, got %q", got)
+	}
+}
+
+func TestFromRequest_CFConnectingIP_AbsentFallsToXRealIP(t *testing.T) {
+	// CF edge in the trail but no CF-Connecting-IP — fall through to the
+	// previous fallbacks unchanged.
+	t.Setenv("JC_TRUSTED_PROXIES", cfEnv)
+	resetForTesting()
+
+	defer resetForTesting()
+
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For": "172.64.0.1",
+		"X-Real-IP":       "172.64.0.1",
+	})
+
+	if got := FromRequest(r); got != "172.64.0.1" {
+		t.Fatalf("expected X-Real-IP fallback when CF header absent, got %q", got)
+	}
+}
+
 // --- JC_TRUSTED_PROXIES override tests (BUG-002) ---
 // These tests are NOT parallel because they mutate the global trusted-proxy
 // cache via resetForTesting and the JC_TRUSTED_PROXIES env var.

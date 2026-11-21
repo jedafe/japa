@@ -1,6 +1,6 @@
 import { PRIVATE_API_BASE_URL } from '$app/env/private';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { JC_SURFACE } from '#lib/server/api.js';
+import { JC_SURFACE, forwardingHeaders } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -18,8 +18,9 @@ export const GET: RequestHandler = async ({ fetch, url, getClientAddress }) => {
 		'x-forwarded-host': url.host,
 		'x-jc-surface': JC_SURFACE
 	};
-	const clientIP = getClientAddress();
-	if (clientIP) headers['x-forwarded-for'] = clientIP;
+	// Forward the verbatim client trail so the backend's
+	// trusted-proxy resolver sees the real visitor IP (§37).
+	Object.assign(headers, forwardingHeaders({ request, getClientAddress }));
 
 	// Unversioned PDS endpoint — the default /api/v1 prefix is disabled.
 	const target = buildApiUrl('/.well-known/atproto-did', apiBase, { version: '' });
