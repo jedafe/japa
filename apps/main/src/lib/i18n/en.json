@@ -7422,6 +7422,7 @@
 	"attestation_guide.doc_type_medical_certificate": "Medical certificate",
 	"attestation_guide.doc_type_other": "Other",
 	"attestation_guide.read_editorial": "Read in-depth attestation guides",
+	"attestation_guide.read_howto": "Read the in-depth attestation guide",
 	"attestation_guide.open_tool": "Open the interactive attestation tool",
 	"attestation_guide.open_tool_desc": "Check live fees, turnaround times, and community-verified updates for your corridor.",
 	"attestation_guide.select_destination": "Select a destination",

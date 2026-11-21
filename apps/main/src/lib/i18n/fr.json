@@ -7315,6 +7315,7 @@
 	"attestation_guide.doc_type_medical_certificate": "Certificat médical",
 	"attestation_guide.doc_type_other": "Autre",
 	"attestation_guide.read_editorial": "Lire les guides d’attestation détaillés",
+	"attestation_guide.read_howto": "Lire le guide d’attestation détaillé",
 	"attestation_guide.open_tool": "Ouvrir l’outil d’attestation interactif",
 	"attestation_guide.open_tool_desc": "Consultez les frais en vigueur, les délais et les mises à jour vérifiées par la communauté pour votre corridor.",
 	"attestation_guide.select_destination": "Sélectionnez une destination",
