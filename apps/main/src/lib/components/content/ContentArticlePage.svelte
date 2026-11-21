@@ -36,6 +36,7 @@
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import { docTypeLabel, isStepObject, safeUrl, stepFields, stepHeadline, stepValueText } from '#lib/attestation/steps.js';
+	import { housingTypeLabel } from '#lib/utils/housing.js';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
@@ -153,6 +154,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				text = v ? t('common.yes', 'Yes') : t('common.no', 'No');
 			} else if (k === 'document_type' && isAttestationGuide) {
 				text = docTypeLabel(String(v));
+			} else if (k === 'accommodation_type' && isAccommodationGuide) {
+				text = housingTypeLabel(String(v), t);
 			} else if (
 				isToolGuide &&
 				(k === 'issuing_country' || k === 'destination_country')

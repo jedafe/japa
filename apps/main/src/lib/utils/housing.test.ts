@@ -3,6 +3,7 @@ import {
 	housingPlatforms,
 	housingRentTiers,
 	rentTierLabel,
+	housingTypeLabel,
 	isStaleVerification
 } from './housing.js';
 
@@ -68,6 +69,33 @@ describe('rentTierLabel', () => {
 		expect(rentTierLabel('city_centre')).toBe('City centre');
 		expect(rentTierLabel('outer')).toBe('Outer districts');
 		expect(rentTierLabel('near_campus')).toBe('near campus');
+	});
+});
+
+describe('housingTypeLabel', () => {
+	// Stand-in for the app's t() — records the key, returns the fallback.
+	const t = (_key: string, fallback: string) => fallback;
+
+	it('resolves enum values through i18n keys', () => {
+		expect(housingTypeLabel('private_rental', t)).toBe('Private rental');
+		expect(housingTypeLabel('employer_provided', t)).toBe('Employer-provided');
+		expect(housingTypeLabel('all', t)).toBe('All types');
+	});
+
+	it('passes the correct i18n key to t()', () => {
+		let seen = '';
+		housingTypeLabel('student', (key, fb) => {
+			seen = key;
+			return fb;
+		});
+		expect(seen).toBe('housing_guide.type_student');
+	});
+
+	it('humanizes unknown legacy values and handles empty', () => {
+		expect(housingTypeLabel('apartment', t)).toBe('apartment');
+		expect(housingTypeLabel('some_old_type', t)).toBe('some old type');
+		expect(housingTypeLabel('', t)).toBe('');
+		expect(housingTypeLabel(null, t)).toBe('');
 	});
 });
 

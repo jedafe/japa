@@ -8,6 +8,7 @@
 		housingPlatforms,
 		housingRentTiers,
 		rentTierLabel,
+		housingTypeLabel,
 		isStaleVerification
 	} from '#lib/utils/housing.js';
 	import type { PageData } from './$types';
@@ -65,8 +66,8 @@
 					</h1>
 					<div class="mt-1 flex flex-wrap gap-2">
 						{#if guide.accommodation_type}
-							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)] capitalize">
-								{guide.accommodation_type}
+							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+								{housingTypeLabel(guide.accommodation_type, t)}
 							</span>
 						{/if}
 						{#if guide.last_verified_at}

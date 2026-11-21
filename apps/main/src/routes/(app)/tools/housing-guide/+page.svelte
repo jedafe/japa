@@ -22,7 +22,9 @@
 		housingPlatforms,
 		housingRentTiers,
 		rentTierLabel,
-		isStaleVerification
+		housingTypeLabel,
+		isStaleVerification,
+		HOUSING_ACCOMMODATION_TYPES
 	} from '#lib/utils/housing.js';
 	import type { HousingGuideWithAi, GeoCountry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
@@ -58,15 +60,9 @@
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	// §96 accommodation_type enum — mirrors the admin page's list; the
-	// backend stores the value verbatim on housing_guides rows.
-	const accommodationTypes = [
-		{ value: 'private_rental', labelKey: 'housing_guide.type_private_rental', label: 'Private rental' },
-		{ value: 'flatshare', labelKey: 'housing_guide.type_flatshare', label: 'Flatshare' },
-		{ value: 'student', labelKey: 'housing_guide.type_student', label: 'Student housing' },
-		{ value: 'employer_provided', labelKey: 'housing_guide.type_employer', label: 'Employer-provided' },
-		{ value: 'all', labelKey: 'housing_guide.type_all', label: 'All types' }
-	];
+	// §96 accommodation_type enum — shared with the detail page and the
+	// Studio field options via HOUSING_ACCOMMODATION_TYPES.
+	const accommodationTypes = HOUSING_ACCOMMODATION_TYPES;
 
 	async function loadGuides() {
 		if (!selectedDestId) {
@@ -204,7 +200,7 @@
 				onchange={onTypeChange}
 				class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			>
-				<option value="">{t('housing_guide.all_types', 'All types')}</option>
+				<option value="">{t('housing_guide.any_type', 'Any type')}</option>
 				{#each accommodationTypes as at (at.value)}
 					<option value={at.value}>{t(at.labelKey, at.label)}</option>
 				{/each}
@@ -263,7 +259,7 @@
 									{/if}
 									{#if guide.accommodation_type}
 										<span class="text-xs px-2 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] rounded-full font-medium">
-											{guide.accommodation_type}
+											{housingTypeLabel(guide.accommodation_type, t)}
 										</span>
 									{/if}
 								</div>

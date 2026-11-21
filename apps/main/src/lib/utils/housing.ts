@@ -142,3 +142,32 @@ const TIER_LABELS: Record<string, string> = {
 export function rentTierLabel(tier: string): string {
 	return TIER_LABELS[tier] ?? tier.replace(/_/g, ' ');
 }
+
+/**
+ * §96 accommodation_type enum — single source for the tool's option lists
+ * AND value→label mapping. `all` is an enum value ("this guide covers
+ * every type"), NOT "no filter" — the filter's empty option is a separate
+ * 'any_type' i18n key. Mirrors custom_fields.options for
+ * guide_accommodation_fields and the admin page's list.
+ */
+export const HOUSING_ACCOMMODATION_TYPES = [
+	{ value: 'private_rental', labelKey: 'housing_guide.type_private_rental', label: 'Private rental' },
+	{ value: 'flatshare', labelKey: 'housing_guide.type_flatshare', label: 'Flatshare' },
+	{ value: 'student', labelKey: 'housing_guide.type_student', label: 'Student housing' },
+	{ value: 'employer_provided', labelKey: 'housing_guide.type_employer', label: 'Employer-provided' },
+	{ value: 'all', labelKey: 'housing_guide.type_all', label: 'All types' }
+] as const;
+
+/**
+ * Localized display label for a stored accommodation_type. Known values
+ * resolve through i18n; unknown legacy values (e.g. 'apartment') fall back
+ * to a humanized form rather than leaking the raw slug.
+ */
+export function housingTypeLabel(
+	type: string | null | undefined,
+	t: (key: string, fallback: string) => string
+): string {
+	if (!type) return '';
+	const found = HOUSING_ACCOMMODATION_TYPES.find((a) => a.value === type);
+	return found ? t(found.labelKey, found.label) : type.replace(/_/g, ' ');
+}

@@ -56,10 +56,17 @@
 	const accommodationTypes = [
 		{ value: 'private_rental', label: 'Private rental' },
 		{ value: 'flatshare', label: 'Flatshare' },
-		{ value: 'student', label: 'Student' },
+		{ value: 'student', label: 'Student housing' },
 		{ value: 'employer_provided', label: 'Employer-provided' },
-		{ value: 'all', label: 'General (all types)' }
+		{ value: 'all', label: 'All types' }
 	];
+
+	// Stored values are enum slugs — render the label, fall back to the raw
+	// value for legacy rows (e.g. 'apartment').
+	function typeLabel(value: string | null | undefined): string {
+		if (!value) return '—';
+		return accommodationTypes.find((a) => a.value === value)?.label ?? value;
+	}
 
 	function openGenerate() {
 		generateDestSpaceId = '';
@@ -260,7 +267,7 @@
 				key: 'accommodation_type',
 				label: t('app.tools.col_accommodation_type', 'Type'),
 				sortable: true,
-				render: (value: string) => value || '—'
+				render: (value: string) => typeLabel(value)
 			},
 			{
 				key: 'status',
@@ -366,7 +373,7 @@
 			<AutocompleteSelect
 				id="gen-accommodation-type"
 				bind:value={generateAccommodationType}
-				options={[{ value: '', label: t('app.tools.all_types', 'All types') }, ...accommodationTypes]}
+				options={[{ value: '', label: t('app.tools.unscoped', 'Unscoped') }, ...accommodationTypes]}
 				class="w-full"
 			/>
 		</div>
@@ -423,7 +430,7 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_accommodation_type', 'Accommodation Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.accommodation_type || '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{typeLabel(row.accommodation_type)}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_status', 'Status')}</p>

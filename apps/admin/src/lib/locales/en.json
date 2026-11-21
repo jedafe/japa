@@ -1265,6 +1265,7 @@
   "app.tools.col_last_verified": "Last verified",
   "app.tools.col_reviewer": "Reviewer",
   "app.tools.all_types": "All types",
+  "app.tools.unscoped": "Unscoped",
   "app.tools.generate": "Generate",
   "app.tools.generating": "Generating...",
   "app.tools.dest_country_placeholder": "Select a destination country",
