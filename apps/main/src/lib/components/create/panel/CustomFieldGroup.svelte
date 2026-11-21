@@ -5,6 +5,7 @@
 	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 	import { ImagePlus, X } from 'lucide-svelte';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import { api } from '#lib/api/client.js';
 	import { listCountries } from '#lib/api/geo.js';
 	import { listCurrencies } from '#lib/api/hub.js';
 	import { isoToLocalDateTime } from '#lib/utils/datetime.js';
@@ -428,6 +429,38 @@
 		}
 	});
 
+	// §109/§94 — 'suggest' fields can also source the tool catalogs:
+	// {"source":"eca_providers"} pulls GET /eca/providers (public) and
+	// {"source":"credential_professions"} pulls /credentials/professions.
+	// Both store the row slug (matching the ?provider=/?profession= filter
+	// convention). A flagged-off tool's endpoint 404s — the field degrades
+	// to an empty suggest the way a missing country list would.
+	type SlugOption = { slug: string; name: string };
+	let ecaProviders = $state<SlugOption[] | null>(null);
+	$effect(() => {
+		if (
+			ecaProviders === null &&
+			fields.some((f) => f.field_type === 'suggest' && optionSource(f) === 'eca_providers')
+		) {
+			ecaProviders = [];
+			api.get<SlugOption[]>('/eca/providers')
+				.then((r) => (ecaProviders = r.data ?? []))
+				.catch(() => (ecaProviders = []));
+		}
+	});
+	let credentialProfessions = $state<SlugOption[] | null>(null);
+	$effect(() => {
+		if (
+			credentialProfessions === null &&
+			fields.some((f) => f.field_type === 'suggest' && optionSource(f) === 'credential_professions')
+		) {
+			credentialProfessions = [];
+			api.get<SlugOption[]>('/credentials/professions')
+				.then((r) => (credentialProfessions = r.data ?? []))
+				.catch(() => (credentialProfessions = []));
+		}
+	});
+
 	// Managed currency list (Control → Currencies). Fetched lazily when a
 	// field declares options {"source":"wallet_currencies"} OR a repeater
 	// item_field uses minmax with a 'currency' part — select fields and the
@@ -479,6 +512,18 @@
 		if (optionSource(field) === 'wallet_currencies') {
 			return Promise.resolve(currencyItems(q));
 		}
+		if (optionSource(field) === 'eca_providers' || optionSource(field) === 'credential_professions') {
+			const rows = optionSource(field) === 'eca_providers' ? ecaProviders : credentialProfessions;
+			const items = (rows ?? []).map((p): AutocompleteItem => ({
+				id: p.slug,
+				label: p.name,
+				sublabel: p.slug
+			}));
+			const query = q.toLowerCase().trim();
+			return Promise.resolve(
+				query ? items.filter((i) => i.label.toLowerCase().includes(query) || i.id.toLowerCase() === query) : items
+			);
+		}
 		const items = optionList(field).map((o): AutocompleteItem => {
 			const opt = typeof o === 'object' ? o : { value: o, label: o };
 			return { id: opt.value || opt.label, label: opt.label || opt.value };
@@ -498,6 +543,10 @@
 		}
 		if (optionSource(field) === 'wallet_currencies') {
 			return currencyName(val, walletCurrencies) || val;
+		}
+		if (optionSource(field) === 'eca_providers' || optionSource(field) === 'credential_professions') {
+			const rows = optionSource(field) === 'eca_providers' ? ecaProviders : credentialProfessions;
+			return rows?.find((p) => p.slug === val)?.name ?? val;
 		}
 		return val;
 	}

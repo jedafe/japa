@@ -30,6 +30,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -618,4 +619,121 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
+}
+
+// HandleAdminCreateProfession handles POST /admin/credentials/professions —
+// create a credential profession. Admin-only (credential_checker.manage
+// permission checked at route registration).
+func (h *Handlers) HandleAdminCreateProfession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	var input CreateProfessionInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.Slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		return
+	}
+
+	if input.Name == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+
+	profession, err := h.service.CreateProfession(r.Context(), input)
+	if err != nil {
+		slog.Error("credentialchecker: admin create profession failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create profession")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": profession})
+}
+
+// HandleAdminUpdateProfession handles PATCH /admin/credentials/professions/:id
+// — update a credential profession. Admin-only (credential_checker.manage
+// permission checked at route registration).
+func (h *Handlers) HandleAdminUpdateProfession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input UpdateProfessionInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	profession, err := h.service.UpdateProfession(r.Context(), id, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "profession_not_found", "Profession not found")
+			return
+		}
+
+		slog.Error("credentialchecker: admin update profession failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update profession")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profession})
+}
+
+// HandleAdminDeleteProfession handles DELETE /admin/credentials/professions/:id
+// — delete a credential profession. Fails with 409 when pathways still
+// reference it (credential_pathways.profession_id is RESTRICT). Admin-only
+// (credential_checker.manage permission checked at route registration).
+func (h *Handlers) HandleAdminDeleteProfession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteProfession(r.Context(), id); err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "profession_not_found", "Profession not found")
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			errpkg.WriteError(w, http.StatusConflict, "profession_in_use", "Profession is still referenced by pathways")
+		default:
+			slog.Error("credentialchecker: admin delete profession failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete profession")
+		}
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

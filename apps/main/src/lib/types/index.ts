@@ -5116,6 +5116,9 @@ export interface CredentialPathway {
 	source_url_last_checked?: string | null;
 	status: string;
 	is_active: boolean;
+	// Detail payload only (§94) — slug of the editorial guide that
+	// claims this pathway.
+	guide_slug?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -5679,6 +5682,9 @@ export interface EcaGuide {
 	is_active: boolean;
 	ai_generated: boolean;
 	is_japabot_indexed: boolean;
+	// Detail payload only (§109) — slug of the editorial guide that
+	// claims this tool row.
+	guide_slug?: string;
 }
 
 export interface EcaPathwayStep {

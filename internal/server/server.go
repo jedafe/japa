@@ -2196,6 +2196,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	credentialCheckerStore := credentialchecker.NewStore(database)
 	credentialCheckerService := credentialchecker.NewService(credentialCheckerStore, settingsService)
 	credentialCheckerService.SetEnqueuer(taskEnqueuer)
+	credentialCheckerService.SetFeatureChecker(featureChecker)
 	credentialCheckerHandlers := credentialchecker.NewHandlers(credentialCheckerService, settingsService)
 	credentialCheckerHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in credentialchecker responses
 
@@ -2218,9 +2219,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	attestationGuideStore := attestationguide.NewStore(database)
 	attestationGuideService := attestationguide.NewService(attestationGuideStore, settingsService)
 	attestationGuideService.SetFeatureChecker(featureChecker)
-	// §97: publishing an attestation-category guide auto-provisions a draft
-	// pathway for its document_type + corridor combination when none exists.
-	contentService.SetGuidePublishHook(attestationGuideService)
 	attestationGuideHandlers := attestationguide.NewHandlers(attestationGuideService, settingsService)
 	attestationGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in attestationguide responses
 
@@ -2345,8 +2343,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ecaGuideStore := ecaguide.NewStore(database)
 	ecaGuideService := ecaguide.NewService(ecaGuideStore, settingsService)
 	ecaGuideService.SetEnqueuer(taskEnqueuer)
+	ecaGuideService.SetFeatureChecker(featureChecker)
 	ecaGuideHandlers := ecaguide.NewHandlers(ecaGuideService, settingsService)
 	ecaGuideHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in ecaguide responses
+
+	// §97 pattern extended: publishing a tool-category guide auto-provisions
+	// a draft row for its natural key in whichever tool owns the category —
+	// attestation (document_type + corridor), eca (provider + destination +
+	// purpose), credential (profession + corridor). The fan-out replaces the
+	// single attestation hook; each service early-returns on foreign
+	// categories and no-ops when its feature flag is off.
+	contentService.SetGuidePublishHook(guidePublishFanout{hooks: []content.GuidePublishHook{
+		attestationGuideService,
+		ecaGuideService,
+		credentialCheckerService,
+	}})
 
 	sopGeneratorStore := sopgenerator.NewStore(database)
 	sopGeneratorService := sopgenerator.NewService(sopGeneratorStore, settingsService)
@@ -9802,6 +9813,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/credentials/notes", credentialCheckerHandlers.HandleAdminListNotes)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Patch("/admin/credentials/notes/{id}", credentialCheckerHandlers.HandleAdminModerateNote)
+				// §94 — profession catalog CRUD. The service layer already
+				// exposed these for agent tools; the admin UI needs HTTP
+				// routes to manage the exhaustive profession list.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Post("/admin/credentials/professions", credentialCheckerHandlers.HandleAdminCreateProfession)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Patch("/admin/credentials/professions/{id}", credentialCheckerHandlers.HandleAdminUpdateProfession)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
+					Delete("/admin/credentials/professions/{id}", credentialCheckerHandlers.HandleAdminDeleteProfession)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).
 					Patch("/admin/credentials/{id}", credentialCheckerHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "credential_checker.manage")).

@@ -519,6 +519,15 @@
 									</a>
 								{/if}
 
+								<!-- §109 editorial cross-link — the in-depth guide that
+								     claims this tool row (guide_slug on the detail DTO). -->
+								{#if detail.guide.guide_slug}
+									<a href="/guide/{detail.guide.guide_slug}" class="ms-3 inline-flex items-center gap-1 text-xs underline text-[var(--color-primary-text)]">
+										<ExternalLink size={11} class="rtl:-scale-x-100" />
+										{t('eca_guide.read_guide', 'Read the in-depth guide')}
+									</a>
+								{/if}
+
 								<!-- Community updates -->
 								{#if detail.updates.length > 0}
 									<div class="mt-4 border-t border-[var(--color-border)] pt-3">

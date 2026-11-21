@@ -149,6 +149,10 @@ type CreatePathwayInput struct {
 	AIGenerated            bool
 	AIModel                *string
 	AIPromptHash           *string
+	// GuideID carries the editorial-guide cross-link (§94 — the contents
+	// row that provisioned or claimed this pathway); NULL for tool-authored
+	// rows.
+	GuideID pgtype.UUID
 }
 
 // UpdatePathwayInput holds the mutable fields for a pathway update. Only
@@ -578,8 +582,8 @@ INSERT INTO credential_pathways (
     timeline_estimate, cost_estimate_usd, pathway_description,
     pathway_steps,
     official_application_url, source_url_last_checked,
-    status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    status, is_active, ai_generated, ai_model, ai_prompt_hash, guide_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 RETURNING id
 `
 
@@ -598,6 +602,7 @@ RETURNING id
 		steps,
 		input.OfficialApplicationURL, input.SourceURLLastChecked,
 		status, input.IsActive, input.AIGenerated, input.AIModel, input.AIPromptHash,
+		nullUUID(input.GuideID),
 	).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("credentialchecker: create pathway: %w", err)
@@ -1022,4 +1027,163 @@ WHERE id = $1 AND deleted_at IS NULL
 	}
 
 	return nil
+}
+
+// nullUUID renders a pgtype.UUID for INSERT/UPDATE — an invalid value
+// yields nil so the column lands NULL.
+func nullUUID(id pgtype.UUID) any {
+	if !id.Valid {
+		return nil
+	}
+
+	return id
+}
+
+// ── Editorial integration helpers (§94 — /studio/create?type=guide) ────
+// Mirror the §97 attestation pattern: guide→tool resolution runs on the
+// (profession, issuing space, destination space) natural key; the
+// tool→guide half resolves an explicit claim (contents.field_values.
+// pathway_id or credential_pathways.guide_id) before falling back to the
+// combination match.
+
+// SpaceIDByCountryGeoCode resolves a country-level geo space by its
+// geo_code (case-insensitive) — the reverse of the /geo/countries list
+// the editorial guide fields are sourced from.
+func (s *Store) SpaceIDByCountryGeoCode(ctx context.Context, geoCode string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM spaces
+WHERE level = 'country'
+  AND UPPER(geo_code) = UPPER($1)
+  AND deleted_at IS NULL
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, geoCode).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// ProfessionIDBySlug resolves a credential_professions row by slug
+// (case-insensitive) — the profession field in editorial guides stores
+// the slug, matching the ?profession= public filter convention.
+func (s *Store) ProfessionIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM credential_professions
+WHERE LOWER(slug) = LOWER($1)
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// PathwayIDForCombination returns the id of the pathway matching the
+// (profession, issuing space, destination space) natural key, in any
+// status — a draft still claims the corridor so the publish hook never
+// duplicates it. Read off Writer: this feeds a write decision.
+// Returns pgx.ErrNoRows when no pathway matches.
+func (s *Store) PathwayIDForCombination(ctx context.Context, professionID, issuingSpaceID, destinationSpaceID pgtype.UUID) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM credential_pathways
+WHERE profession_id = $1
+  AND issuing_space_id = $2
+  AND destination_space_id = $3
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Writer.QueryRow(ctx, q, professionID, issuingSpaceID, destinationSpaceID).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// LinkPathwayToContent stamps the bidirectional editorial link: the
+// credential_pathways row's guide_id points at the guide content, and
+// the guide's field_values.pathway_id is backfilled so the link becomes
+// explicit rather than computed (§97 precedent). field_values is
+// JSONB-merged, not rewritten — concurrent edits to other keys survive.
+func (s *Store) LinkPathwayToContent(ctx context.Context, pathwayID, contentID pgtype.UUID) error {
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE credential_pathways SET guide_id = $2, updated_at = now()
+		WHERE id = $1`, pathwayID, contentID); err != nil {
+		return fmt.Errorf("credentialchecker: link pathway to content: %w", err)
+	}
+
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE contents
+		SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('pathway_id', $2::text),
+		    updated_at = now()
+		WHERE id = $1
+		  AND content_type = 'guide'
+		  AND guide_category = 'credential'
+		  AND deleted_at IS NULL`, contentID, pathwayID.String()); err != nil {
+		return fmt.Errorf("credentialchecker: backfill guide pathway_id: %w", err)
+	}
+
+	return nil
+}
+
+// GuideSlugForPathway returns the slug of the published editorial guide
+// (guide_category='credential') linked to the given pathway — the
+// tool→guide half of the cross-link. A guide claims the pathway either
+// explicitly (field_values.pathway_id, or the row's guide_id column
+// pointing at the content) or via the matching natural key (profession
+// slug + issuing/destination geo codes). Explicit claims win over
+// combination matches. Returns "" with nil error when unclaimed.
+func (s *Store) GuideSlugForPathway(ctx context.Context, p PathwayRow) (string, error) {
+	if !p.ID.Valid {
+		return "", nil
+	}
+
+	var issGeo, destGeo *string
+	if p.IssuingSpaceCode != nil && *p.IssuingSpaceCode != "" {
+		issGeo = p.IssuingSpaceCode
+	}
+	if p.DestinationSpaceCode != nil && *p.DestinationSpaceCode != "" {
+		destGeo = p.DestinationSpaceCode
+	}
+
+	const q = `
+SELECT c.slug FROM contents c
+WHERE c.content_type = 'guide'
+  AND c.guide_category = 'credential'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND (
+      c.field_values->>'pathway_id' = $1
+      OR c.id = (SELECT guide_id FROM credential_pathways WHERE id = $1::uuid)
+      OR (
+          COALESCE(BTRIM(c.field_values->>'pathway_id'), '') = ''
+          AND LOWER(c.field_values->>'profession') = LOWER($2::text)
+          AND UPPER(c.field_values->>'issuing_country') = UPPER($3::text)
+          AND UPPER(c.field_values->>'destination_country') = UPPER($4::text)
+      )
+  )
+ORDER BY (c.field_values->>'pathway_id' = $1) DESC, c.created_at, c.id
+LIMIT 1
+`
+
+	var slug string
+	err := s.pool.Reader.QueryRow(ctx, q, p.ID.String(), p.ProfessionSlug, issGeo, destGeo).Scan(&slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("credentialchecker: guide slug for pathway: %w", err)
+	}
+
+	return slug, nil
 }

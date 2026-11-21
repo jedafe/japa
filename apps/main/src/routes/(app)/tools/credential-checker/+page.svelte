@@ -454,6 +454,17 @@
 													{t('credential_checker.regulatory_body', 'Regulatory body')}
 												</a>
 											{/if}
+											<!-- §94 editorial cross-link — the in-depth guide that
+											     claims this pathway (guide_slug on the detail DTO). -->
+											{#if detailPathway.guide_slug}
+												<a
+													href="/guide/{detailPathway.guide_slug}"
+													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
+												>
+													<ExternalLink class="rtl:-scale-x-100" size={14} />
+													{t('credential_checker.read_guide', 'Read the in-depth guide')}
+												</a>
+											{/if}
 										</div>
 
 										{#if detailPathway.source_url_last_checked}

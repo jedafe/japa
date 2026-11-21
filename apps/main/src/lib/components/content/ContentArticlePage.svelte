@@ -69,9 +69,12 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		 *  guide_category 'attestation': geo countries resolve geo-countries
 		 *  field values into names, and attestationToolHref is the validated
 		 *  deep link into the interactive tool (null when the feature is
-		 *  off or the pathway can't be reached). */
+		 *  off or the pathway can't be reached). §109/§94 carry the same
+		 *  href pair for eca/credential guides. */
 		geoCountries?: { geo_code: string | null; name: string }[];
 		attestationToolHref?: string | null;
+		ecaToolHref?: string | null;
+		credentialToolHref?: string | null;
 	}
 
 	type PageData = ContentArticlePageData;
@@ -126,12 +129,17 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	});
 
 	const isAttestationGuide = $derived(article.content_type === 'guide' && article.guide_category === 'attestation');
+	// §109/§94 — the eca + credential guide categories share the
+	// geo_countries field semantics and the pathway_steps card shape.
+	const isEcaGuide = $derived(article.content_type === 'guide' && article.guide_category === 'eca');
+	const isCredentialGuide = $derived(article.content_type === 'guide' && article.guide_category === 'credential');
+	const isToolGuide = $derived(isAttestationGuide || isEcaGuide || isCredentialGuide);
 
 	const guideDetails = $derived.by(() => {
 		if (article.content_type !== 'guide' || !article.field_values) return [] as { key: string; label: string; value: string }[];
 		const out: { key: string; label: string; value: string }[] = [];
 		for (const [k, v] of Object.entries(article.field_values)) {
-			if (k.startsWith('_') || k === 'pathway_id' || v == null || v === '' || typeof v === 'function') continue;
+			if (k.startsWith('_') || k === 'pathway_id' || k === 'guide_id' || v == null || v === '' || typeof v === 'function') continue;
 			let text = '';
 			if (Array.isArray(v)) {
 				text = v.filter((x) => x != null && typeof x !== 'object').map(String).join(', ');
@@ -142,7 +150,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			} else if (k === 'document_type' && isAttestationGuide) {
 				text = docTypeLabel(String(v));
 			} else if (
-				isAttestationGuide &&
+				isToolGuide &&
 				(k === 'issuing_country' || k === 'destination_country')
 			) {
 				const code = String(v).trim().toUpperCase();
@@ -158,10 +166,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// §97 attestation-category guides — the structured pathway_steps repeater
 	// renders as an ordered card (the generic details card skips object
 	// arrays), and a CTA deep-links into the interactive tool. The href is
-	// resolved server-side (pathway_id validated, feature-gated).
+	// resolved server-side (pathway_id validated, feature-gated). §109/§94
+	// eca + credential categories reuse the same repeater/CTA treatment.
 	const attestationToolHref = $derived(data.attestationToolHref ?? null);
+	const ecaToolHref = $derived(data.ecaToolHref ?? null);
+	const credentialToolHref = $derived(data.credentialToolHref ?? null);
 	const attestationSteps = $derived.by((): unknown[] => {
-		if (!isAttestationGuide) return [];
+		if (!isToolGuide) return [];
 		const raw = article.field_values?.pathway_steps;
 		return Array.isArray(raw) ? raw.filter((x) => x !== null && x !== undefined && x !== '') : [];
 	});
@@ -661,6 +672,36 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				</a>
 				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 					{t('attestation_guide.open_tool_desc', 'Check live fees, turnaround times, and community-verified updates for your corridor.')}
+				</p>
+			</div>
+		{/if}
+
+		{#if ecaToolHref}
+			<div class="mt-8">
+				<a
+					href={ecaToolHref}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<Stamp size={18} />
+					{t('eca_guide.open_tool', 'Open the interactive ECA guide')}
+				</a>
+				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+					{t('eca_guide.open_tool_desc', 'Compare provider fees, timelines, and community-verified reports for your destination.')}
+				</p>
+			</div>
+		{/if}
+
+		{#if credentialToolHref}
+			<div class="mt-8">
+				<a
+					href={credentialToolHref}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<Stamp size={18} />
+					{t('credential_checker.open_tool', 'Open the interactive credential checker')}
+				</a>
+				<p class="mt-1.5 text-xs text-[var(--color-muted)]">
+					{t('credential_checker.open_tool_desc', 'Check the regulator, licensing steps, costs, and community notes for your corridor.')}
 				</p>
 			</div>
 		{/if}

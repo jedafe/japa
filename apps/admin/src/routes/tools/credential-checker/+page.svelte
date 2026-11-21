@@ -10,8 +10,9 @@
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, Sparkles, Pencil, XCircle } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
-	import { credentialCheckerAdminApi, apiFetch, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { credentialCheckerAdminApi, apiFetch, api, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type CredentialCheckerItem = {
@@ -56,6 +57,12 @@
 	type ProfessionOption = { id: string; slug: string; name: string; category?: string };
 
 	const canManage = $derived(hasPermission('credential_checker.manage'));
+
+	// §94 — tabs: the pathways review queue and the professions catalog the
+	// pathways draw from (admin CRUD via /admin/credentials/professions).
+	const CC_TABS = ['pathways', 'professions'] as const;
+	let activeTab = $state<'pathways' | 'professions'>(initTabParam('pathways', { valid: CC_TABS }));
+	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: CC_TABS, preserve: [] });
 
 	// ── Country selectors (250 primary geo space countries) ──────────────────
 	// Filter, generate modal, and the edit form all use geo space *id*.
@@ -373,6 +380,62 @@
 		viewSnippet: CredentialCheckerView
 	};
 });
+
+	// ── Professions tab (§94) ────────────────────────────────────────────────
+	// Catalog management for credential_professions — the suggest source for
+	// the editorial 'profession' field and the generate modal's picker.
+	const PROFESSION_CATEGORIES = [
+		{ value: 'medical', label: 'Medical' },
+		{ value: 'engineering', label: 'Engineering' },
+		{ value: 'legal', label: 'Legal' },
+		{ value: 'finance', label: 'Finance' },
+		{ value: 'education', label: 'Education' },
+		{ value: 'other', label: 'Other' }
+	];
+
+	const professionFields: FieldDef[] = [
+		{ key: 'slug', label: t('common.slug', 'Slug'), type: 'text', required: true, placeholder: 'registered-nurse' },
+		{ key: 'name', label: t('common.name', 'Name'), type: 'text', required: true },
+		{ key: 'category', label: t('common.category', 'Category'), type: 'select', required: true, options: PROFESSION_CATEGORIES }
+	];
+
+	let professionController = $state<EntityPageController | undefined>(undefined);
+
+	const professionConfig: EntityPageConfig = {
+		title: t('app.tools.professions_title', 'Professions'),
+		description: t('app.tools.professions_desc', 'Regulated professions the credential checker covers (§94).'),
+		createPermission: 'credential_checker.manage',
+		editPermission: 'credential_checker.manage',
+		deletePermission: 'credential_checker.manage',
+		fields: professionFields,
+		columns: [
+			{ key: 'name', label: t('common.name', 'Name'), sortable: true },
+			{ key: 'slug', label: t('common.slug', 'Slug') },
+			{ key: 'category', label: t('common.category', 'Category'), render: (v?: string) => v || '—' }
+		],
+		// GET /credentials/professions is unpaginated — return the full array
+		// and let DataTable paginate client-side.
+		load: async () => {
+			const res = await apiFetch<ProfessionOption[]>('/credentials/professions');
+			if (res.error) throw new Error(res.error.message);
+			return res.data ?? [];
+		},
+		create: async (body) => {
+			const res = await api('/admin/credentials/professions', { method: 'POST', body });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await api(`/admin/credentials/professions/${id}`, { method: 'PATCH', body });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/credentials/professions/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		// Professions have no soft-delete column — referenced rows are rejected
+		// by FK; hide the deleted-state affordances.
+		isDeleted: () => false
+	};
 </script>
 
 <svelte:head>
@@ -388,8 +451,17 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	{#if canManage}
+<div class="mb-4 flex items-center justify-between">
+	<div class="flex gap-2">
+		{#each CC_TABS as tab (tab)}
+			<button
+				class="rounded px-3 py-1 text-sm font-medium"
+				style="background:{activeTab === tab ? 'var(--color-primary)' : 'var(--color-muted-bg)'};color:{activeTab === tab ? 'var(--color-primary-contrast)' : 'var(--color-foreground)'}"
+				onclick={() => (activeTab = tab)}
+			>{t(`app.tools.cc_tab_${tab}`, tab === 'pathways' ? 'Pathways' : 'Professions')}</button>
+		{/each}
+	</div>
+	{#if canManage && activeTab === 'pathways'}
 		<Button onclick={openGenerate}>
 			<Sparkles size={16} />
 			{t('app.tools.generate', 'Generate')}
@@ -397,10 +469,14 @@
 	{/if}
 </div>
 
+{#if activeTab === 'pathways'}
 <EntityPage {config} bind:controller={entityController} />
+{:else}
+<EntityPage config={professionConfig} bind:controller={professionController} />
+{/if}
 
 <!-- ── Community note moderation queue ─────────────────────────────────── -->
-{#if canManage && pendingNotes.length > 0}
+{#if canManage && activeTab === 'pathways' && pendingNotes.length > 0}
 	<section class="mt-8">
 		<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide" style="color: var(--color-muted)">
 			{t('app.tools.notes_queue', 'Community notes pending review')} ({pendingNotes.length})

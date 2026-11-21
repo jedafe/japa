@@ -67,8 +67,12 @@ type PathwayDTO struct {
 	HITLReviewedAt         string          `json:"hitl_reviewed_at,omitempty"`
 	HITLReviewNotes        string          `json:"hitl_review_notes,omitempty"`
 	IsJapabotIndexed       bool            `json:"is_japabot_indexed"`
-	CreatedAt              string          `json:"created_at"`
-	UpdatedAt              string          `json:"updated_at"`
+	// GuideSlug is populated on the detail payload only — the editorial
+	// guide (guide_category='credential') that claims this pathway, so
+	// the public page can link back (§94 editorial integration).
+	GuideSlug  string `json:"guide_slug,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 // CommunityNoteDTO is the API response shape for a single community note.
@@ -194,6 +198,33 @@ type Service struct {
 	settings     *config.Settings
 	aiDispatcher AIDispatcher
 	enqueuer     TaskEnqueuer
+	checker      FeatureChecker
+}
+
+// FeatureChecker is the feature_flags reachability read (§42) — the
+// single source of truth for whether the tool is enabled. system_settings
+// is consulted only as a fallback when no checker is injected.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads
+// the feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the credential_checker.enabled flag (§94). The publish
+// hook consults this so a flagged-off tool doesn't accumulate provisioned
+// rows (attestation editorial precedent).
+func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "credential_checker.enabled")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "credential_checker.enabled", false)
 }
 
 // NewService creates a credential checker service.
@@ -368,8 +399,15 @@ func (s *Service) GetPathway(ctx context.Context, id pgtype.UUID) (PathwayDetail
 		noteDTOs = append(noteDTOs, d)
 	}
 
+	dto := pathwayRowToDTO(row)
+	// Slug resolution is best-effort — a lookup failure must not sink the
+	// detail payload the way a missing slug silently skips the back-link.
+	if slug, serr := s.store.GuideSlugForPathway(ctx, row); serr == nil {
+		dto.GuideSlug = slug
+	}
+
 	return PathwayDetailDTO{
-		Pathway: pathwayRowToDTO(row),
+		Pathway: dto,
 		Notes:   noteDTOs,
 	}, nil
 }

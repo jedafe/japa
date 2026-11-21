@@ -55,6 +55,10 @@ type GuideDTO struct {
 	AIModel              string          `json:"ai_model,omitempty"`
 	AIPromptHash         string          `json:"ai_prompt_hash,omitempty"`
 	IsJapabotIndexed     bool            `json:"is_japabot_indexed"`
+	// GuideSlug is populated on the detail payload only — the editorial
+	// guide (guide_category='eca') that claims this tool row, so the
+	// public page can link back (§109 editorial integration).
+	GuideSlug string `json:"guide_slug,omitempty"`
 }
 
 // UpdateDTO is the API shape for a community update.
@@ -142,6 +146,34 @@ type Service struct {
 	settings     *config.Settings
 	enqueuer     TaskEnqueuer
 	aiDispatcher AIDispatcher
+	checker      FeatureChecker
+}
+
+// FeatureChecker is the feature_flags reachability read (§42) — the single
+// source of truth for whether the tool is enabled. system_settings is
+// consulted only as a fallback when no checker is injected (attestation
+// guide precedent, ADR-120).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table instead of drifting against system_settings.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the eca_guide.enabled flag (§109). The publish hook
+// consults this so a flagged-off tool doesn't accumulate provisioned
+// rows (attestation editorial precedent).
+func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "eca_guide.enabled")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "eca_guide.enabled", false)
 }
 
 // NewService creates the service.
@@ -221,7 +253,9 @@ func (s *Service) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpo
 	return guideDTOs(rows), nil
 }
 
-// GetGuide returns a guide detail plus approved community updates.
+// GetGuide returns a guide detail plus approved community updates. The
+// guide_slug field links back to the editorial guide that claims this
+// row when one exists (§109 — tool→guide half of the cross-link).
 func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (*GuideDetailDTO, error) {
 	g, err := s.store.GetGuide(ctx, id)
 	if err != nil {
@@ -233,7 +267,14 @@ func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (*GuideDetailDTO
 		return nil, err
 	}
 
-	return &GuideDetailDTO{Guide: guideDTO(g), Updates: updateDTOs(updates)}, nil
+	dto := guideDTO(g)
+	// Slug resolution is best-effort — a lookup failure must not sink the
+	// detail payload the way a missing slug silently skips the back-link.
+	if slug, serr := s.store.GuideSlugForGuide(ctx, g); serr == nil {
+		dto.GuideSlug = slug
+	}
+
+	return &GuideDetailDTO{Guide: dto, Updates: updateDTOs(updates)}, nil
 }
 
 // CompareGuides returns published guides side-by-side per provider.

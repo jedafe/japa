@@ -11,6 +11,8 @@ package ecaguide
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -74,6 +76,7 @@ type GuideRow struct {
 	AIPromptHash         *string
 	HITLReviewedAt       pgtype.Timestamptz
 	IsJapabotIndexed     bool
+	GuideID              pgtype.UUID // editorial guide cross-link (§109)
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
 }
@@ -354,15 +357,26 @@ func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error
 		INSERT INTO eca_guides
 		  (destination_space_id, provider_id, purpose, pathway_steps,
 		   fee_estimate, currency, timeline_estimate, documents_required,
-		   accepted_for, official_url, status, ai_generated, ai_model, ai_prompt_hash)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14)
+		   accepted_for, official_url, status, ai_generated, ai_model, ai_prompt_hash,
+		   guide_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14,NULLIF($15,'')::uuid)
 		RETURNING id`,
 		g.DestinationSpaceID, g.ProviderID, g.Purpose, g.PathwaySteps,
 		g.FeeEstimate, g.Currency, g.TimelineEstimate, g.DocumentsRequired,
 		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated,
-		g.AIModel, g.AIPromptHash).Scan(&id)
+		g.AIModel, g.AIPromptHash, uuidOrEmpty(g.GuideID)).Scan(&id)
 
 	return id, err
+}
+
+// uuidOrEmpty renders a pgtype.UUID for NULLIF inserts — an invalid UUID
+// yields "" so the column lands NULL instead of a zero-value.
+func uuidOrEmpty(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+
+	return id.String()
 }
 
 // UpdateGuide applies a partial update (admin).
@@ -757,4 +771,153 @@ func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	}
 
 	return nil
+}
+
+// ── Editorial integration helpers (§109 — /studio/create?type=guide) ────
+// Mirror the §97 attestation pattern: guide→tool resolution runs on the
+// (destination, provider, purpose) natural key; the tool→guide half
+// resolves an explicit claim (contents.field_values.guide_id or
+// eca_guides.guide_id) before falling back to the combination match.
+
+// SpaceIDByCountryGeoCode resolves a country-level geo space by its
+// geo_code (case-insensitive) — the reverse of the /geo/countries list
+// the editorial guide fields are sourced from.
+func (s *Store) SpaceIDByCountryGeoCode(ctx context.Context, geoCode string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM spaces
+WHERE level = 'country'
+  AND UPPER(geo_code) = UPPER($1)
+  AND deleted_at IS NULL
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, geoCode).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// ProviderIDBySlug resolves an eca_providers row by slug
+// (case-insensitive) — the provider field in editorial guides stores the
+// slug, matching the ?provider= public filter convention.
+func (s *Store) ProviderIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM eca_providers
+WHERE LOWER(slug) = LOWER($1) AND is_active
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// GuideIDForCombination returns the id of the guide matching the
+// (destination_space, provider, purpose) natural key, in any status — a
+// draft still claims the combination so the publish hook never
+// duplicates it. Read off Writer: this feeds a write decision.
+// Returns pgx.ErrNoRows when no guide matches.
+func (s *Store) GuideIDForCombination(ctx context.Context, destSpaceID, providerID pgtype.UUID, purpose string) (pgtype.UUID, error) {
+	const q = `
+SELECT id FROM eca_guides
+WHERE destination_space_id = $1
+  AND provider_id = $2
+  AND purpose = $3
+ORDER BY created_at, id
+LIMIT 1
+`
+
+	var id pgtype.UUID
+	if err := s.pool.Writer.QueryRow(ctx, q, destSpaceID, providerID, purpose).Scan(&id); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return id, nil
+}
+
+// LinkGuideToContent stamps the bidirectional editorial link: the
+// eca_guides row's guide_id points at the guide content, and the
+// guide's field_values.guide_id is backfilled so the link becomes
+// explicit rather than computed (§97 precedent). field_values is
+// JSONB-merged, not rewritten — concurrent edits to other keys survive.
+func (s *Store) LinkGuideToContent(ctx context.Context, guideID, contentID pgtype.UUID) error {
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE eca_guides SET guide_id = $2, updated_at = now()
+		WHERE id = $1`, guideID, contentID); err != nil {
+		return fmt.Errorf("ecaguide: link guide to content: %w", err)
+	}
+
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE contents
+		SET field_values = COALESCE(field_values, '{}'::jsonb) || jsonb_build_object('guide_id', $2::text),
+		    updated_at = now()
+		WHERE id = $1
+		  AND content_type = 'guide'
+		  AND guide_category = 'eca'
+		  AND deleted_at IS NULL`, contentID, guideID.String()); err != nil {
+		return fmt.Errorf("ecaguide: backfill guide guide_id: %w", err)
+	}
+
+	return nil
+}
+
+// GuideSlugForGuide returns the slug of the published editorial guide
+// (guide_category='eca') linked to the given eca_guides row — the
+// tool→guide half of the cross-link. A guide claims the row either
+// explicitly (field_values.guide_id, or the row's guide_id column
+// pointing at the content) or via the matching natural key
+// (destination geo code + provider slug + purpose). Explicit claims win
+// over combination matches. Returns "" with nil error when unclaimed.
+func (s *Store) GuideSlugForGuide(ctx context.Context, g GuideRow) (string, error) {
+	if !g.ID.Valid {
+		return "", nil
+	}
+
+	var destGeo, providerSlug *string
+	if err := s.pool.Reader.QueryRow(ctx, `
+		SELECT geo_code FROM spaces WHERE id = $1`, g.DestinationSpaceID).Scan(&destGeo); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("ecaguide: dest geo lookup: %w", err)
+	}
+	if g.ProviderSlug != nil && *g.ProviderSlug != "" {
+		providerSlug = g.ProviderSlug
+	}
+
+	const q = `
+SELECT c.slug FROM contents c
+WHERE c.content_type = 'guide'
+  AND c.guide_category = 'eca'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND (
+      c.field_values->>'guide_id' = $1
+      OR c.id = (SELECT guide_id FROM eca_guides WHERE id = $1::uuid)
+      OR (
+          COALESCE(BTRIM(c.field_values->>'guide_id'), '') = ''
+          AND UPPER(c.field_values->>'destination_country') = UPPER($3::text)
+          AND LOWER(c.field_values->>'provider') = LOWER($4::text)
+          AND LOWER(c.field_values->>'purpose') = LOWER($5::text)
+      )
+  )
+ORDER BY (c.field_values->>'guide_id' = $1) DESC, c.created_at, c.id
+LIMIT 1
+`
+
+	var slug string
+	err := s.pool.Reader.QueryRow(ctx, q, g.ID.String(), g.ID, destGeo, providerSlug, g.Purpose).Scan(&slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("ecaguide: guide slug for guide: %w", err)
+	}
+
+	return slug, nil
 }

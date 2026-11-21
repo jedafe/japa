@@ -71,13 +71,25 @@ export const load: PageServerLoad = async (event) => {
 
 	let geoCountries: GeoCountry[] = [];
 	let attestationToolHref: string | null = null;
-	if (isAttestationGuide) {
-		const [{ features }, countries] = await Promise.all([
-			event.parent(),
-			apiList<GeoCountry>(ctx, '/geo/countries').then((r) => r.items).catch(() => [] as GeoCountry[])
-		]);
-		geoCountries = countries;
+	let ecaToolHref: string | null = null;
+	let credentialToolHref: string | null = null;
+	const guideCategory = data.article.guide_category;
+	const needsGeo = guideCategory === 'attestation' || guideCategory === 'eca' || guideCategory === 'credential';
+	const { features } = await event.parent();
+	if (needsGeo) {
+		geoCountries = await apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]);
+	}
 
+	// geo code → space id — the tool landings take ?dest=<space id> while
+	// editorial field_values store geo_countries codes (§97 pattern).
+	const spaceIdOf = (geo: unknown) =>
+		typeof geo === 'string' && geo.trim()
+			? (geoCountries.find((c) => c.geo_code?.toUpperCase() === geo.trim().toUpperCase())?.id ?? null)
+			: null;
+
+	if (isAttestationGuide) {
 		if (features['attestation_guide.enabled']) {
 			const pid = typeof fv.pathway_id === 'string' ? fv.pathway_id.trim() : '';
 			let linked = false;
@@ -103,16 +115,8 @@ export const load: PageServerLoad = async (event) => {
 					)
 						? fv.document_type
 						: '';
-				const spaceId = (geo: unknown) =>
-					typeof geo === 'string' && geo.trim()
-						? (geoCountries.find(
-								(c) =>
-									c.geo_code?.toUpperCase() ===
-									geo.trim().toUpperCase()
-							)?.id ?? null)
-						: null;
-				const destId = spaceId(fv.destination_country);
-				const issId = spaceId(fv.issuing_country);
+				const destId = spaceIdOf(fv.destination_country);
+				const issId = spaceIdOf(fv.issuing_country);
 				if (docType && destId && issId) {
 					try {
 						const qs = new URLSearchParams({
@@ -138,5 +142,53 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { ...data, scholarship, geoCountries, attestationToolHref };
+	// §109 — eca-category guides deep-link into the ECA tool on its natural
+	// key (destination × provider slug × purpose). The landing accepts
+	// ?dest=<space id>&provider=<slug>&purpose=<enum>, so no extra fetch is
+	// needed beyond the geo code → space id resolution.
+	if (guideCategory === 'eca' && features['eca_guide.enabled']) {
+		const q = new URLSearchParams();
+		const destId = spaceIdOf(fv.destination_country);
+		if (destId) q.set('dest', destId);
+		if (typeof fv.provider === 'string' && fv.provider.trim()) {
+			q.set('provider', fv.provider.trim().toLowerCase());
+		}
+		if (
+			typeof fv.purpose === 'string' &&
+			['immigration', 'study', 'employment', 'professional_licensure'].includes(fv.purpose)
+		) {
+			q.set('purpose', fv.purpose);
+		}
+		const s = q.toString();
+		if (s) ecaToolHref = `/tools/eca-guide${s ? `?${s}` : ''}`;
+	}
+
+	// §94 — credential-category guides deep-link into the credential checker
+	// on its natural key (profession × issuing × destination). The tool's
+	// ?profession= filter takes the profession id while field_values stores
+	// the slug, so resolve it against the public professions list.
+	if (guideCategory === 'credential' && features['credential_checker.enabled']) {
+		const q = new URLSearchParams();
+		const destId = spaceIdOf(fv.destination_country);
+		const issId = spaceIdOf(fv.issuing_country);
+		if (destId) q.set('dest', destId);
+		if (issId) q.set('issuing', issId);
+		const profSlug = typeof fv.profession === 'string' ? fv.profession.trim().toLowerCase() : '';
+		if (profSlug) {
+			try {
+				const { items: professions } = await apiList<{ id: string; slug: string }>(
+					ctx,
+					'/credentials/professions'
+				);
+				const prof = professions.find((p) => p.slug?.toLowerCase() === profSlug);
+				if (prof) q.set('profession', prof.id);
+			} catch {
+				// Lookup failure — land on the corridor-filtered tool page.
+			}
+		}
+		const s = q.toString();
+		if (s) credentialToolHref = `/tools/credential-checker${s ? `?${s}` : ''}`;
+	}
+
+	return { ...data, scholarship, geoCountries, attestationToolHref, ecaToolHref, credentialToolHref };
 };
