@@ -177,13 +177,15 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 // passes through verbatim. Non-object items are kept as-is so scalar
 // steps survive the round trip.
 func normalizeEditorialSteps(raw json.RawMessage) json.RawMessage {
+	// pathway_steps is NOT NULL — absent or unparseable input must yield
+	// '[]', not nil, or provisioning hits a 23502.
 	if len(raw) == 0 {
-		return raw
+		return json.RawMessage("[]")
 	}
 
 	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil || len(items) == 0 {
-		return raw
+		return json.RawMessage("[]")
 	}
 
 	out := make([]json.RawMessage, 0, len(items))

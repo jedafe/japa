@@ -376,6 +376,13 @@ func (s *Store) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, st
 
 // CreateGuide inserts a guide (admin).
 func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error) {
+	// pathway_steps is NOT NULL — an empty/nil value must land as '[]',
+	// never NULL (attestation/credential stores guard the same way).
+	steps := g.PathwaySteps
+	if len(steps) == 0 {
+		steps = []byte("[]")
+	}
+
 	var id pgtype.UUID
 	err := s.pool.Writer.QueryRow(ctx, `
 		INSERT INTO eca_guides
@@ -385,7 +392,7 @@ func (s *Store) CreateGuide(ctx context.Context, g GuideRow) (pgtype.UUID, error
 		   guide_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14,NULLIF($15,'')::uuid)
 		RETURNING id`,
-		g.DestinationSpaceID, g.ProviderID, g.Purpose, g.PathwaySteps,
+		g.DestinationSpaceID, g.ProviderID, g.Purpose, steps,
 		g.FeeEstimate, g.Currency, g.TimelineEstimate, g.DocumentsRequired,
 		g.AcceptedFor, strOrEmpty(g.OfficialURL), g.Status, g.AIGenerated,
 		g.AIModel, g.AIPromptHash, uuidOrEmpty(g.GuideID)).Scan(&id)
