@@ -42,7 +42,7 @@ type TriggerDispatcher struct {
 	notifyAdmin func(ctx context.Context, title, body, actionURL string) error
 
 	// emailSender sends an email (send_email trigger). Returns the send error.
-	emailSender func(ctx context.Context, to, subject, body string) error
+	emailSender func(ctx context.Context, mail TriggerEmail) error
 
 	// httpClient is used for send_webhook triggers. Defaults to a 10s-timeout
 	// client when nil.
@@ -102,8 +102,20 @@ func (d *TriggerDispatcher) SetNotifyAdmin(f func(ctx context.Context, title, bo
 
 // SetEmailSender wires the function used to send email for the send_email
 // trigger type.
-func (d *TriggerDispatcher) SetEmailSender(f func(ctx context.Context, to, subject, body string) error) {
+func (d *TriggerDispatcher) SetEmailSender(f func(ctx context.Context, mail TriggerEmail) error) {
 	d.emailSender = f
+}
+
+// TriggerEmail describes one send_email trigger dispatch. TemplateSlug is the
+// optional email_templates slug wrapping the message in a branded,
+// admin-editable shell — empty falls back to the sender's default template.
+// ActionURL feeds the template's optional CTA button.
+type TriggerEmail struct {
+	To           string
+	Subject      string
+	Body         string
+	TemplateSlug string
+	ActionURL    string
 }
 
 // FireSubmissionTriggers implements worker.FormTriggerProcessor. It loads the
@@ -232,7 +244,9 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 }
 
 // fireSendEmail sends an email to the configured address. Supports templating
-// of subject/body with field values via {{field_key}} placeholders.
+// of subject/body/action_url with field values via {{field_key}}
+// placeholders, and an optional template_slug selecting the email_templates
+// row that wraps the message (the sender's default applies when unset).
 func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[string]any) error {
 	if d.emailSender == nil {
 		slog.Warn("customfields: send_email trigger — no email sender wired, skipping")
@@ -242,12 +256,26 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 	to, _ := cfg["to"].(string)
 	subject, _ := cfg["subject"].(string)
 	body, _ := cfg["body"].(string)
+	slug, _ := cfg["template_slug"].(string)
+	actionURL, _ := cfg["action_url"].(string)
 
 	if to == "" {
 		return errors.New("send_email: missing 'to' in config")
 	}
 
-	return d.emailSender(ctx, to, expandTemplate(subject, values), expandTemplate(body, values))
+	// Fire-time re-check for rows predating the create/update gate — same
+	// posture as the send_webhook URL allowlist (CF14).
+	if slug != "" && !guideCategorySlugRe.MatchString(slug) {
+		return fmt.Errorf("send_email: invalid template_slug %q", slug)
+	}
+
+	return d.emailSender(ctx, TriggerEmail{
+		To:           to,
+		Subject:      expandTemplate(subject, values),
+		Body:         expandTemplate(body, values),
+		TemplateSlug: slug,
+		ActionURL:    expandTemplate(actionURL, values),
+	})
 }
 
 // fireSendWebhook POSTs the submission payload to the configured URL.

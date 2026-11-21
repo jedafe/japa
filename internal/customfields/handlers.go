@@ -3890,6 +3890,12 @@ func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, boo
 		if addr, err := mail.ParseAddress(to); err != nil || addr.Address != to {
 			return "send_email config.to must be a single email address", false
 		}
+
+		// Optional template_slug selects the email_templates row wrapping
+		// the message — snake_case like every template slug.
+		if slug, _ := cfg["template_slug"].(string); slug != "" && !guideCategorySlugRe.MatchString(slug) {
+			return "send_email config.template_slug must be snake_case (a-z, 0-9, underscore)", false
+		}
 	case "send_webhook":
 		u, _ := cfg["url"].(string)
 		if strings.TrimSpace(u) == "" {

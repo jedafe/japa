@@ -159,13 +159,17 @@
 	// Trigger config fields per type
 	let triggerConfigEmailTo = $state('');
 	let triggerConfigEmailSubject = $state('');
-	let triggerConfigEmailTemplate = $state('');
+	let triggerConfigEmailBody = $state('');
+	let triggerConfigEmailTemplateSlug = $state('');
+	let triggerConfigEmailActionUrl = $state('');
 	let triggerConfigWebhookUrl = $state('');
 	let triggerConfigWebhookSecret = $state('');
 	let triggerConfigGroupId = $state('');
-	let triggerConfigTicketPriority = $state('medium');
-	let triggerConfigTicketCategory = $state('');
+	let triggerConfigTicketSubject = $state('');
+	let triggerConfigTicketDescription = $state('');
+	let triggerConfigNotifyTitle = $state('');
 	let triggerConfigNotifyMessage = $state('');
+	let triggerConfigNotifyActionUrl = $state('');
 
 	const TRIGGER_TYPES = [
 		{ value: 'assign_user_group', label: t('forms.trigger.assign_user_group', 'Assign User Group') },
@@ -175,12 +179,6 @@
 		{ value: 'notify_admin', label: t('forms.trigger.notify_admin', 'Notify Admin') },
 	];
 
-	const TICKET_PRIORITIES = [
-		{ value: 'low', label: t('forms.priority.low', 'Low') },
-		{ value: 'medium', label: t('forms.priority.medium', 'Medium') },
-		{ value: 'high', label: t('forms.priority.high', 'High') },
-		{ value: 'urgent', label: t('forms.priority.urgent', 'Urgent') },
-	];
 
 	// --- Steps Tab (multi-step) ---
 
@@ -578,28 +576,45 @@
 		newTriggerType = 'send_email';
 		triggerConfigEmailTo = '';
 		triggerConfigEmailSubject = '';
-		triggerConfigEmailTemplate = '';
+		triggerConfigEmailBody = '';
+		triggerConfigEmailTemplateSlug = '';
+		triggerConfigEmailActionUrl = '';
 		triggerConfigWebhookUrl = '';
 		triggerConfigWebhookSecret = '';
 		triggerConfigGroupId = '';
-		triggerConfigTicketPriority = 'medium';
-		triggerConfigTicketCategory = '';
+		triggerConfigTicketSubject = '';
+		triggerConfigTicketDescription = '';
+		triggerConfigNotifyTitle = '';
 		triggerConfigNotifyMessage = '';
+		triggerConfigNotifyActionUrl = '';
 		triggerError = '';
 	}
 
 	function buildTriggerConfig(): Record<string, unknown> {
 		switch (newTriggerType) {
 			case 'assign_user_group':
-				return { group_id: triggerConfigGroupId };
+				return { user_group_id: triggerConfigGroupId };
 			case 'send_email':
-				return { to: triggerConfigEmailTo, subject: triggerConfigEmailSubject, template: triggerConfigEmailTemplate };
+				return {
+					to: triggerConfigEmailTo,
+					subject: triggerConfigEmailSubject,
+					body: triggerConfigEmailBody,
+					template_slug: triggerConfigEmailTemplateSlug || undefined,
+					action_url: triggerConfigEmailActionUrl || undefined,
+				};
 			case 'send_webhook':
 				return { url: triggerConfigWebhookUrl, secret: triggerConfigWebhookSecret || undefined };
 			case 'create_ticket':
-				return { priority: triggerConfigTicketPriority, category: triggerConfigTicketCategory };
+				return {
+					subject: triggerConfigTicketSubject,
+					description: triggerConfigTicketDescription,
+				};
 			case 'notify_admin':
-				return { message: triggerConfigNotifyMessage };
+				return {
+					title: triggerConfigNotifyTitle,
+					body: triggerConfigNotifyMessage,
+					action_url: triggerConfigNotifyActionUrl || undefined,
+				};
 			default:
 				return {};
 		}
@@ -609,15 +624,15 @@
 		const c = trigger.config ?? {};
 		switch (trigger.trigger_type) {
 			case 'assign_user_group':
-				return `Group: ${c.group_id ?? '—'}`;
+				return `Group: ${c.user_group_id ?? '—'}`;
 			case 'send_email':
 				return `To: ${c.to ?? '—'} | Subject: ${c.subject ?? '—'}`;
 			case 'send_webhook':
 				return `URL: ${c.url ?? '—'}`;
 			case 'create_ticket':
-				return `Priority: ${c.priority ?? '—'} | Category: ${c.category ?? '—'}`;
+				return `Subject: ${c.subject ?? '—'}`;
 			case 'notify_admin':
-				return `Message: ${c.message ?? '—'}`;
+				return `Title: ${c.title ?? '—'}`;
 			default:
 				return JSON.stringify(c);
 		}
@@ -1864,8 +1879,17 @@
 							<input id="trigger-email-subject" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailSubject} placeholder={t('forms.ph_new_form_submission', 'New form submission')} />
 						</div>
 						<div>
-							<label for="trigger-email-template" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_template', 'Template')}</label>
-							<input id="trigger-email-template" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTemplate} placeholder={t('forms.ph_optional_template_name', 'Optional template name')} />
+							<label for="trigger-email-body" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_body', 'Body')}</label>
+							<textarea id="trigger-email-body" rows="4" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailBody} placeholder={t('forms.ph_email_body_field_placeholders', 'Email body — use {{field_key}} to insert submitted values')}></textarea>
+						</div>
+						<div>
+							<label for="trigger-email-template" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_template', 'Email template slug')}</label>
+							<input id="trigger-email-template" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTemplateSlug} placeholder="notification" />
+							<p class="mt-1 text-xs text-muted">{t('forms.trigger_email_template_hint', 'Optional email_templates slug wrapping this email — defaults to notification.')}</p>
+						</div>
+						<div>
+							<label for="trigger-email-action-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_action_url', 'Action URL')}</label>
+							<input id="trigger-email-action-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailActionUrl} placeholder="https://…" />
 						</div>
 					{:else if newTriggerType === 'send_webhook'}
 						<div>
@@ -1878,17 +1902,25 @@
 						</div>
 					{:else if newTriggerType === 'create_ticket'}
 						<div>
-							<label for="trigger-ticket-priority" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_priority', 'Priority')} *</label>
-							<Select options={TICKET_PRIORITIES} bind:value={triggerConfigTicketPriority} />
+							<label for="trigger-ticket-subject" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_subject', 'Subject')}</label>
+							<input id="trigger-ticket-subject" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketSubject} placeholder={t('forms.ph_form_submission_ticket_subject', 'Form submission')} />
 						</div>
 						<div>
-							<label for="trigger-ticket-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_category', 'Category')}</label>
-							<input id="trigger-ticket-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketCategory} placeholder={t('forms.ph_eg_feedback', 'e.g., Feedback')} />
+							<label for="trigger-ticket-description" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_ticket_description', 'Description')}</label>
+							<textarea id="trigger-ticket-description" rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigTicketDescription} placeholder={t('forms.ph_ticket_description_placeholders', 'Leave blank to include all submitted field values — use {{field_key}} placeholders')}></textarea>
 						</div>
 					{:else if newTriggerType === 'notify_admin'}
 						<div>
+							<label for="trigger-notify-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_notify_title', 'Title')}</label>
+							<input id="trigger-notify-title" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyTitle} placeholder={t('forms.ph_notify_title', 'New form submission')} />
+						</div>
+						<div>
 							<label for="trigger-notify-message" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_notify_message', 'Message')} *</label>
 							<textarea id="trigger-notify-message" rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyMessage} placeholder={t('forms.ph_notification_message_text', 'Notification message text')}></textarea>
+						</div>
+						<div>
+							<label for="trigger-notify-action-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_notify_action_url', 'Action URL')}</label>
+							<input id="trigger-notify-action-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigNotifyActionUrl} placeholder="https://…" />
 						</div>
 					{/if}
 				</div>
