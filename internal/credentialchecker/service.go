@@ -722,7 +722,7 @@ func (s *Service) RejectPathway(ctx context.Context, id, reviewerID pgtype.UUID,
 
 	if err := s.store.RejectPathway(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgx.ErrNoRows
+			return s.pathwayTransitionErr(ctx, id)
 		}
 
 		return fmt.Errorf("credentialchecker: reject pathway: %w", err)
@@ -734,10 +734,31 @@ func (s *Service) RejectPathway(ctx context.Context, id, reviewerID pgtype.UUID,
 // DeletePathway deletes a credential pathway by id for the platform.
 func (s *Service) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.DeletePathway(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The status-guarded DELETE conflates missing with
+			// published — distinguish so the admin sees the real reason.
+			if _, gerr := s.store.GetPathwayByID(ctx, id); gerr != nil {
+				return pgx.ErrNoRows
+			}
+			return fmt.Errorf("%w: published pathways cannot be deleted — reject or deactivate first", errpkg.ErrInvalidStatusTransition)
+		}
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
 	}
 
 	return nil
+}
+
+// pathwayTransitionErr distinguishes a guarded-transition ErrNoRows:
+// the row is genuinely missing vs. in a status the transition forbids
+// (approve on a published row must not overwrite the original HITL
+// stamps — the store only transitions draft/ai_draft/pending).
+func (s *Service) pathwayTransitionErr(ctx context.Context, id pgtype.UUID) error {
+	row, err := s.store.GetPathwayByID(ctx, id)
+	if err != nil {
+		return pgx.ErrNoRows
+	}
+
+	return fmt.Errorf("%w: pathway is '%s' — only draft, ai_draft or pending can be approved or rejected", errpkg.ErrInvalidStatusTransition, row.Status)
 }
 
 // ApprovePathway marks a pathway as HITL-approved by the given reviewer.
@@ -751,7 +772,7 @@ func (s *Service) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID
 
 	if err := s.store.ApprovePathway(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return PathwayDTO{}, pgx.ErrNoRows
+			return PathwayDTO{}, s.pathwayTransitionErr(ctx, id)
 		}
 
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: approve pathway: %w", err)

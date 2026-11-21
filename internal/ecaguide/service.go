@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -499,6 +500,9 @@ func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, 
 	}
 
 	if err := s.store.ApproveGuide(ctx, id, reviewerID, notes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s.guideTransitionErr(ctx, id)
+		}
 		return err
 	}
 
@@ -726,7 +730,14 @@ func (s *Service) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, n
 		return fmt.Errorf("%w: review_notes is too long (max %d chars)", errpkg.ErrInvalid, maxReviewNotesLen)
 	}
 
-	return s.store.RejectGuide(ctx, id, reviewerID, notes)
+	if err := s.store.RejectGuide(ctx, id, reviewerID, notes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s.guideTransitionErr(ctx, id)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // AdminListProviders returns providers including inactive, paginated
@@ -816,12 +827,49 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, in Provide
 
 // DeleteProvider removes a provider with no referencing guides.
 func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
-	return s.store.DeleteProvider(ctx, id)
+	if err := s.store.DeleteProvider(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001") {
+			return fmt.Errorf("%w: provider is still referenced by guides", errpkg.ErrInUse)
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // DeleteGuide removes a non-published guide.
 func (s *Service) DeleteGuide(ctx context.Context, id pgtype.UUID) error {
-	return s.store.DeleteGuide(ctx, id)
+	if err := s.store.DeleteGuide(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The status-guarded DELETE conflates missing with
+			// published — distinguish so the admin sees the real reason.
+			if _, gerr := s.store.GetGuideAnyStatus(ctx, id); gerr != nil {
+				return pgx.ErrNoRows
+			}
+			return fmt.Errorf("%w: published guides cannot be deleted — deactivate instead", errpkg.ErrInvalidStatusTransition)
+		}
+		return err
+	}
+
+	return nil
+}
+
+// guideTransitionErr distinguishes a guarded-transition ErrNoRows: the
+// row is genuinely missing vs. in a status the transition forbids (e.g.
+// approve on a published row must not overwrite the original HITL
+// stamps — the store only transitions draft/ai_draft/pending).
+func (s *Service) guideTransitionErr(ctx context.Context, id pgtype.UUID) error {
+	row, err := s.store.GetGuideAnyStatus(ctx, id)
+	if err != nil {
+		return pgx.ErrNoRows
+	}
+
+	return fmt.Errorf("%w: guide is '%s' — only draft, ai_draft or pending can be approved or rejected", errpkg.ErrInvalidStatusTransition, row.Status)
 }
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks —

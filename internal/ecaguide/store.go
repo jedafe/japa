@@ -440,7 +440,7 @@ func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, no
 		SET status = 'published', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
 		    is_active = true,
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
-		WHERE id = $1`, id, reviewerID, notes)
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending')`, id, reviewerID, notes)
 	if err != nil {
 		return err
 	}
@@ -578,7 +578,7 @@ func (s *Store) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, not
 		UPDATE eca_guides
 		SET status = 'rejected', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
-		WHERE id = $1`, id, reviewerID, notes)
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending')`, id, reviewerID, notes)
 	if err != nil {
 		return err
 	}
@@ -779,13 +779,12 @@ func (s *Store) UpdateProvider(ctx context.Context, id pgtype.UUID, slug, name s
 	return nil
 }
 
-// DeleteProvider removes a provider only when no guides reference it —
-// eca_guides.provider_id is RESTRICT, so this returns an error rather
-// than orphaning guides.
+// DeleteProvider removes a provider — eca_guides.provider_id is
+// RESTRICT, so a referenced provider raises SQLSTATE 23001 rather than
+// orphaning guides (the service maps it to ErrInUse).
 func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	res, err := s.pool.Writer.Exec(ctx, `
-		DELETE FROM eca_providers WHERE id = $1
-		AND NOT EXISTS (SELECT 1 FROM eca_guides WHERE provider_id = $1)`, id)
+		DELETE FROM eca_providers WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}

@@ -459,19 +459,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.ApproveGuide(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrInvalidStatusTransition) {
+			slog.Error("ecaguide: approve failed", "id", id, "error", err)
 		}
-
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
-		}
-
-		slog.Error("ecaguide: approve failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -568,14 +559,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteGuide(r.Context(), id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found or is published")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInvalidStatusTransition) {
+			slog.Error("ecaguide: delete failed", "id", id, "error", err)
 		}
-
-		slog.Error("ecaguide: delete failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete guide")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -609,19 +596,10 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RejectGuide(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrInvalidStatusTransition) {
+			slog.Error("ecaguide: reject failed", "id", id, "error", err)
 		}
-
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
-		}
-
-		slog.Error("ecaguide: reject failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject guide")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -739,14 +717,10 @@ func (h *Handlers) HandleAdminDeleteProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.service.DeleteProvider(r.Context(), id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusConflict, "provider_in_use", "Provider not found or has guides referencing it")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInUse) {
+			slog.Error("ecaguide: delete provider failed", "id", id, "error", err)
 		}
-
-		slog.Error("ecaguide: delete provider failed", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete provider")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

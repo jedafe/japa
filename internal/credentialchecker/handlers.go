@@ -542,19 +542,10 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.RejectPathway(r.Context(), id, user.UserID, body.ReviewNotes); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrInvalidStatusTransition) {
+			slog.Error("credentialchecker: admin reject failed", "error", err)
 		}
-
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
-		}
-
-		slog.Error("credentialchecker: admin reject failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject pathway")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -588,19 +579,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 	pathway, err := h.service.ApprovePathway(r.Context(), id, user.UserID, body.ReviewNotes)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
-			return
+		if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, errpkg.ErrInvalid) && !errors.Is(err, errpkg.ErrInvalidStatusTransition) {
+			slog.Error("credentialchecker: admin approve failed", "error", err)
 		}
-
-		if errors.Is(err, errpkg.ErrInvalid) {
-			errpkg.HandleServiceError(w, err)
-			return
-		}
-
-		slog.Error("credentialchecker: admin approve failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve pathway")
-
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
