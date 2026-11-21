@@ -1632,6 +1632,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		return err
 	})
+	// Wire the send_email trigger (Section 06): submissions enqueue an
+	// email:send task through the ADR-055 `notification` template so
+	// admin-authored trigger mail ships in the branded shell — the raw
+	// subject/body stays the fallback when the row is absent. Field
+	// values interpolated into the body are user input; the template
+	// renders them escaped.
+	formTriggerDispatcher.SetEmailSender(func(ctx context.Context, to, subject, body string) error {
+		payload, _ := json.Marshal(map[string]any{
+			"to":            to,
+			"subject":       subject,
+			"body":          body,
+			"type":          "form.send_email",
+			"template_slug": "notification",
+			"template_data": map[string]any{
+				"title": subject,
+				"body":  body,
+			},
+		})
+		return taskEnqueuer.Enqueue(worker.TypeEmailSend, payload)
+	})
 	worker.RegisterFormTriggerProcessor(formTriggerDispatcher)
 
 	// Documentation System subsystem (Section 44).
