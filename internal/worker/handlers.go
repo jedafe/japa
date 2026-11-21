@@ -618,6 +618,10 @@ func newsletterAPIBase(siteBase string) string {
 // URL can be resolved — templates must guard with {{if .LogoURL}}.
 // // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
 func resolveEmailLogoURL(ctx context.Context, siteBase string) string {
+	if siteBase == "" {
+		siteBase = resolveBaseURL(ctx)
+	}
+
 	if dbPool != nil {
 		q := gen.New(dbPool.Reader)
 		for _, key := range []string{"appearance.logo_url_dark", "appearance.logo_url"} {
@@ -626,15 +630,21 @@ func resolveEmailLogoURL(ctx context.Context, siteBase string) string {
 				continue
 			}
 			var s string
-			if json.Unmarshal(row, &s) == nil && s != "" {
-				return s
+			if json.Unmarshal(row, &s) != nil || s == "" {
+				continue
 			}
+			// A site-relative path can't resolve inside an email client —
+			// anchor it on the site base so the rendered <img> is absolute.
+			if strings.HasPrefix(s, "/") {
+				if siteBase == "" {
+					return ""
+				}
+				return strings.TrimRight(siteBase, "/") + s
+			}
+			return s
 		}
 	}
 
-	if siteBase == "" {
-		siteBase = resolveBaseURL(ctx)
-	}
 	if siteBase == "" {
 		return ""
 	}
@@ -4005,13 +4015,13 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	// ADR-055: render the campaign body inside the seeded `newsletter`
 	// email_templates row ({{.Subject}} + {{.Content}}) so the branded
-	// shell — logo header, footer — wraps admin-authored campaign HTML.
-	// The raw campaign.Html remains the body when the row is missing or
-	// fails to render, and admin edits to the template take effect
-	// without a deploy.
-	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "newsletter"); terr == nil {
+	// shell — logo header, footer — wraps admin-authored campaign HTML
+	// and the template's own subject applies when present. The raw
+	// campaign.Html/subject remain the fallback when the row is missing,
+	// has no html_body, or fails to render.
+	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "newsletter"); terr == nil && tmplRow.HtmlBody != "" {
 		campaignBase := resolveBaseURL(ctx)
-		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, emailSendPayload{
+		tmplPayload := emailSendPayload{
 			TemplateSlug: "newsletter",
 			TemplateData: map[string]any{
 				"subject":     campaign.Subject,
@@ -4020,8 +4030,14 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 				"support_url": strings.TrimRight(campaignBase, "/") + "/support",
 				"logo_url":    resolveEmailLogoURL(ctx, campaignBase),
 			},
-		}); ok {
+		}
+		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, tmplPayload); ok {
 			htmlBody = rendered
+			if tmplRow.Subject != "" {
+				if rs, sok := renderSubjectTemplate(tmplRow.Subject, tmplPayload); sok && rs != "" {
+					subject = rs
+				}
+			}
 		} else {
 			slog.Warn("task:newsletter:send: newsletter template render failed — sending raw campaign body", "newsletter_id", payload.NewsletterID)
 		}
@@ -4329,7 +4345,8 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 			tmpl = &tmplRow
 		}
 		r := digestRecipient{userID: payload.UserID, email: payload.Email}
-		return sendDigestToUser(ctx, r, period, tmpl, tmplErr, resolveBaseURL(ctx))
+		singleBase := resolveBaseURL(ctx)
+		return sendDigestToUser(ctx, r, period, tmpl, tmplErr, singleBase, resolveEmailLogoURL(ctx, singleBase))
 	}
 
 	// Bulk cron path: when feature.newsletter is live, §62 owns digest
@@ -4372,11 +4389,14 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		tmpl = &tmplRow
 	}
 	siteBase := resolveBaseURL(ctx)
+	// Per-run constant (audit NL-16): resolve the brand logo once — a
+	// per-recipient resolveEmailLogoURL would be 1–2 settings reads × N.
+	logoURL := resolveEmailLogoURL(ctx, siteBase)
 
 	sentCount := 0
 
 	for _, u := range digestUsers {
-		if err := sendDigestToUser(ctx, u, period, tmpl, tmplErr, siteBase); err != nil {
+		if err := sendDigestToUser(ctx, u, period, tmpl, tmplErr, siteBase, logoURL); err != nil {
 			slog.Error("task:email:send_digest: failed for user", "user_id", u.userID, "error", err)
 			continue
 		}
@@ -4391,8 +4411,8 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 // sendDigestToUser sends a digest email to a single user. tmpl/tmplErr are
 // the pre-fetched DB template row for the period (fetched once per bulk run);
-// siteBase is the platform base URL, likewise hoisted (audit NL-16).
-func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmpl *gen.GetEmailTemplateBySlugRow, tmplErr error, siteBase string) error {
+// siteBase and logoURL are per-run invariants, likewise hoisted (audit NL-16).
+func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmpl *gen.GetEmailTemplateBySlugRow, tmplErr error, siteBase, logoURL string) error {
 	userID, email := r.userID, r.email
 	if period == "" {
 		period = "daily"
@@ -4462,7 +4482,7 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 		"digest_content": body.String(),
 		"site_url":       siteBase,
 		"support_url":    strings.TrimRight(siteBase, "/") + "/support",
-		"logo_url":       resolveEmailLogoURL(ctx, siteBase),
+		"logo_url":       logoURL,
 		"period":         period,
 	}
 	// The bulk path supplies the username from the recipients join; a
@@ -5445,8 +5465,8 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	// without a deploy. The inline body stays the fallback when the row
 	// is missing or fails to render.
 	digestBase := resolveBaseURL(ctx)
-	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "weekly_digest"); terr == nil {
-		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, emailSendPayload{
+	if tmplRow, terr := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, "weekly_digest"); terr == nil && tmplRow.HtmlBody != "" {
+		tmplPayload := emailSendPayload{
 			TemplateSlug: "weekly_digest",
 			TemplateData: map[string]any{
 				"digest_content": digestItemsHTML(digestBase, digestItems),
@@ -5454,8 +5474,14 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 				"support_url":    strings.TrimRight(digestBase, "/") + "/support",
 				"logo_url":       resolveEmailLogoURL(ctx, digestBase),
 			},
-		}); ok {
+		}
+		if rendered, ok := renderEmailTemplate(tmplRow.HtmlBody, tmplPayload); ok {
 			body = rendered
+			if tmplRow.Subject != "" {
+				if rs, sok := renderSubjectTemplate(tmplRow.Subject, tmplPayload); sok && rs != "" {
+					subject = rs
+				}
+			}
 		} else {
 			slog.Warn("task:newsletter:digest: weekly_digest template render failed — sending inline body")
 		}

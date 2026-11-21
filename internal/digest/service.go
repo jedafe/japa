@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -598,10 +599,9 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	}
 
 	baseURL := s.resolveBaseURL(ctx)
-	subject := s.emailSubject(ctx)
 	// §14: resolve {{...}} placeholders before HTML render so outbound
 	// email never contains raw literals.
-	htmlBody := s.renderEditionEmailBody(ctx, s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
+	subject, htmlBody := s.renderEditionEmail(ctx, s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
 
 	// Page recipients like newsletter:send (audit DG-11) — the full
 	// digest-enabled list is never materialized at once.
@@ -688,15 +688,19 @@ func (s *Service) resolveBaseURL(ctx context.Context) string {
 // Reads general.site_name — the catalogued key (site.name was a stale key
 // that admin edits never populated).
 func (s *Service) emailSubject(ctx context.Context) string {
-	name := brand.Get()
+	return "Weekly Community Digest — " + s.siteName(ctx)
+}
 
+// siteName resolves the platform brand name: general.site_name setting,
+// then the compiled brand default (mirrors emailSubject).
+func (s *Service) siteName(ctx context.Context) string {
 	if s.settings != nil {
 		if v := s.settings.GetStringOr(ctx, "general.site_name", ""); v != "" {
-			name = v
+			return v
 		}
 	}
 
-	return "Weekly Community Digest — " + name
+	return brand.Get()
 }
 
 // unsubscribeLink generates a per-recipient one-click unsubscribe URL + the
@@ -767,10 +771,19 @@ func digestAPIBase(siteBase string) string {
 // // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
 func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, "appearance.logo_url_dark", ""); v != "" {
-			return v
-		}
-		if v := s.settings.GetStringOr(ctx, "appearance.logo_url", ""); v != "" {
+		for _, key := range []string{"appearance.logo_url_dark", "appearance.logo_url"} {
+			v := s.settings.GetStringOr(ctx, key, "")
+			if v == "" {
+				continue
+			}
+			// A site-relative path can't resolve inside an email client —
+			// anchor it on the site base so the rendered <img> is absolute.
+			if strings.HasPrefix(v, "/") {
+				if baseURL == "" {
+					return ""
+				}
+				return strings.TrimRight(baseURL, "/") + v
+			}
 			return v
 		}
 	}
@@ -782,48 +795,55 @@ func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
 	return strings.TrimRight(baseURL, "/") + "/logos/logo-dark.png"
 }
 
-// renderEditionEmailBody renders the edition content into the email body.
+// renderEditionEmail renders the edition content into subject + body.
 // The §84 section HTML goes through the seeded `community_digest`
 // email_templates row ({{.DigestContent}}) so the branded shell — logo
-// header, footer — wraps it and admin edits take effect without a deploy
-// (ADR-055). The inline branded shell is the fallback when the row is
-// missing/inactive or fails to render.
-func (s *Service) renderEditionEmailBody(ctx context.Context, content []byte, baseURL string) string {
+// header, footer — wraps it and admin body/subject edits take effect
+// without a deploy (ADR-055). The inline branded shell is the fallback
+// when the row is missing/inactive, has no html_body, or fails to render.
+func (s *Service) renderEditionEmail(ctx context.Context, content []byte, baseURL string) (string, string) {
+	siteName := s.siteName(ctx)
+	subject := s.emailSubject(ctx)
 	inner := renderDigestEmail(content, baseURL)
 	logoURL := s.resolveLogoURL(ctx, baseURL)
 
-	if tmpl, err := s.store.GetEmailTemplateBySlug(ctx, "community_digest"); err == nil {
+	if tmpl, err := s.store.GetEmailTemplateBySlug(ctx, "community_digest"); err == nil && tmpl.HtmlBody != "" {
 		data := map[string]any{
-			"SiteName":      brand.Get(),
+			"SiteName":      siteName,
 			"DigestContent": template.HTML(inner),
 			"SiteURL":       baseURL,
 			"SupportURL":    strings.TrimRight(baseURL, "/") + "/support",
 			"LogoURL":       logoURL,
 		}
-		if s.settings != nil {
-			if v := s.settings.GetStringOr(ctx, "general.site_name", ""); v != "" {
-				data["SiteName"] = v
-			}
-		}
 
-		t, err := template.New("community_digest").Parse(tmpl.HtmlBody)
-		if err == nil {
+		if t, err := template.New("community_digest").Parse(tmpl.HtmlBody); err == nil {
 			var out strings.Builder
 			if err := t.Execute(&out, data); err == nil {
-				return out.String()
+				// The DB subject wins over the default when it renders
+				// non-empty — subjects are plain text so render with
+				// text/template (html/template entity-escapes).
+				if tmpl.Subject != "" {
+					if st, serr := texttemplate.New("subject").Parse(tmpl.Subject); serr == nil {
+						var sb strings.Builder
+						if st.Execute(&sb, data) == nil && sb.String() != "" {
+							subject = sb.String()
+						}
+					}
+				}
+				return subject, out.String()
 			}
 		}
 
 		slog.Warn("task:digest:send_email: community_digest template render failed — using inline shell")
 	}
 
-	return digestEmailShell(inner, logoURL)
+	return subject, digestEmailShell(inner, siteName, logoURL)
 }
 
 // digestEmailShell is the inline branded fallback shell for the community
 // digest email — the same table layout as the seeded community_digest
 // template so a missing/inactive row does not degrade branding.
-func digestEmailShell(innerHTML, logoURL string) string {
+func digestEmailShell(innerHTML, siteName, logoURL string) string {
 	const tmpl = `<!DOCTYPE html>
 <html lang="en">
 <body style="margin: 0; padding: 0; background-color: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
@@ -863,7 +883,7 @@ func digestEmailShell(innerHTML, logoURL string) string {
 		SiteName      string
 		LogoURL       string
 		DigestContent template.HTML
-	}{SiteName: brand.Get(), LogoURL: logoURL, DigestContent: template.HTML(innerHTML)}); err != nil {
+	}{SiteName: siteName, LogoURL: logoURL, DigestContent: template.HTML(innerHTML)}); err != nil {
 		return innerHTML
 	}
 

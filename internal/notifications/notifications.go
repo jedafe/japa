@@ -363,11 +363,11 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.U
 	}
 
 	payload, err := json.Marshal(EmailSendPayload{
-		To:        *email,
-		Subject:   title,
-		Body:      body,
-		Type:      nType,
-		ActionURL: actionURL,
+		To:           *email,
+		Subject:      title,
+		Body:         body,
+		Type:         nType,
+		ActionURL:    actionURL,
 		TemplateSlug: "notification",
 		TemplateData: map[string]any{
 			"title":      title,
