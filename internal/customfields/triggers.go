@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	neturl "net/url"
 	"strings"
 	"time"
@@ -244,9 +245,10 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 }
 
 // fireSendEmail sends an email to the configured address. Supports templating
-// of subject/body/action_url with field values via {{field_key}}
-// placeholders, and an optional template_slug selecting the email_templates
-// row that wraps the message (the sender's default applies when unset).
+// of to/subject/body/action_url with field values via {{field_key}}
+// placeholders (a {{email}} 'to' mails the submitter), and an optional
+// template_slug selecting the email_templates row that wraps the message
+// (the sender's default applies when unset).
 func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[string]any) error {
 	if d.emailSender == nil {
 		slog.Warn("customfields: send_email trigger — no email sender wired, skipping")
@@ -261,6 +263,14 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 
 	if to == "" {
 		return errors.New("send_email: missing 'to' in config")
+	}
+
+	// 'to' may be a literal address or a {{field_key}} placeholder (e.g.
+	// {{email}} to mail the submitter). Expand then validate the result —
+	// a field value that doesn't yield an address skips the send.
+	to = expandTemplate(to, values)
+	if addr, err := mail.ParseAddress(to); err != nil || addr.Address != to {
+		return fmt.Errorf("send_email: 'to' resolved to an invalid address %q", to)
 	}
 
 	// Fire-time re-check for rows predating the create/update gate — same
@@ -376,7 +386,7 @@ func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]
 
 	actionURL, _ := cfg["action_url"].(string)
 
-	return d.notifyAdmin(ctx, expandTemplate(title, values), expandTemplate(body, values), actionURL)
+	return d.notifyAdmin(ctx, expandTemplate(title, values), expandTemplate(body, values), expandTemplate(actionURL, values))
 }
 
 // validWebhookURL reports whether raw is an http(s) URL with a host — the

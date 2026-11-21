@@ -1872,7 +1872,7 @@
 					{:else if newTriggerType === 'send_email'}
 						<div>
 							<label for="trigger-email-to" class="mb-1 block text-sm font-medium text-foreground-alt">To (email) *</label>
-							<input id="trigger-email-to" type="email" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTo} placeholder="admin@example.com" />
+							<input id="trigger-email-to" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={triggerConfigEmailTo} placeholder={t('forms.ph_trigger_email_to', 'admin@example.com or {{email}} to mail the submitter')} />
 						</div>
 						<div>
 							<label for="trigger-email-subject" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.trigger_email_subject', 'Subject')} *</label>

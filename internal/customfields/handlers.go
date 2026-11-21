@@ -3885,10 +3885,14 @@ func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, boo
 
 		// CF-S5: validate the recipient as a single RFC 5322 address —
 		// raw strings with control characters could inject headers in
-		// downstream mail transports.
+		// downstream mail transports. A {{field_key}} placeholder (e.g.
+		// {{email}} to mail the submitter) skips the literal-address check;
+		// the expanded result is validated at fire time.
 		to, _ := cfg["to"].(string)
-		if addr, err := mail.ParseAddress(to); err != nil || addr.Address != to {
-			return "send_email config.to must be a single email address", false
+		if !strings.Contains(to, "{{") {
+			if addr, err := mail.ParseAddress(to); err != nil || addr.Address != to {
+				return "send_email config.to must be a single email address", false
+			}
 		}
 
 		// Optional template_slug selects the email_templates row wrapping

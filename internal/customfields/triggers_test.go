@@ -49,6 +49,46 @@ func TestFireSendEmailPassesTemplateAndExpandsValues(t *testing.T) {
 	}
 }
 
+// 'to' accepts {{field_key}} placeholders (e.g. {{email}} mails the
+// submitter); the expanded value must still resolve to a single address.
+func TestFireSendEmailToPlaceholder(t *testing.T) {
+	var got TriggerEmail
+	d := &TriggerDispatcher{
+		emailSender: func(_ context.Context, mail TriggerEmail) error {
+			got = mail
+			return nil
+		},
+	}
+
+	cfg := map[string]any{"to": "{{email}}", "subject": "s"}
+	values := map[string]any{"email": "submitter@example.com"}
+
+	if err := d.fireSendEmail(context.Background(), cfg, values); err != nil {
+		t.Fatalf("fireSendEmail: %v", err)
+	}
+	if got.To != "submitter@example.com" {
+		t.Errorf("To = %q, want expanded address", got.To)
+	}
+}
+
+func TestFireSendEmailToPlaceholderBadValue(t *testing.T) {
+	called := false
+	d := &TriggerDispatcher{
+		emailSender: func(context.Context, TriggerEmail) error { called = true; return nil },
+	}
+
+	// The placeholder resolves to a non-address — must error and not send.
+	cfg := map[string]any{"to": "{{email}}"}
+	values := map[string]any{"email": "not-an-address"}
+
+	if err := d.fireSendEmail(context.Background(), cfg, values); err == nil {
+		t.Fatal("expected invalid-address error")
+	}
+	if called {
+		t.Fatal("sender must not fire for an invalid expanded 'to'")
+	}
+}
+
 func TestFireSendEmailNoSenderSkips(t *testing.T) {
 	d := &TriggerDispatcher{}
 	if err := d.fireSendEmail(context.Background(), map[string]any{"to": "a@b.com"}, nil); err != nil {
@@ -90,6 +130,7 @@ func TestValidateTriggerConfigSendEmail(t *testing.T) {
 		{"with template slug", `{"to":"a@b.com","template_slug":"notification"}`, true, ""},
 		{"with action url", `{"to":"a@b.com","action_url":"https://x.com/s/1"}`, true, ""},
 		{"missing to", `{"subject":"hi"}`, false, "send_email requires config.to"},
+		{"to placeholder", `{"to":"{{email}}"}`, true, ""},
 		{"bad address", `{"to":"not-an-email"}`, false, "send_email config.to must be a single email address"},
 		{"bad slug", `{"to":"a@b.com","template_slug":"Not A Slug"}`, false, "snake_case"},
 		{"empty slug ok", `{"to":"a@b.com","template_slug":""}`, true, ""},

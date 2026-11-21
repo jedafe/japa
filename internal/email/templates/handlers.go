@@ -269,12 +269,16 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue an email:send task using the template's slug for DB lookup.
+	// template_data is synthesized from the row's declared variables so the
+	// delivered test email renders real sample content (matching the
+	// admin page's preview substitution) instead of <no value>.
 	if h.AsynqClient != nil {
 		payload := map[string]interface{}{
 			"to":            input.Email,
 			"template_slug": tmpl.Slug,
 
-			"template_data": map[string]any{},
+			"template_site_name": h.Service.TestSiteName(r.Context()),
+			"template_data":      h.Service.SampleTemplateData(r.Context(), tmpl.Variables),
 		}
 		body, _ := json.Marshal(payload)
 
