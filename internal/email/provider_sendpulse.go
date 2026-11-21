@@ -95,12 +95,12 @@ func (p *SendPulseProvider) accessToken(ctx context.Context) (string, error) {
 
 // Send dispatches an email via SendPulse.
 func (p *SendPulseProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
-	to, err := sanitizeAddress(req.To)
+	to, err := parseAddress(req.To)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("sendpulse send: %w", err)
 	}
 
-	from, err := sanitizeAddress(p.from)
+	from, err := parseAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("sendpulse misconfigured (from_address): %w", err)
 	}
@@ -110,13 +110,25 @@ func (p *SendPulseProvider) Send(ctx context.Context, req EmailRequest) (EmailRe
 		return EmailResponse{}, err
 	}
 
+	// SendPulse splits the mailbox into email/name fields.
+	toField := map[string]string{"email": to.Address}
+	if to.Name != "" {
+		toField["name"] = to.Name
+	}
+
+	fromField := map[string]string{"email": from.Address}
+	if from.Name != "" {
+		fromField["name"] = from.Name
+	}
+
 	mail := map[string]any{
 		"subject": sanitizeHeaderValue(req.Subject),
-		"from":    map[string]string{"email": from},
-		"to":      []map[string]string{{"email": to}},
+		"from":    fromField,
+		"to":      []map[string]string{toField},
 	}
 	if req.IsHTML {
 		mail["html"] = base64.StdEncoding.EncodeToString([]byte(req.Body))
+		mail["text"] = base64.StdEncoding.EncodeToString([]byte(req.TextAlternative()))
 	} else {
 		mail["text"] = base64.StdEncoding.EncodeToString([]byte(req.Body))
 	}

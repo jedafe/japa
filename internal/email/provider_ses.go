@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	urlpkg "net/url"
-	"sort"
 	"strings"
 	"time"
 )
@@ -62,21 +61,21 @@ func (p *SESProvider) Name() string { return p.name }
 
 // Send dispatches an email via SES SendEmail (Raw content).
 func (p *SESProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
-	to, err := sanitizeAddress(req.To)
+	to, err := parseAddress(req.To)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("ses send: %w", err)
 	}
 
-	from, err := sanitizeAddress(p.from)
+	from, err := parseAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("ses misconfigured (from_address): %w", err)
 	}
 
-	mimeMsg := buildMIMEMessage(from, to, req.Subject, req.Body, req.IsHTML, req.Headers)
+	mimeMsg := buildMIMEMessage(headerAddress(from), headerAddress(to), req)
 
 	payload, err := json.Marshal(map[string]any{
-		"FromEmailAddress": from,
-		"Destination":      map[string]any{"ToAddresses": []string{to}},
+		"FromEmailAddress": from.Address,
+		"Destination":      map[string]any{"ToAddresses": []string{to.Address}},
 		"Content": map[string]any{
 			"Raw": map[string]any{"Data": mimeMsg},
 		},
@@ -203,39 +202,8 @@ func newSignedRequest(ctx context.Context, url string, payload []byte) (*http.Re
 }
 
 // buildMIMEMessage renders an RFC 5322 message identical in shape to the
-// SMTP provider's output: sanitized headers, deterministic extra-header
-// ordering, and the raw body as content.
-func buildMIMEMessage(from, to, subject, body string, isHTML bool, extra map[string]string) []byte {
-	contentType := "text/plain; charset=UTF-8"
-	if isHTML {
-		contentType = "text/html; charset=UTF-8"
-	}
-
-	var hdr strings.Builder
-
-	hdr.WriteString("From: " + from + "\r\n")
-	hdr.WriteString("To: " + to + "\r\n")
-	hdr.WriteString("Subject: " + sanitizeHeaderValue(subject) + "\r\n")
-	hdr.WriteString("MIME-Version: 1.0\r\n")
-	hdr.WriteString("Content-Type: " + contentType + "\r\n")
-
-	if len(extra) > 0 {
-		keys := make([]string, 0, len(extra))
-		for k := range extra {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		for _, k := range keys {
-			name := sanitizeHeaderValue(k)
-			if name == "" || strings.ContainsAny(name, " :") {
-				continue
-			}
-
-			hdr.WriteString(name + ": " + sanitizeHeaderValue(extra[k]) + "\r\n")
-		}
-	}
-
-	return []byte(hdr.String() + "\r\n" + body)
+// SMTP provider's output — it delegates to the shared buildRFC822
+// renderer so both transports emit the same bytes.
+func buildMIMEMessage(from, to string, req EmailRequest) []byte {
+	return buildRFC822(from, to, req.Subject, req)
 }

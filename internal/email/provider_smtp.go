@@ -5,12 +5,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/mail"
 	"net/smtp"
 	"os"
-	"sort"
 	"strings"
 	"time"
 )
@@ -116,35 +114,60 @@ func sanitizeHeaderValue(v string) string {
 	return strings.TrimSpace(v)
 }
 
-// sanitizeAddress parses and re-serializes an address, rejecting display
-// names or comments that smuggle CR/LF. Returns an error when the address
-// is not a valid RFC 5322 mailbox.
-func sanitizeAddress(addr string) (string, error) {
+// parseAddress validates and parses an address, returning the mailbox so
+// callers can pick the representation each context needs: .Address is the
+// bare mailbox for envelope MAIL FROM/RCPT TO and vendor email fields,
+// while .String() is the display-name-preserving RFC 5322 form for
+// From:/To: headers and vendor name fields.
+func parseAddress(addr string) (*mail.Address, error) {
 	addr = sanitizeHeaderValue(addr)
 
 	parsed, err := mail.ParseAddress(addr)
 	if err != nil {
-		return "", fmt.Errorf("invalid email address: %w", err)
+		return nil, fmt.Errorf("invalid email address: %w", err)
+	}
+
+	return parsed, nil
+}
+
+// sanitizeAddress returns the bare mailbox of an address — the form
+// envelope commands and vendor email fields require.
+func sanitizeAddress(addr string) (string, error) {
+	parsed, err := parseAddress(addr)
+	if err != nil {
+		return "", err
 	}
 
 	return parsed.Address, nil
 }
 
+// headerAddress returns the RFC 5322 From:/To: header value for a parsed
+// mailbox: the display-name-preserving "Name <addr>" form when a name is
+// configured, the bare address otherwise (mail.Address.String renders
+// nameless addresses as "<addr>" — a cosmetic regression worth avoiding).
+func headerAddress(a *mail.Address) string {
+	if a.Name == "" {
+		return a.Address
+	}
+
+	return a.String()
+}
+
 // Send dispatches an email via SMTP.
 func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
-	to, err := sanitizeAddress(req.To)
+	to, err := parseAddress(req.To)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp send: %w", err)
 	}
 
-	from, err := sanitizeAddress(p.from)
+	from, err := parseAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp misconfigured (JC_SMTP_FROM): %w", err)
 	}
 
 	// Envelope MAIL FROM may differ from the header From (bounce mailbox
 	// routing, §62 self-hosted transport); default to the header address.
-	mailFrom := from
+	mailFrom := from.Address
 
 	if p.envelopeFrom != "" {
 		if mailFrom, err = sanitizeAddress(p.envelopeFrom); err != nil {
@@ -152,47 +175,9 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		}
 	}
 
-	// Build the message
-	contentType := "text/plain; charset=UTF-8"
-	contentBody := req.Body
-
-	if req.IsHTML {
-		contentType = "text/html; charset=UTF-8"
-	}
-
-	// Base headers, in a stable order for deterministic output.
-	// Every interpolated value is CRLF-sanitized (CWE-113).
-	var hdr strings.Builder
-
-	hdr.WriteString("From: " + from + "\r\n")
-	hdr.WriteString("To: " + to + "\r\n")
-	hdr.WriteString("Subject: " + sanitizeHeaderValue(req.Subject) + "\r\n")
-	hdr.WriteString("MIME-Version: 1.0\r\n")
-	hdr.WriteString("Content-Type: " + contentType + "\r\n")
-
-	// Merge optional extra headers (e.g. List-Unsubscribe) in a stable
-	// (alphabetical) order so the rendered message is deterministic.
-	// Header names are restricted to token chars; values are sanitized.
-	if len(req.Headers) > 0 {
-		keys := make([]string, 0, len(req.Headers))
-		for k := range req.Headers {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		for _, k := range keys {
-			name := sanitizeHeaderValue(k)
-			if name == "" || strings.ContainsAny(name, " :") {
-				slog.Warn("email_send: dropping invalid header name")
-				continue
-			}
-
-			hdr.WriteString(name + ": " + sanitizeHeaderValue(req.Headers[k]) + "\r\n")
-		}
-	}
-
-	msg := hdr.String() + "\r\n" + contentBody
+	// Headers carry the display-name-preserving form; the envelope
+	// commands below use the bare mailbox.
+	msg := buildRFC822(headerAddress(from), headerAddress(to), req.Subject, req)
 
 	var auth smtp.Auth
 	if p.user != "" && p.pass != "" {
@@ -232,7 +217,7 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		return EmailResponse{}, fmt.Errorf("smtp mail: %w", err)
 	}
 
-	if err := client.Rcpt(to); err != nil {
+	if err := client.Rcpt(to.Address); err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp rcpt: %w", err)
 	}
 
@@ -241,7 +226,7 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		return EmailResponse{}, fmt.Errorf("smtp data: %w", err)
 	}
 
-	if _, err := w.Write([]byte(msg)); err != nil {
+	if _, err := w.Write(msg); err != nil {
 		return EmailResponse{}, fmt.Errorf("smtp write: %w", err)
 	}
 

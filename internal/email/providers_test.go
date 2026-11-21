@@ -388,11 +388,14 @@ func TestIsProxyEndpointAddr(t *testing.T) {
 func TestBuildMIMEMessageSanitizesAndOrdersHeaders(t *testing.T) {
 	t.Parallel()
 
-	msg := string(buildMIMEMessage("f@x.com", "t@x.com", "hi\r\nBcc: evil@x.com", "body", false,
-		map[string]string{
+	msg := string(buildMIMEMessage("f@x.com", "t@x.com", EmailRequest{
+		Subject: "hi\r\nBcc: evil@x.com",
+		Body:    "body",
+		Headers: map[string]string{
 			"List-Unsubscribe": "<https://x.com/u>",
 			"Bad Header":       "skip me", // space in name → dropped
-		}))
+		},
+	}))
 
 	// The injected \r\n must be stripped — the smuggled Bcc text may remain
 	// inside the single-line Subject value but must not become its own

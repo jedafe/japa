@@ -46,24 +46,26 @@ func (p *PostmarkProvider) Name() string { return p.name }
 
 // Send dispatches an email via Postmark.
 func (p *PostmarkProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
-	to, err := sanitizeAddress(req.To)
+	to, err := parseAddress(req.To)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("postmark send: %w", err)
 	}
 
-	from, err := sanitizeAddress(p.from)
+	from, err := parseAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("postmark misconfigured (from_address): %w", err)
 	}
 
+	// Postmark accepts the RFC 5322 "Name <addr>" form in From/To.
 	body := map[string]any{
-		"From":          from,
-		"To":            to,
+		"From":          headerAddress(from),
+		"To":            headerAddress(to),
 		"Subject":       sanitizeHeaderValue(req.Subject),
 		"MessageStream": p.messageStream,
 	}
 	if req.IsHTML {
 		body["HtmlBody"] = req.Body
+		body["TextBody"] = req.TextAlternative()
 	} else {
 		body["TextBody"] = req.Body
 	}

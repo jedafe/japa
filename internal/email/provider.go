@@ -6,10 +6,15 @@ import "context"
 //
 //nolint:revive // exported: stutter naming is intentional
 type EmailRequest struct {
-	To       string
-	Subject  string
-	Body     string
-	IsHTML   bool
+	To      string
+	Subject string
+	Body    string
+	IsHTML  bool
+	// TextBody is the optional text/plain alternative paired with an HTML
+	// Body as multipart/alternative. Ignored unless IsHTML is set; when
+	// empty providers derive one from Body via HTMLToText — HTML-only
+	// mail is a spam-score flag and must never leave the dispatcher.
+	TextBody string
 	Category string // "transactional" or "marketing"
 	// Headers carries optional extra SMTP headers (e.g. List-Unsubscribe,
 	// List-Unsubscribe-Post) merged into the outgoing message by providers

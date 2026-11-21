@@ -36,23 +36,26 @@ func (p *ResendProvider) Name() string { return p.name }
 
 // Send dispatches an email via Resend.
 func (p *ResendProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
-	to, err := sanitizeAddress(req.To)
+	to, err := parseAddress(req.To)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("resend send: %w", err)
 	}
 
-	from, err := sanitizeAddress(p.from)
+	from, err := parseAddress(p.from)
 	if err != nil {
 		return EmailResponse{}, fmt.Errorf("resend misconfigured (from_address): %w", err)
 	}
 
+	// Resend accepts the RFC 5322 "Name <addr>" form in from/to — pass the
+	// display-name-preserving string so configured sender names survive.
 	body := map[string]any{
-		"from":    from,
-		"to":      []string{to},
+		"from":    headerAddress(from),
+		"to":      []string{headerAddress(to)},
 		"subject": sanitizeHeaderValue(req.Subject),
 	}
 	if req.IsHTML {
 		body["html"] = req.Body
+		body["text"] = req.TextAlternative()
 	} else {
 		body["text"] = req.Body
 	}
