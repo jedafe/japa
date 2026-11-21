@@ -5169,6 +5169,12 @@ export interface CvFormatSession {
 }
 
 /* --- §96 Housing Guide --- */
+export interface HousingPlatformEntry {
+	name?: string;
+	url?: string;
+	description?: string;
+	[key: string]: unknown;
+}
 export interface HousingGuide {
 	id: string;
 	destination_space_id: string;
@@ -5178,7 +5184,9 @@ export interface HousingGuide {
 	city_space_name?: string | null;
 	city_space_code?: string | null;
 	accommodation_type?: string | null;
-	search_platforms?: string[] | Record<string, unknown> | null;
+	// §96 stores [{name, url, description}] — string items and key→url
+	// maps are tolerated by the view normalizer (lib/utils/housing.ts).
+	search_platforms?: (string | HousingPlatformEntry)[] | Record<string, unknown> | null;
 	landlord_requirements?: string | null;
 	rent_ranges?: Record<string, unknown> | null;
 	scam_categories?: string[] | null;

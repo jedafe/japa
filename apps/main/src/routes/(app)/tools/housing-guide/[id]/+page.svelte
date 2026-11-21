@@ -4,6 +4,12 @@
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Home, ArrowLeft, Globe, AlertTriangle, ShieldCheck, MapPin, BookOpen } from 'lucide-svelte';
+	import {
+		housingPlatforms,
+		housingRentTiers,
+		rentTierLabel,
+		isStaleVerification
+	} from '#lib/utils/housing.js';
 	import type { PageData } from './$types';
 
 	/**
@@ -18,25 +24,9 @@
 	const title = $derived(`${guide.city_space_name ? `${guide.city_space_name} — ` : ''}${t('housing_guide.title', 'Housing Guide')}`);
 	const description = $derived(guide.tips ?? t('housing_guide.subtitle', 'Find safe housing abroad.'));
 
-	function isArray(val: unknown): val is string[] {
-		return Array.isArray(val);
-	}
-
-	function objectEntries(val: Record<string, unknown> | null | undefined): [string, unknown][] {
-		if (!val || typeof val !== 'object') return [];
-		return Object.entries(val);
-	}
-
-	function formatValue(val: unknown): string {
-		if (val === null || val === undefined) return '';
-		if (typeof val === 'string') return val;
-		if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-		try {
-			return JSON.stringify(val);
-		} catch {
-			return String(val);
-		}
-	}
+	const platforms = $derived(housingPlatforms(guide.search_platforms));
+	const rentTiers = $derived(housingRentTiers(guide.rent_ranges));
+	const stale = $derived(isStaleVerification(guide.last_verified_at));
 
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
@@ -83,6 +73,16 @@
 							<span class="text-xs text-[var(--color-muted)]">
 								{t('housing_guide.last_verified', 'Last verified')}: {formatDate(guide.last_verified_at)}
 							</span>
+							{#if stale}
+								<span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400">
+									<AlertTriangle size={12} />
+									{t('housing_guide.stale_warning', 'May be outdated — not verified in 90+ days')}
+								</span>
+							{/if}
+						{:else}
+							<span class="text-xs text-[var(--color-muted)]">
+								{t('housing_guide.not_verified', 'Not yet verified')}
+							</span>
 						{/if}
 					</div>
 				</div>
@@ -96,42 +96,68 @@
 			</div>
 		{/if}
 
-		{#if guide.search_platforms}
+		<!-- §96 [{name, url, description}] -->
+		{#if platforms.length > 0}
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('housing_guide.search_platforms', 'Search platforms')}</h2>
-				{#if isArray(guide.search_platforms)}
-					<ul class="space-y-1">
-						{#each guide.search_platforms as platform (platform)}
-							<li class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+				<ul class="space-y-2">
+					{#each platforms as platform (platform.name + (platform.url ?? ''))}
+						<li class="text-sm">
+							<span class="flex items-center gap-2 text-[var(--color-text)]">
 								<Globe size={14} class="text-[var(--color-muted)]" />
-								{platform}
-							</li>
-						{/each}
-					</ul>
-				{:else}
-					<dl class="space-y-1">
-						{#each objectEntries(guide.search_platforms as Record<string, unknown>) as [key, val] (key)}
-							<div class="flex items-start gap-2 text-sm">
-								<dt class="font-medium text-[var(--color-text)]">{key}:</dt>
-								<dd class="text-[var(--color-text-subtle)]">{formatValue(val)}</dd>
-							</div>
-						{/each}
-					</dl>
-				{/if}
+								{#if platform.url}
+									<a
+										href={platform.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="font-medium text-[var(--color-primary-text)] hover:underline"
+									>
+										{platform.name}
+									</a>
+								{:else}
+									<span class="font-medium">{platform.name}</span>
+								{/if}
+							</span>
+							{#if platform.description}
+								<p class="ms-6 text-xs text-[var(--color-muted)]">{platform.description}</p>
+							{/if}
+						</li>
+					{/each}
+				</ul>
 			</div>
 		{/if}
 
-		{#if guide.rent_ranges}
+		<!-- §96 {tier: {studio, 1bed, 2bed, currency}} -->
+		{#if rentTiers.length > 0}
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('housing_guide.rent_ranges', 'Rent ranges')}</h2>
-				<dl class="space-y-1">
-					{#each objectEntries(guide.rent_ranges as Record<string, unknown>) as [key, val] (key)}
-						<div class="flex items-start gap-2 text-sm">
-							<dt class="font-medium text-[var(--color-text)] flex-shrink-0">{key}:</dt>
-							<dd class="text-[var(--color-text-subtle)]">{formatValue(val)}</dd>
+				<div class="space-y-3">
+					{#each rentTiers as row (row.tier)}
+						<div class="text-sm">
+							<p class="font-medium text-[var(--color-text)] capitalize">
+								{rentTierLabel(row.tier)}
+								{#if row.currency}
+									<span class="ms-1 text-xs font-normal text-[var(--color-muted)]">({row.currency})</span>
+								{/if}
+							</p>
+							{#if row.raw}
+								<p class="text-[var(--color-text-subtle)]">{row.raw}</p>
+							{:else}
+								<dl class="mt-0.5 space-y-0.5">
+									{#if row.studio}
+										<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_studio', 'Studio')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.studio}</dd></div>
+									{/if}
+									{#if row.oneBed}
+										<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_1bed', '1-bed')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.oneBed}</dd></div>
+									{/if}
+									{#if row.twoBed}
+										<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_2bed', '2-bed')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.twoBed}</dd></div>
+									{/if}
+								</dl>
+							{/if}
 						</div>
 					{/each}
-				</dl>
+				</div>
 			</div>
 		{/if}
 

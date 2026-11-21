@@ -1971,3 +1971,109 @@ func (ix *Indexer) IndexCredentialPathway(ctx context.Context, pathwayID [16]byt
 
 	return nil
 }
+
+// housingGuideDocument is the document shape stored in the
+// housing_guides index. tips and scam_categories carry the retrieval
+// text JapaBot answers from; the id/name fields drive filtering and
+// citation.
+type housingGuideDocument struct {
+	ID                 string   `json:"id"`
+	DestinationSpaceID string   `json:"destination_space_id"`
+	DestinationName    string   `json:"destination_name"`
+	CitySpaceID        string   `json:"city_space_id,omitempty"`
+	CityName           string   `json:"city_name,omitempty"`
+	AccommodationType  string   `json:"accommodation_type,omitempty"`
+	ScamCategories     []string `json:"scam_categories,omitempty"`
+	Tips               string   `json:"tips,omitempty"`
+	Status             string   `json:"status"`
+	IsJapabotIndexed   bool     `json:"is_japabot_indexed"`
+	URL                string   `json:"url"`
+}
+
+// IndexHousingGuide fetches a housing_guides row and upserts it into the
+// housing_guides index. Only published + is_active rows are indexed —
+// the generated is_japabot_indexed column already encodes that — and
+// anything else removes the document so stale drafts/rejected rows never
+// surface in JapaBot RAG retrieval (§96, ADR-088).
+func (ix *Indexer) IndexHousingGuide(ctx context.Context, guideID [16]byte) error {
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
+		return nil
+	}
+
+	if ix.pool == nil {
+		return errors.New("search:index: no database pool for housing_guides fetch")
+	}
+
+	var (
+		id, destID       string
+		destName         *string
+		cityID, cityName *string
+		accomType, tips  *string
+		scamCategories   []string
+		status           string
+		indexable        bool
+	)
+
+	err := ix.pool.Reader.QueryRow(ctx, `
+		SELECT g.id, g.destination_space_id, dst.name,
+		       g.city_space_id, cs.name,
+		       g.accommodation_type, g.scam_categories, g.tips,
+		       g.status,
+		       (g.is_japabot_indexed AND g.status = 'published' AND g.is_active)
+		FROM housing_guides g
+		LEFT JOIN spaces dst ON dst.id = g.destination_space_id
+		LEFT JOIN spaces cs ON cs.id = g.city_space_id
+		WHERE g.id = $1`, guideID).Scan(
+		&id, &destID, &destName,
+		&cityID, &cityName,
+		&accomType, &scamCategories, &tips,
+		&status, &indexable)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexHousingGuides, guideID)
+		}
+
+		return fmt.Errorf("fetching housing_guide for index: %w", err)
+	}
+
+	if !indexable {
+		return ix.DeleteDocument(ctx, IndexHousingGuides, guideID)
+	}
+
+	doc := housingGuideDocument{
+		ID:                 id,
+		DestinationSpaceID: destID,
+		ScamCategories:     scamCategories,
+		Status:             status,
+		IsJapabotIndexed:   true,
+		URL:                "/tools/housing-guide/" + id,
+	}
+	if destName != nil {
+		doc.DestinationName = *destName
+	}
+
+	if cityID != nil {
+		doc.CitySpaceID = *cityID
+	}
+
+	if cityName != nil {
+		doc.CityName = *cityName
+	}
+
+	if accomType != nil {
+		doc.AccommodationType = *accomType
+	}
+
+	if tips != nil {
+		doc.Tips = *tips
+	}
+
+	if err := ix.engine.UpsertDocuments(ctx, IndexHousingGuides, []housingGuideDocument{doc}); err != nil {
+		return fmt.Errorf("indexing housing_guide %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: housing_guide indexed", "id", doc.ID)
+
+	return nil
+}

@@ -250,8 +250,9 @@ func (s *Service) OnGuidePublished(ctx context.Context, contentID pgtype.UUID, g
 
 	created, err := s.store.CreateGuide(ctx, input)
 	if err != nil {
-		// No natural-key unique index exists on housing_guides, so a
-		// concurrent auto-create cannot be detected by constraint —
+		// A concurrent auto-create (or an admin-created row inserted
+		// between the lookup above and this insert) hits the NULLS NOT
+		// DISTINCT natural-key index and surfaces as ErrNoRows —
 		// re-check the combination and link the winner instead of
 		// reporting a failure for a settled outcome.
 		if id, lerr := s.store.GuideIDForCombination(ctx, destSpace, citySpace, accommodationType); lerr == nil && id.Valid {

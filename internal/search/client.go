@@ -29,6 +29,7 @@ const (
 	IndexEcaGuides          = "eca_guides"                 // §109 ECA guides (JapaBot RAG)
 	IndexSopSamples         = "sop_samples"                // §110 published SOP samples (JapaBot RAG)
 	IndexCredentialPathways = "credential_pathways"        // §94 credential pathways (JapaBot RAG)
+	IndexHousingGuides      = "housing_guides"             // §96 housing orientation guides (JapaBot RAG)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -51,6 +52,7 @@ var allIndexes = []string{
 	IndexEcaGuides,
 	IndexSopSamples,
 	IndexCredentialPathways,
+	IndexHousingGuides,
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
@@ -70,6 +72,7 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexEcaGuides:          {"destination_space_id", "provider_slug", "purpose", "is_japabot_indexed"},
 	IndexSopSamples:         {"destination_space_id", "program_level", "field_of_study", "is_japabot_indexed"},
 	IndexCredentialPathways: {"destination_space_id", "issuing_space_id", "profession_slug", "is_japabot_indexed"},
+	IndexHousingGuides:      {"destination_space_id", "city_space_id", "accommodation_type", "is_japabot_indexed"},
 }
 
 // sortableAttributesByIndex declares which attributes each index exposes for
@@ -91,6 +94,7 @@ var sortableAttributesByIndex = map[string][]string{
 	IndexEcaGuides:          {"created_at"},
 	IndexSopSamples:         {"created_at"},
 	IndexCredentialPathways: {"created_at"},
+	IndexHousingGuides:      {"created_at"},
 }
 
 // NewEngine creates the configured search engine and ensures every search

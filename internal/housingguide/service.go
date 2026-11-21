@@ -23,6 +23,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // GuideDTO is the API response shape for a single housing guide.
@@ -87,7 +88,8 @@ type UpdateGuideRequest struct {
 	IsActive             *bool           `json:"is_active"`
 	AIModel              *string         `json:"ai_model"`
 	AIPromptHash         *string         `json:"ai_prompt_hash"`
-	IsJapabotIndexed     *bool           `json:"is_japabot_indexed"`
+	// is_japabot_indexed is deliberately absent — it is a GENERATED column
+	// (status × is_active), so accepting it here would 500 the UPDATE.
 }
 
 // ApproveGuideRequest is the request body for PATCH
@@ -559,6 +561,14 @@ func (s *Service) Create(ctx context.Context, input CreateGuideRequest) (GuideDT
 
 	id, err := s.store.CreateGuide(ctx, storeInput)
 	if err != nil {
+		// Natural-key conflict (ON CONFLICT DO NOTHING → no RETURNING
+		// row): the destination × city × accommodation_type combination
+		// already has a guide — report it instead of silently inserting
+		// a duplicate.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return GuideDTO{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type", errpkg.ErrDuplicate)
+		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: create: %w", err)
 	}
 
@@ -581,7 +591,6 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 		IsActive:             input.IsActive,
 		AIModel:              input.AIModel,
 		AIPromptHash:         input.AIPromptHash,
-		IsJapabotIndexed:     input.IsJapabotIndexed,
 		ScamCategories:       input.ScamCategories,
 	}
 
@@ -616,6 +625,11 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateGuideR
 		return GuideDTO{}, fmt.Errorf("housingguide: update: fetch updated: %w", err)
 	}
 
+	// Re-sync the search doc — a published guide edited by an admin must
+	// not go stale in Meilisearch, and a deactivation/unpublish removes
+	// it (ecaguide precedent).
+	s.enqueueIndex(id)
+
 	return rowToDTO(row), nil
 }
 
@@ -636,15 +650,30 @@ func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, input
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: fetch approved: %w", err)
 	}
 
-	// Meilisearch indexing for housing_guides is not yet wired — there is no
-	// `housing_guide` entity type in the search indexer and no housing_guides
-	// Meilisearch index. When ADR-088 RAG indexing is extended to housing
-	// guides, enqueue `search:index_entity` here with payload
-	// {"entity_id": id, "entity_type": "housing_guide", "": ...}
-	// and add a `housing_guide` case to worker.HandleSearchIndexSync.
-	// (fire-and-forget, Rule 8 — never block the request on fan-out.)
+	s.enqueueIndex(id)
 
 	return rowToDTO(row), nil
+}
+
+// enqueueIndex fires search:index_entity so JapaBot/Meilisearch picks up
+// the newly published guide — or drops it when the row stopped being
+// indexable (reject, deactivate, unpublish). The indexer's
+// is_japabot_indexed gate makes this a no-op for non-published rows, so
+// it is safe to call on every lifecycle transition. Fire-and-forget
+// (Rule 8 — never block the request on fan-out).
+func (s *Service) enqueueIndex(id pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"entity_type": "housing_guide",
+		"entity_id":   id.String(),
+	})
+
+	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+		slog.Warn("housingguide: search:index_entity enqueue failed", "guide_id", id.String(), "error", err)
+	}
 }
 
 // Reject rejects a pending housing guide (admin HITL). Sets status to
@@ -668,8 +697,8 @@ func (s *Service) Reject(ctx context.Context, id, reviewerID pgtype.UUID, reason
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: fetch rejected: %w", err)
 	}
 
-	// No Meilisearch index update — housing_guides is not yet indexed (see
-	// comment in Approve). When indexing is added, enqueue a delete here.
+	// Reject drops is_japabot_indexed → the indexer deletes the doc.
+	s.enqueueIndex(id)
 
 	return rowToDTO(row), nil
 }
@@ -827,6 +856,10 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateGuideRequest)
 		AIPromptHash:       &promptHash,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return GenerateDraftResponse{}, fmt.Errorf("%w: a housing guide already exists for this destination + city + accommodation_type — review it in the queue instead of regenerating", errpkg.ErrDuplicate)
+		}
+
 		return GenerateDraftResponse{}, fmt.Errorf("housingguide: generate draft: %w", err)
 	}
 

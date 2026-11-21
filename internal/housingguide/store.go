@@ -161,7 +161,7 @@ type UpdateGuideInput struct {
 	AIModel              *string
 	AIPromptHash         *string
 	LastVerifiedAt       pgtype.Date
-	IsJapabotIndexed     *bool
+	// is_japabot_indexed is GENERATED (status × is_active) — not writable.
 }
 
 // ListGuidesFilter holds the filter parameters for listing published
@@ -409,6 +409,11 @@ func (s *Store) CreateGuide(ctx context.Context, input CreateGuideInput) (pgtype
 		status = StatusDraft
 	}
 
+	// ON CONFLICT on the NULLS NOT DISTINCT natural-key index
+	// (migration 001222) — a concurrent insert of the same
+	// destination × city × accommodation_type combination yields zero
+	// RETURNING rows, surfacing as pgx.ErrNoRows so callers can either
+	// claim the winner (editorial hook) or report a duplicate (admin).
 	const q = `
 INSERT INTO housing_guides (
     destination_space_id, city_space_id, accommodation_type,
@@ -416,6 +421,7 @@ INSERT INTO housing_guides (
     tips, status, is_active, ai_generated, ai_model, ai_prompt_hash,
     last_verified_at, guide_id, hitl_review_notes
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15,'')::uuid, $16)
+ON CONFLICT (destination_space_id, city_space_id, accommodation_type) DO NOTHING
 RETURNING id
 `
 
@@ -508,12 +514,6 @@ func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, input UpdateGui
 	if input.LastVerifiedAt.Valid {
 		sets = append(sets, fmt.Sprintf("last_verified_at = $%d", argIdx))
 		args = append(args, input.LastVerifiedAt)
-		argIdx++
-	}
-
-	if input.IsJapabotIndexed != nil {
-		sets = append(sets, fmt.Sprintf("is_japabot_indexed = $%d", argIdx))
-		args = append(args, *input.IsJapabotIndexed)
 		argIdx++
 	}
 

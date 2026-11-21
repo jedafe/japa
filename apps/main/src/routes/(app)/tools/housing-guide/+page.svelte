@@ -18,6 +18,12 @@
 
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
+	import {
+		housingPlatforms,
+		housingRentTiers,
+		rentTierLabel,
+		isStaleVerification
+	} from '#lib/utils/housing.js';
 	import type { HousingGuideWithAi, GeoCountry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
@@ -116,29 +122,9 @@
 		}
 	}
 
-	/** Render search_platforms as a list if it's an array, or key-value if object. */
-	function isPlatformArray(
-		platforms: string[] | Record<string, unknown> | null | undefined
-	): platforms is string[] {
-		return Array.isArray(platforms);
-	}
-
-	/** Get key-value entries from a JSON object field (rent_ranges, search_platforms object). */
-	function objectEntries(val: Record<string, unknown> | null | undefined): [string, unknown][] {
-		if (!val || typeof val !== 'object') return [];
-		return Object.entries(val);
-	}
-
-	/** Format a value for display — stringify objects/arrays, return strings as-is. */
-	function formatValue(val: unknown): string {
-		if (val === null || val === undefined) return '';
-		if (typeof val === 'string') return val;
-		if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-		try {
-			return JSON.stringify(val);
-		} catch {
-			return String(val);
-		}
+	/** ADR-104 staleness — row not re-verified within 90 days. */
+	function isStale(guide: HousingGuideWithAi): boolean {
+		return isStaleVerification(guide.last_verified_at);
 	}
 
 	// On mount: if SSR already loaded guides for initialDestId, no action needed.
@@ -286,6 +272,16 @@
 										{t('housing_guide.last_verified', 'Last verified:')}
 										{formatDate(guide.last_verified_at)}
 									</p>
+									{#if isStale(guide)}
+										<p class="mt-1 inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400">
+											<AlertTriangle size={12} />
+											{t('housing_guide.stale_warning', 'May be outdated — not verified in 90+ days')}
+										</p>
+									{/if}
+								{:else}
+									<p class="text-xs text-[var(--color-muted)] mt-1">
+										{t('housing_guide.not_verified', 'Not yet verified')}
+									</p>
 								{/if}
 							</div>
 							{#if expandedId === guide.id}
@@ -298,32 +294,40 @@
 						<!-- Expanded detail -->
 						{#if expandedId === guide.id}
 							<div class="border-t border-[var(--color-border)] p-4 space-y-4">
-								<!-- Search platforms -->
+								<!-- Search platforms — §96 [{name, url, description}] -->
 								{#if guide.search_platforms}
+									{@const platforms = housingPlatforms(guide.search_platforms)}
+								{#if platforms.length > 0}
 									<div>
 										<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-2">
 											{t('housing_guide.search_platforms', 'Search platforms')}
 										</h3>
-										{#if isPlatformArray(guide.search_platforms)}
-											<ul class="space-y-1">
-												{#each guide.search_platforms as platform (platform)}
-													<li class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+										<ul class="space-y-2">
+											{#each platforms as platform (platform.name + (platform.url ?? ''))}
+												<li class="text-sm">
+													<span class="flex items-center gap-2 text-[var(--color-text)]">
 														<Globe size={14} class="text-[var(--color-muted)] flex-shrink-0" />
-														{platform}
-													</li>
-												{/each}
-											</ul>
-										{:else}
-											<dl class="space-y-1">
-												{#each objectEntries(guide.search_platforms) as [key, val] (key)}
-													<div class="flex items-start gap-2 text-sm">
-														<dt class="font-medium text-[var(--color-text)] flex-shrink-0">{key}:</dt>
-														<dd class="text-[var(--color-text-subtle)]">{formatValue(val)}</dd>
-													</div>
-												{/each}
-											</dl>
-										{/if}
+														{#if platform.url}
+															<a
+																href={platform.url}
+																target="_blank"
+																rel="noopener noreferrer"
+																class="font-medium text-[var(--color-primary-text)] hover:underline"
+															>
+																{platform.name}
+															</a>
+														{:else}
+															<span class="font-medium">{platform.name}</span>
+														{/if}
+													</span>
+													{#if platform.description}
+														<p class="ms-6 text-xs text-[var(--color-muted)]">{platform.description}</p>
+													{/if}
+												</li>
+											{/each}
+										</ul>
 									</div>
+								{/if}
 								{/if}
 
 								<!-- Landlord requirements -->
@@ -336,21 +340,43 @@
 									</div>
 								{/if}
 
-								<!-- Rent ranges -->
+								<!-- Rent ranges — §96 {tier: {studio, 1bed, 2bed, currency}} -->
 								{#if guide.rent_ranges}
+									{@const rentTiers = housingRentTiers(guide.rent_ranges)}
+								{#if rentTiers.length > 0}
 									<div>
 										<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-2">
 											{t('housing_guide.rent_ranges', 'Rent ranges')}
 										</h3>
-										<dl class="space-y-1">
-											{#each objectEntries(guide.rent_ranges) as [key, val] (key)}
-												<div class="flex items-start gap-2 text-sm">
-													<dt class="font-medium text-[var(--color-text)] flex-shrink-0">{key}:</dt>
-													<dd class="text-[var(--color-text-subtle)]">{formatValue(val)}</dd>
+										<div class="space-y-2">
+											{#each rentTiers as row (row.tier)}
+												<div class="text-sm">
+													<p class="font-medium text-[var(--color-text)] capitalize">
+														{rentTierLabel(row.tier)}
+														{#if row.currency}
+															<span class="ms-1 text-xs font-normal text-[var(--color-muted)]">({row.currency})</span>
+														{/if}
+													</p>
+													{#if row.raw}
+														<p class="text-[var(--color-text-subtle)]">{row.raw}</p>
+													{:else}
+														<dl class="space-y-0.5">
+															{#if row.studio}
+																<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_studio', 'Studio')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.studio}</dd></div>
+															{/if}
+															{#if row.oneBed}
+																<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_1bed', '1-bed')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.oneBed}</dd></div>
+															{/if}
+															{#if row.twoBed}
+																<div class="flex gap-2"><dt class="text-[var(--color-muted)]">{t('housing_guide.unit_2bed', '2-bed')}:</dt><dd class="text-[var(--color-text-subtle)]">{row.twoBed}</dd></div>
+															{/if}
+														</dl>
+													{/if}
 												</div>
 											{/each}
-										</dl>
+										</div>
 									</div>
+								{/if}
 								{/if}
 
 								<!-- Scam categories -->
