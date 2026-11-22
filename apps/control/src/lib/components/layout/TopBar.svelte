@@ -44,11 +44,11 @@
 					>
 						<Avatar
 							src={(getUser()!).avatar_url}
-							alt={(getUser()!).display_name}
+							alt={(getUser()!).display_name || (getUser()!).username || (getUser()!).email}
 							size="sm"
 						/>
 
-						<span class="text-foreground text-sm">{(getUser()!).display_name}</span>
+						<span class="text-foreground text-sm">{(getUser()!).display_name || (getUser()!).username}</span>
 					</button>
 				{/snippet}
 

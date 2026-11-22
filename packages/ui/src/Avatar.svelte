@@ -2,7 +2,7 @@
 	// Avatar — circular image or initials fallback.
 	interface Props {
 		src?: string | null;
-		alt?: string;
+		alt?: string | null;
 		size?: 'sm' | 'md' | 'lg' | 'xl';
 		class?: string;
 	}
@@ -18,14 +18,14 @@
 </script>
 
 {#if src}
-	<img {src} {alt} class="rounded-full object-cover {sizes[size] ?? sizes.md} {className}" />
+	<img {src} alt={alt ?? ''} class="rounded-full object-cover {sizes[size] ?? sizes.md} {className}" />
 {:else}
 	<div
 		class="flex items-center justify-center rounded-full {sizes[size] ?? sizes.md} {className}"
 		style="background-color: var(--color-border, var(--border, #e5e7eb))"
 	>
 		<span class="text-sm font-medium" style="color: var(--color-muted-foreground, var(--muted-foreground, var(--color-muted, var(--muted, #6b7280))))">
-			{alt.charAt(0).toUpperCase()}
+			{(alt || '?').charAt(0).toUpperCase()}
 		</span>
 	</div>
 {/if}
