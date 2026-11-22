@@ -26,6 +26,11 @@ REPLICA_PASSWORD="${REPLICA_PASSWORD:-japa_replica}"
 PGDATA="${PGDATA:-/var/lib/postgresql/18/docker}"
 export PGDATA
 
+# The volume mount point and any previous root-run basebackup are owned by
+# root (mode 0700 on /var/lib/postgresql/18), which the postgres user cannot
+# traverse once docker-entrypoint.sh drops privileges. Fix ownership first.
+chown -R postgres:postgres /var/lib/postgresql
+
 # If data directory already has content, skip basebackup and just start.
 if [ -s "$PGDATA/PG_VERSION" ]; then
     echo "postgres-replica: data directory exists, starting in standby mode"
@@ -53,4 +58,7 @@ PGPASSWORD="$REPLICA_PASSWORD" pg_basebackup \
 # and connect back to the primary for WAL streaming.
 
 echo "postgres-replica: basebackup complete, starting in standby mode"
+# pg_basebackup ran as root — hand the whole tree to postgres before the
+# official entrypoint drops privileges (see note above).
+chown -R postgres:postgres /var/lib/postgresql
 exec docker-entrypoint.sh postgres
