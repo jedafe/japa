@@ -8,7 +8,10 @@ BEGIN;
 
 -- 1. Banks -> organizations (wiki 'bank' type reads organizations.org_type='bank')
 INSERT INTO organizations (owner_user_id, name, slug, website_url, org_type, verified, status, geo_space_id, country_code)
-SELECT (SELECT u.id FROM users u JOIN user_group_memberships gm ON gm.user_id=u.id JOIN user_groups g ON g.id=gm.group_id WHERE g.slug='super_admin' LIMIT 1),
+SELECT COALESCE(
+    (SELECT u.id FROM users u JOIN user_group_memberships gm ON gm.user_id=u.id JOIN user_groups g ON g.id=gm.group_id WHERE g.slug='super_admin' LIMIT 1),
+    (SELECT id FROM users ORDER BY created_at LIMIT 1)
+),
        m.name, m.slug, m.website, 'bank', true, 'active', s.id, s.geo_code
 FROM (VALUES
     ('Barclays','bank-united-kingdom-barclays','https://www.barclays.co.uk','united-kingdom'),
