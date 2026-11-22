@@ -81,6 +81,8 @@ export default defineConfig({
 		dedupe: ['svelte']
 	},
 	server: {
+		// §123 dev_env gate — VPS dev-server route (deploy/dev).
+		allowedHosts: ['admin.dev.japa.to'],
 		// Fontsource packages are hoisted in the workspace root node_modules and
 		// loaded through Vite's /@fs/... dev-server path. Allow that directory
 		// so woff/woff2 font files are not 403'd in local dev.

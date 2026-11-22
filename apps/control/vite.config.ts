@@ -107,6 +107,8 @@ export default defineConfig({
 		dedupe: ['svelte']
 	},
 	server: {
+		// §123 dev_env gate — VPS dev-server route (deploy/dev).
+		allowedHosts: ['control.dev.japa.to'],
 		// Vite's root is apps/control; @fontsource/inter is hoisted to the
 		// workspace node_modules/.bun outside that root, so disable fs.strict
 		// in dev to allow those static font assets to be served.

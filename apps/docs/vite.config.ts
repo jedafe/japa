@@ -127,6 +127,8 @@ export default defineConfig({
 		dedupe: ['svelte']
 	},
 	server: {
+		// §123 dev_env gate — VPS dev-server route (deploy/dev).
+		allowedHosts: ['docs.dev.japa.to'],
 		proxy: {
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true },

@@ -25,6 +25,7 @@ const devAllowedHosts = [
 	// §123 dev_env gate — the VPS dev-server route (deploy/dev): caddy on
 	// dev.japa.to proxies to the host's `vite dev --host` on :3000.
 	'dev.japa.to',
+	'main.dev.japa.to',
 	...(process.env.JC_ACADEMY_HOSTS ?? '').split(','),
 	...(process.env.JC_ROADMAP_HOSTS ?? '').split(',')
 ]
