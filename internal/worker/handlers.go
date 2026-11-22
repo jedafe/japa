@@ -614,8 +614,10 @@ func newsletterAPIBase(siteBase string) string {
 // resolveEmailLogoURL resolves the absolute brand-logo URL rendered as
 // {{.LogoURL}} in email template headers. Order: appearance.logo_url_dark
 // (designed for the dark teal header), then appearance.logo_url, then the
-// bundled /logos/logo-dark.png asset on the site base. Empty when no base
-// URL can be resolved — templates must guard with {{if .LogoURL}}.
+// bundled /logos/homepage-logo-dark.png wordmark on the site base — the
+// wordmark (not the square icon) since it replaces the title text. Empty
+// when no base URL can be resolved — templates must guard with
+// {{if .LogoURL}}.
 // // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
 func resolveEmailLogoURL(ctx context.Context, siteBase string) string {
 	if siteBase == "" {
@@ -649,7 +651,7 @@ func resolveEmailLogoURL(ctx context.Context, siteBase string) string {
 		return ""
 	}
 
-	return strings.TrimRight(siteBase, "/") + "/logos/logo-dark.png"
+	return strings.TrimRight(siteBase, "/") + "/logos/homepage-logo-dark.png"
 }
 
 // newsletterGenerateUnsubscribeToken generates a 32-byte hex token for
@@ -4080,7 +4082,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 				"subject":     campaign.Subject,
 				"content":     campaign.Html,
 				"site_url":    campaignBase,
-				"support_url": strings.TrimRight(campaignBase, "/") + "/support",
+				"support_url": strings.TrimRight(campaignBase, "/") + "/contact",
 				"logo_url":    resolveEmailLogoURL(ctx, campaignBase),
 			},
 		}
@@ -4534,7 +4536,7 @@ func sendDigestToUser(ctx context.Context, r digestRecipient, period string, tmp
 	templateVars := map[string]any{
 		"digest_content": body.String(),
 		"site_url":       siteBase,
-		"support_url":    strings.TrimRight(siteBase, "/") + "/support",
+		"support_url":    strings.TrimRight(siteBase, "/") + "/contact",
 		"logo_url":       logoURL,
 		"period":         period,
 	}
@@ -5524,7 +5526,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 			TemplateData: map[string]any{
 				"digest_content": digestItemsHTML(digestBase, digestItems),
 				"site_url":       digestBase,
-				"support_url":    strings.TrimRight(digestBase, "/") + "/support",
+				"support_url":    strings.TrimRight(digestBase, "/") + "/contact",
 				"logo_url":       resolveEmailLogoURL(ctx, digestBase),
 			},
 		}

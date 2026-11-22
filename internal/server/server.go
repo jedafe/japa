@@ -402,7 +402,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		VKClient:            vkClient,
 		SiteName:            cfg.SiteName,
 		SiteURL:             cfg.SiteURL,
-		SupportURL:          cfg.SiteURL + "/support",
+		SupportURL:          cfg.SiteURL + "/contact",
 		CookieDomain:        cfg.CookieDomain,
 		SecureCookies:       cfg.IsProduction(),
 		DefaultFolderSetter: defaultFolderResolver,

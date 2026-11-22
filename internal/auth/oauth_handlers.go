@@ -755,7 +755,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 					"ip_address":  ip,
 					"location":    loginLocation(r, ip),
 					"timestamp":   time.Now().Format("Jan 2, 2006 15:04:05 MST"),
-					"support_url": strings.TrimRight(h.FrontendBaseURL, "/") + "/support",
+					"support_url": strings.TrimRight(h.FrontendBaseURL, "/") + "/contact",
 				}, h.SiteName)
 		}
 	}
@@ -1014,7 +1014,7 @@ func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype
 		UserName:   username,
 		ActionURL:  actionURL,
 		Expiry:     "24 hours",
-		SupportURL: base + "/support",
+		SupportURL: base + "/contact",
 	})
 	if err != nil {
 		slog.Error("oauth register: failed to render verification email", "error", err)
@@ -1027,7 +1027,7 @@ func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype
 			"user_name":   username,
 			"action_url":  actionURL,
 			"expiry":      "24 hours",
-			"support_url": base + "/support",
+			"support_url": base + "/contact",
 			"site_url":    base,
 		}, siteName)
 }

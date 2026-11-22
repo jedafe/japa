@@ -180,13 +180,9 @@ func pascalToSnake(s string) string {
 // variable, keyed by the variable's PascalCase name. Names not in the table
 // fall back to a generic "Sample <name>" so nothing renders as <no value>.
 func sampleTemplateVar(name, siteBase string) string {
-	if strings.HasSuffix(name, "URL") {
-		return siteBase + "/preview"
-	}
-
 	samples := map[string]string{
 		"SiteURL":           siteBase,
-		"SupportURL":        siteBase + "/support",
+		"SupportURL":        siteBase + "/contact",
 		"UserName":          "Test User",
 		"AppellantUsername": "jane_doe",
 		"ReporterUsername":  "john_doe",
@@ -226,6 +222,10 @@ func sampleTemplateVar(name, siteBase string) string {
 
 	if v, ok := samples[name]; ok {
 		return v
+	}
+
+	if strings.HasSuffix(name, "URL") {
+		return siteBase + "/preview"
 	}
 
 	return "Sample " + name

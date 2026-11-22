@@ -694,7 +694,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	if newDevice {
 		supportURL := h.SupportURL
 		if supportURL == "" {
-			supportURL = h.baseURL(r) + "/support"
+			supportURL = h.baseURL(r) + "/contact"
 		}
 		enqueueTemplatedEmailTask(h.AsynqClient, user.Email, "login_alert", "", "",
 			map[string]any{
@@ -1531,7 +1531,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 
 	supportURL := h.SupportURL
 	if supportURL == "" {
-		supportURL = baseURL + "/support"
+		supportURL = baseURL + "/contact"
 	}
 
 	actionURL := fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token)
@@ -1914,7 +1914,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 
 	supportURL := h.SupportURL
 	if supportURL == "" {
-		supportURL = baseURL + "/support"
+		supportURL = baseURL + "/contact"
 	}
 
 	actionURL := fmt.Sprintf("%s/auth/verify-email?token=%s", baseURL, token)

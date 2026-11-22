@@ -12,7 +12,7 @@ func sampleData() TemplateData {
 		UserName:   "Ada",
 		ActionURL:  "https://japaconnect.test/action?token=abc123",
 		Expiry:     "1 hour",
-		SupportURL: "https://japaconnect.test/support",
+		SupportURL: "https://japaconnect.test/contact",
 	}
 }
 
@@ -54,6 +54,39 @@ func TestRenderTemplates(t *testing.T) {
 				t.Error("body contains an unrendered template action")
 			}
 		})
+	}
+}
+
+// The header logo replaces the SiteName title when LogoURL resolves — the
+// h1 survives only as the no-logo fallback.
+func TestRenderLogoReplacesTitle(t *testing.T) {
+	t.Parallel()
+
+	data := sampleData()
+	data.LogoURL = "https://japaconnect.test/logos/homepage-logo-dark.png"
+
+	body, err := RenderWelcomeEmail(data)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	if !strings.Contains(body, `<img src="https://japaconnect.test/logos/homepage-logo-dark.png"`) {
+		t.Error("body missing logo image")
+	}
+
+	if strings.Contains(body, "<h1") {
+		t.Error("title h1 rendered alongside logo — logo should replace it")
+	}
+
+	data.LogoURL = ""
+
+	body, err = RenderWelcomeEmail(data)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	if !strings.Contains(body, "<h1") {
+		t.Error("title h1 missing when no logo resolves")
 	}
 }
 

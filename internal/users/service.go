@@ -2875,7 +2875,7 @@ func (s *Service) enqueueVerificationEmail(ctx context.Context, userID pgtype.UU
 	// seeded slug (verification_granted / verification_revoked).
 	supportURL := ""
 	if s.siteURL != "" {
-		supportURL = s.siteURL + "/support"
+		supportURL = s.siteURL + "/contact"
 	}
 
 	payload, err := json.Marshal(map[string]any{

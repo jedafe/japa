@@ -468,7 +468,7 @@ func (s *Service) EnqueueConfirmEmail(ctx context.Context, emailAddr, token stri
 		"template_data": map[string]any{
 			"action_url":  confirmURL,
 			"site_url":    base,
-			"support_url": strings.TrimRight(base, "/") + "/support",
+			"support_url": strings.TrimRight(base, "/") + "/contact",
 			"expiry":      "7 days",
 		},
 	})

@@ -766,8 +766,9 @@ func digestAPIBase(siteBase string) string {
 // resolveLogoURL resolves the absolute brand-logo URL rendered as
 // {{.LogoURL}} in the digest email header. Order: appearance.logo_url_dark
 // (designed for the dark teal header), then appearance.logo_url, then the
-// bundled /logos/logo-dark.png asset. Empty when no base URL resolves —
-// the shell guards with {{if .LogoURL}}.
+// bundled /logos/homepage-logo-dark.png wordmark — the wordmark (not the
+// square icon) since it replaces the title text. Empty when no base URL
+// resolves — the shell guards with {{if .LogoURL}}.
 // // Ref: conventions/system-settings-catalog.md (appearance.logo_url*).
 func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
 	if s.settings != nil {
@@ -792,7 +793,7 @@ func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
 		return ""
 	}
 
-	return strings.TrimRight(baseURL, "/") + "/logos/logo-dark.png"
+	return strings.TrimRight(baseURL, "/") + "/logos/homepage-logo-dark.png"
 }
 
 // renderEditionEmail renders the edition content into subject + body.
@@ -812,7 +813,7 @@ func (s *Service) renderEditionEmail(ctx context.Context, content []byte, baseUR
 			"SiteName":      siteName,
 			"DigestContent": template.HTML(inner),
 			"SiteURL":       baseURL,
-			"SupportURL":    strings.TrimRight(baseURL, "/") + "/support",
+			"SupportURL":    strings.TrimRight(baseURL, "/") + "/contact",
 			"LogoURL":       logoURL,
 		}
 
@@ -852,8 +853,7 @@ func digestEmailShell(innerHTML, siteName, logoURL string) string {
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
       <tr>
         <td style="background-color: #0f766e; padding: 24px 32px; text-align: center;">
-          {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto 8px; border: 0;" /><br />{{end}}
-          <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600;">{{.SiteName}}</h1>
+          {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}" height="44" style="display: inline-block; max-height: 44px; margin: 0 auto; border: 0;" />{{else}}<h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600;">{{.SiteName}}</h1>{{end}}
         </td>
       </tr>
       <tr>

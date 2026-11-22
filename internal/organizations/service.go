@@ -1125,7 +1125,7 @@ func (s *Service) enqueueVerifyGrantEmail(ctx context.Context, org gen.Organizat
 	orgURL, supportURL := "", ""
 	if s.siteURL != "" {
 		orgURL = s.siteURL + "/org/" + org.Slug
-		supportURL = s.siteURL + "/support"
+		supportURL = s.siteURL + "/contact"
 	}
 
 	payload, err := json.Marshal(map[string]any{

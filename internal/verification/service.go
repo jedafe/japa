@@ -503,7 +503,7 @@ func (s *Service) enqueueReviewEmail(ctx context.Context, row gen.GetVerificatio
 
 	supportURL := ""
 	if s.siteURL != "" {
-		supportURL = s.siteURL + "/support"
+		supportURL = s.siteURL + "/contact"
 	}
 
 	// ADR-055: template_slug routes through the DB-template chain so admins

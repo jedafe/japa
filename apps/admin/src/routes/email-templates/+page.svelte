@@ -40,8 +40,8 @@
 		UserName: 'Test User',
 		ActionURL: 'https://japa.to/reset-password?token=abc123',
 		Expiry: '1 hour',
-		SupportURL: 'https://japa.to/support',
-		LogoURL: 'https://japa.to/logos/logo-dark.png',
+		SupportURL: 'https://japa.to/contact',
+		LogoURL: 'https://japa.to/logos/homepage-logo-dark.png',
 		Title: 'New reply to your thread',
 		Body: 'Someone replied to a thread you follow.',
 	};
@@ -49,6 +49,20 @@
 	function renderPreview(html: string): string {
 		if (!html) return '';
 		let body = html;
+		// Evaluate simple {{if .Var}}...{{else}}...{{end}} and {{if .Var}}...{{end}}
+		// guards against the sample values (non-empty = truthy; unknown vars count
+		// as truthy) so the preview matches Go template semantics — e.g. the logo
+		// OR the title renders, not both.
+		const truthy = (name: string) =>
+			name in templateSampleValues ? templateSampleValues[name] !== '' : true;
+		body = body.replace(
+			/\{\{\s*if\s+\.(\w+)\s*\}\}([\s\S]*?)\{\{\s*else\s*\}\}([\s\S]*?)\{\{\s*end\s*\}\}/g,
+			(_m, name: string, a: string, b: string) => (truthy(name) ? a : b)
+		);
+		body = body.replace(
+			/\{\{\s*if\s+\.(\w+)\s*\}\}([\s\S]*?)\{\{\s*end\s*\}\}/g,
+			(_m, name: string, inner: string) => (truthy(name) ? inner : '')
+		);
 		for (const [variable, value] of Object.entries(templateSampleValues)) {
 			const pattern = new RegExp(`{{\\s*\\.${variable}\\s*}}`, 'g');
 			body = body.replace(pattern, value);
