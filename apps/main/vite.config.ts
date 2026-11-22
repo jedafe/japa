@@ -13,7 +13,9 @@ type CspSource = NonNullable<
 
 // Dev-only backend target. In production the SSR server talks to the backend via
 // PRIVATE_API_BASE_URL ($lib/server/api); this proxy only serves browser fetches.
-const API_TARGET = 'http://localhost:8080';
+// JC_DEV_API_TARGET overrides the dev proxy target when :8080 is taken on the
+// host (e.g. a VPS already serving another service there).
+const API_TARGET = process.env.JC_DEV_API_TARGET ?? 'http://localhost:8080';
 
 // Branded-surface hosts (ADR-063 university, ADR-127 roadmap) must be listed in
 // server.allowedHosts or the dev server 403s them before hooks.server.ts can

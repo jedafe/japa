@@ -54,6 +54,11 @@ const connectOrigins = [
 
 const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL) as CspSource;
 
+// Dev-only backend target for the dev-server proxy. JC_DEV_API_TARGET
+// overrides it when :8080 is already bound on the host.
+const API_TARGET = process.env.JC_DEV_API_TARGET ?? 'http://localhost:8080';
+const WS_TARGET = API_TARGET.replace(/^http/, 'ws');
+
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
@@ -117,15 +122,15 @@ export default defineConfig({
 		},
 		proxy: {
 			'/api/': {
-				target: 'http://localhost:8080',
+				target: API_TARGET,
 				changeOrigin: true
 			},
 			'/ws': {
-				target: 'ws://localhost:8080',
+				target: WS_TARGET,
 				ws: true
 			},
 			'/control': {
-				target: 'http://localhost:8080',
+				target: API_TARGET,
 				changeOrigin: true
 			}
 		}

@@ -12,6 +12,11 @@
 # The Go API is built from the Dockerfile in the project root. Other
 # services use official images. Data is persisted in named volumes so
 # it survives container restarts.
+#
+# Hosts that already serve :80/:8080/:8000 (e.g. a shared VPS running
+# Coolify/Traefik) can remap via .env: JC_NGINX_HOST_PORT,
+# JC_API_HOST_PORT, JC_GLITCHTIP_HOST_PORT. Point the vite dev proxy at
+# the remapped API with JC_DEV_API_TARGET (see apps/*/vite.config.ts).
 
 services:
   # PostgreSQL 18 with pgvector extension for vector similarity search.
@@ -188,7 +193,7 @@ services:
       SECRET_KEY: ${JC_GLITCHTIP_SECRET_KEY:-dev-secret-key}
       PORT: "8000"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${JC_GLITCHTIP_HOST_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -247,7 +252,7 @@ services:
       JC_ENV: development
       JC_PORT: "8080"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${JC_API_HOST_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -277,7 +282,7 @@ services:
   nginx:
     image: nginx:1.29-alpine
     ports:
-      - "127.0.0.1:80:80"
+      - "127.0.0.1:${JC_NGINX_HOST_PORT:-80}:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:

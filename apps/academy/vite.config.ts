@@ -11,7 +11,7 @@ type CspSource = NonNullable<
 
 // Dev-only backend target. In production the SSR server talks to the backend via
 // PRIVATE_API_BASE_URL ($lib/server/api); this proxy only serves browser fetches.
-const API_TARGET = 'http://localhost:8080';
+const API_TARGET = process.env.JC_DEV_API_TARGET ?? 'http://localhost:8080';
 
 /**
  * For client-side fetches to /api/v1 and /ws: turn the jc_token cookie into a
