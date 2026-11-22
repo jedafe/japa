@@ -27,11 +27,13 @@
 #
 # THE SHELL IS THE REAL HOST. ttyd runs privileged with the host PID
 # namespace; each browser session nsenter's into PID 1's namespaces, landing
-# in a login shell as root on the VPS itself — apt installs, docker, systemd
-# all operate on the host. Commands run under `tmux new -A -s main` executed
-# on the host, so the tmux server outlives the connection: closing the
-# browser or losing mobile signal detaches the client but never kills the
-# session — reconnecting resumes it.
+# in a login shell as `japa` on the VPS itself — the dev user that owns
+# /home/japa and carries docker group membership. Commands run under
+# `tmux new -A -s main` executed on the host, so the tmux server outlives
+# the connection: closing the browser or losing mobile signal detaches the
+# client but never kills the session — reconnecting resumes it. Root access
+# is one `sudo -i` away (japa carries a NOPASSWD sudoers entry at
+# /etc/sudoers.d/japa, provisioned alongside the user).
 #
 # AUTH LAYER: HTTP basic auth (TTYD_USER/TTYD_PASS) — the only credential
 # between an allow-listed visitor and a root shell. Keep the gate off when
@@ -116,7 +118,7 @@ services:
           --credential "$${TTYD_USER}:$${TTYD_PASS}" \
           --writable \
           -t titleFixed='japa-vps' \
-          nsenter -t 1 -m -u -i -n -p su - root -c 'exec tmux new -A -s main'
+          nsenter -t 1 -m -u -i -n -p su - japa -c 'exec tmux new -A -s main'
     networks:
       - shell
 
