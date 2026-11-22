@@ -11,6 +11,7 @@ set -e
 # Examples:
 #   ./japa dev
 #   ./japa dev main
+#   ./japa dev --host      Bind 0.0.0.0 (required for the dev.japa.to route)
 #   ./japa help
 
 # ─── Resolve project root from this script's location ─────────────────────────
@@ -70,7 +71,10 @@ show_help() {
   echo "  ${GREEN}control${NC} → :3002"
   echo "  ${YELLOW}academy${NC} → :3003"
   echo "  ${MAGENTA}docs${NC}    → :3004"
-  echo "  ${CYAN}tools${NC}   → :3005"
+  echo ""
+  echo "${BOLD}Options:${NC}"
+  echo "  --host   Bind dev servers to 0.0.0.0 — needed on the VPS for the"
+  echo "           dev.japa.to gate (deploy/dev) to reach them via docker0"
   echo ""
   echo "${BOLD}Examples:${NC}"
   echo "  ./japa dev           Start all apps"
@@ -79,7 +83,7 @@ show_help() {
   echo "  ./japa dev control   Start only the control app"
   echo "  ./japa dev academy   Start only the academy app"
   echo "  ./japa dev docs      Start only the docs app"
-  echo "  ./japa dev tools     Start only the tools app"
+  echo "  ./japa dev --host    Start all apps bound to 0.0.0.0 (VPS gate)"
   echo ""
 }
 
@@ -89,10 +93,11 @@ run_app() {
   local color=$2
   local dir=$3
   local port=$4
+  local bind=$5
 
   (
     cd "$ROOT/$dir"
-    bun run dev 2>&1 | while IFS= read -r line; do
+    bun run dev $bind 2>&1 | while IFS= read -r line; do
       printf "${color}[${name}]${NC} %s\n" "$line"
     done
   ) &
@@ -101,8 +106,15 @@ run_app() {
 
 # ─── Start all frontend apps in parallel ─────────────────────────────────────
 cmd_dev() {
-  local filter="${1:-}"
-  
+  local filter=""
+  local bind=""
+  for arg in "$@"; do
+    case "$arg" in
+      --host|-H) bind="--host" ;;
+      *) filter="$arg" ;;
+    esac
+  done
+
   # Define all apps as name:color:dir:port
   local -a apps=(
     "main:${BLUE}:apps/main:3000"
@@ -110,7 +122,6 @@ cmd_dev() {
     "control:${GREEN}:apps/control:3002"
     "academy:${YELLOW}:apps/academy:3003"
     "docs:${MAGENTA}:apps/docs:3004"
-    "tools:${CYAN}:apps/tools:3005"
   )
   
   # Filter to a single app if specified
@@ -127,7 +138,7 @@ cmd_dev() {
       echo ""
       echo "${RED}Error: Unknown app '$filter'${NC}"
       echo ""
-      echo "Valid apps: main, admin, control, academy, docs, tools"
+      echo "Valid apps: main, admin, control, academy, docs"
       echo ""
       exit 1
     fi
@@ -146,7 +157,7 @@ cmd_dev() {
         echo "${color}║  ${name}    → :${port}                             ║${NC}"
         echo "${BOLD}╚══════════════════════════════════════════════╝${NC}"
         echo ""
-        run_app "$name" "$color" "$dir" "$port"
+        run_app "$name" "$color" "$dir" "$port" "$bind"
       fi
     done
   else
@@ -160,7 +171,6 @@ cmd_dev() {
     echo "${GREEN}║  control → :3002                             ║${NC}"
     echo "${YELLOW}║  academy → :3003                             ║${NC}"
     echo "${MAGENTA}║  docs    → :3004                             ║${NC}"
-    echo "${CYAN}║  tools   → :3005                             ║${NC}"
     echo "${BOLD}╚══════════════════════════════════════════════╝${NC}"
     echo ""
     echo "${DIM}Press Ctrl+C to stop all apps${NC}"
@@ -168,7 +178,7 @@ cmd_dev() {
     
     for app in "${apps[@]}"; do
       IFS=':' read -r name color dir port <<< "$app"
-      run_app "$name" "$color" "$dir" "$port"
+      run_app "$name" "$color" "$dir" "$port" "$bind"
     done
   fi
   
@@ -178,7 +188,7 @@ cmd_dev() {
 # ─── Main dispatch ────────────────────────────────────────────────────────────
 case "${1:-help}" in
   dev)
-    cmd_dev "${2:-}"
+    cmd_dev "${@:2}"
     ;;
   help|--help|-h)
     show_help
