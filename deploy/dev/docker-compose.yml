@@ -86,6 +86,9 @@ services:
         # One site block per dev app — all share the SAN cert
         # (dev.japa.to + *.dev.japa.to) installed by the acme sidecar.
         printf '%s\n' \
+          '{' \
+          '  auto_https off' \
+          '}' \
           'dev.japa.to:8443, main.dev.japa.to:8443 {' \
           '  tls /certs/dev.japa.to/fullchain.cer /certs/dev.japa.to/dev.japa.to.key' \
           '  reverse_proxy host.docker.internal:3000' \
