@@ -123,7 +123,8 @@ export default defineConfig({
 		proxy: {
 			'/api/': {
 				target: API_TARGET,
-				changeOrigin: true
+				changeOrigin: true,
+				ws: true
 			},
 			'/ws': {
 				target: WS_TARGET,
