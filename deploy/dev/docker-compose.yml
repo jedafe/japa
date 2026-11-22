@@ -1,0 +1,148 @@
+# deploy/dev/docker-compose.yml — browser access to the VPS dev environment
+# (vite dev server on the host) behind the §123 gate model.
+#
+# Deployed as an independent Coolify "Docker Compose" service — carries no
+# JapaConnect code and is fully self-contained, so it works from a
+# `docker_compose_raw` resource.
+#
+# This is a STANDING ROUTE, not a start/stop admin tool: the caddy+acme
+# pair is meant to stay up. The real gate is the dev process itself —
+# dev.japa.to only serves while `vite dev` runs on the host; when nothing
+# listens on :3000 the proxy 502s. Toggling the gate in
+# /dashboard/access-gates starts/stops the route wholesale.
+#
+# GATING — identical to the SFTPGo/ttyd gates:
+#
+#   dev.japa.to is DNS-ONLY (gray cloud — NOT Cloudflare-proxied), so
+#   browser traffic hits the host directly on :443, where the CFLOCK4 origin
+#   lockdown drops every non-Cloudflare source. The EXTRA4/EXTRA6 exception
+#   chains (gate-admin.japa.to DDNS + static CIDRs, refreshed every 2 min by
+#   cf-admin-allow.timer) admit only allow-listed operator IPs — the same
+#   allow-list, no new firewall work.
+#
+#   Layer 2 is route existence: registered as a §123 access-gate target
+#   (kind "service"), so Coolify start/stop makes the Traefik route
+#   appear/disappear.
+#
+# Traefik TLS-passthrough: HostSNI(`dev.japa.to`) on :443 forwards raw TCP
+# to caddy:8443, which terminates TLS with a Let's Encrypt cert issued by
+# the `acme` sidecar via DNS-01 + the Cloudflare API — required because
+# CFLOCK4 blocks inbound HTTP-01/TLS-ALPN-01 validation for non-proxied
+# hostnames.
+#
+# UPSTREAM: the vite dev server runs on the HOST (tmux, `su - japa`), not
+# in this compose. caddy reaches it via host.docker.internal → docker0
+# gateway. Two requirements on the host side:
+#
+#   1. vite must bind beyond loopback: `bunx vite dev --port 3000 --host`
+#   2. dev.japa.to must be in server.allowedHosts — handled by the
+#      devAllowedHosts list in apps/main/vite.config.ts
+#
+# Websocket/HMR traffic proxies through caddy natively (same upgrade
+# handling that serves the ttyd terminal).
+#
+# Coolify env to set before first start:
+#   CF_API_KEY + CF_EMAIL — Cloudflare Global API Key pair (the .env pair
+#                      already used for zone automation), OR
+#   CF_DNS_API_TOKEN   — a scoped token with Zone.DNS:Edit on japa.to
+#   CF_ACCOUNT_ID      — optional; lets dns_cf pick the token/zone pair
+#   ACME_EMAIL         — optional; Let's Encrypt account contact
+#
+# JC_ACCESS_GATES entry to register (uuid = this Coolify service):
+#   {"key":"dev_env","label":"Dev Environment","kind":"service",
+#    "uuid":"…","domain":"dev.japa.to","probe_url":"https://dev.japa.to/"}
+#
+# Cert renewal: acme.sh renews ~60 days in and the install-cert reloadcmd
+# keeps key perms readable. Caddy loads cert files per handshake — renewal
+# picks up new certs automatically.
+
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    depends_on:
+      - acme
+    expose:
+      - "8443"
+    # The upstream is the host's vite dev server (:3000) — host-gateway
+    # resolves to the docker0 bridge IP, so vite must run with --host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '%s\n' \
+          ':8443 {' \
+          '  tls /certs/dev.japa.to/fullchain.cer /certs/dev.japa.to/dev.japa.to.key' \
+          '  reverse_proxy host.docker.internal:3000' \
+          '}' > /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - dev-certs:/certs:ro
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.dev-gate.rule=HostSNI(`dev.japa.to`)
+      - traefik.tcp.routers.dev-gate.entrypoints=https
+      - traefik.tcp.routers.dev-gate.tls.passthrough=true
+      - traefik.tcp.services.dev-gate.loadbalancer.server.port=8443
+    networks:
+      - coolify
+
+  acme:
+    image: neilpang/acme.sh:3.1.7
+    restart: unless-stopped
+    # Self-contained bootstrap: issue (or reuse) the cert via DNS-01, install
+    # it into the shared cert dir with caddy-readable perms, then hand off to
+    # the image's `daemon` entrypoint for cron renewal. DNS-01 is required —
+    # CFLOCK4 drops inbound HTTP-01/TLS-ALPN-01 validation for DNS-only
+    # hostnames; api.cloudflare.com is outbound only.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        DOMAIN="$${DEV_DOMAIN:?DEV_DOMAIN env required}"
+        CERT_DIR="/certs/$$DOMAIN"
+        mkdir -p "$$CERT_DIR"
+        if [ -n "$${ACME_EMAIL:-}" ]; then
+          acme.sh --register-account -m "$$ACME_EMAIL" --server letsencrypt || true
+        fi
+        # Exit 2 = "domains not changed — skip"; other failures are left
+        # for the renewal cron to retry.
+        acme.sh --issue --dns dns_cf -d "$$DOMAIN" --keylength 4096 --server letsencrypt || \
+          echo "acme.sh --issue for $$DOMAIN non-fatal (skip or retry via cron)"
+        # acme.sh keys land 0600; reloadcmd chmod runs now and is recorded
+        # in the domain conf, so renewal installs stay readable.
+        acme.sh --install-cert -d "$$DOMAIN" \
+          --key-file "$$CERT_DIR/$$DOMAIN.key" \
+          --fullchain-file "$$CERT_DIR/fullchain.cer" \
+          --ca-file "$$CERT_DIR/ca.cer" \
+          --reloadcmd "chmod 0644 '$$CERT_DIR/$$DOMAIN.key' '$$CERT_DIR/fullchain.cer' '$$CERT_DIR/ca.cer'" || \
+          echo "acme.sh --install-cert non-fatal"
+        exec /entry.sh daemon
+    environment:
+      DEV_DOMAIN: dev.japa.to
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # acme.sh dns_cf credentials — whichever pair is set wins.
+      CF_Token: ${CF_DNS_API_TOKEN:-}
+      CF_Key: ${CF_API_KEY:-}
+      CF_Email: ${CF_EMAIL:-}
+      CF_Account_ID: ${CF_ACCOUNT_ID:-}
+      AUTO_UPGRADE: "0" # pinned tag — renewal must not pull a newer acme.sh
+    volumes:
+      - dev-acme:/acme.sh   # LE account + domain confs (private to acme)
+      - dev-certs:/certs    # install target — shared with caddy
+    networks:
+      - coolify
+
+volumes:
+  dev-certs:
+  dev-acme:
+
+networks:
+  # Shared network every container on the Coolify host joins — Traefik
+  # reaches the caddy terminator through it.
+  coolify:
+    external: true
+    name: coolify
