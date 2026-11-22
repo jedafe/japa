@@ -2,7 +2,7 @@
   "mcpServers": {
     "japaconnect": {
       "type": "http",
-      "url": "http://localhost:8080/api/v1/mcp",
+      "url": "https://japa.to/api/v1/mcp",
       "headers": {
         "X-API-Key": "${JC_MCP_API_KEY}"
       }
