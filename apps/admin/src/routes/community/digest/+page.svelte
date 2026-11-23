@@ -2,6 +2,7 @@
 	// /community/digest — admin HITL review queue for community digests (§84).
 	// Lists digest editions with server-side pagination, filter, and sort.
 	// Admin can publish drafts/reviews and trigger manual generation.
+	import { page } from '$app/state';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
 	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -40,7 +41,7 @@
 	// was too narrow (audit BUG-015). GET /admin/spaces supports server-
 	// side ?q search; the label cache backs getSelectedLabel for ids chosen
 	// before their row was fetched (e.g. URL-restored filters).
-	const spaceLabelCache = new Map<string, string>();
+	const spaceLabelById = $state<Record<string, string>>({});
 	async function spaceDestFetcher(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
 		const params = new URLSearchParams({ page_size: '20' });
 		if (q.trim()) params.set('q', q.trim());
@@ -48,7 +49,7 @@
 			const res = await spacesAdminApi.list(params.toString());
 			const data = res.ok ? (res.data as { items?: { id: string; name: string; level?: string }[] }) : null;
 			return (data?.items ?? []).map((s) => {
-				spaceLabelCache.set(s.id, s.name);
+				spaceLabelById[s.id] = s.name;
 				return { id: s.id, label: s.name, sublabel: s.level };
 			});
 		} catch {
@@ -56,7 +57,22 @@
 		}
 	}
 	const spaceDestInitialFetcher = () => spaceDestFetcher('');
-	const spaceDestGetLabel = (id: string) => spaceLabelCache.get(id) ?? id;
+	const spaceDestGetLabel = (id: string) => spaceLabelById[id] ?? id;
+
+	// URL-restored filter: resolve the dest UUID to a name once so the
+	// filter chip shows the space name instead of the raw id.
+	$effect(() => {
+		const dest = page.url.searchParams.get('dest');
+		if (dest && !spaceLabelById[dest]) {
+			void spacesAdminApi
+				.get(dest)
+				.then((res) => {
+					const space = res.ok ? (res.data as { name?: string } | null) : null;
+					if (space?.name) spaceLabelById[dest] = space.name;
+				})
+				.catch(() => {});
+		}
+	});
 
 	// ── State ────────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);

@@ -24,6 +24,8 @@ WHERE m.slug = 'main_sidebar'
   AND NOT EXISTS (
       SELECT 1 FROM menu_items mi
       WHERE mi.menu_id = m.id AND mi.url = '/digest'
-  );
+  )
+ORDER BY m.created_at
+LIMIT 1;
 
 COMMIT;

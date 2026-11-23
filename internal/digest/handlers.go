@@ -250,7 +250,8 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": edition})
 }
 
-// HandleAdminUpdate handles PATCH /admin/digest/:id — edit draft content.
+// HandleAdminUpdate handles PATCH /admin/digest/:id — edit content, cadence,
+// or scheduled_for on a draft/review edition (§84 lifecycle).
 func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return

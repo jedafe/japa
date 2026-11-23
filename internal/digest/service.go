@@ -466,6 +466,20 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
 func (s *Service) AdminGenerate(ctx context.Context, adminID, spaceID pgtype.UUID) (string, error) {
+	// Reject a bogus space_id up front — otherwise the task enqueues
+	// successfully and fails later at the digest_editions FK insert with
+	// no admin-visible feedback (audit BUG-013). Runs before the cooldown
+	// check so a 404 never burns the admin's rate-limit window.
+	if spaceID.Valid && spaceID != (pgtype.UUID{}) {
+		exists, err := s.store.SpaceExists(ctx, spaceID)
+		if err != nil {
+			return "", fmt.Errorf("digest: admin generate: check space: %w", err)
+		}
+		if !exists {
+			return "", ErrSpaceNotFound
+		}
+	}
+
 	// Per-admin cooldown (audit BUG-013): a manual generate fans out to a
 	// platform-wide edition plus every space and enqueues mail work, so
 	// repeated triggers are rate-limited with a SET NX lock (Rule 9
@@ -474,28 +488,16 @@ func (s *Service) AdminGenerate(ctx context.Context, adminID, spaceID pgtype.UUI
 	// Fail-open on Valkey errors — the caller is an authenticated
 	// digest.manage admin, and the lock guards against accidental repeats
 	// rather than hostile abuse.
+	var cooldownKey string
 	if s.vk != nil && adminID.Valid {
 		if cooldown := s.settings.GetIntOr(ctx, "digest.admin_generate_cooldown_seconds", 300); cooldown > 0 {
-			lockKey := "jc:digest_admin_gen_lock:" + adminID.String()
-			ok, err := s.vk.SetNX(ctx, lockKey, "1", time.Duration(cooldown)*time.Second).Result()
+			cooldownKey = "jc:digest_admin_gen_lock:" + adminID.String()
+			ok, err := s.vk.SetNX(ctx, cooldownKey, "1", time.Duration(cooldown)*time.Second).Result()
 			if err != nil {
 				slog.Warn("digest: admin generate cooldown check failed — allowing", "error", err)
 			} else if !ok {
 				return "", ErrGenerateCooldown
 			}
-		}
-	}
-
-	// Reject a bogus space_id up front — otherwise the task enqueues
-	// successfully and fails later at the digest_editions FK insert with
-	// no admin-visible feedback (audit BUG-013).
-	if spaceID.Valid && spaceID != (pgtype.UUID{}) {
-		exists, err := s.store.SpaceExists(ctx, spaceID)
-		if err != nil {
-			return "", fmt.Errorf("digest: admin generate: check space: %w", err)
-		}
-		if !exists {
-			return "", ErrSpaceNotFound
 		}
 	}
 
@@ -512,6 +514,11 @@ func (s *Service) AdminGenerate(ctx context.Context, adminID, spaceID pgtype.UUI
 
 	payload, _ := json.Marshal(payloadMap)
 	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
+		if cooldownKey != "" {
+			// Release the lock so the admin can retry a failed enqueue —
+			// the cooldown guards completed triggers, not retries.
+			_ = s.vk.Del(ctx, cooldownKey).Err()
+		}
 		return "", fmt.Errorf("digest: enqueue generate: %w", err)
 	}
 

@@ -34,10 +34,9 @@
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Load the full space list once on mount (filtered by level if given).
-	// The admin spaces endpoint does not support server-side search, so we
-	// fetch a generous page and filter client-side — this is the same
-	// approach the previous inline search used, just debounced and inside
-	// the field.
+	// /admin/spaces supports server-side ?q, but this picker pre-fetches a
+	// bounded page and filters client-side so single-keystroke searches
+	// stay local — the same approach the previous inline search used.
 	// Note: the backend reads `page_size` (not `limit`) for pagination.
 	$effect(() => {
 		(async () => {
@@ -61,8 +60,8 @@
 
 	// Debounced filter — derived from the query string against the cached
 	// space list. Excludes already-selected spaces from the results.
-	// The admin spaces endpoint does not support server-side level
-	// filtering, so level filtering (if needed) is done client-side.
+	// /admin/spaces has no `level` param, so level filtering stays
+	// client-side (the param sent above is ignored by the backend).
 	let filtered = $derived.by(() => {
 		if (!allSpaces.length) return [];
 		const q = query.trim().toLowerCase();
