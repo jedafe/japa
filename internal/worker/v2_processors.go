@@ -1407,7 +1407,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 			recentDays = appSettings.GetIntOr(ctx, "digest.recent_window_days", recentDays)
 		}
 		rows, err := dbPool.Reader.Query(ctx, `
-SELECT DISTINCT space_id FROM (
+SELECT DISTINCT active_spaces.space_id FROM (
 	SELECT space_id FROM contents
 	 WHERE space_id IS NOT NULL AND status = 'published' AND deleted_at IS NULL
 	   AND created_at >= now() - make_interval(days => $1)
@@ -1416,6 +1416,7 @@ SELECT DISTINCT space_id FROM (
 	 WHERE space_id IS NOT NULL AND deleted_at IS NULL
 	   AND created_at >= now() - make_interval(days => $1)
 ) active_spaces
+JOIN spaces sp ON sp.id = active_spaces.space_id AND sp.deleted_at IS NULL
 LIMIT 100`, recentDays)
 		if err != nil {
 			slog.Warn("task:digest:generate: active space scan failed", "error", err)

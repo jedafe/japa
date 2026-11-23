@@ -733,7 +733,9 @@ func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID, 
 		threadsQ.WriteString(`
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
 FROM forum_threads ft
+LEFT JOIN spaces ft_sp ON ft_sp.id = ft.space_id
 WHERE ft.deleted_at IS NULL
+  AND (ft.space_id IS NULL OR ft_sp.deleted_at IS NULL)
   AND ft.created_at >= now() - $1::interval
 `)
 		tArgs = append(tArgs, recent)
@@ -786,10 +788,12 @@ FROM users u
 JOIN onboarding_state os ON os.user_id = u.id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+LEFT JOIN spaces u_sp ON u_sp.id = u.current_geo_space_id
 WHERE u.created_at >= now() - $1::interval
   AND os.completed = true
   AND u.status = 'active'
   AND COALESCE(ups.profile_visibility, 'public') = 'public'
+  AND (u.current_geo_space_id IS NULL OR u_sp.deleted_at IS NULL)
 `))
 	mArgs = append(mArgs, recent)
 
@@ -833,10 +837,12 @@ WHERE u.created_at >= now() - $1::interval
 		eventsQ.WriteString(`
 SELECT c.title, c.slug, c.publish_at
 FROM contents c
+LEFT JOIN spaces c_sp ON c_sp.id = c.space_id
 WHERE c.content_type = 'event'
   AND c.status = 'published'
   AND c.publish_at IS NOT NULL
   AND c.publish_at >= now()
+  AND (c.space_id IS NULL OR c_sp.deleted_at IS NULL)
 `)
 
 		argIdx := 1
@@ -890,8 +896,10 @@ WHERE c.content_type = 'event'
 		storyQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
+LEFT JOIN spaces c_sp ON c_sp.id = c.space_id
 WHERE c.content_type = 'story'
   AND c.status = 'published'
+  AND (c.space_id IS NULL OR c_sp.deleted_at IS NULL)
   AND c.created_at >= now() - $1::interval
 `)
 		sArgs = append(sArgs, fmt.Sprintf("%d days", cfg.StoryWindowDays))
@@ -931,7 +939,9 @@ SELECT p.question, ft.slug
 FROM forum_polls p
 JOIN forum_threads ft ON ft.id = p.thread_id
 LEFT JOIN forum_poll_votes v ON v.poll_id = p.id
+LEFT JOIN spaces ft_sp ON ft_sp.id = ft.space_id
 WHERE ft.deleted_at IS NULL
+  AND (ft.space_id IS NULL OR ft_sp.deleted_at IS NULL)
   AND (p.close_at IS NULL OR p.close_at > now())
   AND p.created_at >= now() - $1::interval
 `)

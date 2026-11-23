@@ -190,7 +190,9 @@ func (s *Service) resolveContent(ctx context.Context, raw json.RawMessage) json.
 // CURRENT flag state (§42): an edition generated before a flag flip must not
 // keep serving gated content until the next generation. Sections map to
 // content types via rssmodel.ContentTypeFeatureFlag (top_threads →
-// forum_thread, events → event, story → story); members and polls are
+// forum_thread, events → event, story → story); the poll rides the same
+// forum_thread gate (polls live on forum threads — generation already
+// skips it under the gate, so a stored edition must too); members are
 // entity data and pass through. Unattached contexts evaluate globally.
 // Key-level filtering preserves unknown/future section keys verbatim —
 // unmapped fields must not be dropped when one section is stripped.
@@ -204,6 +206,7 @@ func (s *Service) filterGatedContent(ctx context.Context, raw json.RawMessage) j
 	for _, k := range [][2]string{
 		{"top_threads", "forum_thread"},
 		{"upcoming_threads", "forum_thread"},
+		{"poll", "forum_thread"},
 		{"events", "event"},
 		{"upcoming_events", "event"},
 		{"story", "story"},
