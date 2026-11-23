@@ -92,16 +92,68 @@ type UpdateEditionInput struct {
 	EmailSentAt  *pgtype.Timestamptz `json:"email_sent_at,omitempty"`
 	GeneratedBy  *string             `json:"generated_by,omitempty"`
 	ReviewedBy   *pgtype.UUID        `json:"reviewed_by,omitempty"`
+
+	// ExpectedStatuses, when non-empty, appends AND status = ANY($n) to the
+	// UPDATE so lifecycle preconditions are enforced atomically in the same
+	// statement — a Go-side status pre-check would race a concurrent
+	// publish (cancel/delay/PATCH clobbering a just-published edition).
+	// A mismatched row yields pgx.ErrNoRows, identical to PublishEdition's
+	// guarded UPDATE.
+	ExpectedStatuses []string `json:"-"`
 }
 
-// CreateEdition inserts a new digest edition and returns its id.
+// CreateEdition records a freshly generated edition, idempotent per
+// (space_id, cadence, period): a pending draft/review row for the same
+// scope is refreshed in place (new content snapshot + new review window);
+// a period that already shipped a published edition yields pgx.ErrNoRows
+// so the generator can skip instead of double-mailing subscribers.
+// A cancelled row neither blocks nor is touched — cancelled is terminal,
+// so a manual re-generate after cancel produces a fresh edition.
+// Period boundaries follow the cadence: ISO week for weekly, calendar
+// month for monthly. space_id IS NOT DISTINCT FROM keeps the platform
+// (NULL) scope comparable.
 func (s *Store) CreateEdition(ctx context.Context, edition DigestEdition) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(ctx, `
-INSERT INTO digest_editions (space_id, cadence, status, scheduled_for,
-    content, generated_by) VALUES ($1, $2, COALESCE($3, 'draft'), $4, $5, $6)
-RETURNING id
+WITH period AS (
+	SELECT date_trunc(CASE WHEN $2 = 'monthly' THEN 'month' ELSE 'week' END, now()) AS ts
+),
+pending AS (
+	SELECT d.id FROM digest_editions d
+	WHERE d.space_id IS NOT DISTINCT FROM $1 AND d.cadence = $2
+	  AND d.status IN ('draft', 'review')
+	ORDER BY d.created_at DESC LIMIT 1
+),
+shipped AS (
+	SELECT 1 FROM digest_editions d, period p
+	WHERE d.space_id IS NOT DISTINCT FROM $1 AND d.cadence = $2
+	  AND d.status = 'published' AND d.created_at >= p.ts LIMIT 1
+),
+upd AS (
+	UPDATE digest_editions d
+	SET content = $5, scheduled_for = $4, generated_by = $6
+	WHERE d.id = (SELECT id FROM pending) AND d.status IN ('draft', 'review')
+	RETURNING d.id
+),
+superseded AS (
+	-- Collapse any other pending rows for the same scope (legacy dupes
+	-- predating this dedupe): without this they would still auto-publish
+	-- alongside the refreshed edition.
+	UPDATE digest_editions d
+	SET status = 'cancelled'
+	WHERE d.space_id IS NOT DISTINCT FROM $1 AND d.cadence = $2
+	  AND d.status IN ('draft', 'review')
+	  AND d.id <> (SELECT id FROM pending)
+	RETURNING d.id
+),
+ins AS (
+	INSERT INTO digest_editions (space_id, cadence, status, scheduled_for, content, generated_by)
+	SELECT $1, $2, COALESCE($3, 'draft'), $4, $5, $6
+	WHERE NOT EXISTS (SELECT 1 FROM upd) AND NOT EXISTS (SELECT 1 FROM shipped)
+	RETURNING id
+)
+SELECT id FROM upd UNION ALL SELECT id FROM ins LIMIT 1
 `, edition.SpaceID, edition.Cadence, edition.Status, edition.ScheduledFor, edition.Content, edition.GeneratedBy).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("digest: create edition: %w", err)
@@ -410,13 +462,21 @@ func (s *Store) UpdateEdition(ctx context.Context, id pgtype.UUID, in UpdateEdit
 	}
 
 	args = append(args, id)
+	where := fmt.Sprintf("id = $%d", argIdx)
+	argIdx++
+
+	if len(in.ExpectedStatuses) > 0 {
+		where += fmt.Sprintf(" AND status = ANY($%d)", argIdx)
+		args = append(args, in.ExpectedStatuses)
+	}
+
 	q := fmt.Sprintf(`
 UPDATE digest_editions
 SET %s
-WHERE id = $%d
+WHERE %s
 RETURNING id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
-`, strings.Join(sets, ", "), argIdx)
+`, strings.Join(sets, ", "), where)
 
 	var r EditionRow
 

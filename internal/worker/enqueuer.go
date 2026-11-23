@@ -75,6 +75,7 @@ var idempotentTasks = map[string]bool{
 	TypePushDelivery:                    true,
 	TypeScheduledPublish:                true,
 	TypeNewsletterSend:                  true,
+	TypeDigestSendEmail:                 true, // §84 — same one-shot email fan-out shape as newsletter:send; payload is {edition_id} so Unique collapses re-enqueues
 	TypeAffiliateCreditCommission:       true,
 	TypeAffiliateCreditAuthorCommission: true, // TASK-005: defense-in-depth for author commission
 	TypeWalletProcessActivityEvent:      true,
@@ -108,7 +109,7 @@ func taskDefaults(taskType string) []asynq.Option {
 		ttl := 1 * time.Hour
 
 		switch taskType {
-		case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission, TypeAffiliateCreditAuthorCommission:
+		case TypeScheduledPublish, TypeNewsletterSend, TypeDigestSendEmail, TypeAffiliateCreditCommission, TypeAffiliateCreditAuthorCommission:
 			ttl = 24 * time.Hour
 		}
 

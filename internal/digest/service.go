@@ -384,26 +384,19 @@ func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, in AdminUpdat
 		return ErrInvalidSchedule
 	}
 
-	e, err := s.store.GetEdition(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return pgx.ErrNoRows
-		}
-
-		return fmt.Errorf("digest: admin update: %w", err)
+	// Draft/review-only precondition enforced atomically in the UPDATE —
+	// a Go-side status pre-check would race a concurrent publish.
+	ui := UpdateEditionInput{
+		Content:          in.Content,
+		Cadence:          in.Cadence,
+		ExpectedStatuses: []string{"draft", "review"},
 	}
-
-	if e.Status != "draft" && e.Status != "review" {
-		return pgx.ErrNoRows
-	}
-
-	ui := UpdateEditionInput{Content: in.Content, Cadence: in.Cadence}
 	if in.ScheduledFor != nil {
 		ts := pgtype.Timestamptz{Time: *in.ScheduledFor, Valid: true}
 		ui.ScheduledFor = &ts
 	}
 
-	if _, err = s.store.UpdateEdition(ctx, id, ui); err != nil {
+	if _, err := s.store.UpdateEdition(ctx, id, ui); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -533,17 +526,14 @@ func (s *Service) AdminGenerate(ctx context.Context, adminID, spaceID pgtype.UUI
 // cancelled — they are already live. The draft lock is released so a fresh
 // generation is not blocked by the abandoned edition.
 func (s *Service) AdminCancel(ctx context.Context, id pgtype.UUID) error {
-	e, err := s.store.GetEdition(ctx, id)
-	if err != nil {
-		return err // pgx.ErrNoRows propagates for the handler's 404 mapping
-	}
-
-	if e.Status != "draft" && e.Status != "review" {
-		return pgx.ErrNoRows
-	}
-
 	cancelled := "cancelled"
-	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{Status: &cancelled}); err != nil {
+	// Atomic draft/review precondition — a concurrent publish wins, the
+	// UPDATE matches no rows, and the caller sees 404 (same as the prior
+	// read-then-check shape, minus the TOCTOU).
+	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{
+		Status:           &cancelled,
+		ExpectedStatuses: []string{"draft", "review"},
+	}); err != nil {
 		return fmt.Errorf("digest: admin cancel: %w", err)
 	}
 
@@ -558,17 +548,12 @@ func (s *Service) AdminDelay(ctx context.Context, id pgtype.UUID, until time.Tim
 		return ErrInvalidSchedule
 	}
 
-	e, err := s.store.GetEdition(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	if e.Status != "draft" && e.Status != "review" {
-		return pgx.ErrNoRows
-	}
-
 	ts := pgtype.Timestamptz{Time: until, Valid: true}
-	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{ScheduledFor: &ts}); err != nil {
+	// Atomic draft/review precondition (mirrors AdminCancel).
+	if _, err := s.store.UpdateEdition(ctx, id, UpdateEditionInput{
+		ScheduledFor:     &ts,
+		ExpectedStatuses: []string{"draft", "review"},
+	}); err != nil {
 		return fmt.Errorf("digest: admin delay: %w", err)
 	}
 
@@ -582,9 +567,11 @@ func (s *Service) AdminDelay(ctx context.Context, id pgtype.UUID, until time.Tim
 // it iterates all active platforms. When spaceID is valid, the edition is
 // scoped to that Space; otherwise it is platform-wide.
 // // This method satisfies the worker.DigestProcessor interface. It is
-// idempotent per ( space_id, cadence, week) — a duplicate
-// generate within the same week overwrites the existing draft rather than
-// creating a second one (the admin review window handles the rest).
+// idempotent per (space_id, cadence, period) — enforced atomically in
+// CreateEdition: a duplicate generate within the same period refreshes the
+// pending draft/review edition rather than creating a second one, and a
+// period that already shipped is skipped outright (a second published
+// edition would re-mail the whole subscriber list).
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) GenerateEdition(ctx context.Context, spaceID pgtype.UUID) error {
 	return s.generateForPlatform(ctx, spaceID)
@@ -649,6 +636,14 @@ func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) 
 		GeneratedBy:  "system",
 	})
 	if err != nil {
+		// ErrNoRows = the period already shipped a published edition — a
+		// duplicate generate must not create a second one (subscribers
+		// would be re-mailed). Skip cleanly.
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:digest:generate: period already shipped, skipping", "space_id", spaceID.Valid)
+			return nil
+		}
+
 		return fmt.Errorf("digest: generate: create edition: %w", err)
 	}
 
@@ -743,9 +738,26 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 		return nil
 	}
 
+	// cancelled is terminal — an admin scrapped the edition after the task
+	// was enqueued; retrying can never succeed, so skip instead of burning
+	// the retry budget (draft/review still error → edition may publish
+	// before retries exhaust).
+	if edition.Status == "cancelled" {
+		slog.Info("task:digest:send_email: edition cancelled, skipping", "edition_id", editionID)
+		return nil
+	}
+
 	if edition.Status != "published" {
 		return fmt.Errorf("digest: send_email: edition %s is not published (status=%s)",
 			editionID, edition.Status)
+	}
+
+	// Idempotent re-entry: a retry after a successful-but-unacked run (or a
+	// duplicate enqueue that survived the Unique key) must not re-mail every
+	// subscriber — email_sent is the delivery marker for the whole edition.
+	if edition.EmailSent {
+		slog.Info("task:digest:send_email: edition already mailed, skipping", "edition_id", editionID)
+		return nil
 	}
 
 	baseURL := s.resolveBaseURL(ctx)
