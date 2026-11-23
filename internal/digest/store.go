@@ -130,21 +130,27 @@ shipped AS (
 	WHERE d.space_id IS NOT DISTINCT FROM $1 AND d.cadence = $2
 	  AND d.status = 'published' AND d.created_at >= p.ts LIMIT 1
 ),
+keep AS (
+	-- The pending row survives only when the period has not shipped —
+	-- otherwise every pending row is superseded below.
+	SELECT id FROM pending WHERE NOT EXISTS (SELECT 1 FROM shipped)
+),
 upd AS (
 	UPDATE digest_editions d
 	SET content = $5, scheduled_for = $4, generated_by = $6
-	WHERE d.id = (SELECT id FROM pending) AND d.status IN ('draft', 'review')
+	WHERE d.id = (SELECT id FROM keep) AND d.status IN ('draft', 'review')
 	RETURNING d.id
 ),
 superseded AS (
 	-- Collapse any other pending rows for the same scope (legacy dupes
-	-- predating this dedupe): without this they would still auto-publish
-	-- alongside the refreshed edition.
+	-- predating this dedupe — and all pendings when the period shipped):
+	-- without this they would still auto-publish alongside or after the
+	-- shipped edition. IS DISTINCT FROM keeps the NULL-keep case working.
 	UPDATE digest_editions d
 	SET status = 'cancelled'
 	WHERE d.space_id IS NOT DISTINCT FROM $1 AND d.cadence = $2
 	  AND d.status IN ('draft', 'review')
-	  AND d.id <> (SELECT id FROM pending)
+	  AND d.id IS DISTINCT FROM (SELECT id FROM keep)
 	RETURNING d.id
 ),
 ins AS (
