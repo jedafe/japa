@@ -116,8 +116,9 @@ services:
             cd /tmp && \
             curl -sSfLO https://github.com/zellij-org/zellij/releases/download/v0.46.0/zellij-x86_64-unknown-linux-musl.tar.gz && \
             curl -sSfLO https://github.com/zellij-org/zellij/releases/download/v0.46.0/zellij-x86_64-unknown-linux-musl.sha256sum && \
-            sha256sum -c zellij-x86_64-unknown-linux-musl.sha256sum && \
             tar -xzf zellij-x86_64-unknown-linux-musl.tar.gz -C /usr/local/bin && \
+            read H F < zellij-x86_64-unknown-linux-musl.sha256sum && \
+            echo "$H  /usr/local/bin/zellij" | sha256sum -c - && \
             rm -f zellij-x86_64-unknown-linux-musl.*; }' || true
         exec ttyd \
           --port 7681 \
