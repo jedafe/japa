@@ -109,16 +109,22 @@ services:
         set -e
         # util-linux provides nsenter (not in the ttyd image).
         apk add --no-cache util-linux >/dev/null
-        # One-time host prep: tmux must exist on the VPS — the session
+        # One-time host prep: zellij must exist on the VPS — the session
         # lives server-side so disconnects never kill running work.
         nsenter -t 1 -m -u -i -n -p sh -c \
-          'command -v tmux >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq tmux; }' || true
+          'command -v zellij >/dev/null 2>&1 || { \
+            cd /tmp && \
+            curl -sSfLO https://github.com/zellij-org/zellij/releases/download/v0.46.0/zellij-x86_64-unknown-linux-musl.tar.gz && \
+            curl -sSfLO https://github.com/zellij-org/zellij/releases/download/v0.46.0/zellij-x86_64-unknown-linux-musl.sha256sum && \
+            sha256sum -c zellij-x86_64-unknown-linux-musl.sha256sum && \
+            tar -xzf zellij-x86_64-unknown-linux-musl.tar.gz -C /usr/local/bin && \
+            rm -f zellij-x86_64-unknown-linux-musl.*; }' || true
         exec ttyd \
           --port 7681 \
           --credential "$${TTYD_USER}:$${TTYD_PASS}" \
           --writable \
           -t titleFixed='japa-vps' \
-          nsenter -t 1 -m -u -i -n -p su - japa -c 'exec tmux new -A -s main'
+          nsenter -t 1 -m -u -i -n -p su - japa -c 'exec zellij attach -c main'
     networks:
       - shell
 
