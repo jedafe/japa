@@ -4150,6 +4150,8 @@ export interface TrendPoint {
 }
 
 // --- Section 84: Community Digest Widget ---
+// Matches the slim public DTO — operational fields (scheduled_for,
+// email_sent, generated_by, reviewed_by) only exist on the admin payload.
 export interface DigestEdition {
 	id: string;
 	space_id?: string;
@@ -4157,7 +4159,7 @@ export interface DigestEdition {
 	status: string;
 	scheduled_for?: string;
 	published_at?: string;
-	email_sent: boolean;
+	email_sent?: boolean;
 	generated_by?: string;
 	reviewed_by?: string;
 	created_at: string;

@@ -289,17 +289,15 @@ type AdminListFilter struct {
 }
 
 // AdminList returns all digest editions for admin management (paginated,
-// filterable by space/status, sortable).
-func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit int32) ([]DigestEditionDTO, int64, error) {
+// filterable by space/status, sortable). offset is a row offset (Rule 5).
+func (s *Service) AdminList(ctx context.Context, f AdminListFilter, offset, limit int32) ([]DigestEditionDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	if page <= 0 {
-		page = 1
+	if offset < 0 {
+		offset = 0
 	}
-
-	offset := (page - 1) * limit
 
 	editions, total, err := s.store.ListEditions(ctx, ListEditionsFilter{
 		SpaceID: f.SpaceID,
@@ -444,9 +442,13 @@ func (s *Service) AdminGenerate(ctx context.Context, spaceID pgtype.UUID) (strin
 		}
 	}
 
-	// An empty space_id payload triggers cron semantics — platform-wide
+	// An empty space_id payload triggers a full sweep — platform-wide
 	// edition plus per-space fan-out; a concrete id scopes to that Space.
-	payloadMap := map[string]string{}
+	// "manual" marks the run as admin-triggered so the worker skips the
+	// cron leader lock + cadence gate — an explicit admin command must
+	// never be silently swallowed (e.g. re-generating the same day as the
+	// cron, or mid-month under a monthly cadence).
+	payloadMap := map[string]string{"manual": "true"}
 	if spaceID.Valid && spaceID != (pgtype.UUID{}) {
 		payloadMap["space_id"] = spaceID.String()
 	}
@@ -984,12 +986,28 @@ func renderDigestEmail(content []byte, baseURL string) string {
 	var c DigestContent
 	_ = json.Unmarshal(content, &c)
 
+	// Poll URLs are admin-editable (PATCH /admin/digest/:id). Normalize to
+	// an absolute href before render: same-origin paths get the site
+	// BaseURL; absolute https:// links pass through; anything else
+	// (javascript:, bare http:, malformed) is dropped so the question
+	// still renders without a broken/unsafe link (audit BUG-008 parity).
+	if c.Poll != nil {
+		switch {
+		case strings.HasPrefix(c.Poll.URL, "/"):
+			c.Poll.URL = baseURL + c.Poll.URL
+		case strings.HasPrefix(c.Poll.URL, "https://"):
+			// keep verbatim
+		default:
+			c.Poll.URL = ""
+		}
+	}
+
 	const tmpl = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
 {{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/thread/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/content/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/story/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}
-{{if .Poll}}<h3>Community Poll</h3><p>{{if .Poll.URL}}<a href="{{$.BaseURL}}{{.Poll.URL}}">{{.Poll.Question}}</a>{{else}}{{.Poll.Question}}{{end}}</p>{{end}}
+{{if .Poll}}<h3>Community Poll</h3><p>{{if .Poll.URL}}<a href="{{.Poll.URL}}">{{.Poll.Question}}</a>{{else}}{{.Poll.Question}}{{end}}</p>{{end}}
 </div>`
 
 	t, err := template.New("digest").Parse(tmpl)

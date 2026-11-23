@@ -68,9 +68,10 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 
 // parsePageParams resolves list pagination. The canonical JEOS list
 // contract is ?page_size=&page_offset= (conventions/api-response-format.md,
-// Rule 5); ?page=&limit= is kept as a backwards-compatible alias for the
-// existing admin client (audit BUG-009).
-func parsePageParams(r *http.Request) (page, limit int32) {
+// Rule 5) where page_offset is a ROW offset passed straight to OFFSET —
+// mirroring blog/comments handlers; ?page=&limit= is kept as a
+// backwards-compatible alias for the existing admin client (audit BUG-009).
+func parsePageParams(r *http.Request) (page, limit, offset int32) {
 	page = 1
 	limit = 20
 	q := r.URL.Query()
@@ -87,8 +88,9 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 	if v := q.Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			page = int32(n)/limit + 1 // #nosec
-			return page, limit
+			offset = int32(n)        // #nosec
+			page = offset/limit + 1
+			return page, limit, offset
 		}
 	}
 
@@ -98,7 +100,9 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 		}
 	}
 
-	return page, limit
+	offset = (page - 1) * limit
+
+	return page, limit, offset
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +177,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, limit := parsePageParams(r)
+	page, limit, offset := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
@@ -199,7 +203,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	editions, total, err := h.service.AdminList(r.Context(), f, page, limit)
+	editions, total, err := h.service.AdminList(r.Context(), f, offset, limit)
 	if err != nil {
 		slog.Error("digest: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list digest editions")
@@ -213,7 +217,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 			"page":        page,
 			"limit":       limit,
 			"page_size":   limit,
-			"page_offset": (page - 1) * limit,
+			"page_offset": offset,
 			"total":       total,
 		},
 	})
@@ -394,7 +398,8 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 	// Optional {"space_id"} body scopes generation to a single Space (§84
 	// per-Space digests); empty/absent body produces the platform-wide
-	// edition plus per-space fan-out (cron semantics).
+	// edition plus per-space fan-out. The task payload is marked manual so
+	// the cron leader lock and cadence gate do not swallow the command.
 	var spaceID pgtype.UUID
 	var body struct {
 		SpaceID string `json:"space_id"`

@@ -1335,6 +1335,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		SpaceID string `json:"space_id"`
+		Manual  string `json:"manual"`
 	}
 
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -1348,8 +1349,27 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	cronRun := p.SpaceID == ""
+	// fullRun = platform-wide edition + per-space fan-out (empty space_id).
+	// Admin manual triggers send the same empty payload but carry
+	// manual=true — they bypass the cron leader lock and cadence gate so a
+	// deliberate admin command is never silently skipped.
+	fullRun := p.SpaceID == ""
+	cronRun := fullRun && p.Manual != "true"
 	if cronRun {
+		// §84: digest.cadence (weekly|monthly). The cron still fires weekly;
+		// a monthly cadence only generates in the first calendar week of the
+		// month. Checked BEFORE the leader lock so a gated-out run does not
+		// consume the day's lock (e.g. an operator flipping cadence to
+		// weekly and re-dispatching the same day must not be blocked).
+		cadence := "weekly"
+		if appSettings != nil {
+			cadence = appSettings.GetStringOr(ctx, "digest.cadence", "weekly")
+		}
+		if cadence == "monthly" && time.Now().UTC().Day() > 7 {
+			slog.Info("task:digest:generate: monthly cadence — skipping outside first week of month")
+			return nil
+		}
+
 		// §84/§10: jc:digest_cron_lock:{YYYY-MM-DD} leader lock (25h TTL,
 		// valkey-keys-catalog.md) — a duplicate cron dispatch across
 		// instances must not regenerate the day's editions. On a Valkey
@@ -1365,18 +1385,6 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 				return nil
 			}
 		}
-
-		// §84: digest.cadence (weekly|monthly). The cron still fires weekly;
-		// a monthly cadence only generates in the first calendar week of the
-		// month. Admin-triggered runs (space_id payload) ignore this gate.
-		cadence := "weekly"
-		if appSettings != nil {
-			cadence = appSettings.GetStringOr(ctx, "digest.cadence", "weekly")
-		}
-		if cadence == "monthly" && time.Now().UTC().Day() > 7 {
-			slog.Info("task:digest:generate: monthly cadence — skipping outside first week of month")
-			return nil
-		}
 	}
 
 	if err := digestProcessor.GenerateEdition(ctx, spaceID); err != nil {
@@ -1391,9 +1399,9 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	// stayed permanently empty (audit DG-01). "Active" = published content
 	// or forum threads in the digest window; bounded at 100 spaces per run.
 	// The window comes from digest.recent_window_days (audit BUG-006 — the
-	// 7-day literal was hardcoded). Admin-triggered runs carry an explicit
-	// space_id and skip this fan-out.
-	if cronRun && dbPool != nil {
+	// 7-day literal was hardcoded). Runs carrying an explicit space_id skip
+	// this fan-out.
+	if fullRun && dbPool != nil {
 		recentDays := 7
 		if appSettings != nil {
 			recentDays = appSettings.GetIntOr(ctx, "digest.recent_window_days", recentDays)

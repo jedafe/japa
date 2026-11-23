@@ -30,7 +30,6 @@
 
 	let clientDigest = $state<DigestEdition | null | undefined>(undefined);
 	let clientResolved = $state(false);
-	let errored = $state(false);
 
 	const enabled = $derived(!!page.data.features?.['digest.enabled']);
 	const digest = $derived(ssrDigest !== undefined ? ssrDigest : clientDigest);
@@ -44,7 +43,6 @@
 	$effect(() => {
 		const id = spaceId;
 		clientDigest = undefined;
-		errored = false;
 		if (!enabled || ssrDigest !== undefined) {
 			// Feature off, or SSR provided the digest — no client fetch needed.
 			clientResolved = true;
@@ -58,14 +56,13 @@
 				if (cancelled) return;
 				if (res.data) {
 					clientDigest = res.data;
-				} else if (res.error?.code === 'no_digest' || res.status === 404) {
-					// No published digest for this destination yet — not a real error.
+				} else {
+					// no_digest 404 or any fetch failure — render nothing
+					// (a dead empty card is noise; BUG-016).
 					clientDigest = null;
-				} else if (res.error) {
-					errored = true;
 				}
 			} catch {
-				if (!cancelled) errored = true;
+				if (!cancelled) clientDigest = null;
 			} finally {
 				if (!cancelled) clientResolved = true;
 			}

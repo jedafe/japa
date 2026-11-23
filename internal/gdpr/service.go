@@ -2186,7 +2186,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 							  AND ($2 = '' OR elem->>'display_name' <> $2)
 						), '[]'::jsonb)
 					)
-					WHERE content ? '%s'
+					WHERE jsonb_typeof(content->'%s') = 'array'
 					  AND EXISTS (
 						SELECT 1 FROM jsonb_array_elements(content->'%s') elem
 						WHERE elem->>'username' = $1

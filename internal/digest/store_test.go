@@ -192,16 +192,22 @@ func TestParsePageParams(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		query     string
-		wantPage  int32
-		wantLimit int32
+		query      string
+		wantPage   int32
+		wantLimit  int32
+		wantOffset int32
 	}{
-		{"defaults", "", 1, 20},
-		{"page and limit", "?page=3&limit=50", 3, 50},
-		{"zero page rejected", "?page=0", 1, 20},
-		{"negative page rejected", "?page=-2", 1, 20},
-		{"non-numeric ignored", "?page=abc&limit=xyz", 1, 20},
-		{"limit over 100 rejected to default", "?limit=500", 1, 20},
+		{"defaults", "", 1, 20, 0},
+		{"page and limit", "?page=3&limit=50", 3, 50, 100},
+		{"zero page rejected", "?page=0", 1, 20, 0},
+		{"negative page rejected", "?page=-2", 1, 20, 0},
+		{"non-numeric ignored", "?page=abc&limit=xyz", 1, 20, 0},
+		{"limit over 100 rejected to default", "?limit=500", 1, 20, 0},
+		{"canonical page_size+page_offset", "?page_size=25&page_offset=50", 3, 25, 50},
+		{"unaligned page_offset kept verbatim", "?page_size=20&page_offset=50", 3, 20, 50},
+		{"page_offset wins over page", "?page=5&page_size=10&page_offset=30", 4, 10, 30},
+		{"negative page_offset rejected to default", "?page_offset=-4", 1, 20, 0},
+		{"page_size wins over limit alias", "?page_size=15&limit=40", 1, 15, 0},
 	}
 
 	for _, tc := range tests {
@@ -210,10 +216,10 @@ func TestParsePageParams(t *testing.T) {
 
 			r := httptest.NewRequest(http.MethodGet, "/admin/digest"+tc.query, nil)
 
-			page, limit := parsePageParams(r)
-			if page != tc.wantPage || limit != tc.wantLimit {
-				t.Errorf("parsePageParams(%q) = (%d, %d), want (%d, %d)",
-					tc.query, page, limit, tc.wantPage, tc.wantLimit)
+			page, limit, offset := parsePageParams(r)
+			if page != tc.wantPage || limit != tc.wantLimit || offset != tc.wantOffset {
+				t.Errorf("parsePageParams(%q) = (%d, %d, %d), want (%d, %d, %d)",
+					tc.query, page, limit, offset, tc.wantPage, tc.wantLimit, tc.wantOffset)
 			}
 		})
 	}
