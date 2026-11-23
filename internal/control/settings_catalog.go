@@ -630,6 +630,7 @@ var settingsCatalog = map[string]settingMeta{
 	"digest.events_limit":       {Type: "int", DefaultValue: "5", Description: "Max upcoming events per digest edition.", Panel: "control"},
 	"digest.recent_window_days": {Type: "int", DefaultValue: "7", Description: "Activity look-back window (days) for threads, members, polls and space fan-out.", Panel: "control"},
 	"digest.story_window_days":  {Type: "int", DefaultValue: "30", Description: "Look-back window (days) for the featured story section.", Panel: "control"},
+	"digest.admin_generate_cooldown_seconds": {Type: "int", DefaultValue: "300", Description: "Per-admin cooldown (seconds) between manual digest generation triggers; 0 disables.", Panel: "control"},
 
 	// Mutual Aid Board (§85, ADR-093)
 	"mutual_aid.enabled":                   {Type: "bool", DefaultValue: "false", Description: "Global mutual aid board toggle.", Panel: "control"},

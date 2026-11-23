@@ -1078,8 +1078,7 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)
 
-	query := `SELECT id, space_id, cadence, status, scheduled_for, published_at,
-	                 content, email_sent
+	query := `SELECT id, space_id, cadence, published_at
 	          FROM digest_editions
 	          WHERE status = 'published'`
 	args := []any{}
@@ -1115,26 +1114,19 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 
 		var spaceID pgtype.UUID
 
-		var cadence, status string
+		var cadence string
 
-		var emailSent bool
-
-		var scheduledFor, publishedAt interface{}
-
-		var content []byte
-		if err := rows.Scan(&id, &spaceID, &cadence, &status, &scheduledFor,
-			&publishedAt, &content, &emailSent); err != nil {
+		var publishedAt interface{}
+		if err := rows.Scan(&id, &spaceID, &cadence, &publishedAt); err != nil {
 			return nil, fmt.Errorf("scanning community_digest: %w", err)
-		}
-
-		var contentJSON map[string]any
-		if len(content) > 0 {
-			_ = json.Unmarshal(content, &contentJSON)
 		}
 
 		// The sidebar item renderer reads item.title for the row label
 		// (item.title ?? item.name ?? item.tag ?? item.username) — a digest
 		// edition has none, so rows rendered blank labels (audit BUG-010).
+		// The compact sidebar widget only needs id + title + url: the full
+		// content payload, mail state, and scheduling metadata stay server-
+		// side (audit BUG-016 — slim widget payload).
 		label := "Weekly Community Digest"
 		if cadence == "monthly" {
 			label = "Monthly Community Digest"
@@ -1144,15 +1136,11 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 		}
 
 		items = append(items, map[string]any{
-			"id":            id,
-			"title":         label,
-			"space_id":      spaceID,
-			"cadence":       cadence,
-			"status":        status,
-			"scheduled_for": scheduledFor,
-			"published_at":  publishedAt,
-			"content":       contentJSON,
-			"email_sent":    emailSent,
+			"id":           id,
+			"title":        label,
+			"space_id":     spaceID,
+			"published_at": publishedAt,
+			"url":          "/digest/" + id.String(),
 		})
 	}
 

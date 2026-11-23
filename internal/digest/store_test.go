@@ -2,10 +2,21 @@ package digest
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db"
 )
 
 // ---------------------------------------------------------------------------
@@ -273,5 +284,111 @@ func TestAllowedSortColumns(t *testing.T) {
 
 	if _, ok := allowedSortColumns["content"]; ok {
 		t.Error("content must not be sortable (JSONB)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AdminGenerate — per-admin cooldown lock (audit BUG-013)
+// ---------------------------------------------------------------------------
+
+func newCooldownTestService(t *testing.T) (*Service, *miniredis.Miniredis) {
+	t.Helper()
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("valkey connect: %v", err)
+	}
+	t.Cleanup(func() { vk.Close() })
+
+	compat := valkeycompat.NewAdapter(vk)
+
+	// Settings read path resolves via the L2 Valkey cache — seeding it keeps
+	// the nil-pool DB out of the test.
+	settings := config.NewSettings(&db.DB{}, compat)
+	t.Cleanup(settings.Close)
+
+	seed := fmt.Sprintf(`{"value":%q,"created_at":%q}`, "300", time.Now().UTC().Format(time.RFC3339Nano))
+	if err := compat.Set(t.Context(), "jc:settings:digest.admin_generate_cooldown_seconds", seed, 0).Err(); err != nil {
+		t.Fatalf("seed settings cache: %v", err)
+	}
+
+	svc := NewService(nil, settings)
+	svc.SetValkey(compat)
+	return svc, mr
+}
+
+func TestAdminGenerateCooldown(t *testing.T) {
+	t.Parallel()
+
+	svc, mr := newCooldownTestService(t)
+	ctx := t.Context()
+
+	var adminA, adminB pgtype.UUID
+	if err := adminA.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatal(err)
+	}
+	if err := adminB.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := svc.AdminGenerate(ctx, adminA, pgtype.UUID{})
+	if err != nil || st != "accepted" {
+		t.Fatalf("first generate = (%q, %v), want (accepted, nil)", st, err)
+	}
+	if !mr.Exists("jc:digest_admin_gen_lock:" + adminA.String()) {
+		t.Fatal("cooldown lock key was not written")
+	}
+
+	if _, err := svc.AdminGenerate(ctx, adminA, pgtype.UUID{}); !errors.Is(err, ErrGenerateCooldown) {
+		t.Fatalf("second generate err = %v, want ErrGenerateCooldown", err)
+	}
+
+	// A different admin is not blocked by A's lock.
+	if _, err := svc.AdminGenerate(ctx, adminB, pgtype.UUID{}); err != nil {
+		t.Fatalf("admin B generate err = %v, want nil", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AdminUpdate — PATCH validation (audit BUG-023)
+// ---------------------------------------------------------------------------
+
+func TestAdminUpdateValidation(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(nil, nil)
+	ctx := t.Context()
+
+	var id pgtype.UUID
+	if err := id.Scan("33333333-3333-3333-3333-333333333333"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.AdminUpdate(ctx, id, AdminUpdateInput{}); !errors.Is(err, ErrNoUpdateFields) {
+		t.Errorf("empty input err = %v, want ErrNoUpdateFields", err)
+	}
+
+	badCadence := "daily"
+	if err := svc.AdminUpdate(ctx, id, AdminUpdateInput{Cadence: &badCadence}); !errors.Is(err, ErrInvalidCadence) {
+		t.Errorf("bad cadence err = %v, want ErrInvalidCadence", err)
+	}
+
+	past := time.Now().Add(-time.Hour)
+	if err := svc.AdminUpdate(ctx, id, AdminUpdateInput{ScheduledFor: &past}); !errors.Is(err, ErrInvalidSchedule) {
+		t.Errorf("past schedule err = %v, want ErrInvalidSchedule", err)
+	}
+
+	array := json.RawMessage(`[1,2]`)
+	if err := svc.AdminUpdate(ctx, id, AdminUpdateInput{Content: &array}); !errors.Is(err, ErrInvalidContent) {
+		t.Errorf("array content err = %v, want ErrInvalidContent", err)
 	}
 }

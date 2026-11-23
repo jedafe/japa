@@ -5,10 +5,9 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
 	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { digestAdminApi, adminCatalogApi, spacesAdminApi, type CatalogOption } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import SpaceAutocomplete from '#lib/components/ui/SpaceAutocomplete.svelte';
-	import { useCountries } from '#lib/utils/countries.svelte.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, Sparkles, Pencil, XCircle, Clock } from 'lucide-svelte';
@@ -35,11 +34,29 @@
 
 	const canManage = $derived(hasPermission('digest.manage'));
 
-	// ── Country selector (250 primary geo space countries) ───────────────────
-	const countryUtils = useCountries();
-	$effect(() => {
-		countryUtils.load();
-	});
+	// ── Destination filter — API-backed space autocomplete ──────────────────
+	// §84 digests can be scoped to ANY space level (a city, university, or
+	// custom space may carry its own digest), so the country-only selector
+	// was too narrow (audit BUG-015). GET /admin/spaces supports server-
+	// side ?q search; the label cache backs getSelectedLabel for ids chosen
+	// before their row was fetched (e.g. URL-restored filters).
+	const spaceLabelCache = new Map<string, string>();
+	async function spaceDestFetcher(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const params = new URLSearchParams({ page_size: '20' });
+		if (q.trim()) params.set('q', q.trim());
+		try {
+			const res = await spacesAdminApi.list(params.toString());
+			const data = res.ok ? (res.data as { items?: { id: string; name: string; level?: string }[] }) : null;
+			return (data?.items ?? []).map((s) => {
+				spaceLabelCache.set(s.id, s.name);
+				return { id: s.id, label: s.name, sublabel: s.level };
+			});
+		} catch {
+			return [];
+		}
+	}
+	const spaceDestInitialFetcher = () => spaceDestFetcher('');
+	const spaceDestGetLabel = (id: string) => spaceLabelCache.get(id) ?? id;
 
 	// ── State ────────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -259,26 +276,23 @@
 		{ key: 'status', label: t('app.digest.col_status', 'Status'), type: 'text' }
 	];
 
-	const filters = $derived.by<FilterDef[]>(() => {
-		countryUtils.ready;
-		return [
-			{
-				key: 'status',
-				label: t('app.digest.col_status', 'Status'),
-				options: digestStatusOptions
-			},
-			{
-				key: 'dest',
-				label: t('app.digest.col_destination', 'Destination'),
-				type: 'autocomplete',
-				placeholder: t('app.tools.country_placeholder', 'Search country…'),
-				emptyMessage: t('common.no_results', 'No results found'),
-				fetcher: countryUtils.fetcher,
-				initialFetcher: countryUtils.initialFetcher,
-				getSelectedLabel: countryUtils.getSelectedLabel
-			}
-		];
-	});
+	const filters = $derived.by<FilterDef[]>(() => [
+		{
+			key: 'status',
+			label: t('app.digest.col_status', 'Status'),
+			options: digestStatusOptions
+		},
+		{
+			key: 'dest',
+			label: t('app.digest.col_destination', 'Destination'),
+			type: 'autocomplete',
+			placeholder: t('app.digest.destination_placeholder', 'Search space…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: spaceDestFetcher,
+			initialFetcher: spaceDestInitialFetcher,
+			getSelectedLabel: spaceDestGetLabel
+		}
+	]);
 
 	const config = $derived<EntityPageConfig>({
 		title: t('app.digest.review_queue_heading', 'Digest Review Queue'),

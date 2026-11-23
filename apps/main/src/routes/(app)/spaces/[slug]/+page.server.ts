@@ -132,7 +132,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const [
 		content, pinned, members, forumThreads, moderators, isFollowing,
-		isMuted, presets, parentSpaces, achievements
+		isMuted, presets, parentSpaces, achievements, digest
 	] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${pageSize}`)
 			.then((r) => r.items)
@@ -175,7 +175,17 @@ export const load: PageServerLoad = async (event) => {
 		// render the same DOM and avoid a hydration mismatch (HYDRATION-001).
 		apiList<Achievement>(ctx, `/spaces/${slug}/achievements?limit=5`)
 			.then((r) => r.items)
-			.catch(() => [])
+			.catch(() => []),
+		// Latest digest for this destination (§84, flag-gated). Both
+		// inputs — spaceId and the flag — are already resolved, so the
+		// fetch rides the same batch instead of a sequential round-trip
+		// (audit BUG-019). A 404/no_digest is expected when none has been
+		// published yet.
+		features['digest.enabled']
+			? apiGet<DigestEdition>(ctx, `/digest/latest?dest=${encodeURIComponent(spaceId)}`).catch(
+					() => null
+				)
+			: Promise.resolve(null)
 	]);
 
 	// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
@@ -193,15 +203,6 @@ export const load: PageServerLoad = async (event) => {
 					return { error: 'unavailable' };
 				})
 		: { data: null };
-
-	// Latest digest for this destination, gated by the §84 feature flag.
-	// A 404/no_digest is expected when none has been published yet.
-	let digest: DigestEdition | null = null;
-	if (features['digest.enabled']) {
-		digest = await apiGet<DigestEdition>(ctx, `/digest/latest?dest=${encodeURIComponent(spaceId)}`).catch(
-			() => null
-		);
-	}
 
 	// Destination wiki index for this space, gated by the wiki feature flag.
 	// §80 Wiki Types amendment: a space has a wiki when its space_type has an

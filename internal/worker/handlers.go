@@ -4407,10 +4407,15 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	// Bulk cron path: when feature.newsletter is live, §62 owns digest
 	// delivery (newsletter:digest, weekly — matching the "Weekly digest"
 	// settings toggle). This legacy daily task then skips so the same
-	// subscriber pool isn't double-mailed (audit NL-15). It only still
-	// serves platforms where the newsletter feature is disabled.
-	if featureChecker != nil && featureChecker.IsEnabled(ctx, "feature.newsletter") {
-		slog.Info("task:email:send_digest: feature.newsletter enabled, skipping bulk pass")
+	// subscriber pool isn't double-mailed (audit NL-15). The §84 Community
+	// Digest (digest.enabled → digest:send_email, platform-wide editions)
+	// mails that same subscriber pool, so it supersedes the legacy pass
+	// identically (audit BUG-022). The task only still serves platforms
+	// where both successor pipelines are disabled.
+	if featureChecker != nil &&
+		(featureChecker.IsEnabled(ctx, "feature.newsletter") ||
+			featureChecker.IsEnabled(ctx, "digest.enabled")) {
+		slog.Info("task:email:send_digest: successor digest pipeline enabled, skipping bulk pass")
 		return nil
 	}
 

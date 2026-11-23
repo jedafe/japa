@@ -261,20 +261,41 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input UpdateEditionInput
+	// Mutable fields (§84): content body, cadence, and the scheduled_for
+	// auto-publish gate. At least one must be present.
+	var input struct {
+		Content      *json.RawMessage `json:"content"`
+		Cadence      *string          `json:"cadence"`
+		ScheduledFor *time.Time       `json:"scheduled_for"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
-	if input.Content == nil || len(*input.Content) == 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content is required")
-		return
-	}
+	err := h.service.AdminUpdate(r.Context(), id, AdminUpdateInput{
+		Content:      input.Content,
+		Cadence:      input.Cadence,
+		ScheduledFor: input.ScheduledFor,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoUpdateFields) {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Provide content, cadence, or scheduled_for")
+			return
+		}
 
-	if err := h.service.AdminUpdate(r.Context(), id, *input.Content); err != nil {
 		if errors.Is(err, ErrInvalidContent) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content", "Content must be a JSON object")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidCadence) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cadence", "cadence must be weekly or monthly")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidSchedule) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_schedule", "scheduled_for must be in the future")
 			return
 		}
 
@@ -392,7 +413,8 @@ func (h *Handlers) HandleAdminDelay(w http.ResponseWriter, r *http.Request) {
 // edition from platform analytics (no AI generation — purely metrics-driven,
 // ADR-092). The edition enters the 1-hour admin review window on completion.
 func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -414,8 +436,13 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	status, err := h.service.AdminGenerate(r.Context(), spaceID)
+	status, err := h.service.AdminGenerate(r.Context(), user.UserID, spaceID)
 	if err != nil {
+		if errors.Is(err, ErrGenerateCooldown) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "generate_cooldown", "Digest generation was triggered recently — try again shortly")
+			return
+		}
+
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return

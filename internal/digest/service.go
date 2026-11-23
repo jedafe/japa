@@ -45,6 +45,19 @@ var ErrInvalidSchedule = errors.New("digest: scheduled_for must be in the future
 // space that does not exist. Handlers map it to 404.
 var ErrSpaceNotFound = errors.New("digest: space not found")
 
+// ErrGenerateCooldown is returned when an admin triggers generation inside
+// the per-admin cooldown window (digest.admin_generate_cooldown_seconds).
+// Handlers map it to 429.
+var ErrGenerateCooldown = errors.New("digest: admin generation cooldown active")
+
+// ErrInvalidCadence is returned when a PATCH carries a cadence outside the
+// §84 set. Handlers map it to 400.
+var ErrInvalidCadence = errors.New("digest: cadence must be weekly or monthly")
+
+// ErrNoUpdateFields is returned when a PATCH carries no mutable fields.
+// Handlers map it to 400.
+var ErrNoUpdateFields = errors.New("digest: no updatable fields supplied")
+
 // TaskEnqueuer is the interface for enqueuing Asynq background tasks
 // (structural typing — *worker.Enqueuer satisfies this).
 type TaskEnqueuer interface {
@@ -334,19 +347,38 @@ func (s *Service) AdminGet(ctx context.Context, id pgtype.UUID) (DigestEditionDe
 	return editionToDetailDTO(edition), nil
 }
 
-// AdminUpdate edits the content of a draft or review-status edition before
-// publication. It preserves the §84 lifecycle guard by refusing to update
-// editions that are already published or cancelled.
-func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.RawMessage) error {
-	if len(content) == 0 {
-		return errors.New("content is required")
+// AdminUpdateInput carries the mutable fields a PATCH /admin/digest/:id may
+// touch (§84): the content body, the edition cadence, and the
+// scheduled_for auto-publish gate. Nil fields are left unchanged.
+type AdminUpdateInput struct {
+	Content      *json.RawMessage
+	Cadence      *string
+	ScheduledFor *time.Time
+}
+
+// AdminUpdate edits a draft or review-status edition before publication.
+// It preserves the §84 lifecycle guard by refusing to update editions that
+// are already published or cancelled.
+func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, in AdminUpdateInput) error {
+	if in.Content == nil && in.Cadence == nil && in.ScheduledFor == nil {
+		return ErrNoUpdateFields
 	}
 
 	// §84: content is a JSON object of section keys — reject scalars/arrays
 	// before they hit storage and break renderDigestEmail.
-	var shape map[string]json.RawMessage
-	if err := json.Unmarshal(content, &shape); err != nil || shape == nil {
-		return ErrInvalidContent
+	if in.Content != nil {
+		var shape map[string]json.RawMessage
+		if err := json.Unmarshal(*in.Content, &shape); err != nil || shape == nil {
+			return ErrInvalidContent
+		}
+	}
+
+	if in.Cadence != nil && *in.Cadence != "weekly" && *in.Cadence != "monthly" {
+		return ErrInvalidCadence
+	}
+
+	if in.ScheduledFor != nil && !in.ScheduledFor.After(time.Now()) {
+		return ErrInvalidSchedule
 	}
 
 	e, err := s.store.GetEdition(ctx, id)
@@ -362,8 +394,13 @@ func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.
 		return pgx.ErrNoRows
 	}
 
-	_, err = s.store.UpdateEdition(ctx, id, UpdateEditionInput{Content: &content})
-	if err != nil {
+	ui := UpdateEditionInput{Content: in.Content, Cadence: in.Cadence}
+	if in.ScheduledFor != nil {
+		ts := pgtype.Timestamptz{Time: *in.ScheduledFor, Valid: true}
+		ui.ScheduledFor = &ts
+	}
+
+	if _, err = s.store.UpdateEdition(ctx, id, ui); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -428,7 +465,27 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 // digest:generate Asynq task (§84, ADR-092). The task assembles the edition
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
-func (s *Service) AdminGenerate(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+func (s *Service) AdminGenerate(ctx context.Context, adminID, spaceID pgtype.UUID) (string, error) {
+	// Per-admin cooldown (audit BUG-013): a manual generate fans out to a
+	// platform-wide edition plus every space and enqueues mail work, so
+	// repeated triggers are rate-limited with a SET NX lock (Rule 9
+	// pattern). The window is tunable via
+	// digest.admin_generate_cooldown_seconds (default 300s; 0 disables).
+	// Fail-open on Valkey errors — the caller is an authenticated
+	// digest.manage admin, and the lock guards against accidental repeats
+	// rather than hostile abuse.
+	if s.vk != nil && adminID.Valid {
+		if cooldown := s.settings.GetIntOr(ctx, "digest.admin_generate_cooldown_seconds", 300); cooldown > 0 {
+			lockKey := "jc:digest_admin_gen_lock:" + adminID.String()
+			ok, err := s.vk.SetNX(ctx, lockKey, "1", time.Duration(cooldown)*time.Second).Result()
+			if err != nil {
+				slog.Warn("digest: admin generate cooldown check failed — allowing", "error", err)
+			} else if !ok {
+				return "", ErrGenerateCooldown
+			}
+		}
+	}
+
 	// Reject a bogus space_id up front — otherwise the task enqueues
 	// successfully and fails later at the digest_editions FK insert with
 	// no admin-visible feedback (audit BUG-013).

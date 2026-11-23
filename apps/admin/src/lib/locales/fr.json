@@ -794,6 +794,7 @@
   "app.digest.col_content": "Contenu",
   "app.digest.col_created": "Créé",
   "app.digest.col_destination": "Destination",
+  "app.digest.destination_placeholder": "Rechercher un espace…",
   "app.digest.col_email_sent": "E-mail envoyé",
   "app.digest.col_generated_by": "Généré par",
   "app.digest.col_published_at": "Publié",
