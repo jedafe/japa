@@ -124,8 +124,13 @@ services:
           --port 7681 \
           --credential "$${TTYD_USER}:$${TTYD_PASS}" \
           --writable \
+          --index /frontend/index.html \
           -t titleFixed='japa-vps' \
           nsenter -t 1 -m -u -i -n -p su - japa -c 'exec zellij attach -c main'
+    # Custom frontend built from ttyd master: xterm.js 5.5 + ClipboardAddon
+    # (OSC52 → device clipboard) — 1.7.7's bundled xterm predates OSC52.
+    volumes:
+      - /opt/japa/shell-frontend:/frontend:ro
     networks:
       - shell
 
