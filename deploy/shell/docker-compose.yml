@@ -81,6 +81,13 @@ services:
       - shell-certs:/certs:ro
     labels:
       - traefik.enable=true
+      # Pin the backend network: caddy sits on `coolify` plus the private
+      # `shell` net (and Coolify's per-service net), giving Traefik three
+      # candidate backend IPs. Without this pin it can pick the `shell`-net
+      # IP — which Traefik is not attached to — and every dial times out
+      # ("route down"). files/dev backends are single-network so they never
+      # hit this.
+      - traefik.docker.network=coolify
       - traefik.tcp.routers.shell-gate.rule=HostSNI(`shell.japa.to`)
       - traefik.tcp.routers.shell-gate.entrypoints=https
       - traefik.tcp.routers.shell-gate.tls.passthrough=true
