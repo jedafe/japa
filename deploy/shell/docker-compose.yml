@@ -117,7 +117,6 @@ services:
           --port 7681 \
           --credential "$${TTYD_USER}:$${TTYD_PASS}" \
           --writable \
-          --reconnect 60 \
           -t titleFixed='japa-vps' \
           nsenter -t 1 -m -u -i -n -p su - japa -c 'exec tmux new -A -s main'
     networks:
