@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -1085,13 +1086,19 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 
 	argIdx := 1
 	if spaceID != nil {
-		query += fmt.Sprintf(" AND space_id = $%d", argIdx)
+		// Mirror GET /digest/latest semantics (§84): prefer the Space's
+		// own edition, fall back to the platform-wide one when the space
+		// has none yet (audit BUG-010 — exact-match used to return an
+		// empty widget).
+		query += fmt.Sprintf(" AND (space_id = $%d OR space_id IS NULL)", argIdx)
 
 		args = append(args, *spaceID)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(" ORDER BY published_at DESC LIMIT $%d", argIdx)
+	// space-specific rows sort first (space_id IS NULL → false before
+	// true); recency decides within each scope.
+	query += fmt.Sprintf(" ORDER BY space_id IS NULL, published_at DESC LIMIT $%d", argIdx)
 
 	args = append(args, limit)
 
@@ -1125,8 +1132,20 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 			_ = json.Unmarshal(content, &contentJSON)
 		}
 
+		// The sidebar item renderer reads item.title for the row label
+		// (item.title ?? item.name ?? item.tag ?? item.username) — a digest
+		// edition has none, so rows rendered blank labels (audit BUG-010).
+		label := "Weekly Community Digest"
+		if cadence == "monthly" {
+			label = "Monthly Community Digest"
+		}
+		if ts, ok := publishedAt.(time.Time); ok && !ts.IsZero() {
+			label += " — " + ts.Format("2 Jan 2006")
+		}
+
 		items = append(items, map[string]any{
 			"id":            id,
+			"title":         label,
 			"space_id":      spaceID,
 			"cadence":       cadence,
 			"status":        status,

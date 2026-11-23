@@ -41,6 +41,10 @@ var ErrInvalidContent = errors.New("digest: content must be a JSON object")
 // future. Handlers map it to 400.
 var ErrInvalidSchedule = errors.New("digest: scheduled_for must be in the future")
 
+// ErrSpaceNotFound is returned when an admin-scoped generation targets a
+// space that does not exist. Handlers map it to 404.
+var ErrSpaceNotFound = errors.New("digest: space not found")
+
 // TaskEnqueuer is the interface for enqueuing Asynq background tasks
 // (structural typing — *worker.Enqueuer satisfies this).
 type TaskEnqueuer interface {
@@ -71,6 +75,8 @@ type FeatureChecker = features.FlagEvaluator
 type DigestEditionDTO struct {
 	ID           string `json:"id"`
 	SpaceID      string `json:"space_id,omitempty"`
+	SpaceName    string `json:"space_name,omitempty"`
+	SpaceSlug    string `json:"space_slug,omitempty"`
 	Cadence      string `json:"cadence"`
 	Status       string `json:"status"`
 	ScheduledFor string `json:"scheduled_for,omitempty"`
@@ -78,7 +84,22 @@ type DigestEditionDTO struct {
 	EmailSent    bool   `json:"email_sent"`
 	GeneratedBy  string `json:"generated_by,omitempty"`
 	ReviewedBy   string `json:"reviewed_by,omitempty"`
+	ReviewerName string `json:"reviewer_name,omitempty"`
 	CreatedAt    string `json:"created_at"`
+}
+
+// PublicEditionDetailDTO is the response shape served on the public
+// /digest/* routes. Operational fields (reviewed_by, generated_by,
+// email_sent, scheduled_for) stay on the admin DTOs — a public payload
+// must not leak which admin account reviewed an edition (audit BUG-012).
+type PublicEditionDetailDTO struct {
+	ID          string          `json:"id"`
+	SpaceID     string          `json:"space_id,omitempty"`
+	Cadence     string          `json:"cadence"`
+	Status      string          `json:"status"`
+	PublishedAt string          `json:"published_at,omitempty"`
+	CreatedAt   string          `json:"created_at"`
+	Content     json.RawMessage `json:"content"`
 }
 
 // DigestEditionDetailDTO is the full digest edition with content.
@@ -220,38 +241,38 @@ func (s *Service) EmailEnabled(ctx context.Context) bool {
 
 // GetLatest returns the most recently published edition for a platform
 // (and optionally a space).
-func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (DigestEditionDetailDTO, error) {
+func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (PublicEditionDetailDTO, error) {
 	edition, err := s.store.GetLatestPublished(ctx, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return DigestEditionDetailDTO{}, pgx.ErrNoRows
+			return PublicEditionDetailDTO{}, pgx.ErrNoRows
 		}
 
-		return DigestEditionDetailDTO{}, fmt.Errorf("digest: get latest: %w", err)
+		return PublicEditionDetailDTO{}, fmt.Errorf("digest: get latest: %w", err)
 	}
 
-	dto := editionToDetailDTO(edition)
+	dto := editionToPublicDTO(edition)
 	dto.Content = s.resolveContent(ctx, s.filterGatedContent(ctx, dto.Content))
 
 	return dto, nil
 }
 
 // Get returns a single published edition by id (public browse).
-func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailDTO, error) {
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (PublicEditionDetailDTO, error) {
 	edition, err := s.store.GetEdition(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return DigestEditionDetailDTO{}, pgx.ErrNoRows
+			return PublicEditionDetailDTO{}, pgx.ErrNoRows
 		}
 
-		return DigestEditionDetailDTO{}, fmt.Errorf("digest: get: %w", err)
+		return PublicEditionDetailDTO{}, fmt.Errorf("digest: get: %w", err)
 	}
 
 	if edition.Status != "published" {
-		return DigestEditionDetailDTO{}, pgx.ErrNoRows
+		return PublicEditionDetailDTO{}, pgx.ErrNoRows
 	}
 
-	dto := editionToDetailDTO(edition)
+	dto := editionToPublicDTO(edition)
 	dto.Content = s.resolveContent(ctx, s.filterGatedContent(ctx, dto.Content))
 
 	return dto, nil
@@ -359,6 +380,18 @@ func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.
 // digest:send_email task (fire-and-forget, Rule 8), and clears the
 // jc:digest_draft Valkey key (§84, ADR-092).
 func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) error {
+	// Read the edition first — the email fan-out below is platform-wide
+	// only (§84 email channel), so a per-Space edition must not blast the
+	// full digest subscriber list (audit BUG-001).
+	edition, err := s.store.GetEdition(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("digest: admin publish: load edition: %w", err)
+	}
+
 	if err := s.store.PublishEdition(ctx, id, reviewerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -373,16 +406,21 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 
 	s.clearDraftLock(ctx, id)
 
-	// Fire-and-forget: enqueue digest:send_email so members with the digest
-	// notification preference receive the published edition (§84, Rule 8).
-	// Reuses §62 Newsletter infrastructure in the task handler.
-	payload, _ := json.Marshal(map[string]string{
-		"edition_id": id.String(),
-	})
-	if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
-		// Log but do not fail the publish — email delivery is async and
-		// retryable. The edition is already published.
-		slog.Error("digest: enqueue send_email failed", "error", err, "edition_id", id.String())
+	if !edition.SpaceID.Valid {
+		// Fire-and-forget: enqueue digest:send_email so members with the
+		// digest notification preference receive the published edition
+		// (§84, Rule 8). Reuses §62 Newsletter infrastructure in the task
+		// handler. Per-Space editions skip email — they are a web widget
+		// surface; the full subscriber list must not be re-mailed per
+		// space (audit BUG-001).
+		payload, _ := json.Marshal(map[string]string{
+			"edition_id": id.String(),
+		})
+		if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
+			// Log but do not fail the publish — email delivery is async and
+			// retryable. The edition is already published.
+			slog.Error("digest: enqueue send_email failed", "error", err, "edition_id", id.String())
+		}
 	}
 
 	return nil
@@ -393,6 +431,19 @@ func (s *Service) AdminPublish(ctx context.Context, reviewerID, id pgtype.UUID) 
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
 func (s *Service) AdminGenerate(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+	// Reject a bogus space_id up front — otherwise the task enqueues
+	// successfully and fails later at the digest_editions FK insert with
+	// no admin-visible feedback (audit BUG-013).
+	if spaceID.Valid && spaceID != (pgtype.UUID{}) {
+		exists, err := s.store.SpaceExists(ctx, spaceID)
+		if err != nil {
+			return "", fmt.Errorf("digest: admin generate: check space: %w", err)
+		}
+		if !exists {
+			return "", ErrSpaceNotFound
+		}
+	}
+
 	// An empty space_id payload triggers cron semantics — platform-wide
 	// edition plus per-space fan-out; a concrete id scopes to that Space.
 	payloadMap := map[string]string{}
@@ -502,15 +553,28 @@ func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) 
 		return fmt.Errorf("digest: generate: assemble content: %w", err)
 	}
 
+	// §84: cadence is configurable (weekly|monthly, weekly default) via
+	// digest.cadence — the worker gates the monthly schedule; an
+	// unrecognised value falls back to weekly.
+	cadence := "weekly"
+	if s.settings != nil {
+		if c := s.settings.GetStringOr(ctx, "digest.cadence", "weekly"); c == "monthly" {
+			cadence = "monthly"
+		}
+	}
+
 	// §84: "A 1-hour review window opens after generation before
-	// auto-publish." scheduled_for gates the digest:auto_publish cron, which
-	// publishes draft/review editions once scheduled_for <= now(). Admins
-	// can still publish early via AdminPublish (which short-circuits the
-	// window). Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+	// auto-publish." The edition enters 'review' on creation — the review
+	// window IS the draft period per §84's lifecycle (a fresh edition is
+	// never worked on before it exists). scheduled_for gates the
+	// digest:auto_publish cron, which publishes draft/review editions once
+	// scheduled_for <= now(). Admins can still publish early via
+	// AdminPublish (which short-circuits the window).
+	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
 		SpaceID:      spaceID,
-		Cadence:      "weekly",
-		Status:       "draft",
+		Cadence:      cadence,
+		Status:       "review",
 		ScheduledFor: pgtype.Timestamptz{Time: time.Now().Add(1 * time.Hour), Valid: true},
 		Content:      content,
 		GeneratedBy:  "system",
@@ -547,6 +611,15 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 
 		// ADR-134: auto-published edition — same purge as AdminPublish.
 		cdn.PurgePublicPaths(ctx, []string{"digest_edition:" + e.ID.String()}, "/digest/"+e.ID.String(), "/digest")
+
+		// Per-Space editions never fan out to email (audit BUG-001) — the
+		// §84 email channel delivers the platform-wide digest; space
+		// editions live on the space widget only. Without this guard a
+		// weekly run mailing up to 100 space editions would send every
+		// subscriber ~101 near-identical emails.
+		if e.SpaceID.Valid {
+			continue
+		}
 
 		// Fire-and-forget: enqueue digest:send_email so subscribed members
 		// receive the now-published edition. A failed enqueue is logged but
@@ -593,6 +666,14 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 		return fmt.Errorf("digest: send_email: load edition: %w", err)
 	}
 
+	// Per-Space editions are a web widget surface — email fan-out is
+	// platform-wide only (audit BUG-001). A space-scoped task payload
+	// (manual enqueue, agent tool) is a no-op here.
+	if edition.SpaceID.Valid {
+		slog.Info("task:digest:send_email: space-scoped edition, skipping", "edition_id", editionID)
+		return nil
+	}
+
 	if edition.Status != "published" {
 		return fmt.Errorf("digest: send_email: edition %s is not published (status=%s)",
 			editionID, edition.Status)
@@ -601,7 +682,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	baseURL := s.resolveBaseURL(ctx)
 	// §14: resolve {{...}} placeholders before HTML render so outbound
 	// email never contains raw literals.
-	subject, htmlBody := s.renderEditionEmail(ctx, s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
+	subject, htmlBody := s.renderEditionEmail(ctx, s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL, edition.Cadence)
 
 	// Page recipients like newsletter:send (audit DG-11) — the full
 	// digest-enabled list is never materialized at once.
@@ -686,9 +767,15 @@ func (s *Service) resolveBaseURL(ctx context.Context) string {
 
 // emailSubject resolves the site name for the digest email subject line.
 // Reads general.site_name — the catalogued key (site.name was a stale key
-// that admin edits never populated).
-func (s *Service) emailSubject(ctx context.Context) string {
-	return "Weekly Community Digest — " + s.siteName(ctx)
+// that admin edits never populated). The cadence adjective follows the
+// edition so a monthly digest does not mail a "Weekly" subject.
+func (s *Service) emailSubject(ctx context.Context, cadence string) string {
+	label := "Weekly"
+	if cadence == "monthly" {
+		label = "Monthly"
+	}
+
+	return label + " Community Digest — " + s.siteName(ctx)
 }
 
 // siteName resolves the platform brand name: general.site_name setting,
@@ -802,9 +889,9 @@ func (s *Service) resolveLogoURL(ctx context.Context, baseURL string) string {
 // header, footer — wraps it and admin body/subject edits take effect
 // without a deploy (ADR-055). The inline branded shell is the fallback
 // when the row is missing/inactive, has no html_body, or fails to render.
-func (s *Service) renderEditionEmail(ctx context.Context, content []byte, baseURL string) (string, string) {
+func (s *Service) renderEditionEmail(ctx context.Context, content []byte, baseURL, cadence string) (string, string) {
 	siteName := s.siteName(ctx)
-	subject := s.emailSubject(ctx)
+	subject := s.emailSubject(ctx, cadence)
 	inner := renderDigestEmail(content, baseURL)
 	logoURL := s.resolveLogoURL(ctx, baseURL)
 
@@ -902,6 +989,7 @@ func renderDigestEmail(content []byte, baseURL string) string {
 {{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/content/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/story/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}
+{{if .Poll}}<h3>Community Poll</h3><p>{{if .Poll.URL}}<a href="{{$.BaseURL}}{{.Poll.URL}}">{{.Poll.Question}}</a>{{else}}{{.Poll.Question}}{{end}}</p>{{end}}
 </div>`
 
 	t, err := template.New("digest").Parse(tmpl)
@@ -967,6 +1055,8 @@ func editionToDTO(e DigestEdition) DigestEditionDTO {
 	}
 	if e.SpaceID.Valid {
 		dto.SpaceID = e.SpaceID.String()
+		dto.SpaceName = e.SpaceName
+		dto.SpaceSlug = e.SpaceSlug
 	}
 
 	dto.ScheduledFor = formatTs(e.ScheduledFor)
@@ -978,6 +1068,30 @@ func editionToDTO(e DigestEdition) DigestEditionDTO {
 
 	if e.ReviewedBy.Valid {
 		dto.ReviewedBy = e.ReviewedBy.String()
+		dto.ReviewerName = e.ReviewerName
+	}
+
+	return dto
+}
+
+// editionToPublicDTO converts a DigestEdition to the slim public DTO —
+// operational fields (reviewed_by, generated_by, email_sent,
+// scheduled_for) are intentionally dropped on public routes.
+func editionToPublicDTO(e DigestEdition) PublicEditionDetailDTO {
+	dto := PublicEditionDetailDTO{
+		ID:        e.ID.String(),
+		Cadence:   e.Cadence,
+		Status:    e.Status,
+		CreatedAt: formatTs(e.CreatedAt),
+	}
+	if e.SpaceID.Valid {
+		dto.SpaceID = e.SpaceID.String()
+	}
+
+	dto.PublishedAt = formatTs(e.PublishedAt)
+
+	if len(e.Content) > 0 {
+		dto.Content = json.RawMessage(NormalizeContent(e.Content))
 	}
 
 	return dto

@@ -621,6 +621,15 @@ var settingsCatalog = map[string]settingMeta{
 	// Community Digest Widget (§84, ADR-092)
 	"digest.enabled": {Type: "bool", DefaultValue: "false", Description: "Global community digest toggle.", Panel: "control"},
 	"digest.email":   {Type: "bool", DefaultValue: "true", Description: "Send digest via email when published.", Panel: "control"},
+	// §84 generation tuning (system-settings-catalog.md) — editable in
+	// Control → Settings → Digest; the generator falls back to these
+	// defaults when a key is unset.
+	"digest.cadence":            {Type: "string", DefaultValue: "weekly", Description: "Digest generation cadence (weekly|monthly).", Panel: "control"},
+	"digest.top_threads_limit":  {Type: "int", DefaultValue: "5", Description: "Max top forum threads per digest edition.", Panel: "control"},
+	"digest.new_members_limit":  {Type: "int", DefaultValue: "10", Description: "Max new members per digest edition.", Panel: "control"},
+	"digest.events_limit":       {Type: "int", DefaultValue: "5", Description: "Max upcoming events per digest edition.", Panel: "control"},
+	"digest.recent_window_days": {Type: "int", DefaultValue: "7", Description: "Activity look-back window (days) for threads, members, polls and space fan-out.", Panel: "control"},
+	"digest.story_window_days":  {Type: "int", DefaultValue: "30", Description: "Look-back window (days) for the featured story section.", Panel: "control"},
 
 	// Mutual Aid Board (§85, ADR-093)
 	"mutual_aid.enabled":                   {Type: "bool", DefaultValue: "false", Description: "Global mutual aid board toggle.", Panel: "control"},

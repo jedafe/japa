@@ -7,6 +7,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
+	import SpaceAutocomplete from '#lib/components/ui/SpaceAutocomplete.svelte';
 	import { useCountries } from '#lib/utils/countries.svelte.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
@@ -19,6 +20,8 @@
 	type DigestItem = {
 		id: string;
 		space_id?: string;
+		space_name?: string;
+		space_slug?: string;
 		cadence: string;
 		status: string;
 		scheduled_for?: string;
@@ -26,6 +29,7 @@
 		email_sent: boolean;
 		generated_by?: string;
 		reviewed_by?: string;
+		reviewer_name?: string;
 		created_at: string;
 	};
 
@@ -57,7 +61,7 @@
 	let pageError = $state('');
 	let acting = $state(false);
 	let showGenerateModal = $state(false);
-	let generateSpaceId = $state('');
+	let generateSpaceIds = $state<string[]>([]);
 
 	// ── View detail + edit (consume GET/PATCH /admin/digest/:id, §84) ─────────
 	let viewDetail = $state<(DigestItem & { content?: Record<string, unknown> }) | null>(null);
@@ -161,7 +165,7 @@
 	}
 
 	function openGenerate() {
-		generateSpaceId = '';
+		generateSpaceIds = [];
 		showGenerateModal = true;
 	}
 
@@ -169,7 +173,7 @@
 		acting = true;
 		pageError = '';
 		try {
-			const result = await digestAdminApi.generate(generateSpaceId.trim() || undefined);
+			const result = await digestAdminApi.generate(generateSpaceIds[0] || undefined);
 			if (result.ok) {
 				showGenerateModal = false;
 				entityController?.reload();
@@ -369,16 +373,17 @@
 			{t('app.digest.generate_desc', 'Generate a new community digest draft from recent activity. The edition enters a 1-hour review window before auto-publish.')}
 		</p>
 		<div>
-			<label for="generate-space-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('app.digest.generate_space_id', 'Space ID (optional — per-space edition)')}
+			<label for="generate-space" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.digest.generate_space_id', 'Space (optional — per-space edition)')}
 			</label>
-			<input
-				id="generate-space-id"
-				type="text"
-				bind:value={generateSpaceId}
-				placeholder="UUID — leave blank for platform-wide"
-				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+			<SpaceAutocomplete
+				bind:selectedIds={generateSpaceIds}
+				placeholder={t('app.digest.generate_space_placeholder', 'Search space…')}
+				id="generate-space"
 			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.digest.generate_space_hint', 'Leave blank for the platform-wide edition + per-space fan-out.')}
+			</p>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -442,13 +447,15 @@
 		{#if row.reviewed_by}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_reviewed_by', 'Reviewed By')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reviewed_by}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reviewer_name || row.reviewed_by}</p>
 			</div>
 		{/if}
 		{#if row.space_id}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_space_id', 'Space')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.space_id}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.space_name || row.space_id}{#if row.space_slug}&nbsp;<span style="color: var(--color-muted)">({row.space_slug})</span>{/if}
+				</p>
 			</div>
 		{/if}
 		<div>

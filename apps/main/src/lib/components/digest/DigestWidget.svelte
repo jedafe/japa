@@ -108,16 +108,7 @@
 			{/if}
 		</p>
 	</a>
-{:else if !errored}
-	<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="flex items-center gap-2">
-			<Newspaper size={18} class="text-[var(--color-muted)]" />
-			<span class="text-sm font-semibold text-[var(--color-foreground)]">
-				{t('digest.widget_title', 'Community Digest')}
-			</span>
-		</div>
-		<p class="mt-2 text-xs text-[var(--color-text-subtle)]">
-			{t('digest.widget_empty', 'No digest available yet')}
-		</p>
-	</div>
 {/if}
+<!-- No digest yet (or a fetch error) renders nothing — a dead
+     "No digest available yet" card on every space feed is noise;
+     the widget appears once a published edition exists (audit BUG-016). -->

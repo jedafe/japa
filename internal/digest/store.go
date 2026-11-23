@@ -51,6 +51,13 @@ type DigestEdition struct {
 	GeneratedBy  string // TEXT per §84 schema ('system'|'ai'|'manual')
 	ReviewedBy   pgtype.UUID
 	CreatedAt    pgtype.Timestamptz
+
+	// Resolved display names — populated by the LEFT JOINs in
+	// GetEdition/ListEditions for admin surfaces (audit BUG-015). Not
+	// table columns.
+	SpaceName    string
+	SpaceSlug    string
+	ReviewerName string
 }
 
 // EditionRow is the full row shape for digest_editions returned by update
@@ -106,10 +113,15 @@ RETURNING id
 // GetEdition returns a single digest edition by id within a platform.
 func (s *Store) GetEdition(ctx context.Context, id pgtype.UUID) (DigestEdition, error) {
 	const q = `
-SELECT id, space_id, cadence, status, scheduled_for, published_at,
-       content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
-FROM digest_editions
-WHERE id = $1
+SELECT de.id, de.space_id, de.cadence, de.status, de.scheduled_for, de.published_at,
+       de.content, de.email_sent, de.email_sent_at, de.generated_by, de.reviewed_by, de.created_at,
+       COALESCE(sp.name, ''), COALESCE(sp.slug, ''),
+       COALESCE(rup.display_name, ru.username, '')
+FROM digest_editions de
+LEFT JOIN spaces sp ON sp.id = de.space_id
+LEFT JOIN users ru ON ru.id = de.reviewed_by
+LEFT JOIN user_profiles rup ON rup.user_id = ru.id
+WHERE de.id = $1
 LIMIT 1
 `
 
@@ -119,6 +131,7 @@ LIMIT 1
 		&e.ID, &e.SpaceID, &e.Cadence, &e.Status,
 		&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 		&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
+		&e.SpaceName, &e.SpaceSlug, &e.ReviewerName,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -160,9 +173,12 @@ WHERE status = 'published'
 		q.WriteString(" AND space_id IS NULL")
 	}
 
-	// space_id NULLS LAST prefers the space-scoped row over the platform
-	// fallback when both are published in the same window.
-	q.WriteString(" ORDER BY published_at DESC, space_id NULLS LAST LIMIT 1")
+	// §84 "prefers the destination Space's edition, falls back to
+	// platform-wide": space_id IS NULL sorts false(0) before true(1), so a
+	// Space's own edition always wins over a newer platform-wide one
+	// (audit BUG-002 — recency used to dominate and shadow the space
+	// edition). Recency then decides within each scope.
+	q.WriteString(" ORDER BY space_id IS NULL, published_at DESC LIMIT 1")
 
 	var e DigestEdition
 
@@ -214,20 +230,20 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	)
 
 	if f.SpaceID.Valid {
-		conditions = append(conditions, fmt.Sprintf("space_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("de.space_id = $%d", argIdx))
 		args = append(args, f.SpaceID)
 		argIdx++
 	}
 
 	if f.Status != "" {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("de.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
 
 	if q := strings.TrimSpace(f.Query); q != "" {
 		conditions = append(conditions, fmt.Sprintf(
-			"(cadence ILIKE $%d OR status ILIKE $%d OR generated_by ILIKE $%d)",
+			"(de.cadence ILIKE $%d OR de.status ILIKE $%d OR de.generated_by ILIKE $%d)",
 			argIdx, argIdx, argIdx))
 
 		args = append(args, "%"+q+"%")
@@ -265,11 +281,16 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT id, space_id, cadence, status, scheduled_for, published_at,
-       content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
-FROM digest_editions
+SELECT de.id, de.space_id, de.cadence, de.status, de.scheduled_for, de.published_at,
+       de.content, de.email_sent, de.email_sent_at, de.generated_by, de.reviewed_by, de.created_at,
+       COALESCE(sp.name, ''), COALESCE(sp.slug, ''),
+       COALESCE(rup.display_name, ru.username, '')
+FROM digest_editions de
+LEFT JOIN spaces sp ON sp.id = de.space_id
+LEFT JOIN users ru ON ru.id = de.reviewed_by
+LEFT JOIN user_profiles rup ON rup.user_id = ru.id
 WHERE %s
-ORDER BY %s %s
+ORDER BY de.%s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortCol, orderDir, argIdx, argIdx+1)
 
@@ -289,6 +310,7 @@ LIMIT $%d OFFSET $%d
 			&e.ID, &e.SpaceID, &e.Cadence, &e.Status,
 			&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 			&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
+			&e.SpaceName, &e.SpaceSlug, &e.ReviewerName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("digest: scan edition: %w", err)
 		}
@@ -300,7 +322,7 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, fmt.Errorf("digest: iterate editions: %w", err)
 	}
 
-	countQ := "SELECT COUNT(*) FROM digest_editions WHERE " + whereClause
+	countQ := "SELECT COUNT(*) FROM digest_editions de WHERE " + whereClause
 	countArgs := args[:len(args)-2]
 
 	var total int64
@@ -488,24 +510,28 @@ WHERE id = $1 AND status IN ('draft', 'review')
 }
 
 // PublishedEdition is the minimal row returned by AutoPublishDueEditions so
-// the service can clear draft locks and enqueue digest:send_email per edition.
+// the service can clear draft locks and enqueue digest:send_email per
+// platform-wide edition. SpaceID lets the service skip the email fan-out
+// for per-Space editions (audit BUG-001).
 type PublishedEdition struct {
-	ID pgtype.UUID
+	ID      pgtype.UUID
+	SpaceID pgtype.UUID
 }
 
 // AutoPublishDueEditions publishes every draft/review edition whose
 // 1-hour admin review window has elapsed (scheduled_for <= now()). This is
 // the digest:auto_publish cron body (§84: "A 1-hour review window opens after
 // generation before auto-publish"). The UPDATE is atomic and returns the
-// (id, ) pairs it transitioned to 'published' so the caller can fire
-// digest:send_email per edition. Idempotent: once status='published' the row
-// no longer matches the WHERE clause, so a duplicate cron run is a no-op.
+// (id, space_id) pairs it transitioned to 'published' so the caller can fire
+// digest:send_email per platform-wide edition. Idempotent: once
+// status='published' the row no longer matches the WHERE clause, so a
+// duplicate cron run is a no-op.
 func (s *Store) AutoPublishDueEditions(ctx context.Context) ([]PublishedEdition, error) {
 	rows, err := s.pool.Writer.Query(ctx, `
 UPDATE digest_editions
 SET status = 'published', published_at = now()
 WHERE status IN ('draft', 'review') AND scheduled_for <= now()
-RETURNING id
+RETURNING id, space_id
 `)
 	if err != nil {
 		return nil, fmt.Errorf("digest: auto-publish due editions: %w", err)
@@ -516,7 +542,7 @@ RETURNING id
 
 	for rows.Next() {
 		var e PublishedEdition
-		if err := rows.Scan(&e.ID); err != nil {
+		if err := rows.Scan(&e.ID, &e.SpaceID); err != nil {
 			return nil, fmt.Errorf("digest: auto-publish due editions: scan: %w", err)
 		}
 
@@ -744,11 +770,17 @@ WHERE ft.deleted_at IS NULL
 		}
 	}
 
-	// 2. New members: users created in the past 7 days who completed onboarding
-	// (§84). Privacy opt-out: only members whose profile_visibility is
-	// 'public' are featured — 'members'/'followers' profiles opted out of
-	// public surfaces and must not appear in the digest (audit DG-02).
-	mrows, err := s.pool.Reader.Query(ctx, fmt.Sprintf(`
+	// 2. New members: users created in the recent window who completed
+	// onboarding (§84). Privacy opt-out: only members whose
+	// profile_visibility is 'public' are featured — 'members'/'followers'
+	// profiles opted out of public surfaces and must not appear in the
+	// digest (audit DG-02). Space editions scope the section to members
+	// anchored to that geo Space (audit BUG-003 — the unscoped query used
+	// to show platform-wide members inside a Space digest).
+	var membersQ strings.Builder
+	var mArgs []any
+
+	membersQ.WriteString(fmt.Sprintf(`
 SELECT u.username, COALESCE(up.display_name, '')
 FROM users u
 JOIN onboarding_state os ON os.user_id = u.id
@@ -758,9 +790,17 @@ WHERE u.created_at >= now() - $1::interval
   AND os.completed = true
   AND u.status = 'active'
   AND COALESCE(ups.profile_visibility, 'public') = 'public'
-ORDER BY u.created_at DESC
-LIMIT %d
-`, cfg.MembersLimit), recent)
+`))
+	mArgs = append(mArgs, recent)
+
+	if spaceID.Valid {
+		membersQ.WriteString(" AND u.current_geo_space_id = $2")
+		mArgs = append(mArgs, spaceID)
+	}
+
+	membersQ.WriteString(fmt.Sprintf(" ORDER BY u.created_at DESC LIMIT %d", cfg.MembersLimit))
+
+	mrows, err := s.pool.Reader.Query(ctx, membersQ.String(), mArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: new members: %w", err)
 	}
@@ -993,6 +1033,21 @@ func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, emailAddr st
 	}
 
 	return token, nil
+}
+
+// SpaceExists reports whether a space id resolves to a live (non-deleted)
+// space — used by admin generation to reject bogus space_id payloads
+// before they reach the Asynq queue (audit BUG-013).
+func (s *Store) SpaceExists(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
+	var exists bool
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM spaces WHERE id = $1 AND deleted_at IS NULL)
+`, spaceID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("digest: space exists: %w", err)
+	}
+
+	return exists, nil
 }
 
 // generateUnsubscribeToken generates a 32-byte hex token for one-click

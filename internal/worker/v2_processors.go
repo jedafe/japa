@@ -1348,6 +1348,37 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
+	cronRun := p.SpaceID == ""
+	if cronRun {
+		// §84/§10: jc:digest_cron_lock:{YYYY-MM-DD} leader lock (25h TTL,
+		// valkey-keys-catalog.md) — a duplicate cron dispatch across
+		// instances must not regenerate the day's editions. On a Valkey
+		// error we proceed anyway: generation is idempotent per the
+		// upsert-on-draft behaviour, so availability beats strictness.
+		if rdb != nil {
+			lockKey := "jc:digest_cron_lock:" + time.Now().UTC().Format("2006-01-02")
+			ok, err := rdb.SetNX(ctx, lockKey, "1", 25*time.Hour).Result()
+			if err != nil {
+				slog.Warn("task:digest:generate: cron lock check failed — proceeding", "error", err)
+			} else if !ok {
+				slog.Info("task:digest:generate: cron lock held — skipping duplicate run")
+				return nil
+			}
+		}
+
+		// §84: digest.cadence (weekly|monthly). The cron still fires weekly;
+		// a monthly cadence only generates in the first calendar week of the
+		// month. Admin-triggered runs (space_id payload) ignore this gate.
+		cadence := "weekly"
+		if appSettings != nil {
+			cadence = appSettings.GetStringOr(ctx, "digest.cadence", "weekly")
+		}
+		if cadence == "monthly" && time.Now().UTC().Day() > 7 {
+			slog.Info("task:digest:generate: monthly cadence — skipping outside first week of month")
+			return nil
+		}
+	}
+
 	if err := digestProcessor.GenerateEdition(ctx, spaceID); err != nil {
 		return fmt.Errorf("task:digest:generate: %w", err)
 	}
@@ -1359,19 +1390,25 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	// only the platform-wide edition ever existed and the space widget
 	// stayed permanently empty (audit DG-01). "Active" = published content
 	// or forum threads in the digest window; bounded at 100 spaces per run.
-	// Admin-triggered runs carry an explicit space_id and skip this fan-out.
-	if p.SpaceID == "" && dbPool != nil {
+	// The window comes from digest.recent_window_days (audit BUG-006 — the
+	// 7-day literal was hardcoded). Admin-triggered runs carry an explicit
+	// space_id and skip this fan-out.
+	if cronRun && dbPool != nil {
+		recentDays := 7
+		if appSettings != nil {
+			recentDays = appSettings.GetIntOr(ctx, "digest.recent_window_days", recentDays)
+		}
 		rows, err := dbPool.Reader.Query(ctx, `
 SELECT DISTINCT space_id FROM (
 	SELECT space_id FROM contents
 	 WHERE space_id IS NOT NULL AND status = 'published' AND deleted_at IS NULL
-	   AND created_at >= now() - interval '7 days'
+	   AND created_at >= now() - make_interval(days => $1)
 	UNION
 	SELECT space_id FROM forum_threads
 	 WHERE space_id IS NOT NULL AND deleted_at IS NULL
-	   AND created_at >= now() - interval '7 days'
+	   AND created_at >= now() - make_interval(days => $1)
 ) active_spaces
-LIMIT 100`)
+LIMIT 100`, recentDays)
 		if err != nil {
 			slog.Warn("task:digest:generate: active space scan failed", "error", err)
 			return nil

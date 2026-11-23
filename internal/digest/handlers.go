@@ -66,19 +66,35 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	return id, true
 }
 
+// parsePageParams resolves list pagination. The canonical JEOS list
+// contract is ?page_size=&page_offset= (conventions/api-response-format.md,
+// Rule 5); ?page=&limit= is kept as a backwards-compatible alias for the
+// existing admin client (audit BUG-009).
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+	q := r.URL.Query()
 
-	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
+	if v := q.Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = int32(n) // #nosec
+		}
+	} else if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = int32(n) // #nosec
 		}
 	}
 
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n) // #nosec
+	if v := q.Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = int32(n)/limit + 1 // #nosec
+			return page, limit
+		}
+	}
+
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
 		}
 	}
 
@@ -194,9 +210,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": editions,
 		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+			"page":        page,
+			"limit":       limit,
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
+			"total":       total,
 		},
 	})
 }
@@ -393,6 +411,11 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 	status, err := h.service.AdminGenerate(r.Context(), spaceID)
 	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
+
 		slog.Error("digest: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")
 

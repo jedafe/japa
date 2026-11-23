@@ -101,20 +101,35 @@
 	const story = $derived(content?.story ?? null);
 	const poll = $derived(content?.poll ?? null);
 
+	// digest content JSON is admin-editable — only allow same-origin paths
+	// and http(s) URLs so a javascript:/data: payload can't reach a public
+	// href (audit BUG-008).
+	function safeHref(url: string | null | undefined): string | null {
+		if (!url) return null;
+		if (url.startsWith('/')) return url;
+		try {
+			const u = new URL(url);
+			if (u.protocol === 'https:' || u.protocol === 'http:') return url;
+		} catch {
+			return null;
+		}
+		return null;
+	}
+
 	function threadHref(t: DigestThread): string | null {
-		if (t.url) return t.url;
+		if (safeHref(t.url)) return safeHref(t.url);
 		if (t.slug) return contentHref({ slug: t.slug, content_type: 'discussion' });
 		return null;
 	}
 
 	function storyHref(s: DigestStory): string | null {
-		if (s.url) return s.url;
+		if (safeHref(s.url)) return safeHref(s.url);
 		if (s.slug) return contentHref({ slug: s.slug, content_type: 'story' });
 		return null;
 	}
 
 	function eventHref(e: DigestEvent): string | null {
-		if (e.url) return e.url;
+		if (safeHref(e.url)) return safeHref(e.url);
 		if (e.slug) return contentHref({ slug: e.slug, content_type: 'event' });
 		return null;
 	}
@@ -313,8 +328,8 @@
 						<p class="text-sm text-[var(--color-text)]">
 							{poll.question ?? t('digest.no_poll_question', 'Community poll')}
 						</p>
-						{#if poll.url}
-							<a href={poll.url} class="mt-2 inline-block text-sm text-[var(--color-primary-text)] hover:underline">
+						{#if safeHref(poll.url)}
+							<a href={safeHref(poll.url)} class="mt-2 inline-block text-sm text-[var(--color-primary-text)] hover:underline">
 								{t('digest.vote_now', 'Vote now')} →
 							</a>
 						{/if}

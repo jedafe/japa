@@ -2169,25 +2169,32 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		`, userID).Scan(&digestUname, &digestDname)
 
 		if digestUname != "" {
-			if _, err := s.db.Writer.Exec(ctx, `
-				UPDATE digest_editions
-				SET content = jsonb_set(
-					content, '{new_members}',
-					COALESCE((
-						SELECT jsonb_agg(elem)
-						FROM jsonb_array_elements(content->'new_members') elem
-						WHERE elem->>'username' <> $1
-						  AND ($2 = '' OR elem->>'display_name' <> $2)
-					), '[]'::jsonb)
-				)
-				WHERE content ? 'new_members'
-				  AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(content->'new_members') elem
-					WHERE elem->>'username' = $1
-					   OR ($2 <> '' AND elem->>'display_name' = $2)
-				  )
-			`, digestUname, digestDname); err != nil {
-				return fmt.Errorf("scrubbing digest_editions new_members for user: %w", err)
+			// Scrub BOTH the canonical 'new_members' key and the legacy
+			// 'members' spelling — NormalizeContent maps members→new_members
+			// at read time but the stored blob keeps the old key, so a
+			// legacy-keyed edition would retain the erased member's PII
+			// (audit BUG-021).
+			for _, sectionKey := range []string{"new_members", "members"} {
+				if _, err := s.db.Writer.Exec(ctx, fmt.Sprintf(`
+					UPDATE digest_editions
+					SET content = jsonb_set(
+						content, '{%s}',
+						COALESCE((
+							SELECT jsonb_agg(elem)
+							FROM jsonb_array_elements(content->'%s') elem
+							WHERE elem->>'username' <> $1
+							  AND ($2 = '' OR elem->>'display_name' <> $2)
+						), '[]'::jsonb)
+					)
+					WHERE content ? '%s'
+					  AND EXISTS (
+						SELECT 1 FROM jsonb_array_elements(content->'%s') elem
+						WHERE elem->>'username' = $1
+						   OR ($2 <> '' AND elem->>'display_name' = $2)
+					  )
+				`, sectionKey, sectionKey, sectionKey, sectionKey), digestUname, digestDname); err != nil {
+					return fmt.Errorf("scrubbing digest_editions %s for user: %w", sectionKey, err)
+				}
 			}
 		}
 
