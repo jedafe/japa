@@ -2,9 +2,9 @@
   "mcpServers": {
     "japaconnect": {
       "type": "http",
-      "url": "https://japa.to/api/v1/mcp",
+      "url": "https://api.japa.to/api/v1/mcp",
       "headers": {
-        "X-API-Key": "${JC_MCP_API_KEY}"
+        "X-API-Key": "jc_live_0f0ec24df5929637f415ed91518c0fdc"
       }
     },
     "playwright": {
