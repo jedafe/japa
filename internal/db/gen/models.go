@@ -2183,6 +2183,7 @@ type EcaGuide struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 	AssignedTo           pgtype.UUID        `json:"assigned_to"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
 }
 
 type EcaProvider struct {
@@ -2606,6 +2607,13 @@ type GroupRole struct {
 	GroupID   pgtype.UUID        `json:"group_id"`
 	RoleID    pgtype.UUID        `json:"role_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type HousingDedupKeeper struct {
+	ID                 pgtype.UUID `json:"id"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+	CitySpaceID        pgtype.UUID `json:"city_space_id"`
+	AccommodationType  *string     `json:"accommodation_type"`
 }
 
 type HousingGuide struct {

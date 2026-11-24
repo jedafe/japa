@@ -16,7 +16,7 @@ SELECT COUNT(*)
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
-  AND ($2::text = '' OR sp.slug = $2)
+  AND ($2::text = '' OR (sp.slug = $2 AND sp.deleted_at IS NULL))
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
   AND ($5::bool IS NULL OR wp.is_featured = $5::bool)
@@ -135,7 +135,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) lr ON true
 WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
-  AND ($2::text = '' OR sp.slug = $2)
+  AND ($2::text = '' OR (sp.slug = $2 AND sp.deleted_at IS NULL))
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
   AND ($5::bool IS NULL OR wp.is_featured = $5::bool)
@@ -555,23 +555,24 @@ func (q *Queries) CountPendingRevisionsByTarget(ctx context.Context, arg CountPe
 
 const countWikiDestinations = `-- name: CountWikiDestinations :one
 WITH RECURSIVE subtree AS (
-    SELECT e.cid AS id, 1 AS depth
-    FROM (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    SELECT kid.id, 1 AS depth
+    FROM spaces t
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = t.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e
-    JOIN spaces t ON t.id = e.pid AND t.slug = $5 AND t.deleted_at IS NULL
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = t.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
+    WHERE t.slug = $5 AND t.deleted_at IS NULL
     UNION ALL
-    SELECT e.cid, st.depth + 1
+    SELECT kid.id, st.depth + 1
     FROM subtree st
-    JOIN (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = st.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e ON e.pid = st.id
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = st.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
     WHERE st.depth < 3
 )
 SELECT COUNT(*) FROM (
@@ -586,7 +587,7 @@ SELECT COUNT(*) FROM (
       AND ($1::text = '' OR sp.level = $1 OR st.slug = $1)
       AND ($2::text = '' OR sp.region = $2)
       AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
-      AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4))
+      AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4 AND p.deleted_at IS NULL))
       AND ($5::text = '' OR sp.slug <> $5)
       AND ($5::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
     GROUP BY sp.id
@@ -1846,7 +1847,8 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
-WHERE sp.slug = $1 AND wp.slug = $2
+WHERE sp.slug = $1 AND sp.deleted_at IS NULL
+  AND wp.slug = $2
   AND wp.is_active = true AND wp.deleted_at IS NULL
 LIMIT 1
 `
@@ -2089,7 +2091,7 @@ const getWikiSpaceBySlug = `-- name: GetWikiSpaceBySlug :one
 SELECT sp.id, sp.name
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
-WHERE sp.slug = $1 AND sp.status = 'active'
+WHERE sp.slug = $1 AND sp.status = 'active' AND sp.deleted_at IS NULL
  -- §05 amendment — education-typed spaces need level='university' for wiki.
  AND (sp.level = 'university' OR NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'))
@@ -2339,7 +2341,7 @@ const isUniversitySpaceBySlug = `-- name: IsUniversitySpaceBySlug :one
 SELECT (sp.level = 'university') AS is_university
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
-WHERE sp.slug = $1 AND sp.status = 'active'
+WHERE sp.slug = $1 AND sp.status = 'active' AND sp.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -2953,27 +2955,28 @@ func (q *Queries) ListVisaRoutesForWiki(ctx context.Context, arg ListVisaRoutesF
 
 const listWikiDestinations = `-- name: ListWikiDestinations :many
 WITH RECURSIVE subtree AS (
-    -- Non-recursive: direct children of the target over both edge kinds.
-    -- One unified edge list keeps a single self-reference term — Postgres
-    -- rejects mixed multi-branch shapes (SQLSTATE 42P19).
-    SELECT e.cid AS id, 1 AS depth
-    FROM (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    -- Non-recursive: direct children of the target over both edge kinds,
+    -- correlated via LATERAL so each step hits the space_id/parent_id
+    -- indexes instead of materializing the full edge set per iteration.
+    SELECT kid.id, 1 AS depth
+    FROM spaces t
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = t.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e
-    JOIN spaces t ON t.id = e.pid AND t.slug = $5 AND t.deleted_at IS NULL
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = t.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
+    WHERE t.slug = $5 AND t.deleted_at IS NULL
     UNION ALL
     -- Recursive: children of any node already in the subtree.
-    SELECT e.cid, st.depth + 1
+    SELECT kid.id, st.depth + 1
     FROM subtree st
-    JOIN (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = st.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e ON e.pid = st.id
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = st.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
     WHERE st.depth < 3
 )
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
@@ -3005,7 +3008,7 @@ WHERE sp.status = 'active'
   AND ($1::text = '' OR sp.level = $1 OR st.slug = $1)
   AND ($2::text = '' OR sp.region = $2)
   AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4))
+  AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4 AND p.deleted_at IS NULL))
   -- A space is never "within" itself — also guards a cyclic link that
   -- would otherwise let the target match its own ancestor walk.
   AND ($5::text = '' OR sp.slug <> $5)
@@ -3297,7 +3300,7 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
-WHERE sp.slug = $1 AND wp.is_active = true
+WHERE sp.slug = $1 AND sp.deleted_at IS NULL AND wp.is_active = true
 ORDER BY wp.category, wp.title
 `
 
@@ -4085,7 +4088,8 @@ const wikiPageRowExistsBySlug = `-- name: WikiPageRowExistsBySlug :one
 SELECT EXISTS (
     SELECT 1 FROM wiki_pages wp
     JOIN spaces sp ON sp.id = wp.space_id
-    WHERE sp.slug = $1 AND wp.slug = $2
+    WHERE sp.slug = $1 AND sp.deleted_at IS NULL
+      AND wp.slug = $2
 ) AS exists
 `
 

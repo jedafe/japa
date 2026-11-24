@@ -870,15 +870,11 @@ WITH RECURSIVE walk AS (
     UNION ALL
     SELECT w.origin, par.id, w.depth + 1
     FROM walk w
-    JOIN (
-        SELECT j.space_id AS child, j.parent_space_id AS parent
-        FROM space_parent_spaces j
+    JOIN LATERAL (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = w.node
         UNION
-        SELECT s2.id, s2.parent_id
-        FROM spaces s2
-        WHERE s2.parent_id IS NOT NULL
-    ) e ON e.child = w.node
-    JOIN spaces par ON par.id = e.parent
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = w.node AND s2.parent_id IS NOT NULL
+    ) par ON true
     WHERE w.depth < 3
 )
 SELECT DISTINCT w.origin AS space_id, c.id AS country_id
@@ -930,15 +926,11 @@ WITH RECURSIVE walk AS (
     UNION ALL
     SELECT par.id, w.depth + 1
     FROM walk w
-    JOIN (
-        SELECT j.space_id AS child, j.parent_space_id AS parent
-        FROM space_parent_spaces j
+    JOIN LATERAL (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = w.node
         UNION
-        SELECT s2.id, s2.parent_id
-        FROM spaces s2
-        WHERE s2.parent_id IS NOT NULL
-    ) e ON e.child = w.node
-    JOIN spaces par ON par.id = e.parent
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = w.node AND s2.parent_id IS NOT NULL
+    ) par ON true
     WHERE w.depth < 3
 )
 SELECT c.currency_code

@@ -24,7 +24,8 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
-WHERE sp.slug = @space_slug AND wp.slug = @page_slug
+WHERE sp.slug = @space_slug AND sp.deleted_at IS NULL
+  AND wp.slug = @page_slug
   AND wp.is_active = true AND wp.deleted_at IS NULL
 LIMIT 1;
 
@@ -35,7 +36,8 @@ LIMIT 1;
 SELECT EXISTS (
     SELECT 1 FROM wiki_pages wp
     JOIN spaces sp ON sp.id = wp.space_id
-    WHERE sp.slug = @space_slug AND wp.slug = @page_slug
+    WHERE sp.slug = @space_slug AND sp.deleted_at IS NULL
+      AND wp.slug = @page_slug
 ) AS exists;
 
 -- name: ListWikiPagesBySpaceSlug :many
@@ -46,7 +48,7 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
-WHERE sp.slug = @space_slug AND wp.is_active = true
+WHERE sp.slug = @space_slug AND sp.deleted_at IS NULL AND wp.is_active = true
 ORDER BY wp.category, wp.title;
 
 -- name: ListWikiPagesBySpaceID :many
@@ -70,27 +72,28 @@ ORDER BY wp.category, wp.title;
 -- space_parent_spaces ∪ parent_id) once — the old form ran a 3-level
 -- correlated ancestor EXISTS per candidate row (~2s on a full scan).
 WITH RECURSIVE subtree AS (
-    -- Non-recursive: direct children of the target over both edge kinds.
-    -- One unified edge list keeps a single self-reference term — Postgres
-    -- rejects mixed multi-branch shapes (SQLSTATE 42P19).
-    SELECT e.cid AS id, 1 AS depth
-    FROM (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    -- Non-recursive: direct children of the target over both edge kinds,
+    -- correlated via LATERAL so each step hits the space_id/parent_id
+    -- indexes instead of materializing the full edge set per iteration.
+    SELECT kid.id, 1 AS depth
+    FROM spaces t
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = t.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e
-    JOIN spaces t ON t.id = e.pid AND t.slug = @within AND t.deleted_at IS NULL
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = t.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
+    WHERE t.slug = @within AND t.deleted_at IS NULL
     UNION ALL
     -- Recursive: children of any node already in the subtree.
-    SELECT e.cid, st.depth + 1
+    SELECT kid.id, st.depth + 1
     FROM subtree st
-    JOIN (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = st.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e ON e.pid = st.id
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = st.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
     WHERE st.depth < 3
 )
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
@@ -122,7 +125,7 @@ WHERE sp.status = 'active'
   AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
   AND (@region::text = '' OR sp.region = @region)
   AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
-  AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
+  AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent AND p.deleted_at IS NULL))
   -- A space is never "within" itself — also guards a cyclic link that
   -- would otherwise let the target match its own ancestor walk.
   AND (@within::text = '' OR sp.slug <> @within)
@@ -167,23 +170,24 @@ LIMIT NULLIF(@page_limit::int, 0) OFFSET @page_offset;
 -- pagination) so the response can carry `total` for "Showing N" counts
 -- and numbered pagination. Same predicates, same within-CTE.
 WITH RECURSIVE subtree AS (
-    SELECT e.cid AS id, 1 AS depth
-    FROM (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    SELECT kid.id, 1 AS depth
+    FROM spaces t
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = t.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e
-    JOIN spaces t ON t.id = e.pid AND t.slug = @within AND t.deleted_at IS NULL
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = t.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
+    WHERE t.slug = @within AND t.deleted_at IS NULL
     UNION ALL
-    SELECT e.cid, st.depth + 1
+    SELECT kid.id, st.depth + 1
     FROM subtree st
-    JOIN (
-        SELECT sps.parent_space_id AS pid, sps.space_id AS cid FROM space_parent_spaces sps
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = st.id
         UNION ALL
-        SELECT c.parent_id, c.id FROM spaces c WHERE c.parent_id IS NOT NULL
-    ) e ON e.pid = st.id
-    JOIN spaces dc ON dc.id = e.cid AND dc.deleted_at IS NULL
+        SELECT c.id FROM spaces c WHERE c.parent_id = st.id
+    ) kid ON true
+    JOIN spaces dc ON dc.id = kid.id AND dc.deleted_at IS NULL
     WHERE st.depth < 3
 )
 SELECT COUNT(*) FROM (
@@ -198,7 +202,7 @@ SELECT COUNT(*) FROM (
       AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
       AND (@region::text = '' OR sp.region = @region)
       AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
-      AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
+      AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent AND p.deleted_at IS NULL))
       AND (@within::text = '' OR sp.slug <> @within)
       AND (@within::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
     GROUP BY sp.id
@@ -505,7 +509,7 @@ WHERE wp.id = @page_id;
 SELECT sp.id, sp.name
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
-WHERE sp.slug = @slug AND sp.status = 'active'
+WHERE sp.slug = @slug AND sp.status = 'active' AND sp.deleted_at IS NULL
  -- §05 amendment — education-typed spaces need level='university' for wiki.
  AND (sp.level = 'university' OR NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'))
@@ -536,7 +540,7 @@ WHERE s.status = 'active' AND s.deleted_at IS NULL
 SELECT (sp.level = 'university') AS is_university
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
-WHERE sp.slug = @slug AND sp.status = 'active'
+WHERE sp.slug = @slug AND sp.status = 'active' AND sp.deleted_at IS NULL
 LIMIT 1;
 
 -- name: CreateWikiPage :one
@@ -604,7 +608,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) lr ON true
 WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
-  AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
+  AND (@dest_slug::text = '' OR (sp.slug = @dest_slug AND sp.deleted_at IS NULL))
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
   AND (sqlc.narg(is_featured)::bool IS NULL OR wp.is_featured = sqlc.narg(is_featured)::bool)
@@ -648,7 +652,7 @@ SELECT COUNT(*)
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
 WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
-  AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
+  AND (@dest_slug::text = '' OR (sp.slug = @dest_slug AND sp.deleted_at IS NULL))
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
   AND (sqlc.narg(is_featured)::bool IS NULL OR wp.is_featured = sqlc.narg(is_featured)::bool)

@@ -306,19 +306,28 @@ async function requestUncached<T>(
 	// Abort the fetch after REQUEST_TIMEOUT_MS so a slow/stuck backend cannot
 	// hang the SSR critical path. The controller + timer are cleaned up via
 	// the finally block below to avoid leaking a pending timer per request.
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-	let res: Response;
-	try {
-		res = await ctx.fetch(buildApiUrl(path, API_BASE), {
-			method,
-			headers,
-			body: body === undefined ? undefined : JSON.stringify(body),
-			signal: controller.signal
-		});
-	} finally {
-		clearTimeout(timer);
+	// Idempotent GETs retry once on a thrown fetch (timeout abort / network
+	// error) — a single transient blip must not 500 the whole page load.
+	let res: Response | undefined;
+	let fetchErr: unknown;
+	const maxAttempts = method === 'GET' ? 2 : 1;
+	for (let attempt = 0; attempt < maxAttempts && res === undefined; attempt++) {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+		try {
+			res = await ctx.fetch(buildApiUrl(path, API_BASE), {
+				method,
+				headers,
+				body: body === undefined ? undefined : JSON.stringify(body),
+				signal: controller.signal
+			});
+		} catch (err) {
+			fetchErr = err;
+		} finally {
+			clearTimeout(timer);
+		}
 	}
+	if (res === undefined) throw fetchErr;
 
 	let payload: unknown = null;
 	try {

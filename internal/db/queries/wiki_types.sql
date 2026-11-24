@@ -127,7 +127,7 @@ FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
 JOIN space_types st ON st.id = wtc.space_type_id
 LEFT JOIN custom_field_groups fg ON fg.id = wtc.field_group_id
-WHERE sp.slug = @space_slug AND sp.status = 'active'
+WHERE sp.slug = @space_slug AND sp.status = 'active' AND sp.deleted_at IS NULL
 ORDER BY wtc.position, wtc.slug;
 
 -- name: ListSeedCategoriesBySpaceType :many
