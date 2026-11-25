@@ -356,6 +356,7 @@ LIMIT $%d OFFSET $%d
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorVerified, &r.AuthorVerificationType,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.CitySpaceName, &r.CitySpaceCode,
 		); err != nil {
@@ -564,6 +565,7 @@ LIMIT $%d OFFSET $%d
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorVerified, &r.AuthorVerificationType,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.CitySpaceName, &r.CitySpaceCode,
 		); err != nil {

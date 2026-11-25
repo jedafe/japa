@@ -1712,7 +1712,9 @@ export interface SpaceContentItem {
 	title: string;
 	slug: string;
 	excerpt?: string;
-	body_html: string;
+	/** Full HTML body — not shipped on card payloads (the backend suppresses
+	 *  the key to keep cards lean); only present on detail responses. */
+	body_html?: string;
 	status: string;
 	visibility: string;
 	is_pinned: boolean;

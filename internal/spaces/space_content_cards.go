@@ -11,8 +11,14 @@ import (
 // render (excerpt, cover, engagement counts, tags, org badge, journey
 // badges, video overlay) plus the moderation columns this page needs
 // (status/visibility, the space pin flag lives on PostCard.IsPinned).
+// The depth-0 BodyHtml declaration outranks the embedded PostCard field
+// for encoding/json (same JSON name, shallower depth wins) — it stays
+// unpopulated, so omitempty drops the key. Feed cards never render
+// body_html and explore's payload doesn't ship it; this keeps space cards
+// lean. (json:"-" does NOT shadow embedded fields — verified.)
 type spaceContentCard struct {
 	content.PostCard
+	BodyHtml   string `json:"body_html,omitempty"`
 	Status     string `json:"status"`
 	Visibility string `json:"visibility"`
 	VoteScore  int32  `json:"vote_score"`
@@ -35,12 +41,12 @@ func derefI32(n *int32) int32 {
 func spaceCardFromListRow(c *gen.ListContentsBySpaceRow) spaceContentCard {
 	return spaceContentCard{
 		PostCard: content.PostCard{
-			ID:                     c.ID,
-			ContentType:            c.ContentType,
-			Title:                  c.Title,
-			Slug:                   c.Slug,
-			Excerpt:                feed.CleanExcerpt(c.Excerpt, c.Title),
-			BodyHtml:               c.BodyHtml,
+			ID:          c.ID,
+			ContentType: c.ContentType,
+			Title:       c.Title,
+			Slug:        c.Slug,
+			Excerpt:     feed.CleanExcerpt(c.Excerpt, c.Title),
+			// body_html intentionally unpopulated — suppressed by the outer shadow field.
 			AuthorID:               c.AuthorID,
 			AuthorName:             c.AuthorName,
 			AuthorUsername:         c.AuthorUsername,
@@ -86,12 +92,12 @@ func spaceCardFromListRow(c *gen.ListContentsBySpaceRow) spaceContentCard {
 func spaceCardFromPinnedRow(c *gen.ListPinnedContentBySpaceRow) spaceContentCard {
 	return spaceContentCard{
 		PostCard: content.PostCard{
-			ID:                     c.ID,
-			ContentType:            c.ContentType,
-			Title:                  c.Title,
-			Slug:                   c.Slug,
-			Excerpt:                feed.CleanExcerpt(c.Excerpt, c.Title),
-			BodyHtml:               c.BodyHtml,
+			ID:          c.ID,
+			ContentType: c.ContentType,
+			Title:       c.Title,
+			Slug:        c.Slug,
+			Excerpt:     feed.CleanExcerpt(c.Excerpt, c.Title),
+			// body_html intentionally unpopulated — suppressed by the outer shadow field.
 			AuthorID:               c.AuthorID,
 			AuthorName:             c.AuthorName,
 			AuthorUsername:         c.AuthorUsername,
@@ -137,12 +143,12 @@ func spaceCardFromPinnedRow(c *gen.ListPinnedContentBySpaceRow) spaceContentCard
 func spaceCardFromSearchRow(c *gen.SearchContentsBySpaceRow) spaceContentCard {
 	return spaceContentCard{
 		PostCard: content.PostCard{
-			ID:                     c.ID,
-			ContentType:            c.ContentType,
-			Title:                  c.Title,
-			Slug:                   c.Slug,
-			Excerpt:                feed.CleanExcerpt(c.Excerpt, c.Title),
-			BodyHtml:               c.BodyHtml,
+			ID:          c.ID,
+			ContentType: c.ContentType,
+			Title:       c.Title,
+			Slug:        c.Slug,
+			Excerpt:     feed.CleanExcerpt(c.Excerpt, c.Title),
+			// body_html intentionally unpopulated — suppressed by the outer shadow field.
 			AuthorID:               c.AuthorID,
 			AuthorName:             c.AuthorName,
 			AuthorUsername:         c.AuthorUsername,
