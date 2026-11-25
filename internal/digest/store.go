@@ -741,8 +741,10 @@ type DigestThread struct {
 // DigestMember is a new-member summary (display_name only — no PII leak).
 // //nolint:revive // exported: stutter naming is intentional.
 type DigestMember struct {
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name,omitempty"`
+	Username         string `json:"username"`
+	DisplayName      string `json:"display_name,omitempty"`
+	Verified         bool   `json:"verified,omitempty"`
+	VerificationType string `json:"verification_type,omitempty"`
 }
 
 // DigestEvent is an upcoming event summary.
@@ -849,7 +851,7 @@ WHERE ft.deleted_at IS NULL
 	var mArgs []any
 
 	membersQ.WriteString(fmt.Sprintf(`
-SELECT u.username, COALESCE(up.display_name, '')
+SELECT u.username, COALESCE(up.display_name, ''), u.verified, COALESCE(u.verification_type, '')
 FROM users u
 JOIN onboarding_state os ON os.user_id = u.id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -877,7 +879,7 @@ WHERE u.created_at >= now() - $1::interval
 
 	for mrows.Next() {
 		var m DigestMember
-		if err := mrows.Scan(&m.Username, &m.DisplayName); err != nil {
+		if err := mrows.Scan(&m.Username, &m.DisplayName, &m.Verified, &m.VerificationType); err != nil {
 			mrows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan member: %w", err)
 		}

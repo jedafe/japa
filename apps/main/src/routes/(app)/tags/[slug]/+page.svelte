@@ -4,6 +4,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { Modal } from '#lib/components/ui/index.js';
 	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle, ShieldCheck } from 'lucide-svelte';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -643,6 +644,8 @@
 								slug={f.username}
 								name={f.display_name}
 								avatar={f.avatar_url}
+								verified={f.verified}
+								verificationType={f.verification_type}
 								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
@@ -654,7 +657,7 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{f.display_name}</span>
+										<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{f.display_name}</span><VerifiedBadge verified={f.verified} type={f.verification_type} size={14} /></span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">@{f.username}</span>
 									</span>
 								{/snippet}
@@ -675,6 +678,8 @@
 								slug={m.username}
 								name={m.display_name || m.username}
 								avatar={m.avatar_url}
+								verified={m.verified}
+								verificationType={m.verification_type}
 								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
@@ -686,7 +691,7 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{m.display_name || m.username}</span>
+										<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{m.display_name || m.username}</span><VerifiedBadge verified={m.verified} type={m.verification_type} size={14} /></span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">@{m.username}</span>
 									</span>
 									<ShieldCheck size={16} class="shrink-0 text-[var(--color-primary-text)]" />

@@ -66,7 +66,12 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("spaces: failed to resolve content literals", "error", err)
 		}
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+		cards := make([]spaceContentCard, 0, len(items))
+		for i := range items {
+			cards = append(cards, spaceCardFromSearchRow(&items[i]))
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cards})
 
 		return
 	}
@@ -111,7 +116,12 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("spaces: failed to resolve content literals", "error", err)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+	cards := make([]spaceContentCard, 0, len(items))
+	for i := range items {
+		cards = append(cards, spaceCardFromListRow(&items[i]))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cards})
 }
 
 // ListPinned handles GET /api/v1/spaces/{slug}/pinned. Returns the pinned
@@ -158,7 +168,12 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("spaces: failed to resolve pinned content literals", "error", err)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pins})
+	cards := make([]spaceContentCard, 0, len(pins))
+	for i := range pins {
+		cards = append(cards, spaceCardFromPinnedRow(&pins[i]))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cards})
 }
 
 // AddPinned handles POST /api/v1/spaces/{slug}/pinned — pins a content item

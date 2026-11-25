@@ -1132,6 +1132,8 @@ export interface ProfileLike {
 	comment_count: number;
 	author_name: string;
 	author_avatar_url: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	excerpt: string;
 	reacted_at: string;
 }
@@ -1582,6 +1584,8 @@ export interface SpaceModerator {
 	created_at: string;
 	user_username: string;
 	user_display_name: string | null;
+	user_verified?: boolean;
+	user_verification_type?: string | null;
 }
 
 /** GET /spaces/{slug}/rules item — gen.SpaceRule row. */
@@ -1602,6 +1606,8 @@ export interface SpaceReview {
 	title: string;
 	body: string;
 	author_name: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	created_at: string;
 }
 
@@ -1647,6 +1653,8 @@ export interface SpaceJoinRequest {
 	username: string;
 	display_name: string | null;
 	avatar_url: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 	joined_at: string;
 	status: string;
 }
@@ -1693,7 +1701,9 @@ export interface MyReport {
 	entity_author_username?: string | null;
 }
 
-/** GET /spaces/{slug}/content item — ListContentsBySpaceRow (content cards). */
+/** GET /spaces/{slug}/content, /pinned and ?q= search item — the
+ * spaceContentCard payload (content.PostCard shape + moderation columns),
+ * the same surface fields explore feed cards render. */
 export interface SpaceContentItem {
 	id: string;
 	author_id: string;
@@ -1701,6 +1711,7 @@ export interface SpaceContentItem {
 	content_type: string;
 	title: string;
 	slug: string;
+	excerpt?: string;
 	body_html: string;
 	status: string;
 	visibility: string;
@@ -1709,17 +1720,41 @@ export interface SpaceContentItem {
 	view_count: number;
 	comment_count: number;
 	share_count: number;
+	reaction_count?: number;
+	bookmark_count?: number;
+	vote_score?: number;
 	published_at: string;
 	/** Row creation timestamp — the ?cursor= pagination key for
 	 * GET /spaces/{slug}/content (ORDER BY created_at DESC, id DESC). */
 	created_at: string;
 	/** Author fields joined from users/user_profiles — FeedCard renders
 	 * these via toFeedItem. Nullable: LEFT JOINs. */
+	author_name?: string | null;
 	author_username?: string | null;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
 	author_verified?: boolean;
 	author_verification_type?: string | null;
+	/** Org-attributed posts (§07) — lean org badge reference. */
+	organization_id?: string | null;
+	organization?: FeedOrganization | null;
+	space_name?: string | null;
+	space_slug?: string | null;
+	space_avatar_url?: string | null;
+	header_image_id?: string | null;
+	featured_image_id?: string | null;
+	cover_image_url?: string | null;
+	tags?: string[];
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
+	guide_category?: string | null;
+	video_source_id?: string | null;
+	video_source_url?: string | null;
+	video_source_type?: string | null;
+	video_duration_secs?: number | null;
+	video_thumbnail_url?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -4190,6 +4225,8 @@ export interface DigestMember {
 	/** Backend emits display_name (§84 — only username + display_name). */
 	display_name?: string;
 	avatar_url?: string;
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 export interface DigestEvent {
@@ -4453,6 +4490,8 @@ export interface Achievement {
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	allowed_reactions?: AchievementReaction[];
 }
 
@@ -4509,6 +4548,8 @@ export interface ServiceListing {
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	// §111 package fields — populated when listing_kind='package'.
 	listing_kind?: string;
 	price_amount?: number | null; // minor units (kobo/cents)
@@ -5130,6 +5171,8 @@ export interface CredentialCommunityNote {
 	pathway_id: string;
 	user_id: string;
 	user_name?: string | null;
+	user_verified?: boolean;
+	user_verification_type?: string | null;
 	note: string;
 	upvotes: number;
 	status: string;
@@ -5289,6 +5332,8 @@ export interface LanguageTestScoreStory {
 	status: string;
 	created_at: string;
 	author_name?: string | null;
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 }
 export interface LanguageTestHubPage {
 	test: LanguageTest;
@@ -5717,6 +5762,8 @@ export interface EcaCommunityUpdate {
 	id: string;
 	guide_id: string;
 	user_name?: string;
+	user_verified?: boolean;
+	user_verification_type?: string | null;
 	step_index?: number;
 	fee_estimate?: string;
 	turnaround_days?: number;

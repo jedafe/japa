@@ -80,19 +80,21 @@ type ResourceDTO struct {
 
 // ScoreStoryDTO is the API response shape for a single score story.
 type ScoreStoryDTO struct {
-	ID                 string      `json:"id"`
-	UserID             string      `json:"user_id"`
-	TestID             pgtype.UUID `json:"test_id"`
-	StartingLevel      string      `json:"starting_level,omitempty"`
-	FinalScore         string      `json:"final_score"`
-	DestinationSpaceID string      `json:"destination_space_id,omitempty"`
-	DestSpaceName      string      `json:"destination_space_name,omitempty"`
-	PrepDurationWeeks  int32       `json:"prep_duration_weeks,omitempty"`
-	ResourcesUsed      []string    `json:"resources_used,omitempty"`
-	Advice             string      `json:"advice,omitempty"`
-	Status             string      `json:"status"`
-	CreatedAt          string      `json:"created_at"`
-	AuthorName         string      `json:"author_name,omitempty"`
+	ID                     string      `json:"id"`
+	UserID                 string      `json:"user_id"`
+	TestID                 pgtype.UUID `json:"test_id"`
+	StartingLevel          string      `json:"starting_level,omitempty"`
+	FinalScore             string      `json:"final_score"`
+	DestinationSpaceID     string      `json:"destination_space_id,omitempty"`
+	DestSpaceName          string      `json:"destination_space_name,omitempty"`
+	PrepDurationWeeks      int32       `json:"prep_duration_weeks,omitempty"`
+	ResourcesUsed          []string    `json:"resources_used,omitempty"`
+	Advice                 string      `json:"advice,omitempty"`
+	Status                 string      `json:"status"`
+	CreatedAt              string      `json:"created_at"`
+	AuthorName             string      `json:"author_name,omitempty"`
+	AuthorVerified         bool        `json:"author_verified,omitempty"`
+	AuthorVerificationType string      `json:"author_verification_type,omitempty"`
 }
 
 // CreateRequirementRequest is the request body for POST
@@ -1031,6 +1033,14 @@ func storyRowToDTO(r ScoreStoryRow) ScoreStoryDTO {
 
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
+	}
+
+	if r.AuthorVerified != nil {
+		dto.AuthorVerified = *r.AuthorVerified
+	}
+
+	if r.AuthorVerificationType != nil {
+		dto.AuthorVerificationType = *r.AuthorVerificationType
 	}
 
 	return dto

@@ -547,7 +547,9 @@ const listTagModerators = `-- name: ListTagModerators :many
 
 SELECT tm.user_id, COALESCE(u.public_username, u.username, '') AS username, tm.created_at,
  COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS verified,
+ COALESCE(u.verification_type, '') AS verification_type
 FROM tag_moderators tm
 JOIN users u ON u.id = tm.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
@@ -556,11 +558,13 @@ ORDER BY tm.created_at ASC
 `
 
 type ListTagModeratorsRow struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	Username    string             `json:"username"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Username         string             `json:"username"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	DisplayName      string             `json:"display_name"`
+	AvatarUrl        string             `json:"avatar_url"`
+	Verified         bool               `json:"verified"`
+	VerificationType string             `json:"verification_type"`
 }
 
 // =====================
@@ -582,6 +586,8 @@ func (q *Queries) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]L
 			&i.CreatedAt,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}

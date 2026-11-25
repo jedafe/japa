@@ -70,6 +70,8 @@ type UpdateDTO struct {
 	ID                   string `json:"id"`
 	GuideID              string `json:"guide_id"`
 	UserName             string `json:"user_name,omitempty"`
+	UserVerified         bool   `json:"user_verified,omitempty"`
+	UserVerificationType string `json:"user_verification_type,omitempty"`
 	StepIndex            *int32 `json:"step_index,omitempty"`
 	FeeEstimate          string `json:"fee_estimate,omitempty"`
 	TurnaroundDays       *int32 `json:"turnaround_days,omitempty"`
@@ -617,6 +619,14 @@ func updateDTOs(rows []UpdateRow) []UpdateDTO {
 		}
 		if u.UserName != nil {
 			d.UserName = *u.UserName
+		}
+
+		if u.UserVerified != nil {
+			d.UserVerified = *u.UserVerified
+		}
+
+		if u.UserVerificationType != nil {
+			d.UserVerificationType = *u.UserVerificationType
 		}
 
 		if u.StepIndex.Valid {

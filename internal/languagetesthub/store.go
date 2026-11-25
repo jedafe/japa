@@ -116,18 +116,20 @@ type ResourceRow struct {
 type ScoreStoryRow struct {
 	ID pgtype.UUID
 
-	UserID             pgtype.UUID
-	TestID             pgtype.UUID
-	StartingLevel      *string
-	FinalScore         string
-	DestinationSpaceID pgtype.UUID
-	DestSpaceName      *string
-	PrepDurationWeeks  *int32
-	ResourcesUsed      []string
-	Advice             *string
-	Status             string
-	CreatedAt          pgtype.Timestamptz
-	AuthorName         *string
+	UserID                 pgtype.UUID
+	TestID                 pgtype.UUID
+	StartingLevel          *string
+	FinalScore             string
+	DestinationSpaceID     pgtype.UUID
+	DestSpaceName          *string
+	PrepDurationWeeks      *int32
+	ResourcesUsed          []string
+	Advice                 *string
+	Status                 string
+	CreatedAt              pgtype.Timestamptz
+	AuthorName             *string
+	AuthorVerified         *bool
+	AuthorVerificationType *string
 }
 
 // ListTests returns all language_tests rows ordered by id.
@@ -893,7 +895,8 @@ func (s *Store) ListStories(ctx context.Context, testID, destSpaceID pgtype.UUID
 SELECT s.id, s.user_id, s.test_id, s.starting_level,
        s.final_score, s.destination_space_id, ds.name AS dest_space_name,
        s.prep_duration_weeks, s.resources_used, s.advice, s.status,
-       s.created_at, u.username AS author_name
+       s.created_at, u.username AS author_name,
+       u.verified AS author_verified, u.verification_type AS author_verification_type
 FROM language_score_stories s
 LEFT JOIN spaces ds ON ds.id = s.destination_space_id
 LEFT JOIN users u ON u.id = s.user_id
@@ -919,6 +922,7 @@ LIMIT $%d OFFSET $%d
 			&r.FinalScore, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.PrepDurationWeeks, &r.ResourcesUsed, &r.Advice, &r.Status,
 			&r.CreatedAt, &r.AuthorName,
+			&r.AuthorVerified, &r.AuthorVerificationType,
 		); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan story row: %w", err)
 		}
@@ -979,9 +983,9 @@ RETURNING id, user_id, test_id, starting_level, final_score,
 	if err != nil {
 		return ScoreStoryRow{}, fmt.Errorf("languagetesthub: create story: %w", err)
 	}
-	// Populate author name join.
-	const uq = `SELECT username FROM users WHERE id = $1`
-	if err := s.pool.Reader.QueryRow(ctx, uq, in.UserID).Scan(&r.AuthorName); err != nil {
+	// Populate author name + verification join.
+	const uq = `SELECT username, verified, verification_type FROM users WHERE id = $1`
+	if err := s.pool.Reader.QueryRow(ctx, uq, in.UserID).Scan(&r.AuthorName, &r.AuthorVerified, &r.AuthorVerificationType); err != nil {
 		return ScoreStoryRow{}, fmt.Errorf("languagetesthub: create story: fetch author: %w", err)
 	}
 

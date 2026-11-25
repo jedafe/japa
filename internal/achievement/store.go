@@ -52,30 +52,32 @@ type AchievementMeta struct {
 type AchievementRow struct {
 	ID pgtype.UUID
 
-	AuthorID        pgtype.UUID
-	Title           string
-	Slug            string
-	Body            string
-	BodyHTML        string
-	Status          string
-	Visibility      string
-	ViewCount       int32
-	CommentCount    int32
-	ReactionCount   int32
-	SeoIndexable    bool
-	PublishedAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	MilestoneType   *string
-	OriginSpaceID   pgtype.UUID
-	OriginSpaceName *string
-	OriginSpaceCode *string
-	DestSpaceID     pgtype.UUID
-	DestSpaceName   *string
-	DestSpaceCode   *string
-	IsAnonymous     bool
-	AuthorName      *string
-	AuthorAvatar    *string
+	AuthorID               pgtype.UUID
+	Title                  string
+	Slug                   string
+	Body                   string
+	BodyHTML               string
+	Status                 string
+	Visibility             string
+	ViewCount              int32
+	CommentCount           int32
+	ReactionCount          int32
+	SeoIndexable           bool
+	PublishedAt            pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	MilestoneType          *string
+	OriginSpaceID          pgtype.UUID
+	OriginSpaceName        *string
+	OriginSpaceCode        *string
+	DestSpaceID            pgtype.UUID
+	DestSpaceName          *string
+	DestSpaceCode          *string
+	IsAnonymous            bool
+	AuthorName             *string
+	AuthorAvatar           *string
+	AuthorVerified         *bool
+	AuthorVerificationType *string
 }
 
 // GetSpaceLevel returns the level ('country', 'state', 'city', etc.) of the
@@ -251,6 +253,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        am.is_anonymous,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
        c.seo_indexable
 FROM contents c
 JOIN achievement_meta am ON am.content_id = c.id
@@ -284,6 +287,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 			&r.IsAnonymous,
 			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorVerified, &r.AuthorVerificationType, &r.SeoIndexable,
 		); err != nil {
 			return nil, 0, fmt.Errorf("achievement: scan achievement row: %w", err)
 		}
@@ -327,7 +331,9 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        am.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        am.is_anonymous,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
+       c.seo_indexable
 FROM contents c
 JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
@@ -349,6 +355,7 @@ func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 		&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.IsAnonymous,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.AuthorVerified, &r.AuthorVerificationType,
 		&r.SeoIndexable,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -458,7 +465,9 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        am.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        am.is_anonymous,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
+       c.seo_indexable
 FROM contents c
 JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
@@ -493,6 +502,8 @@ LIMIT $2
 			&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 			&r.IsAnonymous,
 			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorVerified, &r.AuthorVerificationType,
+			&r.SeoIndexable,
 		); err != nil {
 			return nil, fmt.Errorf("achievement: list by space scan: %w", err)
 		}
@@ -578,7 +589,9 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        am.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        am.is_anonymous,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.verified AS author_verified, u.verification_type AS author_verification_type,
+       c.seo_indexable
 FROM contents c
 JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
@@ -611,6 +624,8 @@ LIMIT $%d OFFSET $%d
 			&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 			&r.IsAnonymous,
 			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorVerified, &r.AuthorVerificationType,
+			&r.SeoIndexable,
 		); err != nil {
 			return nil, 0, fmt.Errorf("achievement: admin scan achievement row: %w", err)
 		}

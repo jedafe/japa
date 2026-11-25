@@ -34,6 +34,8 @@ interface TagFollower {
 	display_name: string;
 	avatar_url?: string | null;
 	bio?: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 	is_following?: boolean;
 }
 
@@ -42,6 +44,8 @@ interface TagModerator {
 	username: string;
 	display_name: string;
 	avatar_url?: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
 	added_at?: string;
 }
 

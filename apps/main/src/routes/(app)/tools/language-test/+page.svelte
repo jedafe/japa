@@ -22,6 +22,7 @@
 		Loader2
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { api } from '#lib/api/client.js';
 	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import type {
@@ -578,7 +579,7 @@
 								<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
 									<div class="flex items-center gap-2 flex-wrap mb-2">
 										{#if story.author_name}
-											<span class="text-sm font-medium text-[var(--color-text)]">{story.author_name}</span>
+											<span class="flex items-center gap-1 text-sm font-medium text-[var(--color-text)]"><span class="truncate">{story.author_name}</span><VerifiedBadge verified={story.author_verified} type={story.author_verification_type} size={14} /></span>
 										{/if}
 										<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)] rounded-full font-semibold">
 											{t('language_test.score', 'Score:')} {story.final_score}

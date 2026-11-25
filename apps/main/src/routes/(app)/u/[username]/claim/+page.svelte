@@ -9,6 +9,7 @@
 	import { ShieldQuestion, Loader2, Send, FileCheck, Video } from 'lucide-svelte';
 	import { listMyVideoClaims, submitChannelClaim } from '#lib/api/videos.js';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import type { PublicUser, VideoChannelClaim, VideoSource } from '#lib/types/index.js';
 
@@ -196,8 +197,9 @@
 					<Video size={18} />
 				</span>
 				<div class="min-w-0">
-					<p class="truncate text-sm font-medium text-[var(--color-text)]">
-						{target.display_name || target.username}
+					<p class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+						<span class="truncate">{target.display_name || target.username}</span>
+						<VerifiedBadge verified={target.verified} type={target.verification_type} size={14} />
 					</p>
 					<p class="truncate text-xs text-[var(--color-muted)]">@{target.username}</p>
 				</div>

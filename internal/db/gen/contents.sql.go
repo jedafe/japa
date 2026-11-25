@@ -3318,27 +3318,57 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 }
 
 const listContentsBySpace = `-- name: ListContentsBySpace :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
  c.field_values->>'purpose' AS purpose,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
  EXISTS(SELECT 1 FROM space_pinned_posts spp
   WHERE spp.space_id = $1 AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = cs.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
  AND (
@@ -3377,51 +3407,76 @@ type ListContentsBySpaceParams struct {
 }
 
 type ListContentsBySpaceRow struct {
-	ID                     pgtype.UUID        `json:"id"`
-	AuthorID               pgtype.UUID        `json:"author_id"`
-	SpaceID                pgtype.UUID        `json:"space_id"`
-	ContentType            string             `json:"content_type"`
-	Title                  string             `json:"title"`
-	Slug                   string             `json:"slug"`
-	Body                   string             `json:"body"`
-	BodyHtml               string             `json:"body_html"`
-	FieldValues            []byte             `json:"field_values"`
-	ContentHash            *string            `json:"content_hash"`
-	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl           *string            `json:"canonical_url"`
-	MetaTitle              *string            `json:"meta_title"`
-	MetaDescription        *string            `json:"meta_description"`
-	OgImageUrl             *string            `json:"og_image_url"`
-	SeoIndexable           bool               `json:"seo_indexable"`
-	FederateOptOut         bool               `json:"federate_opt_out"`
-	Status                 string             `json:"status"`
-	Visibility             string             `json:"visibility"`
-	IsLocked               bool               `json:"is_locked"`
-	ReadTimeMinutes        int32              `json:"read_time_minutes"`
-	ViewCount              int32              `json:"view_count"`
-	CommentCount           int32              `json:"comment_count"`
-	ShareCount             int32              `json:"share_count"`
-	ReshareCount           int32              `json:"reshare_count"`
-	PublishAt              pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt            pgtype.Timestamptz `json:"published_at"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory          *string            `json:"guide_category"`
-	JourneyStage           *string            `json:"journey_stage"`
-	VisaRoute              *string            `json:"visa_route"`
-	SourceCountry          *string            `json:"source_country"`
-	TargetCountry          *string            `json:"target_country"`
-	Purpose                interface{}        `json:"purpose"`
-	IsFeatured             bool               `json:"is_featured"`
-	AuthorUsername         string             `json:"author_username"`
-	AuthorDisplayName      *string            `json:"author_display_name"`
-	AuthorAvatarUrl        string             `json:"author_avatar_url"`
-	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
-	SpaceName              *string            `json:"space_name"`
-	IsPinned               bool               `json:"is_pinned"`
+	ID                       pgtype.UUID        `json:"id"`
+	AuthorID                 pgtype.UUID        `json:"author_id"`
+	OrganizationID           pgtype.UUID        `json:"organization_id"`
+	SpaceID                  pgtype.UUID        `json:"space_id"`
+	ContentType              string             `json:"content_type"`
+	Title                    string             `json:"title"`
+	Slug                     string             `json:"slug"`
+	Body                     string             `json:"body"`
+	BodyHtml                 string             `json:"body_html"`
+	FieldValues              []byte             `json:"field_values"`
+	ContentHash              *string            `json:"content_hash"`
+	GeoSpaceID               pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID            pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID          pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl             *string            `json:"canonical_url"`
+	MetaTitle                *string            `json:"meta_title"`
+	MetaDescription          *string            `json:"meta_description"`
+	OgImageUrl               *string            `json:"og_image_url"`
+	SeoIndexable             bool               `json:"seo_indexable"`
+	FederateOptOut           bool               `json:"federate_opt_out"`
+	Status                   string             `json:"status"`
+	Visibility               string             `json:"visibility"`
+	IsLocked                 bool               `json:"is_locked"`
+	ReadTimeMinutes          int32              `json:"read_time_minutes"`
+	ViewCount                int32              `json:"view_count"`
+	CommentCount             int32              `json:"comment_count"`
+	ShareCount               int32              `json:"share_count"`
+	ReshareCount             int32              `json:"reshare_count"`
+	PublishAt                pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt              pgtype.Timestamptz `json:"published_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory            *string            `json:"guide_category"`
+	JourneyStage             *string            `json:"journey_stage"`
+	VisaRoute                *string            `json:"visa_route"`
+	SourceCountry            *string            `json:"source_country"`
+	TargetCountry            *string            `json:"target_country"`
+	VideoSourceID            pgtype.UUID        `json:"video_source_id"`
+	Purpose                  interface{}        `json:"purpose"`
+	IsFeatured               bool               `json:"is_featured"`
+	AuthorUsername           string             `json:"author_username"`
+	AuthorDisplayName        *string            `json:"author_display_name"`
+	AuthorName               string             `json:"author_name"`
+	AuthorAvatarUrl          string             `json:"author_avatar_url"`
+	AuthorVerified           bool               `json:"author_verified"`
+	AuthorVerificationType   string             `json:"author_verification_type"`
+	SpaceName                *string            `json:"space_name"`
+	SpaceSlug                string             `json:"space_slug"`
+	SpaceAvatarStorageBucket *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath   *string            `json:"space_avatar_storage_path"`
+	CoverStorageBucket       *string            `json:"cover_storage_bucket"`
+	CoverStoragePath         *string            `json:"cover_storage_path"`
+	VideoSourceUrl           *string            `json:"video_source_url"`
+	VideoSourceType          *string            `json:"video_source_type"`
+	VideoDurationSecs        *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl        *string            `json:"video_thumbnail_url"`
+	Tags                     interface{}        `json:"tags"`
+	ReactionCount            int32              `json:"reaction_count"`
+	BookmarkCount            int32              `json:"bookmark_count"`
+	VoteScore                int32              `json:"vote_score"`
+	VelocityScore            pgtype.Numeric     `json:"velocity_score"`
+	Excerpt                  string             `json:"excerpt"`
+	OrgName                  *string            `json:"org_name"`
+	OrgSlug                  *string            `json:"org_slug"`
+	OrgLogoMediaID           pgtype.UUID        `json:"org_logo_media_id"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
+	OrgLogoStorageBucket     *string            `json:"org_logo_storage_bucket"`
+	OrgLogoStoragePath       *string            `json:"org_logo_storage_path"`
+	IsPinned                 bool               `json:"is_pinned"`
 }
 
 // Lists content assigned to a given space via the authoritative
@@ -3447,6 +3502,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 		if err := rows.Scan(
 			&i.ID,
 			&i.AuthorID,
+			&i.OrganizationID,
 			&i.SpaceID,
 			&i.ContentType,
 			&i.Title,
@@ -3481,14 +3537,38 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.VideoSourceID,
 			&i.Purpose,
 			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorVerified,
 			&i.AuthorVerificationType,
 			&i.SpaceName,
+			&i.SpaceSlug,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
+			&i.Tags,
+			&i.ReactionCount,
+			&i.BookmarkCount,
+			&i.VoteScore,
+			&i.VelocityScore,
+			&i.Excerpt,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.OrgLogoMediaID,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
+			&i.OrgLogoStorageBucket,
+			&i.OrgLogoStoragePath,
 			&i.IsPinned,
 		); err != nil {
 			return nil, err
@@ -4051,24 +4131,54 @@ func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 }
 
 const listPinnedContentBySpace = `-- name: ListPinnedContentBySpace :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
  true AS is_pinned
 FROM space_pinned_posts spp
 JOIN contents c ON c.id = spp.content_id
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = spp.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE spp.space_id = $1
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
@@ -4096,50 +4206,75 @@ type ListPinnedContentBySpaceParams struct {
 }
 
 type ListPinnedContentBySpaceRow struct {
-	ID                     pgtype.UUID        `json:"id"`
-	AuthorID               pgtype.UUID        `json:"author_id"`
-	SpaceID                pgtype.UUID        `json:"space_id"`
-	ContentType            string             `json:"content_type"`
-	Title                  string             `json:"title"`
-	Slug                   string             `json:"slug"`
-	Body                   string             `json:"body"`
-	BodyHtml               string             `json:"body_html"`
-	FieldValues            []byte             `json:"field_values"`
-	ContentHash            *string            `json:"content_hash"`
-	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID          pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID        pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl           *string            `json:"canonical_url"`
-	MetaTitle              *string            `json:"meta_title"`
-	MetaDescription        *string            `json:"meta_description"`
-	OgImageUrl             *string            `json:"og_image_url"`
-	SeoIndexable           bool               `json:"seo_indexable"`
-	FederateOptOut         bool               `json:"federate_opt_out"`
-	Status                 string             `json:"status"`
-	Visibility             string             `json:"visibility"`
-	IsLocked               bool               `json:"is_locked"`
-	ReadTimeMinutes        int32              `json:"read_time_minutes"`
-	ViewCount              int32              `json:"view_count"`
-	CommentCount           int32              `json:"comment_count"`
-	ShareCount             int32              `json:"share_count"`
-	ReshareCount           int32              `json:"reshare_count"`
-	PublishAt              pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt            pgtype.Timestamptz `json:"published_at"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory          *string            `json:"guide_category"`
-	JourneyStage           *string            `json:"journey_stage"`
-	VisaRoute              *string            `json:"visa_route"`
-	SourceCountry          *string            `json:"source_country"`
-	TargetCountry          *string            `json:"target_country"`
-	Purpose                interface{}        `json:"purpose"`
-	AuthorUsername         string             `json:"author_username"`
-	AuthorDisplayName      *string            `json:"author_display_name"`
-	AuthorAvatarUrl        string             `json:"author_avatar_url"`
-	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
-	SpaceName              *string            `json:"space_name"`
-	IsPinned               bool               `json:"is_pinned"`
+	ID                       pgtype.UUID        `json:"id"`
+	AuthorID                 pgtype.UUID        `json:"author_id"`
+	OrganizationID           pgtype.UUID        `json:"organization_id"`
+	SpaceID                  pgtype.UUID        `json:"space_id"`
+	ContentType              string             `json:"content_type"`
+	Title                    string             `json:"title"`
+	Slug                     string             `json:"slug"`
+	Body                     string             `json:"body"`
+	BodyHtml                 string             `json:"body_html"`
+	FieldValues              []byte             `json:"field_values"`
+	ContentHash              *string            `json:"content_hash"`
+	GeoSpaceID               pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID            pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID          pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl             *string            `json:"canonical_url"`
+	MetaTitle                *string            `json:"meta_title"`
+	MetaDescription          *string            `json:"meta_description"`
+	OgImageUrl               *string            `json:"og_image_url"`
+	SeoIndexable             bool               `json:"seo_indexable"`
+	FederateOptOut           bool               `json:"federate_opt_out"`
+	Status                   string             `json:"status"`
+	Visibility               string             `json:"visibility"`
+	IsLocked                 bool               `json:"is_locked"`
+	ReadTimeMinutes          int32              `json:"read_time_minutes"`
+	ViewCount                int32              `json:"view_count"`
+	CommentCount             int32              `json:"comment_count"`
+	ShareCount               int32              `json:"share_count"`
+	ReshareCount             int32              `json:"reshare_count"`
+	PublishAt                pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt              pgtype.Timestamptz `json:"published_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory            *string            `json:"guide_category"`
+	JourneyStage             *string            `json:"journey_stage"`
+	VisaRoute                *string            `json:"visa_route"`
+	SourceCountry            *string            `json:"source_country"`
+	TargetCountry            *string            `json:"target_country"`
+	VideoSourceID            pgtype.UUID        `json:"video_source_id"`
+	Purpose                  interface{}        `json:"purpose"`
+	AuthorUsername           string             `json:"author_username"`
+	AuthorDisplayName        *string            `json:"author_display_name"`
+	AuthorName               string             `json:"author_name"`
+	AuthorAvatarUrl          string             `json:"author_avatar_url"`
+	AuthorVerified           bool               `json:"author_verified"`
+	AuthorVerificationType   string             `json:"author_verification_type"`
+	SpaceName                *string            `json:"space_name"`
+	SpaceSlug                string             `json:"space_slug"`
+	SpaceAvatarStorageBucket *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath   *string            `json:"space_avatar_storage_path"`
+	CoverStorageBucket       *string            `json:"cover_storage_bucket"`
+	CoverStoragePath         *string            `json:"cover_storage_path"`
+	VideoSourceUrl           *string            `json:"video_source_url"`
+	VideoSourceType          *string            `json:"video_source_type"`
+	VideoDurationSecs        *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl        *string            `json:"video_thumbnail_url"`
+	Tags                     interface{}        `json:"tags"`
+	ReactionCount            int32              `json:"reaction_count"`
+	BookmarkCount            int32              `json:"bookmark_count"`
+	VoteScore                int32              `json:"vote_score"`
+	VelocityScore            pgtype.Numeric     `json:"velocity_score"`
+	Excerpt                  string             `json:"excerpt"`
+	OrgName                  *string            `json:"org_name"`
+	OrgSlug                  *string            `json:"org_slug"`
+	OrgLogoMediaID           pgtype.UUID        `json:"org_logo_media_id"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
+	OrgLogoStorageBucket     *string            `json:"org_logo_storage_bucket"`
+	OrgLogoStoragePath       *string            `json:"org_logo_storage_path"`
+	IsPinned                 bool               `json:"is_pinned"`
 }
 
 // Returns the pinned content rows for a space (space_pinned_posts joined to
@@ -4165,6 +4300,7 @@ func (q *Queries) ListPinnedContentBySpace(ctx context.Context, arg ListPinnedCo
 		if err := rows.Scan(
 			&i.ID,
 			&i.AuthorID,
+			&i.OrganizationID,
 			&i.SpaceID,
 			&i.ContentType,
 			&i.Title,
@@ -4199,13 +4335,37 @@ func (q *Queries) ListPinnedContentBySpace(ctx context.Context, arg ListPinnedCo
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.VideoSourceID,
 			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorVerified,
 			&i.AuthorVerificationType,
 			&i.SpaceName,
+			&i.SpaceSlug,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
+			&i.Tags,
+			&i.ReactionCount,
+			&i.BookmarkCount,
+			&i.VoteScore,
+			&i.VelocityScore,
+			&i.Excerpt,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.OrgLogoMediaID,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
+			&i.OrgLogoStorageBucket,
+			&i.OrgLogoStoragePath,
 			&i.IsPinned,
 		); err != nil {
 			return nil, err
@@ -5226,14 +5386,54 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 }
 
 const searchContentsBySpace = `-- name: SearchContentsBySpace :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
- c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
- c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
+ EXISTS(SELECT 1 FROM space_pinned_posts spp
+  WHERE spp.space_id = $1 AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = cs.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
  AND (
@@ -5273,43 +5473,73 @@ type SearchContentsBySpaceParams struct {
 }
 
 type SearchContentsBySpaceRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	FederateOptOut  bool               `json:"federate_opt_out"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory   *string            `json:"guide_category"`
-	JourneyStage    *string            `json:"journey_stage"`
-	VisaRoute       *string            `json:"visa_route"`
-	SourceCountry   *string            `json:"source_country"`
-	TargetCountry   *string            `json:"target_country"`
+	ID                       pgtype.UUID        `json:"id"`
+	AuthorID                 pgtype.UUID        `json:"author_id"`
+	OrganizationID           pgtype.UUID        `json:"organization_id"`
+	SpaceID                  pgtype.UUID        `json:"space_id"`
+	ContentType              string             `json:"content_type"`
+	Title                    string             `json:"title"`
+	Slug                     string             `json:"slug"`
+	Body                     string             `json:"body"`
+	BodyHtml                 string             `json:"body_html"`
+	FieldValues              []byte             `json:"field_values"`
+	ContentHash              *string            `json:"content_hash"`
+	GeoSpaceID               pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID            pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID          pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl             *string            `json:"canonical_url"`
+	MetaTitle                *string            `json:"meta_title"`
+	MetaDescription          *string            `json:"meta_description"`
+	OgImageUrl               *string            `json:"og_image_url"`
+	SeoIndexable             bool               `json:"seo_indexable"`
+	FederateOptOut           bool               `json:"federate_opt_out"`
+	Status                   string             `json:"status"`
+	Visibility               string             `json:"visibility"`
+	IsLocked                 bool               `json:"is_locked"`
+	ReadTimeMinutes          int32              `json:"read_time_minutes"`
+	ViewCount                int32              `json:"view_count"`
+	CommentCount             int32              `json:"comment_count"`
+	ShareCount               int32              `json:"share_count"`
+	ReshareCount             int32              `json:"reshare_count"`
+	PublishAt                pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt              pgtype.Timestamptz `json:"published_at"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory            *string            `json:"guide_category"`
+	JourneyStage             *string            `json:"journey_stage"`
+	VisaRoute                *string            `json:"visa_route"`
+	SourceCountry            *string            `json:"source_country"`
+	TargetCountry            *string            `json:"target_country"`
+	VideoSourceID            pgtype.UUID        `json:"video_source_id"`
+	AuthorName               string             `json:"author_name"`
+	AuthorUsername           string             `json:"author_username"`
+	AuthorAvatarUrl          string             `json:"author_avatar_url"`
+	AuthorVerified           bool               `json:"author_verified"`
+	AuthorVerificationType   string             `json:"author_verification_type"`
+	SpaceName                string             `json:"space_name"`
+	SpaceSlug                string             `json:"space_slug"`
+	SpaceAvatarStorageBucket *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath   *string            `json:"space_avatar_storage_path"`
+	CoverStorageBucket       *string            `json:"cover_storage_bucket"`
+	CoverStoragePath         *string            `json:"cover_storage_path"`
+	VideoSourceUrl           *string            `json:"video_source_url"`
+	VideoSourceType          *string            `json:"video_source_type"`
+	VideoDurationSecs        *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl        *string            `json:"video_thumbnail_url"`
+	Tags                     interface{}        `json:"tags"`
+	ReactionCount            int32              `json:"reaction_count"`
+	BookmarkCount            int32              `json:"bookmark_count"`
+	VoteScore                int32              `json:"vote_score"`
+	VelocityScore            pgtype.Numeric     `json:"velocity_score"`
+	Excerpt                  string             `json:"excerpt"`
+	OrgName                  *string            `json:"org_name"`
+	OrgSlug                  *string            `json:"org_slug"`
+	OrgLogoMediaID           pgtype.UUID        `json:"org_logo_media_id"`
+	OrgVerified              *bool              `json:"org_verified"`
+	OrgVerificationType      *string            `json:"org_verification_type"`
+	OrgLogoStorageBucket     *string            `json:"org_logo_storage_bucket"`
+	OrgLogoStoragePath       *string            `json:"org_logo_storage_path"`
+	IsPinned                 bool               `json:"is_pinned"`
 }
 
 // Searches content assigned to a given space via the authoritative
@@ -5335,6 +5565,7 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 		if err := rows.Scan(
 			&i.ID,
 			&i.AuthorID,
+			&i.OrganizationID,
 			&i.SpaceID,
 			&i.ContentType,
 			&i.Title,
@@ -5355,7 +5586,6 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
-			&i.IsPinned,
 			&i.ReadTimeMinutes,
 			&i.ViewCount,
 			&i.CommentCount,
@@ -5370,6 +5600,36 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.VideoSourceID,
+			&i.AuthorName,
+			&i.AuthorUsername,
+			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
+			&i.SpaceName,
+			&i.SpaceSlug,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
+			&i.Tags,
+			&i.ReactionCount,
+			&i.BookmarkCount,
+			&i.VoteScore,
+			&i.VelocityScore,
+			&i.Excerpt,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.OrgLogoMediaID,
+			&i.OrgVerified,
+			&i.OrgVerificationType,
+			&i.OrgLogoStorageBucket,
+			&i.OrgLogoStoragePath,
+			&i.IsPinned,
 		); err != nil {
 			return nil, err
 		}

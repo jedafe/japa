@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ChevronDown, ChevronUp, FileBadge, ExternalLink, Timer } from 'lucide-svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '#lib/components/ui/index.js';
 	import DestinationSelector from '#lib/components/tools/DestinationSelector.svelte';
 	import { currencySymbol } from '#lib/utils/currency.js';
@@ -545,7 +546,7 @@
 										</div>
 										{#each detail.updates as update (update.id)}
 											<div class="mb-2 text-xs text-[var(--color-text)]">
-												<span class="font-medium">{update.user_name ?? t('eca_guide.anon_member', 'Member')}</span>
+												<span class="inline-flex items-center gap-1 font-medium">{update.user_name ?? t('eca_guide.anon_member', 'Member')}<VerifiedBadge verified={update.user_verified} type={update.user_verification_type} size={12} /></span>
 												{#if update.fee_estimate}
 													· {t('eca_guide.paid_fmt', 'paid {fee}', { fee: update.fee_estimate })}
 												{/if}

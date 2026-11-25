@@ -523,27 +523,57 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Lists content assigned to a given space via the authoritative
 -- content_spaces table (BUG-010), with visibility gating. The space name
 -- returned is the requested space, regardless of whether it is the primary.
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
  c.field_values->>'purpose' AS purpose,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
  EXISTS(SELECT 1 FROM space_pinned_posts spp
   WHERE spp.space_id = @space_id AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = cs.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
  AND (
@@ -573,14 +603,54 @@ LIMIT @page_limit;
 -- name: SearchContentsBySpace :many
 -- Searches content assigned to a given space via the authoritative
 -- content_spaces table (BUG-010), with visibility gating.
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
- c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
- c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
+ COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
+ EXISTS(SELECT 1 FROM space_pinned_posts spp
+  WHERE spp.space_id = @space_id AND spp.content_id = c.id) AS is_pinned
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = cs.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
  AND (
@@ -886,24 +956,54 @@ ORDER BY spp.position ASC, spp.created_at ASC;
 -- ListContentsBySpace so guests never see members/private pins. is_pinned is
 -- true by definition for every returned row. The space name returned is the
 -- requested space (BUG-010 junction semantics).
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
  c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
  c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.federate_opt_out,
  c.status, c.visibility, c.is_locked, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.video_source_id,
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.verified, false) AS author_verified,
  COALESCE(u.verification_type, '') AS author_verification_type,
  s.name AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(DISTINCT t.name, ',' ORDER BY t.name)
+  FROM content_tags ct
+  JOIN tags t ON t.id = ct.tag_id
+  WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(csc.bookmark_count, 0) AS bookmark_count,
+ COALESCE(csc.vote_score, 0) AS vote_score,
+ COALESCE(csc.velocity_score, 0) AS velocity_score,
+ LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ o.verified AS org_verified, o.verification_type AS org_verification_type,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path,
  true AS is_pinned
 FROM space_pinned_posts spp
 JOIN contents c ON c.id = spp.content_id
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = spp.space_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores csc ON csc.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE spp.space_id = @space_id
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false

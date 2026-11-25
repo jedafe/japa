@@ -89,6 +89,8 @@ type UpdateRow struct {
 	GuideID              pgtype.UUID
 	UserID               pgtype.UUID
 	UserName             *string
+	UserVerified         *bool
+	UserVerificationType *string
 	StepIndex            pgtype.Int4
 	DestinationSpaceName *string
 	ProviderName         *string
@@ -275,9 +277,11 @@ func (s *Store) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, prov
 func (s *Store) ListApprovedUpdates(ctx context.Context, guideID pgtype.UUID) ([]UpdateRow, error) {
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
+		       usr.verified, usr.verification_type,
 		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at
 		FROM eca_community_updates u
 		LEFT JOIN user_profiles up ON up.user_id = u.user_id
+		LEFT JOIN users usr ON usr.id = u.user_id
 		WHERE u.guide_id = $1 AND u.status = 'approved' AND u.deleted_at IS NULL
 		ORDER BY u.created_at DESC
 		LIMIT 200`, guideID)
@@ -296,6 +300,7 @@ func scanUpdates(rows pgx.Rows) ([]UpdateRow, error) {
 	for rows.Next() {
 		var u UpdateRow
 		if err := rows.Scan(&u.ID, &u.GuideID, &u.UserID, &u.UserName,
+			&u.UserVerified, &u.UserVerificationType,
 			&u.StepIndex, &u.FeeEstimate, &u.TurnaroundDays, &u.Note, &u.Status, &u.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -465,6 +470,7 @@ func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, no
 func (s *Store) AdminListUpdates(ctx context.Context, status, sort, q string, page, limit int32) ([]UpdateRow, int64, error) {
 	from := ` FROM eca_community_updates u
 		LEFT JOIN user_profiles up ON up.user_id = u.user_id
+		LEFT JOIN users usr ON usr.id = u.user_id
 		LEFT JOIN eca_guides g ON g.id = u.guide_id
 		LEFT JOIN eca_providers p ON p.id = g.provider_id
 		LEFT JOIN spaces s ON s.id = g.destination_space_id`
@@ -498,6 +504,7 @@ func (s *Store) AdminListUpdates(ctx context.Context, status, sort, q string, pa
 
 	rows, err := s.pool.Reader.Query(ctx, `
 		SELECT u.id, u.guide_id, u.user_id, up.display_name,
+		       usr.verified, usr.verification_type,
 		       u.step_index, u.fee_estimate, u.turnaround_days, u.note, u.status, u.created_at,
 		       s.name AS destination_space_name, p.name AS provider_name, g.purpose`+
 		from+where+orderBy+` LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
@@ -512,6 +519,7 @@ func (s *Store) AdminListUpdates(ctx context.Context, status, sort, q string, pa
 	for rows.Next() {
 		var u UpdateRow
 		if err := rows.Scan(&u.ID, &u.GuideID, &u.UserID, &u.UserName,
+			&u.UserVerified, &u.UserVerificationType,
 			&u.StepIndex, &u.FeeEstimate, &u.TurnaroundDays, &u.Note, &u.Status, &u.CreatedAt,
 			&u.DestinationSpaceName, &u.ProviderName, &u.GuidePurpose); err != nil {
 			return nil, 0, err

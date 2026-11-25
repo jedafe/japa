@@ -78,20 +78,20 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
 }
 
-// mediaURL returns an imgproxy/local serving URL for a media row, or an empty
-// string when either bucket or path is nil.
-func mediaURL(bucket, path *string) string {
-	if bucket == nil || path == nil {
+// MediaURL returns an imgproxy/local serving URL for a media row, or an empty
+// string when either bucket or path is nil or empty.
+func MediaURL(bucket, path *string) string {
+	if bucket == nil || path == nil || *bucket == "" || *path == "" {
 		return ""
 	}
 
 	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
 }
 
-// coverImageURL resolves a cover image from storage bucket/path, falling back to
+// CoverImageURL resolves a cover image from storage bucket/path, falling back to
 // the provided URL (typically a video thumbnail) when no stored media is present.
-func coverImageURL(bucket, path *string, fallbackURL string) string {
-	if url := mediaURL(bucket, path); url != "" {
+func CoverImageURL(bucket, path *string, fallbackURL string) string {
+	if url := MediaURL(bucket, path); url != "" {
 		return url
 	}
 
@@ -110,6 +110,12 @@ func stringFromInterface(v interface{}) string {
 	}
 
 	return fmt.Sprintf("%v", v)
+}
+
+// SplitTags coerces sqlc's interface{} aggregation column into a tag slice —
+// stringFromInterface + splitTags in one call for card-row mappers.
+func SplitTags(v interface{}) []string {
+	return splitTags(stringFromInterface(v))
 }
 
 // splitTags splits a comma-separated tag string into a slice, discarding empty
@@ -144,14 +150,14 @@ type OrgRef struct {
 	VerificationType string      `json:"verification_type,omitempty"`
 }
 
-// orgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
+// OrgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
 // post is not org-attributed. The logo URL is resolved from storage bucket/path.
-func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string, verified *bool, verificationType *string) *OrgRef {
+func OrgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string, verified *bool, verificationType *string) *OrgRef {
 	if !orgID.Valid {
 		return nil
 	}
 
-	ref := &OrgRef{ID: orgID, LogoURL: mediaURL(logoBucket, logoPath)}
+	ref := &OrgRef{ID: orgID, LogoURL: MediaURL(logoBucket, logoPath)}
 	if name != nil {
 		ref.Name = *name
 	}
@@ -286,14 +292,14 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 			AuthorVerified:         c.AuthorVerified,
 			AuthorVerificationType: c.AuthorVerificationType,
 			OrganizationID:         c.OrganizationID,
-			Organization:           orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
+			Organization:           OrgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
 			SpaceID:                c.SpaceID,
 			SpaceName:              c.SpaceName,
 			SpaceSlug:              c.SpaceSlug,
-			SpaceAvatarURL:         mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
+			SpaceAvatarURL:         MediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
 			HeaderImageID:          c.HeaderImageID,
 			FeaturedImageID:        c.FeaturedImageID,
-			CoverImageURL:          coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
+			CoverImageURL:          CoverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
 			ReadTimeMinutes:        c.ReadTimeMinutes,
 			ViewCount:              c.ViewCount,
 			CommentCount:           c.CommentCount,
@@ -393,14 +399,14 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 			AuthorVerified:         c.AuthorVerified,
 			AuthorVerificationType: c.AuthorVerificationType,
 			OrganizationID:         c.OrganizationID,
-			Organization:           orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
+			Organization:           OrgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoStorageBucket, c.OrgLogoStoragePath, c.OrgVerified, c.OrgVerificationType),
 			SpaceID:                c.SpaceID,
 			SpaceName:              c.SpaceName,
 			SpaceSlug:              c.SpaceSlug,
-			SpaceAvatarURL:         mediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
+			SpaceAvatarURL:         MediaURL(c.SpaceAvatarStorageBucket, c.SpaceAvatarStoragePath),
 			HeaderImageID:          c.HeaderImageID,
 			FeaturedImageID:        c.FeaturedImageID,
-			CoverImageURL:          coverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
+			CoverImageURL:          CoverImageURL(c.CoverStorageBucket, c.CoverStoragePath, derefString(c.VideoThumbnailUrl)),
 			ReadTimeMinutes:        c.ReadTimeMinutes,
 			ViewCount:              c.ViewCount,
 			CommentCount:           c.CommentCount,

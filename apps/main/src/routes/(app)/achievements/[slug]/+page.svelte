@@ -8,6 +8,7 @@
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { api } from '#lib/api/client.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { confirmDialog } from '@japaconnect/ui';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import {
@@ -180,7 +181,7 @@
 							{(achievement.author_name ?? 'M').charAt(0)}
 						</span>
 					{/if}
-					<span class="font-medium text-[var(--color-text)]">{achievement.author_name ?? t('achievements.member', 'Member')}</span>
+					<span class="flex items-center gap-1 font-medium text-[var(--color-text)]">{achievement.author_name ?? t('achievements.member', 'Member')}<VerifiedBadge verified={achievement.author_verified} type={achievement.author_verification_type} size={15} /></span>
 				</span>
 			{/if}
 			<span>·</span>

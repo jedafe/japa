@@ -83,6 +83,8 @@ type CommunityNoteDTO struct {
 	PathwayID            string `json:"pathway_id"`
 	UserID               string `json:"user_id,omitempty"`
 	UserName             string `json:"user_name,omitempty"`
+	UserVerified         bool   `json:"user_verified,omitempty"`
+	UserVerificationType string `json:"user_verification_type,omitempty"`
 	Note                 string `json:"note"`
 	Upvotes              int32  `json:"upvotes"`
 	Status               string `json:"status"`
@@ -1283,6 +1285,14 @@ func noteRowToDTO(r CommunityNoteRow) CommunityNoteDTO {
 	}
 	if r.UserName != nil {
 		dto.UserName = *r.UserName
+	}
+
+	if r.UserVerified != nil {
+		dto.UserVerified = *r.UserVerified
+	}
+
+	if r.UserVerificationType != nil {
+		dto.UserVerificationType = *r.UserVerificationType
 	}
 
 	if r.ProfessionName != nil {

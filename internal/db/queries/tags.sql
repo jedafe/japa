@@ -142,7 +142,9 @@ DELETE FROM tags WHERE id = @id;
 -- Lists the moderators of a tag, joined to users for display.
 SELECT tm.user_id, COALESCE(u.public_username, u.username, '') AS username, tm.created_at,
  COALESCE(up.display_name, '') AS display_name,
- COALESCE(up.avatar_url, '') AS avatar_url
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ COALESCE(u.verified, false) AS verified,
+ COALESCE(u.verification_type, '') AS verification_type
 FROM tag_moderators tm
 JOIN users u ON u.id = tm.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id

@@ -2,6 +2,7 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import { Award, Download, ExternalLink } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
@@ -55,11 +56,13 @@
 						slug={recipient.username}
 						name={recipient.display_name}
 						avatar={recipient.avatar_url}
+						verified={recipient.verified}
+						verificationType={recipient.verification_type}
 						class="mt-2 inline-flex items-center gap-1 text-lg font-medium text-[var(--color-primary-text)] hover:underline"
 						variant="row"
 					>
 						{#snippet trigger()}
-							{recipient.display_name} <ExternalLink class="rtl:-scale-x-100" size={14} />
+							{recipient.display_name} <VerifiedBadge verified={recipient.verified} type={recipient.verification_type} size={16} /> <ExternalLink class="rtl:-scale-x-100" size={14} />
 						{/snippet}
 					</UserHoverCard>
 				{:else}

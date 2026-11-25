@@ -17,6 +17,7 @@
 		Timer
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { api } from '#lib/api/client.js';
 	import BodyField from '#lib/components/ui/BodyField.svelte';
 	import type {
@@ -486,7 +487,7 @@
 															<p class="text-sm text-[var(--color-text)]">{note.note}</p>
 															<div class="mt-2 flex items-center gap-2 text-xs text-[var(--color-muted)]">
 																{#if note.user_name}
-																	<span>{note.user_name}</span>
+																	<span class="flex items-center gap-1"><span class="truncate">{note.user_name}</span><VerifiedBadge verified={note.user_verified} type={note.user_verification_type} size={12} /></span>
 																{/if}
 																<span>· {fmtDate(note.created_at)}</span>
 															</div>

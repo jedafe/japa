@@ -148,18 +148,34 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			slug: item.slug,
 			content_type: item.content_type,
 			author_id: item.author_id,
-			author_name: item.author_display_name || item.author_username || null,
+			author_name: item.author_name || item.author_display_name || item.author_username || null,
 			author_username: item.author_username ?? null,
 			author_avatar_url: item.author_avatar_url || null,
 			author_verified: item.author_verified,
 			author_verification_type: item.author_verification_type,
+			organization: item.organization ?? null,
 			created_at: item.published_at,
+			published_at: item.published_at,
+			excerpt: item.excerpt,
+			cover_image_url: item.cover_image_url ?? null,
 			view_count: item.view_count,
 			comment_count: item.comment_count,
+			reaction_count: item.reaction_count,
+			bookmark_count: item.bookmark_count,
+			vote_score: item.vote_score,
 			reading_time_minutes: item.read_time_minutes,
+			tags: item.tags,
+			journey_stage: item.journey_stage ?? null,
+			visa_route: item.visa_route ?? null,
+			source_country: item.source_country ?? null,
+			target_country: item.target_country ?? null,
+			guide_category: item.guide_category ?? null,
+			video_source_id: item.video_source_id ?? null,
+			duration_secs: item.video_duration_secs ?? null,
 			space_id: item.space_id,
-			space_name: space.name,
-			space_slug: space.slug
+			space_name: item.space_name ?? space.name,
+			space_slug: item.space_slug ?? space.slug,
+			space_avatar_url: item.space_avatar_url ?? null
 		};
 	}
 
@@ -291,6 +307,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let searchResults = $state<SpaceContentItem[]>([]);
 	let searching = $state(false);
 	let searchError = $state('');
+	// True when results came from the ?q= content endpoint (full card rows)
+	// rather than Meilisearch's thin {id,title,slug,content_type} hits.
+	let searchResultsAreCards = $state(false);
 
 	async function runSearch() {
 		if (!searchQuery.trim()) {
@@ -321,11 +340,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					searchResults = [];
 				} else {
 					searchResults = fallback.data ?? [];
+					searchResultsAreCards = true;
 				}
 			} else {
 				searchResults = (res.data?.results ?? []).map(
 					(r) => r.item as unknown as SpaceContentItem
 				);
+				searchResultsAreCards = false;
 			}
 		} else {
 			// Guests: /spaces/{id}/search requires auth — fall back to the
@@ -337,6 +358,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				searchResults = [];
 			} else {
 				searchResults = res.data ?? [];
+				searchResultsAreCards = true;
 			}
 		}
 		searching = false;
@@ -1056,14 +1078,22 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			{:else if searchQuery.trim() && searchResults.length === 0}
 				<EmptyState icon={Search} title={t('space.no_search_results', 'No results found')} />
 			{:else if searchResults.length > 0}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)]">
-					{#each searchResults as item (item.id)}
-						<a href="/content/{item.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-							<h3 class="text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{item.content_type}</p>
-						</a>
-					{/each}
-				</div>
+				{#if searchResultsAreCards}
+					<div class="flex flex-col gap-3">
+						{#each searchResults as item (item.id)}
+							<FeedCard item={toFeedItem(item)} style="daily" layout="stream" />
+						{/each}
+					</div>
+				{:else}
+					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-surface)]">
+						{#each searchResults as item (item.id)}
+							<a href="/content/{item.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+								<h3 class="text-sm font-medium text-[var(--color-text)]">{item.title}</h3>
+								<p class="mt-1 text-xs text-[var(--color-muted)]">{item.content_type}</p>
+							</a>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		{:else if activeTab === 'analytics'}
 			<!-- Analytics tab (Phase 08.10) -->
@@ -1132,7 +1162,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 									</span>
 								{/if}
 								<a href="/u/{req.username}" class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{req.display_name ?? req.username}</span>
+									<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{req.display_name ?? req.username}</span><VerifiedBadge verified={req.verified} type={req.verification_type} size={14} /></span>
 									<span class="block text-xs text-[var(--color-muted)]">@{req.username}</span>
 								</a>
 								<div class="flex shrink-0 items-center gap-2">
@@ -1176,7 +1206,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						{#each reviews as review (review.id)}
 							<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 								<div class="mb-2 flex items-center justify-between">
-									<span class="text-sm font-medium text-[var(--color-text)]">{review.author_name}</span>
+									<span class="flex items-center gap-1 text-sm font-medium text-[var(--color-text)]"><span class="truncate">{review.author_name}</span><VerifiedBadge verified={review.author_verified} type={review.author_verification_type} size={14} /></span>
 									<span class="text-xs text-[var(--color-muted)]">{new Date(review.created_at).toLocaleDateString()}</span>
 								</div>
 								<div class="mb-2 flex items-center gap-0.5">

@@ -170,8 +170,8 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"author_verification_type": content.AuthorVerificationType,
 		"space_name":               content.SpaceName,
 		"space_slug":               content.SpaceSlug,
-		"space_avatar_url":         mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
-		"organization":             orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath, content.OrganizationVerified, content.OrganizationVerificationType),
+		"space_avatar_url":         MediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
+		"organization":             OrgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath, content.OrganizationVerified, content.OrganizationVerificationType),
 		"excerpt":                  ExcerptFromBody(content.Body, content.BodyHtml, 160),
 	}
 

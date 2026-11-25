@@ -42,32 +42,34 @@ type ContentService interface {
 //
 //nolint:revive // exported: stutter naming is intentional
 type AchievementDTO struct {
-	ID               string         `json:"id"`
-	Title            string         `json:"title"`
-	Slug             string         `json:"slug"`
-	Body             string         `json:"body"`
-	BodyHTML         string         `json:"body_html"`
-	Status           string         `json:"status"`
-	Visibility       string         `json:"visibility"`
-	ViewCount        int32          `json:"view_count"`
-	CommentCount     int32          `json:"comment_count"`
-	ReactionCount    int32          `json:"reaction_count"`
-	PublishedAt      string         `json:"published_at"`
-	CreatedAt        string         `json:"created_at"`
-	UpdatedAt        string         `json:"updated_at"`
-	MilestoneType    string         `json:"milestone_type,omitempty"`
-	OriginSpaceID    string         `json:"origin_space_id,omitempty"`
-	OriginSpaceName  string         `json:"origin_space_name,omitempty"`
-	OriginSpaceCode  string         `json:"origin_space_code,omitempty"`
-	DestSpaceID      string         `json:"destination_space_id"`
-	DestSpaceName    string         `json:"destination_space_name"`
-	DestSpaceCode    string         `json:"destination_space_code,omitempty"`
-	IsAnonymous      bool           `json:"is_anonymous"`
-	IsOwner          bool           `json:"is_owner,omitempty"`
-	AuthorID         string         `json:"author_id,omitempty"`
-	AuthorName       string         `json:"author_name,omitempty"`
-	AuthorAvatar     string         `json:"author_avatar,omitempty"`
-	AllowedReactions []ReactionItem `json:"allowed_reactions,omitempty"`
+	ID                     string         `json:"id"`
+	Title                  string         `json:"title"`
+	Slug                   string         `json:"slug"`
+	Body                   string         `json:"body"`
+	BodyHTML               string         `json:"body_html"`
+	Status                 string         `json:"status"`
+	Visibility             string         `json:"visibility"`
+	ViewCount              int32          `json:"view_count"`
+	CommentCount           int32          `json:"comment_count"`
+	ReactionCount          int32          `json:"reaction_count"`
+	PublishedAt            string         `json:"published_at"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+	MilestoneType          string         `json:"milestone_type,omitempty"`
+	OriginSpaceID          string         `json:"origin_space_id,omitempty"`
+	OriginSpaceName        string         `json:"origin_space_name,omitempty"`
+	OriginSpaceCode        string         `json:"origin_space_code,omitempty"`
+	DestSpaceID            string         `json:"destination_space_id"`
+	DestSpaceName          string         `json:"destination_space_name"`
+	DestSpaceCode          string         `json:"destination_space_code,omitempty"`
+	IsAnonymous            bool           `json:"is_anonymous"`
+	IsOwner                bool           `json:"is_owner,omitempty"`
+	AuthorID               string         `json:"author_id,omitempty"`
+	AuthorName             string         `json:"author_name,omitempty"`
+	AuthorAvatar           string         `json:"author_avatar,omitempty"`
+	AuthorVerified         bool           `json:"author_verified,omitempty"`
+	AuthorVerificationType string         `json:"author_verification_type,omitempty"`
+	AllowedReactions       []ReactionItem `json:"allowed_reactions,omitempty"`
 	// §43 indexability — the detail page emits noindex when Indexable is false.
 	SeoIndexable bool `json:"seo_indexable"`
 	Indexable    bool `json:"indexable"`
@@ -722,6 +724,14 @@ func rowToDTO(r AchievementRow, viewerID pgtype.UUID) AchievementDTO {
 
 		if r.AuthorAvatar != nil {
 			dto.AuthorAvatar = *r.AuthorAvatar
+		}
+
+		if r.AuthorVerified != nil {
+			dto.AuthorVerified = *r.AuthorVerified
+		}
+
+		if r.AuthorVerificationType != nil {
+			dto.AuthorVerificationType = *r.AuthorVerificationType
 		}
 	}
 	// §89 Privacy: author_id is NOT exposed when is_anonymous is true.

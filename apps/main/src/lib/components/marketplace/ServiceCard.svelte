@@ -228,6 +228,11 @@
 				<span class="truncate font-medium text-[var(--color-text-subtle)]"
 					>{isMentorship ? mentorName : listing.author_name}</span
 				>
+				{#if isMentorship}
+					<VerifiedBadge verified={mentor?.verified} type={mentor?.verification_type} scope="user" size={13} />
+				{:else}
+					<VerifiedBadge verified={listing.author_verified} type={listing.author_verification_type} scope="user" size={13} />
+				{/if}
 			{/if}
 			{#if listing.destination_space_name || listing.city_space_name}
 				<span class="ms-auto inline-flex shrink-0 items-center gap-0.5">

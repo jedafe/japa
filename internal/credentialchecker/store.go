@@ -122,6 +122,8 @@ type CommunityNoteRow struct {
 	PathwayID            pgtype.UUID
 	UserID               pgtype.UUID
 	UserName             *string
+	UserVerified         *bool
+	UserVerificationType *string
 	Note                 string
 	Upvotes              int32
 	Status               string
@@ -530,6 +532,7 @@ LIMIT 1
 func (s *Store) GetPathwayNotes(ctx context.Context, pathwayID pgtype.UUID) ([]CommunityNoteRow, error) {
 	const q = `
 SELECT n.id, n.pathway_id, n.user_id, u.username AS user_name,
+       u.verified AS user_verified, u.verification_type AS user_verification_type,
        n.note, n.upvotes, n.status, n.created_at
 FROM credential_community_notes n
 JOIN credential_pathways p ON p.id = n.pathway_id
@@ -552,6 +555,7 @@ LIMIT 200
 		var r CommunityNoteRow
 		if err := rows.Scan(
 			&r.ID, &r.PathwayID, &r.UserID, &r.UserName,
+			&r.UserVerified, &r.UserVerificationType,
 			&r.Note, &r.Upvotes, &r.Status, &r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("credentialchecker: scan note row: %w", err)
@@ -962,6 +966,7 @@ func (s *Store) AdminListNotes(ctx context.Context, status string, limit, offset
 
 	listQuery := fmt.Sprintf(`
 SELECT n.id, n.pathway_id, n.user_id, u.username AS user_name,
+       u.verified AS user_verified, u.verification_type AS user_verification_type,
        n.note, n.upvotes, n.status, n.created_at,
        pr.name AS profession_name, dst.name AS destination_space_name
 FROM credential_community_notes n
@@ -988,6 +993,7 @@ LIMIT $%d OFFSET $%d
 		var r CommunityNoteRow
 		if err := rows.Scan(
 			&r.ID, &r.PathwayID, &r.UserID, &r.UserName,
+			&r.UserVerified, &r.UserVerificationType,
 			&r.Note, &r.Upvotes, &r.Status, &r.CreatedAt,
 			&r.ProfessionName, &r.DestinationSpaceName,
 		); err != nil {

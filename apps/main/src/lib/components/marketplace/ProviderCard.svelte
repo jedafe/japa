@@ -44,12 +44,21 @@
 			<div class="min-w-0">
 				<p class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
 					<span class="truncate">{service.org_name ?? service.author_name}</span>
-					<VerifiedBadge
-						verified={service.is_verified}
-						type={service.verification_type}
-						scope="service_listing"
-						size={15}
-					/>
+					{#if service.org_name}
+						<VerifiedBadge
+							verified={service.is_verified}
+							type={service.verification_type}
+							scope="service_listing"
+							size={15}
+						/>
+					{:else}
+						<VerifiedBadge
+							verified={service.author_verified}
+							type={service.author_verification_type}
+							scope="user"
+							size={15}
+						/>
+					{/if}
 				</p>
 				{#if service.is_verified && service.verification_type}
 					<p class="text-xs text-[var(--color-muted)]">

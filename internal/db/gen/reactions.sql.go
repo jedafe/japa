@@ -286,6 +286,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  LEFT(c.body, 200) AS excerpt,
  MAX(r.created_at)::timestamptz AS reacted_at
 FROM reactions r
@@ -298,7 +300,7 @@ WHERE r.user_id = $1
  AND c.visibility = 'public'
 GROUP BY c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
- up.display_name, u.username, u.public_username, up.avatar_url, c.body
+ up.display_name, u.username, u.public_username, up.avatar_url, u.verified, u.verification_type, c.body
 ORDER BY reacted_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -310,19 +312,21 @@ type ListContentLikedByUserParams struct {
 }
 
 type ListContentLikedByUserRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	ContentType     string             `json:"content_type"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	AuthorName      string             `json:"author_name"`
-	AuthorAvatarUrl string             `json:"author_avatar_url"`
-	Excerpt         string             `json:"excerpt"`
-	ReactedAt       pgtype.Timestamptz `json:"reacted_at"`
+	ID                     pgtype.UUID        `json:"id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	ContentType            string             `json:"content_type"`
+	AuthorID               pgtype.UUID        `json:"author_id"`
+	SpaceID                pgtype.UUID        `json:"space_id"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	ViewCount              int32              `json:"view_count"`
+	CommentCount           int32              `json:"comment_count"`
+	AuthorName             string             `json:"author_name"`
+	AuthorAvatarUrl        string             `json:"author_avatar_url"`
+	AuthorVerified         bool               `json:"author_verified"`
+	AuthorVerificationType string             `json:"author_verification_type"`
+	Excerpt                string             `json:"excerpt"`
+	ReactedAt              pgtype.Timestamptz `json:"reacted_at"`
 }
 
 // Public "Likes" tab: published+public content the user has reacted to (any
@@ -349,6 +353,8 @@ func (q *Queries) ListContentLikedByUser(ctx context.Context, arg ListContentLik
 			&i.CommentCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.Excerpt,
 			&i.ReactedAt,
 		); err != nil {

@@ -13,6 +13,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '#lib/feed/time.js';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
 	import {
 		Plus,
@@ -285,7 +286,7 @@ import { ogCardUrl } from '#lib/seo/og.js';
 											{(item.author_name ?? 'M').charAt(0)}
 										</span>
 									{/if}
-									<span class="font-medium text-[var(--color-text)]">{item.author_name ?? t('achievements.member', 'Member')}</span>
+									<span class="flex items-center gap-1 font-medium text-[var(--color-text)]">{item.author_name ?? t('achievements.member', 'Member')}<VerifiedBadge verified={item.author_verified} type={item.author_verification_type} size={13} /></span>
 								</span>
 								<span>·</span>
 								<span class="inline-flex items-center gap-1">

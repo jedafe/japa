@@ -14,6 +14,7 @@
 	import SpaceCombobox from '#lib/components/spaces/SpaceCombobox.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
 	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import type {
@@ -813,8 +814,9 @@
 									<ShieldCheck size={15} />
 								</span>
 								<a href="/u/{mod.user_username}" class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-										{mod.user_display_name ?? mod.user_username}
+									<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
+										<span class="truncate">{mod.user_display_name ?? mod.user_username}</span>
+										<VerifiedBadge verified={mod.user_verified} type={mod.user_verification_type} size={14} />
 									</span>
 									<span class="block text-xs text-[var(--color-muted)]">@{mod.user_username}</span>
 								</a>

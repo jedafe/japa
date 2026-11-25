@@ -2,6 +2,7 @@
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	import { t, siteName, i18n } from '#lib/i18n/index.js';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import {
 		Newspaper,
 		MessageSquare,
@@ -257,12 +258,14 @@
 											class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
 										>
 											{memberName(member)}
+											<VerifiedBadge verified={member.verified} type={member.verification_type} size={14} />
 										</a>
 									{:else}
 										<span
 											class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)]"
 										>
 											{memberName(member)}
+											<VerifiedBadge verified={member.verified} type={member.verification_type} size={14} />
 										</span>
 									{/if}
 								</li>

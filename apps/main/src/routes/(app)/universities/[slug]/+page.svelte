@@ -688,6 +688,8 @@
 								slug={member.username}
 								name={member.display_name ?? member.username}
 								avatar={member.avatar_url}
+								verified={member.verified}
+								verificationType={member.verification_type}
 								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
 								{#snippet trigger()}
@@ -699,7 +701,7 @@
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
-										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
+										<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{member.display_name ?? member.username}</span><VerifiedBadge verified={member.verified} type={member.verification_type} size={14} /></span>
 										<span class="block text-xs text-[var(--color-muted)]">@{member.username}</span>
 									</span>
 								{/snippet}

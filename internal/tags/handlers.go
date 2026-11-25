@@ -1019,11 +1019,13 @@ func (h *Handlers) GetTagModerators(w http.ResponseWriter, r *http.Request) {
 	moderators := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		moderators = append(moderators, map[string]any{
-			"user_id":      row.UserID,
-			"username":     row.Username,
-			"display_name": row.DisplayName,
-			"avatar_url":   row.AvatarUrl,
-			"added_at":     row.CreatedAt,
+			"user_id":           row.UserID,
+			"username":          row.Username,
+			"display_name":      row.DisplayName,
+			"avatar_url":        row.AvatarUrl,
+			"verified":          row.Verified,
+			"verification_type": row.VerificationType,
+			"added_at":          row.CreatedAt,
 		})
 	}
 
@@ -1047,11 +1049,13 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 	moderators := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		moderators = append(moderators, map[string]any{
-			"user_id":      row.UserID,
-			"username":     row.Username,
-			"display_name": row.DisplayName,
-			"avatar_url":   row.AvatarUrl,
-			"added_at":     row.CreatedAt,
+			"user_id":           row.UserID,
+			"username":          row.Username,
+			"display_name":      row.DisplayName,
+			"avatar_url":        row.AvatarUrl,
+			"verified":          row.Verified,
+			"verification_type": row.VerificationType,
+			"added_at":          row.CreatedAt,
 		})
 	}
 

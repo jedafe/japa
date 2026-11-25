@@ -16,6 +16,7 @@
 	import TipButton from '#lib/components/tips/TipButton.svelte';
 	import VideoGrid from '#lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { openLightbox } from '#lib/lightbox.svelte.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
@@ -1793,7 +1794,7 @@ profile is private, or no stage is set. -->
 									<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{item.excerpt}</p>
 								{/if}
 								<div class="mt-1.5 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-									{#if item.author_name}<span>{item.author_name}</span>{/if}
+									{#if item.author_name}<span class="flex items-center gap-1"><span class="truncate">{item.author_name}</span><VerifiedBadge verified={item.author_verified} type={item.author_verification_type} size={12} /></span>{/if}
 									<span>· {item.view_count} views</span>
 								</div>
 							</a>
@@ -1867,7 +1868,7 @@ profile is private, or no stage is set. -->
 									</span>
 								{/if}
 								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{u.display_name ?? u.username}</span>
+									<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{u.display_name ?? u.username}</span>{#if et === 'user'}<VerifiedBadge verified={u.verified} type={u.verification_type} size={14} />{/if}</span>
 									<span class="block text-xs text-[var(--color-muted)]">{handle}</span>
 								</span>
 							</a>

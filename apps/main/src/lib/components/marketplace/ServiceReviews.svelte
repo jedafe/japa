@@ -9,6 +9,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import type { ServiceReview, ServiceReviewAggregate } from '#lib/types/index.js';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 
 	interface Props {
 		reviews: ServiceReview[];
@@ -124,8 +125,9 @@
 								</span>
 							{/if}
 							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-semibold text-[var(--color-text)]">
-									{authorName(review)}
+								<p class="flex items-center gap-1 truncate text-sm font-semibold text-[var(--color-text)]">
+									<span class="truncate">{authorName(review)}</span>
+									<VerifiedBadge verified={review.author_verified} type={review.author_verification_type} size={14} />
 								</p>
 								<p class="truncate text-[11px] text-[var(--color-muted)]">
 									{review.title || formatDate(review.created_at)}
