@@ -34,7 +34,7 @@ import (
 type ContentService interface {
 	// ListContents returns a platform-wide text-filtered page of content.
 	// cursor is a zero/invalid pgtype.Timestamptz for the first page.
-	ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error)
+	ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error)
 	// SearchContentsBySpace returns content within a space whose title
 	// matches the query.
 	SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)

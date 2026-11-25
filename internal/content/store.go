@@ -1002,7 +1002,7 @@ func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
+func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1012,6 +1012,7 @@ func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Time
 	contents, err := s.read.ListContents(ctx, gen.ListContentsParams{
 		Q:                 q,
 		CursorCreatedAt:   cursor,
+		CursorID:          cursorID,
 		PageLimit:         limit,
 		RequesterID:       requesterID,
 		CanSeeUnpublished: canSeeUnpublished,
@@ -1144,7 +1145,7 @@ func (s *Service) ListContentsByType(ctx context.Context, contentType, guideCate
 
 // ListContentsBySpace returns a page of content filtered by space_id.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
+func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1154,6 +1155,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
 		SpaceID:           spaceID,
 		CursorCreatedAt:   cursor,
+		CursorID:          cursorID,
 		PageLimit:         limit,
 		RequesterID:       requesterID,
 		CanSeeUnpublished: canSeeUnpublished,

@@ -211,7 +211,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 		// Platform-wide text search (first page — zero cursor).
 		filter := visibility.InternalVisibilityFilter(userID)
 
-		results, err := deps.Content.ListContents(ctx, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
+		results, err := deps.Content.ListContents(ctx, a.Query, pgtype.Timestamptz{}, pgtype.UUID{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
@@ -1472,7 +1472,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_unavailable", "content service is not configured"), nil
 		}
 
-		results, err := deps.Content.ListContents(ctx, "", pgtype.Timestamptz{}, a.Limit, filter)
+		results, err := deps.Content.ListContents(ctx, "", pgtype.Timestamptz{}, pgtype.UUID{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}

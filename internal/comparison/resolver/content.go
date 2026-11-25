@@ -160,7 +160,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 				rows = append(rows, it)
 			}
 		} else {
-			items, err := r.svc.ListContentsBySpace(ctx, geoSpaceID, emptyCursor, fetchLimit, filter)
+			items, err := r.svc.ListContentsBySpace(ctx, geoSpaceID, emptyCursor, pgtype.UUID{}, fetchLimit, filter)
 			if err != nil {
 				return nil, fmt.Errorf("listing contents by space: %w", err)
 			}
@@ -170,7 +170,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			}
 		}
 	default:
-		items, err := r.svc.ListContents(ctx, query, emptyCursor, fetchLimit, filter)
+		items, err := r.svc.ListContents(ctx, query, emptyCursor, pgtype.UUID{}, fetchLimit, filter)
 		if err != nil {
 			return nil, fmt.Errorf("listing contents: %w", err)
 		}

@@ -30,7 +30,7 @@ func (f *gateFakePermChecker) HasPermission(context.Context, pgtype.UUID, string
 // so handler tests need a stub even though literals are irrelevant here.
 type gateNoopContent struct{}
 
-func (gateNoopContent) ListContentsBySpace(context.Context, pgtype.UUID, pgtype.Timestamptz, int32, visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
+func (gateNoopContent) ListContentsBySpace(context.Context, pgtype.UUID, pgtype.Timestamptz, pgtype.UUID, int32, visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	return nil, nil
 }
 

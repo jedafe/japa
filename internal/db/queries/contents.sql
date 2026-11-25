@@ -310,7 +310,11 @@ WHERE c.deleted_at IS NULL
          WHERE ta.content_id = c.id AND ta.entity_type = 'content'
      )
  )
- AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (c.created_at < @cursor_created_at::timestamptz)
+ OR (c.created_at = @cursor_created_at::timestamptz AND (@cursor_id::uuid IS NULL OR c.id < @cursor_id))
+ )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -596,7 +600,11 @@ WHERE c.deleted_at IS NULL
          WHERE ta.content_id = c.id AND ta.entity_type = 'content'
      )
  )
- AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (c.created_at < @cursor_created_at::timestamptz)
+ OR (c.created_at = @cursor_created_at::timestamptz AND (@cursor_id::uuid IS NULL OR c.id < @cursor_id))
+ )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 

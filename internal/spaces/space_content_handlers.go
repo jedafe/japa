@@ -77,6 +77,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cursor pgtype.Timestamptz
+	var cursorID pgtype.UUID
 
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		// Accept RFC3339 (the format this endpoint itself returns in
@@ -88,9 +89,18 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
+
+		// ?cursor_id= completes the composite (created_at, id) cursor —
+		// without it, rows sharing the page-boundary timestamp are skipped.
+		if cid := r.URL.Query().Get("cursor_id"); cid != "" {
+			if err := cursorID.Scan(cid); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor_id", "cursor_id must be a UUID")
+				return
+			}
+		}
 	}
 
-	items, err := h.content.ListContentsBySpace(r.Context(), space.ID, cursor, limit, filter)
+	items, err := h.content.ListContentsBySpace(r.Context(), space.ID, cursor, cursorID, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return

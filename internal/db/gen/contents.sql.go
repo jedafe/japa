@@ -2812,9 +2812,13 @@ WHERE c.deleted_at IS NULL
          WHERE ta.content_id = c.id AND ta.entity_type = 'content'
      )
  )
- AND (c.created_at < $6 OR ($6 IS NULL))
+ AND (
+ ($6::timestamptz IS NULL)
+ OR (c.created_at < $6::timestamptz)
+ OR (c.created_at = $6::timestamptz AND ($7::uuid IS NULL OR c.id < $7))
+ )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $7
+LIMIT $8
 `
 
 type ListContentsParams struct {
@@ -2824,6 +2828,7 @@ type ListContentsParams struct {
 	CanSeeMembers     bool               `json:"can_see_members"`
 	Q                 string             `json:"q"`
 	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID          pgtype.UUID        `json:"cursor_id"`
 	PageLimit         int32              `json:"page_limit"`
 }
 
@@ -2883,6 +2888,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 		arg.CanSeeMembers,
 		arg.Q,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -3391,9 +3397,13 @@ WHERE c.deleted_at IS NULL
          WHERE ta.content_id = c.id AND ta.entity_type = 'content'
      )
  )
- AND (c.created_at < $6 OR ($6 IS NULL))
+ AND (
+ ($6::timestamptz IS NULL)
+ OR (c.created_at < $6::timestamptz)
+ OR (c.created_at = $6::timestamptz AND ($7::uuid IS NULL OR c.id < $7))
+ )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $7
+LIMIT $8
 `
 
 type ListContentsBySpaceParams struct {
@@ -3403,6 +3413,7 @@ type ListContentsBySpaceParams struct {
 	RequesterID       pgtype.UUID        `json:"requester_id"`
 	CanSeeMembers     bool               `json:"can_see_members"`
 	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID          pgtype.UUID        `json:"cursor_id"`
 	PageLimit         int32              `json:"page_limit"`
 }
 
@@ -3490,6 +3501,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 		arg.RequesterID,
 		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {

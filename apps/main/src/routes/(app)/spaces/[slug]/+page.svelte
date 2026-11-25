@@ -424,8 +424,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		feedLoading = true;
 		feedError = '';
 		try {
+			// Composite (created_at, id) cursor — items sharing the boundary
+			// timestamp (bulk-seeded rows) would otherwise be skipped.
 			const res = await api.get<SpaceContentItem[]>(
-				`/spaces/${space.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}`
+				`/spaces/${space.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}&cursor_id=${encodeURIComponent(last.id)}`
 			);
 			if (res.error) {
 				feedError = res.error.message;

@@ -219,7 +219,7 @@ func (p *PreSearcher) searchContent(ctx context.Context, prompt string, geoSpace
 		return toPreSearchItems(contentSearchResultsFromSpace(filtered))
 	}
 
-	rows, err := p.content.ListContents(ctx, prompt, pgtype.Timestamptz{}, preSearchLimit, filter)
+	rows, err := p.content.ListContents(ctx, prompt, pgtype.Timestamptz{}, pgtype.UUID{}, preSearchLimit, filter)
 	if err != nil {
 		slog.Warn("ai: pre-search content search failed", "error", err)
 		return nil

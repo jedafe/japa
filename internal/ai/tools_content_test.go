@@ -36,7 +36,7 @@ type stubContentService struct {
 	getContentErr      error
 }
 
-func (s *stubContentService) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
+func (s *stubContentService) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsRow, error) {
 	return s.searchResults, s.searchErr
 }
 

@@ -1937,7 +1937,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		contents, err = h.Service.ListContentsBySpace(r.Context(), spaceID, cursor, limit, filter)
+		contents, err = h.Service.ListContentsBySpace(r.Context(), spaceID, cursor, cursorID, limit, filter)
 	} else if contentType != "" {
 		// §14: ?sort=popular orders by view_count (offset pagination);
 		// ?sort=roadmap ranks by the resolved VisitorContext journey signals
@@ -1956,12 +1956,12 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		results, searchErr := h.Service.SearchContents(r.Context(), q, limit, filter)
 		if searchErr != nil {
 			slog.Warn("content: Meilisearch search failed, falling back to ILIKE", "error", searchErr, "query", q)
-			contents, err = h.Service.ListContents(r.Context(), q, cursor, limit, filter)
+			contents, err = h.Service.ListContents(r.Context(), q, cursor, cursorID, limit, filter)
 		} else {
 			contents = results
 		}
 	} else {
-		contents, err = h.Service.ListContents(r.Context(), q, cursor, limit, filter)
+		contents, err = h.Service.ListContents(r.Context(), q, cursor, cursorID, limit, filter)
 	}
 
 	if err != nil {
