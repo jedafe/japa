@@ -1270,13 +1270,16 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (any, error) {
 
 	summary := &ReindexSummary{}
 
-	// Contents — cursor-paginated by created_at.
+	// Contents — composite (created_at, id) cursor-paginated; rows sharing a
+	// batch-boundary timestamp would otherwise be skipped from the index.
 	contentCursor := pgtype.Timestamptz{}
+	contentCursorID := pgtype.UUID{}
 
 	for {
 		rows, err := ix.read.ListContents(ctx, gen.ListContentsParams{
 			Q:               "",
 			CursorCreatedAt: contentCursor,
+			CursorID:        contentCursorID,
 			PageLimit:       reindexBatchSize,
 		})
 		if err != nil {
@@ -1300,18 +1303,21 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (any, error) {
 		if len(rows) < reindexBatchSize {
 			break
 		}
-		// Advance cursor — the last row's created_at (if present) drives the
-		// next page. ListContents orders by created_at DESC.
+		// Advance the composite cursor — the last row's (created_at, id)
+		// drives the next page. ListContents orders by created_at DESC, id DESC.
 		last := rows[len(rows)-1]
 		contentCursor = last.CreatedAt
+		contentCursorID = last.ID
 	}
 
-	// Forum threads — cursor-paginated by created_at.
+	// Forum threads — composite (created_at, id) cursor, same as contents.
 	threadCursor := pgtype.Timestamptz{}
+	threadCursorID := pgtype.UUID{}
 
 	for {
 		rows, err := ix.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
 			CursorCreatedAt: threadCursor,
+			CursorID:        threadCursorID,
 			PageLimit:       reindexBatchSize,
 		})
 		if err != nil {
@@ -1338,6 +1344,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (any, error) {
 
 		last := rows[len(rows)-1]
 		threadCursor = last.CreatedAt
+		threadCursorID = last.ID
 	}
 
 	// Tags (/tags surface) — offset-paginated. Forum tags share the same

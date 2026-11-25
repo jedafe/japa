@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -191,14 +192,25 @@ func ForumThreadsListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var cursor pgtype.Timestamptz
+		var cursorID pgtype.UUID
 
 		if a.Cursor != "" {
-			ts, err := time.Parse(time.RFC3339, a.Cursor)
+			// Composite cursor: RFC3339 timestamp optionally followed by '|'
+			// and the thread UUID — threads sharing the boundary timestamp
+			// are skipped without the id component.
+			parts := strings.SplitN(a.Cursor, "|", 2)
+			ts, err := time.Parse(time.RFC3339, parts[0])
 			if err != nil {
 				return errorToolResult("invalid_cursor", "cursor must be an RFC3339 timestamp"), nil
 			}
 
 			cursor = pgtype.Timestamptz{Time: ts, Valid: true}
+
+			if len(parts) == 2 {
+				if err := cursorID.Scan(parts[1]); err != nil {
+					return errorToolResult("invalid_cursor_id", "cursor_id must be a UUID"), nil
+				}
+			}
 		}
 
 		var threads []gen.ForumThread
@@ -211,9 +223,9 @@ func ForumThreadsListHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 			}
 
-			threads, err = deps.Forum.ListThreadsBySpace(ctx, userID, spaceID, cursor, limit)
+			threads, err = deps.Forum.ListThreadsBySpace(ctx, userID, spaceID, cursor, cursorID, limit)
 		} else {
-			threads, err = deps.Forum.ListThreadsByPlatform(ctx, userID, cursor, limit)
+			threads, err = deps.Forum.ListThreadsByPlatform(ctx, userID, cursor, cursorID, limit)
 		}
 
 		if err != nil {
@@ -226,7 +238,7 @@ func ForumThreadsListHandler(deps *ToolDeps) ToolHandler {
 
 		for _, t := range threads {
 			out = append(out, forumThreadToMap(t))
-			nextCursor = t.CreatedAt.Time.UTC().Format(time.RFC3339)
+			nextCursor = t.CreatedAt.Time.UTC().Format(time.RFC3339) + "|" + uuidString(t.ID)
 		}
 
 		return successToolResult(map[string]any{

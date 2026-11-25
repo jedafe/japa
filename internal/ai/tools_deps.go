@@ -886,8 +886,8 @@ type ForumService interface {
 	CreateThread(ctx context.Context, authorUserID pgtype.UUID, input ForumThreadInput) (gen.ForumThread, error)
 	GetThread(ctx context.Context, viewerID, id pgtype.UUID) (gen.ForumThread, error)
 	GetThreadBySlug(ctx context.Context, viewerID pgtype.UUID, slug string) (gen.ForumThread, error)
-	ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
-	ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
+	ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error)
+	ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error)
 	UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error)
 	DeleteThread(ctx context.Context, id, userID pgtype.UUID) error
 	SolveThread(ctx context.Context, id, solverUserID, acceptedReplyID pgtype.UUID) error

@@ -2843,7 +2843,7 @@ func (a *agentForumAdapter) GetThreadBySlug(ctx context.Context, viewerID pgtype
 	return a.gateThreadRead(ctx, viewerID, thread)
 }
 
-func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, viewerID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
 	level, err := a.svc.SpaceAccessLevel(ctx, spaceID, viewerID)
 	if err != nil {
 		return nil, err
@@ -2852,7 +2852,7 @@ func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, viewerID, sp
 		return nil, fmt.Errorf("%w: space", errpkg.ErrNotFound)
 	}
 
-	threads, err := a.svc.ListThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
+	threads, err := a.svc.ListThreadsBySpace(ctx, spaceID, cursorCreatedAt, cursorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2864,8 +2864,8 @@ func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, viewerID, sp
 	return threads, nil
 }
 
-func (a *agentForumAdapter) ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	threads, err := a.svc.ListThreadsByPlatform(ctx, cursorCreatedAt, limit)
+func (a *agentForumAdapter) ListThreadsByPlatform(ctx context.Context, viewerID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
+	threads, err := a.svc.ListThreadsByPlatform(ctx, cursorCreatedAt, cursorID, limit)
 	if err != nil {
 		return nil, err
 	}

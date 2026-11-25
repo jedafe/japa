@@ -54,8 +54,11 @@ WHERE ft.ama_config IS NOT NULL
  OR ft.ama_config->>'host_dest_country_id' = @dest)
  AND (sqlc.narg(profession)::text IS NULL
  OR ft.ama_config->>'host_profession' ILIKE '%' || @profession || '%')
- AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL
- OR ft.created_at < @cursor_created_at)
+ AND (
+ (sqlc.narg(cursor_created_at)::timestamptz IS NULL)
+ OR (ft.created_at < @cursor_created_at)
+ OR (ft.created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR ft.id < @cursor_id))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
@@ -79,8 +82,11 @@ WHERE ft.ama_config IS NOT NULL
  OR ft.ama_config->>'host_dest_country_id' = @dest)
  AND (sqlc.narg(profession)::text IS NULL
  OR ft.ama_config->>'host_profession' ILIKE '%' || @profession || '%')
- AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL
- OR ft.created_at < @cursor_created_at)
+ AND (
+ (sqlc.narg(cursor_created_at)::timestamptz IS NULL)
+ OR (ft.created_at < @cursor_created_at)
+ OR (ft.created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR ft.id < @cursor_id))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 

@@ -78,7 +78,7 @@ type CreateAMAParams struct {
 // and profession filters implement the geo-aware tool pattern (§88 /
 // §§79–101): dest matches ama_config->>'host_dest_country_id' and profession
 // matches ama_config->>'host_profession' (case-insensitive).
-func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThread, error) {
+func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID) ([]AMAThread, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -91,6 +91,7 @@ func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSiz
 		Dest:            strPtr(dest),
 		Profession:      strPtr(profession),
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       pageSize,
 	})
 	if err != nil {
@@ -107,7 +108,7 @@ func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSiz
 
 // ListClosed returns closed AMA sessions (closes_at <= now()), with the
 // same dest/profession filters and cursor pagination as ListActive.
-func (s *Store) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThread, error) {
+func (s *Store) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID) ([]AMAThread, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -120,6 +121,7 @@ func (s *Store) ListClosed(ctx context.Context, dest, profession string, pageSiz
 		Dest:            strPtr(dest),
 		Profession:      strPtr(profession),
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       pageSize,
 	})
 	if err != nil {

@@ -191,23 +191,23 @@ func (s *Service) GetThreadBySlug(ctx context.Context, slug string) (gen.ForumTh
 }
 
 // ListThreadsBySpace returns paginated threads for a space.
-func (s *Service) ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsBySpace(ctx, spaceID, cursorCreatedAt, cursorID, limit)
 }
 
 // ListThreadsByAuthor returns paginated threads for an author.
-func (s *Service) ListThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByAuthor(ctx, authorUserID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByAuthor(ctx, authorUserID, cursorCreatedAt, cursorID, limit)
 }
 
 // ListThreadsByPlatform returns all paginated threads for a platform (public listing).
-func (s *Service) ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByPlatform(ctx, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByPlatform(ctx, cursorCreatedAt, cursorID, limit)
 }
 
 // ListThreadsByTag returns paginated threads for a tag.
-func (s *Service) ListThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
-	return s.store.listThreadsByTag(ctx, tagID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByTag(ctx, tagID, cursorCreatedAt, cursorID, limit)
 }
 
 // UpdateThread updates a forum thread. The author can edit within

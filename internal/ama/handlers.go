@@ -130,23 +130,41 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 	return ts
 }
 
+// parseCursorID reads the cursor_id query param as a UUID. It completes the
+// composite (created_at, id) cursor — without it rows sharing the boundary
+// timestamp are skipped (same convention as the forum list endpoints).
+func parseCursorID(r *http.Request) pgtype.UUID {
+	v := r.URL.Query().Get("cursor_id")
+	if v == "" {
+		return pgtype.UUID{}
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		return pgtype.UUID{}
+	}
+
+	return id
+}
+
 // HandleList handles GET /thread/ama — list active AMA sessions.
 // Supports the geo-aware ?dest= and ?profession= filters (§88 / §§79–101)
-// and cursor-based pagination (?page_size=, ?cursor_created_at=).
+// and cursor-based pagination (?page_size=, ?cursor_created_at=, ?cursor_id=).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	dest := r.URL.Query().Get("dest")
 	profession := r.URL.Query().Get("profession")
 	pageSize := parsePageSize(r)
 	cursor := parseCursor(r)
+	cursorID := parseCursorID(r)
 	status := r.URL.Query().Get("status")
 
 	var dtos []AMAThreadDTO
 
 	var err error
 	if status == "closed" {
-		dtos, err = h.service.ListClosed(r.Context(), dest, profession, pageSize, cursor)
+		dtos, err = h.service.ListClosed(r.Context(), dest, profession, pageSize, cursor, cursorID)
 	} else {
-		dtos, err = h.service.ListActive(r.Context(), dest, profession, pageSize, cursor)
+		dtos, err = h.service.ListActive(r.Context(), dest, profession, pageSize, cursor, cursorID)
 	}
 
 	if err != nil {

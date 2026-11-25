@@ -123,8 +123,8 @@ func (s *Service) CooldownDays(ctx context.Context) int {
 // ListActive returns active AMA sessions (not yet closed), filtered by
 // destination country and host profession (geo-aware tool pattern) and
 // cursor-paginated by created_at.
-func (s *Service) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThreadDTO, error) {
-	threads, err := s.store.ListActive(ctx, dest, profession, pageSize, cursorCreatedAt)
+func (s *Service) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID) ([]AMAThreadDTO, error) {
+	threads, err := s.store.ListActive(ctx, dest, profession, pageSize, cursorCreatedAt, cursorID)
 	if err != nil {
 		return nil, fmt.Errorf("ama: list active: %w", err)
 	}
@@ -139,8 +139,8 @@ func (s *Service) ListActive(ctx context.Context, dest, profession string, pageS
 
 // ListClosed returns closed AMA sessions (closes_at elapsed), filtered by
 // destination country and host profession and cursor-paginated by created_at.
-func (s *Service) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThreadDTO, error) {
-	threads, err := s.store.ListClosed(ctx, dest, profession, pageSize, cursorCreatedAt)
+func (s *Service) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID) ([]AMAThreadDTO, error) {
+	threads, err := s.store.ListClosed(ctx, dest, profession, pageSize, cursorCreatedAt, cursorID)
 	if err != nil {
 		return nil, fmt.Errorf("ama: list closed: %w", err)
 	}

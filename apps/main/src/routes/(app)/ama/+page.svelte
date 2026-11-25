@@ -65,9 +65,9 @@
 		!!page.data.user && (page.data.user.permissions?.includes('forum.ama.create') ?? false)
 	);
 
-	function cursor(): string | null {
+	function cursor(): { ts: string; id: string } | null {
 		const last = sessions[sessions.length - 1];
-		return last ? last.created_at : null;
+		return last ? { ts: last.created_at, id: last.id } : null;
 	}
 
 	$effect(() => {
@@ -90,7 +90,10 @@
 		loading = true;
 		const params = new URLSearchParams({
 			page_size: String(data.pageSize),
-			cursor_created_at: c
+			cursor_created_at: c.ts,
+			// Composite (created_at, id) cursor — sessions sharing the boundary
+			// timestamp would otherwise be skipped.
+			cursor_id: c.id
 		});
 		if (destFilter) params.set('dest', destFilter);
 		if (professionFilter) params.set('profession', professionFilter);

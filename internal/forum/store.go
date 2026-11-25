@@ -282,7 +282,7 @@ func (s *Store) getThreadBySlug(ctx context.Context, slug string) (gen.ForumThre
 }
 
 // listThreadsBySpace returns paginated threads for a space.
-func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -290,6 +290,7 @@ func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cur
 	rows, err := s.read.ListForumThreadsBySpace(ctx, gen.ListForumThreadsBySpaceParams{
 		SpaceID:         spaceID,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -305,7 +306,7 @@ func (s *Store) listThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cur
 }
 
 // listThreadsByAuthor returns paginated threads for an author.
-func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -313,6 +314,7 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUI
 	rows, err := s.read.ListForumThreadsByAuthor(ctx, gen.ListForumThreadsByAuthorParams{
 		AuthorUserID:    authorUserID,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -328,13 +330,14 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, authorUserID pgtype.UUI
 }
 
 // listThreadsByPlatform returns all paginated threads for a platform (public listing).
-func (s *Store) listThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListForumThreads(ctx, gen.ListForumThreadsParams{
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -350,7 +353,7 @@ func (s *Store) listThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtyp
 }
 
 // listThreadsByTag returns paginated threads for a tag.
-func (s *Store) listThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+func (s *Store) listThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ForumThread, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -358,6 +361,7 @@ func (s *Store) listThreadsByTag(ctx context.Context, tagID pgtype.UUID, cursorC
 	rows, err := s.read.ListForumThreadsByTag(ctx, gen.ListForumThreadsByTagParams{
 		TagID:           tagID,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {

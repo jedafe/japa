@@ -1587,13 +1587,18 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE deleted_at IS NULL
- AND (created_at < $1 OR ($1 IS NULL))
+ AND (
+ ($1::timestamptz IS NULL)
+ OR (created_at < $1)
+ OR (created_at = $1 AND ($2::uuid IS NULL OR id < $2))
+ )
 ORDER BY created_at DESC, id DESC
-LIMIT $2
+LIMIT $3
 `
 
 type ListForumThreadsParams struct {
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1622,7 +1627,7 @@ type ListForumThreadsRow struct {
 }
 
 func (q *Queries) ListForumThreads(ctx context.Context, arg ListForumThreadsParams) ([]ListForumThreadsRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreads, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreads, arg.CursorCreatedAt, arg.CursorID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1671,14 +1676,19 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
 FROM forum_threads
 WHERE author_user_id = $1
  AND deleted_at IS NULL
- AND (created_at < $2 OR ($2 IS NULL))
+ AND (
+ ($2::timestamptz IS NULL)
+ OR (created_at < $2)
+ OR (created_at = $2 AND ($3::uuid IS NULL OR id < $3))
+ )
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListForumThreadsByAuthorParams struct {
 	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1707,7 +1717,12 @@ type ListForumThreadsByAuthorRow struct {
 }
 
 func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThreadsByAuthorParams) ([]ListForumThreadsByAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByAuthor, arg.AuthorUserID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreadsByAuthor,
+		arg.AuthorUserID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1917,14 +1932,19 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
 FROM forum_threads
 WHERE space_id = $1
  AND deleted_at IS NULL
- AND (created_at < $2 OR ($2 IS NULL))
+ AND (
+ ($2::timestamptz IS NULL)
+ OR (created_at < $2)
+ OR (created_at = $2 AND ($3::uuid IS NULL OR id < $3))
+ )
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListForumThreadsBySpaceParams struct {
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1953,7 +1973,12 @@ type ListForumThreadsBySpaceRow struct {
 }
 
 func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThreadsBySpaceParams) ([]ListForumThreadsBySpaceRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsBySpace, arg.SpaceID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreadsBySpace,
+		arg.SpaceID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2147,14 +2172,19 @@ FROM forum_threads ft
 JOIN content_tags ct ON ct.content_id = ft.content_id
 WHERE ct.tag_id = $1
  AND ft.deleted_at IS NULL
- AND (ft.created_at < $2 OR ($2 IS NULL))
+ AND (
+ ($2::timestamptz IS NULL)
+ OR (ft.created_at < $2)
+ OR (ft.created_at = $2 AND ($3::uuid IS NULL OR ft.id < $3))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListForumThreadsByTagParams struct {
 	TagID           pgtype.UUID        `json:"tag_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -2183,7 +2213,12 @@ type ListForumThreadsByTagRow struct {
 }
 
 func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThreadsByTagParams) ([]ListForumThreadsByTagRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByTag, arg.TagID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreadsByTag,
+		arg.TagID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

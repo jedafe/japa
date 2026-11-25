@@ -35,7 +35,11 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
 FROM forum_threads
 WHERE space_id = @space_id
  AND deleted_at IS NULL
- AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (created_at < @cursor_created_at)
+ OR (created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR id < @cursor_id))
+ )
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
@@ -47,7 +51,11 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
 FROM forum_threads
 WHERE author_user_id = @author_user_id
  AND deleted_at IS NULL
- AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (created_at < @cursor_created_at)
+ OR (created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR id < @cursor_id))
+ )
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
@@ -58,7 +66,11 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE deleted_at IS NULL
- AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (created_at < @cursor_created_at)
+ OR (created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR id < @cursor_id))
+ )
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
@@ -72,7 +84,11 @@ FROM forum_threads ft
 JOIN content_tags ct ON ct.content_id = ft.content_id
 WHERE ct.tag_id = @tag_id
  AND ft.deleted_at IS NULL
- AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ AND (
+ (@cursor_created_at::timestamptz IS NULL)
+ OR (ft.created_at < @cursor_created_at)
+ OR (ft.created_at = @cursor_created_at AND (@cursor_id::uuid IS NULL OR ft.id < @cursor_id))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 

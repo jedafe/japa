@@ -339,16 +339,20 @@ WHERE ft.ama_config IS NOT NULL
  OR ft.ama_config->>'host_dest_country_id' = $1)
  AND ($2::text IS NULL
  OR ft.ama_config->>'host_profession' ILIKE '%' || $2 || '%')
- AND ($3::timestamptz IS NULL
- OR ft.created_at < $3)
+ AND (
+ ($3::timestamptz IS NULL)
+ OR (ft.created_at < $3)
+ OR (ft.created_at = $3 AND ($4::uuid IS NULL OR ft.id < $4))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListActiveAMAsParams struct {
 	Dest            *string            `json:"dest"`
 	Profession      *string            `json:"profession"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -386,6 +390,7 @@ func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) 
 		arg.Dest,
 		arg.Profession,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -453,16 +458,20 @@ WHERE ft.ama_config IS NOT NULL
  OR ft.ama_config->>'host_dest_country_id' = $1)
  AND ($2::text IS NULL
  OR ft.ama_config->>'host_profession' ILIKE '%' || $2 || '%')
- AND ($3::timestamptz IS NULL
- OR ft.created_at < $3)
+ AND (
+ ($3::timestamptz IS NULL)
+ OR (ft.created_at < $3)
+ OR (ft.created_at = $3 AND ($4::uuid IS NULL OR ft.id < $4))
+ )
 ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListClosedAMAsParams struct {
 	Dest            *string            `json:"dest"`
 	Profession      *string            `json:"profession"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -500,6 +509,7 @@ func (q *Queries) ListClosedAMAs(ctx context.Context, arg ListClosedAMAsParams) 
 		arg.Dest,
 		arg.Profession,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
