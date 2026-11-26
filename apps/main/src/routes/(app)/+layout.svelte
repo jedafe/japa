@@ -9,7 +9,7 @@
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
 	import wordmarkDark from '#lib/assets/branding/wordmark-dark.webp';
-	import { isExceptionRoute, isNoTabBarRoute, isNoRightSidebarRoute } from '#lib/components/create/gate.js';
+	import { isExceptionRoute, isNoTabBarRoute, isNoRightSidebarRoute, isExactHeightRoute } from '#lib/components/create/gate.js';
 	import { api } from '#lib/api/client.js';
 	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	// ProductTour (driver.js), MediaLightbox (bits-ui Dialog) and the AI
@@ -41,6 +41,10 @@
 	// Routes that render their own fixed mobile action bar instead of the
 	// shell's tab bar (see gate.isNoTabBarRoute).
 	const noTabBar = $derived(isNoTabBarRoute(page.route.id));
+	// Exact-height workbenches (messages family, /ai) compute their column
+	// off 100dvh and never scroll — the tab-bar clearance spacer would only
+	// add a dead scrollable strip under the composer (see gate.isExactHeightRoute).
+	const exactHeight = $derived(isExactHeightRoute(page.route.id));
 
 	// Wide workbench routes that keep nav + chrome but drop the right
 	// sidebar (gate.isNoRightSidebarRoute).
@@ -372,8 +376,12 @@
 	{#if !exception && !noTabBar}
 		<!-- Mobile: the fixed tab bar covers the last ~4rem of the page without
 		     this spacer — it reserves scroll clearance so bottom content
-		     (footers, CTAs) is never hidden behind it. -->
-		<div class="hidden h-[calc(4rem+env(safe-area-inset-bottom))] max-sm:block" aria-hidden="true"></div>
+		     (footers, CTAs) is never hidden behind it. Exact-height
+		     workbenches (messages, /ai) never scroll — the spacer would only
+		     leave a dead strip under the composer. -->
+		{#if !exactHeight}
+			<div class="hidden h-[calc(4rem+env(safe-area-inset-bottom))] max-sm:block" aria-hidden="true"></div>
+		{/if}
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if showChatFab}

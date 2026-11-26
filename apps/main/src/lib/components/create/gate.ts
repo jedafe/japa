@@ -98,3 +98,20 @@ const NO_TAB_BAR_ROUTES = new Set(['/(app)/thread/[slug]', '/(app)/services/[slu
 export function isNoTabBarRoute(routeId: string | null): boolean {
 	return routeId !== null && NO_TAB_BAR_ROUTES.has(routeId);
 }
+
+// Routes that render an exact-height, non-scrolling workbench column —
+// height computed off 100dvh minus the shell chrome, panes scroll
+// internally. The tab bar's scroll-clearance spacer must be suppressed
+// here: it leaves a dead scrollable strip under the page's bottom edge
+// (and lets the composer/chat bottom slide behind the fixed tab bar).
+const EXACT_HEIGHT_ROUTES = new Set([
+	'/(app)/ai',
+	'/(app)/messages',
+	'/(app)/messages/bookings',
+	'/(app)/messages/mentorship',
+	'/(app)/messages/support'
+]);
+
+export function isExactHeightRoute(routeId: string | null): boolean {
+	return routeId !== null && EXACT_HEIGHT_ROUTES.has(routeId);
+}
