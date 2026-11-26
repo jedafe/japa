@@ -33,7 +33,9 @@
 	interface Props {
 		detail: TicketDetailResponse;
 		onBack: () => void;
-		onToggleDetails: () => void;
+		/** Optional — absent on the standalone /messages/support workbench
+		 *  (no details rail there). */
+		onToggleDetails?: () => void;
 	}
 
 	let { detail, onBack, onToggleDetails }: Props = $props();
@@ -198,15 +200,17 @@
 		<span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {statusClass(ticket.status)}">
 			{ticketStatusLabel(ticket.status, t)}
 		</span>
-		<button
-			type="button"
-			onclick={onToggleDetails}
-			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-			aria-label={t('hub.details_toggle', 'Conversation details')}
-			title={t('hub.details_toggle', 'Conversation details')}
-		>
-			<PanelRight size={16} />
-		</button>
+		{#if onToggleDetails}
+			<button
+				type="button"
+				onclick={onToggleDetails}
+				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={t('hub.details_toggle', 'Conversation details')}
+				title={t('hub.details_toggle', 'Conversation details')}
+			>
+				<PanelRight size={16} />
+			</button>
+		{/if}
 	</div>
 
 	<!-- Thread body -->

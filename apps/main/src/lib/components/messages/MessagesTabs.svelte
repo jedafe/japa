@@ -12,6 +12,7 @@
 	//                    mentorship bookings are served to the booker even
 	//                    when packages are off
 	//   mentorship     → mentorship.enabled
+	//   support        → feature.tickets (routeFeatureFlags /dashboard/tickets)
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -19,7 +20,7 @@
 	import { bookingsInboxEnabled } from '#lib/features.js';
 
 	interface Props {
-		value: 'inbox' | 'requests' | 'bookings' | 'mentorship';
+		value: 'inbox' | 'requests' | 'bookings' | 'mentorship' | 'support';
 		/** Pending DM-request count — badges the Requests tab (inbox page only). */
 		requestCount?: number;
 	}
@@ -30,6 +31,7 @@
 	const dmEnabled = $derived(!!features['feature.dm']);
 	const bookingsEnabled = $derived(bookingsInboxEnabled(features));
 	const mentorshipEnabled = $derived(!!features['mentorship.enabled']);
+	const ticketsEnabled = $derived(!!features['feature.tickets']);
 
 	const tabs = $derived<UrlTab[]>([
 		...(dmEnabled
@@ -47,14 +49,16 @@
 		...(bookingsEnabled ? [{ value: 'bookings', label: t('messages.tab_bookings', 'Bookings') }] : []),
 		...(mentorshipEnabled
 			? [{ value: 'mentorship', label: t('messages.tab_mentorship', 'Mentorship') }]
-			: [])
+			: []),
+		...(ticketsEnabled ? [{ value: 'support', label: t('messages.tab_support', 'Support') }] : [])
 	]);
 
 	const hrefs: Record<string, string> = {
 		inbox: '/messages',
 		requests: '/messages/requests',
 		bookings: '/messages/bookings',
-		mentorship: '/messages/mentorship'
+		mentorship: '/messages/mentorship',
+		support: '/messages/support'
 	};
 
 	function onValueChange(v: string) {
@@ -63,4 +67,4 @@
 	}
 </script>
 
-<UrlTabs {tabs} {value} {onValueChange} class="!border-b-0 !bg-transparent" />
+<UrlTabs {tabs} {value} {onValueChange} autoOverflow class="!border-b-0 !bg-transparent" />

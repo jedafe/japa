@@ -75,7 +75,8 @@ export const load: LayoutServerLoad = async (event) => {
 		rid === '/(app)/messages' ||
 		rid === '/(app)/messages/bookings' ||
 		rid === '/(app)/messages/mentorship' ||
-		rid === '/(app)/messages/requests';
+		rid === '/(app)/messages/requests' ||
+		rid === '/(app)/messages/support';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||

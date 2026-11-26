@@ -60,6 +60,7 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	['/settings/wallet', 'feature.points'],
 	['/dashboard/affiliate', 'feature.affiliate_program'],
 	['/dashboard/tickets', 'feature.tickets'],
+	['/messages/support', 'feature.tickets'],
 	['/jobs', 'jobs.enabled'],
 	['/me/applications', 'jobs.enabled'],
 	['/donate', 'tips.enabled'],

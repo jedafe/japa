@@ -195,8 +195,12 @@
 
 	// /studio renders its own mobile chrome (bottom tab bar + composer
 	// FABs) — the AI FAB stays desktop-only there so it doesn't stack with
-	// the studio controls.
+	// the studio controls. /messages gets the same treatment: the hub's
+	// own composer sits at the bottom edge on mobile, so the FAB would
+	// cover the input.
 	const isStudioRoute = $derived(page.route.id?.startsWith('/(app)/studio') ?? false);
+	const isMessagesRoute = $derived(page.route.id?.startsWith('/(app)/messages') ?? false);
+	const hideFabOnMobile = $derived(isStudioRoute || isMessagesRoute);
 
 	// §115 AI Quick Panel: the FAB now toggles a page-aware slide-in panel
 	// instead of linking to /ai. Deps init on every page — /ai hides the
@@ -381,7 +385,7 @@
 			aria-label={t('ai.panel.title', 'Japa AI')}
 			title={t('ai.panel.title', 'Japa AI')}
 			aria-expanded={aiPanelOpen}
-			class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5 {isStudioRoute
+			class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5 {hideFabOnMobile
 				? 'max-sm:hidden'
 				: ''}"
 		>

@@ -16,7 +16,8 @@
 		Search,
 		Loader2,
 		Plus,
-		Settings
+		Settings,
+		ExternalLink
 	} from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import {
@@ -60,11 +61,9 @@
 	let requests = $state(untrack(() => data.requests));
 	let loadingMoreConvs = $state(false);
 
-	// Stream filters — one chip row: exclusive kind chips + two state
-	// toggles (unread ⇔ ?filter=unread server param; action ⇔ awaits my
-	// action, the old "Assigned to me" predicate).
+	// Stream filters — kind chips only. ?filter=unread stays supported for
+	// deep links (forwarded to the DM list server-side).
 	let chip = $state<HubChip>('all');
-	let actionOnly = $state(false);
 	const unreadOnly = $derived(data.query.filter === 'unread');
 
 	// Details rail — desktop third column (open by default); mobile drawer
@@ -163,17 +162,21 @@
 		);
 	});
 
-	// Chip badges (mockup: "Unread 7", "Assigned 2") — counts of items
-	// carrying the marker, independent of the toggles themselves.
-	const unreadCount = $derived(streamItems.filter((i) => i.unread > 0).length);
-	const actionCount = $derived(streamItems.filter((i) => i.assigned).length);
+	const hubItems = $derived(sortHubItems(streamItems, data.query.sort));
 
-	const hubItems = $derived(
-		sortHubItems(
-			streamItems.filter((i) => !actionOnly || i.assigned),
-			data.query.sort
-		)
-	);
+	// Per-kind "View all" — a chip-filtered stream only holds the newest
+	// SECONDARY_PAGE_SIZE rows per source; the dedicated surfaces carry
+	// the full history. Direct/requests have no separate "all" surface —
+	// the hub IS the messages surface.
+	const viewAll = $derived.by(() => {
+		const map = {
+			services: { href: '/messages/bookings', key: 'hub.view_all_services' },
+			mentorship: { href: '/messages/mentorship', key: 'hub.view_all_mentorship' },
+			support: { href: '/messages/support', key: 'hub.view_all_support' },
+			ai: { href: '/ai', key: 'hub.ai_open_full' }
+		} as Partial<Record<HubChip, { href: string; key: string }>>;
+		return map[chip] ?? null;
+	});
 
 	const activeSel = $derived(data.sel);
 	const activeItem = $derived(
@@ -453,9 +456,7 @@
 						ariaLabel={t('messages.sort_label', 'Sort conversations')}
 					/>
 				</div>
-				<!-- One filter row — kind chips (exclusive) + state toggles
-				     (Unread ⇔ ?filter=unread, Action needed ⇔ awaits my action);
-				     replaces the separate All/Unread/Assigned tab row. -->
+				<!-- One filter row — kind chips only. -->
 				<div class="flex flex-wrap items-center gap-1.5">
 					{#each chips as c (c.value)}
 						<button
@@ -469,44 +470,6 @@
 							{c.label}
 						</button>
 					{/each}
-					<span class="mx-0.5 h-4 w-px bg-[var(--color-border)]" aria-hidden="true"></span>
-					<button
-						type="button"
-						onclick={() =>
-							goto(listHref({ filter: unreadOnly ? null : 'unread' }), { reset: false })}
-						aria-pressed={unreadOnly}
-						class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors {unreadOnly
-							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-							: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-					>
-						{t('hub.chip_unread', 'Unread')}
-						{#if unreadCount > 0}
-							<span
-								class="grid min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold {unreadOnly
-									? 'bg-[var(--color-primary-contrast)]/20'
-									: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'}"
-								>{unreadCount}</span
-							>
-						{/if}
-					</button>
-					<button
-						type="button"
-						onclick={() => (actionOnly = !actionOnly)}
-						aria-pressed={actionOnly}
-						class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors {actionOnly
-							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-							: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-					>
-						{t('hub.chip_action', 'Action needed')}
-						{#if actionCount > 0}
-							<span
-								class="grid min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold {actionOnly
-									? 'bg-[var(--color-primary-contrast)]/20'
-									: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'}"
-								>{actionCount}</span
-							>
-						{/if}
-					</button>
 				</div>
 			</div>
 
@@ -529,6 +492,17 @@
 					{#each hubItems as item (item.sel)}
 						<HubListItem {item} active={item.sel === activeItem?.sel} onSelect={selectItem} />
 					{/each}
+					{#if viewAll}
+						<li class="border-t border-[var(--color-border)]">
+							<a
+								href={viewAll.href}
+								class="flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium text-[var(--color-primary-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t(viewAll.key, 'View all')}
+								<ExternalLink size={12} aria-hidden="true" />
+							</a>
+						</li>
+					{/if}
 				</ul>
 
 				<div
