@@ -6382,6 +6382,7 @@
 	"tickets.reply_label": "Add a reply",
 	"tickets.reply_submit": "Send reply",
 	"tickets.resolved": "Resolved",
+	"tickets.status.all": "All statuses",
 	"tickets.status.closed": "Closed",
 	"tickets.status.in_progress": "In progress",
 	"tickets.status.open": "Open",

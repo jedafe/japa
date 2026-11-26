@@ -6281,6 +6281,7 @@
 	"tickets.reply_label": "Ajouter une réponse",
 	"tickets.reply_submit": "Envoyer la réponse",
 	"tickets.resolved": "Résolu",
+	"tickets.status.all": "Tous les statuts",
 	"tickets.status.closed": "Fermé",
 	"tickets.status.in_progress": "En cours",
 	"tickets.status.open": "Ouvert",

@@ -101,15 +101,20 @@
 		const u = profileUsername;
 		memberSince = '';
 		if (!u) return;
-		void api.get<PublicUser>(`/users/${encodeURIComponent(u)}`).then((res) => {
-			// Compare against the CURRENT derived — the item may have changed
-			// while the fetch was in flight.
-			if (profileUsername !== u || !res.data?.created_at) return;
-			memberSince = new Date(res.data.created_at).toLocaleDateString(undefined, {
-				month: 'short',
-				year: 'numeric'
+		void api
+			.get<PublicUser>(`/users/${encodeURIComponent(u)}`)
+			.then((res) => {
+				// Compare against the CURRENT derived — the item may have
+				// changed while the fetch was in flight.
+				if (profileUsername !== u || !res.data?.created_at) return;
+				memberSince = new Date(res.data.created_at).toLocaleDateString(undefined, {
+					month: 'short',
+					year: 'numeric'
+				});
+			})
+			.catch(() => {
+				// Non-critical metadata — a failed fetch just hides the line.
 			});
-		});
 	});
 </script>
 

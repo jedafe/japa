@@ -15,6 +15,8 @@
 
 	let { data } = $props();
 	const appeals = $derived<AppealListItem[]>(data.appeals);
+	// Reassign on each submit — a plain Set's .add() is invisible to the
+	// eligible derived below.
 	let submittedIds = $state(new Set<string>());
 	const eligible = $derived<AppealEligibleItem[]>(
 		(data.eligible as AppealEligibleItem[]).filter((i) => !submittedIds.has(i.entity_id))
@@ -143,7 +145,8 @@
 							entityId={item.entity_id}
 							subject={item.label}
 							class="shrink-0 !px-3 !py-1.5"
-							onSubmitted={() => submittedIds.add(item.entity_id)}
+							onSubmitted={() =>
+								(submittedIds = new Set(submittedIds).add(item.entity_id))}
 						/>
 					</li>
 				{/each}

@@ -411,9 +411,18 @@ export async function apiList<T>(
 	// {page_size, page_offset} — cover both spellings.
 	const nestedData =
 		raw.data !== null && typeof raw.data === 'object' && !Array.isArray(raw.data)
-			? (raw.data as { items?: T[]; meta?: ListMeta })
+			? (raw.data as {
+					items?: T[];
+					meta?: ListMeta;
+					next_cursor?: string | null;
+					has_more?: boolean;
+				})
 			: undefined;
-	const items = Array.isArray(raw.data) ? raw.data : (nestedData?.items ?? []);
+	const items = Array.isArray(raw.data)
+		? raw.data
+		: Array.isArray(nestedData?.items)
+			? nestedData.items
+			: [];
 	let meta =
 		raw.meta ??
 		nestedData?.meta ??
@@ -428,11 +437,13 @@ export async function apiList<T>(
 			: undefined);
 	// Cursor-paginated endpoints (§48 DM lists) emit next_cursor/has_more as
 	// top-level sidecars — surface them through meta so callers can resume.
-	if (raw.next_cursor !== undefined || raw.has_more !== undefined) {
+	const nextCursor = raw.next_cursor ?? nestedData?.next_cursor;
+	const hasMore = raw.has_more ?? nestedData?.has_more;
+	if (nextCursor !== undefined || hasMore !== undefined) {
 		meta = {
 			...meta ?? {},
-			next_cursor: raw.next_cursor ?? meta?.next_cursor,
-			has_more: raw.has_more
+			next_cursor: nextCursor ?? meta?.next_cursor,
+			has_more: hasMore
 		};
 	}
 	return { items, meta };

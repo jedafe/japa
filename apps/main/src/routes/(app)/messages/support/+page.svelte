@@ -59,7 +59,8 @@
 	const items = $derived(data.tickets.map((tk) => ticketToHubItem(tk, t)));
 
 	// Appeals — same eligible-drop-on-submit bookkeeping as the dashboard
-	// surface.
+	// surface. Reassign on each submit: a plain Set's .add() is invisible
+	// to the derived below.
 	let submittedIds = $state(new Set<string>());
 	const eligible = $derived(data.eligible.filter((i) => !submittedIds.has(i.entity_id)));
 	const selectedAppeal = $derived(data.selectedAppeal);
@@ -128,7 +129,10 @@
 	}
 
 	function selectItem(item: HubItem) {
-		goto(hrefFor({ t: item.ticket!.id }), { reset: false });
+		// Clear `new`/`a` — the form and appeal branches win the pane
+		// otherwise and the click would appear to do nothing. Keeps the
+		// status/page filters so closing returns to the same list view.
+		goto(hrefFor({ t: item.ticket!.id, new: null, a: null }), { reset: false });
 	}
 
 	function closeDetail() {
@@ -188,7 +192,8 @@
 								page: null,
 								status: null,
 								t: null,
-								a: null
+								a: null,
+								new: null
 							})}
 							aria-current={view === f.id ? 'true' : undefined}
 							class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {view ===
@@ -228,7 +233,13 @@
 				{:else}
 					<ul>
 						{#each items as item (item.sel)}
-							<HubListItem {item} active={item.ticket!.id === selectedId} onSelect={selectItem} />
+							<!-- ?t= accepts JC-<n> too — compare against the resolved
+							     ticket, not the raw ref, or deep links never highlight. -->
+							<HubListItem
+								{item}
+								active={item.ticket!.id === (data.selected?.ticket.id ?? selectedId)}
+								onSelect={selectItem}
+							/>
 						{/each}
 					</ul>
 				{/if}
@@ -273,7 +284,8 @@
 										entityId={item.entity_id}
 										subject={item.label}
 										class="shrink-0 !px-3 !py-1.5"
-										onSubmitted={() => submittedIds.add(item.entity_id)}
+										onSubmitted={() =>
+											(submittedIds = new Set(submittedIds).add(item.entity_id))}
 									/>
 								</li>
 							{/each}
@@ -298,7 +310,7 @@
 							{@const active = appeal.id === selectedAppealId}
 							<li>
 								<a
-									href={hrefFor({ a: appeal.id })}
+									href={hrefFor({ a: appeal.id, new: null })}
 									aria-current={active ? 'true' : undefined}
 									class="flex w-full items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-start transition-colors {active
 										? 'bg-[var(--color-surface-subtle)]'
