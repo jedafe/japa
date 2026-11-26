@@ -212,7 +212,6 @@
 						</div>
 						<div>
 							<p class="font-medium text-foreground">${row.email}</p>
-							${row.name ? `<p class="text-sm text-muted">${row.name}</p>` : ''}
 						</div>
 					</div>
 				`
@@ -464,7 +463,7 @@
 		pageError = '';
 		const result = await api(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body: { status: 'cancelled' } });
 		if (!result.ok) {
-			pageError = result.error ?? 'Failed to cancel campaign';
+			pageError = result.error ?? t('app.newsletter.error_cancel_campaign', 'Failed to cancel campaign');
 			return;
 		}
 		campaignController?.reload();
@@ -474,7 +473,7 @@
 		pageError = '';
 		const result = await api(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body: { status: 'draft' } });
 		if (!result.ok) {
-			pageError = result.error ?? 'Failed to reset campaign send';
+			pageError = result.error ?? t('app.newsletter.error_reset_send', 'Failed to reset campaign send');
 			return;
 		}
 		campaignController?.reload();
@@ -777,12 +776,6 @@
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_email', 'Email')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{row.email}</p>
 		</div>
-		{#if row.name}
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_name', 'Name')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{row.name}</p>
-			</div>
-		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
