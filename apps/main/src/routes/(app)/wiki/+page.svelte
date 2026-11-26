@@ -187,6 +187,7 @@
 			blocks={data.builderBlocks}
 			fetchCtx={fetchCtx}
 			geoCountry={data.contentCountry}
+			features={data.features}
 		/>
 	{:else}
 		<ExploreMapBlock props={exploreProps} fetchCtx={fetchCtx} />
