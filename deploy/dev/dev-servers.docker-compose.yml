@@ -57,6 +57,15 @@ services:
     networks:
       - japaconnect_default
     restart: unless-stopped
+    # Marks the container healthy once vite answers — lets Coolify report
+    # running:healthy (not running:unknown) and flags a hung vite that a
+    # plain exit-based restart policy would never catch.
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3000/',{redirect:'follow'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 90s
 
   admin:
     image: oven/bun:1.4
@@ -72,6 +81,12 @@ services:
     networks:
       - japaconnect_default
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3001/',{redirect:'follow'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 90s
 
   control:
     image: oven/bun:1.4
@@ -87,6 +102,12 @@ services:
     networks:
       - japaconnect_default
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3002/',{redirect:'follow'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 90s
 
   academy:
     image: oven/bun:1.4
@@ -102,6 +123,12 @@ services:
     networks:
       - japaconnect_default
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3003/',{redirect:'follow'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 90s
 
   docs:
     image: oven/bun:1.4
@@ -117,6 +144,12 @@ services:
     networks:
       - japaconnect_default
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3004/',{redirect:'follow'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 90s
 
 networks:
   japaconnect_default:
