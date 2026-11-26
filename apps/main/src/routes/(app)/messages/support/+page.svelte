@@ -43,8 +43,8 @@
 	const newOpen = $derived(page.url.searchParams.get('new') === '1');
 
 	const viewFilters = [
-		{ id: 'tickets', label: t('tickets.list_title', 'Tickets') },
-		{ id: 'appeals', label: t('appeals.list_title', 'Appeals') }
+		{ id: 'tickets', label: t('tickets.list_title', 'My Tickets') },
+		{ id: 'appeals', label: t('appeals.list_title', 'My Appeals') }
 	];
 
 	const statusOptions = $derived([

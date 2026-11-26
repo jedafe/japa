@@ -113,7 +113,7 @@
 	let savingPrivacy = $state(false);
 	let privacyError = $state('');
 
-	const title = $derived(t('hub.title', 'Communications — {site}'));
+	const title = $derived(t('hub.title', 'Messages — {site}'));
 
 	const sortOptions = [
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },
@@ -457,8 +457,8 @@
 							type="search"
 							value={searchValue}
 							oninput={(e) => onSearchInput(e.currentTarget.value)}
-							placeholder={t('hub.search_placeholder', 'Search communications')}
-							aria-label={t('hub.search_placeholder', 'Search communications')}
+							placeholder={t('hub.search_placeholder', 'Search')}
+							aria-label={t('hub.search_placeholder', 'Search')}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 						/>
 					</div>

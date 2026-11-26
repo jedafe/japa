@@ -85,13 +85,13 @@
 	}
 </script>
 
-<SeoHead title={t('appeals.list_title', 'My appeals — {site}')} description={t('appeals.description', 'Track the status and outcomes of your appeals.')} />
+<SeoHead title={t('appeals.list_title', 'My Appeals — {site}')} description={t('appeals.description', 'Track the status and outcomes of your appeals.')} />
 
 <section class="space-y-4">
 	<header class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="flex items-center gap-2 text-lg font-medium text-[var(--color-text)]">
 			<Scale size={18} aria-hidden="true" />
-			{t('appeals.list_title', 'My appeals')}
+			{t('appeals.list_title', 'My Appeals')}
 		</h1>
 		<a
 			href="/messages/support"
