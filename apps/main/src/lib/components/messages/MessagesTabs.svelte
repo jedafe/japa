@@ -12,7 +12,7 @@
 	//                    mentorship bookings are served to the booker even
 	//                    when packages are off
 	//   mentorship     → mentorship.enabled
-	//   support        → feature.tickets (routeFeatureFlags /dashboard/tickets)
+	//   support        → feature.tickets (routeFeatureFlags /messages/support)
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';

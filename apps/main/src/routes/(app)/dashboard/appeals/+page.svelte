@@ -94,7 +94,7 @@
 			{t('appeals.list_title', 'My appeals')}
 		</h1>
 		<a
-			href="/dashboard/tickets"
+			href="/messages/support"
 			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)]"
 		>
 			<Ticket class="h-4 w-4" aria-hidden="true" />

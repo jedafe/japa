@@ -346,7 +346,7 @@
 	<!-- Support CTA — real route, no fabricated endpoint. -->
 	<div class="p-4">
 		<a
-			href="/dashboard/tickets/new"
+			href="/messages/support/new"
 			class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 		>
 			<LifeBuoy size={14} aria-hidden="true" />

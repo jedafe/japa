@@ -83,7 +83,7 @@
 
 <section class="space-y-4">
 	<header>
-		<a href="/dashboard/tickets" class="text-sm text-[var(--color-muted)] hover:underline">
+		<a href="/messages/support" class="text-sm text-[var(--color-muted)] hover:underline">
 			← {t('tickets.back_to_list')}
 		</a>
 		<h1 class="mt-2 text-lg font-medium text-[var(--color-text)]">{t('tickets.new_title')}</h1>
@@ -177,7 +177,7 @@
 
 		<div class="flex justify-end gap-2">
 			<a
-				href="/dashboard/tickets"
+				href="/messages/support"
 				class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
 				{t('tickets.cancel')}

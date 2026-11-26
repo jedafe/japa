@@ -11,8 +11,9 @@ export function ticketRef(t: TicketRef): string {
 	return t.ticket_number ? `JC-${t.ticket_number}` : `#${t.id.slice(0, 8)}`;
 }
 
-/** Detail-page route for a ticket — JC-<n> when the number exists (the
+/** Detail route for a ticket — the support workbench thread pane
+ * (/messages/support?t=<ref>). JC-<n> when the number exists (the
  * backend resolves either form). */
-export function ticketHref(t: TicketRef, base = '/dashboard/tickets'): string {
-	return `${base}/${t.ticket_number ? `JC-${t.ticket_number}` : t.id}`;
+export function ticketHref(t: TicketRef, base = '/messages/support'): string {
+	return `${base}?t=${encodeURIComponent(t.ticket_number ? `JC-${t.ticket_number}` : t.id)}`;
 }

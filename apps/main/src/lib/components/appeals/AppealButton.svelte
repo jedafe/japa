@@ -3,7 +3,7 @@
 	// rejected/appealable decision is surfaced (service claims, ownership
 	// claims, video channel claims, moderation decisions). Submits
 	// POST /api/v1/appeals which records the moderation_appeal and opens a
-	// linked 'appeal' ticket the user can track from /dashboard/tickets.
+	// linked 'appeal' ticket the user can track from /messages/support.
 	//
 	// Design mirrors the onboarding/journey wizards (JourneyOnboardingModal,
 	// /onboarding): stepper header, decorative aside, field-* inputs,
@@ -14,6 +14,7 @@
 	import { Modal } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
+	import { ticketHref } from '#lib/tickets.js';
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import {
 		AlertCircle, Check, CheckCircle2, ChevronRight, FileText, Gavel,
@@ -243,7 +244,7 @@
 						</p>
 						{#if done?.ticket_id}
 							<a
-								href="/dashboard/tickets/{done.ticket_number ? `JC-${done.ticket_number}` : done.ticket_id}"
+								href={ticketHref({ id: done.ticket_id, ticket_number: done.ticket_number })}
 								class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('appeals.track_ticket', 'Track it in your support tickets')}

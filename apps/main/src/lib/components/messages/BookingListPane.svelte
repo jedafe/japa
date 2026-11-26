@@ -11,7 +11,12 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Inbox } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import {
+		AutocompleteSelect,
+		EmptyState,
+		PaginationControls,
+		RelativeTime
+	} from '#lib/components/ui/index.js';
 	import type { ListMeta, ServiceBooking } from '#lib/types/index.js';
 	import {
 		bookingCounterpart,
@@ -61,22 +66,22 @@
 
 	// §111 intent enum — inquiry vs paid booking. '' = no filter.
 	const intentFilters = [
-		{ id: '', label: t('bookings.filter_all', 'All') },
-		{ id: 'inquiry', label: t('bookings.intent_inquiry', 'Inquiries') },
-		{ id: 'booking', label: t('bookings.intent_booking', 'Bookings') }
+		{ value: '', label: t('bookings.filter_all', 'All') },
+		{ value: 'inquiry', label: t('bookings.intent_inquiry', 'Inquiries') },
+		{ value: 'booking', label: t('bookings.intent_booking', 'Bookings') }
 	];
 
 	// §111 booking statuses (plus the mentorship aliases surface through
 	// connection_status on rows — the filter itself uses raw statuses).
 	const statusFilters = [
-		{ id: '', label: t('bookings.filter_all', 'All') },
-		{ id: 'pending', label: t('bookings.status_pending', 'Pending') },
-		{ id: 'confirmed', label: t('bookings.status_confirmed', 'Confirmed') },
-		{ id: 'fulfilled', label: t('bookings.status_fulfilled', 'Fulfilled') },
-		{ id: 'cancelled', label: t('bookings.status_cancelled', 'Cancelled') },
-		{ id: 'declined', label: t('bookings.status_declined', 'Declined') },
-		{ id: 'disputed', label: t('bookings.status_disputed', 'Disputed') },
-		{ id: 'refunded', label: t('bookings.status_refunded', 'Refunded') }
+		{ value: '', label: t('bookings.filter_all', 'All') },
+		{ value: 'pending', label: t('bookings.status_pending', 'Pending') },
+		{ value: 'confirmed', label: t('bookings.status_confirmed', 'Confirmed') },
+		{ value: 'fulfilled', label: t('bookings.status_fulfilled', 'Fulfilled') },
+		{ value: 'cancelled', label: t('bookings.status_cancelled', 'Cancelled') },
+		{ value: 'declined', label: t('bookings.status_declined', 'Declined') },
+		{ value: 'disputed', label: t('bookings.status_disputed', 'Disputed') },
+		{ value: 'refunded', label: t('bookings.status_refunded', 'Refunded') }
 	];
 
 	/** Filter href — changing role/intent/status resets the page + selection. */
@@ -124,34 +129,26 @@
 			>{f.label}</a>
 		{/each}
 	</div>
-	{#if intent !== undefined}
-		<div
-			class="flex flex-wrap items-center gap-1.5"
-			role="group"
-			aria-label={t('bookings.filter_type', 'Type')}
-		>
-			{#each intentFilters as f (f.id)}
-				<a
-					href={filterHref({ intent: f.id })}
-					aria-current={intent === f.id ? 'true' : undefined}
-					class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {intent ===
-					f.id
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
-						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				>{f.label}</a>
-			{/each}
-		</div>
-	{/if}
-	<div class="flex flex-wrap items-center gap-1.5">
-		{#each statusFilters as f (f.id)}
-			<a
-				href={filterHref({ status: f.id })}
-				aria-current={status === f.id ? 'true' : undefined}
-				class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {status === f.id
-					? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
-					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-			>{f.label}</a>
-		{/each}
+	<!-- Dropdown filters (same pattern as /messages/support's status
+	     dropdown). Bookings carries two side-by-side (type + status);
+	     mentorship only status — its rows are always inquiries. -->
+	<div class="flex items-center gap-2">
+		{#if intent !== undefined}
+			<AutocompleteSelect
+				class="flex-1"
+				options={intentFilters}
+				value={intent}
+				ariaLabel={t('bookings.filter_type', 'Type')}
+				onValueChange={(v) => goto(filterHref({ intent: v }), { reset: false })}
+			/>
+		{/if}
+		<AutocompleteSelect
+			class="flex-1"
+			options={statusFilters}
+			value={status}
+			ariaLabel={t('bookings.filter_status', 'Status')}
+			onValueChange={(v) => goto(filterHref({ status: v }), { reset: false })}
+		/>
 	</div>
 </div>
 

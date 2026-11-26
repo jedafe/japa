@@ -1,17 +1,25 @@
-// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
-// Support inbox at /messages/support — the tickets surface inside the
-// Messages tab family (the Communications Hub's Support chip links here
-// for the full list). Auth-gated on feature.tickets like the dashboard
-// surface (routeFeatureFlags); the backend returns only tickets where
-// submitter_user_id = the caller.
+// Ref: japaconnect-engineering/sections/38-tickets.md (user portal),
+//      japaconnect-engineering/sections/22-admin-panel.md (Appeals)
+// Support inbox at /messages/support — the whole member support surface
+// inside the Messages tab family: tickets (list → thread pane) AND
+// appeals (eligible decisions + submitted appeals → detail pane).
+// Auth-gated on feature.tickets like the old dashboard surface
+// (routeFeatureFlags); the backend returns only the caller's own rows.
 //
-// URL params: status, page, t=<ticket id> (deep-link — opens the thread
-// pane). Same lookahead pagination as /dashboard/tickets: the endpoint
-// returns no meta total, so fetch page_size+1 and slice.
+// URL params: view=tickets|appeals, status, page,
+//             t=<ticket id|JC-n> (ticket deep-link — thread pane),
+//             a=<appeal id> (appeal deep-link — detail pane).
+// Same lookahead pagination as /dashboard/tickets: neither endpoint
+// returns a meta total, so fetch page_size+1 and slice.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '#lib/server/api.js';
-import type { TicketDetailResponse, TicketListItem } from '#lib/types/index.js';
+import type {
+	AppealEligibleItem,
+	AppealListItem,
+	TicketDetailResponse,
+	TicketListItem
+} from '#lib/types/index.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
@@ -23,7 +31,9 @@ const VALID_STATUSES = new Set([
 	'closed',
 	'spam'
 ]);
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Ticket refs — uuid or the public JC-<n> form (the backend resolves
+// either, same as the old /dashboard/tickets/[id] route).
+const TICKET_REF_RE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|JC-\d+)$/i;
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -39,6 +49,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const params = event.url.searchParams;
+	const view = params.get('view') === 'appeals' ? 'appeals' : 'tickets';
 	const rawStatus = params.get('status')?.trim() ?? '';
 	const status = VALID_STATUSES.has(rawStatus) ? rawStatus : '';
 	const page = Math.max(1, Math.floor(Number(params.get('page'))) || 1);
@@ -50,6 +61,7 @@ export const load: PageServerLoad = async (event) => {
 		)
 	);
 	const selectedId = params.get('t') ?? '';
+	const selectedAppealId = params.get('a') ?? '';
 
 	// +1 lookahead: no meta total on the response — a full fetched page
 	// beyond pageSize is the only "next page exists" signal.
@@ -60,6 +72,37 @@ export const load: PageServerLoad = async (event) => {
 	if (status) q.set('status', status);
 
 	const ctx = apiContext(event);
+
+	if (view === 'appeals') {
+		// §22 — the user's appeals + every decision they can currently
+		// appeal. Best-effort on both lists like the dashboard surface:
+		// a failure degrades to an empty section rather than 500ing.
+		const [appealRes, eligible] = await Promise.all([
+			apiList<AppealListItem>(ctx, `/me/appeals?${q.toString()}`)
+				.then((r) => r.items)
+				.catch(() => [] as AppealListItem[]),
+			apiList<AppealEligibleItem>(ctx, '/me/appeals/eligible')
+				.then((r) => r.items)
+				.catch(() => [] as AppealEligibleItem[])
+		]);
+		const appeals = appealRes.slice(0, pageSize);
+		return {
+			view,
+			tickets: [],
+			appeals,
+			eligible,
+			selectedAppeal: appeals.find((a) => a.id === selectedAppealId) ?? null,
+			userStatus: event.locals.user.status ?? 'active',
+			hasMore: appealRes.length > pageSize,
+			page,
+			pageSize,
+			status: '',
+			selected: null,
+			selectedMissing: false,
+			loadError: false
+		};
+	}
+
 	let tickets: TicketListItem[] = [];
 	let fetched = 0;
 	let loadError = false;
@@ -73,7 +116,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let selected: TicketDetailResponse | null = null;
 	let selectedMissing = false;
-	if (selectedId && UUID_RE.test(selectedId)) {
+	if (selectedId && TICKET_REF_RE.test(selectedId)) {
 		try {
 			selected = await apiGet<TicketDetailResponse>(
 				ctx,
@@ -87,7 +130,12 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		view,
 		tickets,
+		appeals: [],
+		eligible: [],
+		selectedAppeal: null,
+		userStatus: 'active',
 		hasMore: fetched > pageSize,
 		page,
 		pageSize,
