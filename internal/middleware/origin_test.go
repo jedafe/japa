@@ -73,6 +73,51 @@ func TestAllowedCORSHeadersEnvMerges(t *testing.T) {
 	}
 }
 
+// TestIsOriginAllowedDevEnvHonorsAllowlist verifies that a development server
+// deployed on a real domain (e.g. dev.japa.to) accepts its configured origins
+// in addition to localhost — the dev-env early return used to ignore the
+// allowlist entirely, which broke WebSocket CheckOrigin (and would break CORS)
+// on every deployed dev host.
+func TestIsOriginAllowedDevEnvHonorsAllowlist(t *testing.T) {
+	t.Setenv("JC_ENV", "development")
+	t.Setenv("JC_CORS_ORIGINS", "https://dev.japa.to")
+	t.Setenv("JC_SITE_URL", "")
+
+	if !IsOriginAllowed("https://dev.japa.to") {
+		t.Error("configured deployed origin rejected in dev env")
+	}
+	if !IsOriginAllowed("http://localhost:3000") {
+		t.Error("localhost origin rejected in dev env")
+	}
+	if IsOriginAllowed("https://evil.example.com") {
+		t.Error("unconfigured origin accepted in dev env")
+	}
+	if IsOriginAllowed("*") {
+		t.Error("wildcard accepted in dev env")
+	}
+}
+
+// TestIsOriginAllowedProductionGates verifies production still rejects
+// non-allowlisted origins and localhost.
+func TestIsOriginAllowedProductionGates(t *testing.T) {
+	t.Setenv("JC_ENV", "production")
+	t.Setenv("JC_CORS_ORIGINS", "")
+	t.Setenv("JC_SITE_URL", "https://japa.to")
+
+	if !IsOriginAllowed("https://japa.to") {
+		t.Error("site origin rejected in production")
+	}
+	if !IsOriginAllowed("https://admin.japa.to") {
+		t.Error("subdomain origin rejected in production")
+	}
+	if IsOriginAllowed("http://localhost:3000") {
+		t.Error("localhost accepted in production")
+	}
+	if IsOriginAllowed("https://evil.example.com") {
+		t.Error("unconfigured origin accepted in production")
+	}
+}
+
 func containsHeader(headers []string, want string) bool {
 	for _, h := range headers {
 		if strings.EqualFold(h, want) {

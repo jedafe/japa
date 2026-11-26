@@ -7,7 +7,7 @@
 	// at the member's address (no custody, no credits).
 	import { invalidateAll } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
-	import { provisionStablecoinWallet, createStablecoinOnramp } from '#lib/api/hub.js';
+	import { provisionStablecoinWallet, createStablecoinOnramp, createIdemKeys } from '#lib/api/hub.js';
 	import type { WalletData } from './types';
 
 	interface Props {
@@ -27,6 +27,7 @@
 	let topupBusy = $state(false);
 	let topupError = $state<string | null>(null);
 	let topupAwaiting = $state(false);
+	const idem = createIdemKeys();
 
 	async function provision() {
 		if (provisioning) return;
@@ -45,15 +46,18 @@
 		if (topupBusy) return;
 		topupBusy = true;
 		topupError = null;
+		const fiat = data.preferredCurrency?.preferred_currency?.toLowerCase();
+		const scope = `onramp|${topupAsset}|${fiat}`;
 		const res = await createStablecoinOnramp({
 			asset: topupAsset,
-			fiat_currency: data.preferredCurrency?.preferred_currency?.toLowerCase()
-		});
+			fiat_currency: fiat
+		}, idem.for(scope));
 		topupBusy = false;
 		if (res.error || !res.data?.url) {
 			topupError = res.error?.message ?? t('settings.wallet.stablecoin_topup_unavailable', 'Top-up is unavailable right now.');
 			return;
 		}
+		idem.drop(scope);
 		window.open(res.data.url, '_blank', 'noopener');
 		topupAwaiting = true;
 	}

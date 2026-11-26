@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import { purchaseCredits, setCurrencyPreference } from '#lib/api/hub.js';
+	import { purchaseCredits, setCurrencyPreference, createIdemKeys } from '#lib/api/hub.js';
 	import { Wallet, Sparkles } from 'lucide-svelte';
 	import type { WalletData } from './types';
 
@@ -30,6 +30,7 @@
 	let error = $state<string | null>(null);
 	let success = $state(false);
 	let currencySaving = $state(false);
+	const idem = createIdemKeys();
 
 	// Clicking a currency chip persists it as the preferred currency (same
 	// PATCH /me/preferences/currency call the Details tab uses), so prices
@@ -71,12 +72,15 @@
 		success = false;
 
 		// provider omitted — the backend selects the configured default
-		// (POST /wallet/purchase-credits treats provider as optional).
+		// (POST /wallet/purchase-credits treats provider as optional). The
+		// idempotency key is scoped to this exact purchase intent so a retry
+		// replays while a changed pack/amount executes as a new purchase.
+		const scope = `purchase|${selectedPackId}|${amount}|${preferredCode}`;
 		const res = await purchaseCredits({
 			pack_id: selectedPackId || undefined,
 			credit_amount: selectedPackId ? 0 : amount,
 			currency: preferredCode
-		});
+		}, idem.for(scope));
 
 		purchasing = false;
 		if (res.error) {
@@ -90,6 +94,7 @@
 		success = true;
 		selectedPackId = '';
 		customAmount = '';
+		idem.drop(scope);
 		await invalidateAll();
 	}
 </script>

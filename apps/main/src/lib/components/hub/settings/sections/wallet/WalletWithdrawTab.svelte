@@ -2,7 +2,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
-	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '#lib/api/hub.js';
+	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod, createIdemKeys } from '#lib/api/hub.js';
 	import type { WalletData, Withdrawal } from './types';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
@@ -24,6 +24,7 @@
 	let withdrawalsHasMore = $state(false);
 	let withdrawalsLoading = $state(false);
 	let withdrawalsError = $state<string | null>(null);
+	const idem = createIdemKeys();
 	// Reads only data.withdrawals so appended pages don't retrigger a reset.
 	$effect(() => {
 		const incoming = data.withdrawals ?? [];
@@ -154,11 +155,12 @@
 		success = null;
 		submitting = true;
 
+		const scope = `withdraw|${calcResult.credit_amount}|${calcResult.currency_code}|${selectedMethodId}`;
 		const res = await createWithdrawal({
 			credit_amount: calcResult.credit_amount,
 			currency_code: calcResult.currency_code,
 			payout_method_id: selectedMethodId || undefined
-		});
+		}, idem.for(scope));
 
 		submitting = false;
 		if (res.error || !res.data) {
@@ -166,6 +168,7 @@
 			return;
 		}
 
+		idem.drop(scope);
 		success = t('wallet.withdraw.submitted', 'Withdrawal submitted. Status: {status}').replace('{status}', res.data.status);
 		amount = '';
 		calcResult = null;

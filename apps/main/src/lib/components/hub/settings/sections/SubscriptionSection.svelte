@@ -5,6 +5,7 @@
 		cancelSubscription,
 		reactivateSubscription,
 		createSubscription,
+		createIdemKeys,
 		type PaymentProvider
 	} from '#lib/api/hub.js';
 	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
@@ -82,6 +83,7 @@
 	let selectedPlan = $state<string>('');
 	let billingCycle = $state<'monthly' | 'yearly'>('monthly');
 	let selectedProvider = $state<string>('');
+	const idem = createIdemKeys();
 
 	// BUG-P013: the backend CancelSubscription sets cancel_at_period_end =
 	// true but leaves status = 'active' (the user keeps access until period
@@ -142,8 +144,9 @@
 		// Map plan slug + billing cycle to the backend plan constant
 		// (pro_monthly, pro_yearly, business_monthly, business_yearly).
 		const planCode = `${selectedPlan}_${billingCycle}`;
+		const scope = `subscribe|${planCode}|${selectedProvider}`;
 		try {
-			const res = await createSubscription(planCode, selectedProvider);
+			const res = await createSubscription(planCode, selectedProvider, idem.for(scope));
 			if (res.error) {
 				loading = false;
 				error = res.error.message ?? t('settings.subscription.subscribe_error');
@@ -154,10 +157,12 @@
 			// the provider's first-charge webhook lands.
 			const checkoutUrl = res.data?.checkout_url;
 			if (checkoutUrl) {
+				idem.drop(scope);
 				window.location.href = checkoutUrl;
 				return;
 			}
 			loading = false;
+			idem.drop(scope);
 			success = t('settings.subscription.subscribe_success');
 			await invalidateAll();
 		} catch {
@@ -177,10 +182,11 @@
 		const res = await optimisticAction({
 			apply: () => (sub = { ...sub, cancel_at_period_end: true }),
 			rollback: () => (sub = prevSub),
-			call: () => cancelSubscription()
+			call: () => cancelSubscription(idem.for('sub-cancel'))
 		});
 		loading = false;
 		if (!res.ok) error = res.error?.message ?? null;
+		else idem.drop('sub-cancel');
 		await invalidateAll();
 	}
 
@@ -192,10 +198,11 @@
 		const res = await optimisticAction({
 			apply: () => (sub = { ...sub, status: 'active', cancel_at_period_end: false }),
 			rollback: () => (sub = prevSub),
-			call: () => reactivateSubscription()
+			call: () => reactivateSubscription(idem.for('sub-reactivate'))
 		});
 		loading = false;
 		if (!res.ok) error = res.error?.message ?? null;
+		else idem.drop('sub-reactivate');
 		await invalidateAll();
 	}
 </script>

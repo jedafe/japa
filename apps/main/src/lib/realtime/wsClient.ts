@@ -75,8 +75,16 @@ class WsClient {
 	private shouldReconnect = false;
 	private isConnecting = false;
 
-	/** Open a connection by minting a fresh ticket. Idempotent. */
+	/** Open a connection by minting a fresh ticket. Idempotent. An explicit
+	 *  call resets the retry budget — this is the recovery path after the
+	 *  attempt cap stopped auto-reconnect. The internal reconnect timer uses
+	 *  attemptConnect() directly so it can't reset its own backoff. */
 	async connect(): Promise<void> {
+		this.reconnectAttempts = 0;
+		await this.attemptConnect();
+	}
+
+	private async attemptConnect(): Promise<void> {
 		this.shouldReconnect = true;
 		this.clearReconnect();
 		// Prevent concurrent mint/open cycles while a previous connect is still
@@ -193,6 +201,11 @@ class WsClient {
 		}
 
 		this.socket = socket;
+		// Clear the previous open timestamp so a failed handshake can't match
+		// the stability window against a stale (or epoch-zero) value — that
+		// would reset the attempt counter on every cycle and retry forever at
+		// minimum delay.
+		this.lastOpenedAt = 0;
 
 		socket.onopen = () => {
 			this.isConnecting = false;
@@ -204,11 +217,16 @@ class WsClient {
 			this.socket = null;
 			// Only a connection that survived the stability window proves the
 			// backend is healthy enough to reset the backoff. A socket closed
-			// right after open keeps counting attempts so the retry cap and
-			// exponential backoff actually apply.
-			if (Date.now() - this.lastOpenedAt >= STABLE_CONNECTION_MS) {
+			// right after open — or one that never opened at all — keeps
+			// counting attempts so the retry cap and exponential backoff
+			// actually apply.
+			if (
+				this.lastOpenedAt > 0 &&
+				Date.now() - this.lastOpenedAt >= STABLE_CONNECTION_MS
+			) {
 				this.reconnectAttempts = 0;
 			}
+			this.lastOpenedAt = 0;
 			if (this.shouldReconnect) this.scheduleReconnect();
 		};
 
@@ -254,7 +272,7 @@ class WsClient {
 		const delay = Math.min(1000 * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY);
 		this.reconnectAttempts++;
 		this.reconnectTimer = setTimeout(() => {
-			void this.connect();
+			void this.attemptConnect();
 		}, delay);
 	}
 

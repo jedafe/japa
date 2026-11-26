@@ -86,6 +86,13 @@ class RealtimeStore {
 	private readonly onPollUpdatedBound = (p: unknown) => this.handlePollUpdated(p);
 	private readonly onModerationAlertBound = (p: unknown) => this.handleModerationAlert(p);
 	private readonly onUnreadCountBound = (p: unknown) => this.handleUnreadCount(p);
+	// Recovery triggers — an explicit wsClient.connect() resets the retry
+	// budget, so these revive realtime after the attempt cap or a dead
+	// stretch (offline -> online, tab hidden -> visible).
+	private readonly onReconnectTriggerBound = () => void wsClient.connect();
+	private readonly onVisibilityBound = () => {
+		if (document.visibilityState === 'visible') void wsClient.connect();
+	};
 
 	/** Connect the WebSocket and register event handlers. Idempotent. */
 	connect(): void {
@@ -100,6 +107,11 @@ class RealtimeStore {
 			wsClient.on('typing', this.onTypingBound);
 			wsClient.on('poll_updated', this.onPollUpdatedBound);
 			wsClient.on('moderation_alert', this.onModerationAlertBound);
+
+			if (typeof window !== 'undefined') {
+				window.addEventListener('online', this.onReconnectTriggerBound);
+				document.addEventListener('visibilitychange', this.onVisibilityBound);
+			}
 		}
 
 		// Always re-arm the client, not just on first wiring: wsClient.connect()
@@ -122,6 +134,10 @@ class RealtimeStore {
 		wsClient.off('typing', this.onTypingBound);
 		wsClient.off('poll_updated', this.onPollUpdatedBound);
 		wsClient.off('moderation_alert', this.onModerationAlertBound);
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('online', this.onReconnectTriggerBound);
+			document.removeEventListener('visibilitychange', this.onVisibilityBound);
+		}
 		wsClient.disconnect();
 	}
 

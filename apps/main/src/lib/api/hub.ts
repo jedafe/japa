@@ -99,10 +99,37 @@ export const setCurrencyPreference = (currencyCode: string) =>
 export const listCurrencies = () =>
 	api.get<Array<{ code: string; name: string; symbol: string }>>('/currencies');
 export const listCreditPacks = () => api.get<Array<unknown>>('/wallet/credit-packs');
-export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number; currency?: string; provider?: string }) =>
+// Rule 9: financial endpoints require an Idempotency-Key. Callers pass a
+// stable key per attempt intent (minted when the user opens the confirm
+// flow / first submits) so a retried request replays instead of
+// re-executing — a fresh key per call would defeat the middleware.
+/**
+ * Mint-or-reuse an Idempotency-Key per attempt scope. Build the scope from
+ * the action + submitted params (e.g. `purchase|${packId}|${amount}`):
+ * retries of the same intent reuse the key and replay server-side, while a
+ * changed body or a new action gets a fresh key and executes. Call
+ * `drop(scope)` on success so a future identical intent re-executes.
+ */
+export function createIdemKeys() {
+	const keys = new Map<string, string>();
+	return {
+		for(scope: string): string {
+			let key = keys.get(scope);
+			if (!key) {
+				key = crypto.randomUUID();
+				keys.set(scope, key);
+			}
+			return key;
+		},
+		drop(scope: string): void {
+			keys.delete(scope);
+		}
+	};
+}
+
+export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number; currency?: string; provider?: string }, idemKey?: string) =>
 	api.post<{ checkout_url?: string }>('/wallet/purchase-credits', body, {
-		// Rule 9: financial endpoints require an Idempotency-Key.
-		'Idempotency-Key': crypto.randomUUID()
+		'Idempotency-Key': idemKey ?? crypto.randomUUID()
 	});
 
 export const listWithdrawalProviders = () => api.get<string[]>('/wallet/withdraw/providers');
@@ -114,10 +141,9 @@ export const provisionStablecoinWallet = () =>
 
 // Fiat top-up — returns the Crossmint-hosted checkout URL; USDC/USDT is
 // delivered directly to the member's wallet address (§128, no custody).
-export const createStablecoinOnramp = (body: { asset: string; fiat_currency?: string }) =>
+export const createStablecoinOnramp = (body: { asset: string; fiat_currency?: string }, idemKey?: string) =>
 	api.post<{ url?: string; token?: string; id?: string }>('/me/funding/onramp-session', body, {
-		// Rule 9: financial endpoints require an Idempotency-Key.
-		'Idempotency-Key': crypto.randomUUID()
+		'Idempotency-Key': idemKey ?? crypto.randomUUID()
 	});
 
 export const calculateWithdrawal = (body: { credit_amount: number; currency_code?: string }) =>
@@ -132,7 +158,7 @@ export const calculateWithdrawal = (body: { credit_amount: number; currency_code
 		net_amount: number;
 	}>('/wallet/withdraw/calculate', body);
 
-export const createWithdrawal = (body: { credit_amount: number; currency_code?: string; payout_method_id?: string }) =>
+export const createWithdrawal = (body: { credit_amount: number; currency_code?: string; payout_method_id?: string }, idemKey?: string) =>
 	api.post<{
 		id: string;
 		credit_amount: number;
@@ -147,7 +173,7 @@ export const createWithdrawal = (body: { credit_amount: number; currency_code?: 
 		'/me/wallet/withdraw',
 		body,
 		{
-			'Idempotency-Key': crypto.randomUUID()
+			'Idempotency-Key': idemKey ?? crypto.randomUUID()
 		}
 	);
 
@@ -171,15 +197,13 @@ export const createWithdrawalMethod = (body: {
 		metadata?: unknown;
 	}>('/me/wallet/withdrawal-methods', body);
 
-export const cancelSubscription = () =>
+export const cancelSubscription = (idemKey?: string) =>
 	api.post('/me/subscription/cancel', undefined, {
-		// Rule 9: financial state-change endpoints require an Idempotency-Key.
-		'Idempotency-Key': crypto.randomUUID()
+		'Idempotency-Key': idemKey ?? crypto.randomUUID()
 	});
-export const reactivateSubscription = () =>
+export const reactivateSubscription = (idemKey?: string) =>
 	api.post('/me/subscription/reactivate', undefined, {
-		// Rule 9: financial state-change endpoints require an Idempotency-Key.
-		'Idempotency-Key': crypto.randomUUID()
+		'Idempotency-Key': idemKey ?? crypto.randomUUID()
 	});
 
 export interface PaymentProvider {
@@ -195,10 +219,9 @@ export interface SubscriptionCheckout {
 	checkout_url: string;
 }
 
-export const createSubscription = (plan: string, provider: string) =>
+export const createSubscription = (plan: string, provider: string, idemKey?: string) =>
 	api.post<SubscriptionCheckout>('/subscriptions', { plan, provider }, {
-		// Rule 9: financial state-change endpoints require an Idempotency-Key.
-		'Idempotency-Key': crypto.randomUUID()
+		'Idempotency-Key': idemKey ?? crypto.randomUUID()
 	});
 
 /* ---- danger ---- */
