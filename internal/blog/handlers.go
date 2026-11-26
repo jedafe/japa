@@ -103,7 +103,7 @@ type MentionNotifier interface {
 		actorID pgtype.UUID,
 		subjectType string,
 		subjectID pgtype.UUID,
-		subjectURL, actorName, actorAvatar string,
+		subjectURL string,
 	) error
 }
 
@@ -258,7 +258,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			"mention.content", "",
 			authorID,
 			"content", contentID,
-			"", "", "",
+			"",
 		); err != nil {
 			slog.Warn("blog: failed to dispatch mention.content notification", "user_id", m.ID.String(), "error", err)
 		}

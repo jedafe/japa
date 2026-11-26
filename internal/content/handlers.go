@@ -71,7 +71,7 @@ type MentionNotifier interface {
 		actorID pgtype.UUID,
 		subjectType string,
 		subjectID pgtype.UUID,
-		subjectURL, actorName, actorAvatar string,
+		subjectURL string,
 	) error
 }
 
@@ -804,7 +804,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, authorID, c
 			"mention.content", "",
 			authorID,
 			"content", contentID,
-			"", "", "",
+			"",
 		); err != nil {
 			slog.Warn("content: failed to dispatch mention.content notification", "user_id", m.ID.String(), "error", err)
 		}
@@ -3255,7 +3255,7 @@ func (h *Handlers) dispatchReactionNotification(ctx context.Context, content gen
 		"content.reaction", content.Title,
 		actorID,
 		"content", content.ID,
-		"", "", "",
+		"",
 	); err != nil {
 		slog.Warn("content: failed to dispatch content.reaction notification", "content_id", content.ID.String(), "error", err)
 	}

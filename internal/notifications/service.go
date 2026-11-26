@@ -55,7 +55,7 @@ type DispatchResult struct {
 // subjectTitle/subjectURL ride on the window so DispatchBatch can build a
 // deep-linkable notification row (BUG-009).
 // Returns whether a new notification was created or batch was extended.
-func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, subjectTitle string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, subjectURL, _, _ string) (DispatchResult, error) {
+func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, subjectTitle string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, subjectURL string) (DispatchResult, error) {
 	// §41 (BLK-008): a user block in either direction suppresses the
 	// notification entirely — the blocked party's actions must not reach
 	// the other side. Central check so every dispatch path (comments,
@@ -285,6 +285,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		if ep, ok := prefs[window.NotificationType]; ok {
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, body, actionURL, notifID.String())
+				s.enqueueMobilePush(ctx, window.RecipientID, notifID)
 			}
 
 			if ep.Email {
@@ -449,6 +450,7 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 		if havePref {
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, notifID.String())
+				s.enqueueMobilePush(ctx, recipientID, notifID)
 			}
 
 			if ep.Email {

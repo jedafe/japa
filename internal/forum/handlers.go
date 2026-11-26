@@ -86,7 +86,7 @@ type MentionNotifier interface {
 		actorID pgtype.UUID,
 		subjectType string,
 		subjectID pgtype.UUID,
-		subjectURL, actorName, actorAvatar string,
+		subjectURL string,
 	) error
 }
 
@@ -1350,7 +1350,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			notificationType, "",
 			authorID,
 			"forum", subjectID,
-			"", "", "",
+			"",
 		); err != nil {
 			slog.Warn("forum: failed to dispatch mention notification", "user_id", m.ID.String(), "type", notificationType, "error", err)
 		}

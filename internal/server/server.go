@@ -901,6 +901,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetSettings(settingsService)
 	notificationService.SetValkey(vkClient)
 	notificationService.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in live WS payloads
+	// §77: device token reader for notification:send_push mobile fan-out.
+	notificationService.SetDeviceTokenLister(gen.New(database.Reader))
 
 	// §127 A5 — Jetstream inbound: remote likes/follows/replies notify via
 	// the §35 pipeline; the consumer is a supervised daemon goroutine gated
@@ -10763,10 +10765,10 @@ func (a adsNotificationAdapter) DispatchNotification(
 	actorID pgtype.UUID,
 	subjectType string,
 	subjectID pgtype.UUID,
-	subjectURL, actorName, actorAvatar string,
+	subjectURL string,
 ) error {
 	_, err := a.svc.DispatchNotification(ctx, recipientID, nType, subjectTitle,
-		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
+		actorID, subjectType, subjectID, subjectURL)
 	return err
 }
 
@@ -10924,7 +10926,7 @@ func (a followNotificationAdapter) DispatchFollowNotification(
 		notifications.TypeNewFollower, "",
 		actorID,
 		entityType, entityID,
-		"", "", "",
+		"",
 	)
 }
 
@@ -10935,10 +10937,10 @@ func (a commentNotificationAdapter) DispatchNotification(
 	actorID pgtype.UUID,
 	subjectType string,
 	subjectID pgtype.UUID,
-	subjectURL, actorName, actorAvatar string,
+	subjectURL string,
 ) error {
 	_, err := a.svc.DispatchNotification(ctx, recipientID, nType, subjectTitle,
-		actorID, subjectType, subjectID, subjectURL, actorName, actorAvatar)
+		actorID, subjectType, subjectID, subjectURL)
 	return err
 }
 

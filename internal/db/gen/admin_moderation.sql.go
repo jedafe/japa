@@ -897,9 +897,15 @@ func (q *Queries) CreateAdminBroadcastRecord(ctx context.Context, arg CreateAdmi
 	return err
 }
 
-const createBroadcastNotifications = `-- name: CreateBroadcastNotifications :exec
+const createBroadcastNotifications = `-- name: CreateBroadcastNotifications :many
 INSERT INTO notifications (recipient_id, notification_type, actor_type, title, body, created_at)
-SELECT unnest($1::uuid[]), 'broadcast', 'system', $2, $3, $4
+SELECT r.user_id, 'broadcast', 'system', $2, $3, $4
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key
+WHERE COALESCE(np.in_app, nt.default_in_app)
+RETURNING id, recipient_id
 `
 
 type CreateBroadcastNotificationsParams struct {
@@ -909,20 +915,45 @@ type CreateBroadcastNotificationsParams struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type CreateBroadcastNotificationsRow struct {
+	ID          pgtype.UUID `json:"id"`
+	RecipientID pgtype.UUID `json:"recipient_id"`
+}
+
 // BUG-001: the previous version mapped the SENDER into recipient_id,
 // unnested recipient UUIDs into notification_type, put 'system' into the
 // uuid actor_id, and inserted into a nonexistent updated_at column — every
 // broadcast INSERT failed at runtime. Correct shape: one row per recipient,
 // 'broadcast' type (seeded §35 catalog), system actor (NULL actor_id —
 // actor_id is uuid and 'system' is not a valid uuid).
-func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBroadcastNotificationsParams) error {
-	_, err := q.db.Exec(ctx, createBroadcastNotifications,
+// BUG-027: honor the §35 channel contract — insert only for recipients
+// whose effective in-app preference is on (user override wins over the
+// notification_types default) while the 'broadcast' type itself is
+// enabled. RETURNING gives the caller the true delivered set (plus the
+// notification ids the mobile-push fan-out keys on).
+func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBroadcastNotificationsParams) ([]CreateBroadcastNotificationsRow, error) {
+	rows, err := q.db.Query(ctx, createBroadcastNotifications,
 		arg.Column1,
 		arg.Title,
 		arg.Body,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CreateBroadcastNotificationsRow
+	for rows.Next() {
+		var i CreateBroadcastNotificationsRow
+		if err := rows.Scan(&i.ID, &i.RecipientID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const createScheduledBroadcast = `-- name: CreateScheduledBroadcast :one
@@ -1317,6 +1348,93 @@ func (q *Queries) ListAdminBroadcasts(ctx context.Context, arg ListAdminBroadcas
 			&i.TargetID,
 			&i.Status,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBroadcastChannelRecipients = `-- name: ListBroadcastChannelRecipients :many
+SELECT r.user_id::uuid AS user_id, u.email,
+       COALESCE(np.email, nt.default_email) AS wants_email,
+       COALESCE(np.push,  nt.default_push)  AS wants_push
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN users u ON u.id = r.user_id
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key
+`
+
+type ListBroadcastChannelRecipientsRow struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	Email      string      `json:"email"`
+	WantsEmail bool        `json:"wants_email"`
+	WantsPush  bool        `json:"wants_push"`
+}
+
+// BUG-027: resolves the effective email/push channels for a broadcast
+// recipient set so the caller can fan out email:send / push:deliver per
+// user — the seeded 'broadcast' type carries default_email=true but the
+// old bulk insert never delivered any channel besides in-app.
+func (q *Queries) ListBroadcastChannelRecipients(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListBroadcastChannelRecipientsRow, error) {
+	rows, err := q.db.Query(ctx, listBroadcastChannelRecipients, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBroadcastChannelRecipientsRow
+	for rows.Next() {
+		var i ListBroadcastChannelRecipientsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Email,
+			&i.WantsEmail,
+			&i.WantsPush,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBroadcastPushTargets = `-- name: ListBroadcastPushTargets :many
+SELECT DISTINCT ON (r.user_id) r.user_id::uuid AS user_id, dt.id AS device_token_id
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN device_tokens dt ON dt.user_id = r.user_id AND dt.is_active
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key
+WHERE COALESCE(np.push, nt.default_push)
+ORDER BY r.user_id, dt.last_used_at DESC NULLS LAST
+`
+
+type ListBroadcastPushTargetsRow struct {
+	UserID        pgtype.UUID `json:"user_id"`
+	DeviceTokenID pgtype.UUID `json:"device_token_id"`
+}
+
+// BUG-027: §77 mobile fan-out for broadcasts — one row per targeted
+// user whose effective push preference is on and who has ≥1 active
+// device_tokens row; DISTINCT ON picks a single token per user because
+// PushAdapter fans out to all of the user's devices itself.
+func (q *Queries) ListBroadcastPushTargets(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListBroadcastPushTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listBroadcastPushTargets, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBroadcastPushTargetsRow
+	for rows.Next() {
+		var i ListBroadcastPushTargetsRow
+		if err := rows.Scan(&i.UserID, &i.DeviceTokenID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

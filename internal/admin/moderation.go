@@ -23,6 +23,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/verification"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -828,12 +829,26 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	// Immediate broadcast: insert a notification for every active user in the
 	// target scope (all, a user group, or a geo space).
-	sent, err := h.broadcastToScopedUsers(ctx, user.UserID, req.Subject, req.Body, req.Target, req.TargetID)
+	sent, err := h.broadcastToScopedUsers(ctx, req.Subject, req.Body, req.Target, req.TargetID)
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
 
 		return
+	}
+
+	// Record the broadcast in admin_broadcasts — only on the immediate
+	// path; SendBroadcast and the scheduled sweep already have a row to
+	// stamp (BUG-028: previously broadcastToScopedUsers wrote a second
+	// record every time a draft was sent, producing phantom duplicates).
+	if err := h.Queries.CreateAdminBroadcastRecord(ctx, gen.CreateAdminBroadcastRecordParams{
+		Title:  req.Subject,
+		Body:   req.Body,
+		SentBy: user.UserID,
+		// #nosec G115 // value bounded by caller
+		RecipientCount: int32(sent),
+	}); err != nil {
+		slog.Error("broadcast: record failed", "error", err)
 	}
 
 	slog.Info("broadcast sent", "user_id", user.UserID.String(), "recipients", sent, "target", req.Target, "subject", req.Subject)
@@ -848,14 +863,14 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 // broadcastToAllUsers inserts a system_announcement notification for every
 // active user in the platform. Returns the count of notifications created.
-func (h *Handlers) broadcastToAllUsers(ctx context.Context, senderID pgtype.UUID, title, body string) (int, error) {
-	return h.broadcastToScopedUsers(ctx, senderID, title, body, "all", "")
+func (h *Handlers) broadcastToAllUsers(ctx context.Context, title, body string) (int, error) {
+	return h.broadcastToScopedUsers(ctx, title, body, "all", "")
 }
 
 // broadcastToScopedUsers inserts a system_announcement notification for every
 // active user in the target scope. When target is "user_group" or "geo_space",
 // only users in the specified group or space receive the notification.
-func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.UUID, title, body, target, targetID string) (int, error) {
+func (h *Handlers) broadcastToScopedUsers(ctx context.Context, title, body, target, targetID string) (int, error) {
 	var rows []pgtype.UUID
 
 	var err error
@@ -911,7 +926,11 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.U
 	// BUG-001: param order fixed — Column1 is the recipients array; the
 	// previous mapping wrote the sender into recipient_id and UUIDs into
 	// notification_type so every broadcast INSERT failed.
-	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+	// BUG-027: the INSERT now filters on each recipient's effective
+	// in-app preference for the 'broadcast' type (and suppresses all
+	// inserts while the type is admin-disabled) and returns the actual
+	// delivered set.
+	inserted, err := h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
 		Column1:   rows,
 		Title:     title,
 		Body:      &body,
@@ -921,19 +940,122 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.U
 		return 0, err
 	}
 
-	// Record the broadcast in admin_broadcasts.
-	err = h.Queries.CreateAdminBroadcastRecord(ctx, gen.CreateAdminBroadcastRecordParams{
-		Title:  title,
-		Body:   body,
-		SentBy: senderID,
-		// #nosec G115 // value bounded by caller
-		RecipientCount: int32(len(rows)),
-	})
-	if err != nil {
-		return 0, err
+	// BUG-027: invalidate the unread-count cache for every inserted
+	// recipient so the badge reflects the broadcast on the next poll.
+	if h.Valkey != nil {
+		for _, row := range inserted {
+			if err := h.Valkey.Del(ctx, valkey.MustKey("notif_unread:%s", row.RecipientID.String())).Err(); err != nil {
+				slog.Warn("broadcast: unread-count invalidation failed", "user_id", row.RecipientID.String(), "error", err)
+			}
+		}
 	}
 
-	return len(rows), nil
+	// BUG-027: fan out the remaining §35 channels — the 'broadcast' type
+	// seeds default_email=true but the old bulk insert never delivered
+	// email (or push). Enqueue per-recipient tasks honoring each user's
+	// effective preference; best-effort so one enqueue failure does not
+	// abort the rest.
+	notifByUser := make(map[pgtype.UUID]pgtype.UUID, len(inserted))
+	reached := make(map[pgtype.UUID]struct{}, len(inserted))
+	for _, row := range inserted {
+		notifByUser[row.RecipientID] = row.ID
+		reached[row.RecipientID] = struct{}{}
+	}
+	h.enqueueBroadcastChannels(ctx, rows, title, body, notifByUser, reached)
+
+	// Returns the distinct set of users reached on ANY channel (in-app ∪
+	// email ∪ push) — a push/email-only recipient still counts as reached
+	// even though no in-app row exists for them. The caller stamps
+	// recipient_count on its own admin_broadcasts row (or creates one on
+	// the immediate path) — BUG-028: writing the record here duplicated
+	// every draft send.
+	return len(reached), nil
+}
+
+// enqueueBroadcastChannels fans out the non-in-app broadcast channels —
+// email, web push, and §77 mobile push — to every targeted recipient
+// whose effective preference enables them. Tasks are enqueued via the
+// admin TaskEnqueuer — fire-and-forget per Rule 8; a nil enqueuer
+// degrades silently. notifByUser maps each inserted recipient to their
+// notification row id — mobile push (notification:send_push) only fires
+// for recipients that got an in-app row because the adapter resolves
+// title/body from the notifications table. reached accumulates the
+// distinct users delivered on any channel for the broadcast record.
+// BUG-027: previously broadcasts were in-app only regardless of the
+// 'broadcast' type's default_email=true and any per-user overrides.
+func (h *Handlers) enqueueBroadcastChannels(ctx context.Context, recipients []pgtype.UUID, title, body string, notifByUser map[pgtype.UUID]pgtype.UUID, reached map[pgtype.UUID]struct{}) {
+	if h.Tasks == nil || len(recipients) == 0 {
+		return
+	}
+
+	channels, err := h.Queries.ListBroadcastChannelRecipients(ctx, recipients)
+	if err != nil {
+		slog.Error("broadcast: resolve channel recipients failed", "error", err)
+		return
+	}
+
+	for _, r := range channels {
+		if r.WantsEmail {
+			payload, mErr := json.Marshal(map[string]any{
+				"to":            r.Email,
+				"subject":       title,
+				"body":          body,
+				"type":          "broadcast",
+				"template_slug": "notification",
+				"template_data": map[string]any{"title": title, "body": body},
+			})
+			if mErr == nil {
+				if err := h.Tasks.Enqueue(worker.TypeEmailSend, payload); err != nil {
+					slog.Warn("broadcast: enqueue email failed", "user_id", r.UserID.String(), "error", err)
+				} else {
+					reached[r.UserID] = struct{}{}
+				}
+			}
+		}
+
+		if r.WantsPush {
+			payload, mErr := json.Marshal(map[string]string{
+				"user_id": r.UserID.String(),
+				"title":   title,
+				"body":    body,
+			})
+			if mErr == nil {
+				if err := h.Tasks.Enqueue(worker.TypePushDelivery, payload); err != nil {
+					slog.Warn("broadcast: enqueue push failed", "user_id", r.UserID.String(), "error", err)
+				} else {
+					reached[r.UserID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// §77 mobile push: one notification:send_push per push-enabled
+	// recipient that both received an in-app row (the task keys on
+	// notification_id) and has an active FCM/APNs device token.
+	pushTargets, err := h.Queries.ListBroadcastPushTargets(ctx, recipients)
+	if err != nil {
+		slog.Error("broadcast: resolve push targets failed", "error", err)
+		return
+	}
+
+	for _, t := range pushTargets {
+		notifID, ok := notifByUser[t.UserID]
+		if !ok {
+			continue
+		}
+
+		payload, mErr := json.Marshal(map[string]string{
+			"notification_id": notifID.String(),
+			"device_token_id": t.DeviceTokenID.String(),
+		})
+		if mErr == nil {
+			if err := h.Tasks.Enqueue(worker.TypeNotificationSendPush, payload); err != nil {
+				slog.Warn("broadcast: enqueue mobile push failed", "user_id", t.UserID.String(), "error", err)
+			} else {
+				reached[t.UserID] = struct{}{}
+			}
+		}
+	}
 }
 
 // ─── User Moderation ──────────────────────────────────────────────────────
@@ -2709,7 +2831,7 @@ func (h *Handlers) SendBroadcast(w http.ResponseWriter, r *http.Request) {
 		targetID = b.TargetID.String()
 	}
 
-	sent, err := h.broadcastToScopedUsers(r.Context(), b.SentBy, b.Title, b.Body, target, targetID)
+	sent, err := h.broadcastToScopedUsers(r.Context(), b.Title, b.Body, target, targetID)
 	if err != nil {
 		slog.Error("broadcast: send-by-id failed", "id", bid.String(), "error", err)
 		_ = h.Queries.UnclaimBroadcast(r.Context(), bid)

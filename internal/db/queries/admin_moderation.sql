@@ -601,15 +601,54 @@ JOIN user_group_memberships gm ON gm.user_id = u.id
 JOIN user_groups ug ON ug.id = gm.group_id
 WHERE u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true;
 
--- name: CreateBroadcastNotifications :exec
+-- name: CreateBroadcastNotifications :many
 -- BUG-001: the previous version mapped the SENDER into recipient_id,
 -- unnested recipient UUIDs into notification_type, put 'system' into the
 -- uuid actor_id, and inserted into a nonexistent updated_at column — every
 -- broadcast INSERT failed at runtime. Correct shape: one row per recipient,
 -- 'broadcast' type (seeded §35 catalog), system actor (NULL actor_id —
 -- actor_id is uuid and 'system' is not a valid uuid).
+-- BUG-027: honor the §35 channel contract — insert only for recipients
+-- whose effective in-app preference is on (user override wins over the
+-- notification_types default) while the 'broadcast' type itself is
+-- enabled. RETURNING gives the caller the true delivered set (plus the
+-- notification ids the mobile-push fan-out keys on).
 INSERT INTO notifications (recipient_id, notification_type, actor_type, title, body, created_at)
-SELECT unnest($1::uuid[]), 'broadcast', 'system', $2, $3, $4;
+SELECT r.user_id, 'broadcast', 'system', $2, $3, $4
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key
+WHERE COALESCE(np.in_app, nt.default_in_app)
+RETURNING id, recipient_id;
+
+-- name: ListBroadcastChannelRecipients :many
+-- BUG-027: resolves the effective email/push channels for a broadcast
+-- recipient set so the caller can fan out email:send / push:deliver per
+-- user — the seeded 'broadcast' type carries default_email=true but the
+-- old bulk insert never delivered any channel besides in-app.
+SELECT r.user_id::uuid AS user_id, u.email,
+       COALESCE(np.email, nt.default_email) AS wants_email,
+       COALESCE(np.push,  nt.default_push)  AS wants_push
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN users u ON u.id = r.user_id
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key;
+
+-- name: ListBroadcastPushTargets :many
+-- BUG-027: §77 mobile fan-out for broadcasts — one row per targeted
+-- user whose effective push preference is on and who has ≥1 active
+-- device_tokens row; DISTINCT ON picks a single token per user because
+-- PushAdapter fans out to all of the user's devices itself.
+SELECT DISTINCT ON (r.user_id) r.user_id::uuid AS user_id, dt.id AS device_token_id
+FROM unnest($1::uuid[]) AS r(user_id)
+JOIN device_tokens dt ON dt.user_id = r.user_id AND dt.is_active
+JOIN notification_types nt ON nt.key = 'broadcast' AND nt.enabled
+LEFT JOIN notification_preferences np
+       ON np.user_id = r.user_id AND np.notification_type = nt.key
+WHERE COALESCE(np.push, nt.default_push)
+ORDER BY r.user_id, dt.last_used_at DESC NULLS LAST;
 
 -- name: CreateAdminBroadcastRecord :exec
 INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())

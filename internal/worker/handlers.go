@@ -7654,30 +7654,145 @@ func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error 
 			continue
 		}
 
+		delivered := 0
+
 		if len(recipients) > 0 {
 			// BUG-001: param order — Column1 is the recipients array.
-			if err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+			// BUG-027: the INSERT filters on each recipient's effective
+			// in-app preference for 'broadcast' and returns the delivered
+			// (id, recipient_id) set.
+			inserted, err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
 				Column1:   recipients,
 				Title:     b.Title,
 				Body:      &b.Body,
 				CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			}); err != nil {
+			})
+			if err != nil {
 				slog.Error("task:broadcast:dispatch_scheduled: notify failed", "id", b.ID, "error", err)
 				_ = q.UnclaimBroadcast(ctx, b.ID)
 				continue
 			}
+
+			// BUG-027: invalidate the unread-count cache for inserted
+			// recipients so the badge reflects the broadcast.
+			if rdb != nil {
+				for _, row := range inserted {
+					if err := rdb.Del(ctx, valkey.MustKey("notif_unread:%s", row.RecipientID.String())).Err(); err != nil {
+						slog.Warn("task:broadcast:dispatch_scheduled: unread invalidation failed", "user_id", row.RecipientID.String(), "error", err)
+					}
+				}
+			}
+
+			// BUG-027: fan out email/web-push/mobile-push to recipients
+			// whose effective preferences enable them (the 'broadcast'
+			// type seeds default_email=true). recipient_count is the
+			// distinct set reached on any channel.
+			delivered = enqueueBroadcastChannels(ctx, q, recipients, b.Title, b.Body, inserted)
 		}
 
 		// #nosec G115 // recipient count bounded by user table size
-		if err := q.MarkBroadcastSent(ctx, gen.MarkBroadcastSentParams{ID: b.ID, RecipientCount: int32(len(recipients))}); err != nil {
+		if err := q.MarkBroadcastSent(ctx, gen.MarkBroadcastSentParams{ID: b.ID, RecipientCount: int32(delivered)}); err != nil {
 			slog.Error("task:broadcast:dispatch_scheduled: mark sent failed", "id", b.ID, "error", err)
 			continue
 		}
 
-		slog.Info("task:broadcast:dispatch_scheduled: sent", "id", b.ID, "recipients", len(recipients))
+		slog.Info("task:broadcast:dispatch_scheduled: sent", "id", b.ID, "recipients", delivered)
 	}
 
 	return nil
+}
+
+// enqueueBroadcastChannels fans out the non-in-app broadcast channels —
+// email, web push, and §77 mobile push — to every targeted recipient
+// whose effective preference enables them. inserted carries the
+// (notification_id, recipient_id) rows actually created; mobile push
+// (notification:send_push) only fires for those recipients because the
+// adapter resolves title/body from the notifications table. Returns the
+// distinct set of users reached on ANY channel for the broadcast record.
+// BUG-027: previously broadcasts were in-app only regardless of the
+// 'broadcast' type's default_email=true and any per-user overrides.
+func enqueueBroadcastChannels(ctx context.Context, q *gen.Queries, recipients []pgtype.UUID, title, body string, inserted []gen.CreateBroadcastNotificationsRow) int {
+	notifByUser := make(map[pgtype.UUID]pgtype.UUID, len(inserted))
+	reached := make(map[pgtype.UUID]struct{}, len(inserted))
+	for _, row := range inserted {
+		notifByUser[row.RecipientID] = row.ID
+		reached[row.RecipientID] = struct{}{}
+	}
+
+	if taskEnqueuer == nil || len(recipients) == 0 {
+		return len(reached)
+	}
+
+	channels, err := q.ListBroadcastChannelRecipients(ctx, recipients)
+	if err != nil {
+		slog.Error("broadcast: resolve channel recipients failed", "error", err)
+		return len(reached)
+	}
+
+	for _, r := range channels {
+		if r.WantsEmail {
+			payload, mErr := json.Marshal(map[string]any{
+				"to":            r.Email,
+				"subject":       title,
+				"body":          body,
+				"type":          "broadcast",
+				"template_slug": "notification",
+				"template_data": map[string]any{"title": title, "body": body},
+			})
+			if mErr == nil {
+				if err := taskEnqueuer.Enqueue(TypeEmailSend, payload); err != nil {
+					slog.Warn("broadcast: enqueue email failed", "user_id", r.UserID.String(), "error", err)
+				} else {
+					reached[r.UserID] = struct{}{}
+				}
+			}
+		}
+
+		if r.WantsPush {
+			payload, mErr := json.Marshal(map[string]string{
+				"user_id": r.UserID.String(),
+				"title":   title,
+				"body":    body,
+			})
+			if mErr == nil {
+				if err := taskEnqueuer.Enqueue(TypePushDelivery, payload); err != nil {
+					slog.Warn("broadcast: enqueue push failed", "user_id", r.UserID.String(), "error", err)
+				} else {
+					reached[r.UserID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// §77 mobile push: one notification:send_push per push-enabled
+	// recipient that both received an in-app row and has an active
+	// FCM/APNs device token (PushAdapter fans out to all tokens).
+	pushTargets, err := q.ListBroadcastPushTargets(ctx, recipients)
+	if err != nil {
+		slog.Error("broadcast: resolve push targets failed", "error", err)
+		return len(reached)
+	}
+
+	for _, t := range pushTargets {
+		notifID, ok := notifByUser[t.UserID]
+		if !ok {
+			continue
+		}
+
+		payload, mErr := json.Marshal(map[string]string{
+			"notification_id": notifID.String(),
+			"device_token_id": t.DeviceTokenID.String(),
+		})
+		if mErr == nil {
+			if err := taskEnqueuer.Enqueue(TypeNotificationSendPush, payload); err != nil {
+				slog.Warn("broadcast: enqueue mobile push failed", "user_id", t.UserID.String(), "error", err)
+			} else {
+				reached[t.UserID] = struct{}{}
+			}
+		}
+	}
+
+	return len(reached)
 }
 
 // HandleHonchoRetentionSweep prunes Honcho context entries older than

@@ -278,7 +278,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 			notifications.TypeContentComment, subjectTitle,
 			comment.AuthorUserID,
 			"comment", comment.ID,
-			subjectURL, "", "",
+			subjectURL,
 		); err != nil {
 			slog.Warn("comments: failed to dispatch content.comment notification", "error", err)
 		}
@@ -297,7 +297,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 				notifications.TypeCommentReply, subjectTitle,
 				comment.AuthorUserID,
 				"comment", comment.ID,
-				subjectURL, "", "",
+				subjectURL,
 			); err != nil {
 				slog.Warn("comments: failed to dispatch comment.reply notification", "error", err)
 			}
@@ -355,7 +355,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 			"mention.comment", subjectTitle,
 			comment.AuthorUserID,
 			"comment", comment.ID,
-			subjectURL, "", "",
+			subjectURL,
 		); err != nil {
 			slog.Warn("comments: failed to dispatch mention.comment notification", "user_id", m.ID.String(), "error", err)
 		}
@@ -447,7 +447,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.
 			"mention.comment", subjectTitle,
 			comment.AuthorUserID,
 			"comment", comment.ID,
-			subjectURL, "", "",
+			subjectURL,
 		); err != nil {
 			slog.Warn("comments: failed to dispatch mention.comment notification on edit", "user_id", m.ID.String(), "error", err)
 		}

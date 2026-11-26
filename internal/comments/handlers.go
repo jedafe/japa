@@ -43,7 +43,7 @@ type NotificationDispatcher interface {
 		actorID pgtype.UUID,
 		subjectType string,
 		subjectID pgtype.UUID,
-		subjectURL, actorName, actorAvatar string,
+		subjectURL string,
 	) error
 }
 

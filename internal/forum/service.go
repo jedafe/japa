@@ -508,15 +508,13 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 			subjectTitle := thread.Title
 			subjectType := "forum_thread"
 			subjectID := threadID
-			actorName := ""
-			actorAvatar := ""
 			subjectURL := "/thread/" + thread.Slug
 			_ = s.notifier.DispatchNotification(
 				notifyCtx, thread.AuthorUserID,
 				notifyType, subjectTitle,
 				actorID,
 				subjectType, subjectID,
-				subjectURL, actorName, actorAvatar,
+				subjectURL,
 			)
 		}()
 	}

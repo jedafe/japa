@@ -72,7 +72,7 @@ type Notifier interface {
 		actorID pgtype.UUID,
 		subjectType string,
 		subjectID pgtype.UUID,
-		subjectURL, actorName, actorAvatar string,
+		subjectURL string,
 	) error
 }
 
@@ -697,7 +697,7 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UU
 		nType, title,
 		pgtype.UUID{}, // no actor — system notification
 		"ad_campaign", campaign.ID,
-		actionURL, "", "",
+		actionURL,
 	); err != nil {
 		return fmt.Errorf("adsselfserve: dispatch notification: %w", err)
 	}

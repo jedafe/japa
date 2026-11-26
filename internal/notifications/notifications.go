@@ -94,17 +94,34 @@ type WSEventPayload struct {
 	Payload interface{} `json:"payload"`
 }
 
+// DeviceTokenLister resolves a user's active mobile device tokens (§77
+// FCM/APNs registration table). *gen.Queries satisfies it via
+// GetActiveDeviceTokensForUser.
+type DeviceTokenLister interface {
+	GetActiveDeviceTokensForUser(ctx context.Context, userID pgtype.UUID) ([]gen.DeviceToken, error)
+}
+
 // Service provides notification operations with reader/writer pool separation.
 type Service struct {
-	store       *Store
-	client      *asynq.Client
-	push        *PushDelivery
-	pushStore   *PushStore
-	settings    SettingsProvider
-	wsHub       WSHuber
-	valkeyCache valkeycompat.Cmdable
-	lit         literalResolver // nil disables literal resolution (§14)
+	store        *Store
+	client       *asynq.Client
+	push         *PushDelivery
+	pushStore    *PushStore
+	settings     SettingsProvider
+	wsHub        WSHuber
+	valkeyCache  valkeycompat.Cmdable
+	lit          literalResolver   // nil disables literal resolution (§14)
+	deviceTokens DeviceTokenLister // nil disables mobile push fan-out (§77)
 }
+
+// SetDeviceTokenLister injects the device-token reader used to fan out
+// mobile push via notification:send_push. Nil disables mobile push.
+// BUG-026: previously nothing enqueued notification:send_push — the
+// task, handler, and devices.Service dispatcher were fully wired at
+// startup but unreachable, so registered FCM/APNs device tokens never
+// received a push.
+// Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md.
+func (s *Service) SetDeviceTokenLister(l DeviceTokenLister) { s.deviceTokens = l }
 
 // SetLiteralResolver injects the template-literal catalog so notification
 // titles/bodies in the real-time WebSocket payload render {{...}}
@@ -320,6 +337,55 @@ func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pg
 		"recipient_id", recipientID.String(), "task_id", info.ID)
 }
 
+// enqueueMobilePush enqueues one notification:send_push task for the
+// recipient's registered mobile devices (§77, ADR-074). The task
+// contract requires a persisted notification row — PushAdapter resolves
+// the recipient from any one of their active device tokens and fans out
+// to every token itself via devices.Service.SendPush, so a single task
+// keyed on the first token delivers to all devices without N² fan-out.
+//
+// BUG-026: call only where a real notification id exists — push-only
+// delivery paths (in_app=false + push=true effective pref) insert no
+// row and the adapter loads title/body from the notifications table.
+func (s *Service) enqueueMobilePush(ctx context.Context, recipientID, notifID pgtype.UUID) {
+	if s.client == nil || s.deviceTokens == nil || !notifID.Valid {
+		return
+	}
+
+	tokens, err := s.deviceTokens.GetActiveDeviceTokensForUser(ctx, recipientID)
+	if err != nil {
+		slog.Warn("notifications: list device tokens failed",
+			"recipient_id", recipientID.String(), "error", err)
+		return
+	}
+
+	if len(tokens) == 0 {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"notification_id": notifID.String(),
+		"device_token_id": tokens[0].ID.String(),
+	})
+	if err != nil {
+		slog.Error("notifications: failed to marshal send_push payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeNotificationSendPush, payload)
+	opts := worker.TaskOpts(worker.TypeNotificationSendPush)
+	if s.settings != nil {
+		if maxAttempts := s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", 5); maxAttempts > 0 {
+			opts = append(opts, asynq.MaxRetry(maxAttempts))
+		}
+	}
+
+	if _, err := s.client.Enqueue(task, opts...); err != nil {
+		slog.Error("notifications: failed to enqueue mobile push",
+			"recipient_id", recipientID.String(), "error", err)
+	}
+}
+
 // checkAndEnqueuePush checks user preferences and enqueues push if enabled.
 // BUG-002: previously only checked explicit user preferences, ignoring
 // notification_type defaults. A type with default_push=true (e.g.
@@ -334,6 +400,13 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 
 	if ep, ok := prefs[nType]; ok && ep.Push && !ep.Disabled {
 		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, dedupID)
+
+		// dedupID carries the notification id on the fallback dispatch
+		// paths — mobile push shares the same effective-pref gate.
+		var nid pgtype.UUID
+		if err := nid.Scan(dedupID); err == nil {
+			s.enqueueMobilePush(ctx, recipientID, nid)
+		}
 	}
 }
 

@@ -149,6 +149,8 @@
 		bulkDeleting = true;
 		try {
 			await Promise.all(Array.from(ids).map((id) => api(`/admin/broadcasts/${id}`, { method: 'DELETE' })));
+			selectedIds = new Set();
+			await loadBroadcasts();
 		} catch { /* API not available */ } finally {
 			bulkDeleting = false;
 		}
