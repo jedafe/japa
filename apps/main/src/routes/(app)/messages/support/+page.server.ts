@@ -24,6 +24,10 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+// ?a=<id> deep links: /me/appeals has no single-GET endpoint, so an
+// off-page appeal is resolved by paging the list — this caps the scan
+// at MAX_APPEAL_SCAN_PAGES × 100 rows.
+const MAX_APPEAL_SCAN_PAGES = 10;
 const VALID_STATUSES = new Set([
 	'open',
 	'in_progress',
@@ -97,13 +101,32 @@ export const load: PageServerLoad = async (event) => {
 			wantNew ? fetchTypes() : Promise.resolve([] as TicketType[])
 		]);
 		const appeals = appealRes.slice(0, pageSize);
+
+		// ?a=<id> deep link — there is no GET /me/appeals/{id}, so resolve
+		// off-page appeals by walking /me/appeals until the id shows up or
+		// the list ends. Bounded: a member's appeal history is short in
+		// practice, and MAX_APPEAL_SCAN_PAGES caps pathological cases.
+		let selectedAppeal = appeals.find((a) => a.id === selectedAppealId) ?? null;
+		if (selectedAppealId && !selectedAppeal) {
+			const SCAN_PAGE = 100;
+			for (let p = 0; p < MAX_APPEAL_SCAN_PAGES; p++) {
+				const res = await apiList<AppealListItem>(
+					ctx,
+					`/me/appeals?page_size=${SCAN_PAGE}&page_offset=${p * SCAN_PAGE}`
+				).catch(() => null);
+				if (!res || res.items.length === 0) break;
+				selectedAppeal = res.items.find((a) => a.id === selectedAppealId) ?? null;
+				if (selectedAppeal || res.items.length < SCAN_PAGE) break;
+			}
+		}
+
 		return {
 			view,
 			tickets: [],
 			appeals,
 			eligible,
 			types,
-			selectedAppeal: appeals.find((a) => a.id === selectedAppealId) ?? null,
+			selectedAppeal,
 			userStatus: event.locals.user.status ?? 'active',
 			hasMore: appealRes.length > pageSize,
 			page,
