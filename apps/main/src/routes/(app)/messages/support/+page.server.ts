@@ -39,6 +39,8 @@ const VALID_STATUSES = new Set([
 // Ticket refs — uuid or the public JC-<n> form (the backend resolves
 // either, same as the old /dashboard/tickets/[id] route).
 const TICKET_REF_RE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|JC-\d+)$/i;
+// Appeal ids are uuids — a malformed ?a= must not trigger the lookup scan.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -107,7 +109,7 @@ export const load: PageServerLoad = async (event) => {
 		// the list ends. Bounded: a member's appeal history is short in
 		// practice, and MAX_APPEAL_SCAN_PAGES caps pathological cases.
 		let selectedAppeal = appeals.find((a) => a.id === selectedAppealId) ?? null;
-		if (selectedAppealId && !selectedAppeal) {
+		if (selectedAppealId && UUID_RE.test(selectedAppealId) && !selectedAppeal) {
 			const SCAN_PAGE = 100;
 			for (let p = 0; p < MAX_APPEAL_SCAN_PAGES; p++) {
 				const res = await apiList<AppealListItem>(
