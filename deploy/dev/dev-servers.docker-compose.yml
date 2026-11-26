@@ -1,0 +1,124 @@
+# deploy/dev/dev-servers.docker-compose.yml — the vite dev-server workloads
+# behind dev.japa.to, containerized so /dashboard/access-gates (§123) can
+# start/stop each app.
+#
+# WHY CONTAINERS: the §123 gate model only toggles Coolify resources —
+# host processes (tmux/systemd) are invisible to it. Each service below is
+# deployed to Coolify as an INDEPENDENT docker_compose_raw resource named
+# dev-server-<app>, so the gate gets a per-app toggle.
+#
+# Each container:
+#   - mounts the host repo read-write (vite writes .svelte-kit/.vite caches;
+#     node_modules is bun's isolated store — real dirs, safe to share)
+#   - runs `bunx vite dev --host` (the --host flag is required: the dev-gate
+#     caddy reaches upstreams via host.docker.internal → docker0)
+#   - joins japaconnect_default so the Go API resolves as go-api:8080
+#   - publishes the same host port the old host-side vite used, so the
+#     dev-gate Caddyfile upstreams (host.docker.internal:300X) are unchanged
+#
+# oven/bun runs as uid 1000 (bun) which matches the host `japa` user —
+# file ownership inside the mounted repo stays consistent.
+#
+# Deploy: one Coolify "Docker Compose" service per app — copy the matching
+# service block plus the networks: section into docker_compose_raw.
+#
+# JC_ACCESS_GATES entries to register (uuid = each Coolify service):
+#   {"key":"dev_main","label":"Dev Server: Main","kind":"service",
+#    "uuid":"…","domain":"dev.japa.to","probe_url":"https://dev.japa.to/"}
+#   {"key":"dev_admin","label":"Dev Server: Admin","kind":"service",
+#    "uuid":"…","domain":"admin.dev.japa.to","probe_url":"https://admin.dev.japa.to/"}
+#   {"key":"dev_control","label":"Dev Server: Control","kind":"service",
+#    "uuid":"…","domain":"control.dev.japa.to","probe_url":"https://control.dev.japa.to/"}
+#   {"key":"dev_academy","label":"Dev Server: Academy","kind":"service",
+#    "uuid":"…","domain":"academy.dev.japa.to","probe_url":"https://academy.dev.japa.to/"}
+#   {"key":"dev_docs","label":"Dev Server: Docs","kind":"service",
+#    "uuid":"…","domain":"docs.dev.japa.to","probe_url":"https://docs.dev.japa.to/"}
+#
+# Interaction with the dev_env route gate: the route gate (caddy pair) still
+# controls whether dev.japa.to answers at all — independent of these
+# workload toggles. Route up + workload stopped → 502; both up → live.
+#
+# Boot behavior: Coolify restarts non-stopped services with docker, so
+# these survive host reboots the same way the systemd units did —
+# except a gate "stop" persists across reboots (state is Coolify's).
+
+services:
+  main:
+    image: oven/bun:1.4
+    working_dir: /repo/apps/main
+    command: ["bunx", "vite", "dev", "--port", "3000", "--strictPort", "--host", "0.0.0.0"]
+    volumes:
+      - /home/japa/japaconnect:/repo
+    environment:
+      JC_DEV_API_TARGET: http://go-api:8080
+      PRIVATE_API_BASE_URL: http://go-api:8080
+    ports:
+      - "3000:3000"
+    networks:
+      - japaconnect_default
+    restart: unless-stopped
+
+  admin:
+    image: oven/bun:1.4
+    working_dir: /repo/apps/admin
+    command: ["bunx", "vite", "dev", "--port", "3001", "--strictPort", "--host", "0.0.0.0"]
+    volumes:
+      - /home/japa/japaconnect:/repo
+    environment:
+      JC_DEV_API_TARGET: http://go-api:8080
+      PRIVATE_API_BASE_URL: http://go-api:8080
+    ports:
+      - "3001:3001"
+    networks:
+      - japaconnect_default
+    restart: unless-stopped
+
+  control:
+    image: oven/bun:1.4
+    working_dir: /repo/apps/control
+    command: ["bunx", "vite", "dev", "--port", "3002", "--strictPort", "--host", "0.0.0.0"]
+    volumes:
+      - /home/japa/japaconnect:/repo
+    environment:
+      JC_DEV_API_TARGET: http://go-api:8080
+      PRIVATE_API_BASE_URL: http://go-api:8080
+    ports:
+      - "3002:3002"
+    networks:
+      - japaconnect_default
+    restart: unless-stopped
+
+  academy:
+    image: oven/bun:1.4
+    working_dir: /repo/apps/academy
+    command: ["bunx", "vite", "dev", "--port", "3003", "--strictPort", "--host", "0.0.0.0"]
+    volumes:
+      - /home/japa/japaconnect:/repo
+    environment:
+      JC_DEV_API_TARGET: http://go-api:8080
+      PRIVATE_API_BASE_URL: http://go-api:8080
+    ports:
+      - "3003:3003"
+    networks:
+      - japaconnect_default
+    restart: unless-stopped
+
+  docs:
+    image: oven/bun:1.4
+    working_dir: /repo/apps/docs
+    command: ["bunx", "vite", "dev", "--port", "3004", "--strictPort", "--host", "0.0.0.0"]
+    volumes:
+      - /home/japa/japaconnect:/repo
+    environment:
+      JC_DEV_API_TARGET: http://go-api:8080
+      PRIVATE_API_BASE_URL: http://go-api:8080
+    ports:
+      - "3004:3004"
+    networks:
+      - japaconnect_default
+    restart: unless-stopped
+
+networks:
+  japaconnect_default:
+    external: true
+    name: japaconnect_default
