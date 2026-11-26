@@ -58,6 +58,7 @@
   "nav.replay_tour": "Replay tour",
   "nav.new_page": "New page",
   "nav.logout": "Logout",
+  "sidebar.newsletter_confirm_sent": "Check your inbox — confirm your subscription via the link we just sent.",
   "tour.docs_nav_title": "Documentation tree",
   "tour.docs_nav_desc": "Browse every guide and reference grouped by audience. Expand a section to see its pages.",
   "tour.docs_audience_title": "Audience switcher",

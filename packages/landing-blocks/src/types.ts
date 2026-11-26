@@ -849,8 +849,8 @@ export interface GuestHomeCopy {
   app_name?: string;
 }
 
-/** Props for the guest homepage block — wraps the legacy GuestHomePage
- *  layout as a single Page Builder block. */
+/** Props for the guest homepage block — renders the guest-home container
+ *  (hero, categories, opportunities, stories, tools, newsletter, footer). */
 export interface GuestHomeProps {
   /** Copy overrides; keys match `landing.home.*` translation keys. */
   copy?: GuestHomeCopy;
@@ -1097,6 +1097,9 @@ export interface GuestNewsletterProps {
   cta?: string;
   success_message?: string;
   error_message?: string;
+  /** Success copy shown when double opt-in is on — the subscriber must
+   *  confirm via an emailed link before receiving anything (§62). */
+  confirm_message?: string;
   /** Arbitrary child blocks rendered inside the newsletter card. */
   children?: Block[];
 }

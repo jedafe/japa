@@ -25,7 +25,7 @@
 		email: string;
 		name?: string;
 		status: string;
-		subscribedAt: string;
+		subscribed_at: string;
 		created_at: string;
 	};
 
@@ -33,10 +33,10 @@
 		id: string;
 		name: string;
 		subject: string;
-		preview?: string;
+		preview_text?: string;
 		status: string;
 		sent_at?: string;
-		sentAt?: string;
+		scheduled_at?: string;
 		recipient_count?: number;
 		open_count?: number;
 		click_count?: number;
@@ -117,9 +117,6 @@
 	let importing = $state(false);
 	let importResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
 
-	// ── Bulk delete (campaigns) in-flight guard ─────────────────────────────
-	let bulkDeleting = $state(false);
-
 	// ── Filters ─────────────────────────────────────────────────────────────
 	const subscriberFilters = $derived<FilterDef[]>([
 		{ key: 'status', label: t('app.newsletter.filter_status', 'Status'), options: subscriberStatusOptions }
@@ -181,6 +178,15 @@
 			icon: RotateCcw,
 			onclick: (row) => resetCampaignSend(row.id),
 			show: (row: Campaign) => row.status === 'sending' && canManageNewsletter
+		},
+		{
+			// The backend refuses to delete a 'sending' campaign — the row
+			// action mirrors that guard; sent history stays deletable.
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onclick: (row, ctx) => ctx?.openDelete(row),
+			show: (row: Campaign) => row.status !== 'sending' && canManageNewsletter
 		}
 	]);
 
@@ -191,6 +197,9 @@
 		// readonly hides the Create button (subscribers are added via import);
 		// edit/delete are exposed through custom `actions` with show() predicates.
 		readonly: true,
+		// Gate the built-in "Delete Selected" bulk action (enabled by `remove`
+		// below) on the same node as the row delete + backend route.
+		deletePermission: 'newsletter.manage',
 		pageSize: 20,
 		columns: [
 			{
@@ -217,7 +226,7 @@
 				}
 			},
 			{
-				key: 'subscribedAt',
+				key: 'subscribed_at',
 				label: t('app.newsletter.col_subscribed', 'Subscribed'),
 				render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString(locale.current, { year: 'numeric', month: 'short', day: 'numeric' })
 			}
@@ -268,6 +277,9 @@
 		// readonly hides the Create button; campaigns are created via the
 		// page-local Modal (rich HTML form) triggered by `headerActions`.
 		readonly: true,
+		// Gate the built-in "Delete Selected" bulk action (enabled by `remove`
+		// below) on the same node as the row delete + backend route.
+		deletePermission: 'newsletter.manage',
 		pageSize: 20,
 		columns: [
 			{
@@ -276,7 +288,7 @@
 				render: (_: any, row: any) => `
 					<div>
 						<p class="font-medium text-foreground">${row.subject || row.name || 'No subject'}</p>
-						${row.preview ? `<p class="text-sm text-muted">${row.preview}</p>` : ''}
+						${row.preview_text ? `<p class="text-sm text-muted">${row.preview_text}</p>` : ''}
 					</div>
 				`
 			},
@@ -289,7 +301,7 @@
 				}
 			},
 			{
-				key: 'sentAt',
+				key: 'sent_at',
 				label: t('app.newsletter.col_sent', 'Sent'),
 				render: (v: string, row: any) => {
 					const date = v || row.sent_at;
@@ -308,9 +320,6 @@
 		filters: campaignFilters,
 		actions: campaignActions,
 		fields: [],
-		bulkActions: canManageNewsletter
-			? [{ label: t('app.newsletter.btn_delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteCampaigns }]
-			: [],
 		headerActions: canManageNewsletter
 			? [{ label: t('app.newsletter.btn_new_campaign', 'New Campaign'), icon: Plus, onclick: () => (showCreateModal = true) }]
 			: [],
@@ -346,6 +355,10 @@
 			}
 			throw new Error(result.error ?? t('app.newsletter.error_load_campaigns', 'Failed to load campaigns'));
 		},
+		remove: async (id) => {
+			const res = await api(`/admin/newsletter/campaigns/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		viewSnippet: CampaignView
 	});
 
@@ -361,21 +374,6 @@
 			campaignController?.reload();
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.newsletter.error_send_campaign', 'Failed to send campaign');
-		}
-	}
-
-	// ── Bulk delete campaigns (in-flight guard) ─────────────────────────────
-	async function bulkDeleteCampaigns(ids: Set<string>) {
-		if (ids.size === 0) return;
-		if (bulkDeleting) return;
-		bulkDeleting = true;
-		pageError = '';
-		try {
-			await Promise.all(Array.from(ids).map((id) => api(`/admin/newsletter/campaigns/${id}`, { method: 'DELETE' })));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to delete campaigns');
-		} finally {
-			bulkDeleting = false;
 		}
 	}
 
@@ -546,30 +544,36 @@
 		pageError = '';
 		try {
 			// Fetch all campaigns for the chart + average-rate computation.
-			// Use a large page_size so the backend returns everything in one page.
-			const params = new URLSearchParams({ page_size: '500', offset: '0' });
-			const result = await api<{ items: Campaign[]; total: number; total_pages: number } | Campaign[]>(
-				`/admin/newsletter/campaigns?${params.toString()}`
-			);
-			if (result.ok) {
+			// The backend clamps page_size at 100, so paginate until the full
+			// set is collected (capped at 20 pages = 2000 campaigns).
+			const items: Campaign[] = [];
+			let total = 0;
+			for (let offset = 0; offset < 2000; offset += 100) {
+				const params = new URLSearchParams({ page_size: '100', offset: String(offset) });
+				const result = await api<{ items: Campaign[]; total: number; total_pages: number } | Campaign[]>(
+					`/admin/newsletter/campaigns?${params.toString()}`
+				);
+				if (!result.ok || !result.data) break;
 				const d = result.data;
-				const items = Array.isArray(d) ? d : (d?.items ?? []);
-				const total = Array.isArray(d) ? d.length : (d?.total ?? 0);
-				analyticsCampaigns = items.map((c) => {
-					const recipients = c.recipient_count ?? 0;
-					const openRate = recipients > 0 ? ((c.open_count ?? 0) / recipients) * 100 : 0;
-					const clickRate = recipients > 0 ? ((c.click_count ?? 0) / recipients) * 100 : 0;
-					return { ...c, openRate, clickRate };
-				});
-				stats.campaigns = total;
-				// Average open/click rates are derived from the per-campaign
-				// counters (open_count/click_count/recipient_count) — the backend
-				// does not return pre-computed rates (§62 schema).
-				const sentCampaigns = analyticsCampaigns.filter((c) => c.status === 'sent');
-				if (sentCampaigns.length > 0) {
-					stats.avgOpenRate = sentCampaigns.reduce((sum, c) => sum + (c.openRate ?? 0), 0) / sentCampaigns.length;
-					stats.avgClickRate = sentCampaigns.reduce((sum, c) => sum + (c.clickRate ?? 0), 0) / sentCampaigns.length;
-				}
+				const page = Array.isArray(d) ? d : (d?.items ?? []);
+				items.push(...page);
+				total = Array.isArray(d) ? d.length : (d?.total ?? items.length);
+				if (items.length >= total || page.length < 100) break;
+			}
+			analyticsCampaigns = items.map((c) => {
+				const recipients = c.recipient_count ?? 0;
+				const openRate = recipients > 0 ? ((c.open_count ?? 0) / recipients) * 100 : 0;
+				const clickRate = recipients > 0 ? ((c.click_count ?? 0) / recipients) * 100 : 0;
+				return { ...c, openRate, clickRate };
+			});
+			stats.campaigns = total;
+			// Average open/click rates are derived from the per-campaign
+			// counters (open_count/click_count/recipient_count) — the backend
+			// does not return pre-computed rates (§62 schema).
+			const sentCampaigns = analyticsCampaigns.filter((c) => c.status === 'sent');
+			if (sentCampaigns.length > 0) {
+				stats.avgOpenRate = sentCampaigns.reduce((sum, c) => sum + (c.openRate ?? 0), 0) / sentCampaigns.length;
+				stats.avgClickRate = sentCampaigns.reduce((sum, c) => sum + (c.clickRate ?? 0), 0) / sentCampaigns.length;
 			}
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to load campaigns');
@@ -785,7 +789,7 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_subscribed', 'Subscribed')}</p>
-			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.subscribedAt || row.created_at).toLocaleString()}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.subscribed_at || row.created_at).toLocaleString()}</p>
 		</div>
 	</div>
 {/snippet}
@@ -802,10 +806,10 @@
 				<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
 			</div>
 		</div>
-		{#if row.preview}
+		{#if row.preview_text}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.content_html', 'Preview')}</p>
-				<p class="mt-1 text-sm text-foreground">{row.preview}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.preview_text', 'Preview text')}</p>
+				<p class="mt-1 text-sm text-foreground">{row.preview_text}</p>
 			</div>
 		{/if}
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -823,11 +827,11 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_sent', 'Sent')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{(row.sentAt || row.sent_at) ? new Date(row.sentAt || row.sent_at!).toLocaleString() : '—'}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.sent_at ? new Date(row.sent_at).toLocaleString() : '—'}</p>
 			</div>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.created', 'Created')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('common.created', 'Created')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.created_at).toLocaleString()}</p>
 		</div>
 	</div>

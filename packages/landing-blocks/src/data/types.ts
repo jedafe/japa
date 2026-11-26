@@ -16,6 +16,13 @@ export interface FetchContext {
    * values: internal/features/eval.go).
    */
   surface?: string;
+  /**
+   * Resolved feature flags for the current viewer/surface (the app's
+   * `features` layout data). Blocks that wrap a flagged backend feature
+   * (e.g. `feature.newsletter` for the subscribe form) check this map so
+   * they can hide instead of rendering a form that would 404 on submit.
+   */
+  features?: Record<string, boolean>;
 }
 
 // API response shapes (derived from backend struct tags — no `any`).

@@ -608,6 +608,30 @@ func jsonString(s string) string {
 	return string(b)
 }
 
+// patchEffectiveStatus decides which status a PATCH applies. An explicit
+// non-empty status wins; otherwise a scheduled_at on a draft auto-promotes
+// to 'scheduled' — §62, mirroring CreateCampaign so the delayed-queue
+// enqueue actually fires (a draft carrying a date silently never sends).
+func patchEffectiveStatus(existingStatus string, status *string, scheduledAt *time.Time) *string {
+	if status != nil && *status != "" {
+		return status
+	}
+	if scheduledAt != nil && existingStatus == CampaignDraft {
+		s := CampaignScheduled
+		return &s
+	}
+	return status
+}
+
+// scheduledMissingTime reports whether a PATCH leaves the campaign in
+// 'scheduled' with no scheduled_at — a §62 violation: the delayed-queue
+// claim (ClaimNewsletterScheduledSend) matches on scheduled_at, so a NULL
+// row can never fire. The effective time may come from the request body
+// or from a date already stored on the row.
+func scheduledMissingTime(resulting string, patchTime *time.Time, existingValid bool) bool {
+	return resulting == CampaignScheduled && patchTime == nil && !existingValid
+}
+
 // UpdateCampaign updates an existing newsletter campaign.
 // PATCH /admin/newsletter/campaigns/{id}.
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
@@ -658,6 +682,12 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §62: supplying scheduled_at on a draft is a schedule request —
+	// promote it to 'scheduled' (mirrors CreateCampaign) so the post-update
+	// enqueue fires. Without this the row stayed 'draft' carrying a date
+	// the delayed queue never claims — a schedule that silently never sent.
+	body.Status = patchEffectiveStatus(existing.Status, body.Status, body.ScheduledAt)
+
 	if body.Status != nil && *body.Status != "" {
 		next := *body.Status
 		allowed := false
@@ -697,6 +727,16 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 				"Campaign content is only editable while draft or scheduled")
 			return
 		}
+	}
+
+	// §62 invariant: a 'scheduled' campaign must carry scheduled_at —
+	// otherwise ClaimNewsletterScheduledSend can never match it and the
+	// send silently never fires. The effective time may come from this
+	// request or from a date already stored on the row.
+	if scheduledMissingTime(resulting, body.ScheduledAt, existing.ScheduledAt.Valid) {
+		errpkg.WriteError(w, http.StatusBadRequest, "scheduled_at_required",
+			"Scheduling a campaign requires scheduled_at")
+		return
 	}
 
 	campaign, err := h.Service.UpdateCampaign(r.Context(), id, UpdateCampaignInput{

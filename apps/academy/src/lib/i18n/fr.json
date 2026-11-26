@@ -557,6 +557,7 @@
   "sidebar.loading": "Chargement…",
   "sidebar.metric": "Métrique",
   "sidebar.newsletter": "S'abonner",
+  "sidebar.newsletter_confirm_sent": "Vérifiez votre boîte de réception — confirmez votre inscription via le lien que nous venons d'envoyer.",
   "sidebar.newsletter_error": "L'inscription a échoué. Veuillez réessayer.",
   "sidebar.newsletter_invalid": "Veuillez saisir une adresse e-mail valide",
   "sidebar.newsletter_success": "Vous êtes abonné !",

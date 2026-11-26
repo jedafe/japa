@@ -155,7 +155,7 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	// Top-level visa-checklist alias (canonical tool lives at
 	// /tools/visa-checklist).
 	['/visa-checklist', 'checklist.enabled'],
-	// Newsletter
+	// Notifications
 	['/me/notifications', 'feature.notifications']
 ]);
 

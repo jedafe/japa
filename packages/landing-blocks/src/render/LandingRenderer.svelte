@@ -7,6 +7,7 @@
   import { isBlockVisible, isBlockEmpty, containsGuestBlocks } from './blockVisibility';
   import { applyPageHeader } from './pageHeader';
   import { setGuestHomeData } from '../data/guestHomeContext';
+  import { setFeaturesData } from '../data/featuresContext';
   import GuestBlockStyles from '../blocks/guest/GuestBlockStyles.svelte';
   import { cssIdent, cssTagSafe } from '../shell/styleToCss';
 
@@ -15,8 +16,11 @@
     fetchCtx?: FetchContext;
     geoCountry?: string;
     guestHome?: GuestHomeData;
+    /** Resolved feature flags — flag-gated blocks (e.g. guest_newsletter)
+     *  hide when their flag is false, during SSR as well. */
+    features?: Record<string, boolean>;
   }
-  let { blocks, fetchCtx, geoCountry, guestHome }: Props = $props();
+  let { blocks, fetchCtx, geoCountry, guestHome, features }: Props = $props();
 
   // Page-header convention: a leading `heading` (+ optional `media`) block
   // renders as the shared hero panel so every page gets the same header.
@@ -31,6 +35,12 @@
   const guestHomeStore = setGuestHomeData(guestHome);
   $effect(() => {
     guestHomeStore.set(guestHome);
+  });
+
+  // svelte-ignore state_referenced_locally
+  const featuresStore = setFeaturesData(features);
+  $effect(() => {
+    featuresStore.set(features);
   });
 
   // Load the shared guest-block stylesheet only when at least one guest_*

@@ -61,6 +61,7 @@ export { default as LandingRenderer } from './render/LandingRenderer.svelte';
 export { default as GuestFooterBlock } from './blocks/guest/GuestFooterBlock.svelte';
 export { default as GuestBlockStyles } from './blocks/guest/GuestBlockStyles.svelte';
 export { setGuestHomeData, getGuestHomeData } from './data/guestHomeContext';
+export { setFeaturesData, getFeaturesData } from './data/featuresContext';
 export { containsGuestBlocks, containsBlock, findBlock } from './render/blockVisibility';
 export { normalizeLegacyBlocks, normalizeLegacyBlock, type LegacyBlock } from './render/legacyCompat';
 export { default as BlockShell } from './shell/BlockShell.svelte';

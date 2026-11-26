@@ -6,6 +6,7 @@
 	 * Ref: japaconnect-engineering/sections/27-page-builder.md
 	 */
 	import { page } from '$app/state';
+	import { browser } from '$app/env';
 	import { t } from '#lib/i18n/index.js';
 	import { FileText } from 'lucide-svelte';
 	import { EmptyState } from '#lib/components/ui/index.js';
@@ -16,7 +17,9 @@
 	import { scanDomToc, tocHidden, type TocItem } from '#lib/utils/toc.js';
 	import type { PageBuilderPage } from '#lib/types/index.js';
 
-import { ogCardUrl } from '#lib/seo/og.js';
+	import { ogCardUrl } from '#lib/seo/og.js';
+	import { apiBaseUrl } from '#lib/api/client.js';
+	import { getCsrfToken } from '#lib/api/csrf.svelte.js';
 	interface Props {
 		page: PageBuilderPage;
 		guestHome?: GuestHomeData;
@@ -107,6 +110,23 @@ import { ogCardUrl } from '#lib/seo/og.js';
 
 	const tocItems = $derived(tocHidden(pageData) ? [] : domTocItems);
 	const showToc = $derived(tocItems.length >= 3);
+
+	// Fetch context for blocks that hit the API (guest_newsletter signup,
+	// entity collections). Browser-only — blocks fetch during init and
+	// SvelteKit forbids relative fetch() during SSR (same guard as the
+	// landing page). Without it, newsletter forms on published pages POST
+	// to the frontend origin and 404.
+	const fetchCtx = $derived(
+		browser
+			? {
+					fetch,
+					apiBase: apiBaseUrl,
+					csrfToken: getCsrfToken() ?? null,
+					surface: 'main',
+					features: (page.data.features ?? {}) as Record<string, boolean>
+			  }
+			: undefined
+	);
 </script>
 
 <svelte:head>
@@ -140,7 +160,12 @@ import { ogCardUrl } from '#lib/seo/og.js';
 			</div>
 		{/if}
 		<div bind:this={contentEl}>
-			<LandingRenderer blocks={normalizedBlocks} {guestHome} />
+			<LandingRenderer
+				blocks={normalizedBlocks}
+				{guestHome}
+				fetchCtx={fetchCtx}
+				features={(page.data.features ?? {}) as Record<string, boolean>}
+			/>
 		</div>
 	</div>
 {/if}

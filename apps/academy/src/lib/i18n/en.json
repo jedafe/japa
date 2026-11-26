@@ -557,6 +557,7 @@
   "sidebar.loading": "Loading…",
   "sidebar.metric": "Metric",
   "sidebar.newsletter": "Subscribe",
+  "sidebar.newsletter_confirm_sent": "Check your inbox — confirm your subscription via the link we just sent.",
   "sidebar.newsletter_error": "Subscription failed. Please try again.",
   "sidebar.newsletter_invalid": "Please enter a valid email address",
   "sidebar.newsletter_success": "You are subscribed!",

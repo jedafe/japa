@@ -2,6 +2,8 @@
   import type { GuestNewsletterProps } from '../../types';
   import type { FetchContext } from '../../data/types';
   import { Plane, ArrowRight } from 'lucide-svelte';
+  import { writable } from 'svelte/store';
+  import { getFeaturesData } from '../../data/featuresContext';
   import GuestChildren from './GuestChildren.svelte';
 
   interface Props {
@@ -28,9 +30,21 @@
   const successMessage = $derived(
     props.success_message ?? "You're subscribed! Check your inbox for the next update."
   );
+  const confirmMessage = $derived(
+    props.confirm_message ??
+      'Check your inbox — confirm your subscription via the link we just sent.'
+  );
   const errorMessage = $derived(props.error_message ?? 'Something went wrong. Please try again.');
   // Arbitrary child blocks rendered inside the newsletter card.
   const children = $derived(props.children ?? []);
+
+  // feature.newsletter kill-switch: hide rather than render a form that
+  // 404s on submit. Flags come from the LandingRenderer context (works in
+  // SSR — no flash) with FetchContext.features as the non-landing fallback.
+  const featuresStore = $derived(getFeaturesData() ?? writable<Record<string, boolean> | undefined>(undefined));
+  const enabled = $derived(
+    ($featuresStore?.['feature.newsletter'] ?? fetchCtx?.features?.['feature.newsletter']) !== false
+  );
 
   async function subscribe(e: Event) {
     e.preventDefault();
@@ -48,9 +62,16 @@
         credentials: 'include',
       });
       if (res.ok) {
-        const data = await res.json().catch(() => ({}) as { message?: string });
+        const body = await res.json().catch(() => ({}) as {
+          data?: { double_opt_in?: boolean; message?: string };
+        });
         newsletterStatus = 'success';
-        newsletterMessage = data.message ?? successMessage;
+        // Double opt-in (§62): the subscriber must confirm via the emailed
+        // link before receiving anything — show the confirm copy, not the
+        // plain "subscribed" message.
+        newsletterMessage = body.data?.double_opt_in
+          ? confirmMessage
+          : (body.data?.message ?? successMessage);
         email = '';
       } else {
         const err = await res.json().catch(() => ({ error: { message: '' } }));
@@ -65,6 +86,7 @@
 </script>
 
 <!-- Ref: japaconnect-engineering/sections/16-page-builder.md -->
+{#if enabled}
 <section class="guest-section newsletter-section" {id} aria-labelledby="newsletter-heading-{id}">
   <div class="newsletter-inner">
     <div class="newsletter-content">
@@ -106,3 +128,4 @@
     {/if}
   </div>
 </section>
+{/if}

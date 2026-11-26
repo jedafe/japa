@@ -679,6 +679,19 @@ func (s *Service) UpdateCampaign(ctx context.Context, id pgtype.UUID, input Upda
 		return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign %s: %w", id, err)
 	}
 
+	// A 'draft' campaign must not carry scheduled_at — the value only has
+	// meaning while 'scheduled', and a stale date would be silently re-armed
+	// by a later {status:'scheduled'} PATCH. COALESCE can't express
+	// "set NULL", so clear it with a follow-up write (§62 invariant).
+	if campaign.Status == CampaignDraft && campaign.ScheduledAt.Valid {
+		if _, cerr := s.db.Writer.Exec(ctx,
+			`UPDATE newsletter_campaigns SET scheduled_at = NULL WHERE id = $1`, id); cerr != nil {
+			slog.Warn("newsletter: clear stale scheduled_at failed", "campaign_id", id.String(), "error", cerr)
+		} else {
+			campaign.ScheduledAt = pgtype.Timestamptz{}
+		}
+	}
+
 	// Re-scheduling a scheduled campaign enqueues the task at the new time
 	// (payload carries scheduled_at so Unique() doesn't collapse it).
 	if campaign.Status == CampaignScheduled && campaign.ScheduledAt.Valid {

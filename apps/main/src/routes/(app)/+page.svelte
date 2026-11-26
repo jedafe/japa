@@ -63,7 +63,10 @@
 					csrfToken: data.csrfToken ?? getCsrfToken() ?? null,
 					// X-JC-Surface for scoped feature-flag resolution on
 					// block-level backend fetches.
-					surface: 'main'
+					surface: 'main',
+					// Resolved flags so flag-gated blocks (newsletter signup)
+					// hide instead of rendering a form that 404s on submit.
+					features: (page.data.features ?? {}) as Record<string, boolean>
 			  }
 			: undefined
 	);
@@ -90,6 +93,7 @@
 		fetchCtx={fetchCtx}
 		geoCountry={data.contentCountry}
 		guestHome={data.home}
+		features={(page.data.features ?? {}) as Record<string, boolean>}
 	/>
 {:else if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
@@ -99,6 +103,7 @@
 		fetchCtx={fetchCtx}
 		geoCountry={data.contentCountry}
 		guestHome={data.home}
+		features={(page.data.features ?? {}) as Record<string, boolean>}
 	/>
 {:else}
 	<!-- Authenticated home timeline — dynamic import keeps the feed stack out

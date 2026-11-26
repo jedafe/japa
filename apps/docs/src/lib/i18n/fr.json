@@ -58,6 +58,7 @@
   "nav.replay_tour": "Rejouer la visite",
   "nav.new_page": "Nouvelle page",
   "nav.logout": "Déconnexion",
+  "sidebar.newsletter_confirm_sent": "Vérifiez votre boîte de réception — confirmez votre inscription via le lien que nous venons d'envoyer.",
   "tour.docs_nav_title": "Arborescence de la documentation",
   "tour.docs_nav_desc": "Parcourez les guides et références regroupés par audience. Développez une section pour voir ses pages.",
   "tour.docs_audience_title": "Sélecteur d'audience",
