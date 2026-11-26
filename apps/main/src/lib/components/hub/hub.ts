@@ -19,7 +19,6 @@ import { ticketRef } from '#lib/tickets.js';
 
 export type HubKind = 'dm' | 'org' | 'request' | 'booking' | 'mentorship' | 'ticket' | 'ai';
 export type HubChip = 'all' | 'direct' | 'services' | 'mentorship' | 'support' | 'ai';
-export type HubTab = 'all' | 'unread' | 'assigned';
 
 /** AI conversation list row — GET /ai/conversations (ADR-130). */
 export interface HubAiConversation {
@@ -288,13 +287,6 @@ export function sortHubItems(items: HubItem[], sort: string): HubItem[] {
 export function chipMatches(item: HubItem, chip: HubChip): boolean {
 	if (chip === 'all') return true;
 	return item.chip === chip;
-}
-
-/** Tab filter — unread = has an unread marker; assigned = awaits my action. */
-export function tabMatches(item: HubItem, tab: HubTab): boolean {
-	if (tab === 'unread') return item.unread > 0;
-	if (tab === 'assigned') return item.assigned;
-	return true;
 }
 
 /** Client-side search for non-DM sources (the DM list is searched server-side). */

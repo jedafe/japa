@@ -16,8 +16,7 @@
 		Search,
 		Loader2,
 		Plus,
-		Settings,
-		Filter
+		Settings
 	} from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import {
@@ -46,11 +45,9 @@
 		aiToHubItem,
 		sortHubItems,
 		chipMatches,
-		tabMatches,
 		itemMatchesQuery,
 		type HubItem,
-		type HubChip,
-		type HubTab
+		type HubChip
 	} from '#lib/components/hub/hub.js';
 	import type { DMConversation, PublicUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
@@ -62,11 +59,13 @@
 	let convsCursor = $state<string | null>(untrack(() => data.conversationsCursor));
 	let requests = $state(untrack(() => data.requests));
 	let loadingMoreConvs = $state(false);
-	let filtersModalOpen = $state(false);
 
-	// Stream filters — chip (category) + tab (all/unread/assigned).
+	// Stream filters — one chip row: exclusive kind chips + two state
+	// toggles (unread ⇔ ?filter=unread server param; action ⇔ awaits my
+	// action, the old "Assigned to me" predicate).
 	let chip = $state<HubChip>('all');
-	let tab = $state<HubTab>('all');
+	let actionOnly = $state(false);
+	const unreadOnly = $derived(data.query.filter === 'unread');
 
 	// Details rail — desktop third column (open by default); mobile drawer
 	// modal opens only on an explicit toggle.
@@ -144,14 +143,8 @@
 		{ value: 'ai', label: t('hub.chip_ai', 'AI') }
 	]);
 
-	const tabs: { value: HubTab; label: string }[] = $derived([
-		{ value: 'all', label: t('hub.tab_all', 'All') },
-		{ value: 'unread', label: t('hub.tab_unread', 'Unread') },
-		{ value: 'assigned', label: t('hub.tab_assigned', 'Assigned to me') }
-	]);
-
 	// The unified stream — normalize every source into HubItems, then
-	// apply chip/tab/search filters and sort.
+	// apply chip/search/state filters and sort.
 	const streamItems = $derived.by(() => {
 		const items: HubItem[] = [
 			...conversations.map((c) => dmToHubItem(c)),
@@ -164,21 +157,20 @@
 		const q = data.query.q;
 		// filter=unread is forwarded to the DM list server-side — apply the
 		// same predicate to the non-DM sources here.
-		const unreadOnly = data.query.filter === 'unread';
 		return items.filter(
 			(i) =>
 				chipMatches(i, chip) && itemMatchesQuery(i, q) && (!unreadOnly || i.unread > 0)
 		);
 	});
 
-	// Tab badges (mockup: "Unread 7", "Assigned to me 2") — counts before
-	// the active tab filter.
+	// Chip badges (mockup: "Unread 7", "Assigned 2") — counts of items
+	// carrying the marker, independent of the toggles themselves.
 	const unreadCount = $derived(streamItems.filter((i) => i.unread > 0).length);
-	const assignedCount = $derived(streamItems.filter((i) => i.assigned).length);
+	const actionCount = $derived(streamItems.filter((i) => i.assigned).length);
 
 	const hubItems = $derived(
 		sortHubItems(
-			streamItems.filter((i) => tabMatches(i, tab)),
+			streamItems.filter((i) => !actionOnly || i.assigned),
 			data.query.sort
 		)
 	);
@@ -438,34 +430,6 @@
 			class="flex w-full shrink-0 flex-col border-e border-[var(--color-border)] sm:max-w-xs lg:max-w-sm sm:flex"
 			class:hidden={!!activeSel}
 		>
-			<!-- Tabs: All / Unread / Assigned to me -->
-			<div class="flex gap-1 border-b border-[var(--color-border)] px-3 pt-3">
-				{#each tabs as opt (opt.value)}
-					<button
-						type="button"
-						onclick={() => (tab = opt.value)}
-						class="flex items-center gap-1.5 rounded-t-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {tab ===
-						opt.value
-							? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-					>
-						{opt.label}
-						{#if opt.value === 'unread' && unreadCount > 0}
-							<span
-								class="grid min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-								>{unreadCount}</span
-							>
-						{/if}
-						{#if opt.value === 'assigned' && assignedCount > 0}
-							<span
-								class="grid min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-								>{assignedCount}</span
-							>
-						{/if}
-					</button>
-				{/each}
-			</div>
-
 			<div class="space-y-2 border-b border-[var(--color-border)] px-3 py-3">
 				<div class="relative">
 					<Search
@@ -481,32 +445,18 @@
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 					/>
 				</div>
-				<div class="flex gap-2">
-					<div class="min-w-0 flex-1">
-						<AutocompleteSelect
-							options={sortOptions}
-							value={data.query.sort}
-							onValueChange={(v) => goto(listHref({ sort: v }), { reset: false })}
-							ariaLabel={t('messages.sort_label', 'Sort conversations')}
-						/>
-					</div>
-					<button
-						type="button"
-						onclick={() => (filtersModalOpen = true)}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						{t('common.filters', 'Filters')}
-						{#if data.query.filter}
-							<span
-								class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]"
-								aria-hidden="true"
-							></span>
-						{/if}
-						<Filter size={16} />
-					</button>
+				<div class="min-w-0">
+					<AutocompleteSelect
+						options={sortOptions}
+						value={data.query.sort}
+						onValueChange={(v) => goto(listHref({ sort: v }), { reset: false })}
+						ariaLabel={t('messages.sort_label', 'Sort conversations')}
+					/>
 				</div>
-				<!-- Category chips — the reference image's Direct/Services/etc. -->
-				<div class="flex flex-wrap gap-1.5">
+				<!-- One filter row — kind chips (exclusive) + state toggles
+				     (Unread ⇔ ?filter=unread, Action needed ⇔ awaits my action);
+				     replaces the separate All/Unread/Assigned tab row. -->
+				<div class="flex flex-wrap items-center gap-1.5">
 					{#each chips as c (c.value)}
 						<button
 							type="button"
@@ -519,28 +469,46 @@
 							{c.label}
 						</button>
 					{/each}
+					<span class="mx-0.5 h-4 w-px bg-[var(--color-border)]" aria-hidden="true"></span>
+					<button
+						type="button"
+						onclick={() =>
+							goto(listHref({ filter: unreadOnly ? null : 'unread' }), { reset: false })}
+						aria-pressed={unreadOnly}
+						class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors {unreadOnly
+							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+							: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					>
+						{t('hub.chip_unread', 'Unread')}
+						{#if unreadCount > 0}
+							<span
+								class="grid min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold {unreadOnly
+									? 'bg-[var(--color-primary-contrast)]/20'
+									: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'}"
+								>{unreadCount}</span
+							>
+						{/if}
+					</button>
+					<button
+						type="button"
+						onclick={() => (actionOnly = !actionOnly)}
+						aria-pressed={actionOnly}
+						class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors {actionOnly
+							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+							: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					>
+						{t('hub.chip_action', 'Action needed')}
+						{#if actionCount > 0}
+							<span
+								class="grid min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold {actionOnly
+									? 'bg-[var(--color-primary-contrast)]/20'
+									: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'}"
+								>{actionCount}</span
+							>
+						{/if}
+					</button>
 				</div>
 			</div>
-
-			<Modal
-				bind:open={filtersModalOpen}
-				title={t('common.filters', 'Filters')}
-				icon={Filter}
-				size="lg"
-			>
-				{#snippet children()}
-					<AutocompleteSelect
-						class="w-full"
-						options={[
-							{ value: '', label: t('messages.filter_all', 'All conversations') },
-							{ value: 'unread', label: t('messages.filter_unread', 'Unread only') }
-						]}
-						value={data.query.filter ?? ''}
-						onValueChange={(v) => goto(listHref({ filter: v || null }), { reset: false })}
-						ariaLabel={t('messages.filter_label', 'Filter conversations')}
-					/>
-				{/snippet}
-			</Modal>
 
 			{#if data.loadError}
 				<div class="mx-auto w-full max-w-3xl p-4">
