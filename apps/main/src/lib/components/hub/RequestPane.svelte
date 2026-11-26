@@ -62,7 +62,7 @@
 	}
 </script>
 
-<div class="flex min-w-0 flex-1 flex-col">
+<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<button
 			type="button"

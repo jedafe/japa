@@ -561,7 +561,7 @@
 
 		<!-- Thread pane -->
 		<section
-			class="min-w-0 flex-1 flex-col sm:flex"
+			class="min-w-0 flex-1 flex-col overflow-y-auto sm:flex"
 			class:flex={!!activeSel}
 			class:hidden={!activeSel}
 		>
