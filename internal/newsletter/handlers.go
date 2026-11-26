@@ -391,7 +391,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if _, err := h.Service.CreateSubscriberDirect(r.Context(), email, nil, SourceImport); err != nil {
-			slog.Warn("newsletter import: skip email", "email", email, "error", err)
+			slog.Warn("newsletter import: skip email", "error", err)
 
 			skipped++
 
@@ -925,7 +925,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
+	sub, err := h.Service.GetPreferencesForUser(r.Context(), u.UserID)
 	if err != nil || !strings.EqualFold(sub.Email, email) {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only unsubscribe your own address without a token")
 		return
@@ -949,7 +949,7 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
+	subscriber, err := h.Service.GetPreferencesForUser(r.Context(), u.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
@@ -969,7 +969,7 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
+	subscriber, err := h.Service.GetPreferencesForUser(r.Context(), u.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return

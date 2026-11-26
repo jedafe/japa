@@ -761,6 +761,58 @@ func (s *Service) GetPreferencesByUserID(ctx context.Context, userID pgtype.UUID
 	)
 }
 
+// GetPreferencesForUser resolves the caller's subscriber row: by user_id
+// first, then by the account email (fetched from users). The
+// Subscribe/SubscribePending upserts intentionally leave user_id untouched
+// on conflict (an unauthenticated subscribe must not unlink a row), so an
+// address subscribed as a guest — before the account existed — keeps
+// user_id NULL and is invisible to the user_id lookup: preferences 404,
+// tokenless unsubscribe is rejected, and GDPR's user_id delete misses the
+// row. The account's email is the ownership proof, so a NULL-user_id
+// email match is opportunistically linked, which also closes the erasure
+// gap.
+func (s *Service) GetPreferencesForUser(ctx context.Context, userID pgtype.UUID) (gen.NewsletterSubscriber, error) {
+	sub, err := s.queries.GetSubscriberByUserID(ctx, userID)
+	if err == nil {
+		return sub, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.NewsletterSubscriber{}, err
+	}
+
+	var email string
+	if err := s.db.Reader.QueryRow(ctx,
+		`SELECT email FROM users WHERE id = $1`, userID).Scan(&email); err != nil {
+		return gen.NewsletterSubscriber{}, err
+	}
+	if email == "" {
+		return gen.NewsletterSubscriber{}, pgx.ErrNoRows
+	}
+
+	sub, err = s.queries.GetSubscriberByEmail(ctx, email)
+	if err != nil {
+		return gen.NewsletterSubscriber{}, err
+	}
+
+	// The email row may already belong to a different account (address
+	// recycled to a new user) — never surface or relink another user's row.
+	if sub.UserID.Valid && sub.UserID != userID {
+		return gen.NewsletterSubscriber{}, pgx.ErrNoRows
+	}
+
+	if !sub.UserID.Valid {
+		if _, lerr := s.db.Writer.Exec(ctx,
+			`UPDATE newsletter_subscribers SET user_id = $1 WHERE id = $2 AND user_id IS NULL`,
+			userID, sub.ID); lerr != nil {
+			slog.Warn("newsletter: link subscriber to user failed", "subscriber_id", sub.ID, "error", lerr)
+		} else {
+			sub.UserID = userID
+		}
+	}
+
+	return sub, nil
+}
+
 // UpdatePreferences updates a subscriber's digest/campaign toggles.
 func (s *Service) UpdatePreferences(ctx context.Context, subscriberID pgtype.UUID, digestEnabled, campaignEnabled *bool) (gen.NewsletterSubscriber, error) {
 	return s.writeQueries.UpdatePreferences(ctx, gen.UpdatePreferencesParams{

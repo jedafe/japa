@@ -2145,13 +2145,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// HardDeleteUser would nullify user_id but leave the email row behind.
 		// Delete the user's subscriber row explicitly so the PII email is
 		// removed. newsletter_unsubscribe_tokens cascade via subscriber_id.
+		// The email match also covers guest-subscribed rows whose user_id
+		// stayed NULL (the subscribe upserts never set user_id on conflict)
+		// and rows linked to a recycled/deleted account.
 		// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		// japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+		var newsletterEmail string
+		_ = s.db.Reader.QueryRow(ctx,
+			`SELECT email FROM users WHERE id = $1`, userID).Scan(&newsletterEmail)
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM newsletter_subscribers
-			WHERE user_id = $1
-		`, userID); err != nil {
+			WHERE user_id = $1 OR lower(email) = lower($2)
+		`, userID, newsletterEmail); err != nil {
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
