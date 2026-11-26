@@ -18,7 +18,8 @@ import type {
 	AppealEligibleItem,
 	AppealListItem,
 	TicketDetailResponse,
-	TicketListItem
+	TicketListItem,
+	TicketType
 } from '#lib/types/index.js';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -62,6 +63,10 @@ export const load: PageServerLoad = async (event) => {
 	);
 	const selectedId = params.get('t') ?? '';
 	const selectedAppealId = params.get('a') ?? '';
+	// ?new=1 — the new-ticket form opens inline in the right pane; the
+	// type selector needs the public types (best-effort — degrades to a
+	// no-type form like the standalone page when the list fails).
+	const wantNew = params.get('new') === '1';
 
 	// +1 lookahead: no meta total on the response — a full fetched page
 	// beyond pageSize is the only "next page exists" signal.
@@ -73,17 +78,23 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
+	const fetchTypes = () =>
+		apiList<TicketType>(ctx, '/ticket-types?is_public=true')
+			.then((r) => r.items)
+			.catch(() => [] as TicketType[]);
+
 	if (view === 'appeals') {
 		// §22 — the user's appeals + every decision they can currently
 		// appeal. Best-effort on both lists like the dashboard surface:
 		// a failure degrades to an empty section rather than 500ing.
-		const [appealRes, eligible] = await Promise.all([
+		const [appealRes, eligible, types] = await Promise.all([
 			apiList<AppealListItem>(ctx, `/me/appeals?${q.toString()}`)
 				.then((r) => r.items)
 				.catch(() => [] as AppealListItem[]),
 			apiList<AppealEligibleItem>(ctx, '/me/appeals/eligible')
 				.then((r) => r.items)
-				.catch(() => [] as AppealEligibleItem[])
+				.catch(() => [] as AppealEligibleItem[]),
+			wantNew ? fetchTypes() : Promise.resolve([] as TicketType[])
 		]);
 		const appeals = appealRes.slice(0, pageSize);
 		return {
@@ -91,6 +102,7 @@ export const load: PageServerLoad = async (event) => {
 			tickets: [],
 			appeals,
 			eligible,
+			types,
 			selectedAppeal: appeals.find((a) => a.id === selectedAppealId) ?? null,
 			userStatus: event.locals.user.status ?? 'active',
 			hasMore: appealRes.length > pageSize,
@@ -104,6 +116,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	let tickets: TicketListItem[] = [];
+	let types: TicketType[] = [];
 	let fetched = 0;
 	let loadError = false;
 	try {
@@ -113,6 +126,7 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		loadError = true;
 	}
+	if (wantNew) types = await fetchTypes();
 
 	let selected: TicketDetailResponse | null = null;
 	let selectedMissing = false;
@@ -134,6 +148,7 @@ export const load: PageServerLoad = async (event) => {
 		tickets,
 		appeals: [],
 		eligible: [],
+		types,
 		selectedAppeal: null,
 		userStatus: 'active',
 		hasMore: fetched > pageSize,

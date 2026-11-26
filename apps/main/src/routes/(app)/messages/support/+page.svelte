@@ -24,6 +24,7 @@
 	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
 	import HubListItem from '#lib/components/hub/HubListItem.svelte';
 	import TicketThreadPane from '#lib/components/hub/TicketThreadPane.svelte';
+	import TicketNewPane from '#lib/components/hub/TicketNewPane.svelte';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import { ticketToHubItem, type HubItem } from '#lib/components/hub/hub.js';
 	import { ticketHref } from '#lib/tickets.js';
@@ -37,6 +38,9 @@
 	const view = $derived(data.view);
 	const selectedId = $derived(page.url.searchParams.get('t'));
 	const selectedAppealId = $derived(page.url.searchParams.get('a'));
+	// ?new=1 — the ticket form renders inline in the right pane (the
+	// standalone /messages/support/new page stays as a full-page fallback).
+	const newOpen = $derived(page.url.searchParams.get('new') === '1');
 
 	const viewFilters = [
 		{ id: 'tickets', label: t('tickets.list_title', 'Tickets') },
@@ -131,8 +135,14 @@
 		goto(hrefFor(view === 'appeals' ? { a: null } : { t: null }), { reset: false });
 	}
 
+	function closeNew() {
+		goto(hrefFor({ new: null }), { reset: false });
+	}
+
 	const showPagination = $derived(data.page > 1 || data.hasMore);
-	const paneOpen = $derived(view === 'appeals' ? !!selectedAppealId : !!selectedId);
+	const paneOpen = $derived(
+		newOpen || (view === 'appeals' ? !!selectedAppealId : !!selectedId)
+	);
 </script>
 
 <SeoHead
@@ -150,7 +160,7 @@
 		<MessagesTabs value="support" />
 		{#snippet actions()}
 			<a
-				href="/messages/support/new"
+				href={hrefFor({ new: '1', t: null, a: null })}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<Plus size={14} />
@@ -344,7 +354,21 @@
 			class:flex={paneOpen}
 			class:hidden={!paneOpen}
 		>
-			{#if view === 'tickets'}
+			{#if newOpen}
+				<!-- Inline new-ticket form — ?new=1 -->
+				<div class="p-4 sm:p-6">
+					<div class="mb-3 flex items-center gap-2">
+						<button
+							type="button"
+							onclick={closeNew}
+							class="text-sm text-[var(--color-muted)] hover:underline"
+						>← {t('tickets.back_to_list')}</button>
+					</div>
+					<h2 class="text-lg font-medium text-[var(--color-text)]">{t('tickets.new_title')}</h2>
+					<p class="mb-4 text-sm text-[var(--color-muted)]">{t('tickets.new_subtitle')}</p>
+					<TicketNewPane types={data.types} onCancel={closeNew} />
+				</div>
+			{:else if view === 'tickets'}
 				{#if data.selected}
 					<TicketThreadPane detail={data.selected} onBack={closeDetail} />
 				{:else if data.selectedMissing}

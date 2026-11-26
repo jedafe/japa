@@ -392,7 +392,10 @@ export async function apiList<T>(
 	// callers can use `meta` uniformly — without this, `total_pages` is
 	// dropped and paginated pages never render their controls.
 	const raw = payload as unknown as {
-		data: T[] | null;
+		// Most list endpoints emit a bare array under `data`, but some nest
+		// the page as {data:{items:[...], meta?}} (e.g. GET /ticket-types) —
+		// normalize below so callers always get an array back.
+		data: T[] | { items?: T[]; meta?: ListMeta } | null;
 		meta?: ListMeta;
 		pagination?: { total?: number; page?: number; limit?: number; page_size?: number; page_offset?: number };
 		total?: number;
@@ -406,8 +409,14 @@ export async function apiList<T>(
 	// into the same ListMeta shape so callers can read meta.total/page/limit
 	// uniformly. The wiki endpoints emit {page, limit, total}; older ones emit
 	// {page_size, page_offset} — cover both spellings.
+	const nestedData =
+		raw.data !== null && typeof raw.data === 'object' && !Array.isArray(raw.data)
+			? (raw.data as { items?: T[]; meta?: ListMeta })
+			: undefined;
+	const items = Array.isArray(raw.data) ? raw.data : (nestedData?.items ?? []);
 	let meta =
 		raw.meta ??
+		nestedData?.meta ??
 		(raw.pagination?.total !== undefined
 		? {
 			total: raw.pagination.total,
@@ -426,7 +435,7 @@ export async function apiList<T>(
 			has_more: raw.has_more
 		};
 	}
-	return { items: raw.data ?? [], meta };
+	return { items, meta };
 }
 
 /**
