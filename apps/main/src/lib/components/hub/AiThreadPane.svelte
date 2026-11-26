@@ -54,6 +54,13 @@
 					loadFailed = true;
 				}
 				loading = false;
+			})
+			.catch(() => {
+				// Network-level failure (api.get only resolves on HTTP replies)
+				// — without this the spinner would hang forever.
+				if (conversationId !== id) return;
+				loadFailed = true;
+				loading = false;
 			});
 	});
 

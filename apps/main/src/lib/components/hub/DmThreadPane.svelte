@@ -132,7 +132,9 @@
 			messages = [
 				...messages,
 				{
-					id: crypto.randomUUID(),
+					// ev.id is the stored row id on newer servers — report/
+					// delete need it; the randomUUID is the deploy-drift fallback.
+					id: ev.id ?? crypto.randomUUID(),
 					sender_id: ev.sender_id,
 					sender_username: '',
 					sender_display_name: ev.sender_display_name ?? '',
@@ -148,7 +150,9 @@
 					sent_as_org: ev.sent_as_org
 				}
 			];
-			void api.post(`/dm/conversations/${ev.conversation_id}/read`);
+			void api.post(`/dm/conversations/${ev.conversation_id}/read`).then((res) => {
+				if (!res.error) onRead?.(ev.conversation_id);
+			});
 			tick().then(() => {
 				if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 			});

@@ -18,6 +18,9 @@ import type { Notification } from '#lib/types/index.js';
 
 /** Payload shape broadcast by the backend for `dm_message` events. */
 export interface DMMessageEvent {
+	/** Stored dm_messages.id — absent from older servers; the thread
+	 *  falls back to a temp id in that case. */
+	id?: string;
 	conversation_id: string;
 	sender_id: string;
 	body: string;

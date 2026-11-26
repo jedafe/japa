@@ -42,10 +42,10 @@
 	// standalone /messages/support/new page stays as a full-page fallback).
 	const newOpen = $derived(page.url.searchParams.get('new') === '1');
 
-	const viewFilters = [
+	const viewFilters = $derived([
 		{ id: 'tickets', label: t('tickets.list_title', 'My Tickets') },
 		{ id: 'appeals', label: t('appeals.list_title', 'My Appeals') }
-	];
+	]);
 
 	const statusOptions = $derived([
 		{ value: '', label: t('tickets.status.all', 'All statuses') },

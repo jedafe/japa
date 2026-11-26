@@ -971,6 +971,9 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	// Broadcast DM message event via WebSocket hub. §14: resolve {{...}} —
 	// the live event has no later read-path resolution.
 	payload := map[string]interface{}{
+		// Real message id — clients swap their optimistic temp-id bubbles
+		// and report/edit/delete need the stored id, not a random UUID.
+		"id":              msg.ID.String(),
 		"conversation_id": conversationID.String(),
 		"sender_id":       senderID.String(),
 		"body":            s.resolveDMText(ctx, body),

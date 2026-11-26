@@ -155,7 +155,11 @@
 					errorKey = 'hub.errors.upload_failed';
 					return;
 				}
-				await confirmMedia(initData.media_id);
+				const confirm = await confirmMedia(initData.media_id);
+				if (confirm.error) {
+					errorKey = 'hub.errors.upload_failed';
+					return;
+				}
 				const att = await api.post<TicketAttachment>(
 					`/me/tickets/${ticket.id}/attachments`,
 					{ media_id: initData.media_id, comment_id: commentId ?? null }
