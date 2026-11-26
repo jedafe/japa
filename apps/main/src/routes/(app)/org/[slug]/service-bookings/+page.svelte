@@ -94,13 +94,29 @@
 	let noteFor = $state<{ booking: ServiceBooking; status: string } | null>(null);
 	let noteText = $state('');
 
+	// Rule 9 — the transition route sits behind idempotency middleware,
+	// which dedupes BY key, so the key must stay stable across retries
+	// of the same
+	// transition; a fresh key per request makes a response-lost retry
+	// re-execute. Memoize per booking+status.
+	const idemKeys = new Map<string, string>();
+	function idemKey(b: ServiceBooking, status: string): string {
+		const k = `${b.id}:${status}`;
+		let key = idemKeys.get(k);
+		if (!key) {
+			key = crypto.randomUUID();
+			idemKeys.set(k, key);
+		}
+		return key;
+	}
+
 	async function transition(b: ServiceBooking, status: string, note: string) {
 		busyId = b.id;
 		actionError = '';
 		const res = await api.patch<ServiceBooking>(`/org/${org.id}/service-bookings/${b.id}`, {
 			status,
 			org_response_note: note.trim()
-		}, { 'Idempotency-Key': crypto.randomUUID() });
+		}, { 'Idempotency-Key': idemKey(b, status) });
 		if (res.error) {
 			busyId = '';
 			if (res.error.code === 'payment_pending') {

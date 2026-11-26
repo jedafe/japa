@@ -152,11 +152,21 @@
 	}
 
 	// Every booking mutation carries an idempotency key (Rule 9 — the
-	// cancel/complete/respond/dispute routes replay on retry). One key per
-	// attempt so a failure followed by a retry replays instead of
-	// double-firing the transition + fee-settle tasks.
-	function idemHeaders(): Record<string, string> {
-		return { 'Idempotency-Key': crypto.randomUUID() };
+	// cancel/complete/respond/dispute routes sit behind
+	// mw.IdempotencyMiddleware, which dedupes BY key). The key must stay
+	// stable across retries of the same action — a fresh key per request
+	// makes a response-lost retry re-execute and double-enqueue the
+	// fee-settle tasks. Memoize per booking+action; a different action
+	// mints its own key.
+	const idemKeys = new Map<string, string>();
+	function idemHeaders(action: string): Record<string, string> {
+		const k = `${b.id}:${action}`;
+		let key = idemKeys.get(k);
+		if (!key) {
+			key = crypto.randomUUID();
+			idemKeys.set(k, key);
+		}
+		return { 'Idempotency-Key': key };
 	}
 
 	// Svelte 5: $state must not be set in finally (no re-render) — set
@@ -203,7 +213,7 @@
 		actionError = '';
 		const res = await api.post(`/me/service-bookings/${b.id}/cancel`, {
 			reason: cancelNote.trim()
-		}, idemHeaders());
+		}, idemHeaders('cancel'));
 		if (res.error) {
 			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
@@ -221,7 +231,7 @@
 		actionError = '';
 		const res = await api.post(`/me/service-bookings/${b.id}/dispute`, {
 			reason: disputeReason.trim()
-		}, idemHeaders());
+		}, idemHeaders('dispute'));
 		if (res.error) {
 			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
@@ -243,7 +253,7 @@
 		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/respond`, {
 			action,
 			...(note.trim() ? { note: note.trim() } : {})
-		}, idemHeaders());
+		}, idemHeaders(`respond:${action}`));
 		if (res.error) {
 			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
@@ -271,7 +281,7 @@
 	async function completeBooking() {
 		busy = true;
 		actionError = '';
-		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/complete`, {}, idemHeaders());
+		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/complete`, {}, idemHeaders('complete'));
 		if (res.error) {
 			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');

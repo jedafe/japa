@@ -33,11 +33,11 @@
 
 	const title = $derived(t('messages.requests_title', 'Message requests — {site}'));
 
-	const sortOptions = [
+	const sortOptions = $derived([
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },
 		{ value: 'oldest', label: t('messages.sort_oldest', 'Oldest') },
 		{ value: 'name', label: t('messages.sort_name', 'Name (A–Z)') }
-	];
+	]);
 	const pageSizeOptions = [
 		{ value: '10', label: '10' },
 		{ value: '20', label: '20' },
