@@ -12,6 +12,8 @@
     GuestHomeProps
   } from '../types';
   import type { FetchContext } from '../data/types';
+  import { writable } from 'svelte/store';
+  import { getFeaturesData } from '../data/featuresContext';
   import { resolveAssetUrl } from '../assetBase';
   import { chipClass, opportunityTypeChip, opportunityLogoChip } from './guest/chips';
   import defaultHeroImageUrl from '../assets/hero-community.webp';
@@ -59,6 +61,13 @@
     let email = $state('');
     let newsletterStatus = $state<'idle' | 'loading' | 'success' | 'error'>('idle');
     let newsletterMessage = $state('');
+
+    // feature.newsletter kill-switch: hide rather than render a form that
+    // 404s on submit (flags via LandingRenderer context — SSR-safe).
+    const featuresStore = $derived(getFeaturesData() ?? writable<Record<string, boolean> | undefined>(undefined));
+    const newsletterEnabled = $derived(
+      ($featuresStore?.['feature.newsletter'] ?? fetchCtx?.features?.['feature.newsletter']) !== false
+    );
 
     let oppScroller: HTMLDivElement | undefined = $state(undefined);
     let storyScroller: HTMLDivElement | undefined = $state(undefined);
@@ -140,9 +149,15 @@
         credentials: 'include'
       });
       if (res.ok) {
-        const data = await res.json().catch(() => ({} as { message?: string }));
+        const body = await res.json().catch(() => ({} as {
+          data?: { double_opt_in?: boolean; message?: string };
+        }));
         newsletterStatus = 'success';
-        newsletterMessage = data.message ?? c('newsletter_success', "You're subscribed! Check your inbox.");
+        // Double opt-in (§62): confirm-by-link copy, not the plain
+        // "subscribed" message.
+        newsletterMessage = body.data?.double_opt_in
+          ? c('newsletter_confirm_sent', 'Check your inbox — confirm your subscription via the link we just sent.')
+          : (body.data?.message ?? c('newsletter_success', "You're subscribed! Check your inbox."));
         email = '';
       } else {
         const err = await res.json().catch(() => ({ error: { message: '' } }));
@@ -519,6 +534,7 @@
 </section>
 
 <!-- Newsletter -->
+{#if newsletterEnabled}
 <section class="guest-section newsletter-section" aria-labelledby="newsletter-heading">
   <div class="newsletter-inner">
     <div class="newsletter-content">
@@ -552,6 +568,7 @@
     {/if}
   </div>
 </section>
+{/if}
 
 
 {#snippet UserInitials(name: string)}

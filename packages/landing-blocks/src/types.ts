@@ -797,6 +797,7 @@ export interface GuestHomeCopy {
   newsletter_placeholder?: string;
   newsletter_cta?: string;
   newsletter_success?: string;
+  newsletter_confirm_sent?: string;
   newsletter_error?: string;
 
   // Footer
