@@ -74,7 +74,8 @@ export const load: LayoutServerLoad = async (event) => {
 		// bookings/mentorship workbench sub-routes get the same treatment.
 		rid === '/(app)/messages' ||
 		rid === '/(app)/messages/bookings' ||
-		rid === '/(app)/messages/mentorship';
+		rid === '/(app)/messages/mentorship' ||
+		rid === '/(app)/messages/requests';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||

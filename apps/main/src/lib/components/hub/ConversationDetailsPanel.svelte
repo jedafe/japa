@@ -8,6 +8,7 @@
 	// No assignment/tags API exists on the member side (assignment lives on
 	// staff tickets) — this rail displays the real fields each kind exposes.
 	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { getMedia } from '#lib/api/create.js';
 	import { ticketHref } from '#lib/tickets.js';
 	import {
@@ -28,7 +29,7 @@
 		Headset,
 		LifeBuoy
 	} from 'lucide-svelte';
-	import type { MediaAsset, TicketDetailResponse } from '#lib/types/index.js';
+	import type { MediaAsset, PublicUser, TicketDetailResponse } from '#lib/types/index.js';
 	import type { HubItem } from './hub.js';
 
 	interface Props {
@@ -80,6 +81,36 @@
 					? `/u/${counterpart.username}`
 					: ''
 	);
+
+	// The user-profile counterpart username (org DMs and entities without a
+	// member profile are skipped) — feeds the member-since fetch.
+	const profileUsername = $derived(
+		dm
+			? dm.conversation_type !== 'org'
+				? dm.other_username
+				: ''
+			: request
+				? request.requester_username
+				: counterpart?.username ?? ''
+	);
+
+	// Member-since (mockup: "Member since Mar 2023") — the counterpart's
+	// account creation date from GET /users/{username} (PublicUser).
+	let memberSince = $state('');
+	$effect(() => {
+		const u = profileUsername;
+		memberSince = '';
+		if (!u) return;
+		void api.get<PublicUser>(`/users/${encodeURIComponent(u)}`).then((res) => {
+			// Compare against the CURRENT derived — the item may have changed
+			// while the fetch was in flight.
+			if (profileUsername !== u || !res.data?.created_at) return;
+			memberSince = new Date(res.data.created_at).toLocaleDateString(undefined, {
+				month: 'short',
+				year: 'numeric'
+			});
+		});
+	});
 </script>
 
 <aside class="flex h-full w-full flex-col overflow-y-auto">
@@ -115,6 +146,11 @@
 		</p>
 		{#if item.subtitle}
 			<p class="truncate text-xs text-[var(--color-muted)]">{item.subtitle}</p>
+		{/if}
+		{#if memberSince}
+			<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+				{t('hub.member_since', 'Member since {date}', { date: memberSince })}
+			</p>
 		{/if}
 		{#if profileHref}
 			<a

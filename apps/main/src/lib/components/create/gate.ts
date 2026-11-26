@@ -72,6 +72,7 @@ const NO_RIGHT_SIDEBAR_ROUTES = new Set([
 	'/(app)/messages',
 	'/(app)/messages/bookings',
 	'/(app)/messages/mentorship',
+	'/(app)/messages/requests',
 	// Compare hub directory pages — the discovery grids use the widened
 	// center column like the readiness workbench.
 	'/(app)/compare',

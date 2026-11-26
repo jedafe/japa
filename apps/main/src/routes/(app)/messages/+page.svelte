@@ -73,6 +73,19 @@
 	let detailsOpen = $state(true);
 	let mobileDetailsOpen = $state(false);
 	let isNarrow = $state(false);
+	// The rail re-opens on every new selection (mockup: always visible for
+	// an open conversation) — closing is a per-view action. Booking panes
+	// have no toggle of their own, so without this a user who closed the
+	// rail on a DM could never reopen it for a booking.
+	let lastSelKey = '';
+	$effect(() => {
+		const key = data.sel ? `${data.sel.kind}:${data.sel.id}` : '';
+		if (key !== lastSelKey) {
+			lastSelKey = key;
+			if (key) detailsOpen = true;
+			mobileDetailsOpen = false;
+		}
+	});
 	onMount(() => {
 		const mq = matchMedia('(max-width: 1023.5px)');
 		const sync = () => (isNarrow = mq.matches);

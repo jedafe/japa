@@ -308,17 +308,6 @@ export function itemMatchesQuery(item: HubItem, q: string): boolean {
 	);
 }
 
-/** Parse `sel=<kind>:<id>` (+ legacy `?c=<uuid>` for DM deep links). */
-export function parseSel(raw: string | null): { kind: HubKind; id: string } | null {
-	if (!raw) return null;
-	const idx = raw.indexOf(':');
-	if (idx <= 0) return null;
-	const kind = raw.slice(0, idx) as HubKind;
-	const id = raw.slice(idx + 1);
-	const valid: HubKind[] = ['dm', 'org', 'request', 'booking', 'mentorship', 'ticket', 'ai'];
-	return valid.includes(kind) && id ? { kind, id } : null;
-}
-
 const PRIORITY_KEY: Record<TicketPriority, string> = {
 	low: 'tickets.priority.low',
 	normal: 'tickets.priority.normal',

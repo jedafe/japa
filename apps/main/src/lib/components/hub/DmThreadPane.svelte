@@ -18,7 +18,8 @@
 		Package,
 		Phone,
 		Video,
-		PanelRight
+		PanelRight,
+		Lock
 	} from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
 	import { LiteralSuggest } from '#lib/components/ui/index.js';
@@ -62,7 +63,11 @@
 	// Edit/delete message state (15-min window enforced server-side).
 	let editingId = $state<string | null>(null);
 	let editBody = $state('');
+	let savingEdit = $state(false);
 	let deletingId = $state<string | null>(null);
+	// Edit/delete failures — the silent paths used to discard the action
+	// with no feedback. Shown above the composer.
+	let actionError = $state('');
 
 	// Report incoming message (Section 51 via the DM report route).
 	let reportingMsgId = $state<string | null>(null);
@@ -101,6 +106,7 @@
 		editingId = null;
 		peerTyping = false;
 		lastReadMarked = null;
+		actionError = '';
 		tick().then(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 		});
@@ -175,6 +181,11 @@
 	async function loadEarlierMessages() {
 		if (loadingEarlier || !msgsCursor) return;
 		loadingEarlier = true;
+		// Record the offset from the top of the loaded history so the
+		// prepend doesn't visually jump — after the older page mounts, the
+		// scroll position is restored to the same message.
+		const prevHeight = threadEl?.scrollHeight ?? 0;
+		const prevTop = threadEl?.scrollTop ?? 0;
 		const res = await api.getEnvelope<DMMessage[]>(
 			`/dm/conversations/${conversation.id}/messages?page_size=${pageSize}&cursor=${encodeURIComponent(msgsCursor)}`
 		);
@@ -182,6 +193,8 @@
 		const items = res.data ?? [];
 		msgsCursor = (res.envelope?.next_cursor as string | null | undefined) ?? null;
 		messages = [...items.reverse(), ...messages];
+		await tick();
+		if (threadEl) threadEl.scrollTop = threadEl.scrollHeight - prevHeight + prevTop;
 	}
 
 	async function sendMessage() {
@@ -223,29 +236,55 @@
 		}
 	}
 
+	// Editable only inside the server's 15-minute window (dm.go EditMessage)
+	// — outside it the PATCH is rejected anyway, so the raw body isn't
+	// fetched. Within it, walk raw pages until the row is found: the newest
+	// 100 covers ~every real case; two extra pages guard busy threads.
+	const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
 	async function startEdit(msg: DMMessage) {
 		editingId = msg.id;
 		editBody = msg.body;
-		// Fetch the raw (unresolved) body so hand-typed {{...}} literals survive
-		// a re-save — the display payload has them already resolved.
-		const res = await api.get<DMMessage[]>(
-			`/dm/conversations/${conversation.id}/messages?raw=1&page_size=100`
-		);
-		const raw = res.data?.find((m) => m.id === msg.id);
-		if (editingId === msg.id && raw) editBody = raw.body;
+		actionError = '';
+		// The raw (unresolved) body keeps hand-typed {{...}} literals alive
+		// across a re-save — the display payload has them already resolved.
+		if (Date.now() - Date.parse(msg.created_at) > EDIT_WINDOW_MS) return;
+		let cursor: string | null = null;
+		for (let pageNum = 0; pageNum < 3; pageNum++) {
+			const qs: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+			const res = await api.getEnvelope<DMMessage[]>(
+				`/dm/conversations/${conversation.id}/messages?raw=1&page_size=100${qs}`
+			);
+			if (editingId !== msg.id) return;
+			const raw = res.data?.find((m) => m.id === msg.id);
+			if (raw) {
+				editBody = raw.body;
+				return;
+			}
+			cursor = (res.envelope?.next_cursor as string | null | undefined) ?? null;
+			if (!cursor || !res.data?.length) return;
+		}
 	}
 
 	async function saveEdit(msg: DMMessage) {
-		if (!editBody.trim() || editingId !== msg.id) return;
+		if (!editBody.trim() || editingId !== msg.id || savingEdit) return;
+		savingEdit = true;
+		actionError = '';
 		const res = await api.patch(
 			`/dm/conversations/${conversation.id}/messages/${msg.id}`,
 			{ body: editBody.trim() }
 		);
-		if (!res.error) {
-			messages = messages.map((m) =>
-				m.id === msg.id ? { ...m, body: editBody.trim() } : m
-			);
+		savingEdit = false;
+		if (res.error) {
+			// Keep the editor open so the edit isn't lost — e.g. when the
+			// server rejects it for being outside the 15-minute window.
+			actionError =
+				res.error.message ?? t('messages.save_failed', 'Could not save the message.');
+			return;
 		}
+		messages = messages.map((m) =>
+			m.id === msg.id ? { ...m, body: editBody.trim() } : m
+		);
 		editingId = null;
 		editBody = '';
 	}
@@ -253,13 +292,17 @@
 	async function deleteMessage(msg: DMMessage) {
 		if (deletingId) return;
 		deletingId = msg.id;
+		actionError = '';
 		const res = await api.delete(
 			`/dm/conversations/${conversation.id}/messages/${msg.id}`
 		);
 		deletingId = null;
-		if (!res.error) {
-			messages = messages.filter((m) => m.id !== msg.id);
+		if (res.error) {
+			actionError =
+				res.error.message ?? t('messages.delete_failed', 'Could not delete the message.');
+			return;
 		}
+		messages = messages.filter((m) => m.id !== msg.id);
 	}
 
 	/** Read receipt — the last outgoing message's read_at drives "Seen". */
@@ -447,9 +490,10 @@
 									<button
 										type="button"
 										onclick={() => saveEdit(msg)}
-										class="text-xs font-medium underline"
+										disabled={savingEdit}
+										class="text-xs font-medium underline disabled:opacity-50"
 									>
-										{t('messages.save', 'Save')}
+										{savingEdit ? t('common.saving', 'Saving…') : t('messages.save', 'Save')}
 									</button>
 									<button
 										type="button"
@@ -551,6 +595,10 @@
 		{/if}
 	</div>
 
+	{#if actionError}
+		<p class="px-4 pb-1 text-xs text-[var(--color-danger)]" role="alert">{actionError}</p>
+	{/if}
+
 	<!-- Composer — typing signals fire on input (2s throttle; the server
 	     enforces ~3s). No file attach: dm_messages has no media_id column
 	     yet — attachments live on support tickets for now. -->
@@ -576,6 +624,16 @@
 			<Send class="rtl:-scale-x-100" size={16} />
 		</button>
 	</form>
+	<!-- Reassurance caption mirroring the mockup's footer line — kept
+	     honest (no E2E encryption exists, so no such claim). -->
+	<p
+		class="flex items-center justify-center gap-1.5 border-t border-[var(--color-border)] px-4 py-1.5 text-[11px] text-[var(--color-muted)]"
+	>
+		<Lock size={11} aria-hidden="true" />
+		{isOrg
+			? t('hub.private_note_org', 'Only members of this inbox can see this conversation.')
+			: t('hub.private_note', 'This is a private conversation.')}
+	</p>
 </div>
 
 {#if reportingMsgId}
