@@ -40,8 +40,17 @@ export interface PresenceEvent {
 	status: 'online' | 'offline';
 }
 
+/** Payload shape forwarded by the backend for `typing` events (Section 10 —
+ *  the server relays it to the OTHER conversation participant only). */
+export interface TypingEvent {
+	conversation_id: string;
+	user_id: string;
+	is_typing: boolean;
+}
+
 type DMHandler = (ev: DMMessageEvent) => void;
 type NotificationHandler = (n: Partial<Notification> & { id?: string }) => void;
+type TypingHandler = (ev: TypingEvent) => void;
 
 /** Payload shape broadcast by the backend for `poll_updated` events. */
 export interface PollUpdatedEvent {
@@ -62,6 +71,7 @@ class RealtimeStore {
 	private dmHandlers = new Set<DMHandler>();
 	private notificationHandlers = new Set<NotificationHandler>();
 	private pollHandlers = new Set<(ev: PollUpdatedEvent) => void>();
+	private typingHandlers = new Set<TypingHandler>();
 	private wired = false;
 
 	// Bound handler references so on()/off() match the same function identity.
@@ -69,6 +79,7 @@ class RealtimeStore {
 	private readonly onPresenceBound = (p: unknown) => this.handlePresence(p);
 	private readonly onFeedUpdateBound = () => this.handleFeedUpdate();
 	private readonly onDMMessageBound = (p: unknown) => this.handleDMMessage(p);
+	private readonly onTypingBound = (p: unknown) => this.handleTyping(p);
 	private readonly onPollUpdatedBound = (p: unknown) => this.handlePollUpdated(p);
 	private readonly onModerationAlertBound = (p: unknown) => this.handleModerationAlert(p);
 	private readonly onUnreadCountBound = (p: unknown) => this.handleUnreadCount(p);
@@ -83,6 +94,7 @@ class RealtimeStore {
 			wsClient.on('presence', this.onPresenceBound);
 			wsClient.on('feed_update', this.onFeedUpdateBound);
 			wsClient.on('dm_message', this.onDMMessageBound);
+			wsClient.on('typing', this.onTypingBound);
 			wsClient.on('poll_updated', this.onPollUpdatedBound);
 			wsClient.on('moderation_alert', this.onModerationAlertBound);
 		}
@@ -104,6 +116,7 @@ class RealtimeStore {
 		wsClient.off('presence', this.onPresenceBound);
 		wsClient.off('feed_update', this.onFeedUpdateBound);
 		wsClient.off('dm_message', this.onDMMessageBound);
+		wsClient.off('typing', this.onTypingBound);
 		wsClient.off('poll_updated', this.onPollUpdatedBound);
 		wsClient.off('moderation_alert', this.onModerationAlertBound);
 		wsClient.disconnect();
@@ -152,6 +165,21 @@ class RealtimeStore {
 	/** Remove a previously-registered DM handler. */
 	offDMMessage(handler: DMHandler): void {
 		this.dmHandlers.delete(handler);
+	}
+
+	/** Register a handler for typing events (Section 10 — DM typing relay). */
+	onTyping(handler: TypingHandler): void {
+		this.typingHandlers.add(handler);
+	}
+
+	/** Remove a previously-registered typing handler. */
+	offTyping(handler: TypingHandler): void {
+		this.typingHandlers.delete(handler);
+	}
+
+	/** Send a typing signal for a DM conversation (server enforces ~3s throttle). */
+	sendTyping(conversationId: string, isTyping: boolean): void {
+		wsClient.sendTyping(conversationId, isTyping);
 	}
 
 	/** Register a handler for live poll update events (used by PollBlock). */
@@ -225,6 +253,18 @@ class RealtimeStore {
 		const ev = (payload ?? {}) as DMMessageEvent;
 		if (!ev.conversation_id) return;
 		for (const h of this.dmHandlers) {
+			try {
+				h(ev);
+			} catch {
+				/* swallow */
+			}
+		}
+	}
+
+	private handleTyping(payload: unknown): void {
+		const ev = (payload ?? {}) as TypingEvent;
+		if (!ev.conversation_id) return;
+		for (const h of this.typingHandlers) {
 			try {
 				h(ev);
 			} catch {
