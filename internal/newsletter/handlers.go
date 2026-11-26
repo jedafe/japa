@@ -1168,7 +1168,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	case "bounce":
 		if err := h.Service.MarkBounced(r.Context(), payload.Email); err != nil {
 			releaseDedupe()
-			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
+			slog.Error("newsletter webhook: mark bounced", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
 
 			return
@@ -1176,7 +1176,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	case "complaint":
 		if err := h.Service.MarkComplained(r.Context(), payload.Email); err != nil {
 			releaseDedupe()
-			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
+			slog.Error("newsletter webhook: mark complained", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
 
 			return
@@ -1186,7 +1186,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		// analytics (§62 schema). campaign_id must reference an existing
 		// campaign — arbitrary IDs would poison counters.
 		if payload.CampaignID == "" {
-			slog.Warn("newsletter webhook: "+payload.EventType+" event missing campaign_id", "email", payload.Email)
+			slog.Warn("newsletter webhook: " + payload.EventType + " event missing campaign_id")
 			break
 		}
 		var cid pgtype.UUID
