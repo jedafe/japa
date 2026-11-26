@@ -475,13 +475,14 @@ func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListCampaigns returns newsletter campaigns for the platform with pagination.
-// GET /admin/newsletter/campaigns?page_size=&offset=&status=
+// GET /admin/newsletter/campaigns?page_size=&offset=&status=&search=
 // Returns the standard paginated envelope {items, total, total_pages} so the
 // admin DataTable can render serverSide pagination (§22, ADR-080 §3).
 func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	limit := int(parsePageSize(r))
 	offset := int(parseOffset(r))
 	status := r.URL.Query().Get("status")
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	// Validate the status filter against the allowed enum if provided.
 	if status != "" {
@@ -500,7 +501,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		page = (offset / limit) + 1
 	}
 
-	campaigns, total, err := h.Service.AdminListCampaigns(r.Context(), status, page, limit)
+	campaigns, total, err := h.Service.AdminListCampaigns(r.Context(), status, search, page, limit)
 	if err != nil {
 		slog.Error("listing newsletter campaigns", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
@@ -632,6 +633,25 @@ func scheduledMissingTime(resulting string, patchTime *time.Time, existingValid 
 	return resulting == CampaignScheduled && patchTime == nil && !existingValid
 }
 
+// segmentPatchError validates the RESULTING campaign segment for a PATCH,
+// mirroring CreateCampaign's checks (§62/ADR-080 §3): unknown values and
+// scoped segments ('space'/'tag') without segment_id are rejected — the
+// send worker can only fail on them loudly at send time. Returns "" when
+// the resulting state is valid.
+func segmentPatchError(segment string, segmentIDValid bool) string {
+	switch segment {
+	case SegmentAll, SegmentProSubscribers:
+		return ""
+	case SegmentSpace, SegmentTag:
+		if segmentIDValid {
+			return ""
+		}
+		return "segment_id is required when segment is 'space' or 'tag'"
+	default:
+		return "segment must be one of: all, space, tag, pro_subscribers"
+	}
+}
+
 // UpdateCampaign updates an existing newsletter campaign.
 // PATCH /admin/newsletter/campaigns/{id}.
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
@@ -738,6 +758,53 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 			"Scheduling a campaign requires scheduled_at")
 		return
 	}
+
+	// §62/ADR-080 §3: validate the RESULTING segment the way CreateCampaign
+	// does. An unknown value or a scoped segment without segment_id would
+	// store a campaign the send worker can only fail on (loudly) at send
+	// time — reject it here instead.
+	effectiveSegment := existing.Segment
+	if body.Segment != nil && *body.Segment != "" {
+		effectiveSegment = *body.Segment
+	}
+
+	effectiveSegmentID := existing.SegmentID
+	if body.SegmentID != nil && *body.SegmentID != "" {
+		effectiveSegmentID = pgtype.UUID{}
+		if err := effectiveSegmentID.Scan(*body.SegmentID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+				"segment_id must be a UUID")
+			return
+		}
+	}
+	if msg := segmentPatchError(effectiveSegment, effectiveSegmentID.Valid); msg != "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", msg)
+		return
+	}
+
+	// Empty strings are semantically "unset" for the COALESCE'd fields — a
+	// non-nil "" pointer writes '' past COALESCE, bypassing the enums above
+	// ({segment:""} → worker "unknown segment" failure; {status:""} → CHECK
+	// violation → 500; {name:""} → blank campaign row).
+	if body.Segment != nil && *body.Segment == "" {
+		body.Segment = nil
+	}
+	if body.SegmentID != nil && *body.SegmentID == "" {
+		body.SegmentID = nil
+	}
+	if body.Status != nil && *body.Status == "" {
+		body.Status = nil
+	}
+	if body.Name != nil && *body.Name == "" {
+		body.Name = nil
+	}
+	if body.Subject != nil && *body.Subject == "" {
+		body.Subject = nil
+	}
+	if body.HTML != nil && *body.HTML == "" {
+		body.HTML = nil
+	}
+	// preview_text is exempt: '' is a legitimate clear (it renders blank).
 
 	campaign, err := h.Service.UpdateCampaign(r.Context(), id, UpdateCampaignInput{
 		Name:        body.Name,

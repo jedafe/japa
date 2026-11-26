@@ -118,3 +118,31 @@ func TestScheduledMissingTime(t *testing.T) {
 		}
 	}
 }
+
+// PATCH must validate the RESULTING segment the way CreateCampaign does —
+// a scoped segment without segment_id or an unknown value stores a
+// campaign the send worker can only fail on at send time.
+func TestSegmentPatchError(t *testing.T) {
+	tests := []struct {
+		name           string
+		segment        string
+		segmentIDValid bool
+		wantEmpty      bool
+	}{
+		{name: "all ok", segment: SegmentAll, wantEmpty: true},
+		{name: "pro ok", segment: SegmentProSubscribers, wantEmpty: true},
+		{name: "space with id ok", segment: SegmentSpace, segmentIDValid: true, wantEmpty: true},
+		{name: "tag with id ok", segment: SegmentTag, segmentIDValid: true, wantEmpty: true},
+		{name: "space without id rejected", segment: SegmentSpace, wantEmpty: false},
+		{name: "tag without id rejected", segment: SegmentTag, wantEmpty: false},
+		{name: "unknown rejected", segment: "vip", wantEmpty: false},
+		{name: "empty rejected", segment: "", wantEmpty: false},
+	}
+
+	for _, tt := range tests {
+		got := segmentPatchError(tt.segment, tt.segmentIDValid)
+		if (got == "") != tt.wantEmpty {
+			t.Errorf("%s: got %q, wantEmpty %v", tt.name, got, tt.wantEmpty)
+		}
+	}
+}

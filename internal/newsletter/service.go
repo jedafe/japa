@@ -949,8 +949,12 @@ func (s *Service) AdminSubscriberStats(ctx context.Context) ([]gen.AdminSubscrib
 	return s.queries.AdminSubscriberStats(ctx)
 }
 
-// AdminListCampaigns returns paginated campaigns for admin oversight.
-func (s *Service) AdminListCampaigns(ctx context.Context, status string, page, limit int) ([]gen.NewsletterCampaign, int64, error) {
+// AdminListCampaigns returns campaigns for the admin table, filtered by
+// ?status= and ?search= (name/subject ILIKE). The sqlc query has no
+// search clause, so this mirrors its exact SELECT/scan shape with the
+// search predicate added — without it the admin search box silently
+// did nothing (the request param was ignored).
+func (s *Service) AdminListCampaigns(ctx context.Context, status, search string, page, limit int) ([]gen.NewsletterCampaign, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -962,24 +966,48 @@ func (s *Service) AdminListCampaigns(ctx context.Context, status string, page, l
 	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * limit)
 
-	rows, err := s.queries.AdminListCampaigns(ctx, gen.AdminListCampaignsParams{
-		Status:     status,
-		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
-		PageOffset: offset,
-	})
+	const query = `SELECT id, name, subject, html, status, sent_at, created_at, updated_at,
+			preview_text, body, segment, segment_id, scheduled_at, recipient_count,
+			open_count, click_count, created_by, send_id
+		FROM newsletter_campaigns
+		WHERE ($1::text = '' OR status = $1)
+		  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
+		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $3`
+
+	rows, err := s.db.Reader.Query(ctx, query, status, search, offset, int32(limit))
 	if err != nil {
 		return nil, 0, fmt.Errorf("newsletter: admin list campaigns: %w", err)
 	}
+	defer rows.Close()
 
-	total, err := s.queries.AdminCountCampaigns(ctx,
+	var items []gen.NewsletterCampaign
+	for rows.Next() {
+		var i gen.NewsletterCampaign
+		if err := rows.Scan(
+			&i.ID, &i.Name, &i.Subject, &i.Html, &i.Status, &i.SentAt,
+			&i.CreatedAt, &i.UpdatedAt, &i.PreviewText, &i.Body, &i.Segment,
+			&i.SegmentID, &i.ScheduledAt, &i.RecipientCount, &i.OpenCount,
+			&i.ClickCount, &i.CreatedBy, &i.SendID,
+		); err != nil {
+			return nil, 0, fmt.Errorf("newsletter: scan campaign row: %w", err)
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("newsletter: admin list campaigns: %w", err)
+	}
 
-		status,
-	)
-	if err != nil {
+	var total int64
+	if err := s.db.Reader.QueryRow(ctx, `
+		SELECT COUNT(*) FROM newsletter_campaigns
+		WHERE ($1::text = '' OR status = $1)
+		  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
+	`, status, search).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("newsletter: admin count campaigns: %w", err)
 	}
 
-	return rows, total, nil
+	return items, total, nil
 }
 
 // MarkBounced marks a subscriber as bounced (from email provider webhook).
