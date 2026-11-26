@@ -7,11 +7,14 @@
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { GraduationCap } from 'lucide-svelte';
-	import { EmptyState, ListPageBar } from '#lib/components/ui/index.js';
+	import { EmptyState, ListPageBar, Modal } from '#lib/components/ui/index.js';
 	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
 	import BookingListPane from '#lib/components/messages/BookingListPane.svelte';
 	import BookingDetailPane from '#lib/components/messages/BookingDetailPane.svelte';
+	import ConversationDetailsPanel from '#lib/components/hub/ConversationDetailsPanel.svelte';
+	import { bookingToHubItem } from '#lib/components/hub/hub.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,6 +30,47 @@
 	const viewerId = $derived(page.data.viewerId ?? '');
 	const viewerEmail = $derived(page.data.user?.email ?? '');
 	const selectedId = $derived(page.url.searchParams.get('b'));
+
+	// Details rail — same behavior as /messages: a third column on lg+ that
+	// re-opens on every selection, and a drawer modal on narrower screens
+	// opened via the pane's PanelRight toggle.
+	let detailsOpen = $state(true);
+	let mobileDetailsOpen = $state(false);
+	let isNarrow = $state(false);
+	let lastSelKey = '';
+	$effect(() => {
+		const key = selectedId ?? '';
+		if (key !== lastSelKey) {
+			lastSelKey = key;
+			if (key) detailsOpen = true;
+			mobileDetailsOpen = false;
+		}
+	});
+	onMount(() => {
+		const mq = matchMedia('(max-width: 1023.5px)');
+		const sync = () => (isNarrow = mq.matches);
+		sync();
+		mq.addEventListener('change', sync);
+		return () => mq.removeEventListener('change', sync);
+	});
+	function toggleDetails() {
+		if (isNarrow) mobileDetailsOpen = !mobileDetailsOpen;
+		else detailsOpen = !detailsOpen;
+	}
+
+	// Rail item — build the same HubItem the unified stream uses, with the
+	// effective role derived from the booking (not the inbox tab) so a ?b=
+	// deep link under the "wrong" role still shows the right counterpart.
+	const itemRole = $derived<'sent' | 'received'>(
+		data.selected?.provider_user_id === viewerId
+			? 'received'
+			: data.selected?.booker_user_id === viewerId
+				? 'sent'
+				: data.role
+	);
+	const selectedItem = $derived(
+		data.selected ? bookingToHubItem(data.selected, itemRole) : null
+	);
 
 	const emptyTitle = $derived(
 		data.role === 'received'
@@ -103,6 +147,7 @@
 					{dmEnabled}
 					{packagesEnabled}
 					onClose={closeDetail}
+					onToggleDetails={toggleDetails}
 				/>
 			{:else if data.selectedMissing}
 				<div class="grid flex-1 place-items-center p-8">
@@ -121,5 +166,24 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- Details rail — third column on lg+ like /messages. -->
+		{#if selectedItem && detailsOpen}
+			<div class="hidden w-72 shrink-0 border-s border-[var(--color-border)] lg:block">
+				<ConversationDetailsPanel item={selectedItem} />
+			</div>
+		{/if}
 	</div>
 </div>
+
+<!-- Details drawer for smaller viewports — the lg+ rail is inline above. -->
+{#if isNarrow && selectedItem}
+	<Modal
+		bind:open={mobileDetailsOpen}
+		title={t('hub.details_toggle', 'Conversation details')}
+		size="md"
+		zIndex={50}
+	>
+		<ConversationDetailsPanel item={selectedItem} />
+	</Modal>
+{/if}

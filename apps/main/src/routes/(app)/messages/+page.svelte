@@ -72,9 +72,7 @@
 	let mobileDetailsOpen = $state(false);
 	let isNarrow = $state(false);
 	// The rail re-opens on every new selection (mockup: always visible for
-	// an open conversation) — closing is a per-view action. Booking panes
-	// have no toggle of their own, so without this a user who closed the
-	// rail on a DM could never reopen it for a booking.
+	// an open conversation) — closing is a per-view action.
 	let lastSelKey = '';
 	$effect(() => {
 		const key = data.sel ? `${data.sel.kind}:${data.sel.id}` : '';
@@ -628,6 +626,7 @@
 						dmEnabled
 						packagesEnabled={!!page.data.features?.['service_packages.enabled']}
 						onClose={closeItem}
+						onToggleDetails={toggleDetails}
 					/>
 				{:else}
 					<div class="grid flex-1 place-items-center p-8">

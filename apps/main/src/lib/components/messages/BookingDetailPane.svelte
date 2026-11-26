@@ -31,7 +31,8 @@
 		AlertCircle,
 		ArrowLeft,
 		CheckCircle2,
-		MapPin
+		MapPin,
+		PanelRight
 	} from 'lucide-svelte';
 	import { RelativeTime, Modal } from '#lib/components/ui/index.js';
 	import type { ServiceBooking } from '#lib/types/index.js';
@@ -58,6 +59,9 @@
 		packagesEnabled: boolean;
 		/** Clear the ?b= selection (mobile back). */
 		onClose: () => void;
+		/** Toggle the conversation-details rail/drawer (the workbenches own
+		 *  the rail — when omitted, the header stays mobile-only). */
+		onToggleDetails?: () => void;
 	}
 
 	let {
@@ -67,7 +71,8 @@
 		packagesEnabled,
 		viewerId,
 		viewerEmail = '',
-		onClose
+		onClose,
+		onToggleDetails
 	}: Props = $props();
 	const b = $derived(booking);
 
@@ -293,14 +298,29 @@
 	}
 </script>
 
-<div class="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2 sm:hidden">
+<div
+	class="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2 {onToggleDetails
+		? ''
+		: 'sm:hidden'}"
+>
 	<button
 		type="button"
 		onclick={onClose}
-		class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
+		class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] sm:hidden"
 	>
 		<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('messages.back', 'Back')}
 	</button>
+	{#if onToggleDetails}
+		<button
+			type="button"
+			onclick={onToggleDetails}
+			class="ms-auto grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+			aria-label={t('hub.details_toggle', 'Conversation details')}
+			title={t('hub.details_toggle', 'Conversation details')}
+		>
+			<PanelRight size={16} />
+		</button>
+	{/if}
 </div>
 
 <div class="space-y-4 p-4">

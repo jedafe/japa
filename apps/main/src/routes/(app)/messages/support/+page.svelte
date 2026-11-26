@@ -13,18 +13,21 @@
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { AlertTriangle, LifeBuoy, Plus, Scale } from 'lucide-svelte';
 	import {
 		EmptyState,
 		ListPageBar,
 		AutocompleteSelect,
 		PaginationControls,
-		RelativeTime
+		RelativeTime,
+		Modal
 	} from '#lib/components/ui/index.js';
 	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
 	import HubListItem from '#lib/components/hub/HubListItem.svelte';
 	import TicketThreadPane from '#lib/components/hub/TicketThreadPane.svelte';
 	import TicketNewPane from '#lib/components/hub/TicketNewPane.svelte';
+	import ConversationDetailsPanel from '#lib/components/hub/ConversationDetailsPanel.svelte';
 	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import { ticketToHubItem, type HubItem } from '#lib/components/hub/hub.js';
 	import { ticketHref } from '#lib/tickets.js';
@@ -146,6 +149,38 @@
 	const showPagination = $derived(data.page > 1 || data.hasMore);
 	const paneOpen = $derived(
 		newOpen || (view === 'appeals' ? !!selectedAppealId : !!selectedId)
+	);
+
+	// Details rail — third column on lg+ like /messages, re-opening on
+	// every ticket selection; a drawer modal on narrower screens via the
+	// pane's PanelRight toggle. Tickets only — the appeal pane already
+	// renders the full record inline.
+	let detailsOpen = $state(true);
+	let mobileDetailsOpen = $state(false);
+	let isNarrow = $state(false);
+	let lastSelKey = '';
+	$effect(() => {
+		const key = view === 'tickets' ? (selectedId ?? '') : '';
+		if (key !== lastSelKey) {
+			lastSelKey = key;
+			if (key) detailsOpen = true;
+			mobileDetailsOpen = false;
+		}
+	});
+	onMount(() => {
+		const mq = matchMedia('(max-width: 1023.5px)');
+		const sync = () => (isNarrow = mq.matches);
+		sync();
+		mq.addEventListener('change', sync);
+		return () => mq.removeEventListener('change', sync);
+	});
+	function toggleDetails() {
+		if (isNarrow) mobileDetailsOpen = !mobileDetailsOpen;
+		else detailsOpen = !detailsOpen;
+	}
+
+	const selectedItem = $derived(
+		data.selected ? ticketToHubItem(data.selected.ticket, t) : null
 	);
 </script>
 
@@ -383,7 +418,11 @@
 				</div>
 			{:else if view === 'tickets'}
 				{#if data.selected}
-					<TicketThreadPane detail={data.selected} onBack={closeDetail} />
+					<TicketThreadPane
+						detail={data.selected}
+						onBack={closeDetail}
+						onToggleDetails={toggleDetails}
+					/>
 				{:else if data.selectedMissing}
 					<div class="grid flex-1 place-items-center p-8">
 						<EmptyState
@@ -481,5 +520,25 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- Details rail — third column on lg+ like /messages. Tickets
+		     only; the appeal pane already renders the full record. -->
+		{#if selectedItem && detailsOpen}
+			<div class="hidden w-72 shrink-0 border-s border-[var(--color-border)] lg:block">
+				<ConversationDetailsPanel item={selectedItem} ticketDetail={data.selected} />
+			</div>
+		{/if}
 	</div>
 </div>
+
+<!-- Details drawer for smaller viewports — the lg+ rail is inline above. -->
+{#if isNarrow && selectedItem}
+	<Modal
+		bind:open={mobileDetailsOpen}
+		title={t('hub.details_toggle', 'Conversation details')}
+		size="md"
+		zIndex={50}
+	>
+		<ConversationDetailsPanel item={selectedItem} ticketDetail={data.selected} />
+	</Modal>
+{/if}
