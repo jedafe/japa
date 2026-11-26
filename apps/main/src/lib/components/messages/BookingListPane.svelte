@@ -66,7 +66,7 @@
 
 	// §111 intent enum — inquiry vs paid booking. '' = no filter.
 	const intentFilters = [
-		{ value: '', label: t('bookings.filter_all', 'All') },
+		{ value: '', label: t('bookings.filter_all_bookings', 'All Bookings') },
 		{ value: 'inquiry', label: t('bookings.intent_inquiry', 'Inquiries') },
 		{ value: 'booking', label: t('bookings.intent_booking', 'Bookings') }
 	];
@@ -74,7 +74,7 @@
 	// §111 booking statuses (plus the mentorship aliases surface through
 	// connection_status on rows — the filter itself uses raw statuses).
 	const statusFilters = [
-		{ value: '', label: t('bookings.filter_all', 'All') },
+		{ value: '', label: t('bookings.filter_all_statuses', 'All statuses') },
 		{ value: 'pending', label: t('bookings.status_pending', 'Pending') },
 		{ value: 'confirmed', label: t('bookings.status_confirmed', 'Confirmed') },
 		{ value: 'fulfilled', label: t('bookings.status_fulfilled', 'Fulfilled') },

@@ -67,12 +67,13 @@
      below md the shell's top bar + bottom tab bar are subtracted. -->
 <div
 	class="mx-auto flex w-full max-w-full flex-col overflow-hidden h-[calc(100dvh-8.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:h-dvh"
+	style="--page-gutter: 1rem"
 >
 	<ListPageBar>
 		<MessagesTabs value="bookings" />
 	</ListPageBar>
 
-	<div class="flex min-h-0 flex-1">
+	<div class="flex min-h-0 flex-1" style="margin-inline: var(--page-gutter)">
 		<!-- Booking list -->
 		<aside
 			class="w-full shrink-0 flex-col border-e border-[var(--color-border)] sm:flex sm:max-w-sm"

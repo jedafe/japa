@@ -403,10 +403,21 @@
      remains after the ListPageBar. -->
 <div
 	class="mx-auto flex w-full max-w-full flex-col overflow-hidden h-[calc(100dvh-8.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:h-dvh"
+	style="--page-gutter: 1rem"
 >
 	<ListPageBar>
-		<MessagesTabs value="inbox" requestCount={requests.length} />
+		<MessagesTabs value="inbox" />
 		{#snippet actions()}
+			{#if requests.length > 0}
+				<!-- Pending DM requests — the stream shows them inline, this
+				     badge links to the full management page for depth. -->
+				<a
+					href="/messages/requests"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/10"
+				>
+					{t('messages.tab_requests', 'Requests')} ({requests.length}{requests.length >= 50 ? '+' : ''})
+				</a>
+			{/if}
 			<button
 				type="button"
 				onclick={openNewConv}
@@ -427,29 +438,32 @@
 		{/snippet}
 	</ListPageBar>
 
-	<div class="flex min-h-0 flex-1">
+	<div class="flex min-h-0 flex-1" style="margin-inline: var(--page-gutter)">
 		<!-- Stream pane — unified conversation list. -->
 		<aside
 			class="flex w-full shrink-0 flex-col border-e border-[var(--color-border)] sm:max-w-xs lg:max-w-sm sm:flex"
 			class:hidden={!!activeSel}
 		>
 			<div class="space-y-2 border-b border-[var(--color-border)] px-3 py-3">
-				<div class="relative">
-					<Search
-						size={15}
-						class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
-					/>
-					<input
-						type="search"
-						value={searchValue}
-						oninput={(e) => onSearchInput(e.currentTarget.value)}
-						placeholder={t('hub.search_placeholder', 'Search communications')}
-						aria-label={t('hub.search_placeholder', 'Search communications')}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-					/>
-				</div>
-				<div class="min-w-0">
+				<!-- Search + sort share one row — search keeps the flex width,
+				     the sort dropdown shrinks to its label. -->
+				<div class="flex items-center gap-2">
+					<div class="relative min-w-0 flex-1">
+						<Search
+							size={15}
+							class="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+						/>
+						<input
+							type="search"
+							value={searchValue}
+							oninput={(e) => onSearchInput(e.currentTarget.value)}
+							placeholder={t('hub.search_placeholder', 'Search communications')}
+							aria-label={t('hub.search_placeholder', 'Search communications')}
+							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-9 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+						/>
+					</div>
 					<AutocompleteSelect
+						class="w-36 shrink-0"
 						options={sortOptions}
 						value={data.query.sort}
 						onValueChange={(v) => goto(listHref({ sort: v }), { reset: false })}

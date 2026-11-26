@@ -2,11 +2,14 @@
 	// Ref: japaconnect-engineering/sections/48-direct-messages.md,
 	// sections/111-service-packages-bookings.md, sections/102-mentorship-matching.md
 	//
-	// Shared Messages-section tab bar — Messages | Requests | Bookings |
-	// Mentorship — one tab per route. Each tab is hidden when its feature
-	// flag is off (features map comes from the root layout's
-	// GET /feature-flags payload):
-	//   inbox/requests → feature.dm
+	// Shared Messages-section tab bar — Messages | Bookings | Mentorship |
+	// Support — one tab per route. Each tab is hidden when its feature flag
+	// is off (features map comes from the root layout's GET /feature-flags
+	// payload):
+	//   inbox          → feature.dm — DM requests live inside the inbox
+	//                    stream (accept/decline/block via RequestPane), so
+	//                    /messages/requests is reachable from the hub bar's
+	//                    pending badge rather than a permanent tab
 	//   bookings       → service_directory.enabled (fallback:
 	//                    service_packages.enabled) or mentorship.enabled —
 	//                    mentorship bookings are served to the booker even
@@ -21,11 +24,9 @@
 
 	interface Props {
 		value: 'inbox' | 'requests' | 'bookings' | 'mentorship' | 'support';
-		/** Pending DM-request count — badges the Requests tab (inbox page only). */
-		requestCount?: number;
 	}
 
-	let { value, requestCount = 0 }: Props = $props();
+	let { value }: Props = $props();
 
 	const features = $derived((page.data.features ?? {}) as Record<string, boolean>);
 	const dmEnabled = $derived(!!features['feature.dm']);
@@ -34,18 +35,7 @@
 	const ticketsEnabled = $derived(!!features['feature.tickets']);
 
 	const tabs = $derived<UrlTab[]>([
-		...(dmEnabled
-			? [
-					{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') },
-					{
-						value: 'requests',
-						label:
-							requestCount > 0
-								? `${t('messages.tab_requests', 'Requests')} (${requestCount}${requestCount >= 50 ? '+' : ''})`
-								: t('messages.tab_requests', 'Requests')
-					}
-				]
-			: []),
+		...(dmEnabled ? [{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') }] : []),
 		...(bookingsEnabled ? [{ value: 'bookings', label: t('messages.tab_bookings', 'Bookings') }] : []),
 		...(mentorshipEnabled
 			? [{ value: 'mentorship', label: t('messages.tab_mentorship', 'Mentorship') }]
@@ -55,7 +45,6 @@
 
 	const hrefs: Record<string, string> = {
 		inbox: '/messages',
-		requests: '/messages/requests',
 		bookings: '/messages/bookings',
 		mentorship: '/messages/mentorship',
 		support: '/messages/support'
