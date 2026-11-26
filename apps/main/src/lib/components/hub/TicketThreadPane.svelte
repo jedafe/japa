@@ -170,6 +170,10 @@
 			}
 		} finally {
 			posting = false;
+			// Any failure path above (init/put/confirm/attach) must release
+			// the upload latch — otherwise the send button stays disabled
+			// with a spinner forever.
+			uploading = false;
 		}
 	}
 </script>

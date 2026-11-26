@@ -68,7 +68,13 @@ export const load: LayoutServerLoad = async (event) => {
 		rid === '/(app)/roadmap' ||
 		// /tools/travel renders its discovery rails in-page (§67 mockups) —
 		// same reclaim-the-column path as /roadmap, so skip the resolve.
-		rid === '/(app)/tools/travel';
+		rid === '/(app)/tools/travel' ||
+		// /messages — the Communications Hub's details rail owns the right
+		// edge (reference mockup); skip the global sidebar resolve. The
+		// bookings/mentorship workbench sub-routes get the same treatment.
+		rid === '/(app)/messages' ||
+		rid === '/(app)/messages/bookings' ||
+		rid === '/(app)/messages/mentorship';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||

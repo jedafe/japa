@@ -65,6 +65,13 @@ const NO_RIGHT_SIDEBAR_ROUTES = new Set([
 	'/(app)/tools/readiness',
 	'/(app)/japa-stage',
 	'/(app)/tools/travel',
+	// Communications Hub — the hub's own Conversation-details rail owns the
+	// right edge (reference mockup); the global widget sidebar is dropped.
+	// The bookings/mentorship sub-routes share the same full-height
+	// two-pane workbench pattern.
+	'/(app)/messages',
+	'/(app)/messages/bookings',
+	'/(app)/messages/mentorship',
 	// Compare hub directory pages — the discovery grids use the widened
 	// center column like the readiness workbench.
 	'/(app)/compare',

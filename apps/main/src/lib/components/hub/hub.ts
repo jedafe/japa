@@ -191,7 +191,7 @@ export function bookingToHubItem(b: ServiceBooking, role: 'sent' | 'received'): 
 	const statusKey = b.connection_status ?? b.status;
 	return {
 		kind: mentorship ? 'mentorship' : 'booking',
-		sel: `booking:${b.id}`,
+		sel: `${mentorship ? 'mentorship' : 'booking'}:${b.id}`,
 		chip: mentorship ? 'mentorship' : 'services',
 		title: bookingCounterpartName(b, role) || b.listing_title,
 		subtitle: b.listing_title ?? '',

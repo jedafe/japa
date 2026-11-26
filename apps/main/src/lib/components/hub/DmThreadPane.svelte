@@ -275,6 +275,19 @@
 	const profileHref = $derived(
 		isOrg ? `/org/${conversation.other_username}` : `/u/${conversation.other_username}`
 	);
+
+	// Day-divider helpers (mockup: "Today, 10:24 AM" separators between
+	// message groups).
+	function dayKey(iso: string): string {
+		const d = new Date(iso);
+		return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+	}
+	function dayLabel(iso: string): string {
+		if (dayKey(iso) === dayKey(new Date().toISOString())) {
+			return t('hub.today', 'Today');
+		}
+		return new Date(iso).toLocaleDateString();
+	}
 </script>
 
 <div class="flex min-w-0 flex-1 flex-col">
@@ -359,6 +372,14 @@
 		</button>
 	</div>
 
+	<!-- Conversation-kind line (mockup: "Direct message · Member
+	     conversation" caption under the header). -->
+	<p class="border-b border-[var(--color-border)] px-4 py-1.5 text-center text-[11px] text-[var(--color-muted)]">
+		{isOrg
+			? t('hub.thread_kind_org', 'Org inbox · Services conversation')
+			: t('hub.thread_kind_dm', 'Direct message · Member conversation')}
+	</p>
+
 	<!-- Messages -->
 	<div bind:this={threadEl} class="min-h-0 flex-1 overflow-y-auto p-4">
 		{#if msgsCursor}
@@ -380,9 +401,35 @@
 			</p>
 		{:else}
 			<ul class="space-y-2">
-				{#each messages as msg (msg.id)}
+				{#each messages as msg, msgIdx (msg.id)}
+					{@const prev = msgIdx > 0 ? messages[msgIdx - 1] : null}
+					{#if !prev || dayKey(prev.created_at) !== dayKey(msg.created_at)}
+						<li class="my-2 text-center">
+							<span
+								class="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-[11px] text-[var(--color-muted)]"
+							>
+								{dayLabel(msg.created_at)}
+							</span>
+						</li>
+					{/if}
 					{@const mine = msg.sender_id === page.data.user?.id}
 					<li class="group flex {mine ? 'justify-end' : 'justify-start'}">
+						{#if !mine}
+							{#if conversation.other_avatar_url}
+								<img
+									src={remoteImageUrl(conversation.other_avatar_url)}
+									alt=""
+									class="me-1.5 mt-auto h-6 w-6 shrink-0 rounded-full object-cover"
+								/>
+							{:else}
+								<span
+									class="me-1.5 mt-auto grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[10px] font-medium text-[var(--color-text-subtle)]"
+									>{(conversation.other_display_name ?? '?')
+										.charAt(0)
+										.toUpperCase()}</span
+								>
+							{/if}
+						{/if}
 						<div
 							class="max-w-[75%] rounded-[var(--radius)] px-3 py-2 text-sm {mine
 								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'

@@ -139,7 +139,7 @@
 
 	// The unified stream — normalize every source into HubItems, then
 	// apply chip/tab/search filters and sort.
-	const hubItems = $derived.by(() => {
+	const streamItems = $derived.by(() => {
 		const items: HubItem[] = [
 			...conversations.map((c) => dmToHubItem(c)),
 			...requests.map((r) => requestToHubItem(r)),
@@ -149,13 +149,26 @@
 			...data.aiConversations.map((c) => aiToHubItem(c, t))
 		];
 		const q = data.query.q;
-		return sortHubItems(
-			items.filter(
-				(i) => chipMatches(i, chip) && tabMatches(i, tab) && itemMatchesQuery(i, q)
-			),
-			data.query.sort
+		// filter=unread is forwarded to the DM list server-side — apply the
+		// same predicate to the non-DM sources here.
+		const unreadOnly = data.query.filter === 'unread';
+		return items.filter(
+			(i) =>
+				chipMatches(i, chip) && itemMatchesQuery(i, q) && (!unreadOnly || i.unread > 0)
 		);
 	});
+
+	// Tab badges (mockup: "Unread 7", "Assigned to me 2") — counts before
+	// the active tab filter.
+	const unreadCount = $derived(streamItems.filter((i) => i.unread > 0).length);
+	const assignedCount = $derived(streamItems.filter((i) => i.assigned).length);
+
+	const hubItems = $derived(
+		sortHubItems(
+			streamItems.filter((i) => tabMatches(i, tab)),
+			data.query.sort
+		)
+	);
 
 	const activeSel = $derived(data.sel);
 	const activeItem = $derived(
@@ -389,10 +402,11 @@
 			<button
 				type="button"
 				onclick={openNewConv}
-				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 				aria-label={t('messages.new_conversation', 'New conversation')}
 			>
-				<Plus size={18} />
+				<Plus size={14} />
+				{t('hub.new_message', 'New message')}
 			</button>
 			<button
 				type="button"
@@ -417,12 +431,24 @@
 					<button
 						type="button"
 						onclick={() => (tab = opt.value)}
-						class="rounded-t-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {tab ===
+						class="flex items-center gap-1.5 rounded-t-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {tab ===
 						opt.value
 							? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
 							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 					>
 						{opt.label}
+						{#if opt.value === 'unread' && unreadCount > 0}
+							<span
+								class="grid min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+								>{unreadCount}</span
+							>
+						{/if}
+						{#if opt.value === 'assigned' && assignedCount > 0}
+							<span
+								class="grid min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+								>{assignedCount}</span
+							>
+						{/if}
 					</button>
 				{/each}
 			</div>
