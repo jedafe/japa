@@ -575,6 +575,10 @@
 						pageSize={data.messagesPageSize}
 						onBack={closeItem}
 						onToggleDetails={toggleDetails}
+						onRead={(cid) => {
+							const c = conversations.find((x) => x.id === cid);
+							if (c) c.unread_count = 0;
+						}}
 					/>
 				{:else}
 					<div class="grid flex-1 place-items-center p-8">

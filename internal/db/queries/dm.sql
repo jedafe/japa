@@ -52,7 +52,7 @@ WHERE participant_1_id = LEAST(@participant_1_id, @participant_2_id)::uuid
 SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
- dc.conversation_type, dc.org_id, o.name::text AS org_name, o.slug::text AS org_slug,
+ dc.conversation_type, dc.org_id, COALESCE(o.name, '')::text AS org_name, COALESCE(o.slug, '')::text AS org_slug,
  -- other_* for org convs: the external user (p1) sees the ORG as the
  -- other party; org members see the external user (normal p1 branch).
  (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.slug
@@ -61,15 +61,21 @@ SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.name
                WHEN dc.participant_1_id = @user_id THEN p2.display_name ELSE p1.display_name END,
           CASE WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.public_username, u2.username) ELSE COALESCE(u1.public_username, u1.username) END, o.name)::text AS other_display_name,
- COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.avatar_url
+ -- organizations have logo_media_id, not a stored avatar_url — the org
+ -- logo resolves through media below and the URL is built in Go
+ -- (imgproxy-signed or serve path, never stored). NULL here degrades the
+ -- org arm to the '' fallback below.
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN NULL
                WHEN dc.participant_1_id = @user_id THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
+ olm.storage_bucket AS org_logo_storage_bucket,
+ olm.storage_path AS org_logo_storage_path,
  -- §07 badge: "other" entity resolves org vs user the same way as the name.
  (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN COALESCE(o.verified, false)
        WHEN dc.participant_1_id = @user_id THEN COALESCE(u2.verified, false)
        ELSE COALESCE(u1.verified, false) END)::bool AS other_verified,
- (CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.verification_type
+ COALESCE(CASE WHEN dc.conversation_type = 'org' AND dc.participant_1_id = @user_id THEN o.verification_type
        WHEN dc.participant_1_id = @user_id THEN u2.verification_type
-       ELSE u1.verification_type END)::text AS other_verification_type,
+       ELSE u1.verification_type END, '')::text AS other_verification_type,
  (CASE
     WHEN dc.participant_1_id = @user_id THEN dc.p1_unread_count
     WHEN dc.conversation_type = 'org' THEN (SELECT COUNT(*)::int FROM dm_messages dm
@@ -82,6 +88,7 @@ LEFT JOIN users u2 ON u2.id = dc.participant_2_id
 LEFT JOIN user_profiles p1 ON p1.user_id = u1.id
 LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
 LEFT JOIN organizations o ON o.id = dc.org_id
+LEFT JOIN media olm ON olm.id = o.logo_media_id AND olm.deleted_at IS NULL
 LEFT JOIN organization_members om ON om.organization_id = dc.org_id AND om.user_id = @user_id
 LEFT JOIN dm_org_read_state ors ON ors.conversation_id = dc.id AND ors.member_user_id = @user_id
 WHERE (dc.participant_1_id = @user_id OR dc.participant_2_id = @user_id OR om.user_id IS NOT NULL OR o.owner_user_id = @user_id)
@@ -142,10 +149,14 @@ ORDER BY
  (CASE WHEN @sort::text = 'recent' THEN dc.id END) DESC NULLS LAST
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: InsertDMMessage :exec
+-- name: InsertDMMessage :one
+-- RETURNING the row so POST /dm/conversations/{id}/messages can hand the
+-- client the real message id — without it the optimistic client-side
+-- bubble keeps a random UUID and subsequent edit/delete calls 500 on a
+-- non-existent message.
 INSERT INTO dm_messages (conversation_id, sender_id, body, context_type, context_id, context_label, context_slug, sent_as_org)
 VALUES (@conversation_id, @sender_id, @body, sqlc.narg(context_type), sqlc.narg(context_id), sqlc.narg(context_label), sqlc.narg(context_slug), @sent_as_org)
-;
+RETURNING *;
 
 -- name: GetServiceListingContext :one
 -- Validates a service_listing DM context (000941/000942): the listing must

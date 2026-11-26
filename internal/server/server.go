@@ -11561,7 +11561,8 @@ func (a *mutualAidDMAdapter) SendMessage(
 	conversationID, senderID pgtype.UUID,
 	body string,
 ) error {
-	return a.dm.SendMessage(ctx, conversationID, senderID, body)
+	_, err := a.dm.SendMessage(ctx, conversationID, senderID, body)
+	return err
 }
 
 // personaActionDispatcher adapts the existing action services (comments,

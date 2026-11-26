@@ -36,6 +36,9 @@
 		pageSize: number;
 		onBack: () => void;
 		onToggleDetails: () => void;
+		/** Called after this thread marks the conversation read — the
+		    stream row clears its unread badge. */
+		onRead?: (conversationId: string) => void;
 	}
 
 	let {
@@ -44,7 +47,8 @@
 		initialCursor,
 		pageSize,
 		onBack,
-		onToggleDetails
+		onToggleDetails,
+		onRead
 	}: Props = $props();
 
 	let messages = $state<DMMessage[]>(untrack(() => initialMessages));
@@ -81,10 +85,16 @@
 		!isOrg && realtime.onlineUserIds.has(conversation.other_user_id)
 	);
 
+	// convId tracks the id STRING, not the conversation prop object — the
+	// effects below must only re-run on a true conversation switch, never
+	// when a parent state update hands back a fresh object with the same id
+	// (a re-run resets draft and lastReadMarked).
+	const convId = $derived(conversation.id);
+
 	// Re-sync when the selected conversation changes (SvelteKit reuses the
 	// component across sel= navigations).
 	$effect(() => {
-		conversation.id;
+		convId;
 		messages = untrack(() => initialMessages);
 		msgsCursor = untrack(() => initialCursor);
 		draft = '';
@@ -98,10 +108,12 @@
 
 	// Mark read once the payload is in — keeps the server unread count right.
 	$effect(() => {
-		const id = conversation.id;
+		const id = convId;
 		if (lastReadMarked === id) return;
 		lastReadMarked = id;
-		void api.post(`/dm/conversations/${id}/read`);
+		void api.post(`/dm/conversations/${id}/read`).then((res) => {
+			if (!res.error) onRead?.(id);
+		});
 	});
 
 	// Live DM delivery + typing relay. Events from the current user are
@@ -193,7 +205,7 @@
 		tick().then(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 		});
-		const res = await api.post<{ status: string }>(
+		const res = await api.post<DMMessage>(
 			`/dm/conversations/${conversation.id}/messages`,
 			{ body }
 		);
@@ -202,6 +214,11 @@
 			messages = messages.filter((m) => m.id !== tempId);
 			draft = body;
 		} else {
+			// Swap the optimistic bubble for the stored row — the API
+			// returns it, and edit/delete need the real message id.
+			if (res.data?.id) {
+				messages = messages.map((m) => (m.id === tempId ? { ...m, ...res.data } : m));
+			}
 			realtime.sendTyping(conversation.id, false);
 		}
 	}
@@ -491,7 +508,7 @@
 	     enforces ~3s). No file attach: dm_messages has no media_id column
 	     yet — attachments live on support tickets for now. -->
 	<form
-		class="flex items-center gap-2 border-t border-[var(--color-border)] p-3"
+		class="flex items-center gap-2 border-t border-[var(--color-border)] p-3 pe-14"
 		onsubmit={(e) => {
 			e.preventDefault();
 			sendMessage();
@@ -528,16 +545,16 @@
 	bind:open={callDialogOpen}
 	{conversation}
 	kind={callKind}
-	onSent={(body) => {
+	onSent={(body, msg) => {
 		messages = [
 			...messages,
 			{
-				id: crypto.randomUUID(),
+				id: msg?.id ?? crypto.randomUUID(),
 				sender_id: page.data.user?.id ?? '',
 				sender_username: page.data.user?.username ?? '',
 				sender_display_name: page.data.user?.display_name ?? '',
 				body,
-				created_at: new Date().toISOString(),
+				created_at: msg?.created_at ?? new Date().toISOString(),
 				read_at: null
 			}
 		];

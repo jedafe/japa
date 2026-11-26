@@ -171,7 +171,7 @@
 	</div>
 
 	<form
-		class="flex items-center gap-2 border-t border-[var(--color-border)] p-3"
+		class="flex items-center gap-2 border-t border-[var(--color-border)] p-3 pe-14"
 		onsubmit={(e) => {
 			e.preventDefault();
 			send();

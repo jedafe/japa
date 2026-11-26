@@ -81,12 +81,16 @@
 		{:else}
 			<span
 				class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]"
-				>{(request.requester_display_name ?? '?').charAt(0).toUpperCase()}</span
+				>{(request.requester_display_name || request.requester_username || '?')
+					.charAt(0)
+					.toUpperCase()}</span
 			>
 		{/if}
 		<div class="min-w-0 flex-1">
 			<p class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]">
-				<span class="truncate">{request.requester_display_name}</span>
+				<span class="truncate"
+					>{request.requester_display_name || request.requester_username}</span
+				>
 				<VerifiedBadge
 					verified={request.requester_verified}
 					type={request.requester_verification_type}

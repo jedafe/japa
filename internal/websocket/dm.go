@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -194,9 +195,10 @@ func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, 
 	})
 }
 
-// InsertDMMessage inserts a new message into a conversation. mc carries
-// the optional structured context (000941) — nil for plain DMs.
-func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext, asOrg bool) error {
+// InsertDMMessage inserts a new message into a conversation and returns
+// the stored row. mc carries the optional structured context (000941) —
+// nil for plain DMs.
+func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext, asOrg bool) (gen.DmMessage, error) {
 	p := gen.InsertDMMessageParams{
 		ConversationID: conversationID,
 		SenderID:       senderID,
@@ -836,23 +838,25 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recip
 	return ConversationResult{Conversation: conv, IsNew: true}, nil
 }
 
-// SendMessage sends a message in a conversation.
-func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
+// SendMessage sends a message in a conversation and returns the stored
+// row — the API response carries the real message id so clients can
+// replace their optimistic temp-id bubbles.
+func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) (gen.DmMessage, error) {
 	return s.SendMessageWithContext(ctx, conversationID, senderID, body, nil)
 }
 
 // SendMessageWithContext stores an optional structured context on the
 // message row (000941) — the first DM of a listing-initiated conversation
 // carries the listing so the thread renders a context card.
-func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext) error {
+func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, senderID pgtype.UUID, body string, mc *DMMessageContext) (gen.DmMessage, error) {
 	if body == "" {
-		return errors.New("message body cannot be empty")
+		return gen.DmMessage{}, errors.New("message body cannot be empty")
 	}
 
 	// Verify the sender is a participant in this conversation.
 	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
-		return fmt.Errorf("verifying conversation access: %w", err)
+		return gen.DmMessage{}, fmt.Errorf("verifying conversation access: %w", err)
 	}
 
 	// 000942 — org conversations admit any org member as the org side;
@@ -862,14 +866,14 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	if conv.ConversationType == "org" && conv.Participant1ID != senderID {
 		member, mErr := s.store.IsOrgMember(ctx, conv.OrgID, senderID)
 		if mErr != nil {
-			return fmt.Errorf("checking org membership: %w", mErr)
+			return gen.DmMessage{}, fmt.Errorf("checking org membership: %w", mErr)
 		}
 		if !member {
-			return ErrDMNotParticipant
+			return gen.DmMessage{}, ErrDMNotParticipant
 		}
 		asOrg = true
 	} else if conv.ConversationType != "org" && conv.Participant1ID != senderID && conv.Participant2ID != senderID {
-		return ErrDMNotParticipant
+		return gen.DmMessage{}, ErrDMNotParticipant
 	}
 
 	// A later block must prevent further interaction even on existing
@@ -884,16 +888,17 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 		}
 		blocked, bErr := s.store.IsBlocked(ctx, senderID, peer)
 		if bErr != nil {
-			return fmt.Errorf("checking block status: %w", bErr)
+			return gen.DmMessage{}, fmt.Errorf("checking block status: %w", bErr)
 		}
 		if blocked {
-			return ErrDMBlocked
+			return gen.DmMessage{}, ErrDMBlocked
 		}
 	}
 
 	// Insert the message.
-	if err := s.store.InsertDMMessage(ctx, conversationID, senderID, body, mc, asOrg); err != nil {
-		return fmt.Errorf("inserting dm message: %w", err)
+	msg, err := s.store.InsertDMMessage(ctx, conversationID, senderID, body, mc, asOrg)
+	if err != nil {
+		return gen.DmMessage{}, fmt.Errorf("inserting dm message: %w", err)
 	}
 
 	// 000942 — notification/unread targets by conversation shape:
@@ -912,7 +917,7 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	case conv.ConversationType == "org":
 		members, mErr := s.store.ListOrgMembers(ctx, conv.OrgID)
 		if mErr != nil {
-			return fmt.Errorf("listing org members: %w", mErr)
+			return gen.DmMessage{}, fmt.Errorf("listing org members: %w", mErr)
 		}
 		notifyIDs = append(notifyIDs, members...)
 	default:
@@ -927,11 +932,11 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	// org members read unread from dm_org_read_state instead.
 	if conv.ConversationType == "org" && asOrg && conv.Participant1ID.Valid {
 		if err := s.store.IncrementUnreadCount(ctx, conversationID, conv.Participant1ID); err != nil {
-			return fmt.Errorf("incrementing unread count: %w", err)
+			return gen.DmMessage{}, fmt.Errorf("incrementing unread count: %w", err)
 		}
 	} else if conv.ConversationType == "dm" && len(notifyIDs) > 0 {
 		if err := s.store.IncrementUnreadCount(ctx, conversationID, notifyIDs[0]); err != nil {
-			return fmt.Errorf("incrementing unread count: %w", err)
+			return gen.DmMessage{}, fmt.Errorf("incrementing unread count: %w", err)
 		}
 	}
 
@@ -960,7 +965,7 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	// Update conversation last message. The timestamp is set to now() in
 	// SQL (BUG-001: previously passed a zero-time pgtype.Timestamptz).
 	if err := s.store.UpdateConversationLastMessage(ctx, conversationID, previewPtr); err != nil {
-		return fmt.Errorf("updating conversation last message: %w", err)
+		return gen.DmMessage{}, fmt.Errorf("updating conversation last message: %w", err)
 	}
 
 	// Broadcast DM message event via WebSocket hub. §14: resolve {{...}} —
@@ -1003,7 +1008,7 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 		s.enqueueDMNotifyMessage(ctx, uid, senderID, conversationID, preview)
 	}
 
-	return nil
+	return msg, nil
 }
 
 // GetConversations returns user's conversations with unread counts plus the
@@ -1058,6 +1063,15 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q,
 			if r.OrgSlug != "" {
 				slug := r.OrgSlug
 				infos[i].OrgSlug = &slug
+			}
+			// External user (p1) views the org as the other party — resolve
+			// its logo_media_id to a displayable URL (imgproxy thumb,
+			// same as org endpoints).
+			if r.Participant1ID == userID {
+				if u := media.URLFromParts(r.OrgLogoStorageBucket, r.OrgLogoStoragePath,
+					media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"}); u != nil {
+					infos[i].OtherAvatarURL = *u
+				}
 			}
 		}
 

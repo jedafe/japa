@@ -7,6 +7,7 @@
 	// Ref: japaconnect-engineering/sections/38-ticket-system.md
 	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
+	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
 	import { initiateUpload, uploadToPresigned, confirmMedia, getMedia } from '#lib/api/create.js';
 	import { ticketRef } from '#lib/tickets.js';
@@ -53,9 +54,14 @@
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	let uploading = $state(false);
 
+	// ticketId tracks the id STRING, not the detail prop object — a parent
+	// re-render handing back a fresh detail with the same id must not reset
+	// replyBody/pendingFile mid-compose.
+	const ticketId = $derived(ticket.id);
+
 	// Re-sync when the selected ticket changes (component reuse across sel=).
 	$effect(() => {
-		ticket.id;
+		ticketId;
 		comments = untrack(() => detail.comments ?? []);
 		attachments = untrack(() => detail.attachments ?? []);
 		replyBody = '';
@@ -220,6 +226,11 @@
 						class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 					>
 						<div class="mb-1 flex items-center justify-between text-xs text-[var(--color-muted)]">
+							<span class="font-medium text-[var(--color-text-subtle)]">
+								{c.user_id === page.data.user?.id
+									? t('tickets.you', 'You')
+									: t('tickets.support_team', 'Support')}
+							</span>
 							<span>{new Date(c.created_at).toLocaleString()}</span>
 						</div>
 						<p class="whitespace-pre-wrap text-sm text-[var(--color-text)]">{c.body}</p>
@@ -292,7 +303,7 @@
 	<!-- Reply composer + attachment pick -->
 	{#if ticket.status !== 'closed' && ticket.status !== 'spam'}
 		<form
-			class="space-y-2 border-t border-[var(--color-border)] p-3"
+			class="space-y-2 border-t border-[var(--color-border)] p-3 pe-14"
 			onsubmit={postReply}
 			novalidate
 		>

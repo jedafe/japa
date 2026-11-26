@@ -6,14 +6,15 @@
 	import { api } from '#lib/api/client.js';
 	import { Modal } from '#lib/components/ui/index.js';
 	import { Phone, Video } from 'lucide-svelte';
-	import type { DMConversation } from '#lib/types/index.js';
+	import type { DMConversation, DMMessage } from '#lib/types/index.js';
 
 	interface Props {
 		open: boolean;
 		conversation: DMConversation;
 		kind: 'voice' | 'video';
-		/** Fired after the proposal message lands so the pane can append it. */
-		onSent: (body: string) => void;
+		/** Fired after the proposal message lands so the pane can append it.
+		    Receives the stored row — the real id backs edit/delete. */
+		onSent: (body: string, msg?: DMMessage) => void;
 	}
 
 	let { open = $bindable(), conversation, kind, onSent }: Props = $props();
@@ -35,13 +36,15 @@
 				? t('hub.call_proposal_video', 'Would you be up for a video call?')
 				: t('hub.call_proposal_voice', 'Would you be up for a voice call?');
 		const body = note.trim() ? `${proposal} ${note.trim()}` : proposal;
-		const res = await api.post(`/dm/conversations/${conversation.id}/messages`, { body });
+		const res = await api.post<DMMessage>(`/dm/conversations/${conversation.id}/messages`, {
+			body
+		});
 		sending = false;
 		if (res.error) {
 			sendError = res.error.message ?? t('hub.call_send_error', 'Could not send the request.');
 			return;
 		}
-		onSent(body);
+		onSent(body, res.data ?? undefined);
 		open = false;
 		note = '';
 	}

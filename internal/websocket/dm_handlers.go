@@ -251,7 +251,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	// Send the initial message (BUG-003: previously the handler created a
 	// conversation but never sent the first message).
-	if err := h.dmService.SendMessageWithContext(r.Context(), result.Conversation.ID, user.UserID, req.Message, mc); err != nil {
+	if _, err := h.dmService.SendMessageWithContext(r.Context(), result.Conversation.ID, user.UserID, req.Message, mc); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send initial message")
 		return
 	}
@@ -354,7 +354,8 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.dmService.SendMessage(r.Context(), conversationID, user.UserID, req.Body); err != nil {
+	msg, err := h.dmService.SendMessage(r.Context(), conversationID, user.UserID, req.Body)
+	if err != nil {
 		switch {
 		case errors.Is(err, ErrDMBlocked):
 			errpkg.WriteError(w, http.StatusForbidden, "dm_blocked", "Cannot send DMs to this user")
@@ -373,7 +374,9 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		h.spamPipeline.RecordContentCreation(r.Context(), user.UserID)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	// Return the stored message so the client can swap its optimistic
+	// temp-id bubble for the real row id (edit/delete act on it).
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": msg})
 }
 
 // MarkAsRead handles POST /api/v1/dm/conversations/{id}/read.
