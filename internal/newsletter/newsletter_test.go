@@ -146,3 +146,28 @@ func TestSegmentPatchError(t *testing.T) {
 		}
 	}
 }
+
+// A supplied scheduled_at must be in the future — ProcessAt fires a past
+// date immediately, so a typo'd date would silently send the campaign NOW.
+func TestScheduledInPast(t *testing.T) {
+	now := time.Now()
+	past := now.Add(-time.Minute)
+	future := now.Add(time.Hour)
+
+	tests := []struct {
+		name string
+		at   *time.Time
+		want bool
+	}{
+		{name: "nil ok", at: nil, want: false},
+		{name: "future ok", at: &future, want: false},
+		{name: "past rejected", at: &past, want: true},
+		{name: "now rejected", at: &now, want: true},
+	}
+
+	for _, tt := range tests {
+		if got := scheduledInPast(tt.at, now); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}

@@ -579,6 +579,14 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §62: scheduled_at must be in the future — a past date isn't a
+	// schedule, it's a typo that would fire immediately via ProcessAt.
+	if scheduledInPast(input.ScheduledAt, time.Now()) {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"scheduled_at must be in the future")
+		return
+	}
+
 	// If body is not provided but html is, wrap html in a jsonb body.
 	if len(input.Body) == 0 && input.HTML != "" {
 		input.Body = json.RawMessage(`{"html":` + jsonString(input.HTML) + `}`)
@@ -631,6 +639,15 @@ func patchEffectiveStatus(existingStatus string, status *string, scheduledAt *ti
 // or from a date already stored on the row.
 func scheduledMissingTime(resulting string, patchTime *time.Time, existingValid bool) bool {
 	return resulting == CampaignScheduled && patchTime == nil && !existingValid
+}
+
+// scheduledInPast reports whether a supplied scheduled_at is not in the
+// future. A past time isn't "scheduled" — ProcessAt fires it immediately,
+// so a typo'd date would silently send the campaign NOW. Reject at the
+// boundary instead; only the request-supplied time is checked (a stored
+// past time on an unrelated PATCH must not block edits).
+func scheduledInPast(t *time.Time, now time.Time) bool {
+	return t != nil && !t.After(now)
 }
 
 // segmentPatchError validates the RESULTING campaign segment for a PATCH,
@@ -756,6 +773,14 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	if scheduledMissingTime(resulting, body.ScheduledAt, existing.ScheduledAt.Valid) {
 		errpkg.WriteError(w, http.StatusBadRequest, "scheduled_at_required",
 			"Scheduling a campaign requires scheduled_at")
+		return
+	}
+
+	// §62: a supplied scheduled_at must be in the future — ProcessAt fires
+	// a past date immediately, so a typo'd date would silently send NOW.
+	if scheduledInPast(body.ScheduledAt, time.Now()) {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"scheduled_at must be in the future")
 		return
 	}
 
