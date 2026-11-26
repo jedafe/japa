@@ -484,6 +484,19 @@
 							{c.label}
 						</button>
 					{/each}
+					{#if unreadOnly}
+						<!-- ?filter=unread is deep-link-only now — a dismissible
+						     indicator so the active filter is visible and clearable
+						     (every other nav preserves it via listHref). -->
+						<a
+							href={listHref({ filter: null })}
+							class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-primary-contrast)]"
+							title={t('hub.unread_clear', 'Show all')}
+						>
+							{t('hub.chip_unread', 'Unread')}
+							<span aria-hidden="true">×</span>
+						</a>
+					{/if}
 				</div>
 			</div>
 
