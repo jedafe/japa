@@ -451,10 +451,10 @@
 				editingCampaign = null;
 				campaignController?.reload();
 			} else {
-				pageError = result.error ?? t('app.newsletter.error_create_campaign', 'Failed to update campaign');
+				pageError = result.error ?? t('app.newsletter.error_update_campaign', 'Failed to update campaign');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : 'Failed to update campaign';
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_update_campaign', 'Failed to update campaign');
 		} finally {
 			creating = false;
 		}
@@ -779,7 +779,7 @@
 		</div>
 		{#if row.name}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_email', 'Name')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_name', 'Name')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{row.name}</p>
 			</div>
 		{/if}
