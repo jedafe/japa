@@ -2812,6 +2812,21 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 		return fmt.Errorf("%w: verification_type must be an active user verification type", errpkg.ErrInvalid)
 	}
 
+	// Fetch the current badge state: already-verified with no effective
+	// change (nil/empty/same type) is an idempotent no-op — re-firing the
+	// grant email/webhook would be a false re-notification.
+	user, err := s.store.read.GetUserByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching user for verify: %w", err)
+	}
+	current := ""
+	if user.VerificationType != nil {
+		current = *user.VerificationType
+	}
+	if user.Verified && (vtype == nil || *vtype == "" || *vtype == current) {
+		return nil
+	}
+
 	effectiveType, err := s.store.VerifyUser(ctx, id, vtype)
 	if err != nil {
 		return fmt.Errorf("verifying user: %w", err)
@@ -2837,6 +2852,19 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 // UnverifyUser revokes the profile verification badge, clears its type, and
 // emits the user.unverified webhook event (Section 12).
 func (s *Service) UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error {
+	// Existence check — the UPDATE matches 0 rows on a missing id, which
+	// would otherwise emit user.unverified for a phantom account.
+	user, err := s.store.read.GetUserByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching user for unverify: %w", err)
+	}
+
+	// No badge to revoke — the DB is already in the desired state; skipping
+	// avoids a phantom user.unverified webhook and a false revocation email.
+	if !user.Verified {
+		return nil
+	}
+
 	if err := s.store.UnverifyUser(ctx, id); err != nil {
 		return fmt.Errorf("unverifying user: %w", err)
 	}

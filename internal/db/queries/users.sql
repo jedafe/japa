@@ -57,7 +57,7 @@ WHERE u.id = @user_id
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: GetUserByID :one
-SELECT id, email, username, profile_type, status, follower_count, created_at, updated_at
+SELECT id, email, username, profile_type, status, verified, verification_type, follower_count, created_at, updated_at
 FROM users
 WHERE id = @user_id;
 

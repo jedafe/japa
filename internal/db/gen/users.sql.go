@@ -751,20 +751,22 @@ func (q *Queries) GetUserAccountForUpdate(ctx context.Context, id pgtype.UUID) (
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, username, profile_type, status, follower_count, created_at, updated_at
+SELECT id, email, username, profile_type, status, verified, verification_type, follower_count, created_at, updated_at
 FROM users
 WHERE id = $1
 `
 
 type GetUserByIDRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	Username      string             `json:"username"`
-	ProfileType   string             `json:"profile_type"`
-	Status        string             `json:"status"`
-	FollowerCount int32              `json:"follower_count"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Email            string             `json:"email"`
+	Username         string             `json:"username"`
+	ProfileType      string             `json:"profile_type"`
+	Status           string             `json:"status"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	FollowerCount    int32              `json:"follower_count"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, userID pgtype.UUID) (GetUserByIDRow, error) {
@@ -776,6 +778,8 @@ func (q *Queries) GetUserByID(ctx context.Context, userID pgtype.UUID) (GetUserB
 		&i.Username,
 		&i.ProfileType,
 		&i.Status,
+		&i.Verified,
+		&i.VerificationType,
 		&i.FollowerCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,

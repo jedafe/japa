@@ -1455,6 +1455,16 @@ func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtyp
 		return fmt.Errorf("fetching space for verify: %w", err)
 	}
 
+	// Idempotent: the badge is already in the requested state — re-firing
+	// the grant email/webhook would be a false re-notification.
+	current := ""
+	if space.VerificationType != nil {
+		current = *space.VerificationType
+	}
+	if space.Verified && (vtype == nil || *vtype == "" || *vtype == current) {
+		return nil
+	}
+
 	if err := s.write.VerifySpace(ctx, gen.VerifySpaceParams{ID: id, VerificationType: vtype}); err != nil {
 		return fmt.Errorf("verifying space: %w", err)
 	}
@@ -1495,6 +1505,13 @@ func (s *Service) UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) er
 	space, err := s.read.GetSpaceByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching space for unverify: %w", err)
+	}
+
+	// No badge to revoke — the DB is already in the desired state; skipping
+	// avoids a phantom space.unverified webhook and a false revocation email
+	// to the owner.
+	if !space.Verified {
+		return nil
 	}
 
 	if err := s.write.UnverifySpace(ctx, id); err != nil {

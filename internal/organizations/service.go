@@ -1060,6 +1060,16 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUI
 		return fmt.Errorf("%w: organization must be claimed before it can be verified", errpkg.ErrInvalid)
 	}
 
+	// Idempotent: the badge is already in the requested state — re-firing
+	// the grant email/webhook would be a false re-notification.
+	current := ""
+	if org.VerificationType != nil {
+		current = *org.VerificationType
+	}
+	if org.Verified && (vtype == nil || *vtype == "" || *vtype == current) {
+		return nil
+	}
+
 	if err := s.store.VerifyOrganization(ctx, id, vtype); err != nil {
 		return fmt.Errorf("verifying organization: %w", err)
 	}
@@ -1096,6 +1106,19 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUI
 // verification_type as well (BUG-016). adminID is the administrator who
 // performed the unverification (for the webhook payload).
 func (s *Service) UnverifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error {
+	// Existence check — the UPDATE matches 0 rows on a missing/deleted id,
+	// which would otherwise emit organization.unverified for a phantom org.
+	org, err := s.store.GetOrganizationByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching organization for unverify: %w", err)
+	}
+
+	// No badge to revoke — the DB is already in the desired state; skipping
+	// avoids a phantom organization.unverified webhook to subscribers.
+	if !org.Verified {
+		return nil
+	}
+
 	if err := s.store.UnverifyOrganization(ctx, id); err != nil {
 		return fmt.Errorf("unverifying organization: %w", err)
 	}
