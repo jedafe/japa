@@ -10,6 +10,7 @@
 	import ForumList from '#lib/components/forum/ForumList.svelte';
 	import QuickDiscussionComposer from '#lib/components/forum/QuickDiscussionComposer.svelte';
 	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import FeedGeoControl from '#lib/components/feed/FeedGeoControl.svelte';
 	import { api } from '#lib/api/client.js';
 	import { Loader2 } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
@@ -127,11 +128,19 @@
 		exhausted = false;
 	});
 
+	// Geo re-weight forwarded on load-more so paginated results match the
+	// SSR fetch — same derivation as FeedList (ADR-064).
+	const geo = $derived(
+		page.url.searchParams.get('geo') ??
+			page.data.user?.content_country_preference ??
+			undefined
+	);
+
 	async function loadMore() {
 		if (loadingMore) return;
 		loadingMore = true;
 		const res = await api.get<FeedItem[]>(
-			`/explore?sort=${data.sort === 'top' ? 'top' : 'latest'}&page_size=${data.pageSize}&page_offset=${allItems.length}`
+			`/explore?sort=${data.sort === 'top' ? 'top' : 'latest'}&page_size=${data.pageSize}&page_offset=${allItems.length}${geo ? `&geo=${encodeURIComponent(geo)}` : ''}`
 		);
 		loadingMore = false;
 		const next = res.data ?? [];
@@ -169,6 +178,11 @@
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
+			{#if data.authed}
+				<!-- ADR-064 — the geo re-weight override the old home Thread
+				     tab carried; only the default /explore list consumes it. -->
+				<FeedGeoControl />
+			{/if}
 			{#if data.sort !== 'featured'}
 				<button
 					type="button"

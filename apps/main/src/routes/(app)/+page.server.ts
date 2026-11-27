@@ -39,8 +39,9 @@ export const load: PageServerLoad = async (event) => {
 	// feed of its own. ?tab=thread is the legacy alias for that surface;
 	// redirect so home never renders a second thread list. Every param
 	// /thread understands survives the hop: sort (top|featured — latest is
-	// the default) plus the forum filters status/tag/author_id. Feed-only
-	// params (relevant|rising sorts, geo) have no meaning there and drop.
+	// the default), the forum filters status/tag/author_id, and the geo
+	// re-weight override (ADR-064). Feed-only params (relevant|rising
+	// sorts) have no meaning there and drop.
 	if (event.url.searchParams.get('tab') === 'thread') {
 		const params = new URLSearchParams();
 		const sort = event.url.searchParams.get('sort');
@@ -50,6 +51,10 @@ export const load: PageServerLoad = async (event) => {
 		for (const key of ['tag', 'author_id']) {
 			const v = event.url.searchParams.get(key);
 			if (v) params.set(key, v);
+		}
+		const geo = event.url.searchParams.get('geo')?.trim();
+		if (geo && (/^[a-z]{2}$/i.test(geo) || geo.toLowerCase() === 'all')) {
+			params.set('geo', geo);
 		}
 		const qs = params.toString();
 		redirect(302, `/thread${qs ? `?${qs}` : ''}`);

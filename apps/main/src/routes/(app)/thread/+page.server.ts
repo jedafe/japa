@@ -67,10 +67,17 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Default list = /explore — geo re-weight applies like home/explore
+	// (ADR-064): explicit ?geo= override, else content_country_preference.
+	// Forum-filtered and featured branches don't take geo.
+	const geo =
+		event.url.searchParams.get('geo') ??
+		event.locals.user?.content_country_preference ??
+		undefined;
 	try {
 		const { items } = await apiList<FeedItem>(
 			ctx,
-			`/explore?sort=${sort === 'top' ? 'top' : 'latest'}&page_size=${PAGE_SIZE}&page_offset=0`
+			`/explore?sort=${sort === 'top' ? 'top' : 'latest'}&page_size=${PAGE_SIZE}&page_offset=0${geo ? `&geo=${encodeURIComponent(geo)}` : ''}`
 		);
 		return { ...base, items };
 	} catch {
