@@ -336,18 +336,19 @@
 	{/if}
 
 	<div class="mt-2 flex items-center gap-1 border-t border-[var(--color-border)] pt-2">
-		<!-- Intent switch — swaps placeholder + action per post kind. -->
-		<div class="inline-flex rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5" role="group" aria-label={t('forum.composer.mode', 'Post type')}>
+		<!-- Intent switch — same ghost-button row the card always had; the
+		     active intent keeps the hover fill so it reads as selected. -->
+		<div class="flex min-w-0 flex-1 items-center divide-x divide-[var(--color-border)]" role="group" aria-label={t('forum.composer.mode', 'Post type')}>
 			{#each modes as m (m.value)}
 				{@const Icon = m.icon}
 				<button
 					type="button"
 					onclick={() => (mode = m.value)}
 					aria-pressed={mode === m.value}
-					class="inline-flex items-center gap-1 rounded-[calc(var(--radius)-2px)] px-2.5 py-1 text-xs font-medium transition-colors {mode === m.value ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm' : 'text-[var(--color-muted)] hover:text-[var(--color-text-subtle)]'}"
+					class="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius)] px-1 py-1.5 text-sm font-medium transition-colors {mode === m.value ? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 				>
-					<Icon size={13} class={mode === m.value ? 'text-[var(--color-primary-text)]' : ''} />
-					{m.label}
+					<Icon size={16} class="shrink-0 text-[var(--color-primary-text)]" />
+					<span class="truncate">{m.label}</span>
 				</button>
 			{/each}
 		</div>
