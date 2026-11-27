@@ -816,7 +816,7 @@ func (q *Queries) CountUpcomingSpaceEvents(ctx context.Context, spaceIds []pgtyp
 }
 
 const createSpace = `-- name: CreateSpace :one
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out, verified, verification_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, false), COALESCE($17, false), $18)
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out, verified, verification_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, false), CASE WHEN $8 IN ('country','state','city','university','global') THEN true ELSE COALESCE($17, false) END, CASE WHEN $8 IN ('country','state','city','university','global') THEN 'official' ELSE $18 END)
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
@@ -841,7 +841,7 @@ type CreateSpaceParams struct {
 	CreatorUserID    pgtype.UUID `json:"creator_user_id"`
 	FederateOptOut   interface{} `json:"federate_opt_out"`
 	Verified         interface{} `json:"verified"`
-	VerificationType *string     `json:"verification_type"`
+	VerificationType interface{} `json:"verification_type"`
 }
 
 type CreateSpaceRow struct {
@@ -877,6 +877,10 @@ type CreateSpaceRow struct {
 // creator_user_id is the member-created discriminator (§05 amendment):
 // member creation paths (CreateSpaceWithOwner) set it; platform-seeded
 // paths (universities, geo, attractions) leave it NULL → is_primary.
+// §07/001236: primary levels (country/state/city/university/global —
+// spaces.IsPrimaryLevel) are born verified='official'; the INSERT enforces
+// it so every write path — spaces.Service, CreateCity, the intelligence
+// university promoter — produces the same state.
 func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (CreateSpaceRow, error) {
 	row := q.db.QueryRow(ctx, createSpace,
 		arg.ParentID,

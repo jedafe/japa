@@ -242,8 +242,9 @@ const VerificationTypeOfficial = "official"
 // primary levels (§07/001236) — geo (country/state/city/global) and
 // university spaces are platform-run and born verified. Member-created
 // custom spaces arrive unverified; their owner files a verification_request
-// for the badge. Applied in the service layer so every write path —
-// HTTP create, geo/university seeders, imports — produces the same state.
+// for the badge. The CreateSpace INSERT enforces the same invariant for
+// callers that bypass the service (CreateCity tx, intelligence promoter);
+// this keeps params consistent for service-internal reads.
 func (s *Service) coercePrimaryVerification(params *gen.CreateSpaceParams) {
 	if !IsPrimaryLevel(params.Level) {
 		return

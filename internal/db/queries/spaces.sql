@@ -1025,7 +1025,11 @@ WHERE geo_code = @geo_code
 -- creator_user_id is the member-created discriminator (§05 amendment):
 -- member creation paths (CreateSpaceWithOwner) set it; platform-seeded
 -- paths (universities, geo, attractions) leave it NULL → is_primary.
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out, verified, verification_type) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status, sqlc.narg(creator_user_id), COALESCE(sqlc.narg(federate_opt_out), false), COALESCE(sqlc.narg(verified), false), sqlc.narg(verification_type))
+-- §07/001236: primary levels (country/state/city/university/global —
+-- spaces.IsPrimaryLevel) are born verified='official'; the INSERT enforces
+-- it so every write path — spaces.Service, CreateCity, the intelligence
+-- university promoter — produces the same state.
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out, verified, verification_type) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status, sqlc.narg(creator_user_id), COALESCE(sqlc.narg(federate_opt_out), false), CASE WHEN @level IN ('country','state','city','university','global') THEN true ELSE COALESCE(sqlc.narg(verified), false) END, CASE WHEN @level IN ('country','state','city','university','global') THEN 'official' ELSE sqlc.narg(verification_type) END)
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
