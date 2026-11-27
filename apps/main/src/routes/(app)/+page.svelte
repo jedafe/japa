@@ -16,8 +16,9 @@
 	// Tab bar values — labels match the old FeedTabs component. The active tab
 	// comes from the server load (data.tab); switching calls goto() so SvelteKit
 	// re-runs the load function for the new tab's per-tab feed data.
-	// The Thread tab is a link, not a feed — it navigates to the /thread index
-	// and only shows when feature.forum (the /thread route gate) is on. The
+	// The Thread tab is a link, not a feed — its href renders a real <a> to
+	// the /thread index (client-side nav + hover prefetch, never a reload).
+	// It only shows when feature.forum (the /thread route gate) is on. The
 	// Global tab (§126 M5 remote timeline) likewise only shows when the
 	// feature.federation flag is on — the backend 404s its surface otherwise.
 	const tabs = $derived<UrlTab[]>(
@@ -26,7 +27,7 @@
 					{ value: 'for_you', label: t('feed.tab.for_you') },
 					{ value: 'following', label: t('feed.tab.following') },
 					...(page.data.features?.['feature.forum']
-						? [{ value: 'thread', label: t('feed.tab.thread', 'Thread') }]
+						? [{ value: 'thread', label: t('feed.tab.thread', 'Thread'), href: '/thread' }]
 						: []),
 					...(page.data.features?.['feature.federation']
 						? [{ value: 'global', label: t('feed.tab.global', 'Global') }]

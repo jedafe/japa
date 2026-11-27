@@ -22,6 +22,11 @@
 	export interface UrlTab {
 		value: string;
 		label: string;
+		/** When set, the entry renders as a real <a> (client-side nav +
+		 *  hover prefetch) instead of a Tabs.Trigger — for link-style
+		 *  entries like the home Thread tab → /thread. href tabs never
+		 *  fire onValueChange and never appear active. */
+		href?: string;
 	}
 
 	interface Props {
@@ -85,7 +90,7 @@
 		void tabs;
 		const compute = () => {
 			if (!list.offsetWidth) return;
-			const triggers = [...list.querySelectorAll<HTMLElement>('[role="tab"]')];
+			const triggers = [...list.querySelectorAll<HTMLElement>('[role="tab"], [data-urltab-link]')];
 			const avail = list.clientWidth - 24; // px-3
 			const GAP = 4; // gap-1
 			const MORE = moreEl?.offsetWidth || 115; // measured once rendered; fallback estimate
@@ -162,21 +167,33 @@
 			<Dialog.Title class="sr-only">{activeLabel}</Dialog.Title>
 			<div role="listbox" aria-label={activeLabel}>
 				{#each tabs as tab (tab.value)}
-					<button
-						type="button"
-						role="option"
-						aria-selected={tab.value === activeValue}
-						onclick={() => pickMobile(tab.value)}
-						class="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] px-4 py-3 text-sm font-medium transition-colors {tab.value ===
-						activeValue
-							? 'text-[var(--color-text)]'
-							: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
-					>
-						{tab.label}
-						{#if tab.value === activeValue}
-							<Check size={16} class="text-[var(--color-primary-text)]" />
-						{/if}
-					</button>
+					{#if tab.href}
+						<a
+							href={tab.href}
+							role="option"
+							aria-selected="false"
+							onclick={() => (mobilePickerOpen = false)}
+							class="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] px-4 py-3 text-sm font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+						>
+							{tab.label}
+						</a>
+					{:else}
+						<button
+							type="button"
+							role="option"
+							aria-selected={tab.value === activeValue}
+							onclick={() => pickMobile(tab.value)}
+							class="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] px-4 py-3 text-sm font-medium transition-colors {tab.value ===
+							activeValue
+								? 'text-[var(--color-text)]'
+								: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+						>
+							{tab.label}
+							{#if tab.value === activeValue}
+								<Check size={16} class="text-[var(--color-primary-text)]" />
+							{/if}
+						</button>
+					{/if}
 				{/each}
 			</div>
 		</Dialog.Content>
@@ -193,17 +210,31 @@
 		style="min-height: var(--nav-height)"
 	>
 		{#each tabs as tab, i (tab.value)}
-			<Tabs.Trigger
-				value={tab.value}
-				class="flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors data-[state=active]:text-[var(--color-text)] data-[state=active]:after:bg-[var(--color-primary)] data-[state=inactive]:text-[var(--color-muted)] data-[state=inactive]:hover:text-[var(--color-text)] {autoOverflow &&
-				i >= effVisible
-					? 'invisible absolute start-0'
-					: 'relative'}"
-			>
-				{#snippet child({ props })}
-					<span {...props}>{tab.label}</span>
-				{/snippet}
-			</Tabs.Trigger>
+			{#if tab.href}
+				<!-- Link-styled tab: a real anchor — SvelteKit client-side
+				     nav + preload-data hover prefetch (never a reload), and
+				     open-in-new-tab/copy-link just work. -->
+				<a
+					href={tab.href}
+					data-urltab-link
+					class="flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] {autoOverflow &&
+					i >= effVisible
+						? 'invisible absolute start-0'
+						: 'relative'}"
+				>{tab.label}</a>
+			{:else}
+				<Tabs.Trigger
+					value={tab.value}
+					class="flex shrink-0 cursor-pointer items-center px-4 text-sm font-medium transition-colors after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors data-[state=active]:text-[var(--color-text)] data-[state=active]:after:bg-[var(--color-primary)] data-[state=inactive]:text-[var(--color-muted)] data-[state=inactive]:hover:text-[var(--color-text)] {autoOverflow &&
+					i >= effVisible
+						? 'invisible absolute start-0'
+						: 'relative'}"
+				>
+					{#snippet child({ props })}
+						<span {...props}>{tab.label}</span>
+					{/snippet}
+				</Tabs.Trigger>
+			{/if}
 		{/each}
 		{#if autoOverflow}
 			<div
@@ -227,7 +258,12 @@
 					</button>
 				{/snippet}
 				{#each overflowTabs as tab (tab.value)}
-					<MenuItem onSelect={() => handleChange(tab.value)}>{tab.label}</MenuItem>
+					<MenuItem
+						onSelect={() => {
+							if (tab.href) void goto(tab.href);
+							else handleChange(tab.value);
+						}}
+					>{tab.label}</MenuItem>
 				{/each}
 			</Menu>
 			</div>
