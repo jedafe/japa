@@ -6314,7 +6314,9 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 }
 
 const verifySpace = `-- name: VerifySpace :exec
-UPDATE spaces SET verified = true, verification_type = $1, updated_at = now()
+UPDATE spaces SET verified = true,
+  verification_type = COALESCE($1::text, verification_type),
+  updated_at = now()
 WHERE id = $2 AND deleted_at IS NULL
 `
 

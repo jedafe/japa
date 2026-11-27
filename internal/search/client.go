@@ -60,7 +60,7 @@ var allIndexes = []string{
 var filterableAttributesByIndex = map[string][]string{
 	IndexPosts:              {"content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
 	IndexForumThreads:       {"space_id", "solved"},
-	IndexSpaces:             {"level", "status"},
+	IndexSpaces:             {"level", "status", "verified"},
 	IndexUsers:              {"status"},
 	IndexTags:               {},
 	IndexKnowledgeArticles:  {"status"},

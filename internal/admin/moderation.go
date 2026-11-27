@@ -1289,7 +1289,14 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) isValidOrgVerificationType(ctx context.Context, scope, value string) bool {
 	ok, err := h.Queries.VerificationTypeExists(ctx, gen.VerificationTypeExistsParams{Scope: scope, Value: value})
 	if err != nil {
-		return verification.IsValidType(value)
+		// Fallback vocabulary is scope-aware — 'space' and 'service_listing'
+		// types are not in the org/user VerificationTypes list.
+		for _, v := range verification.FallbackTypeValues(scope) {
+			if v == value {
+				return true
+			}
+		}
+		return false
 	}
 	return ok
 }

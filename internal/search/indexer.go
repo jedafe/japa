@@ -490,14 +490,17 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 type spaceDocument struct {
 	ID string `json:"id"`
 
-	Name        string `json:"title"`
-	Slug        string `json:"slug"`
-	Description string `json:"excerpt"`
-	Level       string `json:"level"`
-	Status      string `json:"status"`
-	ParentID    string `json:"parent_id"`
-	URL         string `json:"url"`
-	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
+	Name             string `json:"title"`
+	Slug             string `json:"slug"`
+	Description      string `json:"excerpt"`
+	Level            string `json:"level"`
+	Status           string `json:"status"`
+	ParentID         string `json:"parent_id"`
+	MemberCount      int32  `json:"member_count"`
+	Verified         bool   `json:"verified"`
+	VerificationType string `json:"verification_type,omitempty"`
+	URL              string `json:"url"`
+	CreatedAt        int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexSpace fetches a space and upserts it into the spaces index.
@@ -529,17 +532,25 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 		desc = *row.Description
 	}
 
+	vtype := ""
+	if row.VerificationType != nil {
+		vtype = *row.VerificationType
+	}
+
 	doc := spaceDocument{
 		ID: row.ID.String(),
 
-		Name:        row.Name,
-		Slug:        row.Slug,
-		Description: desc,
-		Level:       row.Level,
-		Status:      row.Status,
-		ParentID:    row.ParentID.String(),
-		URL:         "/spaces/" + row.Slug,
-		CreatedAt:   row.CreatedAt.Time.Unix(),
+		Name:             row.Name,
+		Slug:             row.Slug,
+		Description:      desc,
+		Level:            row.Level,
+		Status:           row.Status,
+		ParentID:         row.ParentID.String(),
+		MemberCount:      row.MemberCount,
+		Verified:         row.Verified,
+		VerificationType: vtype,
+		URL:              "/spaces/" + row.Slug,
+		CreatedAt:        row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []spaceDocument{doc}

@@ -134,6 +134,9 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		if input.OrganizationID == nil || *input.OrganizationID == "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id is required for entity_type 'organization'", errpkg.ErrInvalid)
 		}
+		if input.ServiceListingID != nil && *input.ServiceListingID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: service_listing_id must be omitted for entity_type 'organization'", errpkg.ErrInvalid)
+		}
 		if input.SpaceID != nil && *input.SpaceID != "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: space_id must be omitted for entity_type 'organization'", errpkg.ErrInvalid)
 		}

@@ -1079,6 +1079,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				input.ServiceListingID = &in.ServiceListingID
 			}
 
+			if in.SpaceID != "" {
+				input.SpaceID = &in.SpaceID
+			}
+
 			if in.RequestedType != "" {
 				input.RequestedType = &in.RequestedType
 			}

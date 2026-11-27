@@ -246,7 +246,7 @@ type SearchResultItem struct {
 	Level        string `json:"level,omitempty"`
 	MemberCount  *int32 `json:"member_count,omitempty"`
 	ContentCount *int32 `json:"content_count,omitempty"`
-	// §07 verification — populated on user/organization hits only.
+	// §07 verification — populated on user/organization/space hits.
 	Verified         bool   `json:"verified,omitempty"`
 	VerificationType string `json:"verification_type,omitempty"`
 }
@@ -753,6 +753,10 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 			item.MemberCount = mc
 		}
 
+		// §07 space verification badge (001236).
+		item.Verified = boolField(hit, "verified")
+		item.VerificationType = stringField(hit, "verification_type")
+
 		item.Title = ""
 	case "tag":
 		// Tag documents store name in "title" for backward compatibility.
@@ -960,7 +964,7 @@ type AutocompleteSuggestion struct {
 	Name         string `json:"name,omitempty"`
 	MemberCount  *int32 `json:"member_count,omitempty"`
 	ContentCount *int32 `json:"content_count,omitempty"`
-	// §07 verification — populated on user/organization suggestions only.
+	// §07 verification — populated on user/organization/space suggestions.
 	Verified         bool   `json:"verified,omitempty"`
 	VerificationType string `json:"verification_type,omitempty"`
 }
@@ -1394,6 +1398,8 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 			case "space":
 				s.Name = stringField(hit, "title")
 				s.Level = stringField(hit, "level")
+				s.Verified = boolField(hit, "verified")
+				s.VerificationType = stringField(hit, "verification_type")
 
 				if mc := int32Field(hit, "member_count"); mc != nil {
 					s.MemberCount = mc

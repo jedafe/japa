@@ -1463,9 +1463,10 @@ func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtyp
 	s.EnqueueSearchIndex(ctx, id, "index")
 
 	s.emitWebhook(ctx, "space.verified", map[string]any{
-		"space_id":    id,
-		"name":        space.Name,
-		"verified_by": adminID,
+		"space_id":          id,
+		"name":              space.Name,
+		"verification_type": vtype,
+		"verified_by":       adminID,
 	})
 
 	return nil
@@ -1475,6 +1476,13 @@ func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtyp
 // emits the space.unverified webhook event (Section 12).
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
 func (s *Service) UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) error {
+	// Existence check — the UPDATE matches 0 rows on a missing/deleted id,
+	// which would otherwise emit space.unverified for a phantom space.
+	space, err := s.read.GetSpaceByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching space for unverify: %w", err)
+	}
+
 	if err := s.write.UnverifySpace(ctx, id); err != nil {
 		return fmt.Errorf("unverifying space: %w", err)
 	}
@@ -1483,6 +1491,7 @@ func (s *Service) UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) er
 
 	s.emitWebhook(ctx, "space.unverified", map[string]any{
 		"space_id":      id,
+		"name":          space.Name,
 		"unverified_by": adminID,
 	})
 

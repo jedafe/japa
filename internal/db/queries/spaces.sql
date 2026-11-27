@@ -1061,7 +1061,9 @@ RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
 -- §07 space badge grant (POST /admin/spaces/{id}/verify) — two-step with the
 -- verification-request review; verification_type carries the space-scope
 -- taxonomy value (official|community|organization seeds).
-UPDATE spaces SET verified = true, verification_type = sqlc.narg(verification_type), updated_at = now()
+UPDATE spaces SET verified = true,
+  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: UnverifySpace :exec

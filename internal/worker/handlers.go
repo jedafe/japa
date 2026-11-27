@@ -159,6 +159,7 @@ type SubmissionLinkInput struct {
 	EntityType       string `json:"entity_type"`
 	OrganizationID   string `json:"organization_id"`
 	ServiceListingID string `json:"service_listing_id"`
+	SpaceID          string `json:"space_id"`
 	RequestedType    string `json:"requested_type"`
 }
 
