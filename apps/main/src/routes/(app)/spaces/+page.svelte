@@ -454,36 +454,35 @@
 		{:else if visibleSpaces.length === 0}
 			<EmptyState icon={Layers} title={t('spaces.empty', 'No spaces yet.')} />
 		{:else}
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#each visibleSpaces as space (space.id)}
 					<SpaceCard
 						{space}
 						typeName={spaceTypeMap[space.space_type_id] ?? ''}
 					>
 						{#snippet actions()}
-							{#if page.data.user}
-								<SpaceJoinButton
-									entityId={space.id}
-									entitySlug={space.slug}
-									initiallyJoined={space.is_member ?? false}
-									initiallyPending={space.is_pending ?? false}
-									initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
-									compact
-									followOnly={!!space.is_primary}
-								/>
-							{/if}
+							<SpaceJoinButton
+								entityId={space.id}
+								entitySlug={space.slug}
+								initiallyJoined={space.is_member ?? false}
+								initiallyPending={space.is_pending ?? false}
+								initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
+								compact
+								followOnly={!!space.is_primary}
+							/>
 						{/snippet}
 					</SpaceCard>
 				{/each}
 			</div>
 
-			<!-- Load more -->
-			{#if visibleTotal > 0}
+			<!-- Load more — only when the result set exceeds 10 items and
+			     more remain to fetch; hidden while everything is loaded. -->
+			{#if visibleTotal > 10 && allSpaces.length < visibleTotal}
 				<div class="mt-4 flex justify-center">
 					<button
 						type="button"
 						onclick={loadMoreSpaces}
-						disabled={loadingMore || allSpaces.length >= visibleTotal}
+						disabled={loadingMore}
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 					>
 						{loadingMore ? t('common.loading', 'Loading…') : t('common.load_more', 'Load more')}
