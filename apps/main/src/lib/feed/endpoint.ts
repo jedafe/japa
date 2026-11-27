@@ -1,7 +1,8 @@
-/** Which feed a Home tab maps to. 'thread' lists all discussions via /explore;
- * 'global' is the §126 M5 remote fediverse timeline (cursor-paginated — it does
- * not go through feedPath/feedQueryString). */
-export type FeedTab = 'following' | 'for_you' | 'explore' | 'thread' | 'global';
+/** Which feed a Home tab maps to. 'global' is the §126 M5 remote fediverse
+ * timeline (cursor-paginated — it does not go through feedPath/feedQueryString).
+ * The Thread tab is not a feed: it links to the /thread index, and ?tab=thread
+ * on / redirects there in (app)/+page.server.ts. */
+export type FeedTab = 'following' | 'for_you' | 'explore' | 'global';
 
 /** Backend `sort` values (note: chip label "Popular" → value "top"). */
 export type SortValue = 'relevant' | 'latest' | 'top' | 'rising';
@@ -12,9 +13,6 @@ const TAB_PATH: Record<FeedTab, string> = {
 	following: '/feed',
 	for_you: '/feed/for-you',
 	explore: '/explore',
-	// Every contents row is a thread (unified-discussion spec) — the Thread
-	// tab lists the same /explore feed the /thread index page does.
-	thread: '/explore',
 	// §126 M5 — kept for map completeness; the Global tab paginates by
 	// next_cursor through GlobalFeedList, not through feedPath offsets.
 	global: '/me/federation/timeline'
@@ -56,23 +54,20 @@ export function feedPath(
 	return `${TAB_PATH[tab]}?${feedQueryString(tab, sort, pageSize, pageOffset, geo)}`;
 }
 
-/** Resolve the active tab. Guests are always explore; authed users default to for_you. */
+/** Resolve the active tab. Guests are always explore; authed users default
+ * to for_you. 'thread' is intentionally absent — that tab links out to
+ * /thread and ?tab=thread redirects before this runs. */
 export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	if (!authed) return 'explore';
-	if (raw === 'following' || raw === 'for_you' || raw === 'thread' || raw === 'global') return raw;
+	if (raw === 'following' || raw === 'for_you' || raw === 'global') return raw;
 	return 'for_you';
 }
 
 /** Resolve the active sort; always yields an explicit value. For You and
  * Following are chronological by default ('latest'); Explore defaults to
- * 'relevant' — its geo discovery blend; the Thread tab defaults to
- * 'latest' (chronological, like /thread).
+ * 'relevant' — its geo discovery blend.
  */
 export function resolveSort(raw: string | null, tab?: FeedTab): SortValue {
-	// The Thread tab mirrors the /thread index — Latest/Top only, so a
-	// carried-over ?sort=relevant|rising coerces to the default instead of
-	// leaving no chip highlighted.
-	if (tab === 'thread') return raw === 'top' ? 'top' : 'latest';
 	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
 	return tab === 'for_you' || tab === 'following' ? 'latest' : 'relevant';
 }

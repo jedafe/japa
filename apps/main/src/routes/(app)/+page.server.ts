@@ -35,6 +35,15 @@ export const load: PageServerLoad = async (event) => {
 	// ADR-127: on the roadmap host the root path is the roadmap board.
 	if (event.locals.isRoadmapHost) redirect(302, '/roadmap');
 
+	// The home "Thread" tab links out to the /thread index — it is not a
+	// feed of its own. ?tab=thread is the legacy alias for that surface;
+	// redirect so home never renders a second thread list. ?sort=top is the
+	// only non-default sort the old tab exposed — it survives the hop.
+	if (event.url.searchParams.get('tab') === 'thread') {
+		const sort = event.url.searchParams.get('sort');
+		redirect(302, `/thread${sort === 'top' ? '?sort=top' : ''}`);
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

@@ -36,6 +36,12 @@
 			{tabs}
 			value={data.tab}
 			onValueChange={(v) => {
+				// The Thread tab is a link to the dedicated /thread index, not
+				// a home feed — navigate instead of swapping ?tab=.
+				if (v === 'thread') {
+					goto('/thread');
+					return;
+				}
 				// Preserve non-tab query params (especially ?geo=) while switching tabs.
 				const url = new URL(page.url.href);
 				url.searchParams.set('tab', v);

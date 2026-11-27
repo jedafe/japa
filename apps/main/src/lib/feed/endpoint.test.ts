@@ -6,8 +6,6 @@ describe('feedPath', () => {
 		expect(feedPath('following', 'relevant', 20, 0)).toBe('/feed?sort=relevant&page_size=20&page_offset=0');
 		expect(feedPath('for_you', 'relevant', 20, 0)).toBe('/feed/for-you?sort=relevant&page_size=20&page_offset=0');
 		expect(feedPath('explore', 'relevant', 20, 0)).toBe('/explore?sort=relevant&page_size=20&page_offset=0');
-		// The Thread tab lists discussions via the same /explore feed /thread does.
-		expect(feedPath('thread', 'latest', 20, 0)).toBe('/explore?sort=latest&page_size=20&page_offset=0');
 	});
 
 	it('uses page_size/page_offset, never limit', () => {
@@ -31,11 +29,14 @@ describe('resolveTab', () => {
 		expect(resolveTab(null, true)).toBe('for_you');
 		expect(resolveTab('following', true)).toBe('following');
 		expect(resolveTab('for_you', true)).toBe('for_you');
-		expect(resolveTab('thread', true)).toBe('thread');
+		expect(resolveTab('global', true)).toBe('global');
 		expect(resolveTab('explore', true)).toBe('for_you'); // authed can't select explore
 		expect(resolveTab('garbage', true)).toBe('for_you');
 	});
-	it('never lets guests select the thread tab', () => {
+	it('does not resolve thread — that tab links to /thread', () => {
+		// ?tab=thread redirects to /thread in (app)/+page.server.ts, so the
+		// value never reaches resolveTab; if it did, it must not select a feed.
+		expect(resolveTab('thread', true)).toBe('for_you');
 		expect(resolveTab('thread', false)).toBe('explore');
 	});
 });
@@ -54,14 +55,6 @@ describe('resolveSort', () => {
 		expect(resolveSort(null, 'explore')).toBe('relevant');
 		expect(resolveSort('', 'for_you')).toBe('latest');
 		expect(resolveSort('popular', 'following')).toBe('latest'); // "popular" is a label, not a value
-	});
-	it('restricts the thread tab to latest/top like the /thread index', () => {
-		expect(resolveSort('top', 'thread')).toBe('top');
-		expect(resolveSort('latest', 'thread')).toBe('latest');
-		expect(resolveSort(null, 'thread')).toBe('latest');
-		// Carried-over feed sorts coerce instead of leaving no chip lit.
-		expect(resolveSort('relevant', 'thread')).toBe('latest');
-		expect(resolveSort('rising', 'thread')).toBe('latest');
 	});
 });
 

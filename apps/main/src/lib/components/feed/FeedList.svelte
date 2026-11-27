@@ -35,12 +35,6 @@
 			undefined
 	);
 
-	// The Thread tab opens /thread/{slug} — it IS the discussions feed.
-	// For You/Following and Explore link to canonical content pages.
-	const threadDefault = $derived(tab === 'thread');
-	// The Thread tab carries the same vote rail as the /thread index.
-	const voteRail = $derived(tab === 'thread');
-
 	let items = $state<FeedItem[]>(untrack(() => initial));
 	let atEnd = $state(false);
 	let loading = $state(false);
@@ -164,13 +158,13 @@
 	{#if gridLayout}
 		<div class="grid grid-cols-1 gap-3.5 p-3 sm:grid-cols-2">
 			{#each items as item (item.id)}
-				<FeedCard {item} style="daily" layout="grid-cell" {threadDefault} {voteRail} />
+				<FeedCard {item} style="daily" layout="grid-cell" />
 			{/each}
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3">
 			{#each items as item, i (item.id)}
-				<FeedCard {item} style="daily" layout="stream" {threadDefault} {voteRail} />
+				<FeedCard {item} style="daily" layout="stream" />
 				{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < items.length - 1 && i / adInterval < 2}
 					<NativeAd slot={adSlot} {spaceId} pickIndex={Math.floor(i / adInterval)} />
 				{/if}
