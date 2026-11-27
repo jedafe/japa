@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -634,10 +635,9 @@ func TestRunMultiSearchFiltered_SuppressesPostsCopyOfThread(t *testing.T) {
 	eng := &stubEngine{multiResults: []IndexResult{
 		{
 			IndexUID:           IndexPosts,
-			EstimatedTotalHits: 3,
+			EstimatedTotalHits: 2,
 			Hits: []Hit{
 				hitWith(map[string]string{"id": "p1", "title": "Post", "content_type": "blog_post"}),
-				hitWith(map[string]string{"id": "t1-content", "title": "Thread", "content_type": "forum_thread"}),
 				hitWith(map[string]string{"id": "d1", "title": "Anchored", "content_type": "discussion"}),
 			},
 		},
@@ -649,20 +649,28 @@ func TestRunMultiSearchFiltered_SuppressesPostsCopyOfThread(t *testing.T) {
 	}}
 
 	h := NewHandlers(eng)
-	results, _, err := h.runMultiSearchFiltered(context.Background(), "x", 20, 0, nil,
-		[]string{IndexPosts, IndexForumThreads}, "", nil)
-	if err != nil {
+	if _, _, err := h.runMultiSearchFiltered(context.Background(), "x", 20, 0, nil,
+		[]string{IndexPosts, IndexForumThreads}, "", nil); err != nil {
 		t.Fatalf("runMultiSearchFiltered: %v", err)
 	}
 
-	var got []string
-	for _, r := range results {
-		got = append(got, r.Type+":"+r.Item.ContentType)
-	}
+	// The exclusion is engine-side (a post-hoc drop would inflate
+	// totals["content"] and shrink the effective page): the posts query
+	// must carry content_type != 'forum_thread', the threads query must not.
+	for _, q := range eng.lastQueries {
+		rendered := renderMeiliFilter(q.Filter)
+		hasNe := strings.Contains(rendered, `content_type != "forum_thread"`)
 
-	want := []string{"content:blog_post", "content:discussion", "forum_thread:"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("results = %v, want %v (posts copy of the thread suppressed)", got, want)
+		switch q.IndexUID {
+		case IndexPosts:
+			if !hasNe {
+				t.Errorf("posts query filter %q missing content_type != 'forum_thread'", rendered)
+			}
+		case IndexForumThreads:
+			if hasNe {
+				t.Errorf("threads query filter %q must not carry the posts-copy exclusion", rendered)
+			}
+		}
 	}
 }
 
@@ -686,6 +694,10 @@ func TestRunMultiSearchFiltered_KeepsThreadWhenThreadsIndexNotQueried(t *testing
 
 	if len(results) != 1 || results[0].Item.ContentType != "forum_thread" {
 		t.Fatalf("results = %#v, want the posts copy of the thread kept", results)
+	}
+
+	if rendered := renderMeiliFilter(eng.lastQueries[0].Filter); strings.Contains(rendered, "!=") {
+		t.Errorf("posts-only query filter %q must not carry the threads-dedup exclusion", rendered)
 	}
 }
 

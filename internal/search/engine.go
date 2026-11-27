@@ -144,7 +144,14 @@ type Or struct {
 	Any []FilterExpr
 }
 
+// Ne matches documents where Field != Value.
+type Ne struct {
+	Field string
+	Value string
+}
+
 func (Eq) isFilterExpr()      {}
+func (Ne) isFilterExpr()      {}
 func (In) isFilterExpr()      {}
 func (IsEmpty) isFilterExpr() {}
 func (And) isFilterExpr()     {}

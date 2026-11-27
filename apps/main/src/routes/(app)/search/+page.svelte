@@ -8,6 +8,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { SearchInput, type SearchSuggestion } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
@@ -116,20 +117,26 @@
 		return activeType === key || (key === 'doc' && activeType === 'doc_page');
 	}
 
-	function autocompleteUrl(s: { type: string; url?: string; slug?: string }): string {
+	function autocompleteUrl(s: { type: string; url?: string; slug?: string; content_type?: string }): string {
 		if (s.url) return s.url;
-		switch (s.type) {
-			case 'user':
-				return s.slug ? `/u/${s.slug}` : '/search';
-			case 'space':
-				return s.slug ? `/spaces/${s.slug}` : '/search';
-			case 'doc_page':
-			// DOC-016: the backend should always provide a `url` for doc pages;
-			// fall back to search if it is missing.
-				return '/search';
-			default:
-				return s.slug ? `/${s.type}/${s.slug}` : '/search';
+		if (!s.slug) return '/search';
+		// Defensive fallback — index docs always carry url, but if one lacks
+		// it resolve through the same canonical routes the indexer writes:
+		// content items and threads via contentHref (§14, ADR-058), entities
+		// via their per-type prefix.
+		if (s.content_type || s.type === 'forum_thread') {
+			return contentHref({ slug: s.slug, content_type: s.content_type ?? 'forum_thread' });
 		}
+		const prefix =
+			s.type === 'user' ? 'u'
+			: s.type === 'space' ? 'spaces'
+			: s.type === 'organization' ? 'org'
+			: s.type === 'tag' ? 'tags'
+			: s.type === 'course' ? 'academy/catalog'
+			: '';
+		// doc_page/article URLs embed segments the slug alone can't rebuild
+		// (docs audience, RAG pipeline path) — fall back to search.
+		return prefix ? `/${prefix}/${s.slug}` : '/search';
 	}
 
 	async function autocompleteFetcher(q: string): Promise<SearchSuggestion[]> {

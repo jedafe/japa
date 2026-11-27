@@ -207,6 +207,8 @@ func renderMeiliFilter(f FilterExpr) string {
 		return ""
 	case Eq:
 		return fmt.Sprintf(`%s = "%s"`, v.Field, escapeMeiliString(v.Value))
+	case Ne:
+		return fmt.Sprintf(`%s != "%s"`, v.Field, escapeMeiliString(v.Value))
 	case In:
 		if len(v.Values) == 0 {
 			return ""

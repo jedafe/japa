@@ -351,10 +351,10 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read-through Valkey cache (jc:cache:search:*, BUG-010). The cache key
-	// includes the platform, query hash, type filter, and limit so identical
-	// queries from the same platform are served from cache. Uses distributed
-	// lock stampede protection (BUG-008) to prevent thundering herd on
-	// popular queries.
+	// includes the query hash, type filter, geo, limit, offset, sort, auth
+	// flag, and posts-filter hash so identical queries are served from
+	// cache. Uses distributed lock stampede protection (BUG-008) to
+	// prevent thundering herd on popular queries.
 	postsFilterKey := strings.Join([]string{ // \x1f (unit separator) cannot appear in user input, so joined values can never collide the way a "|" join could (e.g. "a|b"+"c" vs "a"+"b|c")
 		r.URL.Query().Get("content_type"),
 		r.URL.Query().Get("space_id"),
@@ -600,6 +600,18 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		if idx == IndexPosts && extraPostFilter != nil {
 			filters = append(filters, extraPostFilter)
 		}
+
+		// A real forum thread is indexed twice — its contents row lands in
+		// the posts index (content_type='forum_thread') and its dedicated
+		// document in forum_threads. When both indexes are queried, exclude
+		// the posts copy at the engine so the thread surfaces once under
+		// the forum_thread group — keeping totals and page counts honest
+		// (post-hoc suppression would inflate totals["content"] and shrink
+		// the effective page). Anchored 'discussion' containers have no
+		// thread document and are unaffected.
+		if idx == IndexPosts && slices.Contains(indexes, IndexForumThreads) {
+			filters = append(filters, Ne{Field: "content_type", Value: "forum_thread"})
+		}
 		// ADR-064 + ADR-064a: for indexes that carry a relevant_countries
 		// filterable attribute (posts, academy_tracks), boost results
 		// relevant to the visitor's country. The OR keeps globally-relevant
@@ -662,19 +674,6 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 	}
 
 	mapped, totals := mapSearchResults(results)
-
-	// A real forum thread is indexed twice — its contents row lands in the
-	// posts index (content_type='forum_thread') and its dedicated document
-	// in forum_threads. When both indexes are queried, suppress the posts
-	// copy so the thread surfaces once under the forum_thread group — the
-	// dedicated doc carries solved state and the §05 members-space
-	// title-only visibility semantics. Anchored 'discussion' containers
-	// have no thread document and are not suppressed.
-	if slices.Contains(indexes, IndexPosts) && slices.Contains(indexes, IndexForumThreads) {
-		mapped = slices.DeleteFunc(mapped, func(r SearchResult) bool {
-			return r.Type == "content" && r.Item.ContentType == "forum_thread"
-		})
-	}
 
 	return mapped, totals, nil
 }
@@ -1803,6 +1802,11 @@ func typeFromParam(raw string) string {
 			valid = append(valid, p)
 		}
 	}
+
+	// Sort so type=a,b and type=b,a resolve to one canonical filter — the
+	// raw string feeds the cache key, and order permutations must share an
+	// entry rather than duplicate the same index set under two keys.
+	slices.Sort(valid)
 
 	return strings.Join(valid, ",")
 }
