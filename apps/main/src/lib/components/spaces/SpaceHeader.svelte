@@ -2,10 +2,10 @@
 	/**
 	 * Space hub header — rounded cover card with a dark bottom fade. Per the
 	 * mockup the ENTIRE identity block lives inside the cover: circular
-	 * logo at bottom-left with a white ring, white name + verified badge,
-	 * location/type meta, a globe visibility line, the Follow/Invite pills
-	 * at right, and a stats strip (bold number over label, vertical
-	 * dividers) across the cover bottom.
+	 * logo at bottom-left, white name + verified badge, location/type
+	 * meta, a globe visibility line, and a compact bottom row where the
+	 * stats strip (bold number over label, vertical dividers) sits left
+	 * and the action pills (Follow, Invite, Wiki) sit right.
 	 *
 	 * Ref: .jeos/sections/05-geo-first-space-system.md
 	 *      (Amendment addendum 2026-11-27: Space Hub Redesign)
@@ -68,9 +68,10 @@
 
 <header class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" use:imgLightbox>
 	<!-- Cover — the mockup keeps the whole identity block inside the image:
-	     logo + name + meta + actions sit over the dark fade, stats along
-	     the bottom edge. -->
-	<div class="relative h-64 overflow-hidden sm:h-72">
+	     logo + name + meta sit over the dark fade, and the stats strip
+	     shares the bottom row with the action pills (stats left, actions
+	     right) so the cover stays compact. -->
+	<div class="relative h-48 overflow-hidden sm:h-52">
 		{#if headerUrl}
 			<img src={headerUrl} alt="" class="h-full w-full object-cover" />
 		{:else}
@@ -81,10 +82,10 @@
 		{/if}
 		<div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/35 to-black/10"></div>
 
-		<!-- Identity row — logo, name/meta, action pills (mockup). -->
-		<div class="absolute inset-x-0 bottom-0 flex flex-col gap-4 px-4 pb-4 sm:px-5">
+		<!-- Identity row — logo, name/meta. -->
+		<div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-3.5 sm:px-5">
 			<div class="flex items-end gap-3 sm:gap-4">
-				<!-- Circular logo with the white ring. -->
+				<!-- Circular logo — falls back to the first letter. -->
 				{#if logoUrl}
 					<img
 						src={logoUrl}
@@ -114,10 +115,26 @@
 						<span class="capitalize">{t('space.visibility_label', '{visibility} space').replace('{visibility}', space.visibility)}</span>
 					</p>
 				</div>
+			</div>
 
-				<!-- Action pills — mockup shows Following + Invite only; mute and
-				     report survive as small translucent icon buttons. -->
-				<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+			<!-- Bottom row — stats strip (left) shares the row with the
+			     action pills (right). Stats: bold number over small label,
+			     thin vertical dividers (mockup). -->
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+				{#if stats.length > 0}
+					<div class="flex min-w-0 flex-1 items-center overflow-x-auto text-white">
+						{#each stats as stat, i (stat.label)}
+							<div class="shrink-0 px-4 first:pl-0 sm:px-6 {i > 0 ? 'border-l border-white/30' : ''}">
+								<span class="block text-lg font-bold leading-tight sm:text-xl">{fmt(stat.value)}</span>
+								<span class="block text-xs text-white/75">{stat.label}</span>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="flex-1"></div>
+				{/if}
+
+				<div class="flex shrink-0 items-center justify-end gap-2">
 					{#if authed}
 						<button
 							type="button"
@@ -182,19 +199,6 @@
 					{/if}
 				</div>
 			</div>
-
-			<!-- Stats strip — bold number over small label, thin vertical
-			     dividers between stats (mockup). -->
-			{#if stats.length > 0}
-				<div class="flex items-center overflow-x-auto text-white">
-					{#each stats as stat, i (stat.label)}
-						<div class="shrink-0 px-4 first:pl-0 sm:px-6 {i > 0 ? 'border-l border-white/30' : ''}">
-							<span class="block text-lg font-bold leading-tight sm:text-xl">{fmt(stat.value)}</span>
-							<span class="block text-xs text-white/75">{stat.label}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
 		</div>
 	</div>
 </header>
