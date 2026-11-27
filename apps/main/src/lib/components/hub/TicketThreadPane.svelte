@@ -43,6 +43,13 @@
 
 	let comments = $state<TicketComment[]>(untrack(() => detail.comments ?? []));
 	let attachments = $state<TicketAttachment[]>(untrack(() => detail.attachments ?? []));
+	// A submitter reply can flip the status server-side (waiting_on_user →
+	// in_progress) — the prop snapshot stays stale, so the pill tracks a
+	// refetched copy.
+	let liveStatus = $state<TicketStatus>(untrack(() => detail.ticket.status));
+	// A comment posted but whose file upload failed keeps its id here so a
+	// retry links the attachment to it instead of dropping it loose.
+	let pendingCommentId = $state<string | null>(null);
 	let replyBody = $state('');
 	let posting = $state(false);
 	let errorKey = $state('');
@@ -66,30 +73,46 @@
 		ticketId;
 		comments = untrack(() => detail.comments ?? []);
 		attachments = untrack(() => detail.attachments ?? []);
+		liveStatus = detail.ticket.status;
+		pendingCommentId = null;
 		replyBody = '';
 		pendingFile = null;
 		errorKey = '';
 	});
 
+	// Rows whose media lookup failed (deleted file, revoked access) are
+	// hidden rather than pinned at "Loading…" forever.
+	let mediaFailed = $state<Set<string>>(new Set());
+	const visibleAttachments = $derived(attachments.filter((a) => !mediaFailed.has(a.media_id)));
+	// Media lookups in flight — the effect re-runs on mediaById writes, so
+	// without this guard a pending id counts as "missing" and refetches.
+	const mediaInFlight = new Set<string>();
+
 	// Resolve media details for every attachment row once the list lands.
 	$effect(() => {
 		const missing = attachments
 			.map((a) => a.media_id)
-			.filter((id) => id && !mediaById.has(id));
+			.filter((id) => id && !mediaById.has(id) && !mediaInFlight.has(id) && !mediaFailed.has(id));
 		if (missing.length === 0) return;
 		for (const id of missing) {
+			mediaInFlight.add(id);
 			void getMedia(id).then((res) => {
+				mediaInFlight.delete(id);
 				if (res.data) {
 					const next = new Map(mediaById);
 					next.set(id, res.data);
 					mediaById = next;
+				} else {
+					const next = new Set(mediaFailed);
+					next.add(id);
+					mediaFailed = next;
 				}
 			});
 		}
 	});
 
 	// Attachment rows not bound to a comment render as a ticket-level list.
-	const looseAttachments = $derived(attachments.filter((a) => !a.comment_id));
+	const looseAttachments = $derived(visibleAttachments.filter((a) => !a.comment_id));
 
 	function statusClass(status: TicketStatus): string {
 		switch (status) {
@@ -121,7 +144,7 @@
 		}
 		posting = true;
 		try {
-			let commentId: string | undefined;
+			let commentId = pendingCommentId ?? undefined;
 			if (replyBody.trim()) {
 				const res = await api.post<TicketComment>(`/me/tickets/${ticket.id}/comments`, {
 					body: replyBody.trim()
@@ -129,11 +152,18 @@
 				if (res.data) {
 					comments = [...comments, res.data];
 					commentId = res.data.id;
+					// The saved retry id is superseded by this fresh comment;
+					// a failed attach below re-saves this one's id.
+					pendingCommentId = null;
 					replyBody = '';
 				} else {
 					errorKey = 'tickets.errors.reply_failed';
 					return;
 				}
+				// A reply can drive a server-side transition (waiting_on_user →
+				// in_progress) — refetch so the status pill stays truthful.
+				const det = await api.get<TicketDetailResponse>(`/me/tickets/${ticket.id}`);
+				if (det.data?.ticket.status) liveStatus = det.data.ticket.status;
 			}
 
 			if (pendingFile) {
@@ -167,7 +197,11 @@
 				uploading = false;
 				if (att.data) {
 					attachments = [...attachments, att.data];
+					pendingCommentId = null;
 				} else {
+					// Keep the posted comment's id so a retry still links the
+					// file to it instead of dropping a loose attachment.
+					pendingCommentId = commentId ?? null;
 					errorKey = 'hub.errors.attach_failed';
 					return;
 				}
@@ -201,8 +235,8 @@
 				{ticketRef(ticket)} · {ticket.type_name}
 			</p>
 		</div>
-		<span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {statusClass(ticket.status)}">
-			{ticketStatusLabel(ticket.status, t)}
+		<span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {statusClass(liveStatus)}">
+			{ticketStatusLabel(liveStatus, t)}
 		</span>
 		{#if onToggleDetails}
 			<button
@@ -233,7 +267,7 @@
 		{:else}
 			<ul class="space-y-2">
 				{#each comments as c (c.id)}
-					{@const commentAttachments = attachments.filter((a) => a.comment_id === c.id)}
+					{@const commentAttachments = visibleAttachments.filter((a) => a.comment_id === c.id)}
 					<li
 						class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 					>
@@ -313,7 +347,7 @@
 	</div>
 
 	<!-- Reply composer + attachment pick -->
-	{#if ticket.status !== 'closed' && ticket.status !== 'spam'}
+	{#if liveStatus !== 'closed' && liveStatus !== 'spam'}
 		<form
 			class="space-y-2 border-t border-[var(--color-border)] p-3 pe-14"
 			onsubmit={postReply}
