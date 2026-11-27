@@ -313,9 +313,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			? [{ value: 'wiki', label: t('space.tab.wiki', 'Wiki') }]
 			: []),
 		...(isGeo ? [{ value: 'stories', label: t('space.tab.stories', 'Stories') }] : []),
-		// 'List' is the member/follower roster — the canonical label in the
-		// hub-redesign tab order (mockup).
-		{ value: 'members', label: t('space.tab.list', 'List') },
+		{ value: 'members', label: t('space.tab.members', 'Members') },
 		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
 		...(hasSubspacesTab ? [{ value: 'subspaces', label: t('space.tab.subspaces', 'Subspaces') }] : []),
 		{ value: 'search', label: t('space.tab.search', 'Search') },
