@@ -1180,17 +1180,28 @@ SELECT email FROM users WHERE id = @user_id;
 -- optional; nil preserves any existing value (same contract as orgs).
 -- RETURNING feeds the user.verified webhook payload with the effective
 -- (post-COALESCE) type rather than the request's nil.
+-- The WHERE clause makes the grant atomic-idempotent: a concurrent or
+-- repeated grant with no effective change (already verified, nil/empty/
+-- same type) matches 0 rows — the service treats ErrNoRows as a no-op
+-- rather than re-firing email+webhook. NULLIF normalizes '' to NULL so
+-- an empty type can never be written.
 -- Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
 UPDATE users SET verified = true,
-  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  verification_type = COALESCE(NULLIF(sqlc.narg(verification_type)::text, ''), verification_type),
   updated_at = now()
 WHERE id = $1
+  AND (verified = false
+       OR (NULLIF(sqlc.narg(verification_type)::text, '') IS NOT NULL
+           AND NULLIF(sqlc.narg(verification_type)::text, '') IS DISTINCT FROM verification_type))
 RETURNING verification_type;
 
--- name: UnverifyUser :exec
+-- name: UnverifyUser :execrows
 -- Revokes the profile verification badge and clears verification_type.
+-- AND verified makes the revoke atomic-idempotent — a concurrent/repeat
+-- call matches 0 rows and the service skips the webhook/email side
+-- effects instead of emitting user.unverified for a badge-less account.
 UPDATE users SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1;
+WHERE id = $1 AND verified;
 
 -- name: GetUserVerified :one
 -- Eligibility probe for POST /verification-requests (entity_type='user').

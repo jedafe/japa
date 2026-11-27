@@ -3020,15 +3020,21 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const unverifyUser = `-- name: UnverifyUser :exec
+const unverifyUser = `-- name: UnverifyUser :execrows
 UPDATE users SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND verified
 `
 
 // Revokes the profile verification badge and clears verification_type.
-func (q *Queries) UnverifyUser(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, unverifyUser, id)
-	return err
+// AND verified makes the revoke atomic-idempotent — a concurrent/repeat
+// call matches 0 rows and the service skips the webhook/email side
+// effects instead of emitting user.unverified for a badge-less account.
+func (q *Queries) UnverifyUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, unverifyUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateLastLoginAt = `-- name: UpdateLastLoginAt :exec
@@ -3315,9 +3321,12 @@ func (q *Queries) UsernameExists(ctx context.Context, arg UsernameExistsParams) 
 
 const verifyUser = `-- name: VerifyUser :one
 UPDATE users SET verified = true,
-  verification_type = COALESCE($2::text, verification_type),
+  verification_type = COALESCE(NULLIF($2::text, ''), verification_type),
   updated_at = now()
 WHERE id = $1
+  AND (verified = false
+       OR (NULLIF($2::text, '') IS NOT NULL
+           AND NULLIF($2::text, '') IS DISTINCT FROM verification_type))
 RETURNING verification_type
 `
 
@@ -3330,6 +3339,11 @@ type VerifyUserParams struct {
 // optional; nil preserves any existing value (same contract as orgs).
 // RETURNING feeds the user.verified webhook payload with the effective
 // (post-COALESCE) type rather than the request's nil.
+// The WHERE clause makes the grant atomic-idempotent: a concurrent or
+// repeated grant with no effective change (already verified, nil/empty/
+// same type) matches 0 rows — the service treats ErrNoRows as a no-op
+// rather than re-firing email+webhook. NULLIF normalizes ” to NULL so
+// an empty type can never be written.
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
 func (q *Queries) VerifyUser(ctx context.Context, arg VerifyUserParams) (*string, error) {
 	row := q.db.QueryRow(ctx, verifyUser, arg.ID, arg.VerificationType)

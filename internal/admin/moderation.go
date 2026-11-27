@@ -1344,7 +1344,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		err := h.Queries.VerifyOrganization(r.Context(), gen.VerifyOrganizationParams{
+		_, err := h.Queries.VerifyOrganization(r.Context(), gen.VerifyOrganizationParams{
 			ID:               oid,
 			VerificationType: body.VerificationType,
 		})
@@ -1383,7 +1383,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	} else {
-		err := h.Queries.UnverifyOrganization(r.Context(), oid)
+		_, err := h.Queries.UnverifyOrganization(r.Context(), oid)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 			return

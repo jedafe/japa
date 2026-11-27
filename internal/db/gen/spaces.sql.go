@@ -5741,16 +5741,21 @@ func (q *Queries) SumSpaceContentViews(ctx context.Context, spaceID pgtype.UUID)
 	return count, err
 }
 
-const unverifySpace = `-- name: UnverifySpace :exec
+const unverifySpace = `-- name: UnverifySpace :execrows
 UPDATE spaces SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL AND verified
 `
 
 // §07 space badge revoke (DELETE /admin/spaces/{id}/verify) — clears the
-// type alongside the flag (same contract as UnverifyUser).
-func (q *Queries) UnverifySpace(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, unverifySpace, id)
-	return err
+// type alongside the flag (same contract as UnverifyUser). AND verified
+// makes the revoke atomic-idempotent — a concurrent/repeat call matches
+// 0 rows and the service skips the webhook/email side effects.
+func (q *Queries) UnverifySpace(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, unverifySpace, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updatePermissionPreset = `-- name: UpdatePermissionPreset :one
@@ -6335,11 +6340,14 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 	return i, err
 }
 
-const verifySpace = `-- name: VerifySpace :exec
+const verifySpace = `-- name: VerifySpace :execrows
 UPDATE spaces SET verified = true,
-  verification_type = COALESCE($1::text, verification_type),
+  verification_type = COALESCE(NULLIF($1::text, ''), verification_type),
   updated_at = now()
 WHERE id = $2 AND deleted_at IS NULL
+  AND (verified = false
+       OR (NULLIF($1::text, '') IS NOT NULL
+           AND NULLIF($1::text, '') IS DISTINCT FROM verification_type))
 `
 
 type VerifySpaceParams struct {
@@ -6349,8 +6357,14 @@ type VerifySpaceParams struct {
 
 // §07 space badge grant (POST /admin/spaces/{id}/verify) — two-step with the
 // verification-request review; verification_type carries the space-scope
-// taxonomy value (official|community|organization seeds).
-func (q *Queries) VerifySpace(ctx context.Context, arg VerifySpaceParams) error {
-	_, err := q.db.Exec(ctx, verifySpace, arg.VerificationType, arg.ID)
-	return err
+// taxonomy value (official|community|organization seeds). The WHERE
+// clause makes the grant atomic-idempotent: a concurrent/repeat grant
+// with no effective change matches 0 rows and the service skips the
+// owner email/webhook. NULLIF normalizes ” to NULL.
+func (q *Queries) VerifySpace(ctx context.Context, arg VerifySpaceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, verifySpace, arg.VerificationType, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

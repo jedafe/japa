@@ -920,13 +920,24 @@ func (s *Store) countUserPointsEarned(ctx context.Context, userID pgtype.UUID, f
 
 // VerifyUser grants the §07 profile verification badge and returns the
 // effective (post-COALESCE) verification_type for the webhook payload.
+// changed is false when the UPDATE matched 0 rows — a concurrent or
+// repeated grant with no effective change (atomic-idempotent WHERE).
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) (*string, error) {
-	return s.write.VerifyUser(ctx, gen.VerifyUserParams{ID: id, VerificationType: vtype})
+func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) (*string, bool, error) {
+	v, err := s.write.VerifyUser(ctx, gen.VerifyUserParams{ID: id, VerificationType: vtype})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return v, true, nil
 }
 
 // UnverifyUser revokes the profile verification badge and clears its type.
-func (s *Store) UnverifyUser(ctx context.Context, id pgtype.UUID) error {
+// Returns the affected row count — 0 means the account was already
+// unverified (atomic-idempotent WHERE).
+func (s *Store) UnverifyUser(ctx context.Context, id pgtype.UUID) (int64, error) {
 	return s.write.UnverifyUser(ctx, id)
 }
 

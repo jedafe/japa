@@ -384,7 +384,7 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUID,
 // VerifyOrganization marks an organization as verified (admin action).
 // Platform-scoped to prevent cross-platform verification (BUG-002).
 // vtype is the §7 verification badge type; nil preserves any existing value.
-func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID, vtype *string) error {
+func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID, vtype *string) (int64, error) {
 	return s.write.VerifyOrganization(ctx, gen.VerifyOrganizationParams{
 		ID:               id,
 		VerificationType: vtype,
@@ -392,8 +392,10 @@ func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID, vtype *s
 }
 
 // UnverifyOrganization revokes an organization's verification (admin action).
-// Platform-scoped and clears verification_type (BUG-002, BUG-016).
-func (s *Store) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
+// Platform-scoped and clears verification_type (BUG-002, BUG-016). Returns
+// the affected row count — 0 means the org was already unverified or
+// deleted (atomic-idempotent WHERE).
+func (s *Store) UnverifyOrganization(ctx context.Context, id pgtype.UUID) (int64, error) {
 	return s.write.UnverifyOrganization(ctx, id)
 }
 

@@ -102,19 +102,28 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 -- Organization Verification
 -- =====================
 
--- name: VerifyOrganization :exec
+-- name: VerifyOrganization :execrows
 -- Platform-scoped to prevent cross-platform verification (BUG-002).
 -- §7: verification_type is set when supplied and preserved otherwise —
 -- §111 package publishing gates on it (business|professional_body).
+-- The WHERE clause makes the grant atomic-idempotent: a concurrent or
+-- repeated grant with no effective change matches 0 rows and the service
+-- skips the owner email/webhook instead of re-notifying. NULLIF
+-- normalizes '' to NULL so an empty type can never be written.
 UPDATE organizations SET verified = true,
-  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  verification_type = COALESCE(NULLIF(sqlc.narg(verification_type)::text, ''), verification_type),
   updated_at = now()
-WHERE id = $1;
+WHERE id = $1
+  AND (verified = false
+       OR (NULLIF(sqlc.narg(verification_type)::text, '') IS NOT NULL
+           AND NULLIF(sqlc.narg(verification_type)::text, '') IS DISTINCT FROM verification_type));
 
--- name: UnverifyOrganization :exec
+-- name: UnverifyOrganization :execrows
 -- Platform-scoped and clears verification_type (BUG-002, BUG-016).
+-- AND verified makes the revoke atomic-idempotent — a concurrent/repeat
+-- call matches 0 rows and the service skips organization.unverified.
 UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1;
+WHERE id = $1 AND verified;
 
 -- =====================
 -- Appeals

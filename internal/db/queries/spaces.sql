@@ -1061,20 +1061,28 @@ RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type;
 
--- name: VerifySpace :exec
+-- name: VerifySpace :execrows
 -- §07 space badge grant (POST /admin/spaces/{id}/verify) — two-step with the
 -- verification-request review; verification_type carries the space-scope
--- taxonomy value (official|community|organization seeds).
+-- taxonomy value (official|community|organization seeds). The WHERE
+-- clause makes the grant atomic-idempotent: a concurrent/repeat grant
+-- with no effective change matches 0 rows and the service skips the
+-- owner email/webhook. NULLIF normalizes '' to NULL.
 UPDATE spaces SET verified = true,
-  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  verification_type = COALESCE(NULLIF(sqlc.narg(verification_type)::text, ''), verification_type),
   updated_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+WHERE id = @id AND deleted_at IS NULL
+  AND (verified = false
+       OR (NULLIF(sqlc.narg(verification_type)::text, '') IS NOT NULL
+           AND NULLIF(sqlc.narg(verification_type)::text, '') IS DISTINCT FROM verification_type));
 
--- name: UnverifySpace :exec
+-- name: UnverifySpace :execrows
 -- §07 space badge revoke (DELETE /admin/spaces/{id}/verify) — clears the
--- type alongside the flag (same contract as UnverifyUser).
+-- type alongside the flag (same contract as UnverifyUser). AND verified
+-- makes the revoke atomic-idempotent — a concurrent/repeat call matches
+-- 0 rows and the service skips the webhook/email side effects.
 UPDATE spaces SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+WHERE id = @id AND deleted_at IS NULL AND verified;
 
 -- name: UpdateSpaceKeywords :exec
 -- Updates only the keywords array on a space. Separate from UpdateSpace so

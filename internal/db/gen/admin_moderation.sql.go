@@ -1894,15 +1894,20 @@ func (q *Queries) UnclaimBroadcast(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const unverifyOrganization = `-- name: UnverifyOrganization :exec
+const unverifyOrganization = `-- name: UnverifyOrganization :execrows
 UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND verified
 `
 
 // Platform-scoped and clears verification_type (BUG-002, BUG-016).
-func (q *Queries) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, unverifyOrganization, id)
-	return err
+// AND verified makes the revoke atomic-idempotent — a concurrent/repeat
+// call matches 0 rows and the service skips organization.unverified.
+func (q *Queries) UnverifyOrganization(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, unverifyOrganization, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAppealStatus = `-- name: UpdateAppealStatus :exec
@@ -1937,12 +1942,15 @@ func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusPara
 	return err
 }
 
-const verifyOrganization = `-- name: VerifyOrganization :exec
+const verifyOrganization = `-- name: VerifyOrganization :execrows
 
 UPDATE organizations SET verified = true,
-  verification_type = COALESCE($2::text, verification_type),
+  verification_type = COALESCE(NULLIF($2::text, ''), verification_type),
   updated_at = now()
 WHERE id = $1
+  AND (verified = false
+       OR (NULLIF($2::text, '') IS NOT NULL
+           AND NULLIF($2::text, '') IS DISTINCT FROM verification_type))
 `
 
 type VerifyOrganizationParams struct {
@@ -1956,7 +1964,14 @@ type VerifyOrganizationParams struct {
 // Platform-scoped to prevent cross-platform verification (BUG-002).
 // §7: verification_type is set when supplied and preserved otherwise —
 // §111 package publishing gates on it (business|professional_body).
-func (q *Queries) VerifyOrganization(ctx context.Context, arg VerifyOrganizationParams) error {
-	_, err := q.db.Exec(ctx, verifyOrganization, arg.ID, arg.VerificationType)
-	return err
+// The WHERE clause makes the grant atomic-idempotent: a concurrent or
+// repeated grant with no effective change matches 0 rows and the service
+// skips the owner email/webhook instead of re-notifying. NULLIF
+// normalizes ” to NULL so an empty type can never be written.
+func (q *Queries) VerifyOrganization(ctx context.Context, arg VerifyOrganizationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, verifyOrganization, arg.ID, arg.VerificationType)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -2812,24 +2812,21 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 		return fmt.Errorf("%w: verification_type must be an active user verification type", errpkg.ErrInvalid)
 	}
 
-	// Fetch the current badge state: already-verified with no effective
-	// change (nil/empty/same type) is an idempotent no-op — re-firing the
-	// grant email/webhook would be a false re-notification.
-	user, err := s.store.read.GetUserByID(ctx, id)
-	if err != nil {
+	// Existence check — the atomic-idempotent UPDATE returns 0 rows for a
+	// no-op, which is indistinguishable from a missing id without it.
+	if _, err := s.store.read.GetUserByID(ctx, id); err != nil {
 		return fmt.Errorf("fetching user for verify: %w", err)
 	}
-	current := ""
-	if user.VerificationType != nil {
-		current = *user.VerificationType
-	}
-	if user.Verified && (vtype == nil || *vtype == "" || *vtype == current) {
-		return nil
-	}
 
-	effectiveType, err := s.store.VerifyUser(ctx, id, vtype)
+	effectiveType, changed, err := s.store.VerifyUser(ctx, id, vtype)
 	if err != nil {
 		return fmt.Errorf("verifying user: %w", err)
+	}
+	if !changed {
+		// Already in the requested state (or a concurrent grant won the
+		// race) — the UPDATE's atomic predicate, not the possibly-stale
+		// replica read, is the authority on "nothing changed".
+		return nil
 	}
 
 	// §07: the users index carries verified/verification_type — resync so
@@ -2854,19 +2851,19 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 func (s *Service) UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error {
 	// Existence check — the UPDATE matches 0 rows on a missing id, which
 	// would otherwise emit user.unverified for a phantom account.
-	user, err := s.store.read.GetUserByID(ctx, id)
-	if err != nil {
+	if _, err := s.store.read.GetUserByID(ctx, id); err != nil {
 		return fmt.Errorf("fetching user for unverify: %w", err)
 	}
 
-	// No badge to revoke — the DB is already in the desired state; skipping
-	// avoids a phantom user.unverified webhook and a false revocation email.
-	if !user.Verified {
-		return nil
-	}
-
-	if err := s.store.UnverifyUser(ctx, id); err != nil {
+	rows, err := s.store.UnverifyUser(ctx, id)
+	if err != nil {
 		return fmt.Errorf("unverifying user: %w", err)
+	}
+	if rows == 0 {
+		// Already unverified — the UPDATE's AND verified predicate is the
+		// atomic authority (a stale replica could show verified=false while
+		// the primary still holds the badge). Skip the webhook/email.
+		return nil
 	}
 
 	s.enqueueUserSearchIndex(id)
