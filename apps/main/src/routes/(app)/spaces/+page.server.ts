@@ -15,13 +15,11 @@ import type { Space, SpaceType, GeoCountry, GeoState, GeoCity, SpaceDetail } fro
  *      ADR-058 (renders inside the app shell)
  */
 const DEFAULT_PAGE_SIZE = 24;
-const DEFAULT_LEVELS = ['country', 'state', 'city', 'custom'];
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const typeSlug = (event.url.searchParams.get('type') ?? '').trim();
-	const levelFilter = (event.url.searchParams.get('level') ?? '').trim();
 	const sort = (event.url.searchParams.get('sort') ?? '').trim();
 	const geoFilter = (event.url.searchParams.get('geo') ?? '').trim();
 	const regionFilter = (event.url.searchParams.get('region') ?? '').trim();
@@ -40,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 
-	// Rule 3 / Rule 16: configurable page size and level set from system_settings.
+	// Rule 3 / Rule 16: configurable page size from system_settings.
 	// Settings + space types are shared catalogs; fetch them concurrently —
 	// alongside the geo cascade's option lists and slug→id resolutions.
 	const effectiveCountry = countryParam || geoFilter;
@@ -69,9 +67,6 @@ export const load: PageServerLoad = async (event) => {
 	const siteSettings = siteSettingsRes;
 	const spaceTypes = spaceTypesRes;
 
-	const levels = Array.isArray(siteSettings['spaces.levels'])
-		? (siteSettings['spaces.levels'] as string[])
-		: DEFAULT_LEVELS;
 	const pageSize =
 		typeof siteSettings['spaces.page_size'] === 'number'
 			? Math.max(1, Math.round(siteSettings['spaces.page_size'] as number))
@@ -95,7 +90,6 @@ export const load: PageServerLoad = async (event) => {
 	params.set('member_created', '1');
 	if (q) params.set('q', q);
 	if (typeID) params.set('type', typeID);
-	if (levelFilter) params.set('level', levelFilter);
 	if (sort) params.set('sort', sort);
 	if (geoFilter) params.set('geo', geoFilter);
 	if (regionFilter) params.set('region', regionFilter);
@@ -194,7 +188,6 @@ export const load: PageServerLoad = async (event) => {
 		spaceTypes,
 		q,
 		type: typeSlug,
-		level: levelFilter,
 		sort,
 		geo: geoFilter,
 		region: regionFilter,
@@ -214,9 +207,7 @@ export const load: PageServerLoad = async (event) => {
 		totalPages,
 		total,
 		pageSize,
-		levels,
 		forbidden,
-		loadError,
-		followingSpaceIds: [] as string[]
+		loadError
 	};
 };

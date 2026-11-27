@@ -440,6 +440,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let membersLoading = $state(false);
 	let membersEnd = $derived(data.members.length < data.pageSize);
 
+	// Client-side load-more for the subspaces grid (page_offset paging on
+	// the same ?within=&member_created=1 query the SSR seeds — a geo space
+	// with more subspaces than one page would otherwise truncate silently).
+	let subspaceItems = $state<Space[]>(untrack(() => data.subspaces ?? []));
+	let subspacesLoading = $state(false);
+	let subspacesEnd = $derived(subspaces.length < data.pageSize);
+
 	// §05 hub-redesign — typed tab feeds (blog/stories/guides). Each keeps
 	// the SSR page + total and cursor-paginates on created_at like the
 	// overview feed.
@@ -532,6 +539,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		feedItems = data.content;
 		pinnedItems = data.pinned;
 		membersItems = data.members;
+		subspaceItems = data.subspaces ?? [];
 		moderators = data.moderators;
 		rules = data.rules;
 		parentSpaces = data.parentSpaces;
@@ -541,6 +549,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		discussionFeed = seedTypedFeed(data.discussionFeed ?? { items: [], total: null }, data.forumPageSize);
 		wikiQuery = '';
 		membersEnd = data.members.length < data.pageSize;
+		subspacesEnd = (data.subspaces ?? []).length < data.pageSize;
 		following = data.initiallyFollowing ?? false;
 		muted = data.isMuted ?? false;
 		feedError = '';
@@ -661,6 +670,22 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			if (res.data.length < data.pageSize) membersEnd = true;
 		}
 		membersLoading = false;
+	}
+
+	async function loadMoreSubspaces() {
+		if (subspacesLoading || subspacesEnd) return;
+		subspacesLoading = true;
+		// Same ?within=&member_created=1 scope as the SSR fetch — offset by
+		// items already loaded, short page means the list is exhausted.
+		const res = await api.get<Space[]>(
+			`/spaces?within=${encodeURIComponent(space.slug)}&member_created=1&page_size=${data.pageSize}&page_offset=${subspaceItems.length}`
+		);
+		if (res.data) {
+			const seen = new Set(subspaceItems.map((s) => s.id));
+			subspaceItems = [...subspaceItems, ...res.data.filter((s) => !seen.has(s.id))];
+			if (res.data.length < data.pageSize) subspacesEnd = true;
+		}
+		subspacesLoading = false;
 	}
 
 	// --- Pinned post management (Ref: §05; POST/DELETE /spaces/{slug}/pinned) ---
@@ -1362,11 +1387,11 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{:else if activeTab === 'subspaces'}
 			<!-- Subspaces tab (§05 hub-redesign, geo only) — member-created
 			     communities under this destination + create CTA. -->
-			{#if subspaces.length === 0}
+			{#if subspaceItems.length === 0}
 				<EmptyState icon={Layers} title={t('space.subspaces_empty', 'No subspaces yet')} />
 			{:else}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					{#each subspaces as sub (sub.id)}
+					{#each subspaceItems as sub (sub.id)}
 						<SpaceCard space={sub}>
 							{#snippet actions()}
 								<SpaceJoinButton
@@ -1382,6 +1407,16 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						</SpaceCard>
 					{/each}
 				</div>
+				{#if !subspacesEnd}
+					<button
+						type="button"
+						onclick={loadMoreSubspaces}
+						disabled={subspacesLoading}
+						class="mx-auto mt-3 block rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{subspacesLoading ? t('common.loading') : t('feed.load_more', 'Load more')}
+					</button>
+				{/if}
 			{/if}
 			{#if authed}
 				<button

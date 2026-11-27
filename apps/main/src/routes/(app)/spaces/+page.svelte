@@ -67,7 +67,7 @@
 		!!selectedCountry || !!selectedState || !!selectedCity || !!selectedSort ||
 		// Legacy URL params still resolve server-side — light the dot so the
 		// clear control appears on hand-crafted links too.
-		!!data.type || !!data.level || !!data.geo || !!data.region ||
+		!!data.type || !!data.geo || !!data.region ||
 		!!data.subregion || !!data.parent
 	);
 	let filtersModalOpen = $state(false);
@@ -154,8 +154,6 @@
 		{ value: 'joined', label: t('spaces.joined_only', 'My spaces') }
 	]);
 
-	const followingSpaceIdSet = $derived(new Set(data.followingSpaceIds ?? []));
-
 	async function loadMoreSpaces() {
 		if (loadingMore || allSpaces.length >= visibleTotal) return;
 		loadingMore = true;
@@ -171,7 +169,6 @@
 			params.set('member_created', '1');
 			if (data.q) params.set('q', data.q);
 			if (data.type) params.set('type', data.type);
-			if (data.level) params.set('level', data.level);
 			if (data.sort) params.set('sort', data.sort);
 			if (data.geo) params.set('geo', data.geo);
 			if (data.region) params.set('region', data.region);
@@ -468,7 +465,7 @@
 								entitySlug={space.slug}
 								initiallyJoined={space.is_member ?? false}
 								initiallyPending={space.is_pending ?? false}
-								initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
+								initiallyFollowing={space.is_following ?? false}
 								compact
 								followOnly={!!space.is_primary}
 							/>
