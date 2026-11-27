@@ -117,6 +117,19 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			if _, resolved, rerr := h.Service.ResolveSpaceInvite(r.Context(), pendingInvite.ID, "accepted"); rerr != nil || !resolved {
 				slog.Warn("join: invite resolve failed",
 					"space_id", space.ID, "user_id", user.UserID, "invite_id", pendingInvite.ID, "resolved", resolved, "error", rerr)
+			} else if h.notifier != nil {
+				// §05 hub-redesign: tell the inviter their invite was
+				// accepted (actor = the new member, subject = the space).
+				// Only fires when the resolve actually flipped the row, so
+				// a concurrent accept can't double-notify.
+				if nerr := h.notifier.CreateNotification(r.Context(), pendingInvite.InviterID,
+					"space_invite_accepted", "user", user.UserID,
+					"space", space.ID,
+					"Space invite accepted", "Your invitation to "+space.Name+" was accepted",
+					"/spaces/"+space.Slug); nerr != nil {
+					slog.Warn("join: invite-accepted notification failed",
+						"space_id", space.ID, "inviter_id", pendingInvite.InviterID, "error", nerr)
+				}
 			}
 		}
 

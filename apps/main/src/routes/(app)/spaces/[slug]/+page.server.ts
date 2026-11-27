@@ -114,12 +114,13 @@ export const load: PageServerLoad = async (event) => {
 	const isGeo = ['country', 'state', 'city'].includes(space.level);
 	const isPrimary = space.is_primary === true || isGeo || isUniversity;
 
-	// Fetch reviews for university spaces; the route is public and returns an
-	// empty list for non-university spaces, but the tab is only rendered when
-	// the type matches.
-	const reviews = isUniversity
-		? await apiGet<SpaceReview[]>(ctx, `/spaces/${spaceId}/reviews?page_size=20`).catch(() => [])
-		: [];
+	// Feature flags + result shapes needed by the batch below — resolved
+	// once so each promise can gate on them without extra awaits.
+	const wikiEnabled = !!features['wiki.enabled'];
+	// Phase 08.10 — analytics fetch result: data on success, an error
+	// sentinel on 403/unavailable (space-admin only per JEOS §215).
+	type AnalyticsResult = { data: unknown } | { error: string };
+	type WikiTypeRow = { space_type_id: string; enabled: boolean };
 
 	// Viewer-scoped management flags from the detail bundle (Ref: §05 lines
 	// 198-224). is_owner gates the moderator assignment UI; is_moderator is
@@ -143,7 +144,8 @@ export const load: PageServerLoad = async (event) => {
 	const [
 		contentRes, pinned, members, forumThreads, moderators, isFollowing,
 		isMuted, presets, parentSpaces, achievements, digest,
-		blogFeed, storyFeed, guideFeed, events, subspaces, leaders, contributors, spaceTypes
+		blogFeed, storyFeed, guideFeed, events, subspaces, leaders, contributors, spaceTypes,
+		reviews, analyticsResult, wikiTypes, opportunities
 	] = await Promise.all([
 		// items + meta.total (§05 hub-redesign — the header stats row shows
 		// real counts without paginating the full list).
@@ -244,24 +246,45 @@ export const load: PageServerLoad = async (event) => {
 		// (space_type_id → name). Public route.
 		apiList<SpaceTypeOption>(ctx, `/space-types`)
 			.then((r) => r.items)
-			.catch(() => [])
+			.catch(() => []),
+		// Reviews tab — university spaces only; the route is public and
+		// returns an empty list otherwise, but the fetch is gated to keep
+		// non-university spaces from paying for it.
+		isUniversity
+			? apiGet<SpaceReview[]>(ctx, `/spaces/${spaceId}/reviews?page_size=20`).catch(() => [])
+			: Promise.resolve([] as SpaceReview[]),
+		// Analytics dashboard — space-admin only per JEOS §215 [auth,
+		// space-admin]. Only fetched for authenticated viewers; the route
+		// 403s for non-admins (degrades to the error sentinel → tab hidden).
+		event.locals.user
+			? apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`)
+					.then((data): AnalyticsResult => ({ data }))
+					.catch((err: any): AnalyticsResult => {
+						if (err?.status === 403 || err?.code === 'forbidden') {
+							return { error: 'permission_denied' };
+						}
+						return { error: 'unavailable' };
+					})
+			: Promise.resolve({ data: null } as AnalyticsResult),
+		// §80 Wiki Types probe — resolves hasWiki: a space has a wiki when
+		// its space_type has an enabled wiki_type_configs row. Primary-only
+		// surface (§05 hub matrix), so custom spaces skip the round-trip
+		// entirely; the index fetch below is the only dependent wait.
+		wikiEnabled && isPrimary && space.space_type_id
+			? apiGetEnvelope<WikiTypeRow[]>(ctx, '/wiki/types').catch(
+					() => ({ data: [] as WikiTypeRow[] })
+				)
+			: Promise.resolve({ data: [] as WikiTypeRow[] }),
+		// Opportunities tab — geo-filtered intel radar feed. Only fetched
+		// when the URL deep-links ?tab=opportunities; UrlTabs switches
+		// shallowly otherwise, so the tab lazy-fetches client-side on
+		// activation. Public for guests; degrades to an empty list.
+		event.url.searchParams.get('tab') === 'opportunities'
+			? apiRadarList<RadarItem>(ctx, `/intel/radar?space_id=${space.id}&page_size=24`)
+					.then((r) => r?.items ?? [])
+					.catch(() => [] as RadarItem[])
+			: Promise.resolve([] as RadarItem[])
 	]);
-
-	// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
-	// §215 [auth, space-admin]. Only fetch for authenticated viewers; the
-	// route 403s for non-admins (degrades to null → tab hidden). Guests
-	// never see the tab and never trigger the request.
-	type AnalyticsResult = { data: unknown } | { error: string };
-	const analyticsResult: AnalyticsResult = event.locals.user
-		? await apiGet<unknown>(ctx, `/spaces/${spaceId}/analytics`)
-				.then((data): AnalyticsResult => ({ data }))
-				.catch((err: any): AnalyticsResult => {
-					if (err?.status === 403 || err?.code === 'forbidden') {
-						return { error: 'permission_denied' };
-					}
-					return { error: 'unavailable' };
-				})
-		: { data: null };
 
 	// Destination wiki index for this space, gated by the wiki feature flag.
 	// §80 Wiki Types amendment: a space has a wiki when its space_type has an
@@ -271,22 +294,15 @@ export const load: PageServerLoad = async (event) => {
 	// no wiki yet.
 	let wikiPages: WikiPageIndex[] | null = null;
 	let wikiCategories: WikiApiCategory[] = [];
-	const wikiEnabled = !!features['wiki.enabled'];
-	let hasWiki = false;
-	// Wiki is a primary-space surface (§05 hub matrix) — skip the types
-	// round-trip for custom spaces entirely.
-	if (wikiEnabled && isPrimary && space.space_type_id) {
-		const wikiTypes = await apiGetEnvelope<Array<{ space_type_id: string; enabled: boolean }>>(
-			ctx,
-			'/wiki/types'
-		).catch(() => ({ data: [] as Array<{ space_type_id: string; enabled: boolean }> }));
-		hasWiki = (wikiTypes.data ?? []).some(
-			(wt) => wt.enabled && wt.space_type_id === space.space_type_id
-		);
-	}
+	const hasWiki =
+		wikiEnabled && isPrimary && !!space.space_type_id
+			? (wikiTypes.data ?? []).some(
+					(wt) => wt.enabled && wt.space_type_id === space.space_type_id
+				)
+			: false;
 	// Wiki is a primary-space surface (§05 hub matrix) — skip the index
 	// fetch for custom spaces even when their type has a wiki config.
-	if (wikiEnabled && hasWiki && isPrimary) {
+	if (hasWiki) {
 		[wikiPages, wikiCategories] = await Promise.all([
 			apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
 				.then((r) => r.items)
@@ -301,19 +317,6 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => [] as WikiApiCategory[])
 		]);
 	}
-
-	// Opportunities tab — geo-filtered intel radar feed for this space.
-	// Public for guests (same ?space_id= endpoint the /radar geo view uses);
-	// degrades to an empty list when the intel service is unavailable.
-	const opportunities =
-		event.url.searchParams.get('tab') === 'opportunities'
-			? (
-					await apiRadarList<RadarItem>(
-						ctx,
-						`/intel/radar?space_id=${space.id}&page_size=24`
-					).catch(() => null)
-				)?.items ?? []
-			: [];
 
 	return {
 		space,

@@ -549,6 +549,13 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		opportunitiesLoaded = (data.opportunities ?? []).length > 0;
 		opportunitiesLoading = false;
 		opportunitiesError = '';
+		// Re-sync the tab to the URL on each new load — the component
+		// persists across [slug] navigations, so without this a carried-over
+		// ?tab= (or a stale in-state tab) renders a surface the URL doesn't
+		// ask for. untracked: UrlTabs' shallow ?tab= goto must NOT re-run
+		// this whole re-seed — only a fresh SSR payload (data.*) does.
+		const rawTab = untrack(() => page.url.searchParams.get('tab')) ?? 'overview';
+		activeTab = LEGACY_TABS[rawTab] ?? rawTab;
 	});
 
 	// Header meta line — parents joined ("Lagos · Delta State" for a city).
