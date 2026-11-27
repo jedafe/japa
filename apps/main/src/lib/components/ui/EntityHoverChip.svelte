@@ -44,7 +44,7 @@
 		externalHref?: string;
 		/** §07 verification state already known by the caller — rendered inline
 		 *  on the default trigger and seeds the hover card until the detail
-		 *  fetch resolves. Only meaningful for 'user'/'organization' chips. */
+		 *  fetch resolves. Only meaningful for 'user'/'organization'/'space' chips. */
 		verified?: boolean;
 		verificationType?: string | null;
 	}
@@ -100,8 +100,9 @@
 	let detailVerified = $state<boolean | undefined>(verified || undefined);
 	// svelte-ignore state_referenced_locally
 	let detailVerificationType = $state<string | undefined>(verificationType ?? undefined);
-	// Badge artwork scope — only users and organizations carry §07 badges.
-	const badgeScope = $derived(type === 'organization' ? 'organization' : 'user');
+	// Badge artwork scope — §07 badges on user, organization, and space
+	// (001236) entities; 'source' never carries one (scope unused there).
+	const badgeScope = $derived(type === 'organization' ? 'organization' : type === 'space' ? 'space' : 'user');
 	let detailFollowingCount = $state<number | undefined>(undefined);
 	let detailPostsCount = $state<number | undefined>(undefined);
 	let detailUsername = $state<string | undefined>(undefined);

@@ -262,7 +262,7 @@
 							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
 						</div>
 					{/if}
-					<h3 class="flex items-center gap-1 font-medium text-[var(--color-text)]">{title}<VerifiedBadge verified={item.verified} type={item.verification_type} scope={hoverType === 'organization' ? 'organization' : 'user'} size={15} /></h3>
+					<h3 class="flex items-center gap-1 font-medium text-[var(--color-text)]">{title}<VerifiedBadge verified={item.verified} type={item.verification_type} scope={hoverType === 'organization' ? 'organization' : hoverType === 'space' ? 'space' : 'user'} size={15} /></h3>
 					{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
 				{/snippet}
 			</EntityHoverChip>

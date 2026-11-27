@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/brand"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -1476,6 +1477,12 @@ func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtyp
 		"verified_by":       adminID,
 	})
 
+	// Notify the space owner the badge was granted — §07 parity with the
+	// user/org grant emails (fire-and-forget, Rule 8).
+	s.enqueueVerifyEmail(ctx, id, space.Name, space.Slug, "space_verification_granted",
+		fmt.Sprintf("%s has been verified on %s", space.Name, brand.Get()),
+		"Your space \""+space.Name+"\" has been verified — the badge is now shown publicly on the space.\n")
+
 	return nil
 }
 
@@ -1501,6 +1508,12 @@ func (s *Service) UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) er
 		"name":          space.Name,
 		"unverified_by": adminID,
 	})
+
+	// Notify the space owner the badge was revoked — §07 parity with
+	// verification_revoked (fire-and-forget, Rule 8).
+	s.enqueueVerifyEmail(ctx, id, space.Name, space.Slug, "space_verification_revoked",
+		fmt.Sprintf("Verification removed from %s on %s", space.Name, brand.Get()),
+		"The verification badge on your space \""+space.Name+"\" has been removed by our review team.\n")
 
 	return nil
 }

@@ -506,6 +506,65 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID pgtype.UUID, o
 	}
 }
 
+// enqueueVerifyEmail notifies the space owner of a badge grant/revocation
+// via an email:send task — the §07 parity of org_verification_granted and
+// users' verification_granted / verification_revoked emails. Ownerless
+// spaces (platform-run geo/university primaries carry no 'owner' member)
+// skip silently. Best-effort — the badge state change is already persisted,
+// so failures only log.
+func (s *Service) enqueueVerifyEmail(ctx context.Context, spaceID pgtype.UUID, spaceName, spaceSlug, kind, subject, body string) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	ownerID, err := s.read.GetSpaceOwnerID(ctx, spaceID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("spaces: fetch owner for verification notify", "space_id", spaceID.String(), "error", err)
+		}
+		return
+	}
+
+	email, err := s.read.GetUserEmailByID(ctx, ownerID)
+	if err != nil || email == "" {
+		slog.Warn("spaces: fetch owner email for verification notify",
+			"space_id", spaceID.String(), "error", err)
+		return
+	}
+
+	// ADR-055: template_slug routes through the DB-template chain; subject/
+	// body remain the caller-body fallback when the template row is
+	// missing/inactive. kind matches the seeded slug.
+	actionURL, supportURL := "", ""
+	if s.siteURL != "" && spaceSlug != "" {
+		actionURL = s.siteURL + "/spaces/" + spaceSlug
+	}
+	if s.siteURL != "" {
+		supportURL = s.siteURL + "/contact"
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"to":            email,
+		"subject":       subject,
+		"body":          body,
+		"type":          kind,
+		"template_slug": kind,
+		"template_data": map[string]any{
+			"space_name":  spaceName,
+			"action_url":  actionURL,
+			"support_url": supportURL,
+		},
+	})
+	if err != nil {
+		slog.Error("spaces: marshal verification email payload", "error", err)
+		return
+	}
+
+	if err := s.enqueuer.Enqueue(worker.TypeEmailSend, payload); err != nil {
+		slog.Error("spaces: enqueue verification email", "to", email, "error", err)
+	}
+}
+
 // EnqueueSpaceEntitiesReindex enqueues a search:reindex_space_entities
 // fan-out after a space visibility/status change — forum threads and
 // content both inherit space visibility (§05), so every doc must be

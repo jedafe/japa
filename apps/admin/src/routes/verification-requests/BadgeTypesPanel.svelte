@@ -21,7 +21,8 @@
 	const scopeOptions = [
 		{ value: "organization", label: t("vtypes.scope_organization", "Organization") },
 		{ value: "user", label: t("vtypes.scope_user", "User") },
-		{ value: "service_listing", label: t("vtypes.scope_service_listing", "Service listing") }
+		{ value: "service_listing", label: t("vtypes.scope_service_listing", "Service listing") },
+		{ value: "space", label: t("vtypes.scope_space", "Space") }
 	];
 
 	const scopeLabel = (v: string) => scopeOptions.find((o) => o.value === v)?.label ?? v;

@@ -2210,6 +2210,24 @@ func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorPa
 	return i, err
 }
 
+const getSpaceOwnerID = `-- name: GetSpaceOwnerID :one
+SELECT user_id FROM space_members
+WHERE space_id = $1 AND role = 'owner' AND status = 'approved'
+ORDER BY joined_at ASC
+LIMIT 1
+`
+
+// The space's owner (space_members.role='owner', approved) — the badge
+// grant/revoke notification recipient (§07 space verification, 001236).
+// Multiple owner rows are possible; the earliest joined_at wins, matching
+// the creator_user_id backfill convention (000969).
+func (q *Queries) GetSpaceOwnerID(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSpaceOwnerID, spaceID)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getSpacePrimaryGeoParents = `-- name: GetSpacePrimaryGeoParents :many
 SELECT s.id
 FROM spaces s

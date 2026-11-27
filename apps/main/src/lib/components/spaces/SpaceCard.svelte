@@ -102,6 +102,7 @@
 				description={space.description}
 				count={space.member_count}
 				verified={space.verified ?? !!space.is_primary}
+				verificationType={space.verified ? space.verification_type : null}
 				class="flex min-w-0 items-center gap-3 text-start"
 			>
 				{#snippet trigger()}

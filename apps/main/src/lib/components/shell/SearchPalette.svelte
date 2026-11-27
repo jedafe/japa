@@ -161,7 +161,7 @@
 									>
 										<span class="result-title inline-flex items-center gap-1">
 											{s.title ?? s.name ?? s.display_name ?? s.username ?? ''}
-											{#if s.verified && (s.type === 'user' || s.type === 'organization')}
+											{#if s.verified && (s.type === 'user' || s.type === 'organization' || s.type === 'space')}
 												<VerifiedBadge verified type={s.verification_type} scope={s.type} size={13} />
 											{/if}
 										</span>

@@ -1179,6 +1179,16 @@ SELECT EXISTS(
  AND role = 'owner' AND status = 'approved'
 ) AS is_owner;
 
+-- name: GetSpaceOwnerID :one
+-- The space's owner (space_members.role='owner', approved) — the badge
+-- grant/revoke notification recipient (§07 space verification, 001236).
+-- Multiple owner rows are possible; the earliest joined_at wins, matching
+-- the creator_user_id backfill convention (000969).
+SELECT user_id FROM space_members
+WHERE space_id = @space_id AND role = 'owner' AND status = 'approved'
+ORDER BY joined_at ASC
+LIMIT 1;
+
 -- name: AddSpaceMember :execrows
 INSERT INTO space_members (space_id, user_id, role) VALUES (@space_id, @user_id, 'member')
 
