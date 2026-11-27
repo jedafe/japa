@@ -606,6 +606,27 @@ func (q *Queries) GetTicketByNumber(ctx context.Context, ticketNumber *int64) (G
 	return i, err
 }
 
+const getTicketComment = `-- name: GetTicketComment :one
+SELECT id, ticket_id, user_id, body, is_internal, created_at, updated_at
+FROM ticket_comments
+WHERE id = $1
+`
+
+func (q *Queries) GetTicketComment(ctx context.Context, id pgtype.UUID) (TicketComment, error) {
+	row := q.db.QueryRow(ctx, getTicketComment, id)
+	var i TicketComment
+	err := row.Scan(
+		&i.ID,
+		&i.TicketID,
+		&i.UserID,
+		&i.Body,
+		&i.IsInternal,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTicketTypeByID = `-- name: GetTicketTypeByID :one
 SELECT id, name, slug, description, field_group_id, default_priority,
  auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at

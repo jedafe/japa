@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
@@ -800,6 +801,23 @@ type AddAttachmentInput struct {
 
 // AddAttachment adds a media attachment to a ticket.
 func (s *Service) AddAttachment(ctx context.Context, ticketID pgtype.UUID, input AddAttachmentInput) (gen.TicketAttachment, error) {
+	// A comment-scoped attachment must reference a comment on THIS ticket —
+	// otherwise a caller could graft attachments onto comments belonging to
+	// other tickets. Read on the write pool: the reply path links a comment
+	// created milliseconds ago, inside the replica's lag window.
+	if input.CommentID.Valid {
+		comment, err := s.store.write.GetTicketComment(ctx, input.CommentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.TicketAttachment{}, fmt.Errorf("%w: comment_id not found", errpkg.ErrInvalid)
+			}
+			return gen.TicketAttachment{}, fmt.Errorf("fetching attachment comment: %w", err)
+		}
+		if comment.TicketID != ticketID {
+			return gen.TicketAttachment{}, fmt.Errorf("%w: comment_id does not belong to this ticket", errpkg.ErrInvalid)
+		}
+	}
+
 	return s.store.createTicketAttachment(ctx, gen.CreateTicketAttachmentParams{
 		TicketID:  ticketID,
 		CommentID: input.CommentID,

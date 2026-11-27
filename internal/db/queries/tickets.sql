@@ -204,6 +204,11 @@ WHERE ticket_id = @ticket_id
  AND (@include_internal::bool = true OR is_internal = false)
 ORDER BY created_at ASC;
 
+-- name: GetTicketComment :one
+SELECT id, ticket_id, user_id, body, is_internal, created_at, updated_at
+FROM ticket_comments
+WHERE id = @id;
+
 -- name: DeleteTicketComment :exec
 DELETE FROM ticket_comments
 WHERE id = @id AND ticket_id = @ticket_id;
