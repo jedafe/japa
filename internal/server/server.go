@@ -3852,6 +3852,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	searchHandlers := search.NewHandlers(searchEngine)
 	searchHandlers.SetQueries(gen.New(database.Reader))
+	searchHandlers.SetWriteQueries(gen.New(database.Writer))
 	searchHandlers.SetSettings(settingsService)
 	searchHandlers.SetCache(vkClient.Redis())          // BUG-010: jc:cache:search:* read-through cache
 	searchHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in result titles/excerpts post-cache

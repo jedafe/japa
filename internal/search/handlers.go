@@ -127,12 +127,13 @@ type searchFeatureChecker interface {
 }
 
 type Handlers struct {
-	engine   Engine
-	queries  *gen.Queries
-	settings searchSettingsReader
-	cache    valkeycompat.Cmdable // nil disables caching (tests)
-	lit      literalResolver      // nil disables literal resolution (§14)
-	flags    searchFeatureChecker // nil disables flag filtering (§42)
+	engine       Engine
+	queries      *gen.Queries
+	writeQueries *gen.Queries // nil falls back to queries (tests); prod wires Writer
+	settings     searchSettingsReader
+	cache        valkeycompat.Cmdable // nil disables caching (tests)
+	lit          literalResolver      // nil disables literal resolution (§14)
+	flags        searchFeatureChecker // nil disables flag filtering (§42)
 }
 
 // NewHandlers creates Handlers backed by the given search engine.
@@ -148,9 +149,16 @@ func (h *Handlers) SetFeatureChecker(c searchFeatureChecker) {
 	h.flags = c
 }
 
-// SetQueries injects the database queries for analytics logging.
+// SetQueries injects the database queries for reads (block checks,
+// analytics summaries). Bound to the reader pool in production.
 func (h *Handlers) SetQueries(q *gen.Queries) {
 	h.queries = q
+}
+
+// SetWriteQueries injects the writer-pool queries for search_analytics
+// INSERTs — LogSearchQuery cannot run on the reader pool.
+func (h *Handlers) SetWriteQueries(q *gen.Queries) {
+	h.writeQueries = q
 }
 
 // SetSettings injects the hot-reloadable settings reader (AUDIT-BE-009).
@@ -1673,7 +1681,11 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 // logSearchAsync logs a search query to search_analytics asynchronously.
 // Fire-and-forget — failures are logged but never block the response.
 func (h *Handlers) logSearchAsync(ctx context.Context, query string, resultsCount int, userID pgtype.UUID, contentType string) {
-	if h.queries == nil {
+	pool := h.writeQueries
+	if pool == nil {
+		pool = h.queries
+	}
+	if pool == nil {
 		return
 	}
 
@@ -1686,7 +1698,7 @@ func (h *Handlers) logSearchAsync(ctx context.Context, query string, resultsCoun
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if err := h.queries.LogSearchQuery(bgCtx, gen.LogSearchQueryParams{
+		if err := pool.LogSearchQuery(bgCtx, gen.LogSearchQueryParams{
 			Query:        query,
 			ResultsCount: int32(resultsCount), // #nosec G115 -- search result count, bounded by page size
 			UserID:       userID,
