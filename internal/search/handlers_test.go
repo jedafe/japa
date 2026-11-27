@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -460,4 +461,187 @@ func (c *multiValueCtx) Value(key any) any {
 	}
 
 	return c.Context.Value(key)
+}
+
+// ---------------------------------------------------------------------------
+// content_type filter parsing (§54 + comma extension)
+// ---------------------------------------------------------------------------
+
+func TestContentTypeFilterExpr(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want FilterExpr
+	}{
+		{"empty", "", nil},
+		{"all blank segments", ", ,", nil},
+		{"single", "guide", Eq{Field: "content_type", Value: "guide"}},
+		{"single with spaces", "  guide  ", Eq{Field: "content_type", Value: "guide"}},
+		{"comma pair", "discussion,forum_thread", In{Field: "content_type", Values: []string{"discussion", "forum_thread"}}},
+		{"trailing comma", "guide,", Eq{Field: "content_type", Value: "guide"}},
+		{"empty middle segment", "a,,b", In{Field: "content_type", Values: []string{"a", "b"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := contentTypeFilterExpr(tt.in)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("contentTypeFilterExpr(%q) = %#v, want %#v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// searchCacheKey — posts-filter params must not share an entry
+// ---------------------------------------------------------------------------
+
+func TestSearchCacheKey_PostsFilterIsolates(t *testing.T) {
+	t.Parallel()
+
+	base := searchCacheKey("visa", "content", "", 20, 0, "", false, "")
+	filtered := searchCacheKey("visa", "content", "", 20, 0, "", false, "guide")
+	otherFiltered := searchCacheKey("visa", "content", "", 20, 0, "", false, "discussion")
+
+	if base == filtered {
+		t.Error("filtered and unfiltered content_type queries share a cache key")
+	}
+	if filtered == otherFiltered {
+		t.Error("different content_type filters share a cache key")
+	}
+	if filtered != searchCacheKey("visa", "content", "", 20, 0, "", false, "guide") {
+		t.Error("identical params produced different cache keys")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// mapSearchResults — per-type estimated totals
+// ---------------------------------------------------------------------------
+
+func hitWith(fields map[string]string) Hit {
+	h := Hit{}
+	for k, v := range fields {
+		b, _ := json.Marshal(v)
+		h[k] = b
+	}
+	return h
+}
+
+func TestMapSearchResults_Totals(t *testing.T) {
+	t.Parallel()
+
+	results, totals := mapSearchResults([]IndexResult{
+		{IndexUID: IndexSpaces, EstimatedTotalHits: 56, Hits: []Hit{hitWith(map[string]string{"id": "s1", "name": "Nigeria"})}},
+		{IndexUID: IndexPosts, EstimatedTotalHits: 2, Hits: []Hit{hitWith(map[string]string{"id": "c1", "title": "Guide", "content_type": "guide"})}},
+	})
+
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if totals["space"] != 56 {
+		t.Errorf("totals[space] = %d, want 56", totals["space"])
+	}
+	if totals["content"] != 2 {
+		t.Errorf("totals[content] = %d, want 2", totals["content"])
+	}
+}
+
+func TestGroupResults_UsesEstimatedTotals(t *testing.T) {
+	t.Parallel()
+
+	flat := []SearchResult{{Type: "space", Item: SearchResultItem{}}, {Type: "space", Item: SearchResultItem{}}}
+	groups := groupResults(flat, map[string]int64{"space": 56})
+
+	if len(groups) != 1 || groups[0].Total != 56 {
+		t.Fatalf("groups = %#v, want one space group with Total=56", groups)
+	}
+	if len(groups[0].Results) != 2 {
+		t.Errorf("group results = %d, want 2 fetched hits kept", len(groups[0].Results))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runMultiSearchFiltered — forum-thread dedup across indexes
+// ---------------------------------------------------------------------------
+
+type stubEngine struct {
+	multiResults []IndexResult
+	lastQueries  []Query
+}
+
+func (s *stubEngine) Name() string                                   { return "stub" }
+func (s *stubEngine) Health(context.Context) error                   { return nil }
+func (s *stubEngine) EnsureIndex(context.Context, IndexSchema) error { return nil }
+func (s *stubEngine) Search(context.Context, string, Query) (*IndexResult, error) {
+	return nil, nil
+}
+func (s *stubEngine) MultiSearch(_ context.Context, queries []Query) ([]IndexResult, error) {
+	s.lastQueries = queries
+	return s.multiResults, nil
+}
+func (s *stubEngine) UpsertDocuments(context.Context, string, any) error   { return nil }
+func (s *stubEngine) DeleteDocument(context.Context, string, string) error { return nil }
+func (s *stubEngine) DeleteAllDocuments(context.Context, string) error     { return nil }
+
+func TestRunMultiSearchFiltered_SuppressesPostsCopyOfThread(t *testing.T) {
+	t.Parallel()
+
+	eng := &stubEngine{multiResults: []IndexResult{
+		{
+			IndexUID:           IndexPosts,
+			EstimatedTotalHits: 3,
+			Hits: []Hit{
+				hitWith(map[string]string{"id": "p1", "title": "Post", "content_type": "blog_post"}),
+				hitWith(map[string]string{"id": "t1-content", "title": "Thread", "content_type": "forum_thread"}),
+				hitWith(map[string]string{"id": "d1", "title": "Anchored", "content_type": "discussion"}),
+			},
+		},
+		{
+			IndexUID:           IndexForumThreads,
+			EstimatedTotalHits: 1,
+			Hits:               []Hit{hitWith(map[string]string{"id": "t1", "title": "Thread"})},
+		},
+	}}
+
+	h := NewHandlers(eng)
+	results, _, err := h.runMultiSearchFiltered(context.Background(), "x", 20, 0, nil,
+		[]string{IndexPosts, IndexForumThreads}, "", nil)
+	if err != nil {
+		t.Fatalf("runMultiSearchFiltered: %v", err)
+	}
+
+	var got []string
+	for _, r := range results {
+		got = append(got, r.Type+":"+r.Item.ContentType)
+	}
+
+	want := []string{"content:blog_post", "content:discussion", "forum_thread:"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("results = %v, want %v (posts copy of the thread suppressed)", got, want)
+	}
+}
+
+func TestRunMultiSearchFiltered_KeepsThreadWhenThreadsIndexNotQueried(t *testing.T) {
+	t.Parallel()
+
+	eng := &stubEngine{multiResults: []IndexResult{
+		{
+			IndexUID:           IndexPosts,
+			EstimatedTotalHits: 1,
+			Hits:               []Hit{hitWith(map[string]string{"id": "t1-content", "title": "Thread", "content_type": "forum_thread"})},
+		},
+	}}
+
+	h := NewHandlers(eng)
+	results, _, err := h.runMultiSearchFiltered(context.Background(), "x", 20, 0, nil,
+		[]string{IndexPosts}, "", nil)
+	if err != nil {
+		t.Fatalf("runMultiSearchFiltered: %v", err)
+	}
+
+	if len(results) != 1 || results[0].Item.ContentType != "forum_thread" {
+		t.Fatalf("results = %#v, want the posts copy of the thread kept", results)
+	}
 }

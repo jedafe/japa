@@ -350,12 +350,15 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// queries from the same platform are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
-	postsFilterKey := strings.Join([]string{
+	postsFilterKey := strings.Join([]string{ // \x1f (unit separator) cannot appear in user input, so joined values can never collide the way a "|" join could (e.g. "a|b"+"c" vs "a"+"b|c")
 		r.URL.Query().Get("content_type"),
 		r.URL.Query().Get("space_id"),
 		r.URL.Query().Get("tag_slug"),
-	}, "|")
-	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"), authenticated, postsFilterKey)
+	}, "\x1f")
+	// The canonical sort expression feeds the key, not the raw param —
+	// ?sort=relevant, ?sort=, and ?sort=<garbage> all resolve to nil and
+	// must share one cache entry rather than duplicate it.
+	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, strings.Join(sortExprs, ","), authenticated, postsFilterKey)
 
 	searchStart := time.Now()
 
@@ -437,7 +440,11 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		userID = user.UserID
 	}
 
-	h.logSearchAsync(r.Context(), query, len(results), userID, typeFilter)
+	// §54: results_count is the match count (TotalHits), not the fetched
+	// slice length — a paginated request past the last page must not log
+	// results_count=0 or the admin zero-result report fills with false
+	// positives.
+	h.logSearchAsync(r.Context(), query, total, userID, typeFilter)
 }
 
 // SearchSpaces handles GET /api/v1/spaces/search — the same multi-search
@@ -479,9 +486,35 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results, Total: int(totals["space"])}})
 
-	// Analytics logging — skip for guests (nil or zero UUID).
+	// Analytics logging — skip for guests (nil or zero UUID). Match count,
+	// not fetched-slice length (same §54 results_count rule as Search).
 	if user != nil && user.UserID != (pgtype.UUID{}) {
-		h.logSearchAsync(r.Context(), query, len(results), user.UserID, "space")
+		h.logSearchAsync(r.Context(), query, int(totals["space"]), user.UserID, "space")
+	}
+}
+
+// contentTypeFilterExpr builds the posts-index content_type filter. §54
+// shows single values, but comma-separated content_type is a natural
+// extension — e.g. "discussion,forum_thread" covers both anchored
+// discussion containers and real forum threads (both are contents rows
+// in the posts index). Multiple values become an IN. Returns nil when
+// every segment is blank.
+func contentTypeFilterExpr(contentType string) FilterExpr {
+	values := make([]string, 0, 4)
+
+	for _, p := range strings.Split(contentType, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			values = append(values, v)
+		}
+	}
+
+	switch len(values) {
+	case 0:
+		return nil
+	case 1:
+		return Eq{Field: "content_type", Value: values[0]}
+	default:
+		return In{Field: "content_type", Values: values}
 	}
 }
 
@@ -491,24 +524,8 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 // membership on array fields.
 func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 	var parts []FilterExpr
-	if contentType != "" {
-		// §54 shows single values, but comma-separated content_type is a
-		// natural extension — e.g. "discussion,forum_thread" covers both
-		// anchored discussion containers and real forum threads (both are
-		// contents rows in the posts index). Multiple values become an IN.
-		values := make([]string, 0, 4)
-		for _, p := range strings.Split(contentType, ",") {
-			if v := strings.TrimSpace(p); v != "" {
-				values = append(values, v)
-			}
-		}
-		switch len(values) {
-		case 0:
-		case 1:
-			parts = append(parts, Eq{Field: "content_type", Value: values[0]})
-		default:
-			parts = append(parts, In{Field: "content_type", Values: values})
-		}
+	if f := contentTypeFilterExpr(contentType); f != nil {
+		parts = append(parts, f)
 	}
 
 	if spaceID != "" {
@@ -617,6 +634,19 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 
 	mapped, totals := mapSearchResults(results)
 
+	// A real forum thread is indexed twice — its contents row lands in the
+	// posts index (content_type='forum_thread') and its dedicated document
+	// in forum_threads. When both indexes are queried, suppress the posts
+	// copy so the thread surfaces once under the forum_thread group — the
+	// dedicated doc carries solved state and the §05 members-space
+	// title-only visibility semantics. Anchored 'discussion' containers
+	// have no thread document and are not suppressed.
+	if slices.Contains(indexes, IndexPosts) && slices.Contains(indexes, IndexForumThreads) {
+		mapped = slices.DeleteFunc(mapped, func(r SearchResult) bool {
+			return r.Type == "content" && r.Item.ContentType == "forum_thread"
+		})
+	}
+
 	return mapped, totals, nil
 }
 
@@ -625,8 +655,8 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 // Results from unknown indexes are skipped so a misconfigured engine cannot
 // corrupt the response shape. Per §54, each result includes a nested item
 // with type-specific fields. The totals map keys are the result-type labels
-// (so a type backed by two indexes — e.g. "content" = posts + forum_threads —
-// reports the summed estimate).
+// (indexTypeByUID is 1:1 with indexes today; the += keeps the map correct if
+// a type is ever backed by two indexes again).
 func mapSearchResults(indexResults []IndexResult) ([]SearchResult, map[string]int64) {
 	results := []SearchResult{}
 	totals := make(map[string]int64, len(indexResults))
@@ -1408,8 +1438,8 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		Eq{Field: "status", Value: "published"},
 	}
 
-	if ct := r.URL.Query().Get("content_type"); ct != "" {
-		filters = append(filters, Eq{Field: "content_type", Value: ct})
+	if f := contentTypeFilterExpr(r.URL.Query().Get("content_type")); f != nil {
+		filters = append(filters, f)
 	}
 
 	resp, err := h.engine.Search(r.Context(), IndexPosts, Query{
