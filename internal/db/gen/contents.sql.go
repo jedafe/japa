@@ -143,7 +143,7 @@ FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
- AND ($2::text = '' OR c.content_type = $2::text)
+ AND (coalesce(cardinality($2::text[]), 0) = 0 OR c.content_type = ANY($2::text[]))
  AND (
  ($3::boolean AND $4::boolean)
  OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
@@ -167,7 +167,7 @@ WHERE c.deleted_at IS NULL
 
 type CountContentsBySpaceParams struct {
 	SpaceID           pgtype.UUID `json:"space_id"`
-	ContentType       string      `json:"content_type"`
+	ContentTypes      []string    `json:"content_types"`
 	CanSeeUnpublished bool        `json:"can_see_unpublished"`
 	CanSeePrivate     bool        `json:"can_see_private"`
 	RequesterID       pgtype.UUID `json:"requester_id"`
@@ -180,7 +180,7 @@ type CountContentsBySpaceParams struct {
 func (q *Queries) CountContentsBySpace(ctx context.Context, arg CountContentsBySpaceParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countContentsBySpace,
 		arg.SpaceID,
-		arg.ContentType,
+		arg.ContentTypes,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
@@ -3431,7 +3431,10 @@ LEFT JOIN content_scores csc ON csc.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
- AND ($2::text = '' OR c.content_type = $2::text)
+ -- §05 hub-redesign: ?type= accepts a comma-separated list — the space
+ -- Discussions tab lists thread types (forum_thread,discussion) in one
+ -- feed. An empty slice lists every type.
+ AND (coalesce(cardinality($2::text[]), 0) = 0 OR c.content_type = ANY($2::text[]))
  AND (
  ($3::boolean AND $4::boolean)
  OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
@@ -3463,7 +3466,7 @@ LIMIT $9
 
 type ListContentsBySpaceParams struct {
 	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
+	ContentTypes      []string           `json:"content_types"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
@@ -3552,7 +3555,7 @@ type ListContentsBySpaceRow struct {
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySpace,
 		arg.SpaceID,
-		arg.ContentType,
+		arg.ContentTypes,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,

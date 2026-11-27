@@ -9,7 +9,6 @@ import type {
 	SpaceModerator,
 	SpaceContentItem,
 	SpacePermissionPreset,
-	ForumThread,
 	DigestEdition,
 	WikiPageIndex,
 	Achievement,
@@ -143,7 +142,7 @@ export const load: PageServerLoad = async (event) => {
 	const canManage = isOwner || isModerator;
 
 	const [
-		contentRes, pinned, members, forumThreads, moderators, isFollowing,
+		contentRes, pinned, members, discussionFeed, moderators, isFollowing,
 		isMuted, presets, parentSpaces, achievements, digest,
 		blogFeed, storyFeed, guideFeed, events, subspaces, leaders, contributors, spaceTypes,
 		reviews, analyticsResult, wikiTypes, opportunities, myInvite
@@ -159,9 +158,13 @@ export const load: PageServerLoad = async (event) => {
 		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${pageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<ForumThread>(ctx, `/thread?space_id=${spaceId}&page_size=${forumPageSize}`)
-			.then((r) => r.items)
-			.catch(() => []),
+		// §05 hub-redesign — the Discussions tab is a contents feed over the
+		// thread types: forum_thread (POST /thread backing rows) + discussion
+		// (canonical anchor threads for tools/wiki). /thread?space_id= alone
+		// would miss every anchored discussion row.
+		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?type=forum_thread,discussion&page_size=${forumPageSize}`)
+			.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+			.catch(() => ({ items: [] as SpaceContentItem[], total: null })),
 		// Moderators list — only fetched for the owner/moderator so the
 		// assignment panel has data to render. The sidebar's leaders card
 		// uses the public /leaders route instead.
@@ -351,7 +354,7 @@ export const load: PageServerLoad = async (event) => {
 		contentTotal: contentRes.total,
 		pinned,
 		members,
-		forumThreads,
+		discussionFeed,
 		analytics: 'data' in analyticsResult ? analyticsResult.data : null,
 		analyticsError: 'error' in analyticsResult ? analyticsResult.error : null,
 		isMuted,

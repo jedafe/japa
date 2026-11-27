@@ -19,7 +19,6 @@
 	import SpaceSettings from '#lib/components/spaces/SpaceSettings.svelte';
 	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
 	import InviteModal from '#lib/components/spaces/InviteModal.svelte';
-	import ForumList from '#lib/components/forum/ForumList.svelte';
 	import { EmptyState, UrlTabs, DirectoryCard } from '#lib/components/ui/index.js';
 	import SpaceJoinButton from '#lib/components/ui/SpaceJoinButton.svelte';
 	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
@@ -452,24 +451,30 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		end: boolean;
 		error: string;
 	}
-	function seedTypedFeed(feed: { items: SpaceContentItem[]; total: number | null }): TypedFeed {
+	function seedTypedFeed(feed: { items: SpaceContentItem[]; total: number | null }, pageSize = data.pageSize): TypedFeed {
 		return {
 			items: feed.items,
 			total: feed.total,
 			loading: false,
-			end: feed.items.length < data.pageSize,
+			end: feed.items.length < pageSize,
 			error: ''
 		};
 	}
 	let blogFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.blogFeed ?? { items: [], total: null })));
 	let storyFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.storyFeed ?? { items: [], total: null })));
 	let guideFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.guideFeed ?? { items: [], total: null })));
+	// Discussions tab — contents feed over the thread types (forum_thread +
+	// discussion anchor rows — §05 hub-redesign), seeded at forumPageSize.
+	let discussionFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.discussionFeed ?? { items: [], total: null }, data.forumPageSize)));
 
 	function typedFeedFor(type: string): TypedFeed {
-		return type === 'story' ? storyFeed : type === 'guide' ? guideFeed : blogFeed;
+		if (type === 'story') return storyFeed;
+		if (type === 'guide') return guideFeed;
+		if (type === 'forum_thread,discussion') return discussionFeed;
+		return blogFeed;
 	}
 
-	async function loadMoreTyped(type: 'blog_post' | 'story' | 'guide') {
+	async function loadMoreTyped(type: 'blog_post' | 'story' | 'guide' | 'forum_thread,discussion') {
 		const feed = typedFeedFor(type);
 		if (feed.loading || feed.end) return;
 		const last = feed.items[feed.items.length - 1];
@@ -479,8 +484,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		}
 		feed.loading = true;
 		feed.error = '';
+		const pageSize = type === 'forum_thread,discussion' ? data.forumPageSize : data.pageSize;
 		const res = await api.get<SpaceContentItem[]>(
-			`/spaces/${space.slug}/content?type=${type}&page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}&cursor_id=${encodeURIComponent(last.id)}`
+			`/spaces/${space.slug}/content?type=${type}&page_size=${pageSize}&cursor=${encodeURIComponent(last.created_at)}&cursor_id=${encodeURIComponent(last.id)}`
 		);
 		if (res.error) {
 			// Surface the error and stay retryable — ending the feed on a
@@ -488,7 +494,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			feed.error = res.error.message;
 		} else if (res.data) {
 			feed.items = [...feed.items, ...res.data];
-			if (res.data.length < data.pageSize) feed.end = true;
+			if (res.data.length < pageSize) feed.end = true;
 		}
 		feed.loading = false;
 	}
@@ -533,6 +539,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		blogFeed = seedTypedFeed(data.blogFeed ?? { items: [], total: null });
 		storyFeed = seedTypedFeed(data.storyFeed ?? { items: [], total: null });
 		guideFeed = seedTypedFeed(data.guideFeed ?? { items: [], total: null });
+		discussionFeed = seedTypedFeed(data.discussionFeed ?? { items: [], total: null }, data.forumPageSize);
 		wikiQuery = '';
 		membersEnd = data.members.length < data.pageSize;
 		following = data.initiallyFollowing ?? false;
@@ -1397,10 +1404,30 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				</a>
 			{/if}
 		{:else if activeTab === 'discussions'}
-			{#if data.forumThreads.length === 0}
+			<!-- §05 hub-redesign — contents feed over the thread types
+			     (forum_thread + discussion anchor rows); /thread?space_id=
+			     misses anchored discussions. -->
+			{#if discussionFeed.items.length === 0}
 				<EmptyState icon={MessageSquare} title={t('space.forum_empty', 'No discussions yet')} />
 			{:else}
-				<ForumList threads={data.forumThreads} pageSize={data.forumPageSize} loadError={false} />
+				<div class="flex flex-col gap-3">
+					{#each discussionFeed.items as item (item.id)}
+						<FeedCard item={toFeedItem(item)} style="daily" layout="stream" threadDefault voteRail />
+					{/each}
+				</div>
+				{#if !discussionFeed.end}
+					{#if discussionFeed.error}
+						<p class="mx-auto mt-3 text-center text-sm text-red-600 dark:text-red-400">{discussionFeed.error}</p>
+					{/if}
+					<button
+						type="button"
+						onclick={() => loadMoreTyped('forum_thread,discussion')}
+						disabled={discussionFeed.loading}
+						class="mx-auto mt-3 block rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{discussionFeed.loading ? t('common.loading') : t('feed.load_more', 'Load more')}
+					</button>
+				{/if}
 			{/if}
 		{:else if activeTab === 'members'}
 			<!-- Pending invites (custom spaces, owner/moderator only) — the

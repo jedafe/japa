@@ -1144,10 +1144,11 @@ func (s *Service) ListContentsByType(ctx context.Context, contentType, guideCate
 }
 
 // ListContentsBySpace returns a page of content filtered by space_id.
-// Visibility is gated by the supplied filter. An empty contentType lists
-// all types; a non-empty value restricts to that content_type (the space
-// hub's Blog/Stories/Guides tabs — §05 hub-redesign amendment).
-func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, contentType string, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
+// Visibility is gated by the supplied filter. An empty contentTypes lists
+// all types; a non-empty slice restricts to those content_types (the space
+// hub's Blog/Stories/Guides/Discussions tabs — §05 hub-redesign
+// amendment; the Discussions tab passes forum_thread+discussion).
+func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, contentTypes []string, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1156,7 +1157,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
 		SpaceID:           spaceID,
-		ContentType:       contentType,
+		ContentTypes:      contentTypes,
 		CursorCreatedAt:   cursor,
 		CursorID:          cursorID,
 		PageLimit:         limit,
@@ -1173,15 +1174,15 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 }
 
 // CountContentsBySpace returns the total number of contents in a space
-// visible under the supplied filter (and matching contentType when set) —
+// visible under the supplied filter (and matching contentTypes when set) —
 // backs meta.total on GET /spaces/{slug}/content so hub type tabs can show
 // real counts without paginating.
-func (s *Service) CountContentsBySpace(ctx context.Context, spaceID pgtype.UUID, contentType string, filter visibility.VisibilityFilter) (int64, error) {
+func (s *Service) CountContentsBySpace(ctx context.Context, spaceID pgtype.UUID, contentTypes []string, filter visibility.VisibilityFilter) (int64, error) {
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 
 	total, err := s.read.CountContentsBySpace(ctx, gen.CountContentsBySpaceParams{
 		SpaceID:           spaceID,
-		ContentType:       contentType,
+		ContentTypes:      contentTypes,
 		RequesterID:       requesterID,
 		CanSeeUnpublished: canSeeUnpublished,
 		CanSeeMembers:     canSeeMembers,

@@ -1,17 +1,17 @@
 <script lang="ts">
 	import SeoHead from '#lib/seo/SeoHead.svelte';
-	import { PenSquare, Tag, X, Filter } from 'lucide-svelte';
+	import { Tag, X, Filter } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { ListPageBar, Modal, UrlTabs, type UrlTab, PageAction } from '#lib/components/ui/index.js';
+	import { ListPageBar, Modal, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import ForumList from '#lib/components/forum/ForumList.svelte';
+	import QuickDiscussionComposer from '#lib/components/forum/QuickDiscussionComposer.svelte';
 	import FeedCard from '#lib/components/feed/FeedCard.svelte';
 	import { api } from '#lib/api/client.js';
 	import { Loader2 } from 'lucide-svelte';
-	import { compose } from '#lib/components/shell/compose.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { tiptapJsonFirstImageSrc } from '#lib/tiptap/serialize.js';
 	import type { FeedItem } from '#lib/types/index.js';
@@ -182,21 +182,14 @@
 					<Filter size={16} />
 				</button>
 			{/if}
-			{#if data.authed}
-				<PageAction
-					onclick={() => compose.openDiscussion()}
-					icon={PenSquare}
-					label={t('forum.new_discussion', 'New discussion')}
-				/>
-			{:else}
-				<PageAction
-					href="/login?redirect=/thread"
-					icon={PenSquare}
-					label={t('forum.new_discussion', 'New discussion')}
-				/>
-			{/if}
 		{/snippet}
 	</ListPageBar>
+
+	<div class="mx-auto w-full max-w-3xl px-4 pt-4">
+		<!-- Quick-discussion card (mockup) — replaces the old "New
+		     discussion" PageAction; guests hit requireAuthOrRedirect. -->
+		<QuickDiscussionComposer />
+	</div>
 
 	{#if data.sort !== 'featured'}
 		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">

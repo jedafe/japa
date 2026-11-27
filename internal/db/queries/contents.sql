@@ -580,7 +580,10 @@ LEFT JOIN content_scores csc ON csc.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
- AND (@content_type::text = '' OR c.content_type = @content_type::text)
+ -- §05 hub-redesign: ?type= accepts a comma-separated list — the space
+ -- Discussions tab lists thread types (forum_thread,discussion) in one
+ -- feed. An empty slice lists every type.
+ AND (coalesce(cardinality(@content_types::text[]), 0) = 0 OR c.content_type = ANY(@content_types::text[]))
  AND (
  (@can_see_unpublished::boolean AND @can_see_private::boolean)
  OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
@@ -618,7 +621,7 @@ FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
- AND (@content_type::text = '' OR c.content_type = @content_type::text)
+ AND (coalesce(cardinality(@content_types::text[]), 0) = 0 OR c.content_type = ANY(@content_types::text[]))
  AND (
  (@can_see_unpublished::boolean AND @can_see_private::boolean)
  OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
