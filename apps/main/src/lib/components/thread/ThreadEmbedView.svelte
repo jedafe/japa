@@ -624,7 +624,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		<!-- Reaction rail — identical to the formal forum thread rail:
 		     up/down vote, reply count, bookmark, share. Backed threads vote
 		     through /content/{id}/vote; fixed bottom bar below sm. -->
-		<div class="fixed inset-x-0 bottom-0 z-50 flex w-full flex-row items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[var(--color-muted)] backdrop-blur sm:relative sm:z-30 sm:mt-6 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:py-2 sm:pb-2 sm:backdrop-blur-none">
+		<div class="fixed inset-x-0 bottom-0 z-50 flex w-full flex-row items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[var(--color-muted)] backdrop-blur sm:relative sm:z-20 sm:mt-6 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:py-2 sm:pb-2 sm:backdrop-blur-none">
 			<div class="flex flex-1 items-center justify-center">
 				<VoteRail
 					entityType="thread"

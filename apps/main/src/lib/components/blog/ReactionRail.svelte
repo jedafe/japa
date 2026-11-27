@@ -457,10 +457,10 @@
 -->
 <div
 	class="{bottom
-		? 'fixed bottom-0 start-0 end-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-30 sm:w-full sm:items-stretch sm:justify-start sm:gap-2 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:px-3 sm:py-2 sm:pb-2 sm:backdrop-blur-none'
+		? 'fixed bottom-0 start-0 end-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-20 sm:w-full sm:items-stretch sm:justify-start sm:gap-2 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:px-3 sm:py-2 sm:pb-2 sm:backdrop-blur-none'
 		: horizontal
-			? 'relative z-30 flex w-full flex-row items-stretch gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
-			: 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4'}"
+			? 'relative z-20 flex w-full flex-row items-stretch gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
+			: 'sticky top-24 z-20 flex flex-col items-center gap-1.5 py-4'}"
 >
 	{#if reactionsEnabled}
 		<div
