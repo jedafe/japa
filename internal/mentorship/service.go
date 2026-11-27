@@ -1011,10 +1011,9 @@ func (s *Service) CreateConnection(ctx context.Context, mentorID, menteeID pgtyp
 		return Connection{}, fmt.Errorf("parsing booking id: %w", err)
 	}
 
-	// §102 analytics: mentorship_request_sent { mentor_id }
-	// The mentee (menteeID) is the actor; the mentor is the entity.
-	s.trackEvent(ctx, menteeID, "mentorship_request_sent", "mentorship_connection", bookingID,
-		map[string]any{"mentor_id": mentorID.String()})
+	// §102 analytics: mentorship_request_sent is emitted inside
+	// servicedir.CreateBooking (createMentorshipBooking) — the compat layer
+	// must not re-emit or platform_events double-counts (audit BUG-01).
 
 	row, err := s.bookingRow(ctx, bookingID)
 	if err != nil {
@@ -1146,10 +1145,9 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 	// active_mentee_count moved via the booking trigger — servicedir
 	// already enqueued the mentor Meilisearch reindex on accept.
 
-	// §102 analytics: mentorship_accepted { mentee_id }
-	// The mentor (mentorID) is the actor.
-	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", row.ID,
-		map[string]any{"mentee_id": updated.BookerUserID.String()})
+	// §102 analytics: mentorship_accepted is emitted inside
+	// servicedir.RespondToBooking on the accept arm — re-emitting here
+	// would double-count platform_events (audit BUG-01).
 
 	// Gamification v2 — both parties earn "connected" (Match Made,
 	// Guidance Found, mentor tracks). Dedupe ref: the connection.
@@ -1230,8 +1228,9 @@ func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.
 		return Connection{}, mapBookingErr(err)
 	}
 
-	// §102 analytics: mentorship_completed { connection_id }
-	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", row.ID, nil)
+	// §102 analytics: mentorship_completed is emitted inside servicedir
+	// (RespondToBooking's complete arm / CompleteMyBooking's mentee arm) —
+	// re-emitting here would double-count platform_events (audit BUG-01).
 
 	// Gamification v2 — role-aware emissions: the mentee earns
 	// mentorship.completed (Guided Journey), the mentor earns
