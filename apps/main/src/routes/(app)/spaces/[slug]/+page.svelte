@@ -16,10 +16,11 @@
 	import SpaceSidebar from '#lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceHeader from '#lib/components/spaces/SpaceHeader.svelte';
 	import SpaceComposer from '#lib/components/spaces/SpaceComposer.svelte';
+	import SpaceCard from '#lib/components/spaces/SpaceCard.svelte';
 	import SpaceSettings from '#lib/components/spaces/SpaceSettings.svelte';
 	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
 	import InviteModal from '#lib/components/spaces/InviteModal.svelte';
-	import { EmptyState, UrlTabs, DirectoryCard } from '#lib/components/ui/index.js';
+	import { EmptyState, UrlTabs } from '#lib/components/ui/index.js';
 	import SpaceJoinButton from '#lib/components/ui/SpaceJoinButton.svelte';
 	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
 	import type { UrlTab } from '#lib/components/ui/index.js';
@@ -1366,22 +1367,19 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			{:else}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each subspaces as sub (sub.id)}
-						<DirectoryCard
-							href="/spaces/{sub.slug}"
-							title={sub.name}
-							description={sub.description}
-							imageUrl={sub.logo_url}
-							fallback={sub.name.charAt(0).toUpperCase()}
-							verified={!!sub.is_primary}
-							meta={[
-								{ icon: Users, text: t('space.member_count', '{n} members').replace('{n}', String(sub.member_count)) },
-								{ icon: MessageSquare, text: t('space.discussions_count', '{n} discussions').replace('{n}', String(sub.discussion_count ?? 0)) }
-							]}
-						>
+						<SpaceCard space={sub}>
 							{#snippet actions()}
-								<SpaceJoinButton entityId={sub.id} entitySlug={sub.slug} compact />
+								<SpaceJoinButton
+									entityId={sub.id}
+									entitySlug={sub.slug}
+									initiallyJoined={sub.is_member ?? false}
+									initiallyPending={sub.is_pending ?? false}
+									initiallyFollowing={sub.is_following ?? false}
+									compact
+									followOnly={!!sub.is_primary}
+								/>
 							{/snippet}
-						</DirectoryCard>
+						</SpaceCard>
 					{/each}
 				</div>
 			{/if}

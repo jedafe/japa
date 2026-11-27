@@ -1575,6 +1575,54 @@ func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID, g
 	return stats, nil
 }
 
+// ListSpaceMemberAvatars returns up to perSpace latest approved members'
+// avatar URLs per space — the /spaces directory card's avatar stack (§05
+// hub-redesign). One batched query per page of spaces.
+func (s *Service) ListSpaceMemberAvatars(ctx context.Context, spaceIDs []pgtype.UUID, perSpace int32) (map[string][]string, error) {
+	out := make(map[string][]string, len(spaceIDs))
+	if len(spaceIDs) == 0 {
+		return out, nil
+	}
+	if perSpace <= 0 || perSpace > 20 {
+		perSpace = 4
+	}
+
+	rows, err := s.read.ListSpaceMemberAvatarBatch(ctx, gen.ListSpaceMemberAvatarBatchParams{
+		SpaceIds: spaceIDs,
+		PerSpace: perSpace,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space member avatars: %w", err)
+	}
+
+	for _, r := range rows {
+		out[r.SpaceID.String()] = r.Avatars
+	}
+
+	return out, nil
+}
+
+// CountUpcomingSpaceEvents returns published, upcoming calendar entry
+// counts per space — the directory card's "Upcoming events" stat row (§05
+// hub-redesign).
+func (s *Service) CountUpcomingSpaceEvents(ctx context.Context, spaceIDs []pgtype.UUID) (map[string]int32, error) {
+	out := make(map[string]int32, len(spaceIDs))
+	if len(spaceIDs) == 0 {
+		return out, nil
+	}
+
+	rows, err := s.read.CountUpcomingSpaceEvents(ctx, spaceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("counting upcoming space events: %w", err)
+	}
+
+	for _, r := range rows {
+		out[r.SpaceID.String()] = r.UpcomingCount
+	}
+
+	return out, nil
+}
+
 // SpaceMemberRow represents a space member with user profile information.
 type SpaceMemberRow struct {
 	UserID           pgtype.UUID        `json:"user_id"`

@@ -3,17 +3,16 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
-	import { Filter, Layers, Users, MessageSquare, Plus, ShieldX, ChevronDown, ChevronRight, X, Search, Globe } from 'lucide-svelte';
-	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '#lib/components/ui/index.js';
+	import { Filter, Layers, Plus, ShieldX, ChevronDown, ChevronRight, X, Search, Globe } from 'lucide-svelte';
+	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type UrlTab } from '#lib/components/ui/index.js';
 	import { GuideSlideOver, Modal, type GuideContent } from '#lib/components/ui/index.js';
 	import HeroArtSpaces from '#lib/components/heroes/HeroArtSpaces.svelte';
 	import { formatMetric } from '#lib/components/hub/charts/format.js';
 	import { api } from '#lib/api/client.js';
 	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
+	import SpaceCard from '#lib/components/spaces/SpaceCard.svelte';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
-	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
-	import { flagUrl } from '#lib/utils/flags.js';
 	import type { Space } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -226,21 +225,6 @@
 	const spaceTypeMap = $derived(
 		data.spaceTypes.reduce((m, t) => { m[t.id] = t.name; return m; }, {} as Record<string, string>)
 	);
-
-	// Extract a short description for space cards: prefer space.description,
-	// fall back to the Wikipedia extract from wiki_content (base64-encoded JSON).
-	function cardExcerpt(space: Space): string {
-		if (space.description) return space.description;
-		if (!space.wiki_content) return '';
-		try {
-			const json = typeof space.wiki_content === 'string'
-				? JSON.parse(decodeBase64Text(space.wiki_content))
-				: space.wiki_content;
-			return json?.extract ?? '';
-		} catch {
-			return '';
-		}
-	}
 
 	// Suggestions are scoped to member-created spaces — the same
 	// member_created=1 filter the directory list uses (§05 amendment):
@@ -472,23 +456,9 @@
 		{:else}
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSpaces as space (space.id)}
-					{@const cardMeta: CardMetaItem[] = [
-						{ icon: Users, text: t('meta.members', '{n} members').replace('{n}', String(space.member_count)) },
-						{ icon: MessageSquare, text: t('discover.posts', '{n} posts').replace('{n}', String(space.post_count)) }
-					]}
-					<DirectoryCard
-						href="/spaces/{space.slug}"
-						title={space.name}
-						subtitle={spaceTypeMap[space.space_type_id] ?? 'Space'}
-						description={cardExcerpt(space) || null}
-						imageUrl={(space.level === 'country' && flagUrl(space.geo_code)) || space.logo_url}
-						fallback={space.name.charAt(0).toUpperCase()}
-						hueSeed={space.id}
-						meta={cardMeta}
-						entityType="space"
-						entityId={space.id}
-						entitySlug={space.slug}
-						entityCount={space.member_count}
+					<SpaceCard
+						{space}
+						typeName={spaceTypeMap[space.space_type_id] ?? ''}
 					>
 						{#snippet actions()}
 							{#if page.data.user}
@@ -503,7 +473,7 @@
 								/>
 							{/if}
 						{/snippet}
-					</DirectoryCard>
+					</SpaceCard>
 				{/each}
 			</div>
 

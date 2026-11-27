@@ -282,22 +282,34 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 			}
 		}
 
+		if headerField := elem.FieldByName("HeaderImageID"); headerField.IsValid() {
+			if headerID, ok := headerField.Interface().(pgtype.UUID); ok && headerID.Valid {
+				m["header_url"] = headerID
+			}
+		}
+
 		out = append(out, m)
 	}
 
 	// BUG-029: resolve logos concurrently — a sequential GetMedia per card
-	// was an N+1 against media/imgproxy on every directory page.
+	// was an N+1 against media/imgproxy on every directory page. Header
+	// images (§05 directory card cover) resolve in the same batch.
 	var wg sync.WaitGroup
 	for _, m := range out {
-		logoID, ok := m["logo_url"].(pgtype.UUID)
-		if !ok {
-			continue
+		if logoID, ok := m["logo_url"].(pgtype.UUID); ok {
+			wg.Add(1)
+			go func(m map[string]any, id pgtype.UUID) {
+				defer wg.Done()
+				m["logo_url"] = h.resolveLogoURL(ctx, id)
+			}(m, logoID)
 		}
-		wg.Add(1)
-		go func(m map[string]any, id pgtype.UUID) {
-			defer wg.Done()
-			m["logo_url"] = h.resolveLogoURL(ctx, id)
-		}(m, logoID)
+		if headerID, ok := m["header_url"].(pgtype.UUID); ok {
+			wg.Add(1)
+			go func(m map[string]any, id pgtype.UUID) {
+				defer wg.Done()
+				m["header_url"] = h.resolveHeaderURL(ctx, id)
+			}(m, headerID)
+		}
 	}
 	wg.Wait()
 
@@ -366,6 +378,27 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 			m["is_pending"] = false
 			m["is_following"] = false
 		}
+	}
+
+	// §05 directory card: batched member-avatar previews and upcoming-event
+	// counts — one query each per page of spaces. Best-effort like stats.
+	avatars, avErr := h.Service.ListSpaceMemberAvatars(ctx, ids, 4)
+	if avErr != nil {
+		slog.Warn("spaces: failed to load member avatars", "error", avErr)
+
+		avatars = nil
+	}
+	eventCounts, evErr := h.Service.CountUpcomingSpaceEvents(ctx, ids)
+	if evErr != nil {
+		slog.Warn("spaces: failed to load upcoming event counts", "error", evErr)
+
+		eventCounts = nil
+	}
+
+	for _, m := range out {
+		id, _ := m["id"].(string)
+		m["member_avatars"] = avatars[id]
+		m["upcoming_event_count"] = eventCounts[id]
 	}
 
 	return out

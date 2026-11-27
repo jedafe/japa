@@ -1528,6 +1528,13 @@ export interface Space {
 	keywords?: string[];
 	/** Resolved imgproxy-signed logo URL (GET /spaces list & detail). Empty/null when no logo is set. */
 	logo_url?: string | null;
+	/** Resolved imgproxy-signed cover URL (GET /spaces list & detail). §05
+	 *  directory card cover — empty/null when no header image is set. */
+	header_url?: string | null;
+	/** §05 directory card — up to 4 latest approved members' avatar URLs. */
+	member_avatars?: string[];
+	/** §05 directory card — published upcoming calendar entries for the space. */
+	upcoming_event_count?: number;
 	/** University short code / acronym (initials custom field, Section 39). */
 	initials?: string | null;
 	/** Viewer-scoped (list responses): the caller is an approved member. */

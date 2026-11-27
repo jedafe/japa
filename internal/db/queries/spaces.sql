@@ -91,7 +91,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.keywords,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -129,7 +129,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.keywords,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -1602,15 +1602,58 @@ SELECT
  SELECT COUNT(*) FROM follows f
  WHERE f.entity_type = 'space' AND f.entity_id = s.id
  )::int AS follower_count,
+ -- Discussion count mirrors the Discussions-tab feed basis (§05
+ -- hub-redesign): contents of the thread types (forum_thread rows back
+ -- POST /thread threads; discussion rows are the canonical anchors
+ -- tools/wiki mint) reachable via the content_spaces junction — the old
+ -- contents-space_id JOIN on forum_threads missed anchored discussions.
+ -- Anchored sub-threads (thread_anchors on 'content') are excluded, the
+ -- same rows the public feed hides from non-moderators.
  (
- SELECT COUNT(*) FROM contents c
- JOIN forum_threads ft ON ft.content_id = c.id
- WHERE c.space_id = s.id
- AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ SELECT COUNT(*) FROM content_spaces cs
+ JOIN contents c ON c.id = cs.content_id
+ WHERE cs.space_id = s.id
+ AND c.deleted_at IS NULL AND c.auto_hidden = false
+ AND c.status = 'published' AND c.visibility = 'public'
+ AND c.content_type = ANY(ARRAY['forum_thread','discussion']::text[])
  AND NOT (c.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
+ AND NOT EXISTS (
+ SELECT 1 FROM thread_anchors ta
+ WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  )::int AS discussion_count
 FROM spaces s
 WHERE s.id = ANY(@space_ids::uuid[]);
+
+-- name: ListSpaceMemberAvatarBatch :many
+-- Latest @per_space approved members' avatar URLs per space — the
+-- /spaces directory card's avatar stack (§05 hub-redesign). One query
+-- per page of spaces via a correlated ARRAY subselect; the frontend
+-- renders member_count - shown as a "+N" overflow chip.
+SELECT s.id AS space_id,
+ ARRAY(
+ SELECT COALESCE(up.avatar_url, '')
+ FROM space_members sm
+ JOIN users u ON u.id = sm.user_id AND u.status = 'active'
+ LEFT JOIN user_profiles up ON up.user_id = sm.user_id
+ WHERE sm.space_id = s.id AND sm.status = 'approved'
+ ORDER BY sm.joined_at DESC
+ LIMIT @per_space
+ )::text[] AS avatars
+FROM spaces s
+WHERE s.id = ANY(@space_ids::uuid[]);
+
+-- name: CountUpcomingSpaceEvents :many
+-- Published, upcoming calendar entries per space — the directory card's
+-- "Upcoming events" stat row (§05 hub-redesign). destination_space_id is
+-- the space the event is attached to.
+SELECT destination_space_id AS space_id, COUNT(*)::int AS upcoming_count
+FROM calendar_entries
+WHERE destination_space_id = ANY(@space_ids::uuid[])
+ AND status = 'published'
+ AND deleted_at IS NULL
+ AND occurs_at > now()
+GROUP BY destination_space_id;
 
 -- =====================
 -- §80 Attractions — wikidata_id dedup for the bulk seeder
