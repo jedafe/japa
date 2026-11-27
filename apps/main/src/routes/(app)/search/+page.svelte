@@ -186,8 +186,9 @@
 		space: t('search.filter_spaces', 'Spaces'),
 		forum_thread: t('search.filter_discussions', 'Discussions'),
 		organization: t('search.filter_orgs', 'Organizations'),
-		course: t('search.filter_content', 'Courses'),
-		tag: t('search.filter_all', 'Tags'),
+		course: t('search.filter_courses', 'Courses'),
+		tag: t('search.filter_tags', 'Tags'),
+		article: t('search.filter_articles', 'Articles'),
 		doc_page: t('search.filter_docs', 'Docs'),
 		doc: t('search.filter_docs', 'Docs')
 	});
