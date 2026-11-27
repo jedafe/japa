@@ -135,6 +135,18 @@ func (s *Store) getTicketByID(ctx context.Context, id pgtype.UUID) (gen.GetTicke
 	return row, nil
 }
 
+// getTicketByIDPrimary reads the ticket on the write pool — used on the
+// comment path where a reply can land inside the replica's lag window on
+// a just-created ticket.
+func (s *Store) getTicketByIDPrimary(ctx context.Context, id pgtype.UUID) (gen.GetTicketByIDRow, error) {
+	row, err := s.write.GetTicketByID(ctx, id)
+	if err != nil {
+		return gen.GetTicketByIDRow{}, fmt.Errorf("getting ticket by ID: %w", err)
+	}
+
+	return row, nil
+}
+
 // getTicketByNumber is the numeric-ref variant of getTicketByID — routes accept
 // either the ticket's UUID or its JC-<number> reference (§38).
 func (s *Store) getTicketByNumber(ctx context.Context, n int64) (gen.GetTicketByNumberRow, error) {

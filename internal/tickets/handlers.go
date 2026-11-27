@@ -375,8 +375,9 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the user is the submitter.
-	ticket, err := h.Service.GetTicket(r.Context(), id)
+	// Verify the user is the submitter. Write pool: a reply can land in the
+	// replica's lag window on a just-created ticket.
+	ticket, err := h.Service.GetTicketPrimary(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -878,8 +879,9 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the caller owns the ticket — sibling AddReply/GetMyTicket
-	// enforce SubmitterUserID==caller; attachments must match.
-	ticket, err := h.Service.GetTicket(r.Context(), ticketID)
+	// enforce SubmitterUserID==caller; attachments must match. Write pool:
+	// an attach can land in the replica's lag window on a new ticket.
+	ticket, err := h.Service.GetTicketPrimary(r.Context(), ticketID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

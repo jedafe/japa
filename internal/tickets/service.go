@@ -341,6 +341,13 @@ func (s *Service) GetTicket(ctx context.Context, id pgtype.UUID) (gen.GetTicketB
 	return s.store.getTicketByID(ctx, id)
 }
 
+// GetTicketPrimary reads on the write pool — for mutation-adjacent
+// lookups (reply/attach on a just-created ticket) where replica lag
+// would 404 a row the caller just saw created.
+func (s *Service) GetTicketPrimary(ctx context.Context, id pgtype.UUID) (gen.GetTicketByIDRow, error) {
+	return s.store.getTicketByIDPrimary(ctx, id)
+}
+
 // ResolveTicketRef accepts a ticket UUID or its public JC-<number> reference
 // ("JC-1042" or bare "1042") and returns the ticket's internal UUID. Every
 // /tickets/{id} route resolves its path parameter through this so
@@ -683,8 +690,10 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 
 	// Resolve the ticket up front — the submitter-reply transition below
 	// needs its state, and a nonexistent ticket should 404 rather than
-	// surface as an FK violation on the comment insert.
-	ticket, terr := s.store.getTicketByID(ctx, ticketID)
+	// surface as an FK violation on the comment insert. Read on the write
+	// pool: a reply can land inside the replica's lag window on a
+	// just-created ticket.
+	ticket, terr := s.store.getTicketByIDPrimary(ctx, ticketID)
 	if terr != nil {
 		return gen.TicketComment{}, terr
 	}
