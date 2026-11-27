@@ -37,11 +37,22 @@ export const load: PageServerLoad = async (event) => {
 
 	// The home "Thread" tab links out to the /thread index — it is not a
 	// feed of its own. ?tab=thread is the legacy alias for that surface;
-	// redirect so home never renders a second thread list. ?sort=top is the
-	// only non-default sort the old tab exposed — it survives the hop.
+	// redirect so home never renders a second thread list. Every param
+	// /thread understands survives the hop: sort (top|featured — latest is
+	// the default) plus the forum filters status/tag/author_id. Feed-only
+	// params (relevant|rising sorts, geo) have no meaning there and drop.
 	if (event.url.searchParams.get('tab') === 'thread') {
+		const params = new URLSearchParams();
 		const sort = event.url.searchParams.get('sort');
-		redirect(302, `/thread${sort === 'top' ? '?sort=top' : ''}`);
+		if (sort === 'top' || sort === 'featured') params.set('sort', sort);
+		const status = event.url.searchParams.get('status');
+		if (status === 'solved' || status === 'open') params.set('status', status);
+		for (const key of ['tag', 'author_id']) {
+			const v = event.url.searchParams.get(key);
+			if (v) params.set(key, v);
+		}
+		const qs = params.toString();
+		redirect(302, `/thread${qs ? `?${qs}` : ''}`);
 	}
 
 	const ctx = apiContext(event);
