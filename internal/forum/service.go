@@ -71,32 +71,11 @@ func deconflictForumSlug(slug string) string {
 	return slug
 }
 
-// maxForumSlugAttempts bounds the -N suffix walk in uniqueForumSlug.
-const maxForumSlugAttempts = 100
-
-// uniqueForumSlug returns slug or slug-N (N=2,3,…) — the first candidate not
-// held by a live forum_threads row. Runs against the caller's *gen.Queries so
-// it can participate in the create transaction; mirrors
-// content.ensureUniqueSlugWithQueries. A concurrent insert on the resolved
-// candidate still surfaces as a 23505 → ErrDuplicate.
-func uniqueForumSlug(ctx context.Context, q *gen.Queries, slug string) (string, error) {
-	for i := 2; i <= maxForumSlugAttempts; i++ {
-		candidate := slug
-		if i > 2 {
-			candidate = fmt.Sprintf("%s-%d", slug, i-1)
-		}
-
-		_, err := q.GetForumThreadBySlug(ctx, candidate)
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			return candidate, nil
-		case err != nil:
-			return "", fmt.Errorf("checking forum slug %q: %w", candidate, err)
-		}
-	}
-
-	return "", fmt.Errorf("could not find unique forum slug after %d attempts", maxForumSlugAttempts)
-}
+// Note on slugs: forum_threads.slug is globally unique (URL addressing). We
+// intentionally do NOT auto-suffix — a collision means the title is taken and
+// surfaces as ErrDuplicate (409), rather than minting -2/-3 threads that read
+// as duplicate content. System-driven writes that legitimately need silent
+// dedupe go through content.ensureUniqueSlugWithQueries instead.
 
 // CreateThread creates a new forum thread and optionally a poll in a single
 // transaction. The poll is only created when input.Poll is non-nil and has at
@@ -132,18 +111,13 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 	}
 
 	thread, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumThread, error) {
-		uniqueSlug, err := uniqueForumSlug(ctx, q, input.Slug)
-		if err != nil {
-			return gen.ForumThread{}, err
-		}
-
 		t, err := q.CreateForumThread(ctx, gen.CreateForumThreadParams{
 			ContentID:         input.ContentID,
 			SpaceID:           input.SpaceID,
 			AuthorUserID:      authorUserID,
 			ParentReplyID:     input.ParentReplyID,
 			Title:             input.Title,
-			Slug:              uniqueSlug,
+			Slug:              input.Slug,
 			Body:              input.Body,
 			IsAnonymous:       input.IsAnonymous,
 			EditWindowMinutes: editWindow,
@@ -152,7 +126,7 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-				return gen.ForumThread{}, errpkg.ErrDuplicate
+				return gen.ForumThread{}, ErrThreadSlugTaken
 			}
 			return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 		}
@@ -615,6 +589,10 @@ const (
 // ErrMembersOnly is returned when a non-member tries to read or interact
 // with members-only forum content (title_only → 403 members_only).
 var ErrMembersOnly = errors.New("only space members can access this thread")
+
+// ErrThreadSlugTaken is returned when a thread insert hits the unique
+// forum_threads.slug index — the title is taken (→ 409 already_exists).
+var ErrThreadSlugTaken = errors.New("a thread with this title already exists")
 
 // ThreadAccessLevel resolves the viewer's access to a thread via its
 // containing space (F-009).

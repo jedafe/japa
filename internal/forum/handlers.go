@@ -416,6 +416,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "members_only", err.Error())
 	case errors.Is(err, content.ErrDuplicateContent):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A thread with this content already exists")
+	case errors.Is(err, ErrThreadSlugTaken):
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "A thread with this title already exists — please choose a different title")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
