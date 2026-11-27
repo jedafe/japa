@@ -345,7 +345,7 @@
 					type="button"
 					onclick={() => (mode = m.value)}
 					aria-pressed={mode === m.value}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] px-3 py-1.5 text-sm font-medium transition-colors {mode === m.value ? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {mode === m.value ? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 				>
 					<Icon size={16} class="text-[var(--color-primary-text)]" />
 					{m.label}
