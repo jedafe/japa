@@ -45,20 +45,34 @@
 		(ticketDetail?.attachments ?? []).map((a) => a.media_id).filter(Boolean)
 	);
 
-	// Resolve shared-file media details for ticket attachments.
+	// Resolve shared-file media details for ticket attachments. Failed
+	// lookups (deleted media, permission) are hidden rather than left as
+	// eternal "Loading…" rows; mediaInFlight dedupes effect re-runs while
+	// a fetch is still pending.
 	let mediaById = $state<Map<string, MediaAsset>>(new Map());
+	let mediaFailed = $state<Set<string>>(new Set());
+	const mediaInFlight = new Set<string>();
 	$effect(() => {
-		const missing = attachmentMediaIds.filter((id) => id && !mediaById.has(id));
+		const missing = attachmentMediaIds.filter(
+			(id) => id && !mediaById.has(id) && !mediaFailed.has(id) && !mediaInFlight.has(id)
+		);
 		for (const id of missing) {
+			mediaInFlight.add(id);
 			void getMedia(id).then((res) => {
+				mediaInFlight.delete(id);
 				if (res.data) {
 					const next = new Map(mediaById);
 					next.set(id, res.data);
 					mediaById = next;
+				} else {
+					mediaFailed = new Set(mediaFailed).add(id);
 				}
 			});
 		}
 	});
+	const visibleAttachmentIds = $derived(
+		attachmentMediaIds.filter((id) => !mediaFailed.has(id))
+	);
 
 	const dm = $derived(item.dm);
 	const request = $derived(item.request);
@@ -259,13 +273,13 @@
 	{/if}
 
 	<!-- Shared files — ticket attachments resolved through GET /media/{id}. -->
-	{#if attachmentMediaIds.length > 0}
+	{#if visibleAttachmentIds.length > 0}
 		<div class="border-b border-[var(--color-border)] p-4">
 			<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('hub.shared_files', 'Shared files')}
 			</p>
 			<ul class="space-y-1.5">
-				{#each attachmentMediaIds as mid (mid)}
+				{#each visibleAttachmentIds as mid (mid)}
 					{@const media = mediaById.get(mid)}
 					<li>
 						{#if media?.url}

@@ -757,6 +757,43 @@ func (q *Queries) ListTicketAttachments(ctx context.Context, ticketID pgtype.UUI
 	return items, nil
 }
 
+const listTicketAttachmentsPublic = `-- name: ListTicketAttachmentsPublic :many
+SELECT a.id, a.ticket_id, a.comment_id, a.media_id, a.created_at
+FROM ticket_attachments a
+LEFT JOIN ticket_comments c ON c.id = a.comment_id
+WHERE a.ticket_id = $1
+  AND (a.comment_id IS NULL OR c.is_internal = false)
+ORDER BY a.created_at ASC
+`
+
+// Submitter-visible variant — drops attachments bound to internal staff
+// notes so /me surfaces never expose internal-note media ids.
+func (q *Queries) ListTicketAttachmentsPublic(ctx context.Context, ticketID pgtype.UUID) ([]TicketAttachment, error) {
+	rows, err := q.db.Query(ctx, listTicketAttachmentsPublic, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TicketAttachment
+	for rows.Next() {
+		var i TicketAttachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.TicketID,
+			&i.CommentID,
+			&i.MediaID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTicketComments = `-- name: ListTicketComments :many
 SELECT id, ticket_id, user_id, body, is_internal, created_at, updated_at
 FROM ticket_comments

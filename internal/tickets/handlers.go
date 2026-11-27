@@ -325,8 +325,9 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 		slog.Error("listing ticket comments", "ticket_id", id, "error", err)
 	}
 
-	// Fetch attachments.
-	attachments, err := h.Service.ListAttachments(r.Context(), id)
+	// Fetch attachments — the public variant drops rows bound to internal
+	// staff notes (same exposure class as internal comments above).
+	attachments, err := h.Service.ListAttachmentsPublic(r.Context(), id)
 	if err != nil {
 		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
 	}
@@ -953,7 +954,7 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attachments, err := h.Service.ListAttachments(r.Context(), ticketID)
+	attachments, err := h.Service.ListAttachmentsPublic(r.Context(), ticketID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

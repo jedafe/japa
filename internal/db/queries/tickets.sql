@@ -228,6 +228,16 @@ FROM ticket_attachments
 WHERE ticket_id = @ticket_id
 ORDER BY created_at ASC;
 
+-- Submitter-visible variant — drops attachments bound to internal staff
+-- notes so /me surfaces never expose internal-note media ids.
+-- name: ListTicketAttachmentsPublic :many
+SELECT a.id, a.ticket_id, a.comment_id, a.media_id, a.created_at
+FROM ticket_attachments a
+LEFT JOIN ticket_comments c ON c.id = a.comment_id
+WHERE a.ticket_id = @ticket_id
+  AND (a.comment_id IS NULL OR c.is_internal = false)
+ORDER BY a.created_at ASC;
+
 -- =====================
 -- Ticket Events (Audit Trail)
 -- =====================

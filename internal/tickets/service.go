@@ -830,6 +830,12 @@ func (s *Service) ListAttachments(ctx context.Context, ticketID pgtype.UUID) ([]
 	return s.store.listTicketAttachments(ctx, ticketID)
 }
 
+// ListAttachmentsPublic is the submitter-facing variant — attachments on
+// internal staff notes are hidden (they'd expose internal-note media ids).
+func (s *Service) ListAttachmentsPublic(ctx context.Context, ticketID pgtype.UUID) ([]gen.TicketAttachment, error) {
+	return s.store.listTicketAttachmentsPublic(ctx, ticketID)
+}
+
 // ---------------------------------------------------------------------------
 // Ticket Events (Audit Trail)
 // ---------------------------------------------------------------------------

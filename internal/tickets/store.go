@@ -348,6 +348,18 @@ func (s *Store) listTicketAttachments(ctx context.Context, ticketID pgtype.UUID)
 	return rows, nil
 }
 
+// listTicketAttachmentsPublic is the submitter-facing variant — drops
+// attachments bound to internal staff notes so /me surfaces never expose
+// internal-note media ids.
+func (s *Store) listTicketAttachmentsPublic(ctx context.Context, ticketID pgtype.UUID) ([]gen.TicketAttachment, error) {
+	rows, err := s.read.ListTicketAttachmentsPublic(ctx, ticketID)
+	if err != nil {
+		return nil, fmt.Errorf("listing public ticket attachments: %w", err)
+	}
+
+	return rows, nil
+}
+
 // ---------------------------------------------------------------------------
 // Ticket Events (Audit Trail)
 // ---------------------------------------------------------------------------
