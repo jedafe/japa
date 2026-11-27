@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/tickets"
@@ -37,10 +38,23 @@ func (b supportTicketBridge) FileTicket(ctx context.Context, in worker.SupportTi
 	return err
 }
 
-func (b supportTicketBridge) FileComment(ctx context.Context, ref string, userID pgtype.UUID, body string) error {
+func (b supportTicketBridge) FileComment(ctx context.Context, ref string, userID pgtype.UUID, fromEmail, body string) error {
 	id, err := b.svc.ResolveTicketRef(ctx, ref)
 	if err != nil {
 		return fmt.Errorf("resolving ticket ref %q: %w", ref, err)
+	}
+	// Only the ticket's submitter may thread a reply onto it — the From
+	// header is unauthenticated, so a resolved account alone can't prove
+	// the sender may comment on this particular ticket. The email match
+	// covers tickets filed before the submitter had an account.
+	ticket, err := b.svc.GetTicketPrimary(ctx, id)
+	if err != nil {
+		return fmt.Errorf("loading ticket %q: %w", ref, err)
+	}
+	submitter := (userID.Valid && ticket.SubmitterUserID == userID) ||
+		(ticket.SubmitterEmail != nil && strings.EqualFold(*ticket.SubmitterEmail, fromEmail))
+	if !submitter {
+		return fmt.Errorf("sender %q is not the submitter of %s", fromEmail, ref)
 	}
 	_, err = b.svc.AddComment(ctx, id, tickets.AddCommentInput{
 		Body:       body,

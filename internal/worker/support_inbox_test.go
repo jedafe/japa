@@ -24,9 +24,10 @@ type fakeSupportBridge struct {
 }
 
 type fakeComment struct {
-	ref    string
-	userID pgtype.UUID
-	body   string
+	ref       string
+	userID    pgtype.UUID
+	fromEmail string
+	body      string
 }
 
 func (f *fakeSupportBridge) TicketTypeID(_ context.Context, _ string) (pgtype.UUID, error) {
@@ -46,8 +47,8 @@ func (f *fakeSupportBridge) FileTicket(_ context.Context, in SupportTicketInput)
 	return nil
 }
 
-func (f *fakeSupportBridge) FileComment(_ context.Context, ref string, userID pgtype.UUID, body string) error {
-	f.comments = append(f.comments, fakeComment{ref: ref, userID: userID, body: body})
+func (f *fakeSupportBridge) FileComment(_ context.Context, ref string, userID pgtype.UUID, fromEmail, body string) error {
+	f.comments = append(f.comments, fakeComment{ref: ref, userID: userID, fromEmail: fromEmail, body: body})
 	return nil
 }
 

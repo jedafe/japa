@@ -137,8 +137,10 @@ type SupportTicketBridge interface {
 	// FileTicket creates a ticket from an inbound message.
 	FileTicket(ctx context.Context, in SupportTicketInput) error
 	// FileComment appends a public comment to the ticket a JC-<n>
-	// reference names. Errors mean the comment could not be stored.
-	FileComment(ctx context.Context, ref string, userID pgtype.UUID, body string) error
+	// reference names, only when the sender is that ticket's submitter.
+	// Errors mean no comment was stored — the caller falls back to filing
+	// a new ticket.
+	FileComment(ctx context.Context, ref string, userID pgtype.UUID, fromEmail, body string) error
 }
 
 var supportTicketBridge SupportTicketBridge
@@ -434,10 +436,13 @@ func fileSupportMessage(ctx context.Context, bridge SupportTicketBridge, typeID 
 	}
 
 	// Reply threading: a JC-<n> subject from a known user becomes a public
-	// comment on that ticket instead of a new ticket.
+	// comment on that ticket instead of a new ticket — but only when the
+	// resolved sender is that ticket's submitter (the From address is
+	// unauthenticated; without the match anyone could comment, under a
+	// forged identity, on any ticket by guessing its JC-<n> ref).
 	if submitterID.Valid {
 		if m := ticketRefRe.FindStringSubmatch(subject); m != nil {
-			if cerr := bridge.FileComment(ctx, "JC-"+m[1], submitterID, body); cerr == nil {
+			if cerr := bridge.FileComment(ctx, "JC-"+m[1], submitterID, from, body); cerr == nil {
 				return fileComment, nil
 			}
 		}
