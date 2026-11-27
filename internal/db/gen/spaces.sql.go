@@ -95,7 +95,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type,
  COALESCE(u.username, '') AS owner,
  COALESCE(u.id::text, '') AS owner_id,
  COALESCE(st.name, '') AS space_type
@@ -152,34 +152,36 @@ type AdminListSpacesParams struct {
 }
 
 type AdminListSpacesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	Owner          string             `json:"owner"`
-	OwnerID        interface{}        `json:"owner_id"`
-	SpaceType      string             `json:"space_type"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Owner            string             `json:"owner"`
+	OwnerID          interface{}        `json:"owner_id"`
+	SpaceType        string             `json:"space_type"`
 }
 
 func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams) ([]AdminListSpacesRow, error) {
@@ -228,6 +230,8 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.Owner,
 			&i.OwnerID,
 			&i.SpaceType,
@@ -812,31 +816,32 @@ func (q *Queries) CountUpcomingSpaceEvents(ctx context.Context, spaceIds []pgtyp
 }
 
 const createSpace = `-- name: CreateSpace :one
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, false))
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id, federate_opt_out, verified, verification_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, false), COALESCE($17, false), $18)
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
- federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 `
 
 type CreateSpaceParams struct {
-	ParentID       pgtype.UUID `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID `json:"space_type_id"`
-	Name           string      `json:"name"`
-	Slug           string      `json:"slug"`
-	Description    *string     `json:"description"`
-	WikiContent    []byte      `json:"wiki_content"`
-	GeoCode        *string     `json:"geo_code"`
-	Level          string      `json:"level"`
-	Visibility     string      `json:"visibility"`
-	PostingPerm    string      `json:"posting_perm"`
-	ReplyingPerm   string      `json:"replying_perm"`
-	CommentingPerm string      `json:"commenting_perm"`
-	JoiningPerm    string      `json:"joining_perm"`
-	Status         string      `json:"status"`
-	CreatorUserID  pgtype.UUID `json:"creator_user_id"`
-	FederateOptOut interface{} `json:"federate_opt_out"`
+	ParentID         pgtype.UUID `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID `json:"space_type_id"`
+	Name             string      `json:"name"`
+	Slug             string      `json:"slug"`
+	Description      *string     `json:"description"`
+	WikiContent      []byte      `json:"wiki_content"`
+	GeoCode          *string     `json:"geo_code"`
+	Level            string      `json:"level"`
+	Visibility       string      `json:"visibility"`
+	PostingPerm      string      `json:"posting_perm"`
+	ReplyingPerm     string      `json:"replying_perm"`
+	CommentingPerm   string      `json:"commenting_perm"`
+	JoiningPerm      string      `json:"joining_perm"`
+	Status           string      `json:"status"`
+	CreatorUserID    pgtype.UUID `json:"creator_user_id"`
+	FederateOptOut   interface{} `json:"federate_opt_out"`
+	Verified         interface{} `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
 }
 
 type CreateSpaceRow struct {
@@ -865,7 +870,8 @@ type CreateSpaceRow struct {
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode     *string            `json:"currency_code"`
 	FederateOptOut   bool               `json:"federate_opt_out"`
-	FederateOptOut_2 bool               `json:"federate_opt_out_2"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // creator_user_id is the member-created discriminator (§05 amendment):
@@ -889,6 +895,8 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Creat
 		arg.Status,
 		arg.CreatorUserID,
 		arg.FederateOptOut,
+		arg.Verified,
+		arg.VerificationType,
 	)
 	var i CreateSpaceRow
 	err := row.Scan(
@@ -917,7 +925,8 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Creat
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
-		&i.FederateOptOut_2,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -1102,7 +1111,7 @@ const findCitySpaceByName = `-- name: FindCitySpaceByName :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE lower(name) = lower($1)
  AND level = 'city'
@@ -1111,31 +1120,33 @@ LIMIT 1
 `
 
 type FindCitySpaceByNameRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // ADR-064a: Finds a city-level space by name within a country-level space.
@@ -1170,6 +1181,8 @@ func (q *Queries) FindCitySpaceByName(ctx context.Context, cityName string) (Fin
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -1303,7 +1316,7 @@ const findStateSpaceByName = `-- name: FindStateSpaceByName :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE lower(name) = lower($1)
  AND level = 'state'
@@ -1312,31 +1325,33 @@ LIMIT 1
 `
 
 type FindStateSpaceByNameRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // ADR-064a: Finds a state-level space by name. Used by the reverse-geocoding
@@ -1371,6 +1386,8 @@ func (q *Queries) FindStateSpaceByName(ctx context.Context, stateName string) (F
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -1380,7 +1397,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.deleted_at IS NULL
@@ -1389,31 +1406,33 @@ ORDER BY s.name
 `
 
 type GetChildSpacesByParentIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 func (q *Queries) GetChildSpacesByParentID(ctx context.Context, parentSpaceID pgtype.UUID) ([]GetChildSpacesByParentIDRow, error) {
@@ -1451,6 +1470,8 @@ func (q *Queries) GetChildSpacesByParentID(ctx context.Context, parentSpaceID pg
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -1483,7 +1504,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = $1 AND s.deleted_at IS NULL
@@ -1492,31 +1513,33 @@ ORDER BY s.name
 `
 
 type GetParentSpacesBySpaceIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, spaceID pgtype.UUID) ([]GetParentSpacesBySpaceIDRow, error) {
@@ -1554,6 +1577,8 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, spaceID pgtype.U
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -1623,7 +1648,7 @@ const getPublicSpaceByGeoCode = `-- name: GetPublicSpaceByGeoCode :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE geo_code = $1
  AND level = 'country'
@@ -1633,31 +1658,33 @@ WHERE geo_code = $1
 `
 
 type GetPublicSpaceByGeoCodeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Public API (Section 47 extension digest): resolves a country-level space
@@ -1693,6 +1720,8 @@ func (q *Queries) GetPublicSpaceByGeoCode(ctx context.Context, geoCode *string) 
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -1701,7 +1730,7 @@ const getPublicSpaceBySlug = `-- name: GetPublicSpaceBySlug :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.slug = $1
@@ -1711,32 +1740,34 @@ WHERE spaces.slug = $1
 `
 
 type GetPublicSpaceBySlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 // Public API (Section 47): returns a single space only if it is public,
@@ -1772,6 +1803,8 @@ func (q *Queries) GetPublicSpaceBySlug(ctx context.Context, slug string) (GetPub
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 		&i.IsPrimary,
 	)
 	return i, err
@@ -1781,38 +1814,40 @@ const getSpaceByGeoCode = `-- name: GetSpaceByGeoCode :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND deleted_at IS NULL
 LIMIT 1
 `
 
 type GetSpaceByGeoCodeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Finds a country-level space by its geo_code for primary space auto-join (Section 05, ADR-005).
@@ -1845,6 +1880,8 @@ func (q *Queries) GetSpaceByGeoCode(ctx context.Context, geoCode *string) (GetSp
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -1853,39 +1890,41 @@ const getSpaceByID = `-- name: GetSpaceByID :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.id = $1 AND spaces.deleted_at IS NULL
 `
 
 type GetSpaceByIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 func (q *Queries) GetSpaceByID(ctx context.Context, id pgtype.UUID) (GetSpaceByIDRow, error) {
@@ -1917,6 +1956,8 @@ func (q *Queries) GetSpaceByID(ctx context.Context, id pgtype.UUID) (GetSpaceByI
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 		&i.IsPrimary,
 	)
 	return i, err
@@ -1926,7 +1967,7 @@ const getSpaceBySlug = `-- name: GetSpaceBySlug :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type,
  (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
 WHERE spaces.deleted_at IS NULL
@@ -1941,32 +1982,34 @@ WHERE spaces.deleted_at IS NULL
 `
 
 type GetSpaceBySlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 // The {slug} route param also accepts a space UUID — callers holding only
@@ -2002,6 +2045,8 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, slug string) (GetSpaceBySl
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 		&i.IsPrimary,
 	)
 	return i, err
@@ -2578,7 +2623,7 @@ const listChildSpaces = `-- name: ListChildSpaces :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -2602,31 +2647,33 @@ type ListChildSpacesParams struct {
 }
 
 type ListChildSpacesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Returns all children of a parent space via the space_parent_spaces junction.
@@ -2666,6 +2713,8 @@ func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -2682,7 +2731,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.level = 'city'
@@ -2691,31 +2740,33 @@ ORDER BY s.name
 `
 
 type ListCitiesByStateIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Geo hierarchy (catalog: GET /geo/states/:id/cities). Cities are
@@ -2756,6 +2807,8 @@ func (q *Queries) ListCitiesByStateID(ctx context.Context, stateID pgtype.UUID) 
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -2870,7 +2923,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, sm.role AS member_role
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type, sm.role AS member_role
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = $1
@@ -2891,32 +2944,34 @@ type ListPublicSpacesByMemberUserParams struct {
 }
 
 type ListPublicSpacesByMemberUserRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	MemberRole     string             `json:"member_role"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	MemberRole       string             `json:"member_role"`
 }
 
 // =====================
@@ -2963,6 +3018,8 @@ func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPubl
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.MemberRole,
 		); err != nil {
 			return nil, err
@@ -3846,7 +3903,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.keywords,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type, s.keywords,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -3865,33 +3922,35 @@ ORDER BY s.created_at DESC, s.id DESC
 `
 
 type ListSpacesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	Keywords       []string           `json:"keywords"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Keywords         []string           `json:"keywords"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 // =====================
@@ -3941,6 +4000,8 @@ func (q *Queries) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]L
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.Keywords,
 			&i.IsPrimary,
 		); err != nil {
@@ -3958,7 +4019,7 @@ const listSpacesByAncestorAndType = `-- name: ListSpacesByAncestorAndType :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type,
  cfv.value_text AS initials
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
@@ -3994,32 +4055,34 @@ type ListSpacesByAncestorAndTypeParams struct {
 }
 
 type ListSpacesByAncestorAndTypeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	Initials       *string            `json:"initials"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Initials         *string            `json:"initials"`
 }
 
 // Returns spaces of a given space_type that are children of an ancestor
@@ -4069,6 +4132,8 @@ func (q *Queries) ListSpacesByAncestorAndType(ctx context.Context, arg ListSpace
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.Initials,
 		); err != nil {
 			return nil, err
@@ -4085,7 +4150,7 @@ const listSpacesByLevel = `-- name: ListSpacesByLevel :many
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE spaces.level = $1 AND deleted_at IS NULL
  AND status = 'active'
@@ -4108,31 +4173,33 @@ type ListSpacesByLevelParams struct {
 }
 
 type ListSpacesByLevelRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // SPACES-001: apply the same visibility filter as ListSpaces so
@@ -4174,6 +4241,8 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -4388,7 +4457,7 @@ const listSpacesByParentAndLevel = `-- name: ListSpacesByParentAndLevel :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -4414,31 +4483,33 @@ type ListSpacesByParentAndLevelParams struct {
 }
 
 type ListSpacesByParentAndLevelRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Returns spaces of a given level whose parent is linked via
@@ -4479,6 +4550,8 @@ func (q *Queries) ListSpacesByParentAndLevel(ctx context.Context, arg ListSpaces
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -4494,7 +4567,7 @@ const listSpacesByParentPaginated = `-- name: ListSpacesByParentPaginated :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
@@ -4563,32 +4636,34 @@ type ListSpacesByParentPaginatedParams struct {
 }
 
 type ListSpacesByParentPaginatedRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 // Directory ?parent= branch — children of a parent space via the canonical
@@ -4643,6 +4718,8 @@ func (q *Queries) ListSpacesByParentPaginated(ctx context.Context, arg ListSpace
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.IsPrimary,
 		); err != nil {
 			return nil, err
@@ -4659,7 +4736,7 @@ const listSpacesByType = `-- name: ListSpacesByType :many
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 FROM spaces
 WHERE spaces.space_type_id = $1 AND spaces.deleted_at IS NULL
  AND status = 'active'
@@ -4682,31 +4759,33 @@ type ListSpacesByTypeParams struct {
 }
 
 type ListSpacesByTypeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // SPACES-001: apply the same visibility filter as ListSpaces.
@@ -4745,6 +4824,8 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -4760,7 +4841,7 @@ const listSpacesByTypePaginated = `-- name: ListSpacesByTypePaginated :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out,
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type,
  cfv.value_text AS initials
 FROM spaces s
 LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
@@ -4826,32 +4907,34 @@ type ListSpacesByTypePaginatedParams struct {
 }
 
 type ListSpacesByTypePaginatedRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	Initials       *string            `json:"initials"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Initials         *string            `json:"initials"`
 }
 
 // sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'created' (oldest
@@ -4912,6 +4995,8 @@ func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesB
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.Initials,
 		); err != nil {
 			return nil, err
@@ -4929,7 +5014,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.keywords,
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type, s.keywords,
  (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
@@ -5015,33 +5100,35 @@ type ListSpacesPaginatedParams struct {
 }
 
 type ListSpacesPaginatedRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
-	Keywords       []string           `json:"keywords"`
-	IsPrimary      *bool              `json:"is_primary"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	Keywords         []string           `json:"keywords"`
+	IsPrimary        *bool              `json:"is_primary"`
 }
 
 // SPACES-009/011: SQL-level paginated discovery list with search, geo,
@@ -5109,6 +5196,8 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 			&i.Keywords,
 			&i.IsPrimary,
 		); err != nil {
@@ -5127,7 +5216,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out
+ s.updated_at, s.deleted_at, s.currency_code, s.federate_opt_out, s.verified, s.verification_type
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 JOIN spaces country ON country.id = sps.parent_space_id
@@ -5138,31 +5227,33 @@ ORDER BY s.name
 `
 
 type ListStatesByCountryGeoCodeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Geo hierarchy (catalog: GET /geo/countries/:code/states). Countries and
@@ -5203,6 +5294,8 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, countryCode *s
 			&i.DeletedAt,
 			&i.CurrencyCode,
 			&i.FederateOptOut,
+			&i.Verified,
+			&i.VerificationType,
 		); err != nil {
 			return nil, err
 		}
@@ -5626,6 +5719,18 @@ func (q *Queries) SumSpaceContentViews(ctx context.Context, spaceID pgtype.UUID)
 	return count, err
 }
 
+const unverifySpace = `-- name: UnverifySpace :exec
+UPDATE spaces SET verified = false, verification_type = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+// §07 space badge revoke (DELETE /admin/spaces/{id}/verify) — clears the
+// type alongside the flag (same contract as UnverifyUser).
+func (q *Queries) UnverifySpace(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unverifySpace, id)
+	return err
+}
+
 const updatePermissionPreset = `-- name: UpdatePermissionPreset :one
 UPDATE space_permission_presets
 SET visibility = $1, posting_perm = $2, replying_perm = $3,
@@ -5679,8 +5784,7 @@ WHERE id = $12 AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out,
- federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 `
 
 type UpdateSpaceParams struct {
@@ -5724,7 +5828,8 @@ type UpdateSpaceRow struct {
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode     *string            `json:"currency_code"`
 	FederateOptOut   bool               `json:"federate_opt_out"`
-	FederateOptOut_2 bool               `json:"federate_opt_out_2"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (UpdateSpaceRow, error) {
@@ -5769,7 +5874,8 @@ func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Updat
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
-		&i.FederateOptOut_2,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -5781,7 +5887,7 @@ WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 `
 
 type UpdateSpaceHeaderImageIDParams struct {
@@ -5790,31 +5896,33 @@ type UpdateSpaceHeaderImageIDParams struct {
 }
 
 type UpdateSpaceHeaderImageIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Updates only the header_image_id on a space (banner image upload).
@@ -5847,6 +5955,8 @@ func (q *Queries) UpdateSpaceHeaderImageID(ctx context.Context, arg UpdateSpaceH
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -5895,7 +6005,7 @@ WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 `
 
 type UpdateSpaceLogoMediaIDParams struct {
@@ -5904,31 +6014,33 @@ type UpdateSpaceLogoMediaIDParams struct {
 }
 
 type UpdateSpaceLogoMediaIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Updates only the logo_media_id on a space (used by university:fetch_logo task).
@@ -5961,6 +6073,8 @@ func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLog
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -6044,7 +6158,7 @@ WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code, federate_opt_out, verified, verification_type
 `
 
 type UpdateSpaceSlugParams struct {
@@ -6053,31 +6167,33 @@ type UpdateSpaceSlugParams struct {
 }
 
 type UpdateSpaceSlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
-	FederateOptOut bool               `json:"federate_opt_out"`
+	ID               pgtype.UUID        `json:"id"`
+	ParentID         pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID      pgtype.UUID        `json:"space_type_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	WikiContent      []byte             `json:"wiki_content"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID    pgtype.UUID        `json:"header_image_id"`
+	GeoCode          *string            `json:"geo_code"`
+	Level            string             `json:"level"`
+	MemberCount      int32              `json:"member_count"`
+	PostCount        int32              `json:"post_count"`
+	FollowerCount    int32              `json:"follower_count"`
+	Visibility       string             `json:"visibility"`
+	PostingPerm      string             `json:"posting_perm"`
+	ReplyingPerm     string             `json:"replying_perm"`
+	CommentingPerm   string             `json:"commenting_perm"`
+	JoiningPerm      string             `json:"joining_perm"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode     *string            `json:"currency_code"`
+	FederateOptOut   bool               `json:"federate_opt_out"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
 }
 
 // Updates only the slug of a space. Separate from UpdateSpace (which does not
@@ -6114,6 +6230,8 @@ func (q *Queries) UpdateSpaceSlug(ctx context.Context, arg UpdateSpaceSlugParams
 		&i.DeletedAt,
 		&i.CurrencyCode,
 		&i.FederateOptOut,
+		&i.Verified,
+		&i.VerificationType,
 	)
 	return i, err
 }
@@ -6193,4 +6311,22 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		&i.WikiOnly,
 	)
 	return i, err
+}
+
+const verifySpace = `-- name: VerifySpace :exec
+UPDATE spaces SET verified = true, verification_type = $1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type VerifySpaceParams struct {
+	VerificationType *string     `json:"verification_type"`
+	ID               pgtype.UUID `json:"id"`
+}
+
+// §07 space badge grant (POST /admin/spaces/{id}/verify) — two-step with the
+// verification-request review; verification_type carries the space-scope
+// taxonomy value (official|community|organization seeds).
+func (q *Queries) VerifySpace(ctx context.Context, arg VerifySpaceParams) error {
+	_, err := q.db.Exec(ctx, verifySpace, arg.VerificationType, arg.ID)
+	return err
 }

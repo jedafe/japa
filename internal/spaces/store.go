@@ -831,6 +831,7 @@ func (s *Service) GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (
 // the level and permission axes before calling this method.
 func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {
 	s.coerceWikiOnlyAxes(ctx, &params)
+	s.coercePrimaryVerification(&params)
 
 	space, err := s.write.CreateSpace(ctx, params)
 	if err != nil {
@@ -854,6 +855,7 @@ func (s *Service) CreateSpaceWithOwner(
 	parentSpaceIDs []pgtype.UUID,
 ) (gen.CreateSpaceRow, error) {
 	s.coerceWikiOnlyAxes(ctx, &params)
+	s.coercePrimaryVerification(&params)
 
 	// §05 amendment — member-created spaces stamp creator_user_id (the
 	// primary/member discriminator). Platform-seeded callers use plain
@@ -1438,6 +1440,53 @@ func (s *Service) IsOwner(ctx context.Context, spaceID, userID pgtype.UUID) (boo
 	}
 
 	return isOwner, nil
+}
+
+// VerifySpace marks a space verified (admin grant, POST
+// /admin/spaces/{id}/verify) and emits the space.verified webhook event
+// (Section 12). adminID is the administrator who granted the badge; vtype is
+// the space-scope taxonomy value (official|community|organization seeds) —
+// nil preserves any existing value.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error {
+	space, err := s.read.GetSpaceByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching space for verify: %w", err)
+	}
+
+	if err := s.write.VerifySpace(ctx, gen.VerifySpaceParams{ID: id, VerificationType: vtype}); err != nil {
+		return fmt.Errorf("verifying space: %w", err)
+	}
+
+	// §07: the spaces index carries verified/verification_type — resync so
+	// search results reflect the badge grant immediately.
+	s.EnqueueSearchIndex(ctx, id, "index")
+
+	s.emitWebhook(ctx, "space.verified", map[string]any{
+		"space_id":    id,
+		"name":        space.Name,
+		"verified_by": adminID,
+	})
+
+	return nil
+}
+
+// UnverifySpace revokes a space's verification badge, clears its type, and
+// emits the space.unverified webhook event (Section 12).
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (s *Service) UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) error {
+	if err := s.write.UnverifySpace(ctx, id); err != nil {
+		return fmt.Errorf("unverifying space: %w", err)
+	}
+
+	s.EnqueueSearchIndex(ctx, id, "index")
+
+	s.emitWebhook(ctx, "space.unverified", map[string]any{
+		"space_id":      id,
+		"unverified_by": adminID,
+	})
+
+	return nil
 }
 
 // Join adds the user as a member of the space.

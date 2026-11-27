@@ -233,6 +233,27 @@ func (s *Service) coerceWikiOnlyAxes(ctx context.Context, params *gen.CreateSpac
 	params.JoiningPerm = axes.Joining
 }
 
+// VerificationTypeOfficial is the §07 space badge stamped on platform-run
+// primary spaces at creation (001236) — 'official' is the space-scope
+// taxonomy seed for platform-operated spaces.
+const VerificationTypeOfficial = "official"
+
+// coercePrimaryVerification stamps verified+verification_type='official' on
+// primary levels (§07/001236) — geo (country/state/city/global) and
+// university spaces are platform-run and born verified. Member-created
+// custom spaces arrive unverified; their owner files a verification_request
+// for the badge. Applied in the service layer so every write path —
+// HTTP create, geo/university seeders, imports — produces the same state.
+func (s *Service) coercePrimaryVerification(params *gen.CreateSpaceParams) {
+	if !IsPrimaryLevel(params.Level) {
+		return
+	}
+
+	params.Verified = true
+	vtype := VerificationTypeOfficial
+	params.VerificationType = &vtype
+}
+
 // sourceManager creates canonical intel_sources rows for entity profiles
 // (v2 source directory, Task 5).
 type sourceManager interface {
@@ -269,6 +290,9 @@ type Service struct {
 	// federation.ProvisionGroupActor behind feature.federation; a no-op
 	// error for ineligible spaces makes the call site unconditional.
 	groupProvision func(ctx context.Context, spaceID pgtype.UUID) error
+	// webhooks fans space.verified / space.unverified events out to
+	// subscribed endpoints (Section 12). Optional — nil-safe.
+	webhooks spaceWebhookEmitter
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
@@ -324,6 +348,25 @@ func (s *Service) dropThreadAnchorsIfClosed(ctx context.Context, spaceID pgtype.
 // provisioning error must never break the space write that triggered it.
 func (s *Service) SetGroupProvisioner(fn func(ctx context.Context, spaceID pgtype.UUID) error) {
 	s.groupProvision = fn
+}
+
+// spaceWebhookEmitter fans space.* events out to subscribed webhook
+// endpoints (fire-and-forget, Section 12).
+type spaceWebhookEmitter interface {
+	EmitEvent(ctx context.Context, eventType string, payload any)
+}
+
+// SetWebhookEmitter injects the Section 12 event fan-out for space.verified /
+// space.unverified. Nil-safe — a nil emitter disables delivery.
+func (s *Service) SetWebhookEmitter(w spaceWebhookEmitter) { s.webhooks = w }
+
+// emitWebhook fires a space.* event fire-and-forget (Rule 8). Errors are
+// logged inside the emitter, never returned to the caller.
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
+	if s.webhooks == nil {
+		return
+	}
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // maybeProvisionGroupActor asks the federation service to mint/revive the

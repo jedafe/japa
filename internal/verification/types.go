@@ -46,6 +46,7 @@ var ValidScopes = map[string]struct{}{
 	ScopeOrganization:   {},
 	ScopeUser:           {},
 	ScopeServiceListing: {},
+	ScopeSpace:          {},
 }
 
 // TypeInput carries the mutable fields on create/update.
@@ -105,7 +106,7 @@ func typeInputErr(format string, args ...any) *TypeInputError {
 func validateTypeInput(in TypeInput, creating bool) error {
 	if creating {
 		if _, ok := ValidScopes[in.Scope]; !ok {
-			return typeInputErr("scope must be one of organization|user|service_listing")
+			return typeInputErr("scope must be one of organization|user|service_listing|space")
 		}
 		if !typeValueRe.MatchString(in.Value) {
 			return typeInputErr("value must match ^[a-z][a-z0-9_]{1,48}$")
@@ -166,6 +167,9 @@ var seedTypeRows = []TypeDTO{
 	{Scope: ScopeServiceListing, Value: "community", Label: "Community-verified", Position: 20, IsActive: true, IsProtected: true},
 	{Scope: ScopeServiceListing, Value: "admin", Label: "Admin-verified", Position: 30, IsActive: true, IsProtected: true},
 	{Scope: ScopeServiceListing, Value: "professional_body", Label: "Professional Body-verified", Position: 40, IsActive: true, IsProtected: true},
+	{Scope: ScopeSpace, Value: "official", Label: "Official Space", Position: 10, IsActive: true, IsProtected: true},
+	{Scope: ScopeSpace, Value: "community", Label: "Community Space", Position: 20, IsActive: true, IsProtected: true},
+	{Scope: ScopeSpace, Value: "organization", Label: "Organization Space", Position: 30, IsActive: true, IsProtected: true},
 }
 
 // ListTypes returns active types for a scope (” = all scopes) with badge

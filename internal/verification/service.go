@@ -103,13 +103,18 @@ func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any
 //     (status='published'), the requester is the listing author or an
 //     owner/admin member of the owning org, the listing is not already
 //     verified, and no pending request exists for that listing (001157).
+//   - entity_type 'space': the space exists and is not deleted, the
+//     requester is the space owner (space_members.role='owner'), the space
+//     is not already verified, and no pending request exists for that space
+//     (001236). Primary (platform-run) spaces are born verified — requests
+//     against them fail the already-verified gate.
 //
 // The linked form submission must exist, belong to the requester, and still be
 // status='new' (BUG-009 equivalent — a submission is consumed by exactly one
 // request).
 func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, input SubmitInput) (gen.VerificationRequest, error) {
-	if input.EntityType != EntityTypeOrganization && input.EntityType != EntityTypeUser && input.EntityType != EntityTypeServiceListing {
-		return gen.VerificationRequest{}, fmt.Errorf("%w: entity_type must be 'organization', 'user' or 'service_listing'", errpkg.ErrInvalid)
+	if input.EntityType != EntityTypeOrganization && input.EntityType != EntityTypeUser && input.EntityType != EntityTypeServiceListing && input.EntityType != EntityTypeSpace {
+		return gen.VerificationRequest{}, fmt.Errorf("%w: entity_type must be 'organization', 'user', 'service_listing' or 'space'", errpkg.ErrInvalid)
 	}
 
 	// requested_type is validated against the managed taxonomy for the
@@ -121,12 +126,16 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 
 	var orgID pgtype.UUID
 	var listingID pgtype.UUID
+	var spaceID pgtype.UUID
 	var org *gen.Organization
 
 	switch input.EntityType {
 	case EntityTypeOrganization:
 		if input.OrganizationID == nil || *input.OrganizationID == "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id is required for entity_type 'organization'", errpkg.ErrInvalid)
+		}
+		if input.SpaceID != nil && *input.SpaceID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: space_id must be omitted for entity_type 'organization'", errpkg.ErrInvalid)
 		}
 		if err := orgID.Scan(*input.OrganizationID); err != nil {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: invalid organization_id", errpkg.ErrInvalid)
@@ -178,6 +187,9 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		if input.ServiceListingID != nil && *input.ServiceListingID != "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: service_listing_id must be omitted for entity_type 'user'", errpkg.ErrInvalid)
 		}
+		if input.SpaceID != nil && *input.SpaceID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: space_id must be omitted for entity_type 'user'", errpkg.ErrInvalid)
+		}
 
 		verified, err := s.store.GetUserVerified(ctx, requesterID)
 		if err != nil {
@@ -199,6 +211,9 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		}
 		if input.OrganizationID != nil && *input.OrganizationID != "" {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id must be omitted for entity_type 'service_listing'", errpkg.ErrInvalid)
+		}
+		if input.SpaceID != nil && *input.SpaceID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: space_id must be omitted for entity_type 'service_listing'", errpkg.ErrInvalid)
 		}
 		if err := listingID.Scan(*input.ServiceListingID); err != nil {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: invalid service_listing_id", errpkg.ErrInvalid)
@@ -237,6 +252,46 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 
 		if _, err := s.store.GetPendingForListing(ctx, listingID); err == nil {
 			return gen.VerificationRequest{}, fmt.Errorf("%w: a pending verification request already exists for this listing", errpkg.ErrDuplicate)
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return gen.VerificationRequest{}, fmt.Errorf("checking pending requests: %w", err)
+		}
+
+	case EntityTypeSpace:
+		if input.SpaceID == nil || *input.SpaceID == "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: space_id is required for entity_type 'space'", errpkg.ErrInvalid)
+		}
+		if input.OrganizationID != nil && *input.OrganizationID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: organization_id must be omitted for entity_type 'space'", errpkg.ErrInvalid)
+		}
+		if input.ServiceListingID != nil && *input.ServiceListingID != "" {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: service_listing_id must be omitted for entity_type 'space'", errpkg.ErrInvalid)
+		}
+		if err := spaceID.Scan(*input.SpaceID); err != nil {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: invalid space_id", errpkg.ErrInvalid)
+		}
+
+		space, err := s.store.GetSpaceForVerification(ctx, spaceID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.VerificationRequest{}, fmt.Errorf("%w: space not found", errpkg.ErrNotFound)
+			}
+			return gen.VerificationRequest{}, fmt.Errorf("fetching space: %w", err)
+		}
+		if space.Verified {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: space is already verified", errpkg.ErrInvalidStatusTransition)
+		}
+
+		// Requester must be the space owner (space_members.role='owner').
+		owner, err := s.store.IsSpaceOwner(ctx, spaceID, requesterID)
+		if err != nil {
+			return gen.VerificationRequest{}, fmt.Errorf("checking space ownership: %w", err)
+		}
+		if !owner {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: only the space owner may request verification", errpkg.ErrForbidden)
+		}
+
+		if _, err := s.store.GetPendingForSpace(ctx, spaceID); err == nil {
+			return gen.VerificationRequest{}, fmt.Errorf("%w: a pending verification request already exists for this space", errpkg.ErrDuplicate)
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return gen.VerificationRequest{}, fmt.Errorf("checking pending requests: %w", err)
 		}
@@ -286,6 +341,7 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		EntityType:       input.EntityType,
 		OrganizationID:   orgID,
 		ServiceListingID: listingID,
+		SpaceID:          spaceID,
 		RequestedType:    strPtr(input.RequestedType),
 		FormSubmissionID: submissionID,
 	})
@@ -345,6 +401,35 @@ func (s *Service) GetPendingForOrgScoped(ctx context.Context, orgID, requesterID
 	return req, nil
 }
 
+// GetPendingForSpaceScoped returns the space's pending verification request
+// for the space owner (GET /spaces/{id}/verification-request) — the pre-check
+// the /verification-request form needs so an owner never pays a submission
+// fee for a request that would 409 on a duplicate pending filing. Not-found
+// when no pending request exists.
+func (s *Service) GetPendingForSpaceScoped(ctx context.Context, spaceID, requesterID pgtype.UUID) (pgtype.UUID, error) {
+	if _, err := s.store.GetSpaceForVerification(ctx, spaceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("%w: space not found", errpkg.ErrNotFound)
+		}
+		return pgtype.UUID{}, fmt.Errorf("fetching space: %w", err)
+	}
+	owner, err := s.store.IsSpaceOwner(ctx, spaceID, requesterID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("checking space ownership: %w", err)
+	}
+	if !owner {
+		return pgtype.UUID{}, fmt.Errorf("%w: only the space owner may view space verification requests", errpkg.ErrForbidden)
+	}
+	req, err := s.store.GetPendingForSpace(ctx, spaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("%w: no pending verification request for this space", errpkg.ErrNotFound)
+		}
+		return pgtype.UUID{}, fmt.Errorf("fetching pending request: %w", err)
+	}
+	return req, nil
+}
+
 // ListMyRequests returns the requester's own requests (GET /me/verification-requests).
 func (s *Service) ListMyRequests(ctx context.Context, requesterID pgtype.UUID) ([]gen.ListVerificationRequestsByRequesterRow, error) {
 	return s.store.ListByRequester(ctx, requesterID)
@@ -393,8 +478,8 @@ func (s *Service) AdminList(ctx context.Context, status, entityType, search, sor
 	if status != "" && status != StatusPending && status != StatusApproved && status != StatusRejected && status != StatusWithdrawn {
 		return nil, 0, fmt.Errorf("%w: status must be one of pending|approved|rejected|withdrawn", errpkg.ErrInvalid)
 	}
-	if entityType != "" && entityType != EntityTypeOrganization && entityType != EntityTypeUser && entityType != EntityTypeServiceListing {
-		return nil, 0, fmt.Errorf("%w: entity_type must be organization|user|service_listing", errpkg.ErrInvalid)
+	if entityType != "" && entityType != EntityTypeOrganization && entityType != EntityTypeUser && entityType != EntityTypeServiceListing && entityType != EntityTypeSpace {
+		return nil, 0, fmt.Errorf("%w: entity_type must be organization|user|service_listing|space", errpkg.ErrInvalid)
 	}
 	if sortDir != "" && sortDir != "asc" && sortDir != "desc" {
 		sortDir = ""
@@ -469,6 +554,8 @@ func entityID(row gen.GetVerificationRequestByIDRow) any {
 		return row.OrganizationID
 	case EntityTypeServiceListing:
 		return row.ServiceListingID
+	case EntityTypeSpace:
+		return row.SpaceID
 	}
 	return row.RequesterUserID
 }

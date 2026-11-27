@@ -5,18 +5,20 @@
 
 -- name: CreateVerificationRequest :one
 INSERT INTO verification_requests
-  (requester_user_id, entity_type, organization_id, service_listing_id, requested_type, form_submission_id)
-VALUES ($1, $2, sqlc.narg(organization_id), sqlc.narg(service_listing_id), sqlc.narg(requested_type), $3)
+  (requester_user_id, entity_type, organization_id, service_listing_id, space_id, requested_type, form_submission_id)
+VALUES ($1, $2, sqlc.narg(organization_id), sqlc.narg(service_listing_id), sqlc.narg(space_id), sqlc.narg(requested_type), $3)
 RETURNING *;
 
 -- name: GetVerificationRequestByID :one
 -- Requester-scoped fetch needs only vr.*; joins provide display context.
 SELECT vr.*, u.username AS requester_username, o.name AS org_name, o.slug AS org_slug,
-       sl.title AS listing_title, sl.slug AS listing_slug
+       sl.title AS listing_title, sl.slug AS listing_slug,
+       sp.name AS space_name, sp.slug AS space_slug
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN contents sl ON sl.id = vr.service_listing_id
+LEFT JOIN spaces sp ON sp.id = vr.space_id
 WHERE vr.id = $1;
 
 -- name: GetPendingVerificationRequestForOrg :one
@@ -32,6 +34,20 @@ LIMIT 1;
 -- name: GetPendingVerificationRequestForListing :one
 SELECT id FROM verification_requests
 WHERE service_listing_id = $1 AND status = 'pending' AND entity_type = 'service_listing'
+LIMIT 1;
+
+-- name: GetPendingVerificationRequestForSpace :one
+SELECT id FROM verification_requests
+WHERE space_id = $1 AND status = 'pending' AND entity_type = 'space'
+LIMIT 1;
+
+-- name: GetSpaceForVerification :one
+-- Submit-time resolution for entity_type='space': the space must exist and
+-- not be soft-deleted so the already-verified check and the owner gate
+-- (space_members.role='owner', checked in the service layer) can run.
+SELECT id, name, slug, verified
+FROM spaces
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1;
 
 -- name: GetServiceListingForVerification :one
@@ -51,14 +67,16 @@ LIMIT 1;
 -- Requests filed by one user (GET /me/verification-requests). Requesters have
 -- no other way to discover their request IDs — same contract as
 -- ListOwnershipClaimsByClaimant.
-SELECT vr.id, vr.entity_type, vr.organization_id, vr.service_listing_id,
+SELECT vr.id, vr.entity_type, vr.organization_id, vr.service_listing_id, vr.space_id,
        vr.requested_type, vr.status,
        vr.resolution_note, vr.created_at, vr.reviewed_at, vr.form_submission_id,
        o.name AS org_name, o.slug AS org_slug,
-       sl.title AS listing_title, sl.slug AS listing_slug
+       sl.title AS listing_title, sl.slug AS listing_slug,
+       sp.name AS space_name, sp.slug AS space_slug
 FROM verification_requests vr
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN contents sl ON sl.id = vr.service_listing_id
+LEFT JOIN spaces sp ON sp.id = vr.space_id
 WHERE vr.requester_user_id = $1
 ORDER BY vr.created_at DESC;
 
@@ -72,19 +90,22 @@ SELECT vr.*, u.username AS requester_username, u.email AS requester_email,
        o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified,
        sl.title AS listing_title, sl.slug AS listing_slug,
        sm.is_verified AS listing_verified,
+       sp.name AS space_name, sp.slug AS space_slug, sp.verified AS space_verified,
        rv.username AS reviewed_by_username
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN contents sl ON sl.id = vr.service_listing_id
 LEFT JOIN service_listing_meta sm ON sm.content_id = vr.service_listing_id
+LEFT JOIN spaces sp ON sp.id = vr.space_id
 LEFT JOIN users rv ON rv.id = vr.reviewed_by
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
                     OR o.name ILIKE '%' || $3 || '%'
-                    OR sl.title ILIKE '%' || $3 || '%')
+                    OR sl.title ILIKE '%' || $3 || '%'
+                    OR sp.name ILIKE '%' || $3 || '%')
 ORDER BY
   CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text = 'desc' THEN u.username END DESC,
   CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text <> 'desc' THEN u.username END ASC,
@@ -105,12 +126,14 @@ SELECT count(*) FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN contents sl ON sl.id = vr.service_listing_id
+LEFT JOIN spaces sp ON sp.id = vr.space_id
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
   AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
                     OR u.email ILIKE '%' || $3 || '%'
                     OR o.name ILIKE '%' || $3 || '%'
-                    OR sl.title ILIKE '%' || $3 || '%');
+                    OR sl.title ILIKE '%' || $3 || '%'
+                    OR sp.name ILIKE '%' || $3 || '%');
 
 -- name: ReviewVerificationRequest :execrows
 -- Only pending requests are reviewable; withdrawn/approved/rejected are

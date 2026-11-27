@@ -1467,6 +1467,87 @@ func (h *Handlers) UnverifyUser(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": userID, "verified": false}})
 }
 
+// VerifySpace handles POST /admin/spaces/:id/verify — grants the §07 space
+// verification badge. Routed through the spaces service so the
+// space.verified webhook event is emitted (Section 12) and the search index
+// resyncs.
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (h *Handlers) VerifySpace(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+
+	var sid pgtype.UUID
+
+	if err := sid.Scan(spaceID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		VerificationType *string `json:"verification_type"`
+	}
+
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return
+		}
+	}
+
+	if body.VerificationType != nil && !h.isValidOrgVerificationType(r.Context(), verification.ScopeSpace, *body.VerificationType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type",
+			"verification_type must be an active verification type for this entity")
+		return
+	}
+
+	if h.Spaces == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification service unavailable")
+		return
+	}
+
+	if err := h.Spaces.VerifySpace(r.Context(), sid, user.UserID, body.VerificationType); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID, "verified": true}})
+}
+
+// UnverifySpace handles DELETE /admin/spaces/:id/verify — revokes the space
+// verification badge and emits space.unverified (Section 12).
+// Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests).
+func (h *Handlers) UnverifySpace(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+
+	var sid pgtype.UUID
+
+	if err := sid.Scan(spaceID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if h.Spaces == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification service unavailable")
+		return
+	}
+
+	if err := h.Spaces.UnverifySpace(r.Context(), sid, user.UserID); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID, "verified": false}})
+}
+
 // ─── Appeals ──────────────────────────────────────────────────────────────
 
 // ListAppeals handles GET /admin/appeals.

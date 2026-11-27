@@ -1700,6 +1700,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetSettings(settingsService)
 	adminHandlers.SetGDPR(gdprService)
 	adminHandlers.SetOrgVerifier(orgService)
+	adminHandlers.SetSpaceVerifier(spaceService)
 	adminHandlers.SetOrgClaimReviewer(orgService)
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
@@ -5628,6 +5629,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			orgService.SetWebhookEmitter(webhookService)
 			verificationService.SetWebhooks(webhookService)
 			usersService.SetWebhookEmitter(webhookService)
+			spaceService.SetWebhookEmitter(webhookService)
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
 			// BUG-009/010: wire Valkey for distributed JSON-LD cache and
 			// view-count counters with periodic flush. Ref: valkey-keys-catalog.md.
@@ -6039,6 +6041,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Org-scoped pending lookup — lets owner/admin members detect a
 			// pending request filed by ANOTHER admin before paying a fee.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Get("/organizations/{id}/verification-request", verificationHandlers.GetOrgPendingRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.request")).Get("/spaces/{id}/verification-request", verificationHandlers.GetSpacePendingRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests", verificationHandlers.AdminListRequests)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests/{id}/submission", adminHandlers.GetVerificationRequestSubmission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/admin/verification-requests/{id}", verificationHandlers.ReviewRequest)
@@ -8311,6 +8314,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/users/{id}/verify", adminHandlers.VerifyUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/users/{id}/verify", adminHandlers.UnverifyUser)
+			// §07 space badge grant/revoke (same two-step flow — the
+			// verification-request review only approves; these grant).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/spaces/{id}/verify", adminHandlers.VerifySpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/spaces/{id}/verify", adminHandlers.UnverifySpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).

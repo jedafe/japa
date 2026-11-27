@@ -50,20 +50,21 @@
 	const org = $derived(data.org);
 	const self = $derived(data.self);
 	const listing = $derived(data.listing);
+	const space = $derived(data.space);
 	const form = $derived(data.form);
 	const types = $derived(data.types ?? []);
 	const selectedType = $derived(types.find((v) => v.value === requestedType));
 	const requests = $derived(data.requests ?? []);
 	const credits = $derived(data.credits ?? 0);
 	const blocked = $derived(data.blocked ?? null);
-	const isRequestMode = $derived(Boolean(org) || self || Boolean(listing));
+	const isRequestMode = $derived(Boolean(org) || self || Boolean(listing) || Boolean(space));
 
-	// Shared entity descriptor for the three request modes — drives the
+	// Shared entity descriptor for the four request modes — drives the
 	// POST payload, the paid-checkout session marker, and the display labels.
-	const entityType = $derived(org ? 'organization' : listing ? 'service_listing' : 'user');
-	const entityKey = $derived(org ? `org:${org.slug}` : listing ? `listing:${listing.slug}` : 'self');
-	const entityName = $derived(org ? org.name : listing ? listing.title : '');
-	const entityParam = $derived(org ? `org=${org.slug}` : listing ? `listing=${listing.slug}` : 'self=1');
+	const entityType = $derived(org ? 'organization' : listing ? 'service_listing' : space ? 'space' : 'user');
+	const entityKey = $derived(org ? `org:${org.slug}` : listing ? `listing:${listing.slug}` : space ? `space:${space.space.slug}` : 'self');
+	const entityName = $derived(org ? org.name : listing ? listing.title : space ? space.space.name : '');
+	const entityParam = $derived(org ? `org=${org.slug}` : listing ? `listing=${listing.slug}` : space ? `space=${space.space.slug}` : 'self=1');
 
 	let withdrawing = $state('');
 	let listError = $state('');
@@ -176,6 +177,7 @@
 				entity_type: entityType,
 				organization_id: org?.id,
 				service_listing_id: listing?.id,
+				space_id: space?.space.id,
 				requested_type: requestedType || undefined,
 				form_submission_id: submissionId
 			});
@@ -386,6 +388,7 @@
 					entity_type: entityType,
 					organization_id: org?.id ?? '',
 					service_listing_id: listing?.id ?? '',
+					space_id: space?.space.id ?? '',
 					requested_type: requestedType || ''
 				};
 			}
@@ -435,6 +438,7 @@
 				entity_type: entityType,
 				organization_id: org?.id,
 				service_listing_id: listing?.id,
+				space_id: space?.space.id,
 				requested_type: requestedType || undefined,
 				form_submission_id: submissionId
 			});
@@ -505,6 +509,8 @@
 										<a href="/org/{req.org_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{req.org_name}</a>
 									{:else if req.entity_type === 'service_listing' && req.listing_slug}
 										<a href="/services/{req.listing_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{req.listing_title}</a>
+									{:else if req.entity_type === 'space' && req.space_slug}
+										<a href="/spaces/{req.space_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{req.space_name}</a>
 									{:else}
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{t('verification_request.profile_request', 'Profile verification')}</span>
 									{/if}
@@ -559,7 +565,9 @@
 						? t('verification_request.already_verified_org_body', 'This organization already has a verification badge.')
 						: listing
 							? t('verification_request.already_verified_listing_body', 'This listing already has a verification badge.')
-							: t('verification_request.already_verified_body', 'Your profile already has a verification badge.')}
+							: space
+								? t('verification_request.already_verified_space_body', 'This space already has a verification badge.')
+								: t('verification_request.already_verified_body', 'Your profile already has a verification badge.')}
 				/>
 			{:else if blocked === 'pending_exists'}
 				<EmptyState
@@ -581,6 +589,12 @@
 					icon={ShieldCheck}
 					title={t('verification_request.not_listing_owner_title', 'Listing owner only')}
 					body={t('verification_request.not_listing_owner_body', 'Only the listing author or an owner/admin of the owning organization can request verification.')}
+				/>
+			{:else if blocked === 'not_space_owner'}
+				<EmptyState
+					icon={ShieldCheck}
+					title={t('verification_request.not_space_owner_title', 'Space owner only')}
+					body={t('verification_request.not_space_owner_body', 'Only the owner of this space can request verification.')}
 				/>
 			{:else if blocked === 'no_permission'}
 				<EmptyState
@@ -626,6 +640,11 @@
 						{#if listing}
 						<a href="/services/{listing.slug}" class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 							{t('verification_request.back_to_listing', 'Back to listing')}
+						</a>
+						{/if}
+						{#if space}
+						<a href="/spaces/{space.space.slug}" class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							{t('verification_request.back_to_space', 'Back to space')}
 						</a>
 						{/if}
 					<a href="/verification-request" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
@@ -749,10 +768,11 @@
 							</span>
 								<div class="min-w-0">
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">
-									{org ? org.name : listing ? listing.title : t('verification_request.profile_request', 'Profile verification')}
+									{org ? org.name : listing ? listing.title : space ? space.space.name : t('verification_request.profile_request', 'Profile verification')}
 									</p>
 								{#if org}<p class="truncate text-xs text-[var(--color-muted)]">/{org.slug}</p>{/if}
 								{#if listing}<p class="truncate text-xs text-[var(--color-muted)]">/services/{listing.slug}</p>{/if}
+								{#if space}<p class="truncate text-xs text-[var(--color-muted)]">/spaces/{space.space.slug}</p>{/if}
 								</div>
 							</div>
 
@@ -804,7 +824,9 @@
 											? org.name
 											: listing
 												? listing.title
-												: t('verification_request.profile_request', 'Profile verification')}
+												: space
+													? space.space.name
+													: t('verification_request.profile_request', 'Profile verification')}
 									</dd>
 								</div>
 							<div class="flex items-start justify-between gap-4 px-4 py-2.5">

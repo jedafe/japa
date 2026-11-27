@@ -879,6 +879,11 @@ export const spacesAdminApi = {
 		api(`/admin/spaces/${id}/status`, { method: 'PATCH', body }),
 	assignModerator: (id: string, body: { username: string }) =>
 		api(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
+	// §07 space badge grant/revoke (two-step with the verification-request review).
+	verify: (id: string, body: { verification_type?: string } = {}) =>
+		api(`/admin/spaces/${id}/verify`, { method: 'POST', body }),
+	unverify: (id: string) =>
+		api(`/admin/spaces/${id}/verify`, { method: 'DELETE' }),
 };
 
 export const tagsAdminApi = {

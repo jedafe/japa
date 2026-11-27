@@ -1,9 +1,10 @@
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-// /verification-request — auth-gated. Four modes:
+// /verification-request — auth-gated. Five modes:
 //   ?org={slug}     → org verification request form (owner/admin members only)
 //   ?self=1         → profile verification request form
 //   ?listing={slug} → service-listing verification request form (listing author
 //                     or owner/admin member of the owning org — 001157)
+//   ?space={slug}   → space verification request form (space owner only — 001236)
 //   (none)          → "My verification requests" list (GET /me/verification-requests)
 // The dynamic form comes from the Form Builder via GET
 // /forms/verification-request/embed (system_settings 'verification.form_slug').
@@ -25,7 +26,8 @@ import type {
 	MyVerificationRequest,
 	MeProfile,
 	ComposerOrganization,
-	ServiceListing
+	ServiceListing,
+	SpaceDetail
 } from '#lib/types/index.js';
 
 export type VerificationBlock =
@@ -33,6 +35,7 @@ export type VerificationBlock =
 	| 'pending_exists'
 	| 'not_org_admin'
 	| 'not_listing_owner'
+	| 'not_space_owner'
 	| 'no_permission'
 	| null;
 
@@ -45,8 +48,9 @@ export const load: PageServerLoad = async (event) => {
 	const slug = event.url.searchParams.get('org');
 	const self = event.url.searchParams.get('self') === '1';
 	const listingSlug = event.url.searchParams.get('listing');
+	const spaceSlug = event.url.searchParams.get('space');
 	const paid = event.url.searchParams.get('paid') === '1';
-	const formMode = Boolean(slug) || self || Boolean(listingSlug);
+	const formMode = Boolean(slug) || self || Boolean(listingSlug) || Boolean(spaceSlug);
 
 	// Requester-scoped list — fetched in every mode: it drives both the
 	// bare-mode list view and the pending-request pre-check in form mode.
@@ -71,7 +75,7 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve(null);
 	// Badge-type vocabulary for the suggested-type select (Rule 16) —
 	// managed taxonomy (001013), scoped to the request's entity type.
-	const typeScope = slug ? 'organization' : listingSlug ? 'service_listing' : 'user';
+	const typeScope = slug ? 'organization' : listingSlug ? 'service_listing' : spaceSlug ? 'space' : 'user';
 	const typesPromise =
 		formMode
 			? apiGet<{ types: { value: string; label: string; badge_url?: string }[] }>(ctx, `/verification-requests/types?scope=${typeScope}`)
@@ -93,6 +97,7 @@ export const load: PageServerLoad = async (event) => {
 			org: null,
 			self: false,
 			listing: null,
+			space: null,
 			form: null,
 			types: [],
 			credits: 0,
@@ -124,6 +129,19 @@ export const load: PageServerLoad = async (event) => {
 			throw error(status === 404 ? 404 : 500, {
 				code: status === 404 ? 'not_found' : 'server_error',
 				message: status === 404 ? 'Listing not found' : 'Failed to load listing'
+			});
+		}
+	}
+
+	let space: SpaceDetail | null = null;
+	if (spaceSlug) {
+		try {
+			space = await apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(spaceSlug)}`);
+		} catch (e) {
+			const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
+			throw error(status === 404 ? 404 : 500, {
+				code: status === 404 ? 'not_found' : 'server_error',
+				message: status === 404 ? 'Space not found' : 'Failed to load space'
 			});
 		}
 	}
@@ -185,6 +203,20 @@ export const load: PageServerLoad = async (event) => {
 				})
 				.catch(() => {})
 		);
+	} else if (space) {
+		if (space.space.verified) blocked = 'already_verified';
+		// Requester must be the space owner (role='owner') — is_owner comes
+		// viewer-scoped on GET /spaces/{slug}.
+		if (!blocked && !space.is_owner) blocked = 'not_space_owner';
+		// Space-scoped pending lookup (GET /spaces/{id}/verification-request)
+		// — the requester-scoped list only sees the caller's own filings.
+		checks.push(
+			apiGet<MyVerificationRequest>(ctx, `/spaces/${space.space.id}/verification-request`)
+				.then((r) => {
+					if (r?.id && !blocked) blocked = 'pending_exists';
+				})
+				.catch(() => {})
+		);
 	} else {
 		// Profile request: verified flag lives on /me (SessionUser lacks it).
 		checks.push(
@@ -212,10 +244,12 @@ export const load: PageServerLoad = async (event) => {
 					? r.entity_type === 'organization' && r.organization_id === org.id
 					: listing
 						? r.entity_type === 'service_listing' && r.service_listing_id === listing.id
-						: r.entity_type === 'user')
+						: space
+							? r.entity_type === 'space' && r.space_id === space.space.id
+							: r.entity_type === 'user')
 		);
 		if (pending) blocked = 'pending_exists';
 	}
 
-	return { org, self, listing, form, types, credits, blocked, resumePayment: paid, requests };
+	return { org, self, listing, space, form, types, credits, blocked, resumePayment: paid, requests };
 };

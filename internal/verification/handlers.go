@@ -54,6 +54,7 @@ type submitRequest struct {
 	EntityType       string  `json:"entity_type"`
 	OrganizationID   *string `json:"organization_id"`
 	ServiceListingID *string `json:"service_listing_id"`
+	SpaceID          *string `json:"space_id"`
 	RequestedType    *string `json:"requested_type"`
 	FormSubmissionID string  `json:"form_submission_id"`
 }
@@ -80,6 +81,7 @@ func (h *Handlers) SubmitRequest(w http.ResponseWriter, r *http.Request) {
 		EntityType:       req.EntityType,
 		OrganizationID:   req.OrganizationID,
 		ServiceListingID: req.ServiceListingID,
+		SpaceID:          req.SpaceID,
 		RequestedType:    req.RequestedType,
 		FormSubmissionID: req.FormSubmissionID,
 	})
@@ -168,6 +170,29 @@ func (h *Handlers) GetOrgPendingRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	row, err := h.service.GetPendingForOrgScoped(r.Context(), orgID, user.UserID)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": row.String()}})
+}
+
+// GetSpacePendingRequest handles GET /spaces/{id}/verification-request —
+// returns the space's pending request for the space owner's pre-check (§07,
+// 001236).
+func (h *Handlers) GetSpacePendingRequest(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	spaceID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	row, err := h.service.GetPendingForSpaceScoped(r.Context(), spaceID, user.UserID)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -302,7 +327,7 @@ func writeTypeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrTypeNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "verification_type_not_found", "Verification type not found")
 	case errors.Is(err, ErrInvalidTypeScope):
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of organization|user|service_listing")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of organization|user|service_listing|space")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification type operation failed")
 	}

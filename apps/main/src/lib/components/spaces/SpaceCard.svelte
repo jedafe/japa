@@ -82,7 +82,9 @@
 			<span class="flex min-w-0 items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 				<span class="truncate">{space.name}</span>
 				<VerifiedBadge
-					verified={!!space.is_primary}
+					verified={space.verified ?? !!space.is_primary}
+					type={space.verified ? space.verification_type : null}
+					scope="space"
 					size={15}
 				/>
 			</span>
@@ -99,7 +101,7 @@
 				avatar={space.logo_url}
 				description={space.description}
 				count={space.member_count}
-				verified={!!space.is_primary}
+				verified={space.verified ?? !!space.is_primary}
 				class="flex min-w-0 items-center gap-3 text-start"
 			>
 				{#snippet trigger()}

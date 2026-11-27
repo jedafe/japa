@@ -319,6 +319,9 @@ var defaultWebhookEventCatalog = []map[string]string{
 	// Organizations (§07)
 	{"key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified"},
 	{"key": "organization.unverified", "label": "Organization Unverified", "description": "When an organization's verification is revoked"},
+	// Spaces (§05/§07)
+	{"key": "space.verified", "label": "Space Verified", "description": "When a space is verified"},
+	{"key": "space.unverified", "label": "Space Unverified", "description": "When a space's verification is revoked"},
 	// Payments (§17)
 	{"key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds"},
 	{"key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails"},

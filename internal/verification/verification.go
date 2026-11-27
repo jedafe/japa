@@ -19,6 +19,7 @@ const (
 	EntityTypeOrganization   = "organization"
 	EntityTypeUser           = "user"
 	EntityTypeServiceListing = "service_listing"
+	EntityTypeSpace          = "space"
 )
 
 // Request status values (same lifecycle vocabulary as ownership_claims).
@@ -41,6 +42,7 @@ const (
 	ScopeOrganization   = "organization"
 	ScopeUser           = "user"
 	ScopeServiceListing = "service_listing"
+	ScopeSpace          = "space"
 )
 
 // VerificationTypes is the §07 badge-type vocabulary shared by organizations
@@ -57,11 +59,21 @@ var ServiceListingTypes = []string{
 	"self", "community", "admin", "professional_body",
 }
 
+// SpaceTypes is the §07 space-badge vocabulary — same fallback role for
+// scope 'space' (001236). 'official' marks platform-run primary spaces
+// (geo/university/global levels), which are verified by default.
+var SpaceTypes = []string{
+	"official", "community", "organization",
+}
+
 // FallbackTypeValues returns the compiled-in type vocabulary for a scope,
 // used when verification_types cannot be read.
 func FallbackTypeValues(scope string) []string {
-	if scope == ScopeServiceListing {
+	switch scope {
+	case ScopeServiceListing:
 		return ServiceListingTypes
+	case ScopeSpace:
+		return SpaceTypes
 	}
 	return VerificationTypes
 }
@@ -83,6 +95,7 @@ type SubmitInput struct {
 	EntityType       string
 	OrganizationID   *string
 	ServiceListingID *string
+	SpaceID          *string
 	RequestedType    *string
 	FormSubmissionID string
 }

@@ -44,6 +44,23 @@ func (s *Store) GetPendingForListing(ctx context.Context, listingID pgtype.UUID)
 	return s.read.GetPendingVerificationRequestForListing(ctx, listingID)
 }
 
+// GetPendingForSpace returns the pending request for a space, if any.
+func (s *Store) GetPendingForSpace(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetPendingVerificationRequestForSpace(ctx, spaceID)
+}
+
+// GetSpaceForVerification resolves a space for the submit-time eligibility
+// check (existence, verified flag).
+func (s *Store) GetSpaceForVerification(ctx context.Context, spaceID pgtype.UUID) (gen.GetSpaceForVerificationRow, error) {
+	return s.read.GetSpaceForVerification(ctx, spaceID)
+}
+
+// IsSpaceOwner reports whether the requester is the space owner
+// (space_members.role='owner', approved) — the space-request eligibility gate.
+func (s *Store) IsSpaceOwner(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	return s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{SpaceID: spaceID, UserID: userID})
+}
+
 // GetServiceListingForVerification resolves a listing for the submit-time
 // eligibility check (existence, is_verified, ownership inputs).
 func (s *Store) GetServiceListingForVerification(ctx context.Context, listingID pgtype.UUID) (gen.GetServiceListingForVerificationRow, error) {

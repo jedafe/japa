@@ -4544,6 +4544,9 @@ type Space struct {
 	Subregion      *string            `json:"subregion"`
 	SourceID       pgtype.UUID        `json:"source_id"`
 	FederateOptOut bool               `json:"federate_opt_out"`
+	Verified       bool               `json:"verified"`
+	// official|community|organization — set via POST /admin/spaces/{id}/verify; primary (geo/university/global) spaces default to official
+	VerificationType *string `json:"verification_type"`
 }
 
 type SpaceInvite struct {
@@ -5542,6 +5545,7 @@ type VerificationRequest struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 	ServiceListingID pgtype.UUID        `json:"service_listing_id"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
 }
 
 type VerificationType struct {

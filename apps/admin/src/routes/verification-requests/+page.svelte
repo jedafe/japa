@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from "#lib/components/entity/index.js";
 	import { Modal } from "#lib/components/ui/modal/index.js";
 	import { Button } from "#lib/components/ui/button/index.js";
-	import { verificationAdminApi, organisationsAdminApi, serviceDirectoryAdminApi, type VerificationTypeItem } from "#lib/api.js";
+	import { verificationAdminApi, organisationsAdminApi, serviceDirectoryAdminApi, spacesAdminApi, type VerificationTypeItem } from "#lib/api.js";
 	import { Tabs, TabsContent } from "#lib/components/ui/tabs/index.js";
 	import BadgeTypesPanel from "./BadgeTypesPanel.svelte";
 	import { t } from "#lib/stores/i18n.svelte.js";
@@ -21,6 +21,7 @@
 		entity_type: string;
 		organization_id?: string | null;
 		service_listing_id?: string | null;
+		space_id?: string | null;
 		requested_type?: string | null;
 		form_submission_id: string;
 		status: string;
@@ -36,6 +37,9 @@
 		listing_title?: string | null;
 		listing_slug?: string | null;
 		listing_verified?: boolean | null;
+		space_name?: string | null;
+		space_slug?: string | null;
+		space_verified?: boolean | null;
 		reviewed_by_username?: string | null;
 	};
 
@@ -88,10 +92,12 @@
 			? !!row.org_verified
 			: row.entity_type === "service_listing"
 				? !!row.listing_verified
-				: !!row.requester_verified;
+				: row.entity_type === "space"
+					? !!row.space_verified
+					: !!row.requester_verified;
 
 	const entityLabel = (row: VRequest) =>
-		row.entity_type + (row.org_name ? ` — ${row.org_name}` : "") + (row.listing_title ? ` — ${row.listing_title}` : "");
+		row.entity_type + (row.org_name ? ` — ${row.org_name}` : "") + (row.listing_title ? ` — ${row.listing_title}` : "") + (row.space_name ? ` — ${row.space_name}` : "");
 
 	// Evidence (view modal) — the linked form submission is fetched per row.
 	// viewTargetId guards against a slow fetch for a previously-opened row
@@ -149,7 +155,9 @@
 			? await organisationsAdminApi.verify(grantTarget.organization_id, { verification_type: grantType || undefined })
 			: grantTarget.entity_type === "service_listing" && grantTarget.service_listing_id
 				? await serviceDirectoryAdminApi.verify(grantTarget.service_listing_id, { verification_type: grantType || undefined })
-				: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
+				: grantTarget.entity_type === "space" && grantTarget.space_id
+					? await spacesAdminApi.verify(grantTarget.space_id, { verification_type: grantType || undefined })
+					: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
 		busy = false;
 		if (!res.ok) { pageError = res.error; return; }
 		showGrantModal = false;
@@ -234,7 +242,8 @@
 				options: [
 					{ value: "organization", label: t("vreq.entity_organization", "Organization") },
 					{ value: "user", label: t("vreq.entity_user", "User") },
-					{ value: "service_listing", label: t("vreq.entity_service_listing", "Service listing") }
+					{ value: "service_listing", label: t("vreq.entity_service_listing", "Service listing") },
+					{ value: "space", label: t("vreq.entity_space", "Space") }
 				]
 			}
 		],

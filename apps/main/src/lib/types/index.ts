@@ -1550,6 +1550,10 @@ export interface Space {
 	 *  platform-seeded, e.g. universities). Primary spaces are follow-only:
 	 *  no Join button (no owner — the platform owns them). */
 	is_primary?: boolean;
+	/** §07 — space verification badge. Primary (geo/university/global)
+	 *  spaces are verified at creation with type 'official' (001236). */
+	verified?: boolean;
+	verification_type?: string | null;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */
@@ -6042,11 +6046,14 @@ export interface NextAction {
 /** GET /me/verification-requests row (§07 Verification Requests). */
 export interface MyVerificationRequest {
 	id: string;
-	entity_type: 'organization' | 'user' | 'service_listing' | string;
+	entity_type: 'organization' | 'user' | 'service_listing' | 'space' | string;
 	organization_id?: string | null;
 	service_listing_id?: string | null;
+	space_id?: string | null;
 	listing_title?: string | null;
 	listing_slug?: string | null;
+	space_name?: string | null;
+	space_slug?: string | null;
 	requested_type?: string | null;
 	status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | string;
 	resolution_note?: string | null;

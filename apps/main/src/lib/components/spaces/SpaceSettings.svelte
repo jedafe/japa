@@ -664,6 +664,28 @@
 		</div>
 		</fieldset>
 
+		<!-- §07 space verification (001236) — the owner files a verification
+		     request for the badge; primary spaces arrive verified. -->
+		{#if isOwner && !space.verified}
+			<fieldset class="rounded-lg border border-[var(--color-border)] p-5">
+				<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
+					{t('spaces.settings_verification', 'Verification')}
+				</legend>
+				<div class="flex items-center justify-between gap-3">
+					<p class="text-xs text-[var(--color-muted)]">
+						{t('spaces.settings_verification_hint', 'A verification badge tells members this space is authentic. Submit evidence for our review team to check.')}
+					</p>
+					<a
+						href="/verification-request?space={space.slug}"
+						class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<ShieldCheck class="h-4 w-4" />
+						{t('spaces.settings_request_verification', 'Request verification')}
+					</a>
+				</div>
+			</fieldset>
+		{/if}
+
 		<!-- Permission presets (Ref: §05 lines 122-133) -->
 		{#if presets.length > 0}
 			<fieldset class="rounded-lg border border-[var(--color-border)] p-5">

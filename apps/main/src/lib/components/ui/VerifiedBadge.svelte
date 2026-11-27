@@ -13,7 +13,7 @@
 	interface Props {
 		verified?: boolean;
 		type?: string | null;
-		scope?: 'user' | 'organization' | 'service_listing';
+		scope?: 'user' | 'organization' | 'service_listing' | 'space';
 		size?: number;
 		class?: string;
 	}

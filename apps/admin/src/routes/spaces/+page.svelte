@@ -9,11 +9,11 @@
 	import { Modal } from "#lib/components/ui/modal/index.js";
 	import { Button } from "#lib/components/ui/button/index.js";
 	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
-	import { spacesAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "#lib/api.js";
+	import { spacesAdminApi, organisationsAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "#lib/api.js";
 	import { goto } from "$app/navigation";
 	import { t } from "#lib/stores/i18n.svelte.js";
 	import { hasPermission } from "#lib/stores/permissions.svelte.js";
-	import { Eye, Pencil, Plus, Trash2, SlidersHorizontal } from "lucide-svelte";
+	import { Eye, Pencil, Plus, Trash2, SlidersHorizontal, ShieldCheck, ShieldOff } from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type Space = {
@@ -25,6 +25,8 @@
 		status: string;
 		visibility: string;
 		space_type: string;
+		verified?: boolean;
+		verification_type?: string | null;
 		deleted_at?: string | null;
 		created_at: string;
 		updated_at: string;
@@ -32,6 +34,8 @@
 
 	const canModerateSpaces = $derived(hasPermission("spaces.moderate"));
 	const canManageSpaces = $derived(hasPermission("spaces.admin"));
+	// §07 space badge grant/revoke routes are gated on admin.moderation.
+	const canModerate = $derived(hasPermission("admin.moderation"));
 
 	let visibilityOptions = $state<{ value: string; label: string }[]>([
 		{ value: "public", label: t("spaces.public", "Public") },
@@ -97,6 +101,23 @@
 	let suspendTarget = $state<Space | null>(null);
 	let suspendReason = $state("");
 
+	// §07 Verify Modal (page-local — badge-type picker; Unverify is direct).
+	let showVerifyModal = $state(false);
+	let verifyTarget = $state<Space | null>(null);
+	let verifyType = $state("");
+	let verificationTypeOptions = $state<{ value: string; label: string }[]>([]);
+	$effect(() => {
+		void (async () => {
+			const res = await organisationsAdminApi.verificationTypes("space");
+			if (res.ok && res.data?.types) {
+				verificationTypeOptions = [
+					{ value: "", label: t("spaces.verify_type_none", "No badge type") },
+					...res.data.types.map((ty) => ({ value: ty.value, label: ty.label }))
+				];
+			}
+		})();
+	});
+
 	// ── Filters ─────────────────────────────────────────────────────────────
 	// Option filters render through FilterPanel's Autocomplete path — every
 	// dropdown on this surface uses the shared Autocomplete.svelte.
@@ -154,6 +175,20 @@
 				show: (row: Space) => !row.deleted_at && row.status === "suspended"
 			});
 		}
+		if (canModerate) {
+			acts.push({
+				label: t("spaces.verify", "Verify"),
+				icon: ShieldCheck,
+				onclick: toggleVerify,
+				show: (row: Space) => !row.deleted_at && !row.verified
+			});
+			acts.push({
+				label: t("spaces.unverify", "Unverify"),
+				icon: ShieldOff,
+				onclick: toggleVerify,
+				show: (row: Space) => !row.deleted_at && !!row.verified
+			});
+		}
 		if (canManageSpaces) {
 			acts.push({
 				label: t("common.delete", "Delete"),
@@ -205,6 +240,13 @@
 				}
 			},
 			{ key: "space_type", label: t("spaces.space_type", "Type"), sortable: true },
+			{
+				key: "verified",
+				label: t("spaces.verified", "Verified"),
+				render: (v: boolean, row: Space) => v
+					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${row.verification_type ? t(`spaces.verify_type_${row.verification_type}`, row.verification_type) : t("spaces.verified", "Verified")}</span>`
+					: `<span style="color: var(--color-muted)">—</span>`
+			},
 			{ key: "created_at", label: t("spaces.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
 		],
 		filters: filterDefs,
@@ -338,6 +380,48 @@
 			pageError = t("common.error", "Failed to update space status");
 		} finally {
 			acting = false;
+		}
+	}
+
+	// ── §07 Verify — modal picks the badge type; Unverify is direct. ──────
+	function openVerify(space: Space) {
+		verifyTarget = space;
+		verifyType = space.verification_type ?? "";
+		showVerifyModal = true;
+	}
+
+	async function confirmVerify() {
+		if (!verifyTarget) return;
+		acting = true;
+		pageError = "";
+		try {
+			const res = await spacesAdminApi.verify(verifyTarget.id, {
+				...(verifyType ? { verification_type: verifyType } : {})
+			});
+			if (res.ok) {
+				showVerifyModal = false;
+				verifyTarget = null;
+				entityController?.reload();
+			} else {
+				pageError = res.error ?? t("common.error", "Failed to update verification");
+			}
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function toggleVerify(row: Space, ctx?: { reload: () => void }) {
+		if (!row?.id) return;
+		if (!row.verified) { openVerify(row); return; }
+		try {
+			const result = await spacesAdminApi.unverify(row.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t("common.error", "Failed to update verification");
+			}
+		} catch {
+			pageError = t("common.error", "Failed to update verification");
 		}
 	}
 
@@ -497,6 +581,31 @@
 		<Button variant={suspendTarget?.status === "suspended" ? "default" : "destructive"} onclick={executeSuspend} disabled={acting}>
 			{acting ? t("spaces.processing", "Processing...") : suspendTarget?.status === "suspended" ? t("spaces.unsuspend", "Unsuspend") : t("spaces.suspend", "Suspend")}
 		</Button>
+	</div>
+</Modal>
+
+<!-- §07 Verify Modal (page-local — badge-type picker) -->
+<Modal bind:open={showVerifyModal} title={t("spaces.verify_space", "Verify Space")} size="sm">
+	{#if verifyTarget}
+		<p class="text-sm mb-3" style="color: var(--color-foreground)">
+			{t("spaces.verify_confirm", "Grant a verification badge to")} <strong>{verifyTarget.name}</strong>?
+		</p>
+		<label class="block text-sm" style="color: var(--color-foreground)">
+			{t("spaces.verify_type", "Badge type")}
+			<select
+				class="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={verifyType}
+			>
+				{#each verificationTypeOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</label>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showVerifyModal = false)} disabled={acting}>{t('spaces.cancel')}</Button>
+		<Button onclick={confirmVerify} disabled={acting}>{acting ? t("spaces.processing", "Processing...") : t("spaces.verify", "Verify")}</Button>
 	</div>
 </Modal>
 

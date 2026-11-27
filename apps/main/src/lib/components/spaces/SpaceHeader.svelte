@@ -103,9 +103,7 @@
 				<div class="min-w-0 flex-1 pb-0.5 text-white">
 					<h1 class="flex items-center gap-1.5 text-2xl font-bold drop-shadow-sm sm:text-3xl">
 						<span class="truncate">{space.name}</span>
-						{#if space.is_primary}
-							<VerifiedBadge verified={true} type="platform" size={20} />
-						{/if}
+						<VerifiedBadge verified={space.verified ?? space.is_primary} type={space.verified ? space.verification_type : 'platform'} scope="space" size={20} />
 					</h1>
 					<p class="mt-0.5 truncate text-sm text-white/90">
 						{#if locationLine}{locationLine}{/if}{#if locationLine && typeName} · {/if}{#if typeName}{typeName}{/if}

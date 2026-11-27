@@ -89,6 +89,7 @@ type Handlers struct {
 	Orgs                OrgVerifier
 	OrgClaims           OrgClaimReviewer // Optional — wired by server after organizations.Service is constructed
 	Users               UserVerifier
+	Spaces              SpaceVerifier // Optional — wired by server after spaces.Service is constructed
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
 	DraftPublishHook    DraftPublishHook           // Optional — publishes non-studio ai_hitl_reviews targets on approve (§103)
@@ -197,6 +198,15 @@ type UserVerifier interface {
 	UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error
 }
 
+// SpaceVerifier is the subset of the spaces service the admin verify
+// handlers need to grant/revoke the §07 space verification badge and emit
+// the space.verified / space.unverified webhook events (Section 12).
+// Local interface so admin does not import spaces (cycle-safe).
+type SpaceVerifier interface {
+	VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error
+	UnverifySpace(ctx context.Context, id, adminID pgtype.UUID) error
+}
+
 // NewHandlers creates Handlers with the given database pool.
 func NewHandlers(database *db.DB, queries *gen.Queries) *Handlers {
 	return &Handlers{DB: database, Queries: queries}
@@ -244,6 +254,12 @@ func (h *Handlers) SetOrgClaimReviewer(o OrgClaimReviewer) {
 // flow (which emits the user.verified webhook event, Section 12).
 func (h *Handlers) SetUserVerifier(u UserVerifier) {
 	h.Users = u
+}
+
+// SetSpaceVerifier injects the spaces service for the admin space-verify
+// flow (which emits the space.verified webhook event, Section 12).
+func (h *Handlers) SetSpaceVerifier(s SpaceVerifier) {
+	h.Spaces = s
 }
 
 // SetStudioReviewHook injects the studio service hook so ModerateItem can
