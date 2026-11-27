@@ -1462,10 +1462,17 @@ func (s *Service) VerifySpace(ctx context.Context, id, adminID pgtype.UUID, vtyp
 	// search results reflect the badge grant immediately.
 	s.EnqueueSearchIndex(ctx, id, "index")
 
+	// Effective type = supplied value, else what the COALESCE preserved —
+	// the payload must not claim null while the row keeps its type.
+	effectiveType := vtype
+	if effectiveType == nil {
+		effectiveType = space.VerificationType
+	}
+
 	s.emitWebhook(ctx, "space.verified", map[string]any{
 		"space_id":          id,
 		"name":              space.Name,
-		"verification_type": vtype,
+		"verification_type": effectiveType,
 		"verified_by":       adminID,
 	})
 

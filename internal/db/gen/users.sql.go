@@ -3309,9 +3309,12 @@ func (q *Queries) UsernameExists(ctx context.Context, arg UsernameExistsParams) 
 	return count, err
 }
 
-const verifyUser = `-- name: VerifyUser :exec
-UPDATE users SET verified = true, verification_type = $2, updated_at = now()
+const verifyUser = `-- name: VerifyUser :one
+UPDATE users SET verified = true,
+  verification_type = COALESCE($2::text, verification_type),
+  updated_at = now()
 WHERE id = $1
+RETURNING verification_type
 `
 
 type VerifyUserParams struct {
@@ -3321,8 +3324,12 @@ type VerifyUserParams struct {
 
 // Admin grant of the §07 profile verification badge. verification_type is
 // optional; nil preserves any existing value (same contract as orgs).
+// RETURNING feeds the user.verified webhook payload with the effective
+// (post-COALESCE) type rather than the request's nil.
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-func (q *Queries) VerifyUser(ctx context.Context, arg VerifyUserParams) error {
-	_, err := q.db.Exec(ctx, verifyUser, arg.ID, arg.VerificationType)
-	return err
+func (q *Queries) VerifyUser(ctx context.Context, arg VerifyUserParams) (*string, error) {
+	row := q.db.QueryRow(ctx, verifyUser, arg.ID, arg.VerificationType)
+	var verification_type *string
+	err := row.Scan(&verification_type)
+	return verification_type, err
 }

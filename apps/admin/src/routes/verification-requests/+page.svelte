@@ -151,13 +151,29 @@
 		busy = true;
 		pageError = "";
 		successMessage = "";
-		const res = grantTarget.entity_type === "organization" && grantTarget.organization_id
-			? await organisationsAdminApi.verify(grantTarget.organization_id, { verification_type: grantType || undefined })
-			: grantTarget.entity_type === "service_listing" && grantTarget.service_listing_id
-				? await serviceDirectoryAdminApi.verify(grantTarget.service_listing_id, { verification_type: grantType || undefined })
-				: grantTarget.entity_type === "space" && grantTarget.space_id
+		// Dispatch on entity_type explicitly — a row missing its target id must
+		// error, never fall through to verifyUser(requester).
+		const missing = (entity: string) => ({ ok: false as const, error: t("vreq.grant_missing_entity", `Request row is missing its ${entity} target.`) });
+		let res: { ok: true } | { ok: false; error: string };
+		switch (grantTarget.entity_type) {
+			case "organization":
+				res = grantTarget.organization_id
+					? await organisationsAdminApi.verify(grantTarget.organization_id, { verification_type: grantType || undefined })
+					: missing("organization");
+				break;
+			case "service_listing":
+				res = grantTarget.service_listing_id
+					? await serviceDirectoryAdminApi.verify(grantTarget.service_listing_id, { verification_type: grantType || undefined })
+					: missing("listing");
+				break;
+			case "space":
+				res = grantTarget.space_id
 					? await spacesAdminApi.verify(grantTarget.space_id, { verification_type: grantType || undefined })
-					: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
+					: missing("space");
+				break;
+			default:
+				res = await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
+		}
 		busy = false;
 		if (!res.ok) { pageError = res.error; return; }
 		showGrantModal = false;

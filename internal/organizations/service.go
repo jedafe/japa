@@ -1070,10 +1070,18 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUI
 	// resync so search results reflect the badge grant immediately.
 	worker.EnqueueSearchIndexSync(ctx, "organization", id)
 
+	// Effective type = supplied value, else what the COALESCE preserved —
+	// matching the user.verified/space.verified payload contract.
+	effectiveType := vtype
+	if effectiveType == nil {
+		effectiveType = org.VerificationType
+	}
+
 	s.emitWebhook(ctx, "organization.verified", map[string]any{
-		"organization_id": id,
-		"name":            org.Name,
-		"verified_by":     adminID,
+		"organization_id":   id,
+		"name":              org.Name,
+		"verification_type": effectiveType,
+		"verified_by":       adminID,
 	})
 
 	// Notify the org owner that the badge was granted — the terminal outcome

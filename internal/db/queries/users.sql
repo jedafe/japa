@@ -1175,12 +1175,17 @@ WHERE (username = @handle OR lower(public_username) = lower(@handle))
 -- against JC_OWNER_EMAIL for owner-protected paths.
 SELECT email FROM users WHERE id = @user_id;
 
--- name: VerifyUser :exec
+-- name: VerifyUser :one
 -- Admin grant of the §07 profile verification badge. verification_type is
 -- optional; nil preserves any existing value (same contract as orgs).
+-- RETURNING feeds the user.verified webhook payload with the effective
+-- (post-COALESCE) type rather than the request's nil.
 -- Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-UPDATE users SET verified = true, verification_type = sqlc.narg(verification_type), updated_at = now()
-WHERE id = $1;
+UPDATE users SET verified = true,
+  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  updated_at = now()
+WHERE id = $1
+RETURNING verification_type;
 
 -- name: UnverifyUser :exec
 -- Revokes the profile verification badge and clears verification_type.

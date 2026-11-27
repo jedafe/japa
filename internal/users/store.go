@@ -918,9 +918,10 @@ func (s *Store) countUserPointsEarned(ctx context.Context, userID pgtype.UUID, f
 	})
 }
 
-// VerifyUser grants the §07 profile verification badge.
+// VerifyUser grants the §07 profile verification badge and returns the
+// effective (post-COALESCE) verification_type for the webhook payload.
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
-func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) error {
+func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) (*string, error) {
 	return s.write.VerifyUser(ctx, gen.VerifyUserParams{ID: id, VerificationType: vtype})
 }
 

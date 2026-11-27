@@ -2812,7 +2812,8 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 		return fmt.Errorf("%w: verification_type must be an active user verification type", errpkg.ErrInvalid)
 	}
 
-	if err := s.store.VerifyUser(ctx, id, vtype); err != nil {
+	effectiveType, err := s.store.VerifyUser(ctx, id, vtype)
+	if err != nil {
 		return fmt.Errorf("verifying user: %w", err)
 	}
 
@@ -2822,7 +2823,7 @@ func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype
 
 	s.emitWebhook(ctx, "user.verified", map[string]any{
 		"user_id":           id,
-		"verification_type": vtype,
+		"verification_type": effectiveType,
 		"verified_by":       adminID,
 	})
 

@@ -4977,6 +4977,7 @@
   "vreq.grant": "Grant badge",
   "vreq.grant_type": "Badge type",
   "vreq.grant_type_none": "— none —",
+  "vreq.grant_missing_entity": "Request row is missing its entity target.",
   "vreq.evidence": "Request evidence",
   "vreq.submission": "Form submission",
   "vreq.resolution_note": "Resolution note",
