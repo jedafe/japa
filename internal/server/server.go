@@ -1572,7 +1572,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// BUG-005: dm:notify_* tasks create in-app notification rows through the
 	// service (prefs honoured, WS broadcast, unread invalidation) instead of
 	// push-only delivery.
-	worker.RegisterDMNotificationCreator(notificationService)
+	worker.RegisterNotificationCreator(notificationService)
 
 	// Form submission triggers (Section 06, BUG-002): register the
 	// TriggerDispatcher so the form:fire_submission_triggers worker handler

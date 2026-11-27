@@ -19,8 +19,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-
-	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // HandleRoadmapShipNotify notifies every voter and the submitter that a
@@ -116,19 +114,17 @@ func insertRoadmapShipNotifications(ctx context.Context, recipients map[pgtype.U
 	actionURL := "/roadmap/" + slug
 
 	notified := 0
-	writer := gen.New(dbPool.Writer)
+
+	// BUG-030: route through NotificationCreator so the effective pref
+	// gate, WS event, badge invalidation, and push/email fan-out apply.
+	if notificationCreator == nil {
+		return 0
+	}
 
 	for rid := range recipients {
-		if _, nErr := writer.InsertNotification(ctx, gen.InsertNotificationParams{
-			RecipientID:      rid,
-			NotificationType: "roadmap_shipped", // seeded by migration 000796 (§113)
-			ActorType:        &actorType,
-			SubjectType:      &subjectType,
-			SubjectID:        itemID,
-			Title:            notifTitle,
-			Body:             &bodyStr,
-			ActionUrl:        &actionURL,
-		}); nErr != nil {
+		if nErr := notificationCreator.CreateNotification(ctx, rid,
+			"roadmap_shipped", actorType, pgtype.UUID{},
+			subjectType, itemID, notifTitle, bodyStr, actionURL); nErr != nil {
 			slog.Error("task:roadmap:ship_notify: notification failed",
 				"item_id", itemID.String(), "user_id", rid.String(), "error", nErr)
 			continue

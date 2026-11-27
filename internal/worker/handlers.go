@@ -5199,17 +5199,37 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 			actorType := "system"
 			subjectType := "ticket"
 
-			if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
+			// The sweep runs every 15 minutes — dedup on the breach itself:
+			// skip when an alert for this ticket already exists inside the
+			// window since sla_breach_at (an sla_breach_at update starts a
+			// new window → a fresh breach re-alerts). Days=ceil(age), min 1.
+			daysSinceBreach := int32(math.Ceil(time.Since(b.SlaBreachAt.Time).Hours() / 24))
+			if daysSinceBreach < 1 {
+				daysSinceBreach = 1
+			}
+
+			notified, nErr := gen.New(dbPool.Reader).ExistsRecentNotificationBySubject(ctx, gen.ExistsRecentNotificationBySubjectParams{
 				RecipientID:      b.AssignedTo,
 				NotificationType: "ticket_sla_breached",
-				ActorType:        &actorType,
 				SubjectType:      &subjectType,
 				SubjectID:        b.ID,
-				Title:            title,
-				Body:             &bodyStr,
-				ActionUrl:        &actionURL,
-			}); nErr != nil {
-				slog.Error("task:maintenance:check_sla_breaches: failed to create notification", "ticket_id", b.ID.String(), "error", nErr)
+				Days:             daysSinceBreach,
+			})
+			if nErr != nil {
+				slog.Error("task:maintenance:check_sla_breaches: dedup check failed", "ticket_id", b.ID.String(), "error", nErr)
+			} else if notified {
+				continue
+			}
+
+			// BUG-030: route through NotificationCreator so the effective
+			// preference gate, WS event, badge invalidation, and push/email
+			// fan-out apply — a bare insert silently delivered none of them.
+			if notificationCreator != nil {
+				if nErr := notificationCreator.CreateNotification(ctx, b.AssignedTo,
+					"ticket_sla_breached", actorType, pgtype.UUID{},
+					subjectType, b.ID, title, bodyStr, actionURL); nErr != nil {
+					slog.Error("task:maintenance:check_sla_breaches: failed to create notification", "ticket_id", b.ID.String(), "error", nErr)
+				}
 			}
 		}
 	}
@@ -5894,7 +5914,7 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if dmNotificationCreator == nil {
+	if notificationCreator == nil {
 		slog.Warn("task:dm:notify_request: no notification creator registered, skipping")
 		return nil
 	}
@@ -5916,13 +5936,13 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 
 	// Dedup: an unread dm.request for this conversation already covers the
 	// alert — deliver push only, don't stack a second in-app row.
-	if has, err := dmNotificationCreator.HasUnreadNotification(ctx, recipientID,
+	if has, err := notificationCreator.HasUnreadNotification(ctx, recipientID,
 		"dm.request", "dm_conversation", convID); err == nil && has {
 		dmPushOnly(payload.RecipientID, title, body, "/messages/requests")
 		return nil
 	}
 
-	if err := dmNotificationCreator.CreateNotification(ctx, recipientID,
+	if err := notificationCreator.CreateNotification(ctx, recipientID,
 		"dm.request", "user", senderID,
 		"dm_conversation", convID,
 		title, body, "/messages/requests"); err != nil {
@@ -5956,7 +5976,7 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if dmNotificationCreator == nil {
+	if notificationCreator == nil {
 		slog.Warn("task:dm:notify_message: no notification creator registered, skipping")
 		return nil
 	}
@@ -5988,13 +6008,13 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	// Dedup: an unread dm.message for this conversation already covers the
 	// alert — deliver push only so an active chat doesn't flood the
 	// notification centre with one row per message.
-	if has, err := dmNotificationCreator.HasUnreadNotification(ctx, recipientID,
+	if has, err := notificationCreator.HasUnreadNotification(ctx, recipientID,
 		"dm.message", "dm_conversation", convID); err == nil && has {
 		dmPushOnly(payload.RecipientID, title, body, actionURL)
 		return nil
 	}
 
-	if err := dmNotificationCreator.CreateNotification(ctx, recipientID,
+	if err := notificationCreator.CreateNotification(ctx, recipientID,
 		"dm.message", "user", senderID,
 		"dm_conversation", convID,
 		title, body, actionURL); err != nil {
@@ -6146,17 +6166,15 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 			continue // already marked by a concurrent sweep — no duplicate send
 		}
 
-		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
-			RecipientID:      userID,
-			NotificationType: "onboarding_reminder",
-			ActorType:        &actorType,
-			ActorID:          pgtype.UUID{},
-			SubjectType:      &subjectType,
-			SubjectID:        userID,
-			Title:            title,
-			Body:             &body,
-			ActionUrl:        &actionURL,
-		}); err != nil {
+		// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+		if notificationCreator == nil {
+			slog.Warn("task:onboarding:reminder_sweep: no notification creator registered, skipping")
+			continue
+		}
+
+		if err := notificationCreator.CreateNotification(ctx, userID,
+			"onboarding_reminder", actorType, pgtype.UUID{},
+			subjectType, userID, title, body, actionURL); err != nil {
 			slog.Error("task:onboarding:reminder_sweep: insert failed", "user_id", userID.String(), "error", err)
 			continue
 		}
@@ -6943,40 +6961,22 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 	subjectType := "content_report"
 	actorType := "system"
 
-	wq := gen.New(dbPool.Writer)
-
 	for _, recipientID := range recipients {
-		bodyPtr := &body
-		actionURLPtr := &actionURL
-		subjectTypePtr := &subjectType
-		actorTypePtr := &actorType
-
-		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
-			RecipientID:      recipientID,
-			NotificationType: "report.new",
-			ActorType:        actorTypePtr,
-			ActorID:          pgtype.UUID{},
-			SubjectType:      subjectTypePtr,
-			SubjectID:        reportID,
-			Title:            title,
-			Body:             bodyPtr,
-			ActionUrl:        actionURLPtr,
-		}); err != nil {
-			slog.Error("task:report:notify_admin: failed to insert notification", "error", err, "recipient_id", recipientID.String())
-			continue
+		// BUG-030: route the in-app row through NotificationCreator — the
+		// effective pref gate, WS event, badge invalidation, and pref-gated
+		// web+mobile push all apply. The hand-rolled push:deliver enqueue
+		// below was removed: it duplicated the service's push for pref-on
+		// reviewers and pushed to reviewers who disabled the channel.
+		if notificationCreator == nil {
+			slog.Warn("task:report:notify_admin: no notification creator registered, skipping")
+			break
 		}
 
-		// Enqueue a push notification for this recipient (best-effort).
-		if taskEnqueuer != nil {
-			pushPayload, _ := json.Marshal(map[string]string{
-				"user_id":    recipientID.String(),
-				"title":      title,
-				"body":       body,
-				"action_url": actionURL,
-			})
-			if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
-				slog.Warn("task:report:notify_admin: failed to enqueue push", "error", err, "recipient_id", recipientID.String())
-			}
+		if err := notificationCreator.CreateNotification(ctx, recipientID,
+			"report.new", actorType, pgtype.UUID{},
+			subjectType, reportID, title, body, actionURL); err != nil {
+			slog.Error("task:report:notify_admin: failed to insert notification", "error", err, "recipient_id", recipientID.String())
+			continue
 		}
 
 		// ADR-055: admin_content_reported email alert for this reviewer.

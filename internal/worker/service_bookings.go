@@ -213,17 +213,13 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 		subjectType := "service_booking"
 		actionURL := "/messages/mentorship?role=received&b=" + bk.ID.String()
 
-		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
-			RecipientID:      bk.ProviderUserID,
-			NotificationType: ntype,
-			ActorType:        actorType,
-			ActorID:          actorID,
-			SubjectType:      &subjectType,
-			SubjectID:        bk.ID,
-			Title:            title,
-			Body:             &body,
-			ActionUrl:        &actionURL,
-		}); err != nil {
+		// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+		if notificationCreator == nil {
+			return nil
+		}
+
+		if err := notificationCreator.CreateNotification(ctx, bk.ProviderUserID,
+			ntype, *actorType, actorID, subjectType, bk.ID, title, body, actionURL); err != nil {
 			return fmt.Errorf("notify provider user: %w", err)
 		}
 
@@ -244,18 +240,14 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 
 	actionURL := fmt.Sprintf("/org/%s/service-bookings", orgRef)
 
+	// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+	if notificationCreator == nil {
+		return nil
+	}
+
 	for _, m := range members {
-		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
-			RecipientID:      m.UserID,
-			NotificationType: ntype,
-			ActorType:        actorType,
-			ActorID:          actorID,
-			SubjectType:      &subjectType,
-			SubjectID:        bk.ID,
-			Title:            title,
-			Body:             &body,
-			ActionUrl:        &actionURL,
-		}); err != nil {
+		if err := notificationCreator.CreateNotification(ctx, m.UserID,
+			ntype, *actorType, actorID, subjectType, bk.ID, title, body, actionURL); err != nil {
 			slog.Error("servicedir worker: notify org member failed",
 				"booking_id", bk.ID, "type", ntype, "member", m.UserID, "error", err)
 		}
@@ -373,17 +365,13 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 		body += " Note: " + *bk.OrgResponseNote
 	}
 
-	if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
-		RecipientID:      bk.BookerUserID,
-		NotificationType: ntype,
-		ActorType:        &actorType,
-		ActorID:          actorID,
-		SubjectType:      &subjectType,
-		SubjectID:        bookingID,
-		Title:            title,
-		Body:             &body,
-		ActionUrl:        &actionURL,
-	}); err != nil {
+	// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+	if notificationCreator == nil {
+		return nil
+	}
+
+	if err := notificationCreator.CreateNotification(ctx, bk.BookerUserID,
+		ntype, actorType, actorID, subjectType, bookingID, title, body, actionURL); err != nil {
 		return fmt.Errorf("notify booker: %w", err)
 	}
 
@@ -523,19 +511,14 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 			actionURL := "/messages/bookings?b=" + bk.ID.String()
 			body := "Your booking expired — the organization did not respond in time."
 
-			if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
-				RecipientID:      bk.BookerUserID,
-				NotificationType: "service_booking_declined",
-				ActorType:        strPtrWorker("organization"),
-				ActorID:          bk.OrgID,
-				SubjectType:      &subjectType,
-				SubjectID:        bk.ID,
-				Title:            "Booking expired",
-				Body:             &body,
-				ActionUrl:        &actionURL,
-			}); err != nil {
-				slog.Error("task:service:booking_expire_pending: notify failed",
-					"booking_id", bk.ID, "error", err)
+			// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+			if notificationCreator != nil {
+				if err := notificationCreator.CreateNotification(ctx, bk.BookerUserID,
+					"service_booking_declined", "organization", bk.OrgID,
+					subjectType, bk.ID, "Booking expired", body, actionURL); err != nil {
+					slog.Error("task:service:booking_expire_pending: notify failed",
+						"booking_id", bk.ID, "error", err)
+				}
 			}
 		}
 
@@ -593,17 +576,14 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 
 		actionURL := fmt.Sprintf("/org/%s/service-bookings", orgRef)
 
+		if notificationCreator == nil {
+			continue // BUG-030: no creator wired — skip fan-out for this booking
+		}
+
 		for _, m := range members {
-			if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
-				RecipientID:      m.UserID,
-				NotificationType: "service_booking_reminder",
-				ActorType:        &actorType,
-				SubjectType:      &subjectType,
-				SubjectID:        bk.ID,
-				Title:            title,
-				Body:             &body,
-				ActionUrl:        &actionURL,
-			}); err != nil {
+			if err := notificationCreator.CreateNotification(ctx, m.UserID,
+				"service_booking_reminder", actorType, pgtype.UUID{},
+				subjectType, bk.ID, title, body, actionURL); err != nil {
 				slog.Error("task:service:booking_expire_pending: reminder notify failed",
 					"booking_id", bk.ID, "member", m.UserID, "error", err)
 			}

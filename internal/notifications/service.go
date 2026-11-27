@@ -779,6 +779,17 @@ func (s *Service) UpdatePreferencesBulk(ctx context.Context, userID pgtype.UUID,
 	// instead of N.
 	prefs, _ := s.resolveEffectivePreferences(ctx, userID)
 
+	// BUG-031: hoist the user's existing override rows too — disabled or
+	// unseeded types are absent from effective prefs, and without this
+	// fallback a partial PATCH would clobber the unpatched channels back
+	// to defaults instead of preserving the saved row (same class of bug
+	// as the one UpdatePreferencePartial already guards against).
+	userRows, _ := s.store.getNotificationPreferences(ctx, userID)
+	existing := make(map[string]effectivePref, len(userRows))
+	for _, row := range userRows {
+		existing[row.NotificationType] = effectivePref{InApp: row.InApp, Email: row.Email, Push: row.Push}
+	}
+
 	for _, p := range items {
 		if _, err := s.store.getNotificationTypeLabel(ctx, p.Type); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -792,6 +803,8 @@ func (s *Service) UpdatePreferencesBulk(ctx context.Context, userID pgtype.UUID,
 
 		if ep, ok := prefs[p.Type]; ok {
 			base = ep
+		} else if row, ok := existing[p.Type]; ok {
+			base = row
 		}
 
 		if p.InApp != nil {

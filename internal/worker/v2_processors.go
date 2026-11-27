@@ -1152,8 +1152,6 @@ func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec,
 		return
 	}
 
-	wq := gen.New(dbPool.Writer)
-
 	// The sweep runs weekly but a link can stay broken for months —
 	// remind monthly, don't spam weekly. A recipient with a notification
 	// for this subject younger than brokenLinkReminderDays is skipped.
@@ -1182,17 +1180,14 @@ func notifyBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec,
 				continue
 			}
 
-			if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
-				RecipientID:      recipientID,
-				NotificationType: spec.notifyType,
-				ActorType:        &actorType,
-				ActorID:          pgtype.UUID{},
-				SubjectType:      &subjectType,
-				SubjectID:        it.id,
-				Title:            title,
-				Body:             &body,
-				ActionUrl:        &spec.notifyActionURL,
-			}); err != nil {
+			// BUG-030: full §35 pipeline (pref gate, WS, badge, channels).
+			if notificationCreator == nil {
+				return
+			}
+
+			if err := notificationCreator.CreateNotification(ctx, recipientID,
+				spec.notifyType, actorType, pgtype.UUID{},
+				subjectType, it.id, title, body, spec.notifyActionURL); err != nil {
 				slog.Error("task:"+taskName+": broken-link notification insert failed", "error", err, "recipient_id", recipientID.String())
 				continue
 			}
