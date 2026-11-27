@@ -1577,8 +1577,10 @@ func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID, g
 
 // ListSpaceMemberAvatars returns up to perSpace latest approved members'
 // avatar URLs per space — the /spaces directory card's avatar stack (§05
-// hub-redesign). One batched query per page of spaces.
-func (s *Service) ListSpaceMemberAvatars(ctx context.Context, spaceIDs []pgtype.UUID, perSpace int32) (map[string][]string, error) {
+// hub-redesign). One batched query per page of spaces. viewerID carries
+// the roster's profile_visibility/user_blocks gates (BLK-006); pass an
+// invalid UUID for guests.
+func (s *Service) ListSpaceMemberAvatars(ctx context.Context, viewerID pgtype.UUID, spaceIDs []pgtype.UUID, perSpace int32) (map[string][]string, error) {
 	out := make(map[string][]string, len(spaceIDs))
 	if len(spaceIDs) == 0 {
 		return out, nil
@@ -1588,6 +1590,7 @@ func (s *Service) ListSpaceMemberAvatars(ctx context.Context, spaceIDs []pgtype.
 	}
 
 	rows, err := s.read.ListSpaceMemberAvatarBatch(ctx, gen.ListSpaceMemberAvatarBatchParams{
+		ViewerID: viewerID,
 		SpaceIds: spaceIDs,
 		PerSpace: perSpace,
 	})

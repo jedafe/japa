@@ -1629,14 +1629,35 @@ WHERE s.id = ANY(@space_ids::uuid[]);
 -- Latest @per_space approved members' avatar URLs per space — the
 -- /spaces directory card's avatar stack (§05 hub-redesign). One query
 -- per page of spaces via a correlated ARRAY subselect; the frontend
--- renders member_count - shown as a "+N" overflow chip.
+-- renders member_count - shown as a "+N" overflow chip. Members with no
+-- avatar are skipped so the cap isn't spent on empty slots. The
+-- profile_visibility and user_blocks gates mirror
+-- ListSpaceMembersWithProfile — the public card stack must respect the
+-- same privacy rules as the roster (§19/§50, BLK-006).
 SELECT s.id AS space_id,
  ARRAY(
- SELECT COALESCE(up.avatar_url, '')
+ SELECT up.avatar_url
  FROM space_members sm
  JOIN users u ON u.id = sm.user_id AND u.status = 'active'
- LEFT JOIN user_profiles up ON up.user_id = sm.user_id
+ JOIN user_profiles up ON up.user_id = sm.user_id AND up.avatar_url <> ''
+ LEFT JOIN user_privacy_settings ups ON ups.user_id = sm.user_id
  WHERE sm.space_id = s.id AND sm.status = 'approved'
+ AND (
+  COALESCE(ups.profile_visibility, 'public') = 'public'
+  OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'members')
+  OR (@viewer_id::uuid IS NOT NULL AND COALESCE(ups.profile_visibility, 'public') = 'followers'
+      AND (sm.user_id = @viewer_id::uuid OR EXISTS (
+           SELECT 1 FROM follows vf
+           WHERE vf.follower_id = @viewer_id::uuid AND vf.entity_type = 'user' AND vf.entity_id = sm.user_id)))
+ )
+ AND (
+  @viewer_id::uuid IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM user_blocks ub
+    WHERE (ub.blocker_id = @viewer_id::uuid AND ub.blocked_id = sm.user_id)
+       OR (ub.blocker_id = sm.user_id AND ub.blocked_id = @viewer_id::uuid)
+  )
+ )
  ORDER BY sm.joined_at DESC
  LIMIT @per_space
  )::text[] AS avatars

@@ -170,7 +170,7 @@
 						<Users size={13} />
 					</span>
 				{/if}
-				{#if avatarOverflow > 0}
+				{#if avatarOverflow > 0 && avatars.length > 0}
 					<span class="ms-1.5 text-[11px] font-medium text-[var(--color-muted)]">+{avatarOverflow}</span>
 				{/if}
 			</div>

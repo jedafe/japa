@@ -1531,8 +1531,9 @@ export interface Space {
 	/** Resolved imgproxy-signed cover URL (GET /spaces list & detail). §05
 	 *  directory card cover — empty/null when no header image is set. */
 	header_url?: string | null;
-	/** §05 directory card — up to 4 latest approved members' avatar URLs. */
-	member_avatars?: string[];
+	/** §05 directory card — up to 4 latest approved members' avatar URLs
+	 *  (null when the space has no avatar-carrying members). */
+	member_avatars?: string[] | null;
 	/** §05 directory card — published upcoming calendar entries for the space. */
 	upcoming_event_count?: number;
 	/** University short code / acronym (initials custom field, Section 39). */

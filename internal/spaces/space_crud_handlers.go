@@ -382,17 +382,24 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 
 	// §05 directory card: batched member-avatar previews and upcoming-event
 	// counts — one query each per page of spaces. Best-effort like stats.
-	avatars, avErr := h.Service.ListSpaceMemberAvatars(ctx, ids, 4)
+	// The avatar batch carries the roster's visibility/block gates via
+	// viewerUserID (BLK-006); event counts only load when the calendar
+	// feature is on so a gated feature can't leak counts onto cards.
+	avatars, avErr := h.Service.ListSpaceMemberAvatars(ctx, viewerUserID, ids, 4)
 	if avErr != nil {
 		slog.Warn("spaces: failed to load member avatars", "error", avErr)
 
 		avatars = nil
 	}
-	eventCounts, evErr := h.Service.CountUpcomingSpaceEvents(ctx, ids)
-	if evErr != nil {
-		slog.Warn("spaces: failed to load upcoming event counts", "error", evErr)
+	var eventCounts map[string]int32
+	if h.flags != nil && h.flags.IsEnabled(ctx, "calendar.enabled") {
+		var evErr error
+		eventCounts, evErr = h.Service.CountUpcomingSpaceEvents(ctx, ids)
+		if evErr != nil {
+			slog.Warn("spaces: failed to load upcoming event counts", "error", evErr)
 
-		eventCounts = nil
+			eventCounts = nil
+		}
 	}
 
 	for _, m := range out {
