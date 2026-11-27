@@ -297,10 +297,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 	// §05 hub-redesign tab matrix — the canonical visible order is
 	// Overview | Discussion | Guide | Blog | Wiki | Stories | List |
-	// Sub Spaces | Search | About; conditional/admin surfaces (Events,
-	// Opportunities, Reviews, Requests, Analytics, Settings) append after
-	// About and drop into the "More" dropdown (UrlTabs autoOverflow) on
-	// narrow widths.
+	// Events | Sub Spaces | Search | About; the remaining conditional/admin
+	// surfaces (Opportunities, Reviews, Requests, Analytics, Settings)
+	// append after About and drop into the "More" dropdown (UrlTabs
+	// autoOverflow) on narrow widths.
 	const hasEvents = $derived(data.calendarEnabled && (isGeo || isUniversity));
 	const hasSubspacesTab = $derived(isGeo);
 	const tabs = $derived<UrlTab[]>([
@@ -317,10 +317,10 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		// 'List' is the member/follower roster — the canonical label in the
 		// hub-redesign tab order (mockup).
 		{ value: 'members', label: t('space.tab.list', 'List') },
+		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
 		...(hasSubspacesTab ? [{ value: 'subspaces', label: t('space.tab.subspaces', 'Subspaces') }] : []),
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'about', label: t('space.tab.about', 'About') },
-		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
 		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
 		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
 		// Join requests — only shown for owner/moderator when joining_perm
@@ -962,6 +962,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{followPending}
 		{muted}
 		{mutePending}
+		showWikiLink={wikiEnabled && hasWiki && isPrimary}
 		canInvite={authed && !isPrimary}
 		onFollow={toggleFollow}
 		onMute={toggleMute}

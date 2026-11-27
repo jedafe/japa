@@ -12,7 +12,7 @@
 	 */
 	import { t } from '#lib/i18n/index.js';
 	import {
-		Bell, BellOff, Check, Flag, Globe, Loader2, UserPlus
+		Bell, BellOff, BookOpen, Check, Flag, Globe, Loader2, UserPlus
 	} from 'lucide-svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { imgLightbox } from '#lib/lightbox.svelte.js';
@@ -42,6 +42,9 @@
 		followPending?: boolean;
 		muted?: boolean;
 		mutePending?: boolean;
+		/** Direct link to the destination wiki (primary spaces with a
+		 *  wiki_type_configs row — same gate as the Wiki tab). */
+		showWikiLink?: boolean;
 		/** Invite button is a custom-space feature (§05 hub-redesign). */
 		canInvite?: boolean;
 		onFollow?: () => void;
@@ -52,7 +55,8 @@
 	let {
 		space, logoUrl = '', headerUrl = '', locationLine = '', typeName = '',
 		stats = [], authed, following, followPending = false, muted = false,
-		mutePending = false, canInvite = false, onFollow, onMute, onReport, onInvite
+		mutePending = false, showWikiLink = false, canInvite = false,
+		onFollow, onMute, onReport, onInvite
 	}: Props = $props();
 
 	function fmt(n: number): string {
@@ -85,11 +89,11 @@
 					<img
 						src={logoUrl}
 						alt={space.name}
-						class="h-20 w-20 shrink-0 rounded-full border-4 border-white bg-[var(--color-surface)] object-cover shadow-lg sm:h-24 sm:w-24"
+						class="h-20 w-20 shrink-0 rounded-full bg-[var(--color-surface)] object-cover shadow-lg sm:h-24 sm:w-24"
 					/>
 				{:else}
 					<span
-						class="grid h-20 w-20 shrink-0 place-items-center rounded-full border-4 border-white bg-[var(--color-surface-subtle)] text-2xl font-bold text-[var(--color-primary-text)] shadow-lg sm:h-24 sm:w-24"
+						class="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-2xl font-bold text-[var(--color-primary-text)] shadow-lg sm:h-24 sm:w-24"
 					>
 						{space.name.charAt(0).toUpperCase()}
 					</span>
@@ -167,6 +171,14 @@
 						>
 							<UserPlus size={16} /> {t('space.invite.action', 'Invite')}
 						</button>
+					{/if}
+					{#if showWikiLink}
+						<a
+							href="/wiki/{space.slug}"
+							class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/60 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+						>
+							<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
+						</a>
 					{/if}
 				</div>
 			</div>
