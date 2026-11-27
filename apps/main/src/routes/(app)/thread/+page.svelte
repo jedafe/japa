@@ -4,9 +4,6 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ListPageBar, Modal, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
-	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import ForumList from '#lib/components/forum/ForumList.svelte';
 	import QuickThreadComposer from '#lib/components/forum/QuickThreadComposer.svelte';
 	import FeedCard from '#lib/components/feed/FeedCard.svelte';
@@ -150,14 +147,11 @@
 
 	const hasActiveFilters = $derived(data.status !== 'all' || !!data.tagSlug);
 
-	const statusOptions = $derived<AutocompleteItem[]>([
-		{ id: 'solved', label: t('forum.solved', 'Solved') },
-		{ id: 'open', label: t('forum.open', 'Open') }
+	const statusOptions = $derived([
+		{ id: 'all', label: t('common.all', 'All') },
+		{ id: 'open', label: t('forum.open', 'Open') },
+		{ id: 'solved', label: t('forum.solved', 'Solved') }
 	]);
-	const statusFetcher = $derived(staticAutocompleteFetcher(statusOptions));
-	const selectedStatusLabel = $derived(
-		statusOptions.find((o) => o.id === data.status)?.label ?? null
-	);
 
 	let filtersModalOpen = $state(false);
 	// A modal left open across a switch to featured sort (no filters there) must not linger.
@@ -206,24 +200,26 @@
 	</div>
 
 	{#if data.sort !== 'featured'}
-		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="sm">
 			{#snippet children()}
 			<div class="flex flex-wrap items-center gap-3">
-				<div class="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
-					<div class="w-44">
-						<Autocomplete
-							id="forum-status"
-							placeholder={t('forum.status', 'Status')}
-							ariaLabel={t('forum.status', 'Status')}
-							emptyMessage={t('common.no_results', 'No results found')}
-							fetcher={statusFetcher}
-							initialFetcher={statusFetcher}
-							selectedId={data.status !== 'all' ? data.status : null}
-							selectedLabel={selectedStatusLabel}
-							onSelect={(item) => applyFilter('status', item.id)}
-							onClear={() => applyFilter('status', 'all')}
-						/>
-					</div>
+				<div class="flex items-center gap-2" role="group" aria-label={t('forum.status', 'Status')}>
+					{#each statusOptions as opt (opt.id)}
+						{@const active = data.status === opt.id}
+						<button
+							type="button"
+							aria-pressed={active}
+							onclick={() => {
+								applyFilter('status', opt.id);
+								filtersModalOpen = false;
+							}}
+							class="inline-flex items-center rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {active
+								? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+								: 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+						>
+							{opt.label}
+						</button>
+					{/each}
 				</div>
 				{#if data.tagSlug}
 					<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs text-[var(--color-text-subtle)]">
