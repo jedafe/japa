@@ -18,13 +18,16 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	let { data }: { data: PageData } = $props();
 
 	// Surface tabs — /products is the sibling directory; the Products tab
-	// hides when the wiki surface is off so the bar never dead-ends.
+	// hides when the wiki surface is off so the bar never dead-ends. The
+	// sibling-route tab is a real link (client-side nav + prefetch); the
+	// current page's tab stays a trigger for the active underline.
 	const surfaceTabs = $derived<UrlTab[]>([
 		...data.features?.['wiki.enabled']
 			? [
 				{
 					value: 'products',
-					label: t('products.tab_products', 'Products')
+					label: t('products.tab_products', 'Products'),
+					href: '/products'
 				}
 			]
 			: [],

@@ -34,15 +34,6 @@
 	const mentorshipEnabled = $derived(!!features['mentorship.enabled']);
 	const ticketsEnabled = $derived(!!features['feature.tickets']);
 
-	const tabs = $derived<UrlTab[]>([
-		...(dmEnabled ? [{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') }] : []),
-		...(bookingsEnabled ? [{ value: 'bookings', label: t('messages.tab_bookings', 'Bookings') }] : []),
-		...(mentorshipEnabled
-			? [{ value: 'mentorship', label: t('messages.tab_mentorship', 'Mentorship') }]
-			: []),
-		...(ticketsEnabled ? [{ value: 'support', label: t('messages.tab_support', 'Support') }] : [])
-	]);
-
 	const hrefs: Record<string, string> = {
 		inbox: '/messages',
 		bookings: '/messages/bookings',
@@ -50,6 +41,22 @@
 		support: '/messages/support'
 	};
 
+	// Each tab links to its own route — the active one stays a trigger so
+	// the underline state renders; the rest are real <a> links (client-side
+	// nav + hover prefetch, never a reload).
+	const tabs = $derived<UrlTab[]>(
+		[
+			...(dmEnabled ? [{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') }] : []),
+			...(bookingsEnabled ? [{ value: 'bookings', label: t('messages.tab_bookings', 'Bookings') }] : []),
+			...(mentorshipEnabled
+				? [{ value: 'mentorship', label: t('messages.tab_mentorship', 'Mentorship') }]
+				: []),
+			...(ticketsEnabled ? [{ value: 'support', label: t('messages.tab_support', 'Support') }] : [])
+		].map((tab) => ({ ...tab, href: tab.value === value ? undefined : hrefs[tab.value] }))
+	);
+
+	// Backstop for the remaining (active) trigger — without onValueChange
+	// UrlTabs falls into instant mode and would write ?tab= to the URL.
 	function onValueChange(v: string) {
 		const href = hrefs[v];
 		if (href && v !== value) void goto(href);

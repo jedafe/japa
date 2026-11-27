@@ -57,9 +57,11 @@ import { ogCardUrl } from '#lib/seo/og.js';
 	);
 
 	// Surface tabs — same UrlTabs/ListPageBar pattern as the deals sibling.
+	// The sibling-route tab is a real link (client-side nav + prefetch);
+	// the current page's tab stays a trigger for the active underline.
 	const surfaceTabs = $derived<UrlTab[]>([
 		{ value: 'products', label: t('products.tab_products', 'Products') },
-		...(data.dealsEnabled ? [{ value: 'deals', label: t('products.tab_deals', 'Deals') }] : [])
+		...(data.dealsEnabled ? [{ value: 'deals', label: t('products.tab_deals', 'Deals'), href: '/products/deals' }] : [])
 	]);
 	function goSurface(v: string) {
 		goto(v === 'deals' ? '/products/deals' : '/products');
