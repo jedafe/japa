@@ -427,15 +427,20 @@
 			: t('hub.thread_kind_dm', 'Direct message · Member conversation')}
 	</p>
 
-	<!-- Messages -->
-	<div bind:this={threadEl} class="min-h-0 flex-1 overflow-y-auto p-4">
+	<!-- Messages — WhatsApp-style bubble rail: pale accent-tinted canvas,
+	     per-message avatars on both sides, and a tail on each bubble
+	     pointing toward its sender's avatar. -->
+	<div
+		bind:this={threadEl}
+		class="min-h-0 flex-1 overflow-y-auto bg-[color-mix(in_oklab,var(--color-primary)_5%,var(--color-surface))] p-4"
+	>
 		{#if msgsCursor}
 			<div class="mb-3 text-center">
 				<button
 					type="button"
 					onclick={loadEarlierMessages}
 					disabled={loadingEarlier}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
 					{#if loadingEarlier}<Loader2 size={12} class="animate-spin" />{/if}
 					{t('messages.load_earlier', 'Load earlier messages')}
@@ -453,35 +458,55 @@
 					{#if !prev || dayKey(prev.created_at) !== dayKey(msg.created_at)}
 						<li class="my-2 text-center">
 							<span
-								class="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-[11px] text-[var(--color-muted)]"
+								class="rounded-full bg-[var(--color-surface)] px-3 py-1 text-[11px] text-[var(--color-muted)] shadow-sm"
 							>
 								{dayLabel(msg.created_at)}
 							</span>
 						</li>
 					{/if}
 					{@const mine = msg.sender_id === page.data.user?.id}
-					<li class="group flex {mine ? 'justify-end' : 'justify-start'}">
-						{#if !mine}
-							{#if conversation.other_avatar_url}
+					<li class="group flex items-center gap-1.5 {mine ? 'flex-row-reverse' : ''}">
+						{#if mine}
+							{#if page.data.user?.avatar_url}
 								<img
-									src={remoteImageUrl(conversation.other_avatar_url)}
+									src={remoteImageUrl(page.data.user.avatar_url)}
 									alt=""
-									class="me-1.5 mt-auto h-6 w-6 shrink-0 rounded-full object-cover"
+									class="h-6 w-6 shrink-0 rounded-full object-cover"
 								/>
 							{:else}
 								<span
-									class="me-1.5 mt-auto grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[10px] font-medium text-[var(--color-text-subtle)]"
-									>{(conversation.other_display_name ?? '?')
+									class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/15 text-[10px] font-medium text-[var(--color-primary-text)]"
+									>{(page.data.user?.display_name ?? page.data.user?.username ?? '?')
 										.charAt(0)
 										.toUpperCase()}</span
 								>
 							{/if}
+						{:else if conversation.other_avatar_url}
+							<img
+								src={remoteImageUrl(conversation.other_avatar_url)}
+								alt=""
+								class="h-6 w-6 shrink-0 rounded-full object-cover"
+							/>
+						{:else}
+							<span
+								class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface)] text-[10px] font-medium text-[var(--color-text-subtle)] shadow-sm"
+								>{(conversation.other_display_name ?? '?')
+									.charAt(0)
+									.toUpperCase()}</span
+							>
 						{/if}
 						<div
-							class="max-w-[75%] rounded-[var(--radius)] px-3 py-2 text-sm {mine
+							class="relative max-w-[75%] rounded-2xl px-3 py-1.5 text-sm shadow-sm {mine
 								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-								: 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]'}"
+								: 'bg-[var(--color-surface)] text-[var(--color-text)]'}"
 						>
+							<!-- Bubble tail pointing at the sender's avatar. -->
+							<span
+								aria-hidden="true"
+								class="absolute top-1/2 h-2.5 w-2 -translate-y-1/2 {mine
+									? '-end-1.5 bg-[var(--color-primary)] [clip-path:polygon(0_0,100%_50%,0_100%)]'
+									: '-start-1.5 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)]'}"
+							></span>
 							{#if editingId === msg.id}
 								<LiteralSuggest
 									textarea
@@ -536,7 +561,7 @@
 								{/if}
 								<p class="whitespace-pre-wrap break-words">{msg.body}</p>
 								<p
-									class="mt-1 flex items-center gap-1.5 text-[10px] {mine
+									class="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] {mine
 										? 'text-[var(--color-primary-contrast)]/70'
 										: 'text-[var(--color-muted)]'}"
 								>
@@ -546,7 +571,7 @@
 									{/if}
 								</p>
 								<div
-									class="mt-1 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100"
+									class="flex max-h-0 gap-2 overflow-hidden opacity-0 transition-all group-hover:mt-1 group-hover:max-h-6 group-hover:opacity-100"
 								>
 									{#if mine}
 										<button
@@ -587,10 +612,14 @@
 			</ul>
 		{/if}
 		{#if peerTyping}
-			<div class="mt-2 flex justify-start" aria-live="polite">
+			<div class="mt-2 flex justify-start ps-8" aria-live="polite">
 				<span
-					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+					class="relative inline-flex items-center gap-1 rounded-2xl bg-[var(--color-surface)] px-3 py-2 shadow-sm"
 				>
+					<span
+						aria-hidden="true"
+						class="absolute top-1/2 -start-1.5 h-2.5 w-2 -translate-y-1/2 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)]"
+					></span>
 					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-muted)]"></span>
 					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-muted)] [animation-delay:150ms]"></span>
 					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-muted)] [animation-delay:300ms]"></span>
