@@ -218,6 +218,26 @@ func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (ge
 		return gen.Ticket{}, fmt.Errorf("resolving ticket type: %w", err)
 	}
 
+	// Field-group contract (§06/§38): when the type defines custom fields,
+	// required keys must be present and non-empty in field_values. Unknown
+	// keys are tolerated — internal channels stuff metadata (appeal_id,
+	// entity ids) alongside declared fields.
+	if ticketType.FieldGroupID.Valid {
+		typeFields, ferr := s.store.read.ListCustomFieldsByGroup(ctx, ticketType.FieldGroupID)
+		if ferr != nil {
+			return gen.Ticket{}, fmt.Errorf("loading ticket type fields: %w", ferr)
+		}
+		for _, f := range typeFields {
+			if !f.IsRequired {
+				continue
+			}
+			v, ok := input.FieldValues[f.Key]
+			if !ok || v == nil || v == "" {
+				return gen.Ticket{}, fmt.Errorf("%w: field_values.%s is required", errpkg.ErrRequired, f.Key)
+			}
+		}
+	}
+
 	priority := input.Priority
 	if priority == "" {
 		priority = ticketType.DefaultPriority
@@ -270,7 +290,15 @@ func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (ge
 
 	// Determine submitter email.
 	var submitterEmail *string
-	if input.SubmitterEmail != "" {
+	// A client-supplied email must never steer notifications for an
+	// authenticated submission — the account email is authoritative,
+	// otherwise the ticket system becomes a relay to arbitrary addresses.
+	// Only guest/mail-bridge tickets (no user id) honor the supplied email.
+	if input.SubmitterUserID.Valid {
+		if u, uerr := s.store.read.GetUserByID(ctx, input.SubmitterUserID); uerr == nil && u.Email != "" {
+			submitterEmail = &u.Email
+		}
+	} else if input.SubmitterEmail != "" {
 		submitterEmail = &input.SubmitterEmail
 	}
 
@@ -653,6 +681,14 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 		return gen.TicketComment{}, errors.New("body is required")
 	}
 
+	// Resolve the ticket up front — the submitter-reply transition below
+	// needs its state, and a nonexistent ticket should 404 rather than
+	// surface as an FK violation on the comment insert.
+	ticket, terr := s.store.getTicketByID(ctx, ticketID)
+	if terr != nil {
+		return gen.TicketComment{}, terr
+	}
+
 	comment, err := s.store.createTicketComment(ctx, gen.CreateTicketCommentParams{
 		TicketID:   ticketID,
 		UserID:     input.UserID,
@@ -674,12 +710,33 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 		slog.Error("create ticket event", "ticket_id", ticketID, "error", err)
 	}
 
+	// §38 state machine — waiting_on_user → in_progress on a submitter
+	// reply: staff parked the ticket waiting on the user; the user's
+	// answer must resurface it in the active queue. Staff comments and
+	// comments on other statuses don't drive transitions.
+	if ticket.Status == string(StatusWaitingUser) &&
+		ticket.SubmitterUserID.Valid && ticket.SubmitterUserID == input.UserID {
+		if _, terr := s.store.updateTicketStatus(ctx, gen.UpdateTicketStatusParams{
+			ID:     ticketID,
+			Status: string(StatusInProgress),
+		}); terr != nil {
+			slog.Error("auto-transition ticket on submitter reply", "ticket_id", ticketID, "error", terr)
+		} else if _, eerr := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+			TicketID:  ticketID,
+			UserID:    input.UserID,
+			EventType: string(EventStatusChanged),
+			OldValue:  strPtr(string(StatusWaitingUser)),
+			NewValue:  strPtr(string(StatusInProgress)),
+		}); eerr != nil {
+			slog.Error("create ticket event", "ticket_id", ticketID, "error", eerr)
+		}
+	}
+
 	// ADR-055: notify the submitter via the ticket_response template when a
 	// non-submitter (staff) posts a public reply. Internal notes and the
 	// submitter's own comments never trigger the email.
 	if !input.IsInternal {
-		if ticket, terr := s.store.getTicketByID(ctx, ticketID); terr == nil &&
-			ticket.SubmitterEmail != nil && *ticket.SubmitterEmail != "" &&
+		if ticket.SubmitterEmail != nil && *ticket.SubmitterEmail != "" &&
 			(!ticket.SubmitterUserID.Valid || ticket.SubmitterUserID != input.UserID) {
 			ticketRef := ticketID.String()
 			if ticket.TicketNumber != nil {

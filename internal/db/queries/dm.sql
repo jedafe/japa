@@ -274,9 +274,12 @@ INSERT INTO dm_requests (requester_id, recipient_id, conversation_id, preview_me
 
 ON CONFLICT (requester_id, recipient_id) DO NOTHING;
 
--- name: UpdateMessageRequestStatus :exec
+-- name: UpdateMessageRequestStatus :execrows
+-- status='pending' guard makes the resolution atomic — racing
+-- accept/decline/block calls can't overwrite a resolved request
+-- (the pre-check alone is a read-then-write TOCTOU).
 UPDATE dm_requests SET status = @status, resolved_at = now()
-WHERE id = @id;
+WHERE id = @id AND status = 'pending';
 
 -- name: GetPendingMessageRequests :many
 -- Lists pending DM requests for a recipient (BUG-003). Filters by

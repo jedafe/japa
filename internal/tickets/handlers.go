@@ -331,6 +331,22 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
 	}
 
+	// Submitter-visible event subset (§38 "comments + events") — status
+	// transitions only. Assignment/priority/comment events expose staff
+	// routing metadata (assignee ids, internal-note timing) the submitter
+	// must not see.
+	var publicEvents []gen.TicketEvent
+	if evs, eerr := h.Service.ListEvents(r.Context(), id); eerr != nil {
+		slog.Error("listing ticket events", "ticket_id", id, "error", eerr)
+	} else {
+		publicEvents = make([]gen.TicketEvent, 0, len(evs))
+		for _, e := range evs {
+			if e.EventType == string(EventStatusChanged) {
+				publicEvents = append(publicEvents, e)
+			}
+		}
+	}
+
 	h.resolveLiterals(r, &ticket)
 
 	h.resolveLiterals(r, &comments)
@@ -342,6 +358,7 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 			"ticket":      ticket,
 			"comments":    comments,
 			"attachments": attachments,
+			"events":      publicEvents,
 		},
 	})
 }

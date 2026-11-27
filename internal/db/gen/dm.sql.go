@@ -1003,9 +1003,9 @@ func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateC
 	return err
 }
 
-const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :exec
+const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :execrows
 UPDATE dm_requests SET status = $1, resolved_at = now()
-WHERE id = $2
+WHERE id = $2 AND status = 'pending'
 `
 
 type UpdateMessageRequestStatusParams struct {
@@ -1013,9 +1013,15 @@ type UpdateMessageRequestStatusParams struct {
 	ID     pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) error {
-	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ID)
-	return err
+// status='pending' guard makes the resolution atomic — racing
+// accept/decline/block calls can't overwrite a resolved request
+// (the pre-check alone is a read-then-write TOCTOU).
+func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertDMOrgReadState = `-- name: UpsertDMOrgReadState :exec

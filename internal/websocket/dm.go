@@ -363,8 +363,9 @@ func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipie
 }
 
 // UpdateMessageRequestStatus updates the status of a message request by its
-// dm_requests.id.
-func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, requestID pgtype.UUID, status string) error {
+// dm_requests.id — atomically, only while still pending. Returns rows
+// affected (0 = the request was already resolved by a racing action).
+func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, requestID pgtype.UUID, status string) (int64, error) {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
 		ID: requestID,
 
@@ -936,13 +937,16 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 
 	// Increment the external user's DB counter when an org member sends —
 	// org members read unread from dm_org_read_state instead.
+	// Post-commit side-effects — the message is already stored. A failed
+	// counter or preview write must degrade to a stale badge/preview, not
+	// a client-visible 500 that invites a duplicate retry.
 	if conv.ConversationType == "org" && asOrg && conv.Participant1ID.Valid {
 		if err := s.store.IncrementUnreadCount(ctx, conversationID, conv.Participant1ID); err != nil {
-			return gen.DmMessage{}, fmt.Errorf("incrementing unread count: %w", err)
+			slog.Error("incrementing unread count", "conversation_id", conversationID, "error", err)
 		}
 	} else if conv.ConversationType == "dm" && len(notifyIDs) > 0 {
 		if err := s.store.IncrementUnreadCount(ctx, conversationID, notifyIDs[0]); err != nil {
-			return gen.DmMessage{}, fmt.Errorf("incrementing unread count: %w", err)
+			slog.Error("incrementing unread count", "conversation_id", conversationID, "error", err)
 		}
 	}
 
@@ -971,7 +975,7 @@ func (s *DMService) SendMessageWithContext(ctx context.Context, conversationID, 
 	// Update conversation last message. The timestamp is set to now() in
 	// SQL (BUG-001: previously passed a zero-time pgtype.Timestamptz).
 	if err := s.store.UpdateConversationLastMessage(ctx, conversationID, previewPtr); err != nil {
-		return gen.DmMessage{}, fmt.Errorf("updating conversation last message: %w", err)
+		slog.Error("updating conversation last message", "conversation_id", conversationID, "error", err)
 	}
 
 	// Broadcast DM message event via WebSocket hub. §14: resolve {{...}} —
@@ -1284,15 +1288,28 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 		return "", ErrDMRequestAlreadyResolved
 	}
 
+	// The guarded UPDATE below makes the pending→resolved transition atomic
+	// — 0 rows means a racing action already resolved the request.
+	updateStatus := func(status string) error {
+		n, err := s.store.UpdateMessageRequestStatus(ctx, requestID, status)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrDMRequestAlreadyResolved
+		}
+		return nil
+	}
+
 	switch action {
 	case MessageRequestAccepted:
-		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestAccepted); err != nil {
+		if err := updateStatus(MessageRequestAccepted); err != nil {
 			return "", err
 		}
 
 		return dmReq.ConversationID.String(), nil
 	case MessageRequestDeclined:
-		return "", s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestDeclined)
+		return "", updateStatus(MessageRequestDeclined)
 	case MessageRequestBlocked:
 		// Section 48: block = decline + add requester to user_blocks so they
 		// can no longer DM or see the recipient's content (Section 41).
@@ -1310,7 +1327,7 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID 
 			return "", fmt.Errorf("creating user block: %w", err)
 		}
 
-		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestBlocked); err != nil {
+		if err := updateStatus(MessageRequestBlocked); err != nil {
 			return "", err
 		}
 
