@@ -1026,7 +1026,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	// who has blocked them or whom they have blocked — and a blocked
 	// user's content must not surface as a suggestion either (BLK-006).
 	// Best-effort: a database error degrades to unfiltered results.
-	if autocompleteUser != nil && h.queries != nil {
+	if authenticated && h.queries != nil {
 		suggestions = h.filterBlockedSuggestions(r.Context(), autocompleteUser.UserID, suggestions)
 	}
 
@@ -1215,8 +1215,14 @@ func (h *Handlers) filterBlockedAuthors(ctx context.Context, viewerID pgtype.UUI
 	filtered := results[:0]
 	for _, r := range results {
 		if r.Item.AuthorID != "" {
-			if _, isBlocked := blockedSet[r.Item.AuthorID]; isBlocked {
-				continue
+			// Normalize to the canonical UUID form before lookup —
+			// blockedAuthorSet keys by uid.String(), so a raw hit value
+			// in a different representation would silently pass through.
+			var uid pgtype.UUID
+			if err := uid.Scan(r.Item.AuthorID); err == nil {
+				if _, isBlocked := blockedSet[uid.String()]; isBlocked {
+					continue
+				}
 			}
 		}
 
@@ -1315,6 +1321,11 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 				Eq{Field: "review_status", Value: "published"},
 				In{Field: "audience", Values: publicDocAudiences},
 			)
+		case IndexOrganizations:
+			// Same gating as runMultiSearchFiltered: suspended/pending orgs
+			// are removed at index time, but a stale doc must not surface in
+			// the omnibox either.
+			filter = Eq{Field: "status", Value: "active"}
 		}
 
 		queries[i] = Query{
@@ -1331,7 +1342,16 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 		return nil, fmt.Errorf("autocomplete multi-search: %w", err)
 	}
 
-	return mapAutocompleteResults(results), nil
+	suggestions := mapAutocompleteResults(results)
+	// §54 caps the response itself (?limit=5, max 8) — each index fetches
+	// up to limit hits, so without a post-merge trim a 6-index omnibox
+	// could return 6×limit suggestions. Truncate AFTER the content-first
+	// regrouping in mapAutocompleteResults so leading content survives.
+	if len(suggestions) > limit {
+		suggestions = suggestions[:limit]
+	}
+
+	return suggestions, nil
 }
 
 // mapAutocompleteResults flattens multi-search response into suggestions.
@@ -1350,6 +1370,10 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 				ID:       stringField(hit, "id"),
 				URL:      stringField(hit, "url"),
 				AuthorID: stringField(hit, "author_user_id"),
+				// Slug feeds the client-side href fallback for any type
+				// whose url is missing — populate it uniformly instead of
+				// only on tag/org/course.
+				Slug: stringField(hit, "slug"),
 			}
 
 			// §54: populate type-specific fields per suggestion type.
@@ -1377,19 +1401,16 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 				}
 			case "tag":
 				s.Name = stringField(hit, "title")
-				s.Slug = stringField(hit, "slug")
 
 				if cc := int32Field(hit, "content_count"); cc != nil {
 					s.ContentCount = cc
 				}
 			case "organization":
 				s.Name = stringField(hit, "title")
-				s.Slug = stringField(hit, "slug")
 				s.Verified = boolField(hit, "verified")
 				s.VerificationType = stringField(hit, "verification_type")
 			case "course":
 				s.Title = stringField(hit, "title")
-				s.Slug = stringField(hit, "slug")
 			default:
 				// forum_thread, article, doc_page — use the uniform
 				// title/excerpt shape.

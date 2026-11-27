@@ -306,7 +306,7 @@
 		</div>
 
 		<p class="mb-4 text-sm text-[var(--color-text-subtle)]">
-			{t('search.results_for', 'Results for')} "<span class="font-medium text-[var(--color-text)]">{data.query}</span>"
+			{t('search.results_for', 'Results for')} "<span class="font-medium text-[var(--color-text)]">{data.query}</span>"{#if data.total > 0}<span class="text-[var(--color-muted)]"> · {t('search.results_count', '{n} results').replace('{n}', String(data.total))}</span>{/if}
 		</p>
 
 		{#if loading}

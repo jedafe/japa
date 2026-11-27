@@ -563,6 +563,49 @@ func TestGroupResults_UsesEstimatedTotals(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// runAutocomplete — merged response respects the §54 total cap (max 8)
+// ---------------------------------------------------------------------------
+
+func TestRunAutocomplete_CapsMergedResponseAtLimit(t *testing.T) {
+	t.Parallel()
+
+	// Every index returns `limit` hits — the merged response must still be
+	// trimmed to limit after the content-first regrouping, or a 6-index
+	// omnibox could return 6×limit suggestions.
+	eng := &stubEngine{multiResults: []IndexResult{
+		{IndexUID: IndexPosts, Hits: []Hit{
+			hitWith(map[string]string{"id": "p1", "title": "Post 1"}),
+			hitWith(map[string]string{"id": "p2", "title": "Post 2"}),
+		}},
+		{IndexUID: IndexSpaces, Hits: []Hit{
+			hitWith(map[string]string{"id": "s1", "title": "Space 1"}),
+			hitWith(map[string]string{"id": "s2", "title": "Space 2"}),
+		}},
+		{IndexUID: IndexTags, Hits: []Hit{
+			hitWith(map[string]string{"id": "t1", "title": "Tag 1"}),
+			hitWith(map[string]string{"id": "t2", "title": "Tag 2"}),
+		}},
+	}}
+
+	h := NewHandlers(eng)
+
+	suggestions, err := h.runAutocomplete(context.Background(), "x", 4, "", true)
+	if err != nil {
+		t.Fatalf("runAutocomplete: %v", err)
+	}
+	if len(suggestions) != 4 {
+		t.Fatalf("len(suggestions) = %d, want 4 (§54 response cap)", len(suggestions))
+	}
+	// Content-first ordering: the two posts lead, then the two spaces.
+	if suggestions[0].Type != "content" || suggestions[1].Type != "content" {
+		t.Errorf("content-first order broken: %#v", []string{suggestions[0].Type, suggestions[1].Type})
+	}
+	if suggestions[2].Type != "space" || suggestions[3].Type != "space" {
+		t.Errorf("tail types = %s,%s — tag suggestions wrongly displaced spaces", suggestions[2].Type, suggestions[3].Type)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // runMultiSearchFiltered — forum-thread dedup across indexes
 // ---------------------------------------------------------------------------
 

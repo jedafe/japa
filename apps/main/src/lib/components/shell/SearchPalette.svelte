@@ -93,8 +93,11 @@
 			: s.type === 'space' ? 'spaces'
 			: s.type === 'organization' ? 'org'
 			: s.type === 'tag' ? 'tags'
-			: s.type;
-		return `/${prefix}/${s.slug}`;
+			: s.type === 'course' ? 'academy/catalog'
+			: '';
+		// doc_page/article URLs embed segments the slug alone can't rebuild
+		// (docs audience, RAG pipeline path) — no link beats a 404.
+		return prefix ? `/${prefix}/${s.slug}` : '';
 	}
 
 	function navigate(s: SearchSuggestion) {
