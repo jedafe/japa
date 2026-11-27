@@ -471,7 +471,7 @@ FROM notifications n
 JOIN notification_types nt ON nt.key = n.notification_type
 WHERE n.recipient_id = $1
  AND ($2::bool = false OR n.read_at IS NULL)
-ORDER BY n.created_at DESC
+ORDER BY n.created_at DESC, n.id DESC
 LIMIT $4 OFFSET $3
 `
 

@@ -20,7 +20,7 @@ FROM notifications n
 JOIN notification_types nt ON nt.key = n.notification_type
 WHERE n.recipient_id = @recipient_id
  AND (@unread_only::bool = false OR n.read_at IS NULL)
-ORDER BY n.created_at DESC
+ORDER BY n.created_at DESC, n.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetUnreadNotificationCount :one

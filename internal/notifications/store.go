@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -265,6 +266,16 @@ func (s *Store) dispatchWindowTx(ctx context.Context, windowID pgtype.UUID, inse
 	}
 
 	if window.Dispatched {
+		return pgtype.UUID{}, window, false, nil
+	}
+
+	// TOCTOU: DispatchBatch's close_at pre-check reads before this lock —
+	// a concurrent upsert can reset the expired window into a fresh batch
+	// (new close_at, dispatched=false) between the two. Re-check under the
+	// row lock: a still-open window must not dispatch early. The upsert
+	// already enqueued its own task for the new close time, so aborting
+	// here leaves delivery correctly scheduled.
+	if window.WindowCloseAt.Valid && window.WindowCloseAt.Time.After(time.Now()) {
 		return pgtype.UUID{}, window, false, nil
 	}
 

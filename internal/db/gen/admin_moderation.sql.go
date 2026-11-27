@@ -876,27 +876,6 @@ func (q *Queries) CountModerationAppeals(ctx context.Context, arg CountModeratio
 	return count, err
 }
 
-const createAdminBroadcastRecord = `-- name: CreateAdminBroadcastRecord :exec
-INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
-`
-
-type CreateAdminBroadcastRecordParams struct {
-	Title          string      `json:"title"`
-	Body           string      `json:"body"`
-	SentBy         pgtype.UUID `json:"sent_by"`
-	RecipientCount int32       `json:"recipient_count"`
-}
-
-func (q *Queries) CreateAdminBroadcastRecord(ctx context.Context, arg CreateAdminBroadcastRecordParams) error {
-	_, err := q.db.Exec(ctx, createAdminBroadcastRecord,
-		arg.Title,
-		arg.Body,
-		arg.SentBy,
-		arg.RecipientCount,
-	)
-	return err
-}
-
 const createBroadcastNotifications = `-- name: CreateBroadcastNotifications :many
 INSERT INTO notifications (recipient_id, notification_type, actor_type, title, body, created_at)
 SELECT r.user_id, 'broadcast', 'system', $2, $3, $4

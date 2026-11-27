@@ -650,10 +650,6 @@ LEFT JOIN notification_preferences np
 WHERE COALESCE(np.push, nt.default_push)
 ORDER BY r.user_id, dt.last_used_at DESC NULLS LAST;
 
--- name: CreateAdminBroadcastRecord :exec
-INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
-;
-
 -- §35 scheduled broadcasts (000870)
 -- name: CreateScheduledBroadcast :one
 INSERT INTO admin_broadcasts (title, body, sent_by, scheduled_at, target, target_id)
