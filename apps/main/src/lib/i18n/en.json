@@ -6599,6 +6599,7 @@
 	"tickets.errors.reply_failed": "Failed to post your reply. Please try again.",
 	"tickets.errors.reply_required": "Please enter a reply",
 	"tickets.errors.subject_required": "Please enter a subject",
+	"tickets.errors.type_required": "Please select a ticket type",
 	"tickets.field_description": "Description",
 	"tickets.field_email": "Reply-to email",
 	"tickets.field_email_optional": "Optional — defaults to your account email",

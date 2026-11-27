@@ -50,6 +50,10 @@
 			errorKey = 'tickets.errors.description_required';
 			return;
 		}
+		if (types.length > 0 && !typeId) {
+			errorKey = 'tickets.errors.type_required';
+			return;
+		}
 		loading = true;
 		try {
 			const res = await api.post<{ id: string; ticket_number?: number }>('/tickets', {

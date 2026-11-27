@@ -211,6 +211,11 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if input.TypeID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
+		return
+	}
+
 	var typeID pgtype.UUID
 	if input.TypeID != "" {
 		if err := typeID.Scan(input.TypeID); err != nil {

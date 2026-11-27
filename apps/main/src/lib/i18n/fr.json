@@ -6501,6 +6501,7 @@
 	"tickets.errors.reply_failed": "Échec de l'envoi de la réponse. Veuillez réessayer.",
 	"tickets.errors.reply_required": "Veuillez saisir une réponse",
 	"tickets.errors.subject_required": "Veuillez saisir un sujet",
+	"tickets.errors.type_required": "Veuillez sélectionner un type de ticket",
 	"tickets.field_description": "Description",
 	"tickets.field_email": "E-mail de réponse",
 	"tickets.field_email_optional": "Optionnel — par défaut l'e-mail de votre compte",
