@@ -775,9 +775,9 @@ const countUpcomingSpaceEvents = `-- name: CountUpcomingSpaceEvents :many
 SELECT destination_space_id AS space_id, COUNT(*)::int AS upcoming_count
 FROM calendar_entries
 WHERE destination_space_id = ANY($1::uuid[])
- AND status = 'published'
+ AND status IN ('published', 'unverified')
  AND deleted_at IS NULL
- AND occurs_at > now()
+ AND occurs_at >= now()
 GROUP BY destination_space_id
 `
 
@@ -786,9 +786,11 @@ type CountUpcomingSpaceEventsRow struct {
 	UpcomingCount int32       `json:"upcoming_count"`
 }
 
-// Published, upcoming calendar entries per space — the directory card's
-// "Upcoming events" stat row (§05 hub-redesign). destination_space_id is
-// the space the event is attached to.
+// Upcoming calendar entries per space — the directory card's "Upcoming
+// events" stat row (§05 hub-redesign). destination_space_id is the space
+// the event is attached to. Statuses mirror the public calendar list
+// (published + unverified — ADR-094 lists unverified entries with a
+// warning rather than removing them).
 func (q *Queries) CountUpcomingSpaceEvents(ctx context.Context, spaceIds []pgtype.UUID) ([]CountUpcomingSpaceEventsRow, error) {
 	rows, err := q.db.Query(ctx, countUpcomingSpaceEvents, spaceIds)
 	if err != nil {

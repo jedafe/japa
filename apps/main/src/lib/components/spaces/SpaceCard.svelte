@@ -116,16 +116,18 @@
 			<p class="line-clamp-2 text-xs text-[var(--color-text-subtle)]">{space.description}</p>
 		{/if}
 
-		<!-- Keyword tag pills — decorative chips (the card itself links to
-		     the space; pill links would nest anchors). -->
+		<!-- Keyword tag pills → /tags/{kw}, same target as the sidebar's
+		     "Popular topics" (they're siblings of the cover/title links, so
+		     anchors are valid here). -->
 		{#if tagPills.length > 0}
 			<div class="flex flex-wrap gap-1.5">
 				{#each tagPills as kw (kw)}
-					<span
-						class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-medium text-[var(--color-primary)]"
+					<a
+						href="/tags/{encodeURIComponent(kw)}"
+						class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
 					>
 						{kw}
-					</span>
+					</a>
 				{/each}
 			</div>
 		{/if}

@@ -230,11 +230,13 @@
 	// member_created=1 filter the directory list uses (§05 amendment):
 	// primary/geo spaces are reachable via /wiki and /universities, not here.
 	async function spaceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ items: { id: string; name: string; slug: string; description?: string }[] }>(
+		// GET /spaces wraps items in {data:[...],meta} — api.get unwraps the
+		// envelope, so res.data IS the array (a nested `.items` never exists).
+		const res = await api.get<{ id: string; name: string; slug: string; description?: string }[]>(
 			`/spaces?q=${encodeURIComponent(q)}&member_created=1&page_size=8`
 		);
 		if (res.error || !res.data) return [];
-		return (res.data.items ?? []).map((s) => ({
+		return res.data.map((s) => ({
 			id: s.id,
 			title: s.name,
 			url: `/spaces/${s.slug}`,
