@@ -650,8 +650,21 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	// 'private' and 'admin_only' presets produce visibility='members', so
 	// gating only 'private' leaked every members-only space by slug.
 	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
-		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
-		return
+		// §05 hub-redesign: a pending space invite is the invitee's entry
+		// ticket — they may view the space profile (name/rules/counts) to
+		// decide, and the join route accepts on the same invite. Member
+		// content/membership surfaces stay gated (canViewRestrictedSpace
+		// still guards them), so an invite grants a profile preview, not
+		// indefinite read.
+		hasInvite := false
+		if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+			_, found, ierr := h.Service.GetPendingSpaceInvite(r.Context(), space.ID, user.UserID)
+			hasInvite = ierr == nil && found
+		}
+		if !hasInvite {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
 	}
 
 	// BUG-006: non-active spaces (suspended/archived/draft) are offline —

@@ -128,8 +128,17 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 	moderatorID := mkUser("moderator")
 	outsiderID := mkUser("outsider")
 	permID := mkUser("perm")
+	inviteeID := mkUser("invitee")
 
 	private := mkSpace(VisibilityPrivate, fmt.Sprintf("priv-gate-%d", uniq), ownerID)
+
+	// §05 hub-redesign: a pending invite lets the invitee view the space
+	// profile so they can decide — the private gate exempts them.
+	if _, err := q.CreateSpaceInvite(ctx, gen.CreateSpaceInviteParams{
+		SpaceID: private.ID, InviterID: ownerID, InviteeID: inviteeID,
+	}); err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
 
 	if ok, err := svc.IsOwner(ctx, private.ID, ownerID); err != nil || !ok {
 		t.Fatalf("creator must be owner (role owner, status approved): ok=%v err=%v", ok, err)
@@ -185,6 +194,7 @@ func TestPrivateSpaceGate_GetSpace(t *testing.T) {
 		{"guest on private", deny, private.Slug, nil, http.StatusNotFound},
 		{"outsider on private", deny, private.Slug, &outsiderID, http.StatusNotFound},
 		{"static perm denied on private", deny, private.Slug, &permID, http.StatusNotFound},
+		{"invitee on private", deny, private.Slug, &inviteeID, http.StatusOK},
 		{"member on private", deny, private.Slug, &memberID, http.StatusOK},
 		{"owner on private", deny, private.Slug, &ownerID, http.StatusOK},
 		{"moderator on private", deny, private.Slug, &moderatorID, http.StatusOK},

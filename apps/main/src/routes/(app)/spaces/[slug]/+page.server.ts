@@ -17,7 +17,8 @@ import type {
 	CalendarEntry,
 	SpaceLeader,
 	SpaceContributor,
-	SpaceTypeOption
+	SpaceTypeOption,
+	MySpaceInvite
 } from '#lib/types/index.js';
 
 /**
@@ -145,7 +146,7 @@ export const load: PageServerLoad = async (event) => {
 		contentRes, pinned, members, forumThreads, moderators, isFollowing,
 		isMuted, presets, parentSpaces, achievements, digest,
 		blogFeed, storyFeed, guideFeed, events, subspaces, leaders, contributors, spaceTypes,
-		reviews, analyticsResult, wikiTypes, opportunities
+		reviews, analyticsResult, wikiTypes, opportunities, myInvite
 	] = await Promise.all([
 		// items + meta.total (§05 hub-redesign — the header stats row shows
 		// real counts without paginating the full list).
@@ -283,7 +284,16 @@ export const load: PageServerLoad = async (event) => {
 			? apiRadarList<RadarItem>(ctx, `/intel/radar?space_id=${space.id}&page_size=24`)
 					.then((r) => r?.items ?? [])
 					.catch(() => [] as RadarItem[])
-			: Promise.resolve([] as RadarItem[])
+			: Promise.resolve([] as RadarItem[]),
+		// The viewer's pending invite to THIS space — feeds the accept/
+		// decline banner that space_invite notifications link to. Custom
+		// spaces only (primary spaces have no invites) and only for authed
+		// non-members; a member's resolved invite can't be pending.
+		event.locals.user && !(detail.is_member ?? false) && !isPrimary
+			? apiList<MySpaceInvite>(ctx, `/me/space-invites?page_size=50`)
+					.then((r) => r.items.find((i) => i.space_id === space.id) ?? null)
+					.catch(() => null)
+			: Promise.resolve(null)
 	]);
 
 	// Destination wiki index for this space, gated by the wiki feature flag.
@@ -363,6 +373,7 @@ export const load: PageServerLoad = async (event) => {
 		leaders,
 		contributors,
 		spaceTypes,
+		myInvite,
 		calendarEnabled: !!features['calendar.enabled']
 	};
 };

@@ -1443,6 +1443,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting space pinned posts: %w", err)
 		}
 
+		// space_invites.inviter_id/.invitee_id have no CASCADE (Section 05
+		// hub-redesign, migration 001233) — drop the user's invite rows in
+		// both directions or HardDeleteUser blocks on the residual FK.
+		if err := q.DeleteSpaceInvitesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting space invites: %w", err)
+		}
+
 		// forum_tags.moderator_user_id is nullable; clear it so the tag survives.
 		if err := q.NullifyForumTagModerator(ctx,
 			userID,

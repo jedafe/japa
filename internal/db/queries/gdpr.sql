@@ -598,6 +598,14 @@ DELETE FROM content_revisions WHERE edited_by = @user_id;
 -- space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
 DELETE FROM space_pinned_posts WHERE pinned_by = @user_id;
 
+-- name: DeleteSpaceInvitesByUser :exec
+-- space_invites.inviter_id and .invitee_id both reference users(id) with
+-- NO ON DELETE action — without this the final HardDeleteUser blocks on
+-- the residual FK, and pending invite rows would keep the erased user's
+-- id through the retention window. Ref: Section 05 (space_invites),
+-- GDPR erasure coverage.
+DELETE FROM space_invites WHERE inviter_id = @user_id OR invitee_id = @user_id;
+
 -- name: NullifyForumTagModerator :exec
 -- forum_tags.moderator_user_id is nullable; clear it so the tag survives without the user.
 UPDATE forum_tags SET moderator_user_id = NULL

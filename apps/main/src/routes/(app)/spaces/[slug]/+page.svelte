@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { t } from '#lib/i18n/index.js';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
@@ -8,7 +9,7 @@
 		Rss, MessageSquare, Users, Info, Search, BarChart3,
 		Loader2, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star,
-		CalendarDays, Layers, ArrowRight
+		CalendarDays, Layers, ArrowRight, UserPlus
 	, TriangleAlert, Radar } from 'lucide-svelte';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -36,7 +37,7 @@
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview,
-		CalendarEntry, RadarItem
+		CalendarEntry, RadarItem, SpaceInvite, MySpaceInvite
 	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
@@ -543,6 +544,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		requestsLoaded = false;
 		requestError = '';
 		requestActionId = null;
+		pendingInvites = [];
+		invitesLoaded = false;
+		invitesLoading = false;
+		invitesError = '';
+		inviteActionId = null;
+		myInvite = data.myInvite ?? null;
+		myInviteAction = null;
+		myInviteError = '';
 		inviteOpen = false;
 		createSubspaceOpen = false;
 		opportunitiesItems = data.opportunities;
@@ -770,6 +779,87 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		}
 	});
 
+	// Pending member invites — the Members-tab admin section that makes
+	// GET/DELETE /spaces/{slug}/invites reachable. Custom spaces only:
+	// primary spaces can't hold invites (§05), so the section stays off.
+	let pendingInvites = $state<SpaceInvite[]>([]);
+	let invitesLoading = $state(false);
+	let invitesLoaded = $state(false);
+	let invitesError = $state('');
+	let inviteActionId = $state<string | null>(null);
+
+	async function loadPendingInvites() {
+		if (invitesLoaded || invitesLoading) return;
+		invitesLoading = true;
+		invitesError = '';
+		const res = await api.get<SpaceInvite[]>(`/spaces/${space.slug}/invites?page_size=50`);
+		if (res.error) {
+			invitesError = res.error.message;
+		} else {
+			pendingInvites = res.data ?? [];
+		}
+		invitesLoaded = true;
+		invitesLoading = false;
+	}
+
+	$effect(() => {
+		if (activeTab === 'members' && canManage && !isPrimary) {
+			loadPendingInvites();
+		}
+	});
+
+	async function revokeInvite(inviteId: string) {
+		if (inviteActionId) return;
+		inviteActionId = inviteId;
+		invitesError = '';
+		const res = await api.delete(`/spaces/${space.slug}/invites/${inviteId}`);
+		if (res.error) {
+			invitesError = res.error.message;
+		} else {
+			pendingInvites = pendingInvites.filter((i) => i.id !== inviteId);
+		}
+		inviteActionId = null;
+	}
+
+	// The viewer's own pending invite to THIS space — SSR-seeded; the
+	// space_invite notification's action_url lands here, so the banner is
+	// the decline surface the API can't otherwise reach. Accept runs the
+	// normal join flow (which resolves the invite server-side); decline
+	// flips it to 'declined' and frees the (space, invitee) pair.
+	let myInvite = $state<MySpaceInvite | null>(untrack(() => data.myInvite ?? null));
+	let myInviteAction = $state<'accept' | 'decline' | null>(null);
+	let myInviteError = $state('');
+
+	async function acceptInvite() {
+		if (!myInvite || myInviteAction) return;
+		myInviteAction = 'accept';
+		myInviteError = '';
+		const res = await api.post(`/spaces/${space.slug}/join`);
+		if (res.error) {
+			myInviteError = res.error.message;
+			myInviteAction = null;
+			return;
+		}
+		myInvite = null;
+		myInviteAction = null;
+		// Membership gates the composer, settings surface, and stats —
+		// re-run the load so the page reflects the new member state.
+		await invalidateAll();
+	}
+
+	async function declineInvite() {
+		if (!myInvite || myInviteAction) return;
+		myInviteAction = 'decline';
+		myInviteError = '';
+		const res = await api.post(`/me/space-invites/${myInvite.id}/decline`);
+		if (res.error) {
+			myInviteError = res.error.message;
+		} else {
+			myInvite = null;
+		}
+		myInviteAction = null;
+	}
+
 	// Opportunities (§73 intel radar, country spaces) — SSR-fetched only on
 	// a ?tab=opportunities deep link; UrlTabs switches shallowly (no load
 	// re-run), so a tab click lazy-fetches here instead.
@@ -875,6 +965,41 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		onInvite={() => (inviteOpen = true)}
 	/>
 </div>
+
+<!-- Pending-invite banner — the space_invite notification's action_url
+     lands on this page, so the banner is the invitee's accept/decline
+     surface (GET /me/space-invites seed, decline via /me/space-invites). -->
+{#if myInvite}
+	<div class="mx-auto w-full max-w-3xl px-4 pt-3">
+		<div class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-4 py-3">
+			<UserPlus size={18} class="shrink-0 text-[var(--color-primary-text)]" />
+			<p class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
+				{t('space.invited_banner', '{name} invited you to join this space', {
+					name: myInvite.inviter_display_name ?? myInvite.inviter_username ?? t('space.someone', 'Someone')
+				})}
+			</p>
+			{#if myInviteError}
+				<span class="text-xs text-red-600 dark:text-red-400">{myInviteError}</span>
+			{/if}
+			<button
+				type="button"
+				onclick={acceptInvite}
+				disabled={myInviteAction !== null}
+				class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90 disabled:opacity-50"
+			>
+				{myInviteAction === 'accept' ? t('common.loading') : t('space.invite_accept', 'Accept')}
+			</button>
+			<button
+				type="button"
+				onclick={declineInvite}
+				disabled={myInviteAction !== null}
+				class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3.5 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+			>
+				{myInviteAction === 'decline' ? t('common.loading') : t('space.invite_decline', 'Decline')}
+			</button>
+		</div>
+	</div>
+{/if}
 
 <div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} autoOverflow /></div>
 
@@ -1273,6 +1398,49 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 				<ForumList threads={data.forumThreads} pageSize={data.forumPageSize} loadError={false} />
 			{/if}
 		{:else if activeTab === 'members'}
+			<!-- Pending invites (custom spaces, owner/moderator only) — the
+			     admin surface for GET/DELETE /spaces/{slug}/invites. -->
+			{#if canManage && !isPrimary && (invitesLoading || invitesError || pendingInvites.length > 0)}
+				<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+						<UserPlus size={15} />
+						{t('space.invites_pending', 'Pending invites')}
+					</h3>
+					{#if invitesLoading}
+						<p class="py-2 text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+					{:else if invitesError}
+						<p class="py-2 text-sm text-red-600 dark:text-red-400">{invitesError}</p>
+					{:else}
+						<ul class="space-y-2">
+							{#each pendingInvites as invite (invite.id)}
+								<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] p-2.5">
+									{#if invite.invitee_avatar_url}
+										<img src={remoteImageUrl(invite.invitee_avatar_url)} alt="" class="h-8 w-8 rounded-full object-cover" />
+									{:else}
+										<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
+											{(invite.invitee_display_name ?? invite.invitee_username ?? '?').charAt(0).toUpperCase()}
+										</span>
+									{/if}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{invite.invitee_display_name ?? invite.invitee_username}</span>
+										<span class="block text-xs text-[var(--color-muted)]">
+											{t('space.invited_by', 'Invited by {name}', { name: invite.inviter_display_name ?? invite.inviter_username ?? '' })}
+										</span>
+									</span>
+									<button
+										type="button"
+										onclick={() => revokeInvite(invite.id)}
+										disabled={inviteActionId === invite.id}
+										class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-red-600 disabled:opacity-50"
+									>
+										{inviteActionId === invite.id ? t('common.loading') : t('space.invite_revoke', 'Revoke')}
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 			{#if membersItems.length === 0}
 				<EmptyState icon={Users} title={t('space.members_empty', 'No members yet')} />
 			{:else}

@@ -1,6 +1,7 @@
 package spaces
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -42,13 +43,6 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// BUG-028: a private space is invisible to non-members — a joining_perm
-	// misconfiguration cannot leak join access. Members may still leave.
-	if !isMember && space.Visibility == VisibilityPrivate {
-		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
-		return
-	}
-
 	if isMember {
 		if err := h.Service.Leave(r.Context(), space.ID, user.UserID); err != nil {
 			handleServiceError(w, err)
@@ -61,6 +55,9 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		// join itself. The lookup runs for EVERY joining_perm so an
 		// open-perm join also consumes the invite (otherwise the row sits
 		// pending forever and blocks re-invites via the unique index).
+		// It must also run BEFORE the private-visibility gate: a pending
+		// invite is the invitee's ticket into a private space — without
+		// the exemption a private-space invite could never be accepted.
 		// Resolution happens AFTER Join — a failed join must not burn it.
 		var pendingInvite gen.SpaceInvite
 		hasInvite := false
@@ -69,6 +66,14 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			return
 		} else if found {
 			pendingInvite, hasInvite = inv, true
+		}
+
+		// BUG-028: a private space is invisible to non-members — a
+		// joining_perm misconfiguration cannot leak join access. Pending
+		// invite holders are the exception: the invite grants entry.
+		if space.Visibility == VisibilityPrivate && !hasInvite {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
 		}
 
 		// BUG-004: honor the space's joining_perm axis (Section 05 lines 358-360).
@@ -114,23 +119,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		// resolve failure leaves a stale pending row (admin-revocable),
 		// never a lost membership.
 		if hasInvite {
-			if _, resolved, rerr := h.Service.ResolveSpaceInvite(r.Context(), pendingInvite.ID, "accepted"); rerr != nil || !resolved {
-				slog.Warn("join: invite resolve failed",
-					"space_id", space.ID, "user_id", user.UserID, "invite_id", pendingInvite.ID, "resolved", resolved, "error", rerr)
-			} else if h.notifier != nil {
-				// §05 hub-redesign: tell the inviter their invite was
-				// accepted (actor = the new member, subject = the space).
-				// Only fires when the resolve actually flipped the row, so
-				// a concurrent accept can't double-notify.
-				if nerr := h.notifier.CreateNotification(r.Context(), pendingInvite.InviterID,
-					"space_invite_accepted", "user", user.UserID,
-					"space", space.ID,
-					"Space invite accepted", "Your invitation to "+space.Name+" was accepted",
-					"/spaces/"+space.Slug); nerr != nil {
-					slog.Warn("join: invite-accepted notification failed",
-						"space_id", space.ID, "inviter_id", pendingInvite.InviterID, "error", nerr)
-				}
-			}
+			h.resolveAcceptedInvite(r.Context(), space, pendingInvite, user.UserID)
 		}
 
 		// BL-010 mirror: joining auto-follows the space server-side so
@@ -240,6 +229,14 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// A moderator force-add accepts any pending invite on the target's
+	// behalf — otherwise the row stays pending forever and the unique
+	// index blocks a future re-invite after they leave.
+	if inv, found, ierr := h.Service.GetPendingSpaceInvite(r.Context(), space.ID, targetUserID); ierr == nil && found {
+		h.resolveAcceptedInvite(r.Context(), space, inv, targetUserID)
+	}
+
 	if h.follows != nil {
 		if _, ferr := h.follows.EnsureFollow(r.Context(), targetUserID, "space", space.ID); ferr != nil {
 			slog.Warn("invite: auto-follow failed", "space_id", space.ID, "error", ferr)
@@ -249,6 +246,32 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"space_id": space.ID, "user_id": targetUserID},
 	})
+}
+
+// resolveAcceptedInvite flips a pending invite to 'accepted' after a
+// successful join and notifies the inviter (actor = the new member). Both
+// steps are best-effort — failures are logged, never returned.
+// Shared by the self-serve join path and the moderator AddMember path.
+func (h *Handlers) resolveAcceptedInvite(ctx context.Context, space *gen.GetSpaceBySlugRow, invite gen.SpaceInvite, memberID pgtype.UUID) {
+	if _, resolved, rerr := h.Service.ResolveSpaceInvite(ctx, invite.ID, "accepted"); rerr != nil || !resolved {
+		slog.Warn("invite resolve failed",
+			"space_id", space.ID, "user_id", memberID, "invite_id", invite.ID, "resolved", resolved, "error", rerr)
+		return
+	}
+	if h.notifier == nil {
+		return
+	}
+	// §05 hub-redesign: tell the inviter their invite was accepted.
+	// Only fires when the resolve actually flipped the row, so a
+	// concurrent accept can't double-notify.
+	if nerr := h.notifier.CreateNotification(ctx, invite.InviterID,
+		"space_invite_accepted", "user", memberID,
+		"space", space.ID,
+		"Space invite accepted", "Your invitation to "+space.Name+" was accepted",
+		"/spaces/"+space.Slug); nerr != nil {
+		slog.Warn("invite-accepted notification failed",
+			"space_id", space.ID, "inviter_id", invite.InviterID, "error", nerr)
+	}
 }
 
 // ---------------------------------------------------------------------------

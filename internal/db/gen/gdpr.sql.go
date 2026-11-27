@@ -775,6 +775,20 @@ func (q *Queries) DeletePushSubscriptionsByUser(ctx context.Context, userID pgty
 	return err
 }
 
+const deleteSpaceInvitesByUser = `-- name: DeleteSpaceInvitesByUser :exec
+DELETE FROM space_invites WHERE inviter_id = $1 OR invitee_id = $1
+`
+
+// space_invites.inviter_id and .invitee_id both reference users(id) with
+// NO ON DELETE action — without this the final HardDeleteUser blocks on
+// the residual FK, and pending invite rows would keep the erased user's
+// id through the retention window. Ref: Section 05 (space_invites),
+// GDPR erasure coverage.
+func (q *Queries) DeleteSpaceInvitesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSpaceInvitesByUser, userID)
+	return err
+}
+
 const deleteSpaceMutesByUser = `-- name: DeleteSpaceMutesByUser :exec
 DELETE FROM space_mutes
 WHERE user_id = $1
