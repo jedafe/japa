@@ -295,42 +295,45 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// data.pinned while mutations only touched feedItems (audit fix).
 	let pinnedItems = $state<SpaceContentItem[]>(untrack(() => data.pinned));
 
-	// §05 hub-redesign tab matrix — visible order matches the mockup;
-	// Search/About/Analytics/Requests/Settings sit at the tail and drop
-	// into the "More" dropdown (UrlTabs autoOverflow) on narrow widths.
+	// §05 hub-redesign tab matrix — the canonical visible order is
+	// Overview | Discussion | Guide | Blog | Wiki | Stories | List |
+	// Sub Spaces | Search | About; conditional/admin surfaces (Events,
+	// Opportunities, Reviews, Requests, Analytics, Settings) append after
+	// About and drop into the "More" dropdown (UrlTabs autoOverflow) on
+	// narrow widths.
 	const hasEvents = $derived(data.calendarEnabled && (isGeo || isUniversity));
 	const hasSubspacesTab = $derived(isGeo);
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'overview', label: t('space.tab.overview', 'Overview') },
 		{ value: 'discussions', label: t('space.tab.discussions', 'Discussions') },
-		// §05 amendment — on follow-only primary spaces the members list is
-		// the follower set (join↔follow are coupled), so label it that way.
-		{ value: 'members', label: isPrimary ? t('space.tab.followers', 'Followers') : t('space.tab.members', 'Members') },
-		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
-		...(isPrimary ? [{ value: 'blog', label: t('space.tab.blog', 'Blog') }] : []),
-		...(isGeo ? [{ value: 'stories', label: t('space.tab.stories', 'Stories') }] : []),
 		...(isPrimary ? [{ value: 'guides', label: t('space.tab.guides', 'Guides') }] : []),
+		...(isPrimary ? [{ value: 'blog', label: t('space.tab.blog', 'Blog') }] : []),
 		// Wiki is a primary-space surface (§05 hub matrix) — a custom space
 		// never shows the tab even if its space_type has a wiki config.
 		...(wikiEnabled && hasWiki && isPrimary
 			? [{ value: 'wiki', label: t('space.tab.wiki', 'Wiki') }]
 			: []),
+		...(isGeo ? [{ value: 'stories', label: t('space.tab.stories', 'Stories') }] : []),
+		// 'List' is the member/follower roster — the canonical label in the
+		// hub-redesign tab order (mockup).
+		{ value: 'members', label: t('space.tab.list', 'List') },
 		...(hasSubspacesTab ? [{ value: 'subspaces', label: t('space.tab.subspaces', 'Subspaces') }] : []),
-		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
-		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'about', label: t('space.tab.about', 'About') },
+		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
+		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
+		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
+		// Join requests — only shown for owner/moderator when joining_perm
+		// is 'request' (otherwise the tab is empty/irrelevant).
+		...(canManage && space.joining_perm === 'request'
+			? [{ value: 'requests', label: t('space.tab.requests', 'Requests') }]
+			: []),
 		// Analytics dashboard — space-admin only per JEOS §215 [auth,
 		// space-admin]. The server only returns analytics data to the space
 		// owner/moderators (403 → null otherwise), so the tab is hidden for
 		// guests and non-admin members.
 		...(authed && analytics
 			? [{ value: 'analytics', label: t('space.tab.analytics', 'Analytics') }]
-			: []),
-		// Join requests — only shown for owner/moderator when joining_perm
-		// is 'request' (otherwise the tab is empty/irrelevant).
-		...(canManage && space.joining_perm === 'request'
-			? [{ value: 'requests', label: t('space.tab.requests', 'Requests') }]
 			: []),
 		// Settings — visible only to the space owner or a moderator. The
 		// PATCH endpoint still enforces the same permission server-side.
@@ -959,8 +962,6 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{followPending}
 		{muted}
 		{mutePending}
-		showWikiLink={wikiEnabled && hasWiki && isPrimary}
-		canPost={authed && !isGeoSpace}
 		canInvite={authed && !isPrimary}
 		onFollow={toggleFollow}
 		onMute={toggleMute}
