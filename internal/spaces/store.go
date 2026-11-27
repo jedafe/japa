@@ -1873,3 +1873,131 @@ func (s *Service) SpaceIndexSignals(ctx context.Context, spaceID pgtype.UUID) (m
 
 	return int(row.MemberCount), int(row.PostCount), int(row.ForumCount), int(row.QuestionCount), nil
 }
+
+// ---------------------------------------------------------------------------
+// Space Contributors (§05 hub-redesign amendment — "Top contributors" card)
+// ---------------------------------------------------------------------------
+
+// ListSpaceContributors returns the top contributors to a space — authors
+// of published contents, non-anonymous forum threads, and approved wiki
+// revisions grouped by author and ordered by contribution count.
+func (s *Service) ListSpaceContributors(ctx context.Context, spaceID pgtype.UUID, limit int32) ([]gen.ListSpaceContributorsRow, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 5
+	}
+	rows, err := s.read.ListSpaceContributors(ctx, gen.ListSpaceContributorsParams{
+		SpaceID:   spaceID,
+		PageLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space contributors: %w", err)
+	}
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// Space Invites (§05 hub-redesign amendment — custom spaces only)
+// ---------------------------------------------------------------------------
+
+// CreateSpaceInvite records a pending member→user invite. The caller-side
+// checks (member inviter, custom space, invitee not a member, no pending
+// dupe) happen in the handler — this is the raw insert.
+func (s *Service) CreateSpaceInvite(ctx context.Context, spaceID, inviterID, inviteeID pgtype.UUID) (gen.SpaceInvite, error) {
+	row, err := s.write.CreateSpaceInvite(ctx, gen.CreateSpaceInviteParams{
+		SpaceID:   spaceID,
+		InviterID: inviterID,
+		InviteeID: inviteeID,
+	})
+	if err != nil {
+		return gen.SpaceInvite{}, fmt.Errorf("creating space invite: %w", err)
+	}
+	return row, nil
+}
+
+// GetPendingSpaceInvite returns the pending invite for (space, invitee) —
+// pgx.ErrNoRows maps to found=false so callers can branch without importing
+// pgx.
+func (s *Service) GetPendingSpaceInvite(ctx context.Context, spaceID, inviteeID pgtype.UUID) (gen.SpaceInvite, bool, error) {
+	row, err := s.read.GetPendingSpaceInvite(ctx, gen.GetPendingSpaceInviteParams{
+		SpaceID:   spaceID,
+		InviteeID: inviteeID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SpaceInvite{}, false, nil
+		}
+		return gen.SpaceInvite{}, false, fmt.Errorf("getting pending space invite: %w", err)
+	}
+	return row, true, nil
+}
+
+// ListSpaceInvites returns pending invites on a space (owner/moderator view).
+func (s *Service) ListSpaceInvites(ctx context.Context, spaceID pgtype.UUID, limit, offset int32) ([]gen.ListSpaceInvitesRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.read.ListSpaceInvites(ctx, gen.ListSpaceInvitesParams{
+		SpaceID:    spaceID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space invites: %w", err)
+	}
+	return rows, nil
+}
+
+// ListSpaceInvitesByInvitee returns a user's pending invites across spaces.
+func (s *Service) ListSpaceInvitesByInvitee(ctx context.Context, inviteeID pgtype.UUID, limit, offset int32) ([]gen.ListSpaceInvitesByInviteeRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.read.ListSpaceInvitesByInvitee(ctx, gen.ListSpaceInvitesByInviteeParams{
+		InviteeID:  inviteeID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space invites by invitee: %w", err)
+	}
+	return rows, nil
+}
+
+// ResolveSpaceInvite flips a pending invite to a terminal status
+// ('accepted'|'declined'|'revoked'). found=false means the invite was not
+// pending (already resolved or unknown id).
+func (s *Service) ResolveSpaceInvite(ctx context.Context, id pgtype.UUID, status string) (gen.SpaceInvite, bool, error) {
+	row, err := s.write.ResolveSpaceInvite(ctx, gen.ResolveSpaceInviteParams{
+		ID:     id,
+		Status: status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SpaceInvite{}, false, nil
+		}
+		return gen.SpaceInvite{}, false, fmt.Errorf("resolving space invite: %w", err)
+	}
+	return row, true, nil
+}
+
+// ListSpaceLeaders returns the space's leadership — owners first, then
+// moderators — for the hub's "Space leaders" sidebar card.
+func (s *Service) ListSpaceLeaders(ctx context.Context, spaceID pgtype.UUID, limit int32) ([]gen.ListSpaceLeadersRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	rows, err := s.read.ListSpaceLeaders(ctx, gen.ListSpaceLeadersParams{
+		SpaceID:   spaceID,
+		PageLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing space leaders: %w", err)
+	}
+	return rows, nil
+}

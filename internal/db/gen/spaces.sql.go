@@ -869,6 +869,37 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Creat
 	return i, err
 }
 
+const createSpaceInvite = `-- name: CreateSpaceInvite :one
+INSERT INTO space_invites (space_id, inviter_id, invitee_id)
+VALUES ($1, $2, $3)
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at
+`
+
+type CreateSpaceInviteParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	InviterID pgtype.UUID `json:"inviter_id"`
+	InviteeID pgtype.UUID `json:"invitee_id"`
+}
+
+// Member→user invitation to a custom space (§05 hub-redesign amendment).
+// The pending-unique index rejects a second pending row for the same
+// (space, invitee) pair — the handler pre-checks and 409s first.
+func (q *Queries) CreateSpaceInvite(ctx context.Context, arg CreateSpaceInviteParams) (SpaceInvite, error) {
+	row := q.db.QueryRow(ctx, createSpaceInvite, arg.SpaceID, arg.InviterID, arg.InviteeID)
+	var i SpaceInvite
+	err := row.Scan(
+		&i.ID,
+		&i.SpaceID,
+		&i.InviterID,
+		&i.InviteeID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RespondedAt,
+	)
+	return i, err
+}
+
 const createSpaceRule = `-- name: CreateSpaceRule :one
 INSERT INTO space_rules (space_id, title, body, position) VALUES ($1, $2, $3, $4)
 
@@ -1447,6 +1478,36 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, spaceID pgtype.U
 		return nil, err
 	}
 	return items, nil
+}
+
+const getPendingSpaceInvite = `-- name: GetPendingSpaceInvite :one
+SELECT id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at
+FROM space_invites
+WHERE space_id = $1 AND invitee_id = $2 AND status = 'pending'
+LIMIT 1
+`
+
+type GetPendingSpaceInviteParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	InviteeID pgtype.UUID `json:"invitee_id"`
+}
+
+// The pending invite for (space, invitee), if any — used by the join flow
+// to satisfy joining_perm='request'/'invite' gating and flip 'accepted'.
+func (q *Queries) GetPendingSpaceInvite(ctx context.Context, arg GetPendingSpaceInviteParams) (SpaceInvite, error) {
+	row := q.db.QueryRow(ctx, getPendingSpaceInvite, arg.SpaceID, arg.InviteeID)
+	var i SpaceInvite
+	err := row.Scan(
+		&i.ID,
+		&i.SpaceID,
+		&i.InviterID,
+		&i.InviteeID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RespondedAt,
+	)
+	return i, err
 }
 
 const getPermissionPresetByName = `-- name: GetPermissionPresetByName :one
@@ -2893,6 +2954,239 @@ func (q *Queries) ListSpaceAncestors(ctx context.Context, spaceID pgtype.UUID) (
 	return items, nil
 }
 
+const listSpaceContributors = `-- name: ListSpaceContributors :many
+SELECT
+    agg.user_id,
+    COALESCE(u.public_username, u.username, '') AS username,
+    COALESCE(up.display_name, u.public_username, u.username, '') AS display_name,
+    COALESCE(up.avatar_url, '') AS avatar_url,
+    COALESCE(u.verified, false) AS verified,
+    COALESCE(u.verification_type, '') AS verification_type,
+    agg.score
+FROM (
+    SELECT author AS user_id, COUNT(*)::bigint AS score
+    FROM (
+        SELECT c.author_id AS author
+        FROM contents c
+        JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+        WHERE c.deleted_at IS NULL AND c.status = 'published' AND c.author_id IS NOT NULL
+        UNION ALL
+        SELECT ft.author_user_id AS author
+        FROM forum_threads ft
+        WHERE ft.space_id = $1 AND ft.deleted_at IS NULL
+          AND ft.author_user_id IS NOT NULL AND ft.is_anonymous = false
+        UNION ALL
+        SELECT wr.submitted_by AS author
+        FROM wiki_revisions wr
+        JOIN wiki_pages wp ON wp.id = wr.wiki_page_id
+        WHERE wp.space_id = $1 AND wr.submitted_by IS NOT NULL
+          AND wr.status = 'approved'
+    ) contrib
+    GROUP BY author
+) agg
+JOIN users u ON u.id = agg.user_id AND u.status <> 'deleted'
+LEFT JOIN user_profiles up ON up.user_id = agg.user_id
+ORDER BY agg.score DESC, agg.user_id
+LIMIT $2
+`
+
+type ListSpaceContributorsParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	PageLimit int32       `json:"page_limit"`
+}
+
+type ListSpaceContributorsRow struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	Username         string      `json:"username"`
+	DisplayName      string      `json:"display_name"`
+	AvatarUrl        string      `json:"avatar_url"`
+	Verified         bool        `json:"verified"`
+	VerificationType string      `json:"verification_type"`
+	Score            int64       `json:"score"`
+}
+
+// Top contributors to a space: published contents + non-anonymous forum
+// threads + approved wiki revisions, grouped by author. Powers the hub's
+// "Top contributors" card (§05 hub-redesign amendment). Anonymous threads
+// are excluded — counting them would unmask their authors.
+func (q *Queries) ListSpaceContributors(ctx context.Context, arg ListSpaceContributorsParams) ([]ListSpaceContributorsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceContributors, arg.SpaceID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceContributorsRow
+	for rows.Next() {
+		var i ListSpaceContributorsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.Verified,
+			&i.VerificationType,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceInvites = `-- name: ListSpaceInvites :many
+SELECT si.id, si.space_id, si.inviter_id, si.invitee_id, si.status,
+       si.created_at, si.updated_at, si.responded_at,
+       COALESCE(u.public_username, u.username, '') AS invitee_username,
+       COALESCE(up.display_name, u.public_username, u.username, '') AS invitee_display_name,
+       COALESCE(up.avatar_url, '') AS invitee_avatar_url,
+       COALESCE(iu.public_username, iu.username, '') AS inviter_username,
+       COALESCE(iup.display_name, iu.public_username, iu.username, '') AS inviter_display_name
+FROM space_invites si
+JOIN users u ON u.id = si.invitee_id
+LEFT JOIN user_profiles up ON up.user_id = si.invitee_id
+JOIN users iu ON iu.id = si.inviter_id
+LEFT JOIN user_profiles iup ON iup.user_id = si.inviter_id
+WHERE si.space_id = $1 AND si.status = 'pending'
+ORDER BY si.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListSpaceInvitesParams struct {
+	SpaceID    pgtype.UUID `json:"space_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListSpaceInvitesRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	InviterID          pgtype.UUID        `json:"inviter_id"`
+	InviteeID          pgtype.UUID        `json:"invitee_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RespondedAt        pgtype.Timestamptz `json:"responded_at"`
+	InviteeUsername    string             `json:"invitee_username"`
+	InviteeDisplayName string             `json:"invitee_display_name"`
+	InviteeAvatarUrl   string             `json:"invitee_avatar_url"`
+	InviterUsername    string             `json:"inviter_username"`
+	InviterDisplayName string             `json:"inviter_display_name"`
+}
+
+// Pending invites on a space, newest first — owner/moderator admin list.
+func (q *Queries) ListSpaceInvites(ctx context.Context, arg ListSpaceInvitesParams) ([]ListSpaceInvitesRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceInvites, arg.SpaceID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceInvitesRow
+	for rows.Next() {
+		var i ListSpaceInvitesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpaceID,
+			&i.InviterID,
+			&i.InviteeID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RespondedAt,
+			&i.InviteeUsername,
+			&i.InviteeDisplayName,
+			&i.InviteeAvatarUrl,
+			&i.InviterUsername,
+			&i.InviterDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceInvitesByInvitee = `-- name: ListSpaceInvitesByInvitee :many
+SELECT si.id, si.space_id, si.inviter_id, si.invitee_id, si.status,
+       si.created_at, si.updated_at, si.responded_at,
+       s.name AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       COALESCE(iu.public_username, iu.username, '') AS inviter_username,
+       COALESCE(iup.display_name, iu.public_username, iu.username, '') AS inviter_display_name,
+       COALESCE(iup.avatar_url, '') AS inviter_avatar_url
+FROM space_invites si
+JOIN spaces s ON s.id = si.space_id AND s.deleted_at IS NULL
+JOIN users iu ON iu.id = si.inviter_id
+LEFT JOIN user_profiles iup ON iup.user_id = si.inviter_id
+WHERE si.invitee_id = $1 AND si.status = 'pending'
+ORDER BY si.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListSpaceInvitesByInviteeParams struct {
+	InviteeID  pgtype.UUID `json:"invitee_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListSpaceInvitesByInviteeRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	InviterID          pgtype.UUID        `json:"inviter_id"`
+	InviteeID          pgtype.UUID        `json:"invitee_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RespondedAt        pgtype.Timestamptz `json:"responded_at"`
+	SpaceName          string             `json:"space_name"`
+	SpaceSlug          string             `json:"space_slug"`
+	InviterUsername    string             `json:"inviter_username"`
+	InviterDisplayName string             `json:"inviter_display_name"`
+	InviterAvatarUrl   string             `json:"inviter_avatar_url"`
+}
+
+// The caller's pending space invites (GET /me/space-invites) — carries the
+// inviter + space display fields the notification/invite UI renders.
+func (q *Queries) ListSpaceInvitesByInvitee(ctx context.Context, arg ListSpaceInvitesByInviteeParams) ([]ListSpaceInvitesByInviteeRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceInvitesByInvitee, arg.InviteeID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceInvitesByInviteeRow
+	for rows.Next() {
+		var i ListSpaceInvitesByInviteeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpaceID,
+			&i.InviterID,
+			&i.InviteeID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RespondedAt,
+			&i.SpaceName,
+			&i.SpaceSlug,
+			&i.InviterUsername,
+			&i.InviterDisplayName,
+			&i.InviterAvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
 
 
@@ -2945,6 +3239,71 @@ func (q *Queries) ListSpaceJoinRequests(ctx context.Context, arg ListSpaceJoinRe
 			&i.AvatarUrl,
 			&i.JoinedAt,
 			&i.Status,
+			&i.Verified,
+			&i.VerificationType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceLeaders = `-- name: ListSpaceLeaders :many
+SELECT leader.user_id, leader.role, COALESCE(u.public_username, u.username, '') AS username,
+ up.display_name, up.avatar_url, u.verified, u.verification_type
+FROM (
+    SELECT sm.user_id, 'owner'::text AS role, sm.joined_at AS since
+    FROM space_members sm
+    WHERE sm.space_id = $1 AND sm.role = 'owner' AND sm.status = 'approved'
+    UNION ALL
+    SELECT mo.user_id, 'moderator'::text AS role, mo.created_at AS since
+    FROM space_moderators mo
+    WHERE mo.space_id = $1
+) leader
+JOIN users u ON u.id = leader.user_id AND u.status <> 'deleted'
+LEFT JOIN user_profiles up ON up.user_id = leader.user_id
+ORDER BY CASE leader.role WHEN 'owner' THEN 0 ELSE 1 END, leader.since
+LIMIT $2
+`
+
+type ListSpaceLeadersParams struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	PageLimit int32       `json:"page_limit"`
+}
+
+type ListSpaceLeadersRow struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	Role             string      `json:"role"`
+	Username         string      `json:"username"`
+	DisplayName      *string     `json:"display_name"`
+	AvatarUrl        *string     `json:"avatar_url"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
+}
+
+// Space leadership for the hub's "Space leaders" card (§05 hub-redesign):
+// owners (space_members.role='owner') UNION assigned moderators
+// (space_moderators), owners first then by tenure. Anonymous-friendly —
+// leadership of a public space is public data like the members roster.
+func (q *Queries) ListSpaceLeaders(ctx context.Context, arg ListSpaceLeadersParams) ([]ListSpaceLeadersRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceLeaders, arg.SpaceID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceLeadersRow
+	for rows.Next() {
+		var i ListSpaceLeadersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Role,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
 			&i.Verified,
 			&i.VerificationType,
 		); err != nil {
@@ -4862,6 +5221,37 @@ type RemoveSpaceModeratorParams struct {
 func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
 	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
 	return err
+}
+
+const resolveSpaceInvite = `-- name: ResolveSpaceInvite :one
+UPDATE space_invites
+SET status = $1, responded_at = now(), updated_at = now()
+WHERE id = $2 AND status = 'pending'
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at
+`
+
+type ResolveSpaceInviteParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// Flips a pending invite to its terminal status ('accepted' | 'declined' |
+// 'revoked') and stamps responded_at. The status='pending' guard makes a
+// double-resolve a no-op row rather than a silent overwrite.
+func (q *Queries) ResolveSpaceInvite(ctx context.Context, arg ResolveSpaceInviteParams) (SpaceInvite, error) {
+	row := q.db.QueryRow(ctx, resolveSpaceInvite, arg.Status, arg.ID)
+	var i SpaceInvite
+	err := row.Scan(
+		&i.ID,
+		&i.SpaceID,
+		&i.InviterID,
+		&i.InviteeID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RespondedAt,
+	)
+	return i, err
 }
 
 const spaceExists = `-- name: SpaceExists :one

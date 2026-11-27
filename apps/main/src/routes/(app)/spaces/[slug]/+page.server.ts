@@ -13,7 +13,11 @@ import type {
 	DigestEdition,
 	WikiPageIndex,
 	Achievement,
-	SpaceReview
+	SpaceReview,
+	CalendarEntry,
+	SpaceLeader,
+	SpaceContributor,
+	SpaceTypeOption
 } from '#lib/types/index.js';
 
 /**
@@ -104,6 +108,12 @@ export const load: PageServerLoad = async (event) => {
 	// level is the discriminator for the Reviews tab.
 	const isUniversity = space.level === 'university';
 
+	// §05 hub-redesign (2026-11-27) — tab gating by space class:
+	// is_primary marks platform-run spaces (geo + universities); geo
+	// covers country/state/city; custom = member-created community.
+	const isGeo = ['country', 'state', 'city'].includes(space.level);
+	const isPrimary = space.is_primary === true || isGeo || isUniversity;
+
 	// Fetch reviews for university spaces; the route is public and returns an
 	// empty list for non-university spaces, but the tab is only rendered when
 	// the type matches.
@@ -131,12 +141,15 @@ export const load: PageServerLoad = async (event) => {
 	const canManage = isOwner || isModerator;
 
 	const [
-		content, pinned, members, forumThreads, moderators, isFollowing,
-		isMuted, presets, parentSpaces, achievements, digest
+		contentRes, pinned, members, forumThreads, moderators, isFollowing,
+		isMuted, presets, parentSpaces, achievements, digest,
+		blogFeed, storyFeed, guideFeed, events, subspaces, leaders, contributors, spaceTypes
 	] = await Promise.all([
+		// items + meta.total (§05 hub-redesign — the header stats row shows
+		// real counts without paginating the full list).
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${pageSize}`)
-			.then((r) => r.items)
-			.catch(() => []),
+			.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+			.catch(() => ({ items: [] as SpaceContentItem[], total: null })),
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/pinned`)
 			.then((r) => r.items)
 			.catch(() => []),
@@ -147,8 +160,8 @@ export const load: PageServerLoad = async (event) => {
 			.then((r) => r.items)
 			.catch(() => []),
 		// Moderators list — only fetched for the owner/moderator so the
-		// assignment panel has data to render. The GET route is public, but
-		// we avoid the extra request for viewers who can't manage moderators.
+		// assignment panel has data to render. The sidebar's leaders card
+		// uses the public /leaders route instead.
 		canManage
 			? apiList<SpaceModerator>(ctx, `/spaces/${slug}/moderators`)
 					.then((r) => r.items)
@@ -163,14 +176,11 @@ export const load: PageServerLoad = async (event) => {
 					.then((r) => r.items)
 					.catch(() => [])
 			: Promise.resolve([] as SpacePermissionPreset[]),
-		// Parent spaces — only fetched for custom spaces (primary spaces have
-		// no parents) and only when the viewer is the owner (who can manage
-		// parents). Non-owners don't need this data.
-		(isOwner && space.level === 'custom')
-			? apiList<Space>(ctx, `/spaces/${slug}/parents`)
-					.then((r) => r.items)
-					.catch(() => [])
-			: Promise.resolve([] as Space[]),
+		// Parent spaces — OptionalAuth since the hub-redesign amendment:
+		// the About card's location line resolves ancestors for guests too.
+		apiList<Space>(ctx, `/spaces/${slug}/parents`)
+			.then((r) => r.items)
+			.catch(() => []),
 		// Sidebar achievement widget — fetch server-side so SSR and client
 		// render the same DOM and avoid a hydration mismatch (HYDRATION-001).
 		apiList<Achievement>(ctx, `/spaces/${slug}/achievements?limit=5`)
@@ -185,7 +195,56 @@ export const load: PageServerLoad = async (event) => {
 			? apiGet<DigestEdition>(ctx, `/digest/latest?dest=${encodeURIComponent(spaceId)}`).catch(
 					() => null
 				)
-			: Promise.resolve(null)
+			: Promise.resolve(null),
+		// §05 hub-redesign — type-filtered feeds for the Blog/Stories/Guides
+		// tabs. Each rides the same ?type= listing and keeps meta.total for
+		// the tab count + header stats. Primary-only except Stories (geo).
+		isPrimary
+			? apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?type=blog_post&page_size=${pageSize}`)
+					.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+					.catch(() => ({ items: [] as SpaceContentItem[], total: null }))
+			: Promise.resolve({ items: [] as SpaceContentItem[], total: null }),
+		isGeo
+			? apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?type=story&page_size=${pageSize}`)
+					.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+					.catch(() => ({ items: [] as SpaceContentItem[], total: null }))
+			: Promise.resolve({ items: [] as SpaceContentItem[], total: null }),
+		isPrimary
+			? apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?type=guide&page_size=${pageSize}`)
+					.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+					.catch(() => ({ items: [] as SpaceContentItem[], total: null }))
+			: Promise.resolve({ items: [] as SpaceContentItem[], total: null }),
+		// Events tab + sidebar "Upcoming events" (§86) — geo + university
+		// destinations only; customs have no calendar surface.
+		features['calendar.enabled'] && (isGeo || isUniversity)
+			? apiList<CalendarEntry>(
+					ctx,
+					`/calendar?dest=${encodeURIComponent(spaceId)}&view=list&from=${encodeURIComponent(new Date().toISOString())}&page_size=5`
+				)
+					.then((r) => ({ items: r.items, total: r.meta?.total ?? null }))
+					.catch(() => ({ items: [] as CalendarEntry[], total: null }))
+			: Promise.resolve({ items: [] as CalendarEntry[], total: null }),
+		// Subspaces tab — member-created communities under this geo parent
+		// (custom spaces can't be parents, SPACES-008; universities don't
+		// get the tab either).
+		isGeo
+			? apiList<Space>(ctx, `/spaces?within=${encodeURIComponent(slug)}&member_created=1&page_size=${pageSize}`)
+					.then((r) => r.items)
+					.catch(() => [])
+			: Promise.resolve([] as Space[]),
+		// Sidebar "Space leaders" card — owners ∪ moderators, OptionalAuth.
+		apiList<SpaceLeader>(ctx, `/spaces/${slug}/leaders?page_size=10`)
+			.then((r) => r.items)
+			.catch(() => []),
+		// Wiki-tab "Top contributors" card.
+		apiList<SpaceContributor>(ctx, `/spaces/${slug}/contributors?page_size=5`)
+			.then((r) => r.items)
+			.catch(() => []),
+		// Space types catalog — resolves the About card's Category line
+		// (space_type_id → name). Public route.
+		apiList<SpaceTypeOption>(ctx, `/space-types`)
+			.then((r) => r.items)
+			.catch(() => [])
 	]);
 
 	// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
@@ -261,6 +320,8 @@ export const load: PageServerLoad = async (event) => {
 		logoUrl: detail.logo_url ?? '',
 		headerUrl: detail.header_url ?? '',
 		isUniversity,
+		isGeo,
+		isPrimary,
 		reviews,
 		isOwner,
 		isModerator,
@@ -269,7 +330,8 @@ export const load: PageServerLoad = async (event) => {
 		moderators,
 		presets,
 		parentSpaces,
-		content,
+		content: contentRes.items,
+		contentTotal: contentRes.total,
 		pinned,
 		members,
 		forumThreads,
@@ -282,7 +344,18 @@ export const load: PageServerLoad = async (event) => {
 		achievements,
 		digest,
 		wikiEnabled,
+		hasWiki,
 		wikiPages,
-		wikiCategories
+		wikiCategories,
+		// §05 hub-redesign — typed tab feeds + sidebar card data.
+		blogFeed,
+		storyFeed,
+		guideFeed,
+		events,
+		subspaces,
+		leaders,
+		contributors,
+		spaceTypes,
+		calendarEnabled: !!features['calendar.enabled']
 	};
 };

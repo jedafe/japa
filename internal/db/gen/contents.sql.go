@@ -137,6 +137,60 @@ func (q *Queries) CountContentShares(ctx context.Context, contentID pgtype.UUID)
 	return count, err
 }
 
+const countContentsBySpace = `-- name: CountContentsBySpace :one
+SELECT COUNT(*)::bigint
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($2::text = '' OR c.content_type = $2::text)
+ AND (
+ ($3::boolean AND $4::boolean)
+ OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $6::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+ )
+ )
+ )
+ AND (
+     $3::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
+ )
+`
+
+type CountContentsBySpaceParams struct {
+	SpaceID           pgtype.UUID `json:"space_id"`
+	ContentType       string      `json:"content_type"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+}
+
+// Total matching contents for a space under the same visibility + type
+// filters as ListContentsBySpace (no cursor) — powers meta.total on
+// GET /spaces/{slug}/content for the hub's type-tab counts.
+func (q *Queries) CountContentsBySpace(ctx context.Context, arg CountContentsBySpaceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countContentsBySpace,
+		arg.SpaceID,
+		arg.ContentType,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPostsByAuthor = `-- name: CountPostsByAuthor :one
 SELECT COUNT(*)::int AS count
 FROM contents c
@@ -3377,37 +3431,39 @@ LEFT JOIN content_scores csc ON csc.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
+ AND ($2::text = '' OR c.content_type = $2::text)
  AND (
- ($2::boolean AND $3::boolean)
- OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ ($3::boolean AND $4::boolean)
+ OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
  OR (
  c.status = 'published'
  AND (
  c.visibility = 'public'
- OR (c.visibility = 'members' AND $5::boolean)
- OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ OR (c.visibility = 'members' AND $6::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
  )
  )
  )
  -- Anchored discussion containers don't list (see ListContents).
  AND (
-     $2::boolean
+     $3::boolean
      OR NOT EXISTS (
          SELECT 1 FROM thread_anchors ta
          WHERE ta.content_id = c.id AND ta.entity_type = 'content'
      )
  )
  AND (
- ($6::timestamptz IS NULL)
- OR (c.created_at < $6::timestamptz)
- OR (c.created_at = $6::timestamptz AND ($7::uuid IS NULL OR c.id < $7))
+ ($7::timestamptz IS NULL)
+ OR (c.created_at < $7::timestamptz)
+ OR (c.created_at = $7::timestamptz AND ($8::uuid IS NULL OR c.id < $8))
  )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $8
+LIMIT $9
 `
 
 type ListContentsBySpaceParams struct {
 	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
@@ -3496,6 +3552,7 @@ type ListContentsBySpaceRow struct {
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySpace,
 		arg.SpaceID,
+		arg.ContentType,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,

@@ -100,7 +100,19 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.content.ListContentsBySpace(r.Context(), space.ID, cursor, cursorID, limit, filter)
+	// ?type= restricts to a single content_type — powers the hub's
+	// Blog/Stories/Guides tabs (§05 hub-redesign amendment). A gated type
+	// short-circuits to empty rather than leaking its existence via counts.
+	contentType := strings.TrimSpace(r.URL.Query().Get("type"))
+	if contentType != "" && h.contentTypeHidden(r.Context(), contentType) {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": []spaceContentCard{},
+			"meta": map[string]any{"total": 0},
+		})
+		return
+	}
+
+	items, err := h.content.ListContentsBySpace(r.Context(), space.ID, cursor, cursorID, limit, contentType, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return
@@ -131,7 +143,16 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		cards = append(cards, spaceCardFromListRow(&items[i]))
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cards})
+	// meta.total powers the hub's stats row + type-tab counts. Best-effort:
+	// a count failure must not drop the feed itself.
+	resp := map[string]any{"data": cards}
+	if total, err := h.content.CountContentsBySpace(r.Context(), space.ID, contentType, filter); err == nil {
+		resp["meta"] = map[string]any{"total": total}
+	} else {
+		slog.Warn("spaces: failed to count space content", "error", err, "space_id", space.ID.String())
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ListPinned handles GET /api/v1/spaces/{slug}/pinned. Returns the pinned

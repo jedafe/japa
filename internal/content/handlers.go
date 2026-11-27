@@ -1937,7 +1937,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		contents, err = h.Service.ListContentsBySpace(r.Context(), spaceID, cursor, cursorID, limit, filter)
+		contents, err = h.Service.ListContentsBySpace(r.Context(), spaceID, cursor, cursorID, limit, contentType, filter)
 	} else if contentType != "" {
 		// §14: ?sort=popular orders by view_count (offset pagination);
 		// ?sort=roadmap ranks by the resolved VisitorContext journey signals

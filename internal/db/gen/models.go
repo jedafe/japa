@@ -4546,6 +4546,17 @@ type Space struct {
 	FederateOptOut bool               `json:"federate_opt_out"`
 }
 
+type SpaceInvite struct {
+	ID          pgtype.UUID        `json:"id"`
+	SpaceID     pgtype.UUID        `json:"space_id"`
+	InviterID   pgtype.UUID        `json:"inviter_id"`
+	InviteeID   pgtype.UUID        `json:"invitee_id"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	RespondedAt pgtype.Timestamptz `json:"responded_at"`
+}
+
 type SpaceMember struct {
 	ID       pgtype.UUID        `json:"id"`
 	SpaceID  pgtype.UUID        `json:"space_id"`

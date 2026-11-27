@@ -1144,8 +1144,10 @@ func (s *Service) ListContentsByType(ctx context.Context, contentType, guideCate
 }
 
 // ListContentsBySpace returns a page of content filtered by space_id.
-// Visibility is gated by the supplied filter.
-func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
+// Visibility is gated by the supplied filter. An empty contentType lists
+// all types; a non-empty value restricts to that content_type (the space
+// hub's Blog/Stories/Guides tabs — §05 hub-redesign amendment).
+func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, contentType string, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1154,6 +1156,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
 		SpaceID:           spaceID,
+		ContentType:       contentType,
 		CursorCreatedAt:   cursor,
 		CursorID:          cursorID,
 		PageLimit:         limit,
@@ -1167,6 +1170,28 @@ func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, 
 	}
 
 	return contents, nil
+}
+
+// CountContentsBySpace returns the total number of contents in a space
+// visible under the supplied filter (and matching contentType when set) —
+// backs meta.total on GET /spaces/{slug}/content so hub type tabs can show
+// real counts without paginating.
+func (s *Service) CountContentsBySpace(ctx context.Context, spaceID pgtype.UUID, contentType string, filter visibility.VisibilityFilter) (int64, error) {
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
+	total, err := s.read.CountContentsBySpace(ctx, gen.CountContentsBySpaceParams{
+		SpaceID:           spaceID,
+		ContentType:       contentType,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting contents by space: %w", err)
+	}
+
+	return total, nil
 }
 
 // SearchContentsBySpace returns content within a space whose title matches the

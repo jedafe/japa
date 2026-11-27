@@ -811,6 +811,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Subject:    cfg.VAPIDSubject,
 	})
 	notificationHandlers := notifications.NewHandlers(notificationService)
+	// §05 hub-redesign: space_invite notifications to invitees.
+	spaceHandlers.SetNotifier(notificationService)
 	// §14: resolve {{...}} literals embedded in notification titles/bodies.
 	notificationHandlers.SetLiteralResolver(literalsCatalog)
 	// C3: wire follow.received notification dispatch (Section 35). Fire-and-forget
@@ -4769,6 +4771,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/regions", spaceHandlers.ListDistinctRegions)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/subregions", spaceHandlers.ListSubregionsByRegion)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
+			// §05 hub-redesign: the caller's pending space invites
+			// (notification action surface — accept via POST /spaces/{slug}/join).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/space-invites", spaceHandlers.ListMySpaceInvites)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
 			// BUG-006: /me/spaces/owned — ownership is tracked via
 			// space_members.role='owner' (migration 000033), not a spaces
@@ -4833,6 +4838,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Delete("/spaces/{slug}/pinned/{content_id}", spaceHandlers.RemovePinned)
 
+			// Top contributors + member invites (§05 hub-redesign amendment).
+			// Contributors is public like the members roster; invites are a
+			// custom-space feature — the handler itself 403s primary spaces
+			// and non-member inviters.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/contributors", spaceHandlers.ListContributors)
+			// Leaders = owners ∪ moderators — one call for the sidebar card
+			// (a members list can't resolve role='owner' rows).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/leaders", spaceHandlers.ListLeaders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Post("/spaces/{slug}/invites", spaceHandlers.CreateInvite)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
+				Get("/spaces/{slug}/invites", spaceHandlers.ListInvites)
+
 			// Dedicated leave (catalog: DELETE /spaces/:id/leave), split from
 			// the join/leave toggle above.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -4867,7 +4887,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/spaces/{slug}/moderators", spaceHandlers.AssignModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderator.assign")).
 				Delete("/spaces/{slug}/moderators/{userId}", spaceHandlers.RemoveModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// OptionalAuth (§05 hub-redesign amendment): community leadership is
+			// public data — the space hub's "Space leaders" card renders it to
+			// guests, matching the already-public members roster.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/moderators", spaceHandlers.ListModerators)
 
 			// Space parent spaces (many-to-many hierarchy)
@@ -4875,7 +4898,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/spaces/{slug}/parents", spaceHandlers.AddParentSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.edit")).
 				Delete("/spaces/{slug}/parents/{parentId}", spaceHandlers.RemoveParentSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// OptionalAuth (§05 hub-redesign amendment): the hub's About-card
+			// location line resolves parent names for guests too.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/parents", spaceHandlers.ListParentSpaces)
 
 			// Permission preset routes

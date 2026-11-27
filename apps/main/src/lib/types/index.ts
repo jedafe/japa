@@ -1599,6 +1599,67 @@ export interface SpaceRule {
 	updated_at: string;
 }
 
+/** GET /spaces/{slug}/leaders item — owner ∪ moderator, owners first. */
+export interface SpaceLeader {
+	user_id: string;
+	role: 'owner' | 'moderator';
+	username: string;
+	display_name: string | null;
+	avatar_url: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
+}
+
+/** GET /spaces/{slug}/contributors item — top authors ranked by score. */
+export interface SpaceContributor {
+	user_id: string;
+	username: string;
+	display_name: string | null;
+	avatar_url: string | null;
+	verified?: boolean;
+	verification_type?: string | null;
+	score: number;
+}
+
+/** GET /space-types item — used to resolve the hub's Category line. */
+export interface SpaceTypeOption {
+	id: string;
+	name: string;
+	slug: string;
+	category?: string;
+	selectable?: boolean;
+}
+
+/** GET /spaces/{slug}/invites item (admin view) — pending invite + parties. */
+export interface SpaceInvite {
+	id: string;
+	space_id: string;
+	inviter_id: string;
+	invitee_id: string;
+	status: 'pending' | 'accepted' | 'declined' | 'revoked';
+	created_at: string;
+	invitee_username?: string;
+	invitee_display_name?: string | null;
+	invitee_avatar_url?: string | null;
+	inviter_username?: string;
+	inviter_display_name?: string | null;
+}
+
+/** GET /me/space-invites item — caller's pending invite + space display fields. */
+export interface MySpaceInvite {
+	id: string;
+	space_id: string;
+	inviter_id: string;
+	invitee_id: string;
+	status: 'pending' | 'accepted' | 'declined' | 'revoked';
+	created_at: string;
+	space_name: string;
+	space_slug: string;
+	inviter_username?: string;
+	inviter_display_name?: string | null;
+	inviter_avatar_url?: string | null;
+}
+
 /** GET /spaces/{id}/reviews item — published review with author name. */
 export interface SpaceReview {
 	id: string;

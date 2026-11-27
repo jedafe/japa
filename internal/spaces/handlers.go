@@ -30,7 +30,8 @@ import (
 // ContentService is the subset of content.Service the space content/pinned
 // handlers need.
 type ContentService interface {
-	ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error)
+	ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, contentType string, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error)
+	CountContentsBySpace(ctx context.Context, spaceID pgtype.UUID, contentType string, filter visibility.VisibilityFilter) (int64, error)
 	SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
 	PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error)
 	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
@@ -102,6 +103,10 @@ type Handlers struct {
 	// tipSettings reports a space's tips_enabled flag for the
 	// monetization exclusivity gate (§05); nil-safe.
 	tipSettings TipSettingsChecker
+
+	// notifier dispatches the space_invite notification to invitees
+	// (§05 hub-redesign amendment); nil skips the alert.
+	notifier Notifier
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space

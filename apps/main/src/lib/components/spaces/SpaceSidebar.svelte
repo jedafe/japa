@@ -2,14 +2,21 @@
 	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { Users, FileText, ScrollText, LogIn, Shield } from 'lucide-svelte';
+	import {
+		Users, ScrollText, LogIn, Shield, MapPin, Tag, CalendarDays,
+		Crown, Trophy, Hash
+	} from 'lucide-svelte';
+	import { Accordion } from 'bits-ui';
 	import { api } from '#lib/api/client.js';
 	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
 	import AchievementWidget from '#lib/components/spaces/AchievementWidget.svelte';
 	import TipButton from '#lib/components/tips/TipButton.svelte';
 	import SpaceFollowListModal from '#lib/components/spaces/SpaceFollowListModal.svelte';
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
-	import type { Space, SpaceMember, SpaceRule, Achievement } from '#lib/types/index.js';
+	import type {
+		Space, SpaceMember, SpaceRule, Achievement, CalendarEntry,
+		SpaceLeader, SpaceContributor
+	} from '#lib/types/index.js';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	interface Props {
@@ -39,8 +46,35 @@
 		/** First page of members (joined_at DESC) — rendered by the New
 		 * members widget; hidden when empty. */
 		members?: SpaceMember[];
+		// §05 hub-redesign sidebar cards — all degrade to hidden when empty.
+		/** Ancestor/parent spaces — the About card's Location line. */
+		parentSpaces?: Space[];
+		/** Resolved space-type display name — the About card's Category. */
+		typeName?: string;
+		/** Upcoming calendar entries for this destination. */
+		events?: CalendarEntry[];
+		/** Owners ∪ moderators from GET /spaces/{slug}/leaders. */
+		leaders?: SpaceLeader[];
+		/** Top contributors from GET /spaces/{slug}/contributors. */
+		contributors?: SpaceContributor[];
+		/** Space keywords — rendered as "Popular topics" pills → /tags/{slug}. */
+		keywords?: string[];
 	}
-	let { space, rules = [], authed, logoUrl = '', initialJoined = false, initialPending = false, isOwner = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
+	let {
+		space, rules = [], authed, logoUrl = '', initialJoined = false,
+		initialPending = false, isOwner = false, following: followingProp = false,
+		onFollowChange, achievements = [], members = [], parentSpaces = [],
+		typeName = '', events = [], leaders = [], contributors = [], keywords = []
+	}: Props = $props();
+
+	// About-card meta rows — joined ancestors for Location, type name for
+	// Category, created month for Created (mockup: "March 2024").
+	const locationLabel = $derived(parentSpaces.map((p) => p.name).join(' · '));
+	const createdLabel = $derived(
+		space.created_at
+			? new Date(space.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+			: ''
+	);
 
 	let following = $state(untrack(() => followingProp ?? false));
 
@@ -144,52 +178,75 @@
 </script>
 
 <div class="space-y-4">
+	<!-- About this space (§05 hub-redesign) — description + Location /
+	     Category / Created meta rows + Join/leave + tips. The stats strip
+	     lives on the header card now. -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-start gap-3">
 			{#if logoUrl}
 				<img
 					src={logoUrl}
 					alt={space.name}
-					class="h-12 w-12 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] object-cover"
+					class="h-12 w-12 shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover"
 				/>
 			{:else}
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-base font-medium text-[var(--color-text-subtle)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-base font-medium text-[var(--color-text-subtle)]"
 				>
 					{space.name.charAt(0).toUpperCase()}
 				</span>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">{space.name}</h2>
-				<p class="text-xs capitalize text-[var(--color-muted)]">{space.level} space</p>
+				<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">
+					{t('space.about_this', 'About this space')}
+				</h2>
+				<p class="text-xs capitalize text-[var(--color-muted)]">{space.level} · {space.visibility}</p>
 			</div>
 		</div>
 
-		<dl
-			class="mt-4 grid grid-flow-col grid-cols-3 grid-rows-2 gap-x-2 gap-y-1 text-center"
-		>
-			<!-- §05 amendment — primary spaces are follow-only; the Members
-			     figure (auto-joins) is meaningless, show Followers only. -->
-			{#if !space.is_primary}
-				<dt class="text-xs text-[var(--color-muted)]">{t('space.members', 'Members')}</dt>
-				<dd class="text-sm font-medium text-[var(--color-text)]">{space.member_count}</dd>
+		{#if space.description}
+			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">{space.description}</p>
+		{:else if wikiExtract}
+			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
+		{/if}
+
+		<dl class="mt-3 space-y-2 text-sm">
+			{#if locationLabel}
+				<div class="flex items-center gap-2">
+					<MapPin size={14} class="shrink-0 text-[var(--color-muted)]" />
+					<dt class="text-[var(--color-muted)]">{t('space.location', 'Location')}</dt>
+					<dd class="ml-auto truncate font-medium text-[var(--color-text)]">{locationLabel}</dd>
+				</div>
 			{/if}
-			<dt class="text-xs text-[var(--color-muted)]">{t('space.posts', 'Posts')}</dt>
-			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
-			<dt class="text-xs text-[var(--color-muted)]">{t('space.discussions', 'Discussions')}</dt>
-			<dd class="text-sm font-medium text-[var(--color-text)]">{space.discussion_count ?? 0}</dd>
-			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
-			<dd class="text-sm font-medium text-[var(--color-text)]">
-				<!-- GET /spaces/{id}/followers is OptionalAuth — guests can open
-				     the follower list too. -->
-				<button
-					type="button"
-					onclick={() => (followersOpen = true)}
-					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
-				>
-					{space.follower_count}
-				</button>
-			</dd>
+			{#if typeName}
+				<div class="flex items-center gap-2">
+					<Tag size={14} class="shrink-0 text-[var(--color-muted)]" />
+					<dt class="text-[var(--color-muted)]">{t('space.category', 'Category')}</dt>
+					<dd class="ml-auto truncate font-medium text-[var(--color-text)]">{typeName}</dd>
+				</div>
+			{/if}
+			{#if createdLabel}
+				<div class="flex items-center gap-2">
+					<CalendarDays size={14} class="shrink-0 text-[var(--color-muted)]" />
+					<dt class="text-[var(--color-muted)]">{t('space.created', 'Created')}</dt>
+					<dd class="ml-auto font-medium text-[var(--color-text)]">{createdLabel}</dd>
+				</div>
+			{/if}
+			<div class="flex items-center gap-2">
+				<Users size={14} class="shrink-0 text-[var(--color-muted)]" />
+				<dt class="text-[var(--color-muted)]">{space.is_primary ? t('space.followers', 'Followers') : t('space.members', 'Members')}</dt>
+				<dd class="ml-auto font-medium text-[var(--color-text)]">
+					<!-- GET /spaces/{id}/followers is OptionalAuth — guests can open
+					     the follower list too. -->
+					<button
+						type="button"
+						onclick={() => (followersOpen = true)}
+						class="hover:text-[var(--color-primary-text)]"
+					>
+						{space.is_primary ? space.follower_count : space.member_count}
+					</button>
+				</dd>
+			</div>
 		</dl>
 
 		<!-- §05 amendment — primary (platform-run) spaces are follow-only:
@@ -246,39 +303,147 @@
 		{/if}
 	</section>
 
+	<!-- Community rules — collapsible accordion (mockup). -->
 	{#if rules.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<ScrollText size={16} /> {t('space.rules', 'Rules')}
+			<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<ScrollText size={16} /> {t('space.rules', 'Community rules')}
 			</h2>
-			<ol class="space-y-3">
+			<Accordion.Root type="single" class="divide-y divide-[var(--color-border)]">
 				{#each rules as rule, i (rule.id)}
-					<li class="text-sm">
-						<p class="font-medium text-[var(--color-text)]">{i + 1}. {rule.title}</p>
+					<Accordion.Item value={rule.id}>
+						<Accordion.Header>
+							<Accordion.Trigger class="flex w-full items-center justify-between py-2 text-start text-sm font-medium text-[var(--color-text)] data-[state=open]:text-[var(--color-primary-text)]">
+								{i + 1}. {rule.title}
+								<span class="text-xs text-[var(--color-muted)] transition-transform group-data-[state=open]:rotate-180">▾</span>
+							</Accordion.Trigger>
+						</Accordion.Header>
 						{#if rule.body}
-							<p class="mt-0.5 text-[var(--color-text-subtle)]">{rule.body}</p>
+							<Accordion.Content class="pb-3 text-sm text-[var(--color-text-subtle)]">
+								{rule.body}
+							</Accordion.Content>
 						{/if}
-					</li>
+					</Accordion.Item>
 				{/each}
-			</ol>
+			</Accordion.Root>
 		</section>
 	{/if}
 
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<FileText size={16} /> {t('space.about', 'About')}
-		</h2>
-		{#if space.description}
-			<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{space.description}</p>
-		{:else if wikiExtract}
-			<p class="text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
-		{:else}
-			<p class="text-sm text-[var(--color-muted)]">{t('space.no_description', 'No description yet.')}</p>
-		{/if}
-		{#if wikiExtract && space.description}
-			<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)] line-clamp-4">{wikiExtract}</p>
-		{/if}
-	</section>
+	<!-- Upcoming events (§86) — top 3 from the same /calendar fetch that
+	     feeds the Events tab. -->
+	{#if events.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<CalendarDays size={16} /> {t('space.events.upcoming', 'Upcoming events')}
+			</h2>
+			<ul class="space-y-3">
+				{#each events.slice(0, 3) as ev (ev.id)}
+					{@const dt = new Date(ev.occurs_at)}
+					<li class="flex items-center gap-2.5">
+						<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
+							<span class="text-center leading-tight">
+								<span class="block text-[9px] font-semibold uppercase">{dt.toLocaleDateString(undefined, { month: 'short' })}</span>
+								<span class="block text-sm font-bold">{dt.getDate()}</span>
+							</span>
+						</span>
+						<span class="min-w-0">
+							<span class="block truncate text-sm font-medium text-[var(--color-text)]">{ev.title}</span>
+							<span class="block truncate text-xs text-[var(--color-muted)]">
+								{dt.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+							</span>
+						</span>
+					</li>
+				{/each}
+			</ul>
+			<a
+				href="/calendar?dest={space.id}"
+				class="mt-3 inline-block text-xs font-medium text-[var(--color-primary-text)] hover:underline"
+			>
+				{t('space.events.view_all', 'View all events')} →
+			</a>
+		</section>
+	{/if}
+
+	<!-- Space leaders — owners ∪ moderators (GET /spaces/{slug}/leaders). -->
+	{#if leaders.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Crown size={16} /> {t('space.leaders', 'Space leaders')}
+			</h2>
+			<ul class="space-y-2.5">
+				{#each leaders as leader (leader.user_id)}
+					<li class="flex items-center gap-2.5">
+						<a href="/u/{leader.username}" class="flex min-w-0 flex-1 items-center gap-2.5 transition-colors hover:text-[var(--color-primary-text)]">
+							{#if leader.avatar_url}
+								<img src={remoteImageUrl(leader.avatar_url)} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
+									{(leader.display_name ?? leader.username).charAt(0).toUpperCase()}
+								</span>
+							{/if}
+							<span class="min-w-0">
+								<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{leader.display_name ?? leader.username}</span><VerifiedBadge verified={leader.verified} type={leader.verification_type} size={13} /></span>
+								<span class="block truncate text-xs text-[var(--color-muted)]">@{leader.username}</span>
+							</span>
+						</a>
+						<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-muted)]">
+							{leader.role === 'owner' ? t('space.role.owner', 'Owner') : t('space.role.moderator', 'Mod')}
+						</span>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
+	<!-- Popular topics — space keywords as pills → /tags/{slug}. -->
+	{#if keywords.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Hash size={16} /> {t('space.topics', 'Popular topics')}
+			</h2>
+			<div class="flex flex-wrap gap-1.5">
+				{#each keywords as kw (kw)}
+					<a
+						href="/tags/{encodeURIComponent(kw)}"
+						class="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
+					>
+						#{kw}
+					</a>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<!-- Top contributors (wiki-tab sidebar card, §05 hub-redesign). -->
+	{#if contributors.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Trophy size={16} /> {t('space.contributors', 'Top contributors')}
+			</h2>
+			<ul class="space-y-2.5">
+				{#each contributors as contributor, i (contributor.user_id)}
+					<li class="flex items-center gap-2.5">
+						<span class="w-4 shrink-0 text-center text-xs font-semibold text-[var(--color-muted)]">{i + 1}</span>
+						<a href="/u/{contributor.username}" class="flex min-w-0 flex-1 items-center gap-2.5 transition-colors hover:text-[var(--color-primary-text)]">
+							{#if contributor.avatar_url}
+								<img src={remoteImageUrl(contributor.avatar_url)} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
+									{(contributor.display_name ?? contributor.username).charAt(0).toUpperCase()}
+								</span>
+							{/if}
+							<span class="min-w-0">
+								<span class="flex items-center gap-1 truncate text-sm font-medium text-[var(--color-text)]"><span class="truncate">{contributor.display_name ?? contributor.username}</span><VerifiedBadge verified={contributor.verified} type={contributor.verification_type} size={13} /></span>
+								<span class="block truncate text-xs text-[var(--color-muted)]">
+									{t('space.contributions', '{n} contributions').replace('{n}', String(contributor.score))}
+								</span>
+							</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
 
 	<!-- §89 Community Achievement Feed — sidebar widget showing latest
 	     achievements filed against this Space (country). Auto-hides when

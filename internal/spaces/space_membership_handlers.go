@@ -56,49 +56,64 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		}
 
 	} else {
+		// §05 hub-redesign: a pending space_invites row satisfies the
+		// 'request'/'invite' joining gate — accepting the invite is the
+		// join itself. Resolved before the perm check so an invited user
+		// never lands on a pending-request or invite-only rejection.
+		inviteAccepted := false
+		if space.JoiningPerm == JoiningRequest || space.JoiningPerm == JoiningInvite {
+			if inv, found, ierr := h.Service.GetPendingSpaceInvite(r.Context(), space.ID, user.UserID); ierr == nil && found {
+				if _, resolved, rerr := h.Service.ResolveSpaceInvite(r.Context(), inv.ID, "accepted"); rerr == nil && resolved {
+					inviteAccepted = true
+				}
+			}
+		}
+
 		// BUG-004: honor the space's joining_perm axis (Section 05 lines 358-360).
 		// - 'open': immediate membership (existing behavior).
 		// - 'request': insert a pending join request (status='pending') for
 		//   admin approval; do NOT increment member_count until approved.
 		// - 'invite': only invited users may join; reject otherwise.
-		switch space.JoiningPerm {
-		case JoiningRequest:
-			if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID); err != nil {
-				handleServiceError(w, err)
-				return
-			}
-
-			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
-				"data": map[string]any{
-					"joined":       false,
-					"pending":      true,
-					"member_count": 0, // unchanged — pending requests don't count
-				},
-			})
-
-			return
-		case JoiningInvite:
-			errpkg.WriteError(w, http.StatusForbidden, "invite_only",
-				"This space is invite-only; you cannot join without an invitation")
-			return
-		default:
-			// JoiningOpen — immediate membership.
-			if err := h.Service.Join(r.Context(), space.ID, user.UserID); err != nil {
-				handleServiceError(w, err)
-				return
-			}
-
-			// BL-010 mirror: joining auto-follows the space server-side so
-			// every join path (UI, API clients, admin grants) produces the
-			// follow, not just the frontend's best-effort POST. Ensure
-			// semantics make the client's duplicate call a harmless no-op.
-			if h.follows != nil {
-				if _, ferr := h.follows.EnsureFollow(r.Context(), user.UserID, "space", space.ID); ferr != nil {
-					slog.Warn("join: auto-follow failed", "space_id", space.ID, "user_id", user.UserID, "error", ferr)
+		if !inviteAccepted {
+			switch space.JoiningPerm {
+			case JoiningRequest:
+				if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID); err != nil {
+					handleServiceError(w, err)
+					return
 				}
-			}
 
+				errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+					"data": map[string]any{
+						"joined":       false,
+						"pending":      true,
+						"member_count": 0, // unchanged — pending requests don't count
+					},
+				})
+
+				return
+			case JoiningInvite:
+				errpkg.WriteError(w, http.StatusForbidden, "invite_only",
+					"This space is invite-only; you cannot join without an invitation")
+				return
+			}
 		}
+
+		// JoiningOpen — or an accepted invite — is immediate membership.
+		if err := h.Service.Join(r.Context(), space.ID, user.UserID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		// BL-010 mirror: joining auto-follows the space server-side so
+		// every join path (UI, API clients, admin grants) produces the
+		// follow, not just the frontend's best-effort POST. Ensure
+		// semantics make the client's duplicate call a harmless no-op.
+		if h.follows != nil {
+			if _, ferr := h.follows.EnsureFollow(r.Context(), user.UserID, "space", space.ID); ferr != nil {
+				slog.Warn("join: auto-follow failed", "space_id", space.ID, "user_id", user.UserID, "error", ferr)
+			}
+		}
+
 	}
 
 	memberCount, err := h.Service.CountMembers(r.Context(), space.ID)

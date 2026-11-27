@@ -26,9 +26,12 @@
 		onClose: () => void;
 		/** Whether the composer starts in question mode (set by the menu). */
 		initialIsQuestion?: boolean;
+		/** Space-hub preset (§05 hub-redesign) — when set, the composer is
+		 *  locked to this space: no picker, no "join a space" gate. */
+		presetSpace?: { spaceId: string; spaceName: string } | null;
 	}
 
-	let { onClose, initialIsQuestion = false }: Props = $props();
+	let { onClose, initialIsQuestion = false, presetSpace = null }: Props = $props();
 
 	// ---- form state ----
 	let title = $state('');
@@ -36,7 +39,7 @@
 	/** TipTap JSON document — base64-encoded for the forum API. */
 	let bodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
 	let spaces = $state<MeSpace[]>([]);
-	let spaceId = $state<string>('');
+	let spaceId = $state<string>(untrack(() => presetSpace?.spaceId ?? ''));
 	let isAnonymous = $state(false);
 	// §126: forum_thread is federatable — the member's per-post "don't
 	// federate" flag rides the create. Hidden when no federation feature
@@ -107,7 +110,10 @@
 
 	// Fetch the user's joined spaces on mount so the space selector is
 	// populated. The sheet is client-side, so this uses the client API.
+	// Skipped when a preset locks the target space (hub composer) — the
+	// picker never renders and the member list is irrelevant.
 	onMount(async () => {
+		if (presetSpace) return;
 		// member_only — the picker means "spaces I belong to"; without it
 		// super admins get every platform space (~10k rows / 1.7MB).
 		const res = await api.get<MeSpace[]>('/me/spaces?member_only=1&page_size=50');
@@ -204,7 +210,7 @@
 		</p>
 	{/if}
 
-	{#if spaces.length === 0}
+	{#if spaces.length === 0 && !presetSpace}
 		<p class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-3 text-sm text-[var(--color-text-subtle)]">
 			{t('forum.new.no_spaces', 'Join a space before starting a discussion.')}
 		</p>
@@ -222,17 +228,25 @@
 		<!-- Space + Tags on the same row -->
 		<div class="flex flex-wrap items-start gap-2">
 			<div class="min-w-[160px] flex-1">
-				<Autocomplete
-					placeholder={t('create.placeholder.space_search', 'Search spaces…')}
-					emptyMessage={t('create.placeholder.space_no_results', 'No spaces found')}
-					fetcher={spaceFetcher}
-					initialFetcher={spaceInitialFetcher}
-					selectedId={spaceId || null}
-					selectedLabel={selectedSpace?.name ?? null}
-					selectedBadge={selectedSpace?.is_primary ? '★' : null}
-					onSelect={(item) => (spaceId = item.id)}
-					onClear={() => (spaceId = '')}
-				/>
+				{#if presetSpace}
+					<!-- Hub composer: the target space is fixed — a labelled chip
+					     replaces the picker (§05 hub-redesign). -->
+					<span class="flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm font-medium text-[var(--color-text)]">
+						<span class="truncate">{presetSpace.spaceName}</span>
+					</span>
+				{:else}
+					<Autocomplete
+						placeholder={t('create.placeholder.space_search', 'Search spaces…')}
+						emptyMessage={t('create.placeholder.space_no_results', 'No spaces found')}
+						fetcher={spaceFetcher}
+						initialFetcher={spaceInitialFetcher}
+						selectedId={spaceId || null}
+						selectedLabel={selectedSpace?.name ?? null}
+						selectedBadge={selectedSpace?.is_primary ? '★' : null}
+						onSelect={(item) => (spaceId = item.id)}
+						onClear={() => (spaceId = '')}
+					/>
+				{/if}
 			</div>
 			<div class="min-w-[180px] flex-1">
 				<TagInput {tags} onTags={(next) => (tags = next)} />

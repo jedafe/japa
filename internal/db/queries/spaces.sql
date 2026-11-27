@@ -1712,3 +1712,124 @@ WHERE space_type_id = @space_type_id AND deleted_at IS NULL;
 SELECT id, visibility, status, deleted_at
 FROM spaces
 WHERE id = ANY(@space_ids::uuid[]);
+
+-- name: ListSpaceContributors :many
+-- Top contributors to a space: published contents + non-anonymous forum
+-- threads + approved wiki revisions, grouped by author. Powers the hub's
+-- "Top contributors" card (§05 hub-redesign amendment). Anonymous threads
+-- are excluded — counting them would unmask their authors.
+SELECT
+    agg.user_id,
+    COALESCE(u.public_username, u.username, '') AS username,
+    COALESCE(up.display_name, u.public_username, u.username, '') AS display_name,
+    COALESCE(up.avatar_url, '') AS avatar_url,
+    COALESCE(u.verified, false) AS verified,
+    COALESCE(u.verification_type, '') AS verification_type,
+    agg.score
+FROM (
+    SELECT author AS user_id, COUNT(*)::bigint AS score
+    FROM (
+        SELECT c.author_id AS author
+        FROM contents c
+        JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+        WHERE c.deleted_at IS NULL AND c.status = 'published' AND c.author_id IS NOT NULL
+        UNION ALL
+        SELECT ft.author_user_id AS author
+        FROM forum_threads ft
+        WHERE ft.space_id = @space_id AND ft.deleted_at IS NULL
+          AND ft.author_user_id IS NOT NULL AND ft.is_anonymous = false
+        UNION ALL
+        SELECT wr.submitted_by AS author
+        FROM wiki_revisions wr
+        JOIN wiki_pages wp ON wp.id = wr.wiki_page_id
+        WHERE wp.space_id = @space_id AND wr.submitted_by IS NOT NULL
+          AND wr.status = 'approved'
+    ) contrib
+    GROUP BY author
+) agg
+JOIN users u ON u.id = agg.user_id AND u.status <> 'deleted'
+LEFT JOIN user_profiles up ON up.user_id = agg.user_id
+ORDER BY agg.score DESC, agg.user_id
+LIMIT @page_limit;
+
+-- name: CreateSpaceInvite :one
+-- Member→user invitation to a custom space (§05 hub-redesign amendment).
+-- The pending-unique index rejects a second pending row for the same
+-- (space, invitee) pair — the handler pre-checks and 409s first.
+INSERT INTO space_invites (space_id, inviter_id, invitee_id)
+VALUES (@space_id, @inviter_id, @invitee_id)
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at;
+
+-- name: GetPendingSpaceInvite :one
+-- The pending invite for (space, invitee), if any — used by the join flow
+-- to satisfy joining_perm='request'/'invite' gating and flip 'accepted'.
+SELECT id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at
+FROM space_invites
+WHERE space_id = @space_id AND invitee_id = @invitee_id AND status = 'pending'
+LIMIT 1;
+
+-- name: ListSpaceInvites :many
+-- Pending invites on a space, newest first — owner/moderator admin list.
+SELECT si.id, si.space_id, si.inviter_id, si.invitee_id, si.status,
+       si.created_at, si.updated_at, si.responded_at,
+       COALESCE(u.public_username, u.username, '') AS invitee_username,
+       COALESCE(up.display_name, u.public_username, u.username, '') AS invitee_display_name,
+       COALESCE(up.avatar_url, '') AS invitee_avatar_url,
+       COALESCE(iu.public_username, iu.username, '') AS inviter_username,
+       COALESCE(iup.display_name, iu.public_username, iu.username, '') AS inviter_display_name
+FROM space_invites si
+JOIN users u ON u.id = si.invitee_id
+LEFT JOIN user_profiles up ON up.user_id = si.invitee_id
+JOIN users iu ON iu.id = si.inviter_id
+LEFT JOIN user_profiles iup ON iup.user_id = si.inviter_id
+WHERE si.space_id = @space_id AND si.status = 'pending'
+ORDER BY si.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListSpaceInvitesByInvitee :many
+-- The caller's pending space invites (GET /me/space-invites) — carries the
+-- inviter + space display fields the notification/invite UI renders.
+SELECT si.id, si.space_id, si.inviter_id, si.invitee_id, si.status,
+       si.created_at, si.updated_at, si.responded_at,
+       s.name AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       COALESCE(iu.public_username, iu.username, '') AS inviter_username,
+       COALESCE(iup.display_name, iu.public_username, iu.username, '') AS inviter_display_name,
+       COALESCE(iup.avatar_url, '') AS inviter_avatar_url
+FROM space_invites si
+JOIN spaces s ON s.id = si.space_id AND s.deleted_at IS NULL
+JOIN users iu ON iu.id = si.inviter_id
+LEFT JOIN user_profiles iup ON iup.user_id = si.inviter_id
+WHERE si.invitee_id = @invitee_id AND si.status = 'pending'
+ORDER BY si.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ResolveSpaceInvite :one
+-- Flips a pending invite to its terminal status ('accepted' | 'declined' |
+-- 'revoked') and stamps responded_at. The status='pending' guard makes a
+-- double-resolve a no-op row rather than a silent overwrite.
+UPDATE space_invites
+SET status = @status, responded_at = now(), updated_at = now()
+WHERE id = @id AND status = 'pending'
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at;
+
+-- name: ListSpaceLeaders :many
+-- Space leadership for the hub's "Space leaders" card (§05 hub-redesign):
+-- owners (space_members.role='owner') UNION assigned moderators
+-- (space_moderators), owners first then by tenure. Anonymous-friendly —
+-- leadership of a public space is public data like the members roster.
+SELECT leader.user_id, leader.role, COALESCE(u.public_username, u.username, '') AS username,
+ up.display_name, up.avatar_url, u.verified, u.verification_type
+FROM (
+    SELECT sm.user_id, 'owner'::text AS role, sm.joined_at AS since
+    FROM space_members sm
+    WHERE sm.space_id = @space_id AND sm.role = 'owner' AND sm.status = 'approved'
+    UNION ALL
+    SELECT mo.user_id, 'moderator'::text AS role, mo.created_at AS since
+    FROM space_moderators mo
+    WHERE mo.space_id = @space_id
+) leader
+JOIN users u ON u.id = leader.user_id AND u.status <> 'deleted'
+LEFT JOIN user_profiles up ON up.user_id = leader.user_id
+ORDER BY CASE leader.role WHEN 'owner' THEN 0 ELSE 1 END, leader.since
+LIMIT @page_limit;

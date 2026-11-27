@@ -5,16 +5,22 @@
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { page } from '$app/state';
 	import {
-		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
-		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
-		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
+		Rss, MessageSquare, Users, Info, Search, BarChart3,
+		Loader2, Pin, PinOff,
+		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star,
+		CalendarDays, Layers, ArrowRight
 	, TriangleAlert, Radar } from 'lucide-svelte';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '#lib/components/spaces/SpaceSidebar.svelte';
+	import SpaceHeader from '#lib/components/spaces/SpaceHeader.svelte';
+	import SpaceComposer from '#lib/components/spaces/SpaceComposer.svelte';
 	import SpaceSettings from '#lib/components/spaces/SpaceSettings.svelte';
+	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
+	import InviteModal from '#lib/components/spaces/InviteModal.svelte';
 	import ForumList from '#lib/components/forum/ForumList.svelte';
-	import { EmptyState, UrlTabs } from '#lib/components/ui/index.js';
+	import { EmptyState, UrlTabs, DirectoryCard } from '#lib/components/ui/index.js';
+	import SpaceJoinButton from '#lib/components/ui/SpaceJoinButton.svelte';
 	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
 	import type { UrlTab } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
@@ -26,9 +32,11 @@
 	import NativeAd from '#lib/components/ads/NativeAd.svelte';
 	import DigestWidget from '#lib/components/digest/DigestWidget.svelte';
 	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { categoryIconResolved, categoryTint } from '#lib/components/wiki/icons.js';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
-		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview
+		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview,
+		CalendarEntry
 	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
@@ -73,15 +81,28 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		Math.max(0, Number(page.data.siteSettings?.['ads.native_feed_interval'] ?? 5) || 0)
 	);
 	const wikiEnabled = $derived(!!data.wikiEnabled);
+	const hasWiki = $derived(!!data.hasWiki);
 	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
 	const isUniversity = $derived(data.isUniversity ?? false);
-	// University spaces are typed via space_types.slug = 'university' (most
-	// carry level = 'custom'), so include isUniversity alongside the level set.
-	const isDestinationWiki = $derived(['country', 'state', 'city', 'university'].includes(space.level) || isUniversity);
-	// Geo spaces (country/state/city — ADR-005) are follow-only surfaces;
-	// the header Post CTA is hidden on them (posting lives on custom spaces).
-	const isGeoSpace = $derived(['country', 'state', 'city'].includes(space.level));
+	// §05 hub-redesign — tab gating mirrors the server load: geo covers
+	// country/state/city; primary = platform-run (geo ∪ university ∪
+	// explicitly marked); custom = member-created.
+	const isGeo = $derived(data.isGeo ?? false);
+	const isPrimary = $derived(data.isPrimary ?? false);
+	const isDestinationWiki = $derived(isPrimary || isUniversity);
+	// Geo spaces are follow-only surfaces; the composer/Post CTA hide on them.
+	const isGeoSpace = $derived(isGeo);
 	const reviews = $derived<SpaceReview[]>(data.reviews ?? []);
+	const events = $derived<CalendarEntry[]>(data.events?.items ?? []);
+	const eventsTotal = $derived(data.events?.total ?? null);
+	const subspaces = $derived<Space[]>(data.subspaces ?? []);
+	const leaders = $derived(data.leaders ?? []);
+	const contributors = $derived(data.contributors ?? []);
+	// Header meta: "Lagos · Education" — space-type name (parents joined
+	// into locationLine further down, after the state declarations).
+	const typeName = $derived(
+		data.spaceTypes?.find((s) => s.id === space.space_type_id)?.name ?? ''
+	);
 
 	function formatWikiCategory(category: string): string {
 		return category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
@@ -191,7 +212,18 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			return null;
 		}
 	});
-	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'feed'));
+	// §05 hub-redesign — the tab set was renamed (feed→overview,
+	// forum→discussions, pinned folded into overview). Deep links carrying
+	// the old ?tab= values remap here so bookmarks keep working.
+	const LEGACY_TABS: Record<string, string> = {
+		feed: 'overview',
+		forum: 'discussions',
+		pinned: 'overview'
+	};
+	let activeTab = $state(untrack(() => {
+		const raw = page.url.searchParams.get('tab') ?? 'overview';
+		return LEGACY_TABS[raw] ?? raw;
+	}));
 	const canManage = $derived(data.isOwner || data.isModerator);
 
 	// Hydrate the Join button's initial state from the detail bundle's
@@ -263,16 +295,26 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// data.pinned while mutations only touched feedItems (audit fix).
 	let pinnedItems = $state<SpaceContentItem[]>(untrack(() => data.pinned));
 
+	// §05 hub-redesign tab matrix — visible order matches the mockup;
+	// Search/About/Analytics/Requests/Settings sit at the tail and drop
+	// into the "More" dropdown (UrlTabs autoOverflow) on narrow widths.
+	const hasEvents = $derived(data.calendarEnabled && (isGeo || isUniversity));
+	const hasSubspacesTab = $derived(isGeo);
 	const tabs = $derived<UrlTab[]>([
-		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
-		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
-		...(pinnedItems.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
-		{ value: 'forum', label: t('space.tab.forum', 'Threads') },
-		{ value: 'search', label: t('space.tab.search', 'Search') },
+		{ value: 'overview', label: t('space.tab.overview', 'Overview') },
+		{ value: 'discussions', label: t('space.tab.discussions', 'Discussions') },
 		// §05 amendment — on follow-only primary spaces the members list is
 		// the follower set (join↔follow are coupled), so label it that way.
-		{ value: 'members', label: space.is_primary ? t('space.tab.followers', 'Followers') : t('space.tab.members', 'Members') },
+		{ value: 'members', label: isPrimary ? t('space.tab.followers', 'Followers') : t('space.tab.members', 'Members') },
+		...(hasEvents ? [{ value: 'events', label: t('space.tab.events', 'Events') }] : []),
+		...(isPrimary ? [{ value: 'blog', label: t('space.tab.blog', 'Blog') }] : []),
+		...(isGeo ? [{ value: 'stories', label: t('space.tab.stories', 'Stories') }] : []),
+		...(isPrimary ? [{ value: 'guides', label: t('space.tab.guides', 'Guides') }] : []),
+		...(wikiEnabled && hasWiki ? [{ value: 'wiki', label: t('space.tab.wiki', 'Wiki') }] : []),
+		...(hasSubspacesTab ? [{ value: 'subspaces', label: t('space.tab.subspaces', 'Subspaces') }] : []),
 		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
+		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
+		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'about', label: t('space.tab.about', 'About') },
 		// Analytics dashboard — space-admin only per JEOS §215 [auth,
 		// space-admin]. The server only returns analytics data to the space
@@ -294,11 +336,11 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	]);
 
 	// Clamp the active tab to the rendered set — an invalid ?tab= value (or a
-	// tab that disappears, e.g. 'pinned' after the last unpin) would
+	// tab that disappears, e.g. 'stories' on a custom space) would
 	// otherwise render a blank content area (audit fix).
 	$effect(() => {
 		if (!tabs.some((tab) => tab.value === activeTab)) {
-			activeTab = 'feed';
+			activeTab = 'overview';
 		}
 	});
 
@@ -393,6 +435,73 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let membersLoading = $state(false);
 	let membersEnd = $derived(data.members.length < data.pageSize);
 
+	// §05 hub-redesign — typed tab feeds (blog/stories/guides). Each keeps
+	// the SSR page + total and cursor-paginates on created_at like the
+	// overview feed.
+	interface TypedFeed {
+		items: SpaceContentItem[];
+		total: number | null;
+		loading: boolean;
+		end: boolean;
+	}
+	function seedTypedFeed(feed: { items: SpaceContentItem[]; total: number | null }): TypedFeed {
+		return {
+			items: feed.items,
+			total: feed.total,
+			loading: false,
+			end: feed.items.length < data.pageSize
+		};
+	}
+	let blogFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.blogFeed ?? { items: [], total: null })));
+	let storyFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.storyFeed ?? { items: [], total: null })));
+	let guideFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.guideFeed ?? { items: [], total: null })));
+
+	function typedFeedFor(type: string): TypedFeed {
+		return type === 'story' ? storyFeed : type === 'guide' ? guideFeed : blogFeed;
+	}
+
+	async function loadMoreTyped(type: 'blog_post' | 'story' | 'guide') {
+		const feed = typedFeedFor(type);
+		if (feed.loading || feed.end) return;
+		const last = feed.items[feed.items.length - 1];
+		if (!last?.created_at) {
+			feed.end = true;
+			return;
+		}
+		feed.loading = true;
+		const res = await api.get<SpaceContentItem[]>(
+			`/spaces/${space.slug}/content?type=${type}&page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}&cursor_id=${encodeURIComponent(last.id)}`
+		);
+		if (res.data) {
+			feed.items = [...feed.items, ...res.data];
+			if (res.data.length < data.pageSize) feed.end = true;
+		} else {
+			feed.end = true;
+		}
+		feed.loading = false;
+	}
+
+	// Wiki tab — client-side title filter + popular list (featured first,
+	// then most recently updated — the index carries no view_count).
+	let wikiQuery = $state('');
+	const wikiFiltered = $derived.by(() => {
+		const q = wikiQuery.trim().toLowerCase();
+		if (!q) return wikiPages;
+		return wikiPages.filter((p) => p.title.toLowerCase().includes(q));
+	});
+	const popularWikiPages = $derived(
+		[...wikiPages]
+			.sort((a, b) =>
+				Number(b.is_featured) - Number(a.is_featured) ||
+				new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime()
+			)
+			.slice(0, 5)
+	);
+
+	// Invite (custom spaces only) + create-subspace modals.
+	let inviteOpen = $state(false);
+	let createSubspaceOpen = $state(false);
+
 	// Moderators + rules + parent spaces — seeded from SSR, mutated client-side
 	// in the Settings tab. Re-seeds when the slug changes.
 	let moderators = $state<SpaceModerator[]>(untrack(() => data.moderators));
@@ -407,7 +516,35 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		moderators = data.moderators;
 		rules = data.rules;
 		parentSpaces = data.parentSpaces;
+		blogFeed = seedTypedFeed(data.blogFeed ?? { items: [], total: null });
+		storyFeed = seedTypedFeed(data.storyFeed ?? { items: [], total: null });
+		guideFeed = seedTypedFeed(data.guideFeed ?? { items: [], total: null });
+		wikiQuery = '';
 		membersEnd = data.members.length < data.pageSize;
+	});
+
+	// Header meta line — parents joined ("Lagos · Delta State" for a city).
+	// Reads the mutable parentSpaces state so Settings edits reflect.
+	const locationLine = $derived(parentSpaces.map((p) => p.name).join(' · '));
+	// Stats strip over the cover — per-class set (§05 hub-redesign matrix).
+	const headerStats = $derived.by(() => {
+		const stats: { label: string; value: number }[] = [];
+		if (space.is_primary) {
+			stats.push({ label: t('space.stats.followers', 'Followers'), value: space.follower_count });
+		} else {
+			stats.push({ label: t('space.stats.members', 'Members'), value: space.member_count });
+		}
+		stats.push({ label: t('space.stats.discussions', 'Discussions'), value: space.discussion_count ?? 0 });
+		if (events.length > 0 || (eventsTotal ?? 0) > 0) {
+			stats.push({ label: t('space.stats.events', 'Events'), value: eventsTotal ?? events.length });
+		}
+		if ((guideFeed.total ?? 0) > 0) {
+			stats.push({ label: t('space.stats.guides', 'Guides'), value: guideFeed.total ?? 0 });
+		}
+		if (!space.is_primary) {
+			stats.push({ label: t('space.stats.posts', 'Posts'), value: space.post_count });
+		}
+		return stats;
 	});
 
 	async function loadMoreFeed() {
@@ -627,126 +764,52 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={spaceLogo} {initialJoined} {initialPending} isOwner={data.isOwner} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
+	<SpaceSidebar
+		{space}
+		rules={data.rules}
+		{authed}
+		logoUrl={spaceLogo}
+		{initialJoined}
+		{initialPending}
+		isOwner={data.isOwner}
+		following={data.initiallyFollowing}
+		onFollowChange={(v) => (following = v)}
+		achievements={data.achievements}
+		members={data.members}
+		{parentSpaces}
+		{typeName}
+		{events}
+		{leaders}
+		{contributors}
+		keywords={data.keywords}
+	/>
 </SetSidebar>
 
-<!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
-<div class="mx-auto w-full max-w-3xl">
-<header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]" use:imgLightbox>
-	<!-- Cover banner — image with dark fade at bottom, or gradient fallback.
-	     The dark fade at the bottom improves logo/title legibility. -->
-	<div class="relative h-32 overflow-hidden sm:h-40">
-		{#if data.headerUrl}
-			<img src={data.headerUrl} alt="" class="h-full w-full object-cover" />
-		{:else}
-			<!-- Visible gradient fallback — works in both light and dark mode -->
-			<div
-				class="h-full w-full"
-				style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 30%, transparent) 0%, color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-subtle)) 100%);"
-			></div>
-		{/if}
-		<!-- Dark fade at bottom — always applied, over both image and fallback -->
-		<div class="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
-	</div>
-
-	<div class="relative px-4 pb-4">
-		<div class="-mt-12 flex flex-col gap-3 sm:-mt-16 sm:flex-row sm:items-end sm:gap-4">
-			<!-- Logo — overlaps the cover, falls back to first letter -->
-			{#if spaceLogo}
-				<img
-					src={spaceLogo}
-					alt={space.name}
-					class="h-24 w-24 shrink-0 rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover shadow-lg sm:h-28 sm:w-28"
-				/>
-			{:else}
-				<span
-					class="grid h-24 w-24 shrink-0 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-3xl font-bold text-[var(--color-primary-text)] shadow-lg sm:h-28 sm:w-28"
-				>
-					{space.name.charAt(0).toUpperCase()}
-				</span>
-			{/if}
-
-			<div class="flex-1 pb-1">
-				<div class="-translate-y-2">
-					<h1 class="text-xl font-bold text-white">{space.name}</h1>
-					<p class="text-sm font-medium capitalize text-white/80 dark:text-[var(--color-primary-text)]">{space.level} · {space.visibility}</p>
-				</div>
-				{#if space.description}
-					<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{space.description}</p>
-				{/if}
-			</div>
-
-			<div class="flex shrink-0 items-center gap-2 pb-1">
-				{#if authed}
-				<button
-					type="button"
-					onclick={toggleMute}
-					disabled={mutePending}
-					aria-busy={mutePending}
-					title={muted ? t('space.unmute', 'Unmute') : t('space.mute', 'Mute')}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-				>
-					{#if mutePending}
-						<Loader2 size={16} class="animate-spin" />
-					{:else if muted}
-						<BellOff size={16} />
-					{:else}
-						<Bell size={16} />
-					{/if}
-				</button>
-				<button
-					type="button"
-					onclick={() => (reportOpen = true)}
-					title={t('space.report', 'Report')}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<Flag size={16} />
-				</button>
-				{/if}
-				<!-- Follow renders for guests too — toggleFollow sends them to
-				     /login via requireAuthOrRedirect before touching the API. -->
-				<button
-					type="button"
-					onclick={toggleFollow}
-					disabled={followPending}
-					aria-busy={followPending}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {following
-						? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-						: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-				>
-					{#if followPending}
-						<Loader2 size={16} class="animate-spin" />
-					{:else if following}
-						<UserCheck size={16} />
-						{t('profile.following_label', 'Following')}
-					{:else}
-						<UserPlus size={16} />
-						{t('profile.follow', 'Follow')}
-					{/if}
-				</button>
-				{#if wikiEnabled && isDestinationWiki}
-					<a
-						href="/wiki/{space.slug}"
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
-					</a>
-				{/if}
-				{#if authed && !isGeoSpace}
-				<a
-					href="/create?type=blog_post&space={space.slug}"
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<PenSquare size={16} /> {t('space.post', 'Post')}
-				</a>
-				{/if}
-			</div>
-		</div>
-	</div>
-</header>
+<!-- Space header — mockup cover card w/ overlaid stats + actions -->
+<div class="mx-auto w-full max-w-3xl px-4 pt-4">
+	<SpaceHeader
+		{space}
+		logoUrl={spaceLogo}
+		headerUrl={data.headerUrl}
+		{locationLine}
+		{typeName}
+		stats={headerStats}
+		{authed}
+		{following}
+		{followPending}
+		{muted}
+		{mutePending}
+		showWikiLink={wikiEnabled && isDestinationWiki}
+		canPost={authed && !isGeoSpace}
+		canInvite={authed && !isPrimary}
+		onFollow={toggleFollow}
+		onMute={toggleMute}
+		onReport={() => (reportOpen = true)}
+		onInvite={() => (inviteOpen = true)}
+	/>
 </div>
 
-<div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
+<div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} autoOverflow /></div>
 
 {#if pinnedScamAlerts.length > 0}
 	<div class="mx-auto w-full max-w-3xl px-4 pt-3">
@@ -768,15 +831,76 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 <div class="isolate mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if activeTab === 'feed'}
+		{#if activeTab === 'overview'}
+			<!-- Composer — custom/university spaces; geo hubs keep posting
+			     gated to their primary feed (§05 amendment). -->
+			{#if authed && !isGeoSpace}
+				<div class="mb-3">
+					<SpaceComposer {space} />
+				</div>
+			{/if}
 			<div class="mb-3">
 				<DigestWidget spaceId={space.id} digest={data.digest} />
 			</div>
-			{#if feedItems.length === 0}
+			<!-- Pinned fold-in (§05 hub-redesign): pinned items lead the
+			     overview stream, deduped from the feed below. -->
+			{#if pinnedItems.length > 0}
+				<div class="mb-3 flex flex-col gap-3">
+					{#each pinnedItems as item (item.id)}
+						<div class="group relative block">
+							<FeedCard item={toFeedItem(item)} style="daily" layout="stream" />
+							<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
+								<Pin size={10} /> {t('space.pinned', 'Pinned')}
+							</span>
+							{#if canManage}
+								<div class="absolute end-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+									<button
+										type="button"
+										disabled={reordering}
+										onclick={() => reorderPinned('up', item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.pinned_move_up', 'Move pinned up')}
+										aria-label={t('space.pinned_move_up', 'Move pinned up')}
+									>
+										<ChevronUp size={13} />
+									</button>
+									<button
+										type="button"
+										disabled={reordering}
+										onclick={() => reorderPinned('down', item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.pinned_move_down', 'Move pinned down')}
+										aria-label={t('space.pinned_move_down', 'Move pinned down')}
+									>
+										<ChevronDown size={13} />
+									</button>
+									<button
+										type="button"
+										disabled={pinningId === item.id}
+										onclick={() => togglePin(item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.unpin', 'Unpin')}
+										aria-label={t('space.unpin', 'Unpin')}
+									>
+										{#if pinningId === item.id}
+											<Loader2 size={13} class="animate-spin" />
+										{:else}
+											<PinOff size={13} />
+										{/if}
+									</button>
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+			{@const pinnedIds = new Set(pinnedItems.map((p) => p.id))}
+			{@const streamItems = feedItems.filter((f) => !pinnedIds.has(f.id))}
+			{#if feedItems.length === 0 && pinnedItems.length === 0}
 				<EmptyState icon={Rss} title={t('space.feed_empty', 'No posts yet')} />
-			{:else}
+			{:else if streamItems.length > 0}
 				<div class="flex flex-col gap-3">
-					{#each feedItems as item, i (item.id)}
+					{#each streamItems as item, i (item.id)}
 						{#if adInterval > 0 && i > 0 && i % adInterval === 0 && i / adInterval < 2 && i < feedItems.length - 1}
 							<NativeAd slot="native_space_feed" spaceId={space.id} pickIndex={Math.floor(i / adInterval) - 1} />
 						{/if}
@@ -850,64 +974,229 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					</button>
 				{/if}
 			{/if}
-		{:else if activeTab === 'pinned'}
-			{#if pinnedItems.length === 0}
-				<EmptyState icon={Pin} title={t('space.pinned_empty', 'No pinned posts yet')} />
+		{:else if activeTab === 'events'}
+			<!-- Events tab (§86 calendar, geo + university) — upcoming entries
+			     for this destination with a link to the full calendar. -->
+			{#if events.length === 0}
+				<EmptyState icon={CalendarDays} title={t('space.events.empty', 'No upcoming events')} />
+			{:else}
+				<ul class="divide-y divide-[var(--color-border)] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each events as ev (ev.id)}
+						{@const dt = new Date(ev.occurs_at)}
+						<li class="flex items-center gap-3 p-3">
+							<span class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
+								<span class="text-center leading-tight">
+									<span class="block text-[10px] font-semibold uppercase">{dt.toLocaleDateString(undefined, { month: 'short' })}</span>
+									<span class="block text-lg font-bold">{dt.getDate()}</span>
+								</span>
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{ev.title}</span>
+								<span class="block truncate text-xs text-[var(--color-muted)]">
+									{dt.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+									{#if ev.category} · {ev.category.replace(/_/g, ' ')}{/if}
+								</span>
+							</span>
+							{#if ev.source_url}
+								<a
+									href={ev.source_url}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									{t('space.events.source', 'Details')}
+								</a>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				<div class="mt-3 text-center">
+					<a href="/calendar?dest={space.id}" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
+						{t('space.events.view_all', 'View all events')} →
+					</a>
+				</div>
+			{/if}
+		{:else if activeTab === 'blog' || activeTab === 'stories' || activeTab === 'guides'}
+			<!-- Type-filtered feeds (§05 hub-redesign) — blog_post on primary,
+			     story on geo, guide on primary; each cursor-paginates. -->
+			{@const tf = activeTab === 'stories' ? storyFeed : activeTab === 'guides' ? guideFeed : blogFeed}
+			{@const tfType = activeTab === 'stories' ? 'story' : activeTab === 'guides' ? 'guide' : 'blog_post'}
+			{#if tf.items.length === 0}
+				<EmptyState
+					icon={BookOpen}
+					title={activeTab === 'stories'
+						? t('space.stories_empty', 'No stories yet')
+						: activeTab === 'guides'
+							? t('space.guides_empty', 'No guides yet')
+							: t('space.blog_empty', 'No posts yet')}
+				/>
 			{:else}
 				<div class="flex flex-col gap-3">
-					{#each pinnedItems as item (item.id)}
-						<div class="group relative block">
-							<FeedCard
-								item={toFeedItem(item)}
-								style="daily"
-								layout="stream"
-							/>
-							<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
-								<Pin size={10} /> {t('space.pinned', 'Pinned')}
-							</span>
-							{#if canManage}
-								<div class="absolute end-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-									<button
-										type="button"
-										disabled={reordering}
-										onclick={() => reorderPinned('up', item)}
-										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
-										title={t('space.pinned_move_up', 'Move pinned up')}
-										aria-label={t('space.pinned_move_up', 'Move pinned up')}
+					{#each tf.items as item (item.id)}
+						<FeedCard item={toFeedItem(item)} style="daily" layout="stream" />
+					{/each}
+				</div>
+				{#if !tf.end}
+					<button
+						type="button"
+						onclick={() => loadMoreTyped(tfType)}
+						disabled={tf.loading}
+						class="mx-auto mt-3 block rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{tf.loading ? t('common.loading') : t('feed.load_more', 'Load more')}
+					</button>
+				{/if}
+			{/if}
+		{:else if activeTab === 'wiki'}
+			<!-- Wiki/Knowledge tab (§05 hub-redesign, primary spaces) — search,
+			     browse-by-category cards, popular articles, suggest CTA. -->
+			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<h2 class="text-base font-semibold text-[var(--color-text)]">
+							{t('space.wiki_tab.title', '{space} Community Wiki').replace('{space}', space.name)}
+						</h2>
+						<p class="mt-0.5 text-sm text-[var(--color-text-subtle)]">
+							{t('space.wiki_tab.subtitle', 'Everything you need to know, written and maintained by the community.')}
+						</p>
+					</div>
+					<a
+						href="/wiki/{encodeURIComponent(space.slug)}/create"
+						class="shrink-0 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('space.wiki_tab.suggest', 'Suggest an article')}
+					</a>
+				</div>
+
+				<div class="mt-3 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 focus-within:border-[var(--color-primary)]">
+					<Search size={16} class="text-[var(--color-muted)]" />
+					<input
+						type="search"
+						bind:value={wikiQuery}
+						placeholder={t('space.wiki_tab.search_placeholder', 'Search the wiki…')}
+						class="w-full appearance-none border-0 bg-transparent text-sm text-[var(--color-text)] outline-none ring-0 placeholder:text-[var(--color-muted)]"
+					/>
+				</div>
+
+				{#if wikiQuery.trim()}
+					{#if wikiFiltered.length === 0}
+						<p class="py-6 text-center text-sm text-[var(--color-muted)]">{t('space.no_search_results', 'No results found')}</p>
+					{:else}
+						<ul class="mt-3 space-y-1.5">
+							{#each wikiFiltered as wikiPage (wikiPage.id)}
+								<li>
+									<a
+										href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(wikiPage.slug)}"
+										class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
 									>
-										<ChevronUp size={13} />
-									</button>
-									<button
-										type="button"
-										disabled={reordering}
-										onclick={() => reorderPinned('down', item)}
-										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
-										title={t('space.pinned_move_down', 'Move pinned down')}
-										aria-label={t('space.pinned_move_down', 'Move pinned down')}
-									>
-										<ChevronDown size={13} />
-									</button>
-									<button
-										type="button"
-										disabled={pinningId === item.id}
-										onclick={() => togglePin(item)}
-										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
-										title={t('space.unpin', 'Unpin')}
-										aria-label={t('space.unpin', 'Unpin')}
-									>
-										{#if pinningId === item.id}
-											<Loader2 size={13} class="animate-spin" />
-										{:else}
-											<PinOff size={13} />
+										<span class="font-medium text-[var(--color-text)]">{wikiPage.title}</span>
+										{#if wikiPage.is_featured}
+											<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
 										{/if}
-									</button>
-								</div>
-							{/if}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{:else}
+					{#if wikiGroups.length > 0}
+						<div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{#each wikiGroups as group (group.category)}
+								{@const CatIcon = categoryIconResolved(group.category)}
+								{@const tint = categoryTint(group.category)}
+								<a
+									href={group.pageSlug
+										? `/wiki/${encodeURIComponent(space.slug)}/${encodeURIComponent(group.pageSlug)}`
+										: `/wiki/${encodeURIComponent(space.slug)}#${encodeURIComponent(group.category)}`}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-primary)]"
+								>
+									<span
+										class="mb-2 grid h-8 w-8 place-items-center rounded-[var(--radius)]"
+										style="background:{tint.bg};color:{tint.fg}"
+									>
+										<CatIcon size={16} />
+									</span>
+									<span class="block text-sm font-medium text-[var(--color-text)]">{group.label}</span>
+									<span class="block text-xs text-[var(--color-muted)]">
+										{t('space.wiki_tab.pages_count', '{n} articles').replace('{n}', String(group.pages.length))}
+									</span>
+								</a>
+							{/each}
 						</div>
+					{/if}
+					{#if popularWikiPages.length > 0}
+						<h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+							{t('space.wiki_tab.popular', 'Popular articles')}
+						</h3>
+						<ul class="mt-2 divide-y divide-[var(--color-border)]">
+							{#each popularWikiPages as wikiPage (wikiPage.id)}
+								<li>
+									<a
+										href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(wikiPage.slug)}"
+										class="flex items-center justify-between py-2 text-sm transition-colors hover:text-[var(--color-primary-text)]"
+									>
+										<span class="font-medium text-[var(--color-text)]">{wikiPage.title}</span>
+										{#if wikiPage.is_featured}
+											<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
+										{/if}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<a
+						href="/wiki/{encodeURIComponent(space.slug)}"
+						class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
+					>
+						{t('space.wiki_tab.explore_all', 'Explore all wiki articles')}
+						<ArrowRight size={14} class="rtl:-scale-x-100" />
+					</a>
+				{/if}
+			</section>
+		{:else if activeTab === 'subspaces'}
+			<!-- Subspaces tab (§05 hub-redesign, geo only) — member-created
+			     communities under this destination + create CTA. -->
+			{#if subspaces.length === 0}
+				<EmptyState icon={Layers} title={t('space.subspaces_empty', 'No subspaces yet')} />
+			{:else}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					{#each subspaces as sub (sub.id)}
+						<DirectoryCard
+							href="/spaces/{sub.slug}"
+							title={sub.name}
+							description={sub.description}
+							imageUrl={sub.logo_url}
+							fallback={sub.name.charAt(0).toUpperCase()}
+							verified={!!sub.is_primary}
+							meta={[
+								{ icon: Users, text: t('space.member_count', '{n} members').replace('{n}', String(sub.member_count)) },
+								{ icon: MessageSquare, text: t('space.discussions_count', '{n} discussions').replace('{n}', String(sub.discussion_count ?? 0)) }
+							]}
+						>
+							{#snippet actions()}
+								<SpaceJoinButton entityId={sub.id} entitySlug={sub.slug} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
 				</div>
 			{/if}
-		{:else if activeTab === 'forum'}
+			{#if authed}
+				<button
+					type="button"
+					onclick={() => (createSubspaceOpen = true)}
+					class="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-text)]"
+				>
+					<Layers size={16} /> {t('space.subspaces_create', 'Create a new subspace')}
+				</button>
+			{:else}
+				<a
+					href="/login?redirect={encodeURIComponent(page.url.pathname)}"
+					class="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-text)]"
+				>
+					<Layers size={16} /> {t('space.subspaces_create', 'Create a new subspace')}
+				</a>
+			{/if}
+		{:else if activeTab === 'discussions'}
 			{#if data.forumThreads.length === 0}
 				<EmptyState icon={MessageSquare} title={t('space.forum_empty', 'No discussions yet')} />
 			{:else}
@@ -989,55 +1278,8 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					<EmptyState icon={Info} title={t('space.no_about', 'No description yet')} />
 				{/if}
 
-				{#if isDestinationWiki && wikiEnabled}
-					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
-						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.community_wiki', 'Community Wiki')}</h2>
-						{#if wikiGroups.length > 0}
-							<div class="mb-3 space-y-3">
-								{#each wikiGroups as group (group.category)}
-									<div>
-										<h3 class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{group.label}</h3>
-										{#if group.pages.length > 0}
-											<ul class="mt-1.5 space-y-2">
-												{#each group.pages as wikiPage (wikiPage.id)}
-													<li>
-														<a
-															href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(wikiPage.slug)}"
-															class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
-														>
-															<span class="font-medium text-[var(--color-text)]">{wikiPage.title}</span>
-															{#if wikiPage.is_featured}
-																<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
-															{/if}
-														</a>
-													</li>
-												{/each}
-											</ul>
-										{:else if group.pageSlug}
-											<a
-												href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(group.pageSlug)}"
-												class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
-											>
-												{t('space.view_wiki_category', 'Browse {label}', { label: group.label })}
-												<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
-											</a>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{:else}
-							<p class="mb-3 text-sm text-[var(--color-text-subtle)]">{t('space.no_wiki_pages', 'No community wiki pages yet.')}</p>
-						{/if}
-						<a
-							href="/wiki/{encodeURIComponent(space.slug)}"
-							class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
-						>
-							{t('space.view_wiki', 'View wiki')}
-							<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
-						</a>
-					</div>
-				{/if}
-
+				<!-- Community wiki moved to the dedicated Wiki tab (§05
+				     hub-redesign); About keeps the Wikipedia extract only. -->
 				{#if wikiData}
 					<div class="mt-4 border-t border-[var(--color-border)] pt-4" use:imgLightbox>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
@@ -1246,3 +1488,14 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 <!-- Report space dialog — POST /spaces/{id}/report (Section 51) -->
 <ReportDialog bind:open={reportOpen} entityType="space" entityId={space.id} entityName={space.name} />
+
+<!-- Member-invite modal (§05 hub-redesign) — custom spaces only. -->
+{#if authed && !isPrimary}
+	<InviteModal bind:open={inviteOpen} {space} />
+{/if}
+
+<!-- Create-subspace modal (§05 hub-redesign) — geo parents pre-attach
+     via parent_space_ids. -->
+{#if authed && isGeo}
+	<SpaceCreationModal bind:open={createSubspaceOpen} presetParentSpace={{ id: space.id, name: space.name }} />
+{/if}

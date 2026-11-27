@@ -37,8 +37,12 @@
 		open?: boolean;
 		/** When provided, called with the created space instead of navigating to it. */
 		onCreated?: (space: { id: string; slug: string; name: string }) => void;
+		/** Subspace creation (§05 hub-redesign) — pre-attaches the new space
+		 *  to this parent via parent_space_ids instead of relying on the
+		 *  backend name-keyword auto-link. */
+		presetParentSpace?: { id: string; name: string } | null;
 	}
-	let { open = $bindable(false), onCreated }: Props = $props();
+	let { open = $bindable(false), onCreated, presetParentSpace = null }: Props = $props();
 
 	let name = $state('');
 	let slug = $state('');
@@ -172,6 +176,7 @@
 				level: 'custom',
 				description: description.trim() || undefined
 			};
+			if (presetParentSpace) body.parent_space_ids = [presetParentSpace.id];
 			if (selectedPresetName) body.preset_name = selectedPresetName;
 			if (federationEnabled) body.federate_opt_out = !federate;
 

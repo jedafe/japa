@@ -580,6 +580,7 @@ LEFT JOIN content_scores csc ON csc.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.deleted_at IS NULL
  AND c.auto_hidden = false
+ AND (@content_type::text = '' OR c.content_type = @content_type::text)
  AND (
  (@can_see_unpublished::boolean AND @can_see_private::boolean)
  OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
@@ -607,6 +608,36 @@ WHERE c.deleted_at IS NULL
  )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
+
+-- name: CountContentsBySpace :one
+-- Total matching contents for a space under the same visibility + type
+-- filters as ListContentsBySpace (no cursor) — powers meta.total on
+-- GET /spaces/{slug}/content for the hub's type-tab counts.
+SELECT COUNT(*)::bigint
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (@content_type::text = '' OR c.content_type = @content_type::text)
+ AND (
+ (@can_see_unpublished::boolean AND @can_see_private::boolean)
+ OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND @can_see_members::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+ )
+ )
+ )
+ AND (
+     @can_see_unpublished::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
+ );
 
 -- name: SearchContentsBySpace :many
 -- Searches content assigned to a given space via the authoritative
