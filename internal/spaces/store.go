@@ -1969,6 +1969,40 @@ func (s *Service) ListSpaceInvitesByInvitee(ctx context.Context, inviteeID pgtyp
 	return rows, nil
 }
 
+// DeclineSpaceInvite flips a pending invite to 'declined' — invitee-scoped,
+// so a caller can only decline their own invite. found=false means no
+// pending invite for (id, invitee).
+func (s *Service) DeclineSpaceInvite(ctx context.Context, id, inviteeID pgtype.UUID) (gen.SpaceInvite, bool, error) {
+	row, err := s.write.DeclineSpaceInvite(ctx, gen.DeclineSpaceInviteParams{
+		ID:        id,
+		InviteeID: inviteeID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SpaceInvite{}, false, nil
+		}
+		return gen.SpaceInvite{}, false, fmt.Errorf("declining space invite: %w", err)
+	}
+	return row, true, nil
+}
+
+// RevokeSpaceInvite flips a pending invite to 'revoked' — space-scoped so
+// an admin of one space can't revoke another's. found=false means no
+// pending invite for (id, space).
+func (s *Service) RevokeSpaceInvite(ctx context.Context, id, spaceID pgtype.UUID) (gen.SpaceInvite, bool, error) {
+	row, err := s.write.RevokeSpaceInvite(ctx, gen.RevokeSpaceInviteParams{
+		ID:      id,
+		SpaceID: spaceID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SpaceInvite{}, false, nil
+		}
+		return gen.SpaceInvite{}, false, fmt.Errorf("revoking space invite: %w", err)
+	}
+	return row, true, nil
+}
+
 // ResolveSpaceInvite flips a pending invite to a terminal status
 // ('accepted'|'declined'|'revoked'). found=false means the invite was not
 // pending (already resolved or unknown id).

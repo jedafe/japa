@@ -89,7 +89,6 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	// explicitly marked); custom = member-created.
 	const isGeo = $derived(data.isGeo ?? false);
 	const isPrimary = $derived(data.isPrimary ?? false);
-	const isDestinationWiki = $derived(isPrimary || isUniversity);
 	// Geo spaces are follow-only surfaces; the composer/Post CTA hide on them.
 	const isGeoSpace = $derived(isGeo);
 	const reviews = $derived<SpaceReview[]>(data.reviews ?? []);
@@ -310,7 +309,11 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		...(isPrimary ? [{ value: 'blog', label: t('space.tab.blog', 'Blog') }] : []),
 		...(isGeo ? [{ value: 'stories', label: t('space.tab.stories', 'Stories') }] : []),
 		...(isPrimary ? [{ value: 'guides', label: t('space.tab.guides', 'Guides') }] : []),
-		...(wikiEnabled && hasWiki ? [{ value: 'wiki', label: t('space.tab.wiki', 'Wiki') }] : []),
+		// Wiki is a primary-space surface (§05 hub matrix) — a custom space
+		// never shows the tab even if its space_type has a wiki config.
+		...(wikiEnabled && hasWiki && isPrimary
+			? [{ value: 'wiki', label: t('space.tab.wiki', 'Wiki') }]
+			: []),
 		...(hasSubspacesTab ? [{ value: 'subspaces', label: t('space.tab.subspaces', 'Subspaces') }] : []),
 		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
 		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
@@ -443,13 +446,15 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		total: number | null;
 		loading: boolean;
 		end: boolean;
+		error: string;
 	}
 	function seedTypedFeed(feed: { items: SpaceContentItem[]; total: number | null }): TypedFeed {
 		return {
 			items: feed.items,
 			total: feed.total,
 			loading: false,
-			end: feed.items.length < data.pageSize
+			end: feed.items.length < data.pageSize,
+			error: ''
 		};
 	}
 	let blogFeed = $state<TypedFeed>(untrack(() => seedTypedFeed(data.blogFeed ?? { items: [], total: null })));
@@ -469,14 +474,17 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			return;
 		}
 		feed.loading = true;
+		feed.error = '';
 		const res = await api.get<SpaceContentItem[]>(
 			`/spaces/${space.slug}/content?type=${type}&page_size=${data.pageSize}&cursor=${encodeURIComponent(last.created_at)}&cursor_id=${encodeURIComponent(last.id)}`
 		);
-		if (res.data) {
+		if (res.error) {
+			// Surface the error and stay retryable — ending the feed on a
+			// transient failure would brick "Load more" until a reload.
+			feed.error = res.error.message;
+		} else if (res.data) {
 			feed.items = [...feed.items, ...res.data];
 			if (res.data.length < data.pageSize) feed.end = true;
-		} else {
-			feed.end = true;
 		}
 		feed.loading = false;
 	}
@@ -799,7 +807,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		{followPending}
 		{muted}
 		{mutePending}
-		showWikiLink={wikiEnabled && isDestinationWiki}
+		showWikiLink={wikiEnabled && hasWiki && isPrimary}
 		canPost={authed && !isGeoSpace}
 		canInvite={authed && !isPrimary}
 		onFollow={toggleFollow}
@@ -1037,6 +1045,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					{/each}
 				</div>
 				{#if !tf.end}
+					{#if tf.error}
+						<p class="mx-auto mt-3 text-center text-sm text-red-600 dark:text-red-400">{tf.error}</p>
+					{/if}
 					<button
 						type="button"
 						onclick={() => loadMoreTyped(tfType)}

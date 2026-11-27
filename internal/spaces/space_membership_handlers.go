@@ -58,25 +58,28 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 	} else {
 		// §05 hub-redesign: a pending space_invites row satisfies the
 		// 'request'/'invite' joining gate — accepting the invite is the
-		// join itself. Resolved before the perm check so an invited user
-		// never lands on a pending-request or invite-only rejection.
-		inviteAccepted := false
-		if space.JoiningPerm == JoiningRequest || space.JoiningPerm == JoiningInvite {
-			if inv, found, ierr := h.Service.GetPendingSpaceInvite(r.Context(), space.ID, user.UserID); ierr == nil && found {
-				if _, resolved, rerr := h.Service.ResolveSpaceInvite(r.Context(), inv.ID, "accepted"); rerr == nil && resolved {
-					inviteAccepted = true
-				}
-			}
+		// join itself. The lookup runs for EVERY joining_perm so an
+		// open-perm join also consumes the invite (otherwise the row sits
+		// pending forever and blocks re-invites via the unique index).
+		// Resolution happens AFTER Join — a failed join must not burn it.
+		var pendingInvite gen.SpaceInvite
+		hasInvite := false
+		if inv, found, ierr := h.Service.GetPendingSpaceInvite(r.Context(), space.ID, user.UserID); ierr != nil {
+			handleServiceError(w, ierr)
+			return
+		} else if found {
+			pendingInvite, hasInvite = inv, true
 		}
 
 		// BUG-004: honor the space's joining_perm axis (Section 05 lines 358-360).
 		// - 'open': immediate membership (existing behavior).
 		// - 'request': insert a pending join request (status='pending') for
-		//   admin approval; do NOT increment member_count until approved.
+		//   admin approval; do NOT increment member_count until approved —
+		//   unless a pending invite converts straight to membership.
 		// - 'invite': only invited users may join; reject otherwise.
-		if !inviteAccepted {
-			switch space.JoiningPerm {
-			case JoiningRequest:
+		switch space.JoiningPerm {
+		case JoiningRequest:
+			if !hasInvite {
 				if err := h.Service.JoinPending(r.Context(), space.ID, user.UserID); err != nil {
 					handleServiceError(w, err)
 					return
@@ -91,17 +94,30 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				})
 
 				return
-			case JoiningInvite:
+			}
+		case JoiningInvite:
+			if !hasInvite {
 				errpkg.WriteError(w, http.StatusForbidden, "invite_only",
 					"This space is invite-only; you cannot join without an invitation")
 				return
 			}
 		}
 
-		// JoiningOpen — or an accepted invite — is immediate membership.
+		// JoiningOpen — or an invited user on request/invite — is immediate
+		// membership.
 		if err := h.Service.Join(r.Context(), space.ID, user.UserID); err != nil {
 			handleServiceError(w, err)
 			return
+		}
+
+		// Consume the invite now that the join succeeded — best-effort: a
+		// resolve failure leaves a stale pending row (admin-revocable),
+		// never a lost membership.
+		if hasInvite {
+			if _, resolved, rerr := h.Service.ResolveSpaceInvite(r.Context(), pendingInvite.ID, "accepted"); rerr != nil || !resolved {
+				slog.Warn("join: invite resolve failed",
+					"space_id", space.ID, "user_id", user.UserID, "invite_id", pendingInvite.ID, "resolved", resolved, "error", rerr)
+			}
 		}
 
 		// BL-010 mirror: joining auto-follows the space server-side so

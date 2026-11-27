@@ -4775,6 +4775,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// §05 hub-redesign: the caller's pending space invites
 			// (notification action surface — accept via POST /spaces/{slug}/join).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/space-invites", spaceHandlers.ListMySpaceInvites)
+			// Invitee-scoped decline — the scoped update enforces ownership.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/space-invites/{id}/decline", spaceHandlers.DeclineMySpaceInvite)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
 			// BUG-006: /me/spaces/owned — ownership is tracked via
 			// space_members.role='owner' (migration 000033), not a spaces
@@ -4853,6 +4855,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/spaces/{slug}/invites", spaceHandlers.CreateInvite)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Get("/spaces/{slug}/invites", spaceHandlers.ListInvites)
+			// Space-admin revoke — frees the (space, invitee) pair; the
+			// space-scoped update can't touch another space's rows.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
+				Delete("/spaces/{slug}/invites/{id}", spaceHandlers.RevokeInvite)
 
 			// Dedicated leave (catalog: DELETE /spaces/:id/leave), split from
 			// the join/leave toggle above.

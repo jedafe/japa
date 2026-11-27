@@ -1821,15 +1821,42 @@ RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, 
 SELECT leader.user_id, leader.role, COALESCE(u.public_username, u.username, '') AS username,
  up.display_name, up.avatar_url, u.verified, u.verification_type
 FROM (
-    SELECT sm.user_id, 'owner'::text AS role, sm.joined_at AS since
-    FROM space_members sm
-    WHERE sm.space_id = @space_id AND sm.role = 'owner' AND sm.status = 'approved'
-    UNION ALL
-    SELECT mo.user_id, 'moderator'::text AS role, mo.created_at AS since
-    FROM space_moderators mo
-    WHERE mo.space_id = @space_id
+    -- One row per leader — an owner who is also in space_moderators
+    -- collapses to their 'owner' row (GROUP BY + role preference).
+    SELECT user_id,
+           CASE WHEN bool_or(role = 'owner') THEN 'owner'::text ELSE 'moderator'::text END AS role,
+           MIN(since) AS since
+    FROM (
+        SELECT sm.user_id, 'owner'::text AS role, sm.joined_at AS since
+        FROM space_members sm
+        WHERE sm.space_id = @space_id AND sm.role = 'owner' AND sm.status = 'approved'
+        UNION ALL
+        SELECT mo.user_id, 'moderator'::text AS role, mo.created_at AS since
+        FROM space_moderators mo
+        WHERE mo.space_id = @space_id
+    ) roles
+    GROUP BY user_id
 ) leader
 JOIN users u ON u.id = leader.user_id AND u.status <> 'deleted'
 LEFT JOIN user_profiles up ON up.user_id = leader.user_id
 ORDER BY CASE leader.role WHEN 'owner' THEN 0 ELSE 1 END, leader.since
 LIMIT @page_limit;
+
+-- name: DeclineSpaceInvite :one
+-- Invitee-scoped decline — the invitee (and only the invitee) flips their
+-- pending invite to 'declined'. The invitee_id guard in WHERE makes the
+-- scope check atomic with the update; a resolved or foreign row is a
+-- no-op (pgx.ErrNoRows → found=false).
+UPDATE space_invites
+SET status = 'declined', responded_at = now(), updated_at = now()
+WHERE id = @id AND invitee_id = @invitee_id AND status = 'pending'
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at;
+
+-- name: RevokeSpaceInvite :one
+-- Space-admin revoke — scoped by space_id so a moderator of one space
+-- can't revoke another's invite. Pending-only guard keeps resolved rows
+-- immutable.
+UPDATE space_invites
+SET status = 'revoked', responded_at = now(), updated_at = now()
+WHERE id = @id AND space_id = @space_id AND status = 'pending'
+RETURNING id, space_id, inviter_id, invitee_id, status, created_at, updated_at, responded_at;

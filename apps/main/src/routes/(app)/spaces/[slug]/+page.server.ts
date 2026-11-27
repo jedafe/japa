@@ -282,7 +282,9 @@ export const load: PageServerLoad = async (event) => {
 			(wt) => wt.enabled && wt.space_type_id === space.space_type_id
 		);
 	}
-	if (wikiEnabled && hasWiki) {
+	// Wiki is a primary-space surface (§05 hub matrix) — skip the index
+	// fetch for custom spaces even when their type has a wiki config.
+	if (wikiEnabled && hasWiki && isPrimary) {
 		[wikiPages, wikiCategories] = await Promise.all([
 			apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
 				.then((r) => r.items)

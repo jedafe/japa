@@ -5,6 +5,7 @@
 	 * POST /spaces/{slug}/invites files the pending invite + notification.
 	 * Duplicate invites surface the backend's 409 invite_pending inline.
 	 */
+	import { onDestroy } from 'svelte';
 	import { Modal } from '#lib/components/ui/index.js';
 	import { t } from '#lib/i18n/index.js';
 	import { UserPlus, Search, Loader2, Check } from 'lucide-svelte';
@@ -43,6 +44,11 @@
 			searching = false;
 		}, 250);
 	}
+
+	// A pending debounce must not fire after the modal unmounts.
+	onDestroy(() => {
+		if (searchTimer) clearTimeout(searchTimer);
+	});
 
 	async function invite(hit: SearchHit) {
 		if (invitingId || invitedIds.has(hit.id)) return;

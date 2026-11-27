@@ -4,7 +4,7 @@
 	// selectable space types (default: community), enter a name, and the
 	// backend keyword-matches the name against primary geo spaces to auto-link.
 	import { Modal } from '#lib/components/ui/index.js';
-	import { Rocket, Loader2 } from 'lucide-svelte';
+	import { Rocket, Loader2, Layers } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
@@ -221,6 +221,16 @@
 				</p>
 			{:else}
 				<form onsubmit={submit} class="space-y-3">
+					<!-- Subspace preset (§05 hub-redesign) — the "Create a new
+					     subspace" entry point attaches the new space under this
+					     parent via parent_space_ids; surface it so the attachment
+					     isn't silent. -->
+					{#if presetParentSpace}
+						<p class="flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]">
+							<Layers size={14} class="shrink-0 text-[var(--color-primary-text)]" />
+							{t('spaces.create_under', 'Will be created as a subspace of')} <span class="font-medium text-[var(--color-text)]">{presetParentSpace.name}</span>
+						</p>
+					{/if}
 					<!-- Space type selector — flat dropdown of selectable member types -->
 					<div>
 						<label for="space-type" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">

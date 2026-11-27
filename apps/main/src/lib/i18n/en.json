@@ -6149,6 +6149,7 @@
 	"spaces.create_space": "Create a space",
 	"spaces.create_submit": "Create",
 	"spaces.create_title": "Create a new space",
+	"spaces.create_under": "Will be created as a subspace of",
 	"spaces.creating": "Creating…",
 	"spaces.delete_confirm_hint": "Type <strong>{name}</strong> to confirm deletion:",
 	"spaces.description": "Discover and join spaces — countries, states, cities, and topical communities.",

@@ -190,6 +190,60 @@ func (h *Handlers) ListMySpaceInvites(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
+// DeclineMySpaceInvite handles POST /api/v1/me/space-invites/{id}/decline —
+// the invitee declines their own pending invite. The scoped update
+// enforces invitee ownership, so a foreign or resolved invite 404s.
+func (h *Handlers) DeclineMySpaceInvite(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	inviteID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid invite id")
+		return
+	}
+
+	if _, found, err := h.Service.DeclineSpaceInvite(r.Context(), inviteID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	} else if !found {
+		errpkg.WriteError(w, http.StatusNotFound, "invite_not_found", "No pending invite with that id")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"declined": true}})
+}
+
+// RevokeInvite handles DELETE /api/v1/spaces/{slug}/invites/{id} — a
+// space-admin revokes a pending invite (the router gates this on
+// spaces.moderate). The space-scoped update can't touch another space's
+// rows; a resolved or foreign invite 404s.
+func (h *Handlers) RevokeInvite(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	inviteID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid invite id")
+		return
+	}
+
+	if _, found, err := h.Service.RevokeSpaceInvite(r.Context(), inviteID, space.ID); err != nil {
+		handleServiceError(w, err)
+		return
+	} else if !found {
+		errpkg.WriteError(w, http.StatusNotFound, "invite_not_found", "No pending invite with that id")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"revoked": true}})
+}
+
 // SetNotifier injects the notifications service used to alert invitees.
 // nil disables notification dispatch (invite row still records).
 func (h *Handlers) SetNotifier(n Notifier) { h.notifier = n }
