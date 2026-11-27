@@ -15,7 +15,7 @@
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '#lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceHeader from '#lib/components/spaces/SpaceHeader.svelte';
-	import SpaceComposer from '#lib/components/spaces/SpaceComposer.svelte';
+	import QuickThreadComposer from '#lib/components/forum/QuickThreadComposer.svelte';
 	import SpaceCard from '#lib/components/spaces/SpaceCard.svelte';
 	import SpaceSettings from '#lib/components/spaces/SpaceSettings.svelte';
 	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
@@ -1064,7 +1064,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			     gated to their primary feed (§05 amendment). -->
 			{#if authed && !isGeoSpace}
 				<div class="mb-3">
-					<SpaceComposer {space} />
+					<QuickThreadComposer {space} />
 				</div>
 			{/if}
 			<div class="mb-3">

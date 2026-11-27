@@ -26,20 +26,29 @@ class ComposeStore {
 	/** Space-hub preset (§05 hub-redesign) — the inline composer locks its
 	 *  target to this space instead of showing the space picker. */
 	presetSpace = $state<ComposeSpacePreset | null>(null);
+	/** Title typed into a quick composer, carried over when it hands off
+	 *  to the full discussion composer. */
+	initialTitle = $state('');
 
 	/** Open the modal at the type-selector menu. */
 	openMenu() {
 		this.mode = 'menu';
 		this.isQuestion = false;
 		this.presetSpace = null;
+		this.initialTitle = '';
 		this.open = true;
 	}
 
 	/** Open the modal directly in the inline discussion composer. */
-	openDiscussion(isQuestion = false, presetSpace: ComposeSpacePreset | null = null) {
+	openDiscussion(
+		isQuestion = false,
+		presetSpace: ComposeSpacePreset | null = null,
+		initialTitle = ''
+	) {
 		this.mode = 'discussion';
 		this.isQuestion = isQuestion;
 		this.presetSpace = presetSpace;
+		this.initialTitle = initialTitle;
 		this.open = true;
 	}
 
@@ -49,6 +58,7 @@ class ComposeStore {
 		this.mode = 'menu';
 		this.isQuestion = false;
 		this.presetSpace = null;
+		this.initialTitle = '';
 	}
 }
 

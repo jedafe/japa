@@ -8,7 +8,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import ForumList from '#lib/components/forum/ForumList.svelte';
-	import QuickDiscussionComposer from '#lib/components/forum/QuickDiscussionComposer.svelte';
+	import QuickThreadComposer from '#lib/components/forum/QuickThreadComposer.svelte';
 	import FeedCard from '#lib/components/feed/FeedCard.svelte';
 	import FeedGeoControl from '#lib/components/feed/FeedGeoControl.svelte';
 	import { api } from '#lib/api/client.js';
@@ -200,9 +200,9 @@
 	</ListPageBar>
 
 	<div class="mx-auto w-full max-w-3xl px-4 pt-4">
-		<!-- Quick-discussion card (mockup) — replaces the old "New
-		     discussion" PageAction; guests hit requireAuthOrRedirect. -->
-		<QuickDiscussionComposer />
+		<!-- Quick thread composer — Ask|Discuss|Poll switch; Ask/Discuss hand
+		     the typed title to the compose sheet, Poll builds inline. -->
+		<QuickThreadComposer />
 	</div>
 
 	{#if data.sort !== 'featured'}

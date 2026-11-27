@@ -95,6 +95,7 @@
 					onClose={() => compose.close()}
 					initialIsQuestion={compose.isQuestion}
 					presetSpace={compose.presetSpace}
+					initialTitle={compose.initialTitle}
 				/>
 			{:else}
 				<h2 class="mb-4 text-base font-medium text-[var(--color-text)]">

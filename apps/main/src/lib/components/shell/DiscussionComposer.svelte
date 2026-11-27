@@ -29,12 +29,14 @@
 		/** Space-hub preset (§05 hub-redesign) — when set, the composer is
 		 *  locked to this space: no picker, no "join a space" gate. */
 		presetSpace?: { spaceId: string; spaceName: string } | null;
+		/** Title typed into a quick composer before the handoff. */
+		initialTitle?: string;
 	}
 
-	let { onClose, initialIsQuestion = false, presetSpace = null }: Props = $props();
+	let { onClose, initialIsQuestion = false, presetSpace = null, initialTitle = '' }: Props = $props();
 
 	// ---- form state ----
-	let title = $state('');
+	let title = $state(untrack(() => initialTitle));
 	let bodyHtml = $state('');
 	/** TipTap JSON document — base64-encoded for the forum API. */
 	let bodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
