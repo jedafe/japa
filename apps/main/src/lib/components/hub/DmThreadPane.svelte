@@ -504,8 +504,8 @@
 							<span
 								aria-hidden="true"
 								class="absolute top-1/2 h-2.5 w-2 -translate-y-1/2 {mine
-									? '-end-1.5 bg-[var(--color-primary)] [clip-path:polygon(0_0,100%_50%,0_100%)]'
-									: '-start-1.5 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)]'}"
+									? '-end-1.5 bg-[var(--color-primary)] [clip-path:polygon(0_0,100%_50%,0_100%)] rtl:[clip-path:polygon(100%_0,0_50%,100%_100%)]'
+									: '-start-1.5 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)] rtl:[clip-path:polygon(0_0,100%_50%,0_100%)]'}"
 							></span>
 							{#if editingId === msg.id}
 								<LiteralSuggest
@@ -571,7 +571,7 @@
 									{/if}
 								</p>
 								<div
-									class="flex max-h-0 gap-2 overflow-hidden opacity-0 transition-all group-hover:mt-1 group-hover:max-h-6 group-hover:opacity-100"
+									class="flex max-h-0 gap-2 overflow-hidden opacity-0 transition-all focus-within:mt-1 focus-within:max-h-6 focus-within:opacity-100 group-hover:mt-1 group-hover:max-h-6 group-hover:opacity-100"
 								>
 									{#if mine}
 										<button
@@ -612,13 +612,13 @@
 			</ul>
 		{/if}
 		{#if peerTyping}
-			<div class="mt-2 flex justify-start ps-8" aria-live="polite">
+			<div class="mt-2 flex justify-start ps-[30px]" aria-live="polite">
 				<span
 					class="relative inline-flex items-center gap-1 rounded-2xl bg-[var(--color-surface)] px-3 py-2 shadow-sm"
 				>
 					<span
 						aria-hidden="true"
-						class="absolute top-1/2 -start-1.5 h-2.5 w-2 -translate-y-1/2 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)]"
+						class="absolute top-1/2 -start-1.5 h-2.5 w-2 -translate-y-1/2 bg-[var(--color-surface)] [clip-path:polygon(100%_0,0_50%,100%_100%)] rtl:[clip-path:polygon(0_0,100%_50%,0_100%)]"
 					></span>
 					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-muted)]"></span>
 					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-muted)] [animation-delay:150ms]"></span>
