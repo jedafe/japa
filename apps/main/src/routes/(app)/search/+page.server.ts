@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	if (!q.trim()) {
-		return { query: '', results: [] as SearchResult[], groups: [] as ResultGroup[], authed };
+		return { query: '', results: [] as SearchResult[], groups: [] as ResultGroup[], total: 0, authed };
 	}
 
 	try {
@@ -49,9 +49,10 @@ export const load: PageServerLoad = async (event) => {
 			query: q,
 			results: res?.results ?? [],
 			groups: res?.groups ?? [],
+			total: res?.total ?? 0,
 			authed
 		};
 	} catch {
-		return { query: q, results: [] as SearchResult[], groups: [] as ResultGroup[], authed, loadError: true };
+		return { query: q, results: [] as SearchResult[], groups: [] as ResultGroup[], total: 0, authed, loadError: true };
 	}
 };

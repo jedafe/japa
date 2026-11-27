@@ -53,6 +53,10 @@
 
 	// Debounced fetch — 200ms → /docs/search?q=&audience=&limit= (ADR-060).
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+	// Monotonic fetch sequence — the debounce cancels the timer but not an
+	// in-flight request, so without this a slow earlier query could resolve
+	// after a newer one and overwrite its results with stale data.
+	let fetchSeq = 0;
 
 	$effect(() => {
 		clearTimeout(debounceTimer);
@@ -64,6 +68,7 @@
 		}
 		loading = true;
 		debounceTimer = setTimeout(async () => {
+			const seq = ++fetchSeq;
 			try {
 				const params = new URLSearchParams({ q, limit: '10' });
 				if (resolvedAudience) params.set('audience', resolvedAudience);
@@ -73,11 +78,11 @@
 				const res = await fetch(`/api/docs/search?${params}`, { credentials: 'include' });
 				if (!res.ok) throw new Error('search failed');
 				const json = await res.json();
-				results = (json.data as DocSearchResult[]) ?? [];
+				if (seq === fetchSeq) results = (json.data as DocSearchResult[]) ?? [];
 			} catch {
-				results = [];
+				if (seq === fetchSeq) results = [];
 			} finally {
-				loading = false;
+				if (seq === fetchSeq) loading = false;
 			}
 		}, 200);
 		// Cleanup on unmount or re-run: cancel the pending debounce so the

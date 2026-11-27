@@ -44,6 +44,11 @@ const maxSearchLimit = 100
 // popular queries (BUG-010).
 const searchCacheTTL = 2 * time.Minute
 
+// maxSearchPageDepth mirrors the engine's pagination.maxTotalHits
+// (Meilisearch default 1000): the deepest offset+limit window a query
+// may request. Requests past it are downgraded, never an engine error.
+const maxSearchPageDepth = 1000
+
 // indexTypeByUID maps a search index UID to the result type label
 // returned in the API response. Only indexes queried by the search endpoint
 // appear here.
@@ -627,9 +632,33 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		}
 	}
 
+	// Meilisearch rejects offset+limit beyond pagination.maxTotalHits
+	// (default 1000) with a 400, which would surface as a misleading 503
+	// "search_unavailable". Deep pages instead degrade gracefully: the
+	// tail window (offset<depth<offset+limit) is capped to what the engine
+	// can serve, and past-depth pages fetch the cheapest window then drop
+	// the hits — a true limit=0 never reaches the engine (the SDK tags it
+	// omitempty) — so the response is an honest empty page with real totals.
+	pastDepth := offset >= maxSearchPageDepth
+	for i := range queries {
+		switch {
+		case pastDepth:
+			queries[i].Offset = 0
+			queries[i].Limit = 1
+		case offset+limit > maxSearchPageDepth:
+			queries[i].Limit = maxSearchPageDepth - offset
+		}
+	}
+
 	results, err := h.engine.MultiSearch(ctx, queries)
 	if err != nil {
 		return nil, nil, fmt.Errorf("multi-search: %w", err)
+	}
+
+	if pastDepth {
+		for i := range results {
+			results[i].Hits = nil
+		}
 	}
 
 	mapped, totals := mapSearchResults(results)
@@ -994,11 +1023,11 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 
 	// Section 41 — filter out blocked users from @mention autocomplete
 	// suggestions. A user should not see (and therefore @mention) someone
-	// who has blocked them or whom they have blocked. Best-effort: a
-	// database error degrades to unfiltered results.
+	// who has blocked them or whom they have blocked — and a blocked
+	// user's content must not surface as a suggestion either (BLK-006).
+	// Best-effort: a database error degrades to unfiltered results.
 	if autocompleteUser != nil && h.queries != nil {
-		suggestions = h.filterBlockedUsers(r.Context(), autocompleteUser.UserID, suggestions)
-		suggestions = h.filterBlockedSuggestionAuthors(r.Context(), autocompleteUser.UserID, suggestions)
+		suggestions = h.filterBlockedSuggestions(r.Context(), autocompleteUser.UserID, suggestions)
 	}
 
 	// §42: drop suggestions belonging to disabled features.
@@ -1080,40 +1109,74 @@ func (h *Handlers) filterDisabledFeatureSuggestions(ctx context.Context, sc feat
 	return filtered
 }
 
-// filterBlockedUsers removes user-type suggestions where a block relationship
-// exists between the current user and the suggested user (either direction).
-// Non-user suggestions are passed through unchanged. Best-effort: on database
-// error the suggestion is kept (fail-open for visibility).
-func (h *Handlers) filterBlockedUsers(ctx context.Context, currentUserID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
-	filtered := suggestions[:0]
+// filterBlockedSuggestions removes suggestions a blocked user should
+// never see: user-type suggestions for someone with a block relationship
+// to the viewer, and content/thread suggestions authored by one (§41,
+// BLK-006). One batch query resolves all candidate ids — the suggested
+// users and every suggestion's author — so the filter never degrades
+// into per-suggestion IsBlocked lookups.
+func (h *Handlers) filterBlockedSuggestions(ctx context.Context, viewerID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+	if h.queries == nil || len(suggestions) == 0 {
+		return suggestions
+	}
 
-	for _, s := range suggestions {
-		if s.Type != "user" {
-			filtered = append(filtered, s)
-			continue
+	var candidates []pgtype.UUID
+	seen := map[pgtype.UUID]struct{}{}
+
+	collect := func(raw string) {
+		if raw == "" {
+			return
 		}
 
 		var uid pgtype.UUID
-		if err := uid.Scan(s.ID); err != nil {
-			filtered = append(filtered, s)
+		if err := uid.Scan(raw); err != nil {
+			return
+		}
+		if _, dup := seen[uid]; dup {
+			return
+		}
+
+		seen[uid] = struct{}{}
+		candidates = append(candidates, uid)
+	}
+
+	for _, s := range suggestions {
+		if s.Type == "user" {
+			collect(s.ID)
+		}
+		collect(s.AuthorID)
+	}
+
+	blockedSet := h.blockedAuthorSet(ctx, viewerID, candidates)
+	if blockedSet == nil {
+		return suggestions
+	}
+
+	isBlocked := func(raw string) bool {
+		if raw == "" {
+			return false
+		}
+
+		var uid pgtype.UUID
+		if err := uid.Scan(raw); err != nil {
+			return false
+		}
+
+		_, blocked := blockedSet[uid.String()]
+
+		return blocked
+	}
+
+	filtered := suggestions[:0]
+	for _, s := range suggestions {
+		if s.Type == "user" && isBlocked(s.ID) {
+			continue
+		}
+		if isBlocked(s.AuthorID) {
 			continue
 		}
 
-		blocked, err := h.queries.IsBlocked(ctx, gen.IsBlockedParams{
-			BlockerID: currentUserID,
-			BlockedID: uid,
-		})
-		if err != nil {
-			slog.Warn("autocomplete: IsBlocked check failed", "user_id", uid.String(), "error", err)
-
-			filtered = append(filtered, s)
-
-			continue
-		}
-
-		if !blocked {
-			filtered = append(filtered, s)
-		}
+		filtered = append(filtered, s)
 	}
 
 	return filtered
@@ -1158,48 +1221,6 @@ func (h *Handlers) filterBlockedAuthors(ctx context.Context, viewerID pgtype.UUI
 		}
 
 		filtered = append(filtered, r)
-	}
-
-	return filtered
-}
-
-// filterBlockedSuggestionAuthors is the autocomplete counterpart of
-// filterBlockedAuthors — a blocked user's post or thread must not surface
-// as a ⌘K suggestion either (§41). Suggestions without an author id pass.
-func (h *Handlers) filterBlockedSuggestionAuthors(ctx context.Context, viewerID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
-	if h.queries == nil || len(suggestions) == 0 {
-		return suggestions
-	}
-
-	var candidates []pgtype.UUID
-
-	for _, s := range suggestions {
-		if s.AuthorID == "" {
-			continue
-		}
-
-		var uid pgtype.UUID
-		if err := uid.Scan(s.AuthorID); err != nil {
-			continue
-		}
-
-		candidates = append(candidates, uid)
-	}
-
-	blockedSet := h.blockedAuthorSet(ctx, viewerID, candidates)
-	if blockedSet == nil {
-		return suggestions
-	}
-
-	filtered := suggestions[:0]
-	for _, s := range suggestions {
-		if s.AuthorID != "" {
-			if _, isBlocked := blockedSet[s.AuthorID]; isBlocked {
-				continue
-			}
-		}
-
-		filtered = append(filtered, s)
 	}
 
 	return filtered

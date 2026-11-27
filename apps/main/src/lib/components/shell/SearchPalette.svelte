@@ -9,6 +9,7 @@
 	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api/client.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 
 	interface SearchSuggestion {
 		type: string;
@@ -44,6 +45,10 @@
 
 	// Debounced fetch — 200ms → /search/autocomplete?q=&limit=.
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+	// Monotonic fetch sequence — the debounce cancels the timer but not an
+	// in-flight request, so without this a slow earlier query could resolve
+	// after a newer one and overwrite its suggestions with stale results.
+	let fetchSeq = 0;
 
 	$effect(() => {
 		clearTimeout(debounceTimer);
@@ -55,16 +60,17 @@
 		}
 		loading = true;
 		debounceTimer = setTimeout(async () => {
+			const seq = ++fetchSeq;
 			try {
 				// api.get already unwraps the {data: ...} envelope.
 				const res = await api.get<{ suggestions: SearchSuggestion[] }>(
 					`/search/autocomplete?q=${encodeURIComponent(q)}&limit=10`
 				);
-				suggestions = res.data?.suggestions ?? [];
+				if (seq === fetchSeq) suggestions = res.data?.suggestions ?? [];
 			} catch {
-				suggestions = [];
+				if (seq === fetchSeq) suggestions = [];
 			} finally {
-				loading = false;
+				if (seq === fetchSeq) loading = false;
 			}
 		}, 200);
 		// Cancel the pending debounce on unmount/re-run so the fetch never
@@ -74,10 +80,21 @@
 
 	function suggestionHref(s: SearchSuggestion): string {
 		if (s.url) return s.url;
-		if (s.slug) {
-			return `/${s.type === 'user' ? 'u' : s.type === 'space' ? 'spaces' : s.type}/${s.slug}`;
+		if (!s.slug) return '';
+		// Defensive fallback — index docs always carry url, but if one lacks
+		// it resolve through the same canonical routes the indexer writes:
+		// content items and threads via contentHref (§14, ADR-058), entities
+		// via their per-type prefix.
+		if (s.content_type || s.type === 'forum_thread') {
+			return contentHref({ slug: s.slug, content_type: s.content_type ?? 'forum_thread' });
 		}
-		return '';
+		const prefix =
+			s.type === 'user' ? 'u'
+			: s.type === 'space' ? 'spaces'
+			: s.type === 'organization' ? 'org'
+			: s.type === 'tag' ? 'tags'
+			: s.type;
+		return `/${prefix}/${s.slug}`;
 	}
 
 	function navigate(s: SearchSuggestion) {

@@ -645,3 +645,46 @@ func TestRunMultiSearchFiltered_KeepsThreadWhenThreadsIndexNotQueried(t *testing
 		t.Fatalf("results = %#v, want the posts copy of the thread kept", results)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// runMultiSearchFiltered — deep-page downgrade (pagination.maxTotalHits)
+// ---------------------------------------------------------------------------
+
+func TestRunMultiSearchFiltered_DeepPageDowngrade(t *testing.T) {
+	t.Parallel()
+
+	eng := &stubEngine{multiResults: []IndexResult{
+		// The stub returns a hit the way the real engine does: the SDK
+		// serializes limit omitempty so a limit=0 downgrade can never reach
+		// Meilisearch — the handler must discard the hits itself.
+		{IndexUID: IndexPosts, EstimatedTotalHits: 1234, Hits: []Hit{hitWith(map[string]string{"id": "p1"})}},
+	}}
+
+	h := NewHandlers(eng)
+
+	// offset past the engine depth — cheapest-window fetch, hits dropped.
+	results, totals, err := h.runMultiSearchFiltered(context.Background(), "x", 20, 2000, nil,
+		[]string{IndexPosts}, "", nil)
+	if err != nil {
+		t.Fatalf("runMultiSearchFiltered: %v", err)
+	}
+	if got := eng.lastQueries[0]; got.Offset != 0 || got.Limit != 1 {
+		t.Errorf("past-depth query = %+v, want Offset=0 Limit=1", got)
+	}
+	if len(results) != 0 {
+		t.Errorf("results = %d, want 0 (hits discarded past depth)", len(results))
+	}
+	if totals["content"] != 1234 {
+		t.Errorf("totals[content] = %d, want 1234 (real estimate preserved)", totals["content"])
+	}
+
+	// tail window straddling the depth — limit capped, offset kept.
+	_, _, err = h.runMultiSearchFiltered(context.Background(), "x", 20, 990, nil,
+		[]string{IndexPosts}, "", nil)
+	if err != nil {
+		t.Fatalf("runMultiSearchFiltered: %v", err)
+	}
+	if got := eng.lastQueries[0]; got.Offset != 990 || got.Limit != 10 {
+		t.Errorf("straddling query = %+v, want Offset=990 Limit=10", got)
+	}
+}
