@@ -12,6 +12,7 @@
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import TagInput from '#lib/components/create/TagInput.svelte';
+	import type { ComposePollSeed, ComposeSpacePreset } from '#lib/components/shell/compose.svelte.js';
 	import type { ForumThread, MeSpace } from '#lib/types/index.js';
 
 	/**
@@ -31,9 +32,20 @@
 		presetSpace?: { spaceId: string; spaceName: string } | null;
 		/** Title typed into a quick composer before the handoff. */
 		initialTitle?: string;
+		/** Poll drafted in a quick composer — opens the poll builder prefilled. */
+		initialPoll?: ComposePollSeed | null;
+		/** Space picked in a quick composer — preselected but changeable. */
+		initialSpace?: ComposeSpacePreset | null;
 	}
 
-	let { onClose, initialIsQuestion = false, presetSpace = null, initialTitle = '' }: Props = $props();
+	let {
+		onClose,
+		initialIsQuestion = false,
+		presetSpace = null,
+		initialTitle = '',
+		initialPoll = null,
+		initialSpace = null
+	}: Props = $props();
 
 	// ---- form state ----
 	let title = $state(untrack(() => initialTitle));
@@ -41,7 +53,7 @@
 	/** TipTap JSON document — base64-encoded for the forum API. */
 	let bodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
 	let spaces = $state<MeSpace[]>([]);
-	let spaceId = $state<string>(untrack(() => presetSpace?.spaceId ?? ''));
+	let spaceId = $state<string>(untrack(() => presetSpace?.spaceId ?? initialSpace?.spaceId ?? ''));
 	let isAnonymous = $state(false);
 	// §126: forum_thread is federatable — the member's per-post "don't
 	// federate" flag rides the create. Hidden when no federation feature
@@ -64,12 +76,14 @@
 	// endpoint get-or-creates missing slugs server-side (BUG-006).
 	let tags = $state<string[]>([]);
 
-	// Poll builder state.
-	let showPoll = $state(false);
-	let pollQuestion = $state('');
-	let pollOptions = $state<string[]>(['', '']);
-	let pollAllowMultiple = $state(false);
-	let pollExpiresAt = $state('');
+	// Poll builder state — seeded when a quick composer hands a drafted poll over.
+	let showPoll = $state(untrack(() => !!initialPoll));
+	let pollQuestion = $state(untrack(() => initialPoll?.question ?? ''));
+	let pollOptions = $state<string[]>(
+		untrack(() => (initialPoll?.options.length ? [...initialPoll.options] : ['', '']))
+	);
+	let pollAllowMultiple = $state(untrack(() => initialPoll?.isMultiSelect ?? false));
+	let pollExpiresAt = $state(untrack(() => initialPoll?.expiresAt ?? ''));
 
 	function addPollOption() {
 		pollOptions = [...pollOptions, ''];
@@ -121,7 +135,10 @@
 		const res = await api.get<MeSpace[]>('/me/spaces?member_only=1&page_size=50');
 		if (!res.error && res.data) {
 			spaces = res.data;
-			spaceId = untrack(() => spaces.find((s) => s.is_primary)?.id ?? spaces[0]?.id ?? '');
+			// Don't clobber a seeded pick (initialSpace handoff) with the primary default.
+			if (!untrack(() => spaceId)) {
+				spaceId = spaces.find((s) => s.is_primary)?.id ?? spaces[0]?.id ?? '';
+			}
 		}
 	});
 
@@ -243,7 +260,7 @@
 						fetcher={spaceFetcher}
 						initialFetcher={spaceInitialFetcher}
 						selectedId={spaceId || null}
-						selectedLabel={selectedSpace?.name ?? null}
+						selectedLabel={selectedSpace?.name ?? initialSpace?.spaceName ?? null}
 						selectedBadge={selectedSpace?.is_primary ? '★' : null}
 						onSelect={(item) => (spaceId = item.id)}
 						onClear={() => (spaceId = '')}

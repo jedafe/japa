@@ -16,6 +16,25 @@ export interface ComposeSpacePreset {
 	spaceName: string;
 }
 
+/** Poll data carried from the quick composer's inline builder into the
+ *  discussion composer (expiresAt is the raw datetime-local value). */
+export interface ComposePollSeed {
+	question: string;
+	options: string[];
+	isMultiSelect: boolean;
+	expiresAt: string;
+}
+
+export interface OpenDiscussionOptions {
+	isQuestion?: boolean;
+	presetSpace?: ComposeSpacePreset | null;
+	initialTitle?: string;
+	initialPoll?: ComposePollSeed | null;
+	/** Space preselected but NOT locked — the picker still shows (unlike
+	 *  presetSpace, which replaces the picker with a fixed chip). */
+	initialSpace?: ComposeSpacePreset | null;
+}
+
 class ComposeStore {
 	/** Whether the modal is open. */
 	open = $state(false);
@@ -29,6 +48,10 @@ class ComposeStore {
 	/** Title typed into a quick composer, carried over when it hands off
 	 *  to the full discussion composer. */
 	initialTitle = $state('');
+	/** Poll drafted in a quick composer, carried into the discussion composer. */
+	initialPoll = $state<ComposePollSeed | null>(null);
+	/** Space chosen in a quick composer, preselected (not locked) in the sheet. */
+	initialSpace = $state<ComposeSpacePreset | null>(null);
 
 	/** Open the modal at the type-selector menu. */
 	openMenu() {
@@ -36,19 +59,19 @@ class ComposeStore {
 		this.isQuestion = false;
 		this.presetSpace = null;
 		this.initialTitle = '';
+		this.initialPoll = null;
+		this.initialSpace = null;
 		this.open = true;
 	}
 
 	/** Open the modal directly in the inline discussion composer. */
-	openDiscussion(
-		isQuestion = false,
-		presetSpace: ComposeSpacePreset | null = null,
-		initialTitle = ''
-	) {
+	openDiscussion(opts: OpenDiscussionOptions = {}) {
 		this.mode = 'discussion';
-		this.isQuestion = isQuestion;
-		this.presetSpace = presetSpace;
-		this.initialTitle = initialTitle;
+		this.isQuestion = opts.isQuestion ?? false;
+		this.presetSpace = opts.presetSpace ?? null;
+		this.initialTitle = opts.initialTitle ?? '';
+		this.initialPoll = opts.initialPoll ?? null;
+		this.initialSpace = opts.initialSpace ?? null;
 		this.open = true;
 	}
 
@@ -59,6 +82,8 @@ class ComposeStore {
 		this.isQuestion = false;
 		this.presetSpace = null;
 		this.initialTitle = '';
+		this.initialPoll = null;
+		this.initialSpace = null;
 	}
 }
 

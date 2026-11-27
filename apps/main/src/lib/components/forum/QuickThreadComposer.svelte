@@ -9,25 +9,22 @@
 	 *   button) hands off to the compose sheet (DiscussionComposer) with the
 	 *   title prefilled, question mode on for Ask.
 	 * - Poll: the input is the poll question and the card expands an inline
-	 *   option builder — the thread + embedded poll are created directly via
-	 *   POST /thread (no sheet). The space target is the preset on hub pages
-	 *   or a member-space picker on /thread.
+	 *   option builder — Create Poll hands the drafted poll (question,
+	 *   options, multi-select, expiry, picked space) to the compose sheet
+	 *   prefilled, same as the other intents.
 	 */
 	import { tick, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { BarChart3, HelpCircle, Loader2, MessageSquare, Plus, Trash2 } from 'lucide-svelte';
+	import { BarChart3, HelpCircle, MessageSquare, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import { searchSpaces } from '#lib/api/create.js';
-	import { encodeTiptapDoc } from '#lib/tiptap/serialize.js';
-	import { suggestSlug } from '#lib/components/create/slug.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { compose } from '#lib/components/shell/compose.svelte.js';
 	import { isAuthed, requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
-	import type { ForumThread, MeSpace, Space } from '#lib/types/index.js';
+	import type { MeSpace, Space } from '#lib/types/index.js';
 
 	interface Props {
 		/** Space-hub preset — locks the target space and swaps the copy. */
@@ -61,10 +58,11 @@
 	// fetch — submit bounces them to /login before the space matters).
 	let spaces = $state<MeSpace[]>([]);
 	let spaceId = $state<string>(untrack(() => space?.id ?? ''));
+	/** The explicitly-picked space item — an untouched default doesn't
+	 *  travel into the modal as a preset. */
+	let pickedSpaceItem = $state<AutocompleteItem | null>(null);
 	let spacesRequested = $state(false);
 	let spacesLoaded = $state(false);
-	let submitting = $state(false);
-	let errorMsg = $state<string | null>(null);
 
 	const preset = $derived(space ? { spaceId: space.id, spaceName: space.name } : null);
 
@@ -97,8 +95,6 @@
 
 	const filledOptions = $derived(pollOptions.filter((o) => o.trim().length > 0));
 	const pollValid = $derived(title.trim().length > 0 && !!spaceId && filledOptions.length >= 2);
-	// Guests keep an enabled action — submit bounces them to /login.
-	const canAct = $derived(!submitting && (!isAuthed() || mode !== 'poll' || pollValid));
 
 	const selectedSpace = $derived(spaces.find((s) => s.id === spaceId) ?? null);
 	// Set only on a successful fetch — a failed fetch leaves the picker
@@ -162,13 +158,13 @@
 	}
 
 	/** Enter on the title: Ask/Discuss hand off to the sheet; Poll moves
-	 *  into the option list (or submits a complete poll). */
+	 *  into the option list (or hands a complete poll to the sheet). */
 	function onTitleKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Enter') return;
 		e.preventDefault();
 		if (mode === 'poll') {
 			if (pollValid) {
-				submitPoll();
+				openComposer();
 			} else {
 				const firstEmpty = pollOptions.findIndex((o) => !o.trim());
 				focusOption(firstEmpty === -1 ? 0 : firstEmpty);
@@ -182,7 +178,7 @@
 		if (e.key !== 'Enter') return;
 		e.preventDefault();
 		if (pollValid) {
-			submitPoll();
+			openComposer();
 		} else if (idx === pollOptions.length - 1) {
 			addPollOption();
 			focusOption(idx + 1);
@@ -191,46 +187,34 @@
 		}
 	}
 
-	/** Ask/Discuss — open the compose sheet with the typed title prefilled. */
+	/** Hand the card's state to the compose sheet — title for Ask/Discuss,
+	 *  plus the drafted poll (question, options, multi-select, expiry) and
+	 *  the picked space for Poll. */
 	async function openComposer() {
 		if (!(await requireAuthOrRedirect())) return;
-		compose.openDiscussion(mode === 'ask', preset, title.trim());
-	}
 
-	/** Poll — create the thread + embedded poll directly (POST /thread). */
-	async function submitPoll() {
-		if (!(await requireAuthOrRedirect())) return;
-		if (!pollValid || submitting) return;
-		submitting = true;
-		errorMsg = null;
+		const initialPoll =
+			mode === 'poll'
+				? {
+						question: title.trim(),
+						options: [...pollOptions],
+						isMultiSelect: pollAllowMultiple,
+						expiresAt: pollExpiresAt
+					}
+				: null;
 
-		const res = await api.post<ForumThread>('/thread', {
-			title: title.trim(),
-			slug: suggestSlug(title),
-			// The poll block renders its own question — the body carries an
-			// empty paragraph so the contents row stays a valid TipTap doc.
-			body: encodeTiptapDoc({ type: 'doc', content: [{ type: 'paragraph' }] }),
-			space_id: spaceId,
-			poll: {
-				question: title.trim(),
-				is_multi_select: pollAllowMultiple,
-				close_at: pollExpiresAt ? new Date(pollExpiresAt).toISOString() : null,
-				options: filledOptions.map((label, i) => ({ label: label.trim(), position: i }))
-			}
+		const initialSpace =
+			mode === 'poll' && pickedSpaceItem
+				? { spaceId: pickedSpaceItem.id, spaceName: pickedSpaceItem.label }
+				: null;
+
+		compose.openDiscussion({
+			isQuestion: mode === 'ask',
+			presetSpace: preset,
+			initialTitle: title.trim(),
+			initialPoll,
+			initialSpace
 		});
-
-		const thread = res.data;
-		if (res.error || !thread) {
-			errorMsg = res.error?.message || t('forum.new.error_generic', 'Failed to create the discussion.');
-			submitting = false;
-			return;
-		}
-		goto(`/thread/${thread.slug}`);
-	}
-
-	function onAction() {
-		if (mode === 'poll') submitPoll();
-		else openComposer();
 	}
 </script>
 
@@ -255,13 +239,9 @@
 	</div>
 
 	{#if mode === 'poll'}
-		<!-- Inline poll builder — question is the title input above. -->
+		<!-- Inline poll builder — question is the title input above; the
+		     completed draft opens in the compose sheet. -->
 		<div class="mt-3 border-t border-[var(--color-border)] pt-3">
-			{#if errorMsg}
-				<p class="mb-2 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
-					{errorMsg}
-				</p>
-			{/if}
 			{#if noSpaces}
 				<p class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-subtle)]">
 					{t('forum.new.no_spaces', 'Join a space before starting a discussion.')}
@@ -324,10 +304,10 @@
 							fetcher={spaceFetcher}
 							initialFetcher={spaceInitialFetcher}
 							selectedId={spaceId || null}
-							selectedLabel={selectedSpace?.name ?? null}
+							selectedLabel={selectedSpace?.name ?? pickedSpaceItem?.label ?? null}
 							selectedBadge={selectedSpace?.is_primary ? '★' : null}
-							onSelect={(item) => (spaceId = item.id)}
-							onClear={() => (spaceId = '')}
+							onSelect={(item) => { spaceId = item.id; pickedSpaceItem = item; }}
+							onClear={() => { spaceId = ''; pickedSpaceItem = null; }}
 						/>
 					</div>
 				{/if}
@@ -354,13 +334,9 @@
 		</div>
 		<button
 			type="button"
-			onclick={onAction}
-			disabled={!canAct}
-			class="ms-auto inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+			onclick={openComposer}
+			class="ms-auto inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 		>
-			{#if submitting}
-				<Loader2 size={14} class="animate-spin" />
-			{/if}
 			{actionLabel}
 		</button>
 	</div>

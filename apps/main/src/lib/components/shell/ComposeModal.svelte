@@ -96,6 +96,8 @@
 					initialIsQuestion={compose.isQuestion}
 					presetSpace={compose.presetSpace}
 					initialTitle={compose.initialTitle}
+					initialPoll={compose.initialPoll}
+					initialSpace={compose.initialSpace}
 				/>
 			{:else}
 				<h2 class="mb-4 text-base font-medium text-[var(--color-text)]">
@@ -106,7 +108,7 @@
 					<div class="flex items-stretch gap-2">
 						<button
 							type="button"
-							onclick={() => compose.openDiscussion(false)}
+							onclick={() => compose.openDiscussion({ isQuestion: false })}
 							class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-start text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<MessageSquare size={20} class="text-[var(--color-primary-text)]" />
@@ -114,7 +116,7 @@
 						</button>
 						<button
 							type="button"
-							onclick={() => compose.openDiscussion(true)}
+							onclick={() => compose.openDiscussion({ isQuestion: true })}
 							class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-end text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span>{t('create.question', 'Question')}</span>
