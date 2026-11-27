@@ -46,6 +46,20 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// BUG-028 parity: a private space is invisible to non-members — 404
+	// before any space-specific rejection so the endpoint can't confirm
+	// existence (same gate as ToggleSpaceMembership).
+	if !isMember && space.Visibility == VisibilityPrivate {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
+	}
+
 	// Invites are a member-created custom-space feature — primary spaces
 	// (geo/university) are follow-only platform entities (§05).
 	if isPrimarySpace(space) {
@@ -54,13 +68,6 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A private space is invisible to non-members; gate on membership first
-	// so this endpoint cannot confirm the space exists to outsiders.
-	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
 	if !isMember {
 		errpkg.WriteError(w, http.StatusForbidden, "not_a_member",
 			"Only members can invite others to this space")
@@ -97,6 +104,17 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	if inviteeID == user.UserID {
 		errpkg.WriteError(w, http.StatusBadRequest, "cannot_invite_self", "You cannot invite yourself")
+		return
+	}
+
+	// The user_id path skips existence — a non-existent id would trip the
+	// FK on insert (500); deleted accounts resolve under both paths and
+	// shouldn't receive invites.
+	if exists, err := h.Service.UserExists(r.Context(), inviteeID); err != nil {
+		handleServiceError(w, err)
+		return
+	} else if !exists {
+		errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "No user with that id was found")
 		return
 	}
 

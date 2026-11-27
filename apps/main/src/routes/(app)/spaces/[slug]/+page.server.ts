@@ -273,7 +273,9 @@ export const load: PageServerLoad = async (event) => {
 	let wikiCategories: WikiApiCategory[] = [];
 	const wikiEnabled = !!features['wiki.enabled'];
 	let hasWiki = false;
-	if (wikiEnabled && space.space_type_id) {
+	// Wiki is a primary-space surface (§05 hub matrix) — skip the types
+	// round-trip for custom spaces entirely.
+	if (wikiEnabled && isPrimary && space.space_type_id) {
 		const wikiTypes = await apiGetEnvelope<Array<{ space_type_id: string; enabled: boolean }>>(
 			ctx,
 			'/wiki/types'

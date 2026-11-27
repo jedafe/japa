@@ -36,7 +36,7 @@
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview,
-		CalendarEntry
+		CalendarEntry, RadarItem
 	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
@@ -517,7 +517,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	let parentSpaces = $state<Space[]>(untrack(() => data.parentSpaces));
 
 	$effect(() => {
-		// Re-seed on SSR payload change (slug change).
+		// Re-seed on SSR payload change (slug change) — the page component
+		// persists across [slug] navigations, so every mutable that seeds
+		// from data must reset or the previous space's state bleeds over.
 		feedItems = data.content;
 		pinnedItems = data.pinned;
 		membersItems = data.members;
@@ -529,6 +531,24 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		guideFeed = seedTypedFeed(data.guideFeed ?? { items: [], total: null });
 		wikiQuery = '';
 		membersEnd = data.members.length < data.pageSize;
+		following = data.initiallyFollowing ?? false;
+		muted = data.isMuted ?? false;
+		feedError = '';
+		searchQuery = '';
+		searchResults = [];
+		searchResultsAreCards = false;
+		searching = false;
+		pinnedScamAlerts = [];
+		joinRequests = [];
+		requestsLoaded = false;
+		requestError = '';
+		requestActionId = null;
+		inviteOpen = false;
+		createSubspaceOpen = false;
+		opportunitiesItems = data.opportunities;
+		opportunitiesLoaded = (data.opportunities ?? []).length > 0;
+		opportunitiesLoading = false;
+		opportunitiesError = '';
 	});
 
 	// Header meta line — parents joined ("Lagos · Delta State" for a city).
@@ -740,6 +760,38 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 	$effect(() => {
 		if (activeTab === 'requests' && canManage) {
 			loadJoinRequests();
+		}
+	});
+
+	// Opportunities (§73 intel radar, country spaces) — SSR-fetched only on
+	// a ?tab=opportunities deep link; UrlTabs switches shallowly (no load
+	// re-run), so a tab click lazy-fetches here instead.
+	let opportunitiesItems = $state<RadarItem[]>(untrack(() => data.opportunities));
+	let opportunitiesLoading = $state(false);
+	let opportunitiesLoaded = $state(untrack(() => (data.opportunities ?? []).length > 0));
+	let opportunitiesError = $state('');
+
+	$effect(() => {
+		if (
+			activeTab === 'opportunities' &&
+			space.level === 'country' &&
+			!opportunitiesLoaded &&
+			!opportunitiesLoading
+		) {
+			opportunitiesLoading = true;
+			opportunitiesError = '';
+			// The radar envelope is {items, next_cursor, …} — no data wrapper.
+			api.get<{ items?: RadarItem[] }>(
+				`/intel/radar?space_id=${space.id}&page_size=24`
+			).then((res) => {
+				if (res.error) {
+					opportunitiesError = res.error.message;
+				} else {
+					opportunitiesItems = res.data?.items ?? [];
+				}
+				opportunitiesLoaded = true;
+				opportunitiesLoading = false;
+			});
 		}
 	});
 </script>
@@ -1259,7 +1311,11 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 			{/if}
 		{:else if activeTab === 'opportunities'}
 			<div class="p-4">
-				{#if data.opportunities.length === 0}
+				{#if opportunitiesLoading}
+					<p class="py-8 text-center text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+				{:else if opportunitiesError}
+					<p class="py-8 text-center text-sm text-red-600 dark:text-red-400">{opportunitiesError}</p>
+				{:else if opportunitiesItems.length === 0}
 					<EmptyState
 						icon={Radar}
 						title={t('space.opportunities_empty', 'No opportunities for this destination yet')}
@@ -1267,7 +1323,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 					/>
 				{:else}
 					<div class="space-y-2">
-						{#each data.opportunities as item (item.id)}
+						{#each opportunitiesItems as item (item.id)}
 							<RadarItemRow {item} />
 						{/each}
 					</div>

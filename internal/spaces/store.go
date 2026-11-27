@@ -1662,6 +1662,21 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UU
 	return nil
 }
 
+// UserExists reports whether a user id resolves to a live account —
+// the invitee check for POST /spaces/{slug}/invites' user_id path (a
+// non-existent id would otherwise fail the FK on insert; a deleted
+// account shouldn't receive invites).
+func (s *Service) UserExists(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row, err := s.read.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("getting user by id: %w", err)
+	}
+	return row.Status != "deleted", nil
+}
+
 // GetUserIDByUsername resolves a username to a user ID within the platform.
 // Uses the sqlc-generated GetUserByUsername query (Rule 2 — no raw SQL).
 func (s *Service) GetUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error) {

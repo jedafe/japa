@@ -50,6 +50,15 @@
 		if (searchTimer) clearTimeout(searchTimer);
 	});
 
+	// The page component persists across [slug] navigations — reset the
+	// per-space session set or a user invited on space A shows "Invited"
+	// on space B.
+	$effect(() => {
+		space.slug;
+		invitedIds = new Set();
+		errorMsg = '';
+	});
+
 	async function invite(hit: SearchHit) {
 		if (invitingId || invitedIds.has(hit.id)) return;
 		invitingId = hit.id;

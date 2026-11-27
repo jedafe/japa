@@ -4851,7 +4851,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (a members list can't resolve role='owner' rows).
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/leaders", spaceHandlers.ListLeaders)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// Rate-limited like the sibling write routes — an invite files a
+			// notification to another user, so it's a spam vector without a
+			// throttle.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/spaces/{slug}/invites", spaceHandlers.CreateInvite)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Get("/spaces/{slug}/invites", spaceHandlers.ListInvites)
