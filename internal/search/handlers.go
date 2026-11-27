@@ -185,14 +185,20 @@ func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
 }
 
-// searchCacheKey builds jc:cache:search:{}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}.
+// searchCacheKey builds jc:cache:search:{}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}:{auth}:{posts_filter_hash}.
 // The query is SHA-256 hashed to keep keys short and avoid storing raw user
 // input in Valkey keys. geoCountry is included so visitors from different
 // countries don't share a cached result set (ADR-064 geo-boost). page and sort
 // are included so different pages/sort orders don't share a cached result set.
-func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sortExpr string, authenticated bool) string {
+// The posts-filter params (content_type, space_id, tag_slug) are hashed into
+// the key too — without them a ?content_type= request would be served the
+// unfiltered cached set (different filters must never share an entry).
+func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sortExpr string, authenticated bool, postsFilter string) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
+
+	filterHash := sha256.Sum256([]byte(postsFilter))
+	postsFilterHash := hex.EncodeToString(filterHash[:8]) // 16-char hex suffix
 
 	// authenticated feeds the key: authed queries include users-index hits
 	// while guest queries strip them, so sharing one entry would leak user
@@ -202,7 +208,7 @@ func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sor
 		authBit = "1"
 	}
 
-	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s:%s", "", queryHash, typeFilter, geoCountry, limit, offset, sortExpr, authBit)
+	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s:%s:%s", "", queryHash, typeFilter, geoCountry, limit, offset, sortExpr, authBit, postsFilterHash)
 }
 
 // SearchResultItem holds the type-specific fields for a search result. Per
@@ -256,6 +262,16 @@ type SearchResponse struct { //nolint:revive // stuttering type name preserved f
 	Groups  []ResultGroup  `json:"groups,omitempty"`
 	Total   int            `json:"total"`
 	TookMs  int64          `json:"took_ms"`
+}
+
+// searchPayload is the cacheable form of a multi-search response: the flat
+// result list plus the per-type estimated totals. Totals are viewer-agnostic
+// engine estimates so they are safe to share in the read-through cache —
+// post-cache filters (§41 blocks, §42 feature flags) only shrink the result
+// list, never the underlying match count.
+type searchPayload struct {
+	Results []SearchResult   `json:"results"`
+	Totals  map[string]int64 `json:"totals"`
 }
 
 // Search handles GET /api/v1/search?q=...&type=...&limit=20.
@@ -326,11 +342,16 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// queries from the same platform are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
-	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"), authenticated)
+	postsFilterKey := strings.Join([]string{
+		r.URL.Query().Get("content_type"),
+		r.URL.Query().Get("space_id"),
+		r.URL.Query().Get("tag_slug"),
+	}, "|")
+	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"), authenticated, postsFilterKey)
 
 	searchStart := time.Now()
 
-	results, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
+	payload, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) (searchPayload, error) {
 		indexes := searchTypeIndexes(typeFilter)
 		// §54: guests cannot search the users index — strip it after type
 		// resolution so no ?type= combination can smuggle it back in.
@@ -338,13 +359,23 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 			indexes = slices.DeleteFunc(indexes, func(uid string) bool { return uid == IndexUsers })
 		}
 
-		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, indexes, geoCountry, extraPostFilter)
+		results, totals, err := h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, indexes, geoCountry, extraPostFilter)
+		if err != nil {
+			return searchPayload{}, err
+		}
+
+		return searchPayload{Results: results, Totals: totals}, nil
 	})
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 
 		return
+	}
+
+	results := payload.Results
+	if results == nil {
+		results = []SearchResult{}
 	}
 
 	// §41 (BLK-006): drop results authored by users with a mutual block
@@ -363,14 +394,22 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	// ADR-017: when no type filter is active, group results by type (top 2-3
 	// per category) instead of returning a flat cross-index merge. When a
-	// specific type is requested, return a flat results list.
+	// specific type is requested, return a flat results list. `total` is the
+	// engine's estimated match count (sum of per-index estimatedTotalHits),
+	// not the fetched hit count — clients use it for "See all N" links and
+	// pagination, so it must reflect the true match size.
+	total := 0
+	for _, n := range payload.Totals {
+		total += int(n)
+	}
+
 	resp := SearchResponse{
 		Results: results,
-		Total:   len(results),
+		Total:   total,
 		TookMs:  tookMs,
 	}
 	if typeFilter == "" {
-		resp.Groups = groupResults(results)
+		resp.Groups = groupResults(results, payload.Totals)
 		// When grouping, results is still populated for clients that prefer
 		// the flat view, but groups is the canonical field per ADR-017.
 	}
@@ -420,7 +459,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, []string{IndexSpaces}, "", nil)
+	results, totals, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, []string{IndexSpaces}, "", nil)
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -430,7 +469,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &results)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results, Total: int(totals["space"])}})
 
 	// Analytics logging — skip for guests (nil or zero UUID).
 	if user != nil && user.UserID != (pgtype.UUID{}) {
@@ -445,7 +484,23 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 	var parts []FilterExpr
 	if contentType != "" {
-		parts = append(parts, Eq{Field: "content_type", Value: contentType})
+		// §54 shows single values, but comma-separated content_type is a
+		// natural extension — e.g. "discussion,forum_thread" covers both
+		// anchored discussion containers and real forum threads (both are
+		// contents rows in the posts index). Multiple values become an IN.
+		values := make([]string, 0, 4)
+		for _, p := range strings.Split(contentType, ",") {
+			if v := strings.TrimSpace(p); v != "" {
+				values = append(values, v)
+			}
+		}
+		switch len(values) {
+		case 0:
+		case 1:
+			parts = append(parts, Eq{Field: "content_type", Value: values[0]})
+		default:
+			parts = append(parts, In{Field: "content_type", Values: values})
+		}
 	}
 
 	if spaceID != "" {
@@ -467,13 +522,13 @@ func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 // (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
 // zero-based pagination offset (§54 ?page=). sortExprs, when non-nil, is
 // passed to the engine as the sort expression (§54 ?sort=).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, indexes []string, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, indexes []string, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, map[string]int64, error) {
 	// A type filter with no backing index (e.g. "organization" before its
 	// index is provisioned) yields no queries. Short-circuit to empty
 	// results instead of issuing a zero-query multi-search, which engines
 	// may reject.
 	if len(indexes) == 0 {
-		return []SearchResult{}, nil
+		return []SearchResult{}, map[string]int64{}, nil
 	}
 
 	queries := make([]Query, len(indexes))
@@ -549,24 +604,32 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 
 	results, err := h.engine.MultiSearch(ctx, queries)
 	if err != nil {
-		return nil, fmt.Errorf("multi-search: %w", err)
+		return nil, nil, fmt.Errorf("multi-search: %w", err)
 	}
 
-	return mapSearchResults(results), nil
+	mapped, totals := mapSearchResults(results)
+
+	return mapped, totals, nil
 }
 
 // mapSearchResults flattens an engine multi-search response into a single
-// type-tagged result list. Results from unknown indexes are skipped so a
-// misconfigured engine cannot corrupt the response shape. Per §54, each result
-// includes a nested item with type-specific fields.
-func mapSearchResults(indexResults []IndexResult) []SearchResult {
+// type-tagged result list plus a per-type map of estimated total hits.
+// Results from unknown indexes are skipped so a misconfigured engine cannot
+// corrupt the response shape. Per §54, each result includes a nested item
+// with type-specific fields. The totals map keys are the result-type labels
+// (so a type backed by two indexes — e.g. "content" = posts + forum_threads —
+// reports the summed estimate).
+func mapSearchResults(indexResults []IndexResult) ([]SearchResult, map[string]int64) {
 	results := []SearchResult{}
+	totals := make(map[string]int64, len(indexResults))
 
 	for _, sr := range indexResults {
 		resultType, ok := indexTypeByUID[sr.IndexUID]
 		if !ok {
 			continue
 		}
+
+		totals[resultType] += sr.EstimatedTotalHits
 
 		for _, hit := range sr.Hits {
 			results = append(results, SearchResult{
@@ -576,7 +639,7 @@ func mapSearchResults(indexResults []IndexResult) []SearchResult {
 		}
 	}
 
-	return results
+	return results, totals
 }
 
 // mapHitToItem builds a SearchResultItem from a search hit, populating
@@ -707,7 +770,7 @@ var canonicalTypeOrder = []string{
 	"organization", "course", "article", "doc_page",
 }
 
-func groupResults(flat []SearchResult) []ResultGroup {
+func groupResults(flat []SearchResult, totals map[string]int64) []ResultGroup {
 	buckets := make(map[string][]SearchResult)
 	for _, r := range flat {
 		buckets[r.Type] = append(buckets[r.Type], r)
@@ -721,8 +784,14 @@ func groupResults(flat []SearchResult) []ResultGroup {
 			continue
 		}
 
+		// Group total is the engine's estimated match count for the type's
+		// backing index(es) — the fetched hit count is capped by the request
+		// limit and must not be presented as the total (§54).
 		total := len(rs)
-		if total > maxPerGroup {
+		if totals != nil && totals[t] > 0 {
+			total = int(totals[t])
+		}
+		if len(rs) > maxPerGroup {
 			rs = rs[:maxPerGroup]
 		}
 
@@ -1122,12 +1191,12 @@ func (h *Handlers) blockedAuthorSet(ctx context.Context, viewerID pgtype.UUID, c
 	return blockedSet
 }
 
-// runAutocomplete queries the users, spaces, tags, and posts indexes with
-// a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
-// content) restricts which indexes are queried; empty means all four.
+// runAutocomplete queries the omnibox indexes (users, spaces, tags, posts,
+// doc_pages, organizations) with a small limit for typeahead suggestions.
+// typeFilter restricts which indexes are queried; empty means the full set.
 func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, typeFilter string, authenticated bool) ([]AutocompleteSuggestion, error) {
-	// Build the index list from the type filter. Default: all four
-	// autocomplete indexes (users, spaces, tags, posts).
+	// Build the index list from the type filter. Default: the full omnibox
+	// index set (users, spaces, tags, posts, doc_pages, organizations).
 	var indexes []string
 
 	switch typeFilter {
@@ -1139,11 +1208,21 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 		indexes = []string{IndexTags}
 	case "content":
 		indexes = []string{IndexPosts}
+	case "forum_thread":
+		indexes = []string{IndexForumThreads}
+	case "organization":
+		indexes = []string{IndexOrganizations}
+	case "article":
+		indexes = []string{IndexKnowledgeArticles}
+	case "course":
+		indexes = []string{IndexAcademyTracks}
 	case "doc", "doc_page":
 		indexes = []string{IndexDocPages}
 	default:
-		// DOC-016: include doc_pages in omnibox autocomplete.
-		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts, IndexDocPages}
+		// DOC-016: include doc_pages in omnibox autocomplete; organizations
+		// are a first-class result type on the /search page, so the omnibox
+		// must surface them too.
+		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts, IndexDocPages, IndexOrganizations}
 	}
 
 	// The users index is authenticated-only (§54): strip it AFTER type
@@ -1354,7 +1433,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": SearchResponse{Results: results},
+		"data": SearchResponse{Results: results, Total: int(resp.EstimatedTotalHits)},
 	})
 }
 
@@ -1485,7 +1564,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	h.resolveLiterals(r, &results)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": SearchResponse{Results: results},
+		"data": SearchResponse{Results: results, Total: int(resp.EstimatedTotalHits)},
 	})
 }
 
@@ -1681,7 +1760,10 @@ func searchTypeIndexes(typeFilter string) []string {
 func singleTypeIndexes(typeFilter string) []string {
 	switch typeFilter {
 	case "content":
-		return []string{IndexPosts, IndexForumThreads}
+		// Posts index only — every real forum thread already has a contents
+		// row (forum_threads.content_id) indexed into posts, so querying the
+		// forum_threads index here would surface the same thread twice.
+		return []string{IndexPosts}
 	case "user":
 		return []string{IndexUsers}
 	case "space":

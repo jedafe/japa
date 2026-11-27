@@ -79,11 +79,18 @@
 		}
 	}
 
+	const discussionsContentTypes = 'discussion,forum_thread';
+
 	function filterByType(type: string) {
 		const q = query.trim();
 		const params = new URLSearchParams();
 		if (q) params.set('q', q);
-		if (type !== 'all') params.set('type', type);
+		if (type === 'discussions') {
+			params.set('type', 'content');
+			params.set('content_type', discussionsContentTypes);
+		} else if (type !== 'all') {
+			params.set('type', type);
+		}
 		loading = true;
 		goto(`/search?${params.toString()}`, { reset: false });
 	}
@@ -91,10 +98,21 @@
 	// DOC-006: the backend groups doc results as type `doc_page`, but the
 	// filter bar (and the ?type= param) uses `doc`.
 	function filterTypeForGroup(type: string): string {
-		return type === 'doc_page' ? 'doc' : type;
+		if (type === 'doc_page') return 'doc';
+		if (type === 'forum_thread') return 'discussions';
+		return type;
 	}
 
 	function activeForFilter(key: string): boolean {
+		const contentType = page.url.searchParams.get('content_type');
+		if (key === 'discussions') {
+			return activeType === 'content' && !!contentType && contentType.split(',').includes('discussion');
+		}
+		if (key === 'content') {
+			// A content_type-scoped view (Discussions, or a deep-linked
+			// ?content_type= filter) is not the unfiltered Posts view.
+			return activeType === 'content' && !contentType;
+		}
 		return activeType === key || (key === 'doc' && activeType === 'doc_page');
 	}
 
@@ -129,12 +147,17 @@
 	}
 
 	// Filter types — driven by the backend search index types.
+	// "Discussions" covers every thread-like page: anchored discussion
+	// containers (contents.content_type='discussion' — tool/wiki threads)
+	// and real forum threads (contents.content_type='forum_thread'). Both
+	// live in the posts index, so the chip filters on content_type rather
+	// than the forum_threads index — which would miss anchored containers.
 	const filterTypes = $derived([
 		{ key: 'all', label: t('search.filter_all', 'All'), icon: Layers },
 		{ key: 'content', label: t('search.filter_content', 'Posts'), icon: FileText },
 		{ key: 'user', label: t('search.filter_people', 'People'), icon: Users },
 		{ key: 'space', label: t('search.filter_spaces', 'Spaces'), icon: Hash },
-		{ key: 'forum_thread', label: t('search.filter_discussions', 'Discussions'), icon: MessageSquare },
+		{ key: 'discussions', label: t('search.filter_discussions', 'Discussions'), icon: MessageSquare },
 		{ key: 'doc', label: t('search.filter_docs', 'Docs'), icon: BookOpen },
 		{ key: 'organization', label: t('search.filter_orgs', 'Organizations'), icon: Building2 }
 	]);
