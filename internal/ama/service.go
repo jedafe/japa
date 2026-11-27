@@ -39,7 +39,7 @@ type AMAThreadDTO struct {
 	AuthorAvatar string `json:"author_avatar,omitempty"`
 	// §07 author badge — false/"" when is_anonymous.
 	AuthorVerified         bool            `json:"author_verified,omitempty"`
-	AuthorVerificationType string          `json:"author_verification_type,omitempty"`
+	AuthorVerificationType any             `json:"author_verification_type,omitempty"`
 	IsAnonymous            bool            `json:"is_anonymous"`
 	AmaConfig              json.RawMessage `json:"ama_config"`
 	CreatedAt              string          `json:"created_at"`

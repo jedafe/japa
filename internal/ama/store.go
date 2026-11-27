@@ -52,9 +52,9 @@ type AMAThread struct {
 	AuthorUserID pgtype.UUID
 	AuthorName   string
 	AuthorAvatar string
-	// §07 author badge — false/"" when is_anonymous (SQL CASE redacts).
+	// §07 author badge — false/nil when is_anonymous (SQL CASE redacts).
 	AuthorVerified         bool
-	AuthorVerificationType string
+	AuthorVerificationType any
 	IsAnonymous            bool
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
@@ -285,7 +285,7 @@ func (s *Store) GetLastAMACreatedAt(ctx context.Context, userID pgtype.UUID) (ti
 func rowToAMAThread(
 	id pgtype.UUID, title, slug string, body, amaConfig []byte,
 	authorUserID pgtype.UUID, authorUsername, authorAvatar interface{},
-	authorVerified bool, authorVerificationType string,
+	authorVerified bool, authorVerificationType interface{},
 	isAnonymous bool,
 	createdAt, updatedAt pgtype.Timestamptz,
 ) AMAThread {

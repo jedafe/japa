@@ -414,6 +414,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", err.Error())
 	case errors.Is(err, ErrMembersOnly):
 		errpkg.WriteError(w, http.StatusForbidden, "members_only", err.Error())
+	case errors.Is(err, content.ErrDuplicateContent):
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "A thread with this slug already exists")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

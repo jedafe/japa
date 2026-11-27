@@ -593,7 +593,7 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -624,7 +624,7 @@ type GetForumReplyByIDWithAuthorRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 // Returns a single reply with author details. Used for the accepted-answer
@@ -809,7 +809,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE COALESCE(su.public_username, su.username) END AS solved_by_username,
  CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
  s.name AS space_name,
@@ -857,7 +857,7 @@ type GetForumThreadBySlugWithDetailsRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 	SolvedByUsername       interface{}        `json:"solved_by_username"`
 	SolvedByDisplayName    interface{}        `json:"solved_by_display_name"`
 	SpaceName              *string            `json:"space_name"`
@@ -1065,7 +1065,7 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -1093,7 +1093,7 @@ type GetTopReplyForThreadRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 // Returns the highest-voted non-deleted reply for a thread. Used as the
@@ -1364,7 +1364,7 @@ SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN fr.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
@@ -1402,7 +1402,7 @@ type ListForumRepliesByThreadWithAuthorRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 // viewer_can_manage flags author-or-creator ownership for @viewer_id
@@ -1773,7 +1773,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -1855,7 +1855,7 @@ type ListForumThreadsByAuthorWithDetailsRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 	SpaceName              *string            `json:"space_name"`
 	SpaceSlug              *string            `json:"space_slug"`
 	SpaceLevel             *string            `json:"space_level"`
@@ -2029,7 +2029,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level
@@ -2098,7 +2098,7 @@ type ListForumThreadsBySpaceWithDetailsRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 	SpaceName              *string            `json:"space_name"`
 	SpaceSlug              *string            `json:"space_slug"`
 	SpaceLevel             *string            `json:"space_level"`
@@ -2269,7 +2269,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -2352,7 +2352,7 @@ type ListForumThreadsByTagWithDetailsRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 	SpaceName              *string            `json:"space_name"`
 	SpaceSlug              *string            `json:"space_slug"`
 	SpaceLevel             *string            `json:"space_level"`
@@ -2431,7 +2431,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type,
  s.name AS space_name,
  s.slug AS space_slug,
  s.level AS space_level,
@@ -2514,7 +2514,7 @@ type ListForumThreadsWithDetailsRow struct {
 	AuthorDisplayName      interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 	SpaceName              *string            `json:"space_name"`
 	SpaceSlug              *string            `json:"space_slug"`
 	SpaceLevel             *string            `json:"space_level"`

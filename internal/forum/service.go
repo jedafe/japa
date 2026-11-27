@@ -11,6 +11,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -117,6 +118,10 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 			CreatedByUserID:   input.CreatedByUserID,
 		})
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return gen.ForumThread{}, errpkg.ErrDuplicate
+			}
 			return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 		}
 

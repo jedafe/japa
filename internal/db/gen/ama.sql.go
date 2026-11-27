@@ -186,7 +186,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -220,7 +220,7 @@ type GetAMAByIDRow struct {
 	AuthorUsername         interface{}        `json:"author_username"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 // =====================
@@ -327,7 +327,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -382,7 +382,7 @@ type ListActiveAMAsRow struct {
 	AuthorUsername         interface{}        `json:"author_username"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) ([]ListActiveAMAsRow, error) {
@@ -447,7 +447,7 @@ SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
@@ -501,7 +501,7 @@ type ListClosedAMAsRow struct {
 	AuthorUsername         interface{}        `json:"author_username"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 func (q *Queries) ListClosedAMAs(ctx context.Context, arg ListClosedAMAsParams) ([]ListClosedAMAsRow, error) {
@@ -596,7 +596,7 @@ RETURNING ft.id, ft.content_id, ft.space_id, ft.author_user_id,
  CASE WHEN ft.is_anonymous THEN NULL ELSE COALESCE(u.public_username, u.username) END AS author_username,
  CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
  (CASE WHEN ft.is_anonymous THEN false ELSE COALESCE(u.verified, false) END)::bool AS author_verified,
- (CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END)::text AS author_verification_type
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.verification_type END AS author_verification_type
 `
 
 type UpdateAMAParams struct {
@@ -632,7 +632,7 @@ type UpdateAMARow struct {
 	AuthorUsername         interface{}        `json:"author_username"`
 	AuthorAvatarUrl        interface{}        `json:"author_avatar_url"`
 	AuthorVerified         bool               `json:"author_verified"`
-	AuthorVerificationType string             `json:"author_verification_type"`
+	AuthorVerificationType interface{}        `json:"author_verification_type"`
 }
 
 // =====================
