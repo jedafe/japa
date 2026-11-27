@@ -798,6 +798,9 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 		} else {
 			pendingInvites = res.data ?? [];
 		}
+		// Mark loaded even on failure — the effect re-fires whenever a
+		// tracked dep changes, so an uncached error would retry-storm.
+		// The error row's Retry button resets invitesLoaded instead.
 		invitesLoaded = true;
 		invitesLoading = false;
 	}
@@ -1406,10 +1409,20 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 						<UserPlus size={15} />
 						{t('space.invites_pending', 'Pending invites')}
 					</h3>
+					{#if invitesError}
+						<p class="mb-2 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+							<span class="min-w-0 flex-1">{invitesError}</span>
+							<button
+								type="button"
+								onclick={() => { invitesLoaded = false; loadPendingInvites(); }}
+								class="shrink-0 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
+							>
+								{t('common.retry', 'Retry')}
+							</button>
+						</p>
+					{/if}
 					{#if invitesLoading}
 						<p class="py-2 text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
-					{:else if invitesError}
-						<p class="py-2 text-sm text-red-600 dark:text-red-400">{invitesError}</p>
 					{:else}
 						<ul class="space-y-2">
 							{#each pendingInvites as invite (invite.id)}
@@ -1733,7 +1746,7 @@ import { ogCardUrl, ogMediaUrl } from '#lib/seo/og.js';
 
 <!-- Member-invite modal (§05 hub-redesign) — custom spaces only. -->
 {#if authed && !isPrimary}
-	<InviteModal bind:open={inviteOpen} {space} />
+	<InviteModal bind:open={inviteOpen} {space} onsent={() => (invitesLoaded = false)} />
 {/if}
 
 <!-- Create-subspace modal (§05 hub-redesign) — geo parents pre-attach

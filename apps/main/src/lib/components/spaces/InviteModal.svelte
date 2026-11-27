@@ -18,8 +18,11 @@
 	interface Props {
 		open?: boolean;
 		space: Space;
+		/** Fired after each successful invite — the host page uses it to
+		 *  invalidate its cached pending-invites list. */
+		onsent?: () => void;
 	}
-	let { open = $bindable(false), space }: Props = $props();
+	let { open = $bindable(false), space, onsent }: Props = $props();
 
 	let query = $state('');
 	let hits = $state<SearchHit[]>([]);
@@ -75,6 +78,7 @@
 				: res.error.message;
 		} else {
 			invitedIds = new Set([...invitedIds, hit.id]);
+			onsent?.();
 		}
 		invitingId = null;
 	}
