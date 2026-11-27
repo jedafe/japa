@@ -681,6 +681,27 @@ UPDATE admin_broadcasts
 SET claimed_at = NULL
 WHERE id = $1 AND sent_at IS NULL;
 
+-- name: MakeBroadcastDue :execrows
+-- Manual "send now" (POST /admin/broadcasts/:id/send and the immediate
+-- POST /admin/broadcast path): mark the stored row due so the
+-- broadcast:dispatch_scheduled worker delivers it — Rule 8 keeps the
+-- per-recipient fan-out off the request path. Mirrors the ClaimBroadcast
+-- lease predicate: a row already sent or claimed mid-dispatch can't be
+-- re-due'd (0 rows → caller returns a conflict).
+UPDATE admin_broadcasts
+SET scheduled_at = now()
+WHERE id = $1 AND sent_at IS NULL
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes');
+
+-- name: ResetBroadcastToDraft :exec
+-- Permanent dispatch failure (an unrecognized stored target — reachable
+-- only via direct DB writes since the API whitelists targets): revert
+-- the pending row to draft so the every-minute sweep stops retrying it
+-- and it surfaces in the admin Drafts tab for an operator to fix/delete.
+UPDATE admin_broadcasts
+SET scheduled_at = NULL, claimed_at = NULL
+WHERE id = $1 AND sent_at IS NULL;
+
 -- name: MarkBroadcastSent :exec
 UPDATE admin_broadcasts
 SET sent_at = now(), recipient_count = $2, claimed_at = NULL

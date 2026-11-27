@@ -347,8 +347,9 @@
 				{/if}
 			</div>
 
-			<!-- Footer -->
-			<div class="border-t border-[var(--color-border)] px-3 py-2">
+			<!-- Footer — sticky bottom so "View all" stays pinned while the
+				list scrolls; opaque bg matches the panel surface. -->
+			<div class="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-surface,var(--background))] px-3 py-2">
 				<a
 					href="/notifications"
 					class="block text-center text-xs font-medium text-[var(--color-primary-text)] hover:underline"

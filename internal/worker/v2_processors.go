@@ -105,8 +105,11 @@ type AdsSelfServeProcessor interface {
 }
 
 // PushProcessor handles mobile push delivery (§77, ADR-074).
+// notificationID keys the canonical path — title/body load from the
+// notifications row. When invalid (push-only prefs, dedup'd alerts, no
+// persisted row), the inline title/body/actionURL carry the content.
 type PushProcessor interface {
-	SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID) error
+	SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID, title, body, actionURL string) error
 }
 
 // PersonaProcessor handles participation orchestration tasks (§76, ADR-077).
@@ -826,11 +829,42 @@ func HandleAdsNotifyCampaignStatus(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleNotificationSendPush dispatches a push notification to FCM/APNs (§77).
+// Payload: device_token_id required (anchor token — the adapter resolves the
+// user and fans out to all their active tokens), plus either notification_id
+// (content loaded from the row) or inline title/body/action_url for row-less
+// pushes (§11 payload contract). Malformed payloads SkipRetry — a missing
+// required field is permanent, not transient.
 func HandleNotificationSendPush(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "notification:send_push", pushProcessor != nil, []string{"notification_id", "device_token_id"},
-		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return pushProcessor.SendPush(ctx, ids[0], ids[1])
-		})
+	if pushProcessor == nil {
+		slog.Warn("task:notification:send_push: no processor registered, skipping")
+		return nil
+	}
+
+	var p map[string]string
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:notification:send_push: invalid payload: %w: %w", err, asynq.SkipRetry)
+	}
+
+	var tokenID, notifID pgtype.UUID
+	if err := tokenID.Scan(p["device_token_id"]); err != nil {
+		return fmt.Errorf("task:notification:send_push: bad device_token_id: %w: %w", err, asynq.SkipRetry)
+	}
+
+	if s := p["notification_id"]; s != "" {
+		if err := notifID.Scan(s); err != nil {
+			return fmt.Errorf("task:notification:send_push: bad notification_id: %w: %w", err, asynq.SkipRetry)
+		}
+	}
+
+	if !notifID.Valid && p["title"] == "" {
+		return fmt.Errorf("task:notification:send_push: payload has neither notification_id nor title: %w", asynq.SkipRetry)
+	}
+
+	if err := pushProcessor.SendPush(ctx, notifID, tokenID, p["title"], p["body"], p["action_url"]); err != nil {
+		return fmt.Errorf("task:notification:send_push: %w", err)
+	}
+
+	return nil
 }
 
 // HandlePersonaRunActivity runs a scheduled persona activity cycle (§76).

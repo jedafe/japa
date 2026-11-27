@@ -12,11 +12,14 @@ package workerv2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"time"
 
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/adsselfserve"
@@ -532,9 +535,12 @@ func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaign
 // ---------------------------------------------------------------------------
 
 // PushAdapter adapts the devices.Service to the PushProcessor
-// interface. The Asynq payload carries notification_id + device_token_id;
-// the adapter resolves the user and platform from the device token, then
-// delegates to the service's SendPush.
+// interface. The Asynq payload carries device_token_id plus either
+// notification_id (content loaded from the row — the canonical path) or
+// inline title/body/action_url for row-less pushes (push-only effective
+// prefs, dedup'd DM alerts). The adapter resolves the user from the
+// device token, then delegates to the service's SendPush which fans out
+// to all of the user's active tokens.
 type PushAdapter struct {
 	svc *devices.Service
 	db  *db.DB
@@ -545,9 +551,13 @@ func NewPushAdapter(svc *devices.Service, database *db.DB) *PushAdapter {
 	return &PushAdapter{svc: svc, db: database}
 }
 
-// SendPush resolves the device token's platform and user, then sends the push
-// notification. The notification payload is loaded from the notifications table.
-func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID) error {
+// SendPush resolves the device token's user, then sends the push
+// notification. When notificationID is valid the payload is loaded from
+// the notifications table; otherwise the inline title/body/actionURL
+// carry the content. Missing token or notification rows are permanent
+// (e.g. GDPR erasure raced the enqueue) — SkipRetry avoids dead-letter
+// churn on rows that can never reappear.
+func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID, title, body, actionURL string) error {
 	var userID pgtype.UUID
 
 	err := a.db.Reader.QueryRow(
@@ -555,27 +565,38 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 		"SELECT user_id FROM device_tokens WHERE id = $1", deviceTokenID,
 	).Scan(&userID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("device token gone: %w: %w", err, asynq.SkipRetry)
+		}
 		return fmt.Errorf("looking up device token: %w", err)
 	}
 
-	// Load the notification to build the push payload.
-	var title, body string
+	data := map[string]interface{}{}
 
-	err = a.db.Reader.QueryRow(
-		ctx,
-		"SELECT title, body FROM notifications WHERE id = $1",
-		notificationID,
-	).Scan(&title, &body)
-	if err != nil {
-		return fmt.Errorf("looking up notification: %w", err)
+	if notificationID.Valid {
+		// Canonical path — the notification row is the source of truth.
+		err = a.db.Reader.QueryRow(
+			ctx,
+			"SELECT title, body FROM notifications WHERE id = $1",
+			notificationID,
+		).Scan(&title, &body)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("notification gone: %w: %w", err, asynq.SkipRetry)
+			}
+			return fmt.Errorf("looking up notification: %w", err)
+		}
+		data["notification_id"] = notificationID.String()
+	}
+
+	if actionURL != "" {
+		data["action_url"] = actionURL
 	}
 
 	return a.svc.SendPush(ctx, userID, devices.PushPayload{
 		Title: title,
 		Body:  body,
-		Data: map[string]interface{}{
-			"notification_id": notificationID.String(),
-		},
+		Data:  data,
 	})
 }
 

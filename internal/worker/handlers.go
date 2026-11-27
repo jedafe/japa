@@ -5938,7 +5938,7 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 	// alert — deliver push only, don't stack a second in-app row.
 	if has, err := notificationCreator.HasUnreadNotification(ctx, recipientID,
 		"dm.request", "dm_conversation", convID); err == nil && has {
-		dmPushOnly(payload.RecipientID, title, body, "/messages/requests")
+		dmPushOnly(ctx, payload.RecipientID, title, body, "/messages/requests")
 		return nil
 	}
 
@@ -6010,7 +6010,7 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	// notification centre with one row per message.
 	if has, err := notificationCreator.HasUnreadNotification(ctx, recipientID,
 		"dm.message", "dm_conversation", convID); err == nil && has {
-		dmPushOnly(payload.RecipientID, title, body, actionURL)
+		dmPushOnly(ctx, payload.RecipientID, title, body, actionURL)
 		return nil
 	}
 
@@ -6027,9 +6027,11 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// dmPushOnly enqueues a bare web push for a DM event whose in-app row already
+// dmPushOnly enqueues push delivery for a DM event whose in-app row already
 // exists unread — keeps per-message push delivery without stacking rows.
-func dmPushOnly(recipientID, title, body, actionURL string) {
+// Covers web push (push:deliver) and §77 mobile push (notification:send_push
+// with inline content — the covering row's id isn't needed).
+func dmPushOnly(ctx context.Context, recipientID, title, body, actionURL string) {
 	if taskEnqueuer == nil {
 		return
 	}
@@ -6042,6 +6044,30 @@ func dmPushOnly(recipientID, title, body, actionURL string) {
 	})
 	if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
 		slog.Warn("task:dm: push-only enqueue failed", "error", err)
+	}
+
+	if dbPool == nil {
+		return
+	}
+
+	uid, err := scanUUID(recipientID)
+	if err != nil {
+		return
+	}
+
+	tokens, err := gen.New(dbPool.Reader).GetActiveDeviceTokensForUser(ctx, uid)
+	if err != nil || len(tokens) == 0 {
+		return
+	}
+
+	mobilePayload, _ := json.Marshal(map[string]string{
+		"device_token_id": tokens[0].ID.String(),
+		"title":           title,
+		"body":            body,
+		"action_url":      actionURL,
+	})
+	if err := taskEnqueuer.Enqueue(TypeNotificationSendPush, mobilePayload); err != nil {
+		slog.Warn("task:dm: mobile push-only enqueue failed", "error", err)
 	}
 }
 
@@ -7598,13 +7624,53 @@ func HandleWikiFieldsPropagate(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// HandleBroadcastDispatchScheduled sweeps admin_broadcasts for rows whose
-// scheduled_at is due and delivers them: a system_announcement notification
-// for every user in the stored target scope, then sent_at + recipient_count
-// stamped. §35 — runs every minute via the Asynq scheduler.
-func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error {
+// HandleBroadcastDispatchScheduled dispatches due admin_broadcasts rows:
+// a broadcast notification for every user in the stored target scope,
+// then sent_at + recipient_count stamped. §35 — runs every minute via
+// the Asynq scheduler (empty payload = sweep all due rows) and is also
+// enqueued with {broadcast_id} by the immediate-send paths (POST
+// /admin/broadcast without a schedule, POST /admin/broadcasts/:id/send)
+// to kick a targeted dispatch — Rule 8 keeps the per-recipient fan-out
+// off the request path.
+func HandleBroadcastDispatchScheduled(ctx context.Context, t *asynq.Task) error {
 	if dbPool == nil {
 		slog.Warn("task:broadcast:dispatch_scheduled: no database, skipping")
+		return nil
+	}
+
+	var p struct {
+		BroadcastID string `json:"broadcast_id"`
+	}
+	if len(t.Payload()) > 0 {
+		_ = json.Unmarshal(t.Payload(), &p)
+	}
+
+	q := gen.New(dbPool.Writer)
+
+	// Targeted kick: dispatch one due row (the immediate-send paths make
+	// the row due before enqueueing, so the same due/claim semantics
+	// apply — a row that's already sent, claimed, or not yet due is a
+	// no-op). Writer pool avoids replica lag: the row was just written.
+	if p.BroadcastID != "" {
+		var id pgtype.UUID
+		if err := id.Scan(p.BroadcastID); err != nil {
+			return fmt.Errorf("task:broadcast:dispatch_scheduled: bad broadcast_id: %w: %w", err, asynq.SkipRetry)
+		}
+
+		b, err := q.GetAdminBroadcastByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // row deleted between enqueue and dispatch
+			}
+			return fmt.Errorf("task:broadcast:dispatch_scheduled: load broadcast: %w", err)
+		}
+
+		if b.SentAt.Valid || !b.ScheduledAt.Valid || b.ScheduledAt.Time.After(time.Now()) {
+			return nil
+		}
+
+		dispatchBroadcast(ctx, q, b.ID, b.Title, b.Body, b.Target, b.TargetID)
+
 		return nil
 	}
 
@@ -7614,101 +7680,108 @@ func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error 
 		return err
 	}
 
-	if len(due) == 0 {
-		return nil
-	}
-
-	q := gen.New(dbPool.Writer)
-
 	for _, b := range due {
-		// Claim the row atomically before dispatch — closes the race where a
-		// manual send (or a second worker) could double-insert notifications
-		// for a due scheduled broadcast. 0 rows = already claimed/sent.
-		claimed, err := q.ClaimBroadcast(ctx, b.ID)
-		if err != nil {
-			slog.Error("task:broadcast:dispatch_scheduled: claim failed", "id", b.ID, "error", err)
-			continue
-		}
-
-		if claimed == 0 {
-			continue
-		}
-
-		var recipients []pgtype.UUID
-
-		switch b.Target {
-		case "geo_space":
-			recipients, err = q.ListActiveUserIDsByGeoSpace(ctx, b.TargetID)
-		case "user_group":
-			recipients, err = q.ListActiveUserIDsByGroup(ctx, b.TargetID)
-		case "all", "":
-			recipients, err = q.ListActiveUserIDs(ctx)
-		default:
-			// Unknown scope — never fall through to "all" (BUG-031): a bad
-			// stored row must not mass-notify every active user.
-			err = fmt.Errorf("invalid broadcast target: %q", b.Target)
-		}
-		if err != nil {
-			slog.Error("task:broadcast:dispatch_scheduled: scope resolve failed", "id", b.ID, "error", err)
-			_ = q.UnclaimBroadcast(ctx, b.ID)
-			continue
-		}
-
-		delivered := 0
-
-		if len(recipients) > 0 {
-			// BUG-001: param order — Column1 is the recipients array.
-			// BUG-027: the INSERT filters on each recipient's effective
-			// in-app preference for 'broadcast' and returns the delivered
-			// (id, recipient_id) set.
-			inserted, err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
-				Column1:   recipients,
-				Title:     b.Title,
-				Body:      &b.Body,
-				CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			})
-			if err != nil {
-				slog.Error("task:broadcast:dispatch_scheduled: notify failed", "id", b.ID, "error", err)
-				_ = q.UnclaimBroadcast(ctx, b.ID)
-				continue
-			}
-
-			// BUG-027: invalidate the unread-count cache for inserted
-			// recipients so the badge reflects the broadcast.
-			if rdb != nil {
-				for _, row := range inserted {
-					if err := rdb.Del(ctx, valkey.MustKey("notif_unread:%s", row.RecipientID.String())).Err(); err != nil {
-						slog.Warn("task:broadcast:dispatch_scheduled: unread invalidation failed", "user_id", row.RecipientID.String(), "error", err)
-					}
-				}
-			}
-
-			// BUG-027: fan out email/web-push/mobile-push to recipients
-			// whose effective preferences enable them (the 'broadcast'
-			// type seeds default_email=true). recipient_count is the
-			// distinct set reached on any channel.
-			delivered = enqueueBroadcastChannels(ctx, q, recipients, b.Title, b.Body, inserted)
-		}
-
-		// #nosec G115 // recipient count bounded by user table size
-		if err := q.MarkBroadcastSent(ctx, gen.MarkBroadcastSentParams{ID: b.ID, RecipientCount: int32(delivered)}); err != nil {
-			slog.Error("task:broadcast:dispatch_scheduled: mark sent failed", "id", b.ID, "error", err)
-			continue
-		}
-
-		slog.Info("task:broadcast:dispatch_scheduled: sent", "id", b.ID, "recipients", delivered)
+		dispatchBroadcast(ctx, q, b.ID, b.Title, b.Body, b.Target, b.TargetID)
 	}
 
 	return nil
 }
 
+// dispatchBroadcast delivers one due admin_broadcasts row: claim → scope
+// resolve → pref-filtered insert → unread invalidation → channel fan-out
+// → mark sent. Transient failures roll the claim back for retry; a
+// stored target outside {all, user_group, geo_space} is a permanent data
+// error and reverts the row to draft (otherwise the sweep would retry it
+// every minute forever — reachable only via direct DB writes since the
+// API whitelists targets).
+func dispatchBroadcast(ctx context.Context, q *gen.Queries, id pgtype.UUID, title, body, target string, targetID pgtype.UUID) {
+	// Claim the row atomically before dispatch — closes the race where a
+	// manual send (or a second worker) could double-insert notifications
+	// for a due scheduled broadcast. 0 rows = already claimed/sent.
+	claimed, err := q.ClaimBroadcast(ctx, id)
+	if err != nil {
+		slog.Error("task:broadcast:dispatch_scheduled: claim failed", "id", id, "error", err)
+		return
+	}
+
+	if claimed == 0 {
+		return
+	}
+
+	var recipients []pgtype.UUID
+
+	switch target {
+	case "geo_space":
+		recipients, err = q.ListActiveUserIDsByGeoSpace(ctx, targetID)
+	case "user_group":
+		recipients, err = q.ListActiveUserIDsByGroup(ctx, targetID)
+	case "all", "":
+		recipients, err = q.ListActiveUserIDs(ctx)
+	default:
+		// Unknown scope — never fall through to "all" (BUG-031): a bad
+		// stored row must not mass-notify every active user.
+		slog.Error("task:broadcast:dispatch_scheduled: invalid target — reverted to draft", "id", id, "target", target)
+		_ = q.ResetBroadcastToDraft(ctx, id)
+		return
+	}
+	if err != nil {
+		slog.Error("task:broadcast:dispatch_scheduled: scope resolve failed", "id", id, "error", err)
+		_ = q.UnclaimBroadcast(ctx, id)
+		return
+	}
+
+	delivered := 0
+
+	if len(recipients) > 0 {
+		// BUG-001: param order — Column1 is the recipients array.
+		// BUG-027: the INSERT filters on each recipient's effective
+		// in-app preference for 'broadcast' and returns the delivered
+		// (id, recipient_id) set.
+		inserted, err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+			Column1:   recipients,
+			Title:     title,
+			Body:      &body,
+			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		})
+		if err != nil {
+			slog.Error("task:broadcast:dispatch_scheduled: notify failed", "id", id, "error", err)
+			_ = q.UnclaimBroadcast(ctx, id)
+			return
+		}
+
+		// BUG-027: invalidate the unread-count cache for inserted
+		// recipients so the badge reflects the broadcast.
+		if rdb != nil {
+			for _, row := range inserted {
+				if err := rdb.Del(ctx, valkey.MustKey("notif_unread:%s", row.RecipientID.String())).Err(); err != nil {
+					slog.Warn("task:broadcast:dispatch_scheduled: unread invalidation failed", "user_id", row.RecipientID.String(), "error", err)
+				}
+			}
+		}
+
+		// BUG-027: fan out email/web-push/mobile-push to recipients
+		// whose effective preferences enable them (the 'broadcast'
+		// type seeds default_email=true). recipient_count is the
+		// distinct set reached on any channel.
+		delivered = enqueueBroadcastChannels(ctx, q, recipients, title, body, inserted)
+	}
+
+	// #nosec G115 // recipient count bounded by user table size
+	if err := q.MarkBroadcastSent(ctx, gen.MarkBroadcastSentParams{ID: id, RecipientCount: int32(delivered)}); err != nil {
+		slog.Error("task:broadcast:dispatch_scheduled: mark sent failed", "id", id, "error", err)
+		return
+	}
+
+	slog.Info("task:broadcast:dispatch_scheduled: sent", "id", id, "recipients", delivered)
+}
+
 // enqueueBroadcastChannels fans out the non-in-app broadcast channels —
 // email, web push, and §77 mobile push — to every targeted recipient
 // whose effective preference enables them. inserted carries the
-// (notification_id, recipient_id) rows actually created; mobile push
-// (notification:send_push) only fires for those recipients because the
-// adapter resolves title/body from the notifications table. Returns the
-// distinct set of users reached on ANY channel for the broadcast record.
+// (notification_id, recipient_id) rows actually created; recipients
+// without a row (in-app pref off) get inline-content send_push payloads
+// instead. Returns the distinct set of users reached on ANY channel for
+// the broadcast record.
 // BUG-027: previously broadcasts were in-app only regardless of the
 // 'broadcast' type's default_email=true and any per-user overrides.
 func enqueueBroadcastChannels(ctx context.Context, q *gen.Queries, recipients []pgtype.UUID, title, body string, inserted []gen.CreateBroadcastNotificationsRow) int {
@@ -7765,8 +7838,10 @@ func enqueueBroadcastChannels(ctx context.Context, q *gen.Queries, recipients []
 	}
 
 	// §77 mobile push: one notification:send_push per push-enabled
-	// recipient that both received an in-app row and has an active
-	// FCM/APNs device token (PushAdapter fans out to all tokens).
+	// recipient with an active FCM/APNs device token (PushAdapter fans
+	// out to all tokens). Recipients that got an in-app row key the push
+	// on notification_id; push-only recipients (in-app pref off) carry
+	// inline title/body — the send_push contract accepts either.
 	pushTargets, err := q.ListBroadcastPushTargets(ctx, recipients)
 	if err != nil {
 		slog.Error("broadcast: resolve push targets failed", "error", err)
@@ -7774,15 +7849,15 @@ func enqueueBroadcastChannels(ctx context.Context, q *gen.Queries, recipients []
 	}
 
 	for _, t := range pushTargets {
-		notifID, ok := notifByUser[t.UserID]
-		if !ok {
-			continue
+		p := map[string]string{"device_token_id": t.DeviceTokenID.String()}
+		if notifID, ok := notifByUser[t.UserID]; ok {
+			p["notification_id"] = notifID.String()
+		} else {
+			p["title"] = title
+			p["body"] = body
 		}
 
-		payload, mErr := json.Marshal(map[string]string{
-			"notification_id": notifID.String(),
-			"device_token_id": t.DeviceTokenID.String(),
-		})
+		payload, mErr := json.Marshal(p)
 		if mErr == nil {
 			if err := taskEnqueuer.Enqueue(TypeNotificationSendPush, payload); err != nil {
 				slog.Warn("broadcast: enqueue mobile push failed", "user_id", t.UserID.String(), "error", err)

@@ -128,6 +128,12 @@ func taskDefaults(taskType string) []asynq.Option {
 	// DB-only tasks: standard timeout.
 	case TypeScheduledPublish, TypeScheduledPublishSweep:
 		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(5))
+	// §35 broadcast dispatch: per-recipient insert + email/push fan-out
+	// is the longest-running task class — a target=all dispatch enqueues
+	// up to 3N tasks. Generous timeout; bounded retries since a killed
+	// task's row re-arms via the 10-minute claim lease.
+	case TypeBroadcastDispatch:
+		opts = append(opts, asynq.Timeout(10*time.Minute), asynq.MaxRetry(3))
 	// Assessment scoring: pure computation + DB writes. Generous timeout
 	// for DB contention headroom; 5 retries with exponential backoff
 	// ensures a submission is eventually scored even if the worker is

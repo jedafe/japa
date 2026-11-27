@@ -220,9 +220,11 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
 				return fmt.Errorf("marking batch window dispatched: %w", err)
 			}
-			// Still honour push/email if the user enabled them.
+			// Still honour push/email if the user enabled them. No row
+			// exists → mobile push carries the content inline.
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, body, actionURL, windowID.String())
+				s.enqueueMobilePushInline(ctx, window.RecipientID, title, body, actionURL)
 			}
 
 			if ep.Email {
@@ -371,9 +373,11 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	}
 
 	if prefErr == nil && havePref && !ep.InApp {
-		// in-app off — no row, but push/email still honoured.
+		// in-app off — no row, but push/email still honoured. Mobile
+		// push carries the content inline (no notification id to key on).
 		if ep.Push {
 			s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, "")
+			s.enqueueMobilePushInline(ctx, recipientID, title, body, actionURL)
 		}
 
 		if ep.Email {

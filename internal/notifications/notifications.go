@@ -338,15 +338,12 @@ func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pg
 }
 
 // enqueueMobilePush enqueues one notification:send_push task for the
-// recipient's registered mobile devices (§77, ADR-074). The task
-// contract requires a persisted notification row — PushAdapter resolves
-// the recipient from any one of their active device tokens and fans out
-// to every token itself via devices.Service.SendPush, so a single task
-// keyed on the first token delivers to all devices without N² fan-out.
-//
-// BUG-026: call only where a real notification id exists — push-only
-// delivery paths (in_app=false + push=true effective pref) insert no
-// row and the adapter loads title/body from the notifications table.
+// recipient's registered mobile devices (§77, ADR-074). PushAdapter
+// resolves the recipient from any one of their active device tokens and
+// fans out to every token itself via devices.Service.SendPush, so a
+// single task keyed on the first token delivers to all devices without
+// N² fan-out. The notification_id payload key loads title/body from the
+// persisted row — the canonical path.
 func (s *Service) enqueueMobilePush(ctx context.Context, recipientID, notifID pgtype.UUID) {
 	if s.client == nil || s.deviceTokens == nil || !notifID.Valid {
 		return
@@ -386,6 +383,51 @@ func (s *Service) enqueueMobilePush(ctx context.Context, recipientID, notifID pg
 	}
 }
 
+// enqueueMobilePushInline is the row-less variant of enqueueMobilePush:
+// push-only effective prefs (in_app=false + push=true) insert no
+// notifications row, so the payload carries title/body/action_url inline
+// and the adapter skips the row lookup (§11 send_push contract).
+func (s *Service) enqueueMobilePushInline(ctx context.Context, recipientID pgtype.UUID, title, body, actionURL string) {
+	if s.client == nil || s.deviceTokens == nil || title == "" {
+		return
+	}
+
+	tokens, err := s.deviceTokens.GetActiveDeviceTokensForUser(ctx, recipientID)
+	if err != nil {
+		slog.Warn("notifications: list device tokens failed",
+			"recipient_id", recipientID.String(), "error", err)
+		return
+	}
+
+	if len(tokens) == 0 {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"device_token_id": tokens[0].ID.String(),
+		"title":           title,
+		"body":            body,
+		"action_url":      actionURL,
+	})
+	if err != nil {
+		slog.Error("notifications: failed to marshal send_push payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeNotificationSendPush, payload)
+	opts := worker.TaskOpts(worker.TypeNotificationSendPush)
+	if s.settings != nil {
+		if maxAttempts := s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", 5); maxAttempts > 0 {
+			opts = append(opts, asynq.MaxRetry(maxAttempts))
+		}
+	}
+
+	if _, err := s.client.Enqueue(task, opts...); err != nil {
+		slog.Error("notifications: failed to enqueue mobile push",
+			"recipient_id", recipientID.String(), "error", err)
+	}
+}
+
 // checkAndEnqueuePush checks user preferences and enqueues push if enabled.
 // BUG-002: previously only checked explicit user preferences, ignoring
 // notification_type defaults. A type with default_push=true (e.g.
@@ -402,10 +444,13 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, dedupID)
 
 		// dedupID carries the notification id on the fallback dispatch
-		// paths — mobile push shares the same effective-pref gate.
+		// paths — mobile push shares the same effective-pref gate. A
+		// non-uuid dedupID means no row exists → inline-content push.
 		var nid pgtype.UUID
 		if err := nid.Scan(dedupID); err == nil {
 			s.enqueueMobilePush(ctx, recipientID, nid)
+		} else {
+			s.enqueueMobilePushInline(ctx, recipientID, title, body, actionURL)
 		}
 	}
 }

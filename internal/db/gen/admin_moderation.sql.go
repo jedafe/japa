@@ -1747,6 +1747,27 @@ func (q *Queries) ListUserWarnings(ctx context.Context, userID pgtype.UUID) ([]L
 	return items, nil
 }
 
+const makeBroadcastDue = `-- name: MakeBroadcastDue :execrows
+UPDATE admin_broadcasts
+SET scheduled_at = now()
+WHERE id = $1 AND sent_at IS NULL
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
+`
+
+// Manual "send now" (POST /admin/broadcasts/:id/send and the immediate
+// POST /admin/broadcast path): mark the stored row due so the
+// broadcast:dispatch_scheduled worker delivers it — Rule 8 keeps the
+// per-recipient fan-out off the request path. Mirrors the ClaimBroadcast
+// lease predicate: a row already sent or claimed mid-dispatch can't be
+// re-due'd (0 rows → caller returns a conflict).
+func (q *Queries) MakeBroadcastDue(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, makeBroadcastDue, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markBroadcastSent = `-- name: MarkBroadcastSent :exec
 UPDATE admin_broadcasts
 SET sent_at = now(), recipient_count = $2, claimed_at = NULL
@@ -1814,6 +1835,21 @@ func (q *Queries) RemoveContentByAdmin(ctx context.Context, id pgtype.UUID) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const resetBroadcastToDraft = `-- name: ResetBroadcastToDraft :exec
+UPDATE admin_broadcasts
+SET scheduled_at = NULL, claimed_at = NULL
+WHERE id = $1 AND sent_at IS NULL
+`
+
+// Permanent dispatch failure (an unrecognized stored target — reachable
+// only via direct DB writes since the API whitelists targets): revert
+// the pending row to draft so the every-minute sweep stops retrying it
+// and it surfaces in the admin Drafts tab for an operator to fix/delete.
+func (q *Queries) ResetBroadcastToDraft(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, resetBroadcastToDraft, id)
+	return err
 }
 
 const restoreContentByAdmin = `-- name: RestoreContentByAdmin :execrows
