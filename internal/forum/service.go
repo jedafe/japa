@@ -71,6 +71,33 @@ func deconflictForumSlug(slug string) string {
 	return slug
 }
 
+// maxForumSlugAttempts bounds the -N suffix walk in uniqueForumSlug.
+const maxForumSlugAttempts = 100
+
+// uniqueForumSlug returns slug or slug-N (N=2,3,…) — the first candidate not
+// held by a live forum_threads row. Runs against the caller's *gen.Queries so
+// it can participate in the create transaction; mirrors
+// content.ensureUniqueSlugWithQueries. A concurrent insert on the resolved
+// candidate still surfaces as a 23505 → ErrDuplicate.
+func uniqueForumSlug(ctx context.Context, q *gen.Queries, slug string) (string, error) {
+	for i := 2; i <= maxForumSlugAttempts; i++ {
+		candidate := slug
+		if i > 2 {
+			candidate = fmt.Sprintf("%s-%d", slug, i-1)
+		}
+
+		_, err := q.GetForumThreadBySlug(ctx, candidate)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return candidate, nil
+		case err != nil:
+			return "", fmt.Errorf("checking forum slug %q: %w", candidate, err)
+		}
+	}
+
+	return "", fmt.Errorf("could not find unique forum slug after %d attempts", maxForumSlugAttempts)
+}
+
 // CreateThread creates a new forum thread and optionally a poll in a single
 // transaction. The poll is only created when input.Poll is non-nil and has at
 // least two options, so the thread and its poll are always committed (or
@@ -105,13 +132,18 @@ func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in
 	}
 
 	thread, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumThread, error) {
+		uniqueSlug, err := uniqueForumSlug(ctx, q, input.Slug)
+		if err != nil {
+			return gen.ForumThread{}, err
+		}
+
 		t, err := q.CreateForumThread(ctx, gen.CreateForumThreadParams{
 			ContentID:         input.ContentID,
 			SpaceID:           input.SpaceID,
 			AuthorUserID:      authorUserID,
 			ParentReplyID:     input.ParentReplyID,
 			Title:             input.Title,
-			Slug:              input.Slug,
+			Slug:              uniqueSlug,
 			Body:              input.Body,
 			IsAnonymous:       input.IsAnonymous,
 			EditWindowMinutes: editWindow,

@@ -648,7 +648,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// For video posts, append the video_source_id so the same body text
 	// with different sources does not collide (§106).
 	contentHash := input.ContentHash
-	if contentHash == nil && strings.TrimSpace(input.Body) != "" {
+	if contentHash == nil && strings.TrimSpace(stripMarkdown(input.Body)) != "" {
 		var h string
 		if input.ContentType == TypeVideo && input.VideoSourceID.Valid {
 			h = ComputeContentHashWithDistinguisher(input.Body, input.VideoSourceID.String())
