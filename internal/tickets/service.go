@@ -204,6 +204,14 @@ func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (ge
 		return gen.Ticket{}, errors.New("description is required")
 	}
 
+	// tickets.type_id is NOT NULL — every create path (HTTP portal,
+	// form triggers, inbound mail, appeals) must resolve a real type.
+	// An invalid UUID here would otherwise surface as a misleading
+	// "ticket type not found" lookup error.
+	if !input.TypeID.Valid {
+		return gen.Ticket{}, errors.New("type_id is required")
+	}
+
 	// Resolve ticket type for default priority and SLA.
 	ticketType, err := s.store.getTicketTypeByID(ctx, input.TypeID)
 	if err != nil {

@@ -188,12 +188,13 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		TypeID      string         `json:"type_id"`
-		Subject     string         `json:"subject"`
-		Description string         `json:"description"`
-		Priority    string         `json:"priority"`
-		Email       string         `json:"email"`
-		FieldValues map[string]any `json:"field_values"`
+		TypeID        string         `json:"type_id"`
+		Subject       string         `json:"subject"`
+		Description   string         `json:"description"`
+		Priority      string         `json:"priority"`
+		Email         string         `json:"email"`
+		FieldValues   map[string]any `json:"field_values"`
+		AttachmentIDs []string       `json:"attachment_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -217,11 +218,31 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var typeID pgtype.UUID
-	if input.TypeID != "" {
-		if err := typeID.Scan(input.TypeID); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+	if err := typeID.Scan(input.TypeID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+		return
+	}
+
+	// Portal submissions file under public types only — non-public types
+	// (appeal, internal) exist for their own channels; the type_id body
+	// field must not become a backdoor into them.
+	ticketType, err := h.Service.GetTicketType(r.Context(), typeID)
+	if err != nil || !ticketType.IsPublic {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+		return
+	}
+
+	// attachment_ids references media already uploaded by the caller —
+	// validate the formats up front so a bad id can't half-succeed after
+	// the ticket row lands.
+	mediaIDs := make([]pgtype.UUID, 0, len(input.AttachmentIDs))
+	for _, raw := range input.AttachmentIDs {
+		var mediaID pgtype.UUID
+		if err := mediaID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_attachment_id", "attachment_ids must be UUIDs")
 			return
 		}
+		mediaIDs = append(mediaIDs, mediaID)
 	}
 
 	ticket, err := h.Service.CreateTicket(r.Context(), CreateTicketInput{
@@ -236,6 +257,14 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Link pre-uploaded media. A nonexistent media_id fails the FK insert —
+	// logged and skipped so a stray id never loses the created ticket.
+	for _, mediaID := range mediaIDs {
+		if _, err := h.Service.AddAttachment(r.Context(), ticket.ID, AddAttachmentInput{MediaID: mediaID}); err != nil {
+			slog.Warn("linking ticket attachment", "ticket_id", ticket.ID.String(), "media_id", mediaID.String(), "error", err)
+		}
 	}
 
 	h.resolveLiterals(r, &ticket)
@@ -751,19 +780,28 @@ func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 // Ticket Type Management Handlers
 // ---------------------------------------------------------------------------
 
-// ListTicketTypes handles GET /api/v1/ticket-types (public).
+// ListTicketTypes handles GET /api/v1/ticket-types (public). The portal
+// list is always restricted to is_public types — non-public types (appeal,
+// internal) must never be selectable outside their own channels.
 func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
-	h.listTicketTypes(w, r, true)
+	publicOnly := true
+	h.listTicketTypes(w, r, true, &publicOnly)
 }
 
 // AdminListTicketTypes handles GET /api/v1/admin/ticket-types. Same listing
 // but literals stay unresolved — admin surfaces must round-trip raw {{...}}
-// syntax (public keeps resolution).
+// syntax (public keeps resolution). The optional ?is_public= filter is
+// honored here only.
 func (h *Handlers) AdminListTicketTypes(w http.ResponseWriter, r *http.Request) {
-	h.listTicketTypes(w, r, false)
+	var isPublic *bool
+	if v := r.URL.Query().Get("is_public"); v != "" {
+		b := v == "true"
+		isPublic = &b
+	}
+	h.listTicketTypes(w, r, false, isPublic)
 }
 
-func (h *Handlers) listTicketTypes(w http.ResponseWriter, r *http.Request, resolve bool) {
+func (h *Handlers) listTicketTypes(w http.ResponseWriter, r *http.Request, resolve bool, isPublic *bool) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -771,13 +809,6 @@ func (h *Handlers) listTicketTypes(w http.ResponseWriter, r *http.Request, resol
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
-
-	var isPublic *bool
-
-	if v := r.URL.Query().Get("is_public"); v != "" {
-		b := v == "true"
-		isPublic = &b
-	}
 
 	types, err := h.Service.ListTicketTypes(r.Context(), limit, offset, isPublic)
 	if err != nil {

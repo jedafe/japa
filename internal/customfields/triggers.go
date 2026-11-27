@@ -37,8 +37,9 @@ type TriggerDispatcher struct {
 	// Matches the rbac.Store.AddUserToGroup signature.
 	rbacAssigner func(ctx context.Context, userID, groupID pgtype.UUID) error
 
-	// ticketCreator creates a ticket (create_ticket trigger).
-	ticketCreator func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error
+	// ticketCreator creates a ticket (create_ticket trigger). typeSlug is the
+	// configured ticket_type slug — empty means the wiring's default.
+	ticketCreator func(ctx context.Context, typeSlug, subject, description string, submitterUserID *pgtype.UUID) error
 
 	// notifyAdmin sends an admin notification (notify_admin trigger).
 	notifyAdmin func(ctx context.Context, title, body, actionURL string) error
@@ -92,7 +93,7 @@ func (d *TriggerDispatcher) SetRBACAssigner(f func(ctx context.Context, userID, 
 
 // SetTicketCreator wires the function used to create a ticket for the
 // create_ticket trigger type.
-func (d *TriggerDispatcher) SetTicketCreator(f func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error) {
+func (d *TriggerDispatcher) SetTicketCreator(f func(ctx context.Context, typeSlug, subject, description string, submitterUserID *pgtype.UUID) error) {
 	d.ticketCreator = f
 }
 
@@ -379,7 +380,11 @@ func (d *TriggerDispatcher) fireCreateTicket(ctx context.Context, cfg map[string
 		}
 	}
 
-	return d.ticketCreator(ctx, expandTemplate(subject, values), expandTemplate(description, values), submitterUserID)
+	// Optional ticket_type slug — empty falls back to the wiring's default
+	// support type (JC_SUPPORT_TICKET_TYPE).
+	typeSlug, _ := cfg["type_slug"].(string)
+
+	return d.ticketCreator(ctx, typeSlug, expandTemplate(subject, values), expandTemplate(description, values), submitterUserID)
 }
 
 // fireNotifyAdmin sends an admin notification about the submission.

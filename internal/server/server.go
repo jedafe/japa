@@ -1620,7 +1620,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the create_ticket trigger (Section 06 → Section 38): form
 	// submissions with a create_ticket trigger create a support ticket
 	// via the ticket service. Without this hook the trigger silently skips.
-	formTriggerDispatcher.SetTicketCreator(func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error {
+	formTriggerDispatcher.SetTicketCreator(func(ctx context.Context, typeSlug, subject, description string, submitterUserID *pgtype.UUID) error {
 		input := tickets.CreateTicketInput{
 			Subject:     subject,
 			Description: description,
@@ -1630,7 +1630,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			input.SubmitterUserID = *submitterUserID
 		}
 
-		_, err := ticketService.CreateTicket(ctx, input)
+		// Resolve the filing ticket type — the trigger's config.type_slug
+		// wins; otherwise fall back to the default support type used by the
+		// inbound-mail bridge (JC_SUPPORT_TICKET_TYPE, seeded "General
+		// Support"). Tickets.type_id is NOT NULL, so there is no valid
+		// "no type" path.
+		if typeSlug == "" {
+			typeSlug = strings.TrimSpace(os.Getenv("JC_SUPPORT_TICKET_TYPE"))
+			if typeSlug == "" {
+				typeSlug = "demo-ticket-type-general"
+			}
+		}
+		tt, err := ticketService.GetTicketTypeBySlug(ctx, typeSlug)
+		if err != nil {
+			return fmt.Errorf("create_ticket: resolving ticket type %q: %w", typeSlug, err)
+		}
+		input.TypeID = tt.ID
+
+		_, err = ticketService.CreateTicket(ctx, input)
 
 		return err
 	})

@@ -50,14 +50,14 @@
 			errorKey = 'tickets.errors.description_required';
 			return;
 		}
-		if (types.length > 0 && !typeId) {
+		if (!typeId) {
 			errorKey = 'tickets.errors.type_required';
 			return;
 		}
 		loading = true;
 		try {
 			const res = await api.post<{ id: string; ticket_number?: number }>('/tickets', {
-				type_id: typeId || undefined,
+				type_id: typeId,
 				subject: subject.trim(),
 				description: description.trim(),
 				priority,
@@ -99,29 +99,27 @@
 {/if}
 
 <form onsubmit={submit} class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
-	{#if types.length > 0}
-		<div class="flex flex-col gap-1.5">
-			<label for="ticket-type" class="text-sm font-medium text-[var(--color-text)]">
-				{t('tickets.field_type')}
-			</label>
-			<Autocomplete
-				placeholder={t('tickets.type_placeholder')}
-				emptyMessage={t('common.no_results', 'No results found')}
-				fetcher={fetchTypes}
-				initialFetcher={fetchTypesInitial}
-				selectedId={typeId || null}
-				selectedLabel={selectedTypeLabel}
-				onSelect={(item) => {
-					typeId = item.id;
-					const found = types.find((tp) => tp.id === item.id);
-					if (found?.default_priority) priority = found.default_priority;
-				}}
-				onClear={() => {
-					typeId = '';
-				}}
-			/>
-		</div>
-	{/if}
+	<div class="flex flex-col gap-1.5">
+		<label for="ticket-type" class="text-sm font-medium text-[var(--color-text)]">
+			{t('tickets.field_type')}
+		</label>
+		<Autocomplete
+			placeholder={t('tickets.type_placeholder')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={fetchTypes}
+			initialFetcher={fetchTypesInitial}
+			selectedId={typeId || null}
+			selectedLabel={selectedTypeLabel}
+			onSelect={(item) => {
+				typeId = item.id;
+				const found = types.find((tp) => tp.id === item.id);
+				if (found?.default_priority) priority = found.default_priority;
+			}}
+			onClear={() => {
+				typeId = '';
+			}}
+		/>
+	</div>
 
 	<div class="flex flex-col gap-1.5">
 		<label for="ticket-subject" class="text-sm font-medium text-[var(--color-text)]">

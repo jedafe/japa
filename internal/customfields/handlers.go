@@ -3911,7 +3911,12 @@ func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, boo
 			return "send_webhook config.url must be an http(s) URL", false
 		}
 	case "create_ticket":
-		// subject/description both default server-side; no required keys.
+		// subject/description both default server-side; type_slug is optional
+		// (empty files under the default support type) but must be snake_case
+		// when present.
+		if slug, _ := cfg["type_slug"].(string); slug != "" && !guideCategorySlugRe.MatchString(slug) {
+			return "create_ticket config.type_slug must be snake_case (a-z, 0-9, underscore)", false
+		}
 	case "notify_admin":
 		// title/body/action_url all default server-side; no required keys.
 	default:
