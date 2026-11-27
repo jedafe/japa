@@ -371,7 +371,8 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Body string `json:"body"`
+		Body          string   `json:"body"`
+		AttachmentIDs []string `json:"attachment_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -384,6 +385,19 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// attachment_ids references media already uploaded by the caller —
+	// same upfront validation as ticket create so a bad id can't
+	// half-succeed after the comment lands.
+	mediaIDs := make([]pgtype.UUID, 0, len(input.AttachmentIDs))
+	for _, raw := range input.AttachmentIDs {
+		var mediaID pgtype.UUID
+		if err := mediaID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_attachment_id", "attachment_ids must be UUIDs")
+			return
+		}
+		mediaIDs = append(mediaIDs, mediaID)
+	}
+
 	comment, err := h.Service.AddComment(r.Context(), id, AddCommentInput{
 		Body:       input.Body,
 		IsInternal: false,
@@ -392,6 +406,14 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Link pre-uploaded media to the comment — warn-on-failure so a stray
+	// id never loses the posted reply.
+	for _, mediaID := range mediaIDs {
+		if _, err := h.Service.AddAttachment(r.Context(), id, AddAttachmentInput{CommentID: comment.ID, MediaID: mediaID}); err != nil {
+			slog.Warn("linking comment attachment", "ticket_id", id.String(), "comment_id", comment.ID.String(), "media_id", mediaID.String(), "error", err)
+		}
 	}
 
 	h.resolveLiterals(r, &comment)

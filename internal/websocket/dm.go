@@ -627,6 +627,12 @@ var (
 	// recipient (spoofed privacy-bypass attempt or stale entity id).
 	ErrDMInvalidContext = errors.New("invalid message context")
 	ErrDMNotParticipant = errors.New("user is not a participant in this conversation")
+	// The 15-minute edit window (Section 48) is enforced in the
+	// EditDMMessage WHERE clause — this sentinel lets the service report
+	// an expired-window edit as an error instead of a silent 200 no-op
+	// (the :exec affects 0 rows without error).
+	ErrDMEditWindowExpired = errors.New("message edit window has expired")
+	ErrDMMessageDeleted    = errors.New("message has been deleted")
 )
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
@@ -1445,6 +1451,18 @@ func (s *DMService) EditMessage(ctx context.Context, conversationID, messageID, 
 
 	if msg.SenderID != senderID {
 		return ErrDMNotSender
+	}
+
+	// The EditDMMessage WHERE clause also filters deleted_at IS NULL and
+	// the 15-minute window — but :exec silently affects 0 rows on either,
+	// so both conditions are surfaced explicitly rather than returning a
+	// misleading success.
+	if msg.DeletedAt.Valid {
+		return ErrDMMessageDeleted
+	}
+
+	if !msg.CreatedAt.Valid || time.Since(msg.CreatedAt.Time) > 15*time.Minute {
+		return ErrDMEditWindowExpired
 	}
 
 	if err := s.store.EditDMMessage(ctx, messageID, conversationID, senderID, body); err != nil {

@@ -572,8 +572,20 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.EditMessage(r.Context(), conversationID, messageID, user.UserID, req.Body); err != nil {
+		if errors.Is(err, ErrDMNotParticipant) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+			return
+		}
 		if errors.Is(err, ErrDMNotSender) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can edit this message")
+			return
+		}
+		if errors.Is(err, ErrDMMessageDeleted) {
+			errpkg.WriteError(w, http.StatusNotFound, "message_deleted", "This message has been deleted")
+			return
+		}
+		if errors.Is(err, ErrDMEditWindowExpired) {
+			errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The 15-minute edit window has expired")
 			return
 		}
 
@@ -613,6 +625,10 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.DeleteMessage(r.Context(), conversationID, messageID, user.UserID); err != nil {
+		if errors.Is(err, ErrDMNotParticipant) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_participant", "You are not a participant in this conversation")
+			return
+		}
 		if errors.Is(err, ErrDMNotSender) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can delete this message")
 			return

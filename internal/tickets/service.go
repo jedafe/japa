@@ -224,7 +224,7 @@ func (s *Service) CreateTicket(ctx context.Context, input CreateTicketInput) (ge
 	}
 
 	if !ValidPriority(priority) {
-		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", priority)
+		return gen.Ticket{}, fmt.Errorf("%w: invalid priority %q: must be one of low, normal, high, urgent", errpkg.ErrInvalid, priority)
 	}
 
 	// Compute SLA breach time. Fall back to tickets.default_sla_hours
@@ -419,12 +419,12 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, id pgtype.UUID, input 
 
 	// Validate state machine transition.
 	if !IsValidStatusTransition(oldStatus, newStatus) {
-		return gen.Ticket{}, fmt.Errorf("invalid status transition: %s → %s", oldStatus, newStatus)
+		return gen.Ticket{}, fmt.Errorf("%w: %s → %s", errpkg.ErrInvalidStatusTransition, oldStatus, newStatus)
 	}
 
 	// Resolve or close tickets need resolution note.
 	if newStatus == StatusResolved && input.ResolutionNote == "" {
-		return gen.Ticket{}, errors.New("resolution note is required when resolving a ticket")
+		return gen.Ticket{}, fmt.Errorf("%w: resolution note is required when resolving a ticket", errpkg.ErrRequired)
 	}
 
 	// Update status.
@@ -463,7 +463,7 @@ type UpdateTicketPriorityInput struct {
 // UpdateTicketPriority changes the ticket priority.
 func (s *Service) UpdateTicketPriority(ctx context.Context, id pgtype.UUID, input UpdateTicketPriorityInput) (gen.Ticket, error) {
 	if !ValidPriority(input.Priority) {
-		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", input.Priority)
+		return gen.Ticket{}, fmt.Errorf("%w: invalid priority %q: must be one of low, normal, high, urgent", errpkg.ErrInvalid, input.Priority)
 	}
 
 	current, err := s.store.getTicketByID(ctx, id)
@@ -542,7 +542,7 @@ func (s *Service) ResolveTicket(ctx context.Context, id pgtype.UUID, input Resol
 	}
 
 	if !IsValidStatusTransition(TicketStatus(current.Status), StatusResolved) {
-		return gen.Ticket{}, fmt.Errorf("ticket cannot be resolved from status: %s", current.Status)
+		return gen.Ticket{}, fmt.Errorf("%w: ticket cannot be resolved from status: %s", errpkg.ErrInvalidStatusTransition, current.Status)
 	}
 
 	var resolutionNote *string
