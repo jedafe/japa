@@ -1306,6 +1306,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	paymentService.SetSettings(settingsService)
 	paymentService.SetTierManager(tierService)
 	paymentService.SetSiteURL(cfg.SiteURL)
+	paymentService.SetSubscriptionLocker(vkClient.Redis())
 	worker.RegisterSubscriptionProcessor(paymentService)
 
 	// Wire wallet, payments, and settings into customfields so SubmitForm can
@@ -1417,6 +1418,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// tombstone commits while key custody still exists.
 	gdprService.SetAtprotoEraser(atprotoService)
 	gdprService.SetFederationEraser(federationService)
+	// §17: provider-side billing stops before erasure — an erased member
+	// must never keep being charged on a saved payment method.
+	gdprService.SetSubscriptionCanceller(paymentService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
 	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).

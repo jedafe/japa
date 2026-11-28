@@ -299,6 +299,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// status update — confirms rows whose debit exists (with sync-settlement
 	// fan-out replay) and fails the rest.
 	schedule("25 * * * *", TypePaymentReconcileCredit, 1*time.Hour)
+	schedule("41 * * * *", TypePaymentsExpirePendingCheckouts, 1*time.Hour)
 
 	// Affiliate link expiry — daily.
 	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)

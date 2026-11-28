@@ -64,6 +64,15 @@ type FederationEraser interface {
 	EraseFederation(ctx context.Context, userID pgtype.UUID) error
 }
 
+// SubscriptionCanceller stops provider-side billing before the user row
+// is erased — *payments.Service satisfies it. Same custody argument as
+// AtprotoEraser: once the row's provider_sub_id is unreachable the
+// subscription can never be canceled, and an erased member must never
+// keep being charged. A nil seam skips the step (payments not wired).
+type SubscriptionCanceller interface {
+	CancelProviderSubscriptionByRef(ctx context.Context, provider, providerSubID string) error
+}
+
 // Service provides GDPR operations with reader/writer pool separation.
 type Service struct {
 	store            *Store
@@ -74,6 +83,7 @@ type Service struct {
 	sessionDeleter   SessionDeleter
 	atprotoEraser    AtprotoEraser
 	federationEraser FederationEraser
+	subCanceller     SubscriptionCanceller
 	siteName         string
 	settings         SettingsProvider
 	storage          Storage
@@ -151,6 +161,13 @@ func (s *Service) SetAtprotoEraser(e AtprotoEraser) {
 // is off, so nothing exists to retract.
 func (s *Service) SetFederationEraser(e FederationEraser) {
 	s.federationEraser = e
+}
+
+// SetSubscriptionCanceller injects the payments service used to stop
+// provider-side billing before erasure (§17). When nil, hardDeleteUser
+// skips the step — subscriptions can't exist without a wired provider.
+func (s *Service) SetSubscriptionCanceller(c SubscriptionCanceller) {
+	s.subCanceller = c
 }
 
 // SetSettings injects the system settings provider for hard-delete configuration.
@@ -1180,6 +1197,29 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		}
 	}
 
+	// §17 lifecycle: cancel every live provider subscription BEFORE the
+	// erasure tx. The row survives for the financial audit trail but its
+	// user_id is nulled — leaving the provider sub running would keep
+	// billing a deleted member's saved payment method forever, and once
+	// user_id is unreachable the cancel handle is unrecoverable. A
+	// provider failure aborts the delete (retryable) for the same reason
+	// as atproto: proceeding would orphan live billing. Runs outside the
+	// tx below — external API calls must not hold row locks (§6.2).
+	if s.subCanceller != nil {
+		liveSubs, err := s.store.read.ListBillableSubscriptionsForErasure(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("hard delete blocked: listing billable subscriptions for user %s: %w", userID, err)
+		}
+		for _, sub := range liveSubs {
+			if sub.ProviderSubID == nil {
+				continue
+			}
+			if err := s.subCanceller.CancelProviderSubscriptionByRef(ctx, sub.Provider, *sub.ProviderSubID); err != nil {
+				return fmt.Errorf("hard delete blocked: subscription cancel failed for user %s (sub %s): %w", userID, sub.ID, err)
+			}
+		}
+	}
+
 	// All four steps run in one transaction so a failure cannot leave the user
 	// half-erased (e.g. authorship reassigned but the user row still present).
 	if err := db.WithTxHandle(ctx, s.db.Writer, func(tx pgx.Tx, q *gen.Queries) error {
@@ -1273,7 +1313,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("nullifying payment user refs: %w", err)
 		}
 
-		// 2a. Nullify subscription user references (BUG-020).
+		// 2a. Nullify subscription user references (BUG-020). Live rows are
+		// ended first — the provider cancel ran before this tx, so marking
+		// them canceled keeps late-arriving provider webhooks on the
+		// ended-row guards instead of resurrecting/billing a nulled user.
+		if err := q.EndSubscriptionsForErasure(ctx,
+			userID,
+		); err != nil {
+			return fmt.Errorf("ending subscriptions for erasure: %w", err)
+		}
 		if err := q.NullifySubscriptionUserRefs(ctx,
 			userID,
 		); err != nil {

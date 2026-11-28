@@ -342,6 +342,7 @@ var settingsCatalog = map[string]settingMeta{
 	"payments.paystack.plan.pro_yearly":        {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Pro yearly recurring plan.", Panel: "control"},
 	"payments.paystack.plan.business_monthly":  {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Business monthly recurring plan.", Panel: "control"},
 	"payments.paystack.plan.business_yearly":   {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Business yearly recurring plan.", Panel: "control"},
+	"payments.pending_checkout_ttl_hours":     {Type: "int", DefaultValue: "48", Description: "Hours an abandoned hosted-checkout payment may sit 'pending' before payments:expire_pending_checkouts marks it failed and reclaims its discount-code use (§17).", Panel: "control"},
 	"subscription.past_due_grace_hours":        {Type: "int", DefaultValue: "72", Description: "Hours a past_due subscription keeps its tier before the expiry sweep downgrades it (§17).", Panel: "control"},
 	"subscription.expiry_sweep_interval_minutes": {Type: "int", DefaultValue: "30", Description: "Cadence of the subscription:expiry_sweep periodic task, in minutes. Read at scheduler boot; JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP takes precedence.", Panel: "control"},
 	// Affiliate

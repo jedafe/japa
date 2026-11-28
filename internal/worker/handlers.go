@@ -909,6 +909,66 @@ func HandlePaymentReconcileCredit(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandlePaymentsExpirePendingCheckouts is the §17 abandoned-checkout sweep
+// (hourly, low tier): hosted providers expire their checkout sessions
+// within hours, so a paystack/stripe/nowpayments row still 'pending' past
+// payments.pending_checkout_ttl_hours (default 48h) can never settle —
+// mark it failed. Every use row whose payment is failed is then deleted,
+// releasing the consumed max_uses/per-user slots back to the code so a
+// declined or abandoned checkout can't permanently burn a discount. The
+// delete→release pair stays consistent by construction: each returned
+// code_id decrements codes.uses exactly once. Refunded/disputed payments
+// keep their use — the discount was consumed in a real settlement.
+func HandlePaymentsExpirePendingCheckouts(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:payments:expire_pending_checkouts")
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:payments:expire_pending_checkouts: no database, skipping", "error", err)
+		return nil
+	}
+
+	// TTL is admin-configurable via system_settings
+	// 'payments.pending_checkout_ttl_hours' (default 48h).
+	ttlHours := int64(48)
+	var raw string
+	if err := dbPool.Reader.QueryRow(ctx,
+		`SELECT value::text FROM system_settings WHERE key = $1`,
+		"payments.pending_checkout_ttl_hours").Scan(&raw); err == nil {
+		raw = strings.Trim(raw, `"`)
+		if n, cerr := strconv.ParseInt(raw, 10, 64); cerr == nil && n > 0 {
+			ttlHours = n
+		}
+	}
+
+	expired, err := queries.FailStalePendingCheckoutPayments(ctx,
+		pgtype.Timestamptz{Time: time.Now().Add(-time.Duration(ttlHours) * time.Hour), Valid: true})
+	if err != nil {
+		return fmt.Errorf("task:payments:expire_pending_checkouts: expire stale: %w", err)
+	}
+	if len(expired) > 0 {
+		slog.Info("task:payments:expire_pending_checkouts: expired stale checkouts", "count", len(expired))
+	}
+
+	// Reclaim discount uses attached to failed payments — covers both
+	// sweep-expired rows and provider-declined failures from the webhook
+	// path.
+	codeIDs, err := queries.DeleteDiscountUsesForFailedPayments(ctx)
+	if err != nil {
+		return fmt.Errorf("task:payments:expire_pending_checkouts: reclaim uses: %w", err)
+	}
+	for _, codeID := range codeIDs {
+		if _, rerr := queries.ReleaseDiscountCodeUse(ctx, codeID); rerr != nil {
+			slog.Error("task:payments:expire_pending_checkouts: release slot failed", "code_id", codeID, "error", rerr)
+		}
+	}
+	if len(codeIDs) > 0 {
+		slog.Info("task:payments:expire_pending_checkouts: reclaimed discount uses", "count", len(codeIDs))
+	}
+
+	return nil
+}
+
 // HandlePaymentSyncSettlement replays the full onPaymentSucceeded fan-out
 // for a payment that settled synchronously — credit-wallet debits and
 // zero-amount payments never traverse a provider webhook, so without this

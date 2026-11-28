@@ -346,6 +346,15 @@ func handleServiceError(w http.ResponseWriter, err error) {
 			"The payment provider could not complete the request")
 		return
 	}
+	if errors.Is(err, ErrRefundExceedsBalance) {
+		errpkg.WriteError(w, http.StatusConflict, "refund_exceeds_balance", err.Error())
+		return
+	}
+	if errors.Is(err, ErrSubscriptionCheckoutInProgress) {
+		errpkg.WriteError(w, http.StatusConflict, "subscription_checkout_in_progress",
+			"A subscription checkout is already in progress — finish or let it expire first")
+		return
+	}
 	errpkg.HandleServiceError(w, err)
 }
 
@@ -1014,8 +1023,10 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Amount > payment.Amount {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Refund amount cannot exceed payment amount")
+	// Cap at the NET charged (gross − discount); the service enforces the
+	// cumulative cap across prior refunds.
+	if input.Amount > payment.Amount-payment.DiscountAmount {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Refund amount cannot exceed amount paid")
 		return
 	}
 

@@ -37,6 +37,16 @@ func (s *Store) createPayment(ctx context.Context, p gen.CreatePaymentParams) (g
 	return row, nil
 }
 
+// sumSettledRefundAmountForPayment totals refunds that consumed (or will
+// consume) provider budget — pending+succeeded — for the cumulative cap.
+func (s *Store) sumSettledRefundAmountForPayment(ctx context.Context, paymentID pgtype.UUID) (int64, error) {
+	total, err := s.read.SumSettledRefundAmountForPayment(ctx, paymentID)
+	if err != nil {
+		return 0, fmt.Errorf("summing settled refunds: %w", err)
+	}
+	return total, nil
+}
+
 func (s *Store) getPaymentByID(ctx context.Context, id pgtype.UUID) (gen.Payment, error) {
 	row, err := s.read.GetPaymentByID(ctx, id)
 	if err != nil {

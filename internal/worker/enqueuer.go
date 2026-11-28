@@ -528,6 +528,7 @@ var taskTypeCatalog = []struct {
 	{TypeContentRegenerateFromSource, "default", "Rewrite an existing content row from a linked intelligence extraction (§75, ADR-076 Amendment 2)"},
 	{TypeFormFireSubmissionTriggers, "default", "Fire form submission triggers (assign_user_group / send_email / send_webhook / create_ticket / notify_admin)"},
 	{TypeFormExpirePendingSubmissions, "low", "Hourly sweep — expire paid form submissions whose hosted checkout was abandoned (pending_payment TTL)"},
+	{TypePaymentsExpirePendingCheckouts, "low", "Hourly sweep — expire abandoned hosted-checkout payments past TTL and reclaim discount-code uses on failed payments (§17)"},
 	// §111 Service Packages & Bookings (ADR-123)
 	{TypeServiceBookingCreated, "default", "Notify org members of a new service booking/inquiry"},
 	{TypeServiceBookingStatusChanged, "default", "Notify booker of a service booking status transition"},

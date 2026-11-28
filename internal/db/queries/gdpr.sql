@@ -472,6 +472,27 @@ WHERE uploader_user_id = @user_id;
 UPDATE payments SET user_id = NULL
 WHERE user_id = @user_id;
 
+-- name: ListBillableSubscriptionsForErasure :many
+-- GDPR erasure pre-step: live subscriptions whose provider sub must be
+-- canceled BEFORE the user row disappears — an erased member must never
+-- keep being billed. provider_sub_id is the provider cancel handle.
+SELECT id, provider, provider_sub_id FROM subscriptions
+WHERE user_id = @user_id
+  AND status IN ('active', 'trialing', 'past_due')
+  AND provider_sub_id IS NOT NULL;
+
+-- name: EndSubscriptionsForErasure :exec
+-- Runs inside the erasure tx after provider-side cancel: ends live rows
+-- so late-arriving provider webhooks short-circuit on the ended-status
+-- guards instead of resurrecting or billing a nulled user.
+UPDATE subscriptions
+SET status = 'canceled',
+    cancel_at_period_end = false,
+    cancelled_at = now(),
+    updated_at = now()
+WHERE user_id = @user_id
+  AND status IN ('active', 'trialing', 'past_due');
+
 -- name: NullifySubscriptionUserRefs :exec
 -- Nulls subscription user references for GDPR erasure (BUG-020).
 -- Preserves subscription history for financial audit while removing PII.

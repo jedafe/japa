@@ -23,6 +23,7 @@ const (
 	TypePaymentWebhookProcess      = "payment:process_webhook"
 	TypePaymentSyncSettlement      = "payment:sync_settlement"      // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
 	TypePaymentReconcileCredit     = "payments:reconcile_credit"    // §17 — recover credit payments stuck pending between debit and status update
+	TypePaymentsExpirePendingCheckouts = "payments:expire_pending_checkouts" // §17 — expire abandoned hosted-checkout pendings + reclaim discount uses
 	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
 	TypePaymentRefundProcess       = "payment:process_refund"       // §17 provider refund retry (kept pending until provider confirms)
 	TypeTicketSendConfirmation     = "ticket:send_confirmation"
@@ -401,6 +402,7 @@ var handlerRegistry = []struct {
 	{TypeReferralReviewFlagged, HandleReferralReviewFlagged},
 	{TypePaymentSyncSettlement, HandlePaymentSyncSettlement},
 	{TypePaymentReconcileCredit, HandlePaymentReconcileCredit},
+	{TypePaymentsExpirePendingCheckouts, HandlePaymentsExpirePendingCheckouts},
 	{TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits},
 	{TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus},
 	{TypeAdsAccrueSpend, HandleAdsAccrueSpendDaily},

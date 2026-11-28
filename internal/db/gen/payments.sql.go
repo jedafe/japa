@@ -335,6 +335,40 @@ func (q *Queries) DeleteDiscountCode(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
+const deleteDiscountUsesForFailedPayments = `-- name: DeleteDiscountUsesForFailedPayments :many
+DELETE FROM discount_code_uses u
+USING payments p
+WHERE u.payment_id = p.id
+  AND p.status = 'failed'
+RETURNING u.code_id
+`
+
+// Checkout-expiry sweep: a discount use recorded for a payment that
+// failed (declined, or stale-pending → expired) consumed a max_uses slot
+// and a per-user slot it never earned. Deleting the use row lets the
+// buyer retry the code; each returned code_id decrements codes.uses once
+// via ReleaseDiscountCodeUse. Refunded/disputed payments keep their use
+// — the discount was consumed in a real settlement.
+func (q *Queries) DeleteDiscountUsesForFailedPayments(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteDiscountUsesForFailedPayments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var code_id pgtype.UUID
+		if err := rows.Scan(&code_id); err != nil {
+			return nil, err
+		}
+		items = append(items, code_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireSubscription = `-- name: ExpireSubscription :one
 UPDATE subscriptions
 SET status = 'expired', updated_at = now()
@@ -362,6 +396,40 @@ func (q *Queries) ExpireSubscription(ctx context.Context, id pgtype.UUID) (Subsc
 		&i.CancelledAt,
 	)
 	return i, err
+}
+
+const failStalePendingCheckoutPayments = `-- name: FailStalePendingCheckoutPayments :many
+UPDATE payments
+SET status = 'failed', updated_at = now()
+WHERE status = 'pending'
+  AND provider IN ('paystack', 'stripe', 'nowpayments')
+  AND created_at < $1
+RETURNING id
+`
+
+// Abandoned-checkout sweep (payments:expire_pending_checkouts): hosted
+// providers expire their sessions within hours, so a row still 'pending'
+// past the configured TTL can never settle — mark it failed. Include-list
+// on purpose: 'credit' has its own reconcile sweep and 'manual_transfer'
+// rows legitimately stay pending awaiting admin bank confirmation.
+func (q *Queries) FailStalePendingCheckoutPayments(ctx context.Context, cutoff pgtype.Timestamptz) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, failStalePendingCheckoutPayments, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getActiveSubscriptionByUser = `-- name: GetActiveSubscriptionByUser :one
@@ -1349,6 +1417,24 @@ WHERE id = $1
 func (q *Queries) SoftDeleteSubscription(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteSubscription, id)
 	return err
+}
+
+const sumSettledRefundAmountForPayment = `-- name: SumSettledRefundAmountForPayment :one
+SELECT COALESCE(SUM(amount), 0)::bigint
+FROM payment_refunds
+WHERE payment_id = $1
+  AND status IN ('pending', 'succeeded')
+`
+
+// Cumulative refund cap: counts refunds that consumed (or will consume)
+// provider budget — pending rows await provider confirmation (incl. the
+// manual-review arm), succeeded already settled. 'failed' rows moved no
+// money and are excluded.
+func (q *Queries) SumSettledRefundAmountForPayment(ctx context.Context, paymentID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumSettledRefundAmountForPayment, paymentID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const updateDiscountCode = `-- name: UpdateDiscountCode :one

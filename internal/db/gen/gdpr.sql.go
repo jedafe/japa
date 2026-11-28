@@ -1003,6 +1003,24 @@ func (q *Queries) DeleteVerificationRequestsByRequester(ctx context.Context, use
 	return err
 }
 
+const endSubscriptionsForErasure = `-- name: EndSubscriptionsForErasure :exec
+UPDATE subscriptions
+SET status = 'canceled',
+    cancel_at_period_end = false,
+    cancelled_at = now(),
+    updated_at = now()
+WHERE user_id = $1
+  AND status IN ('active', 'trialing', 'past_due')
+`
+
+// Runs inside the erasure tx after provider-side cancel: ends live rows
+// so late-arriving provider webhooks short-circuit on the ended-status
+// guards instead of resurrecting or billing a nulled user.
+func (q *Queries) EndSubscriptionsForErasure(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, endSubscriptionsForErasure, userID)
+	return err
+}
+
 const expireDataExport = `-- name: ExpireDataExport :exec
 UPDATE data_export_requests
 SET download_url = NULL,
@@ -3107,6 +3125,42 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.IpAddress,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBillableSubscriptionsForErasure = `-- name: ListBillableSubscriptionsForErasure :many
+SELECT id, provider, provider_sub_id FROM subscriptions
+WHERE user_id = $1
+  AND status IN ('active', 'trialing', 'past_due')
+  AND provider_sub_id IS NOT NULL
+`
+
+type ListBillableSubscriptionsForErasureRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Provider      string      `json:"provider"`
+	ProviderSubID *string     `json:"provider_sub_id"`
+}
+
+// GDPR erasure pre-step: live subscriptions whose provider sub must be
+// canceled BEFORE the user row disappears — an erased member must never
+// keep being billed. provider_sub_id is the provider cancel handle.
+func (q *Queries) ListBillableSubscriptionsForErasure(ctx context.Context, userID pgtype.UUID) ([]ListBillableSubscriptionsForErasureRow, error) {
+	rows, err := q.db.Query(ctx, listBillableSubscriptionsForErasure, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBillableSubscriptionsForErasureRow
+	for rows.Next() {
+		var i ListBillableSubscriptionsForErasureRow
+		if err := rows.Scan(&i.ID, &i.Provider, &i.ProviderSubID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

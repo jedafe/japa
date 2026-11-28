@@ -7,9 +7,11 @@ package payments
 
 import (
 	"context"
+	"time"
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Payment providers.
@@ -132,6 +134,18 @@ type Service struct {
 	tierManager TierManager
 	perms       permChecker
 	siteURL     string
+	subLock     subscriptionCheckoutLock
+}
+
+// subscriptionCheckoutLock is the narrow Valkey seam for the §17
+// subscription-checkout in-flight lock (jc:sub_checkout:{user_id}) — SET NX
+// acquire, GET resume, SETEX value-refresh, DEL release. valkeycompat.Cmdable
+// satisfies it.
+type subscriptionCheckoutLock interface {
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.BoolCmd
+	SetEX(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
+	Get(ctx context.Context, key string) *valkeycompat.StringCmd
+	Del(ctx context.Context, keys ...string) *valkeycompat.IntCmd
 }
 
 // webhookEmitter fans a payment.* event out to all subscribed webhook
@@ -182,6 +196,10 @@ func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 // SetPermChecker injects the RBAC resolver — the wallet.credits.spend gate
 // on the credits payment rail (nil = ungated, e.g. unit tests).
 func (s *Service) SetPermChecker(p permChecker) { s.perms = p }
+
+// SetSubscriptionLocker wires the Valkey seam for the subscription-checkout
+// in-flight lock (§17). Nil (no Valkey) degrades to the unlocked path.
+func (s *Service) SetSubscriptionLocker(l subscriptionCheckoutLock) { s.subLock = l }
 
 // emitWebhook fires a payment.* event fire-and-forget (Rule 8). Errors are
 // logged but never returned to the caller — webhook delivery is async.

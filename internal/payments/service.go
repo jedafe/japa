@@ -204,6 +204,14 @@ func (s *Service) enqueueSyncSettlement(p gen.Payment) {
 // awaiting capture; a settled/failed/refunded payment has nothing to resume.
 var ErrPaymentNotPending = errors.New("payment is not pending")
 
+// ErrRefundExceedsBalance — the refund amount exceeds the payment's
+// remaining refundable balance (net charged minus refunds already issued).
+var ErrRefundExceedsBalance = errors.New("refund amount exceeds refundable balance")
+
+// ErrSubscriptionCheckoutInProgress — a subscription checkout is already in
+// flight for this user but has no resumable URL (§17 jc:sub_checkout:* lock).
+var ErrSubscriptionCheckoutInProgress = errors.New("a subscription checkout is already in progress")
+
 // ErrPaymentNotOwned — the caller is not the payer on the payment row.
 var ErrPaymentNotOwned = errors.New("payment not owned by caller")
 
@@ -919,6 +927,19 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 
 	if payment.Status != PaymentStatusSucceeded {
 		return gen.PaymentRefund{}, errors.New("payment must be in 'succeeded' status to be refunded")
+	}
+
+	// Cumulative net cap: the customer was charged Amount−DiscountAmount,
+	// and earlier refunds already consumed part of it. payments.Amount is
+	// the GROSS, so capping at it alone over-refunds by the discount, and
+	// per-request caps alone let sequential partial refunds exceed what
+	// was paid.
+	alreadyRefunded, err := s.store.sumSettledRefundAmountForPayment(ctx, paymentID)
+	if err != nil {
+		return gen.PaymentRefund{}, fmt.Errorf("summing prior refunds: %w", err)
+	}
+	if refundable := payment.Amount - payment.DiscountAmount - alreadyRefunded; input.Amount > refundable {
+		return gen.PaymentRefund{}, fmt.Errorf("%w: refund amount %d exceeds refundable balance %d", ErrRefundExceedsBalance, input.Amount, refundable)
 	}
 
 	var reason *string

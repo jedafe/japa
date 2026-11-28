@@ -71,6 +71,19 @@ SET provider_ref = @provider_ref, updated_at = now()
 WHERE id = @id AND status = 'pending'
 RETURNING *;
 
+-- name: FailStalePendingCheckoutPayments :many
+-- Abandoned-checkout sweep (payments:expire_pending_checkouts): hosted
+-- providers expire their sessions within hours, so a row still 'pending'
+-- past the configured TTL can never settle — mark it failed. Include-list
+-- on purpose: 'credit' has its own reconcile sweep and 'manual_transfer'
+-- rows legitimately stay pending awaiting admin bank confirmation.
+UPDATE payments
+SET status = 'failed', updated_at = now()
+WHERE status = 'pending'
+  AND provider IN ('paystack', 'stripe', 'nowpayments')
+  AND created_at < @cutoff
+RETURNING id;
+
 -- =====================
 -- Payment Webhook Events
 -- =====================
@@ -323,6 +336,19 @@ WHERE code_id = @code_id
 ORDER BY used_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: DeleteDiscountUsesForFailedPayments :many
+-- Checkout-expiry sweep: a discount use recorded for a payment that
+-- failed (declined, or stale-pending → expired) consumed a max_uses slot
+-- and a per-user slot it never earned. Deleting the use row lets the
+-- buyer retry the code; each returned code_id decrements codes.uses once
+-- via ReleaseDiscountCodeUse. Refunded/disputed payments keep their use
+-- — the discount was consumed in a real settlement.
+DELETE FROM discount_code_uses u
+USING payments p
+WHERE u.payment_id = p.id
+  AND p.status = 'failed'
+RETURNING u.code_id;
+
 -- =====================
 -- Payment Refunds
 -- =====================
@@ -330,6 +356,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CreateRefund :one
 INSERT INTO payment_refunds (payment_id, amount, reason, status, provider_ref) VALUES (@payment_id, @amount, sqlc.narg(reason), @status, sqlc.narg(provider_ref))
 RETURNING *;
+
+-- name: SumSettledRefundAmountForPayment :one
+-- Cumulative refund cap: counts refunds that consumed (or will consume)
+-- provider budget — pending rows await provider confirmation (incl. the
+-- manual-review arm), succeeded already settled. 'failed' rows moved no
+-- money and are excluded.
+SELECT COALESCE(SUM(amount), 0)::bigint
+FROM payment_refunds
+WHERE payment_id = @payment_id
+  AND status IN ('pending', 'succeeded');
 
 -- name: GetRefundByID :one
 SELECT id, payment_id, amount, reason, status, provider_ref, created_at FROM payment_refunds

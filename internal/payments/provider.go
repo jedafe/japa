@@ -345,6 +345,12 @@ func (p *PaystackProvider) paystackEmailToken(ctx context.Context, code string) 
 func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code, action string) error {
 	token, err := p.paystackEmailToken(ctx, code)
 	if err != nil {
+		// Disabling a subscription Paystack no longer knows is already the
+		// goal state — swallow the not-found so the caller doesn't loop
+		// retries. Enable must still fail: a missing sub can't reactivate.
+		if action == "disable" && paystackErrIsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
@@ -383,10 +389,26 @@ func (p *PaystackProvider) paystackSubscriptionAction(ctx context.Context, code,
 	}
 
 	if !apiResp.Status {
+		// Same not-found goal-state swallow on the action call itself.
+		if action == "disable" && (resp.StatusCode == http.StatusNotFound || paystackMessageIsNotFound(apiResp.Message)) {
+			return nil
+		}
 		return fmt.Errorf("paystack error: %s", apiResp.Message)
 	}
 
 	return nil
+}
+
+// paystackErrIsNotFound reports whether a Paystack call error means the
+// referenced object is gone. Paystack signals this only via the message
+// text (status=false), occasionally an HTTP 404.
+func paystackErrIsNotFound(err error) bool {
+	return err != nil && paystackMessageIsNotFound(err.Error())
+}
+
+func paystackMessageIsNotFound(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "not found") || strings.Contains(m, "does not exist") || strings.Contains(m, "invalid subscription")
 }
 
 // CancelSubscription stops Paystack renewals. Paystack has no native
@@ -682,6 +704,13 @@ func (p *StripeProvider) stripeSetCancelAtPeriodEnd(ctx context.Context, subID s
 	}
 
 	if resp.StatusCode >= 400 {
+		// Canceling a subscription Stripe no longer knows (deleted after an
+		// expiry/cancel race) is already the goal state — swallow 404 so the
+		// caller doesn't loop retries. Reactivate must still fail: a missing
+		// sub can't be reactivated.
+		if resp.StatusCode == http.StatusNotFound && cancel {
+			return nil
+		}
 		return fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 

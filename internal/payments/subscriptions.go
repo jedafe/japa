@@ -182,6 +182,13 @@ func planPeriodBounds(plan string, now time.Time) (start, end time.Time) {
 // mode=subscription Checkout Session, or Paystack initialize-with-plan) and
 // returns the redirect URL. Per §17, no subscriptions row is created here —
 // the provider's first-charge webhook creates it (deferred creation).
+//
+// TOCTOU: the no-active-subscription gate below and the row creation are
+// separated by the whole checkout round-trip — two simultaneous requests
+// could both clear it and open two provider subscriptions (double
+// billing). The jc:sub_checkout:{user} Valkey lock serializes the window
+// until the first-charge webhook lands; a conflicting request resumes the
+// in-flight session (idempotent — provider sessions can't be paid twice).
 func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, input CreateSubscriptionInput) (SubscriptionCheckoutResult, error) {
 	if input.Plan == "" {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: plan", errpkg.ErrRequired)
@@ -204,6 +211,34 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 	if existing, err := s.store.getActiveSubscriptionByUser(ctx, userID); err == nil && existing.ID.Valid {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: cancel the current subscription before starting a new one", ErrAlreadySubscribed)
 	}
+
+	lockKey := subscriptionCheckoutLockKey(userID)
+	lockHeld := false
+	if s.subLock != nil {
+		if acquired, err := s.subLock.SetNX(ctx, lockKey, subCheckoutLockInflight, 15*time.Minute).Result(); err != nil {
+			slog.WarnContext(ctx, "subscription checkout lock unavailable — continuing unlocked", "error", err)
+		} else if !acquired {
+			if v, gerr := s.subLock.Get(ctx, lockKey).Result(); gerr == nil && strings.HasPrefix(v, "http") {
+				return SubscriptionCheckoutResult{CheckoutURL: v}, nil
+			}
+			return SubscriptionCheckoutResult{}, ErrSubscriptionCheckoutInProgress
+		} else {
+			lockHeld = true
+		}
+	}
+
+	// Success stores the checkout URL on the key so a concurrent request
+	// resumes the same session; the first-charge webhook's row create
+	// releases it. Any failure before delivery releases immediately so a
+	// retry isn't blocked.
+	delivered := false
+	defer func() {
+		if lockHeld && !delivered {
+			if err := s.subLock.Del(context.Background(), lockKey).Err(); err != nil {
+				slog.WarnContext(ctx, "subscription checkout lock release failed", "error", err)
+			}
+		}
+	}()
 
 	// Resolve the provider-side price/plan code from settings — missing means
 	// the plan isn't configured for this provider: fail loud, never grant.
@@ -278,6 +313,13 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 
 	if resp.CheckoutURL == "" {
 		return SubscriptionCheckoutResult{}, fmt.Errorf("%w: empty checkout URL", ErrProviderFailure)
+	}
+
+	if lockHeld {
+		if err := s.subLock.SetEX(ctx, lockKey, resp.CheckoutURL, 15*time.Minute).Err(); err != nil {
+			slog.WarnContext(ctx, "subscription checkout lock value-refresh failed", "error", err)
+		}
+		delivered = true
 	}
 
 	return SubscriptionCheckoutResult{CheckoutURL: resp.CheckoutURL}, nil
@@ -419,8 +461,11 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
+		// Money moved — returning an error lets asynq retry: the create
+		// event for this sub may simply not have landed yet (ordering is
+		// not guaranteed). A never-created sub dead-letters after retries.
 		slog.Warn("subscription webhook: invoice.paid for unknown sub", "sub", subID)
-		return nil
+		return fmt.Errorf("invoice.paid for unknown subscription %s", subID)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // stale replay on an ended row — must not resurrect bounds/tier
@@ -466,7 +511,8 @@ func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]int
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
-		return nil // unknown sub — nothing to sync
+		// Retry — an updated event can precede the create event's landing.
+		return fmt.Errorf("subscription.updated for unknown subscription %s: %w", subID, err)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // ended row — stale replay must not shift bounds or re-notify
@@ -513,7 +559,8 @@ func (s *Service) stripeCancelNow(ctx context.Context, obj map[string]interface{
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
-		return nil
+		// Retry — a deleted event can precede a late create/activate.
+		return fmt.Errorf("subscription.deleted for unknown subscription %s: %w", subID, err)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // already ended — replay must not re-email/re-emit/re-revoke
@@ -640,7 +687,9 @@ func (s *Service) paystackRenewal(ctx context.Context, subCode string, data map[
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subCode)
 	if err != nil {
-		return nil // may be the first charge before subscription.create landed
+		// Money moved — retry: the first charge often precedes
+		// subscription.create. Dead-letters if the sub is never created.
+		return fmt.Errorf("charge.success for unknown subscription %s: %w", subCode, err)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // stale replay on an ended row — see stripeInvoicePaid
@@ -718,6 +767,15 @@ func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUI
 	})
 	if err != nil {
 		return sub, err
+	}
+
+	// The subscriptions row now exists — release the checkout in-flight lock
+	// so subsequent requests hit the active-subscription gate instead of
+	// resuming this session.
+	if s.subLock != nil {
+		if err := s.subLock.Del(ctx, subscriptionCheckoutLockKey(userID)).Err(); err != nil {
+			slog.WarnContext(ctx, "subscription checkout lock release failed", "error", err)
+		}
 	}
 
 	// ADR-055: subscription_created notification (only on row creation —
@@ -818,7 +876,8 @@ func (s *Service) markSubPastDueByRef(ctx context.Context, subID string) error {
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
-		return nil
+		// Retry — a failed renewal invoice can precede the create event.
+		return fmt.Errorf("invoice.payment_failed for unknown subscription %s: %w", subID, err)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // ended row — stale payment_failed must not error (retry loop) or re-email
@@ -848,7 +907,8 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
-		return nil
+		// Retry — disable/not_renew can precede the create event's landing.
+		return fmt.Errorf("subscription cancel-flag event for unknown sub %s: %w", subID, err)
 	}
 	if !isLiveSubscriptionStatus(sub.Status) {
 		return nil // ended row — stale disable/not_renew must not re-notify
@@ -877,6 +937,22 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 // ---------------------------------------------------------------------------
 // Cancel / reactivate — provider first, then local (§17)
 // ---------------------------------------------------------------------------
+
+// CancelProviderSubscriptionByRef cancels a provider-side subscription by
+// its provider id — used by the GDPR erasure pipeline, which holds no
+// subscription row context and must stop billing before the user row is
+// erased. Returns ErrProviderFailure when the provider is unregistered or
+// the call fails — callers treat that as abort-worthy, not skippable.
+func (s *Service) CancelProviderSubscriptionByRef(ctx context.Context, provider, providerSubID string) error {
+	sp, ok := s.providers[provider].(SubscriptionProvider)
+	if !ok {
+		return fmt.Errorf("%w: provider %q not registered", ErrProviderFailure, provider)
+	}
+	if err := sp.CancelSubscription(ctx, providerSubID); err != nil {
+		return fmt.Errorf("%w: %w", ErrProviderFailure, err)
+	}
+	return nil
+}
 
 // CancelSubscription schedules cancellation at the provider, then marks the
 // local row. Provider failure aborts before any local change.
@@ -923,6 +999,17 @@ func isReactivatableSub(s gen.Subscription) bool {
 		return s.CancelAtPeriodEnd
 	}
 	return false
+}
+
+// subCheckoutLockInflight is the placeholder stored on
+// jc:sub_checkout:{user_id} while the provider checkout call runs — before
+// the resumable URL is known.
+const subCheckoutLockInflight = "inflight"
+
+// subscriptionCheckoutLockKey — §17 checkout in-flight lock, one per user
+// (valkey-keys catalog `jc:sub_checkout:{user_id}`).
+func subscriptionCheckoutLockKey(userID pgtype.UUID) string {
+	return "jc:sub_checkout:" + userID.String()
 }
 
 // isLiveSubscriptionStatus reports whether a status carries a running
