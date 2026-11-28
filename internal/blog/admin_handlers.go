@@ -7,6 +7,7 @@ import (
 
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // AdminCreatePost handles POST /api/v1/admin/blog — creates a blog post
@@ -19,12 +20,13 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title      string `json:"title"`
-		Slug       string `json:"slug"`
-		Body       string `json:"body"`
-		BodyHtml   string `json:"body_html"` //nolint:revive // matches sqlc-generated field name
-		Status     string `json:"status"`
-		Visibility string `json:"visibility"`
+		Title      string  `json:"title"`
+		Slug       string  `json:"slug"`
+		Body       string  `json:"body"`
+		BodyHtml   string  `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		Status     string  `json:"status"`
+		Visibility string  `json:"visibility"`
+		SpaceID    *string `json:"space_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -45,7 +47,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		input.Visibility = "public"
 	}
 
-	post, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
+	createInput := content.CreateContentInput{
 		AuthorID:     user.UserID,
 		ContentType:  contentTypeBlogPost,
 		Title:        input.Title,
@@ -55,10 +57,21 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		SeoIndexable: true,
 		Status:       input.Status,
 		Visibility:   input.Visibility,
-	})
+	}
+
+	// Publishing requires a primary space (§14) — accept one explicitly so an
+	// admin can create a live post instead of only drafts.
+	if input.SpaceID != nil && *input.SpaceID != "" {
+		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
+	}
+
+	post, err := h.content.CreateContent(r.Context(), createInput)
 	if err != nil {
 		slog.Error("failed to create blog post (admin)", "error", err, "title", input.Title, "slug", input.Slug)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
+		handleContentError(w, err)
 
 		return
 	}
@@ -68,10 +81,15 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// too, otherwise @mentions in admin-created posts are silently dropped.
 	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, input.Body)
 
-	// BUG-009: enqueue rss:regenerate when an admin creates a post directly
-	// as published. Ref: §24.
+	// Lifecycle parity with the public create path — search index, moderation
+	// scan, link previews.
+	h.contentWriteEffects(post.BodyHtml, post.ID)
+
+	// BUG-009: run the full publish pipeline when an admin creates a post
+	// directly as published — content_scores row, affiliate scan, feed
+	// fan-out, and rss:regenerate (§24/§32).
 	if post.Status == content.StatusPublished {
-		h.enqueueRSSRegenerate()
+		h.publishEffects(r.Context(), post.ID, post.AuthorID, post.SpaceID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
@@ -131,19 +149,43 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		updateInput.Visibility = *input.Visibility
 	}
 
-	// BUG-009: capture previous status to detect draft→published transition
-	// for rss:regenerate enqueue. Ref: §24.
-	prevStatus := ""
-	if existing, gErr := h.content.GetContent(r.Context(), id); gErr == nil {
-		prevStatus = existing.Status
+	// Scope check: /admin/blog/{id} must only act on blog posts — the shared
+	// contents table means a guessed non-blog ID would otherwise be mutated
+	// through the blog surface (BUG-BL-005).
+	existing, gErr := h.content.GetContent(r.Context(), id)
+	if gErr != nil {
+		handleServiceError(w, gErr)
+		return
+	}
+
+	if existing.ContentType != contentTypeBlogPost {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Blog post not found")
+		return
 	}
 
 	post, err := h.content.UpdateContent(r.Context(), id, user.UserID, updateInput, true)
 	if err != nil {
 		slog.Error("failed to update blog post (admin)", "error", err, "id", id)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")
+		handleContentError(w, err)
 
 		return
+	}
+
+	// Lifecycle parity with the public update path (BUG-BL-006): leaving
+	// published purges RAG chunks; other writes re-embed. Search index,
+	// moderation scan, and link previews fire on every write.
+	prevStatus := existing.Status
+	if prevStatus == content.StatusPublished && post.Status != content.StatusPublished {
+		worker.PurgeRAGEntity(r.Context(), "content", id)
+	} else {
+		h.enqueueContentEmbedding(id)
+	}
+	h.contentWriteEffects(post.BodyHtml, id)
+
+	// §32: a draft→published transition fans the post out to feeds.
+	if prevStatus != content.StatusPublished && post.Status == content.StatusPublished {
+		h.enqueueAffiliateLinkScan(id)
+		h.enqueueFeedFanOut(r.Context(), id, post.AuthorID, post.SpaceID)
 	}
 
 	// BUG-009: enqueue rss:regenerate on draft→published transition. Ref: §24.

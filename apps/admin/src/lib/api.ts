@@ -1290,7 +1290,7 @@ export const blogAdminApi = {
 	approvePost: (id: string) => api<unknown>(`/admin/blog/review-queue/${id}/approve`, { method: 'POST', body: {} }),
 	rejectPost: (id: string, body: { reason?: string }) =>
 		api<unknown>(`/admin/blog/review-queue/${id}/reject`, { method: 'POST', body }),
-	createPost: (body: { title: string; slug?: string; body?: string; body_html?: string; status?: string; visibility?: string }) =>
+	createPost: (body: { title: string; slug?: string; body?: string; body_html?: string; status?: string; visibility?: string; space_id?: string }) =>
 		api<unknown>('/admin/blog', { method: 'POST', body }),
 	updatePost: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/blog/${id}`, { method: 'PATCH', body }),

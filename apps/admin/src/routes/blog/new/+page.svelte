@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { t } from '#lib/stores/i18n.svelte.js';
-	import { blogAdminApi, contentAdminApi } from '#lib/api.js';
+	import { blogAdminApi, contentAdminApi, spacesAdminApi } from '#lib/api.js';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import PageHeader from '#lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '#lib/components/ui/card/index.js';
@@ -20,6 +20,7 @@
 	let bodyHtml = $state('');
 	let status = $state('draft');
 	let visibility = $state('public');
+	let spaceId = $state('');
 	let submitting = $state(false);
 	let error = $state('');
 
@@ -27,16 +28,26 @@
 	// instead of hardcoding them (Rule 16). Ref: §14 content status/visibility.
 	let statusOptions = $state<{ value: string; label: string }[]>([]);
 	let visibilityOptions = $state<{ value: string; label: string }[]>([]);
+	let spaceOptions = $state<{ value: string; label: string }[]>([]);
+
+	// §14: publishing/scheduling requires a primary space — flag the field so
+	// the admin picks one before the backend rejects with missing_primary_space.
+	const needsSpace = $derived(status === 'published' || status === 'scheduled');
 
 	$effect(() => {
 		void (async () => {
 			try {
-				const [s, v] = await Promise.all([
+				const [s, v, sp] = await Promise.all([
 					contentAdminApi.getStatusOptions(),
-					contentAdminApi.getVisibilityOptions()
+					contentAdminApi.getVisibilityOptions(),
+					spacesAdminApi.list('?page_size=100&sort=name')
 				]);
 				if (s.ok) statusOptions = s.data ?? [];
 				if (v.ok) visibilityOptions = v.data ?? [];
+				if (sp.ok) {
+					const rows = (sp.data as { id: string; name: string }[]) ?? [];
+					spaceOptions = rows.map((r) => ({ value: r.id, label: r.name }));
+				}
 			} catch {
 				// Best-effort — selectors fall back to the default-bound value.
 			}
@@ -64,6 +75,10 @@
 			error = t('app.blog.error_title_required', 'Title is required');
 			return;
 		}
+		if (needsSpace && !spaceId) {
+			error = t('app.blog.error_space_required', 'A primary space is required to publish or schedule a post');
+			return;
+		}
 		submitting = true;
 		error = '';
 		try {
@@ -72,7 +87,8 @@
 				slug: slug.trim() || undefined,
 				body_html: bodyHtml || undefined,
 				status,
-				visibility
+				visibility,
+				space_id: spaceId || undefined
 			});
 			if (result.ok) {
 				goto('/blog');
@@ -188,6 +204,27 @@
 						class="w-full"
 					/>
 				</div>
+			</div>
+
+			<div>
+				<label for="post-space" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+					{t('app.blog.field_space', 'Primary Space')}
+					{#if needsSpace}
+						<span style="color: var(--color-danger)">*</span>
+					{/if}
+				</label>
+				<AutocompleteSelect
+					id="post-space"
+					bind:value={spaceId}
+					options={spaceOptions}
+					placeholder={t('app.blog.space_placeholder', 'Select a space...')}
+					class="w-full"
+				/>
+				{#if needsSpace}
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">
+						{t('app.blog.space_hint', 'Required when publishing or scheduling')}
+					</p>
+				{/if}
 			</div>
 		</CardContent>
 	</Card>
