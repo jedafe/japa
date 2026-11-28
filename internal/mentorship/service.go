@@ -407,6 +407,32 @@ func (s *Service) trackEvent(ctx context.Context, userID pgtype.UUID, eventType,
 	}
 }
 
+// mentorProfileFallbackRow synthesizes the read/merge row for an account
+// whose user_profiles row is missing (migrated/anomalous accounts —
+// registration normally creates it). is_mentor off, the schema-default
+// capacity (NULL capacity reads as uncapped in the booking probe — never
+// synthesize nil), and the aliased username so a first opt-in still gets a
+// well-formed mentor-<username> shadow slug. ErrNoRows propagates when the
+// user itself is gone.
+func (s *Service) mentorProfileFallbackRow(ctx context.Context, userID pgtype.UUID) (gen.GetMentorProfileRow, error) {
+	u, err := s.read.GetMentorProfileUserFallback(ctx, userID)
+	if err != nil {
+		return gen.GetMentorProfileRow{}, err
+	}
+
+	isMentor := false
+	capacity := int16(3) // user_profiles mentor_capacity column DEFAULT
+
+	return gen.GetMentorProfileRow{
+		UserID:           u.UserID,
+		IsMentor:         &isMentor,
+		MentorCapacity:   &capacity,
+		Username:         u.Username,
+		Verified:         u.Verified,
+		VerificationType: u.VerificationType,
+	}, nil
+}
+
 // GetMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile.
 func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (MentorProfile, error) {
@@ -415,7 +441,13 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 		userID,
 	)
 	if err != nil {
-		return MentorProfile{}, fmt.Errorf("getting mentor profile: %w", err)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return MentorProfile{}, fmt.Errorf("getting mentor profile: %w", err)
+		}
+
+		if row, err = s.mentorProfileFallbackRow(ctx, userID); err != nil {
+			return MentorProfile{}, fmt.Errorf("getting mentor profile: %w", err)
+		}
 	}
 
 	// 000829: the settings editor needs the shadow listing's page content
@@ -466,13 +498,21 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 // PATCH /api/v1/me/mentor-profile
 // When mentor_bio changes, enqueues the mentor:generate_embedding task.
 func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string, card MentorCardInput) (MentorProfile, error) {
-	// Fetch current values for merge.
+	// Fetch current values for merge — a missing user_profiles row
+	// (migrated/anomalous account) resolves to schema defaults; the write
+	// below is an upsert that creates the row.
 	current, err := s.read.GetMentorProfile(ctx,
 
 		userID,
 	)
 	if err != nil {
-		return MentorProfile{}, fmt.Errorf("loading current mentor profile: %w", err)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return MentorProfile{}, fmt.Errorf("loading current mentor profile: %w", err)
+		}
+
+		if current, err = s.mentorProfileFallbackRow(ctx, userID); err != nil {
+			return MentorProfile{}, fmt.Errorf("loading current mentor profile: %w", err)
+		}
 	}
 
 	// Load the platform-wide cap once for validation and the response.

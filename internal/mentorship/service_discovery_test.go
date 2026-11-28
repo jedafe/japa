@@ -138,3 +138,74 @@ func TestListMentorsIncludeUnavailable_LiveDB(t *testing.T) {
 		}
 	})
 }
+
+// TestMentorProfileMissingRow_LiveDB — an account with no user_profiles
+// row resolves a default profile from GET (schema defaults, not a 500)
+// and PATCH upserts the row on first save; a later PATCH takes the
+// conflict arm and preserves mentor_since (audit GAP-01).
+func TestMentorProfileMissingRow_LiveDB(t *testing.T) {
+	ctx := t.Context()
+	database := liveDB(t)
+	uniq := strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	svc := NewService(database)
+
+	var id pgtype.UUID
+	if err := database.Writer.QueryRow(ctx,
+		`INSERT INTO users (email, username, profile_type) VALUES ($1, $2, 'regular') RETURNING id`,
+		"noprof"+uniq+"@svc.test", "noprof"+uniq).Scan(&id); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	t.Cleanup(func() {
+		database.Writer.Exec(ctx, `DELETE FROM contents WHERE author_id = $1`, id)
+		database.Writer.Exec(ctx, `DELETE FROM user_profiles WHERE user_id = $1`, id)
+		database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	})
+
+	// GET resolves a default view instead of surfacing ErrNoRows as a 500.
+	prof, err := svc.GetMentorProfile(ctx, id)
+	if err != nil {
+		t.Fatalf("GetMentorProfile: %v", err)
+	}
+
+	if prof.IsMentor == nil || *prof.IsMentor {
+		t.Errorf("is_mentor = %v, want false default", prof.IsMentor)
+	}
+
+	if prof.MentorCapacity == nil || *prof.MentorCapacity != 3 {
+		t.Errorf("mentor_capacity = %v, want schema default 3", prof.MentorCapacity)
+	}
+
+	// PATCH upserts the row — the update arm must not rely on a preexisting
+	// user_profiles row.
+	on := true
+	var cap5 int16 = 5
+
+	prof, err = svc.UpdateMentorProfile(ctx, id, &on, &cap5, []string{"visa"}, nil, MentorCardInput{})
+	if err != nil {
+		t.Fatalf("UpdateMentorProfile (insert arm): %v", err)
+	}
+
+	if prof.IsMentor == nil || !*prof.IsMentor ||
+		prof.MentorCapacity == nil || *prof.MentorCapacity != 5 {
+		t.Errorf("post-upsert profile wrong: %+v", prof)
+	}
+
+	// Second PATCH takes the conflict arm; mentor_since must survive an
+	// opt-out (restored intact on re-enable).
+	off := false
+
+	prof, err = svc.UpdateMentorProfile(ctx, id, &off, nil, nil, nil, MentorCardInput{})
+	if err != nil {
+		t.Fatalf("UpdateMentorProfile (conflict arm): %v", err)
+	}
+
+	if prof.IsMentor == nil || *prof.IsMentor {
+		t.Errorf("is_mentor = %v, want false", prof.IsMentor)
+	}
+
+	if !prof.MentorSince.Valid {
+		t.Error("mentor_since cleared on opt-out — expected preserved")
+	}
+}

@@ -1830,6 +1830,8 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 			s.enqueueMentorMeilisearch(row.ProviderUserID)
 		}
 
+		s.emitAdminMentorshipEvent(ctx, row, bookingID, input.Status)
+
 		return s.GetBooking(ctx, bookingID, pgtype.UUID{}, true)
 	default:
 		releaseDep := pgtype.UUID{}
@@ -1852,6 +1854,8 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 		s.enqueueMentorMeilisearch(row.ProviderUserID)
 	}
 
+	s.emitAdminMentorshipEvent(ctx, row, bookingID, input.Status)
+
 	switch input.Status {
 	case BookingStatusDeclined, BookingStatusRefunded:
 		s.enqueueFeeSettle(row.ID, "refund")
@@ -1862,6 +1866,32 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 	}
 
 	return s.GetBooking(ctx, bookingID, pgtype.UUID{}, true)
+}
+
+// emitAdminMentorshipEvent mirrors the §102 analytics events an
+// admin-forced transition would have produced on the user path — pending
+// → confirmed maps to mentorship_accepted, anything → fulfilled maps to
+// mentorship_completed. The provider rides as the event actor (same shape
+// as RespondToBooking/CompleteMyBooking) with via=admin marking the
+// override; decline/cancel carry no §102 event, same as the user path.
+// Called once per successful admin transition — AdminSetBookingStatus is
+// the only caller, so compat and servicedir admin routes both emit once.
+func (s *Service) emitAdminMentorshipEvent(ctx context.Context, row BookingRow, bookingID pgtype.UUID, newStatus string) {
+	if row.ListingKind != ListingKindMentorship {
+		return
+	}
+
+	switch newStatus {
+	case BookingStatusConfirmed:
+		if row.Status == BookingStatusConfirmed {
+			return // already confirmed — no accept transition
+		}
+		s.trackEvent(ctx, row.ProviderUserID, "mentorship_accepted", "mentorship_connection", bookingID,
+			map[string]any{"mentee_id": row.BookerUserID.String(), "via": "admin"})
+	case BookingStatusFulfilled:
+		s.trackEvent(ctx, row.ProviderUserID, "mentorship_completed", "mentorship_connection", bookingID,
+			map[string]any{"via": "admin"})
+	}
 }
 
 // paymentSettled reports whether the booking's fee payment has moved

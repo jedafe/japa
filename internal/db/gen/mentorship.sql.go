@@ -287,6 +287,37 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 	return i, err
 }
 
+const getMentorProfileUserFallback = `-- name: GetMentorProfileUserFallback :one
+SELECT u.id AS user_id,
+ COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type
+FROM users u
+WHERE u.id = $1
+`
+
+type GetMentorProfileUserFallbackRow struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	Username         string      `json:"username"`
+	Verified         bool        `json:"verified"`
+	VerificationType *string     `json:"verification_type"`
+}
+
+// users-only row for accounts WITHOUT a user_profiles row (migrated or
+// anomalous accounts). Lets /me/mentor-profile resolve the aliased
+// username + verification flags instead of 500ing; the UpdateMentorProfile
+// upsert creates the profile row lazily on first save.
+func (q *Queries) GetMentorProfileUserFallback(ctx context.Context, userID pgtype.UUID) (GetMentorProfileUserFallbackRow, error) {
+	row := q.db.QueryRow(ctx, getMentorProfileUserFallback, userID)
+	var i GetMentorProfileUserFallbackRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.Verified,
+		&i.VerificationType,
+	)
+	return i, err
+}
+
 const getMentorsByIDs = `-- name: GetMentorsByIDs :many
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
@@ -1010,26 +1041,34 @@ func (q *Queries) UpdateMentorEmbedding(ctx context.Context, arg UpdateMentorEmb
 }
 
 const updateMentorProfile = `-- name: UpdateMentorProfile :one
-UPDATE user_profiles
-SET is_mentor = $1,
- mentor_capacity = $2,
- mentor_areas = $3,
- mentor_bio = $4,
- -- 000829 mentor card fields — COALESCE so nil preserves the stored
- -- value; the service layer maps absent → nil, empty → empty value.
- mentor_title = COALESCE($5, mentor_title),
- mentor_response_time = COALESCE($6, mentor_response_time),
- mentor_availability = COALESCE($7, mentor_availability),
- mentor_session_type = COALESCE($8, mentor_session_type),
- mentor_languages = COALESCE($9, mentor_languages),
- mentor_session_formats = COALESCE($10, mentor_session_formats),
- mentor_countries = COALESCE($11, mentor_countries),
- mentor_credentials = COALESCE($12, mentor_credentials),
- mentor_years_experience = COALESCE($13, mentor_years_experience),
- mentor_success_label = COALESCE($14, mentor_success_label),
- mentor_since = CASE WHEN $1 = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
+INSERT INTO user_profiles (user_id, is_mentor, mentor_capacity, mentor_areas, mentor_bio,
+ mentor_title, mentor_response_time, mentor_availability, mentor_session_type,
+ mentor_languages, mentor_session_formats, mentor_countries, mentor_credentials,
+ mentor_years_experience, mentor_success_label, mentor_since)
+VALUES ($1, $2, $3, $4, $5,
+ $6, $7, $8, $9,
+ $10, $11, $12, $13,
+ $14, $15,
+ CASE WHEN $2 = true THEN now() ELSE NULL END)
+ON CONFLICT (user_id) DO UPDATE
+SET is_mentor = EXCLUDED.is_mentor,
+ mentor_capacity = EXCLUDED.mentor_capacity,
+ mentor_areas = EXCLUDED.mentor_areas,
+ mentor_bio = EXCLUDED.mentor_bio,
+ -- 000829 mentor card fields — COALESCE(EXCLUDED) so nil preserves the
+ -- stored value; the service layer maps absent → nil, empty → empty value.
+ mentor_title = COALESCE(EXCLUDED.mentor_title, user_profiles.mentor_title),
+ mentor_response_time = COALESCE(EXCLUDED.mentor_response_time, user_profiles.mentor_response_time),
+ mentor_availability = COALESCE(EXCLUDED.mentor_availability, user_profiles.mentor_availability),
+ mentor_session_type = COALESCE(EXCLUDED.mentor_session_type, user_profiles.mentor_session_type),
+ mentor_languages = COALESCE(EXCLUDED.mentor_languages, user_profiles.mentor_languages),
+ mentor_session_formats = COALESCE(EXCLUDED.mentor_session_formats, user_profiles.mentor_session_formats),
+ mentor_countries = COALESCE(EXCLUDED.mentor_countries, user_profiles.mentor_countries),
+ mentor_credentials = COALESCE(EXCLUDED.mentor_credentials, user_profiles.mentor_credentials),
+ mentor_years_experience = COALESCE(EXCLUDED.mentor_years_experience, user_profiles.mentor_years_experience),
+ mentor_success_label = COALESCE(EXCLUDED.mentor_success_label, user_profiles.mentor_success_label),
+ mentor_since = CASE WHEN EXCLUDED.is_mentor = true AND user_profiles.mentor_since IS NULL THEN now() ELSE user_profiles.mentor_since END,
  updated_at = now()
-WHERE user_id = $15
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
  mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
  profession, website_url,
@@ -1040,6 +1079,7 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 `
 
 type UpdateMentorProfileParams struct {
+	UserID                pgtype.UUID `json:"user_id"`
 	IsMentor              *bool       `json:"is_mentor"`
 	MentorCapacity        *int16      `json:"mentor_capacity"`
 	MentorAreas           []string    `json:"mentor_areas"`
@@ -1054,7 +1094,6 @@ type UpdateMentorProfileParams struct {
 	MentorCredentials     []string    `json:"mentor_credentials"`
 	MentorYearsExperience *int16      `json:"mentor_years_experience"`
 	MentorSuccessLabel    *string     `json:"mentor_success_label"`
-	UserID                pgtype.UUID `json:"user_id"`
 }
 
 type UpdateMentorProfileRow struct {
@@ -1081,12 +1120,15 @@ type UpdateMentorProfileRow struct {
 	MentorSuccessLabel    *string            `json:"mentor_success_label"`
 }
 
-// Toggle is_mentor and set capacity/areas/bio. When is_mentor flips to true,
-// mentor_since is set to now() if not already recorded. mentor_since is
-// deliberately NOT cleared when is_mentor turns off — it records when the
-// user first mentored and is restored intact on re-enable.
+// Toggle is_mentor and set capacity/areas/bio — upsert so a missing
+// user_profiles row is created rather than erroring (audit GAP-01).
+// When is_mentor flips to true, mentor_since is set to now() if not
+// already recorded. mentor_since is deliberately NOT cleared when
+// is_mentor turns off — it records when the user first mentored and is
+// restored intact on re-enable.
 func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfileParams) (UpdateMentorProfileRow, error) {
 	row := q.db.QueryRow(ctx, updateMentorProfile,
+		arg.UserID,
 		arg.IsMentor,
 		arg.MentorCapacity,
 		arg.MentorAreas,
@@ -1101,7 +1143,6 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 		arg.MentorCredentials,
 		arg.MentorYearsExperience,
 		arg.MentorSuccessLabel,
-		arg.UserID,
 	)
 	var i UpdateMentorProfileRow
 	err := row.Scan(

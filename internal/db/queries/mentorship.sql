@@ -21,31 +21,52 @@ FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE up.user_id = @user_id;
 
+-- name: GetMentorProfileUserFallback :one
+-- users-only row for accounts WITHOUT a user_profiles row (migrated or
+-- anomalous accounts). Lets /me/mentor-profile resolve the aliased
+-- username + verification flags instead of 500ing; the UpdateMentorProfile
+-- upsert creates the profile row lazily on first save.
+SELECT u.id AS user_id,
+ COALESCE(u.public_username, u.username, '') AS username,
+ u.verified, u.verification_type
+FROM users u
+WHERE u.id = @user_id;
+
 -- name: UpdateMentorProfile :one
--- Toggle is_mentor and set capacity/areas/bio. When is_mentor flips to true,
--- mentor_since is set to now() if not already recorded. mentor_since is
--- deliberately NOT cleared when is_mentor turns off — it records when the
--- user first mentored and is restored intact on re-enable.
-UPDATE user_profiles
-SET is_mentor = @is_mentor,
- mentor_capacity = @mentor_capacity,
- mentor_areas = @mentor_areas,
- mentor_bio = @mentor_bio,
- -- 000829 mentor card fields — COALESCE so nil preserves the stored
- -- value; the service layer maps absent → nil, empty → empty value.
- mentor_title = COALESCE(sqlc.narg(mentor_title), mentor_title),
- mentor_response_time = COALESCE(sqlc.narg(mentor_response_time), mentor_response_time),
- mentor_availability = COALESCE(sqlc.narg(mentor_availability), mentor_availability),
- mentor_session_type = COALESCE(sqlc.narg(mentor_session_type), mentor_session_type),
- mentor_languages = COALESCE(sqlc.narg(mentor_languages), mentor_languages),
- mentor_session_formats = COALESCE(sqlc.narg(mentor_session_formats), mentor_session_formats),
- mentor_countries = COALESCE(sqlc.narg(mentor_countries), mentor_countries),
- mentor_credentials = COALESCE(sqlc.narg(mentor_credentials), mentor_credentials),
- mentor_years_experience = COALESCE(sqlc.narg(mentor_years_experience), mentor_years_experience),
- mentor_success_label = COALESCE(sqlc.narg(mentor_success_label), mentor_success_label),
- mentor_since = CASE WHEN @is_mentor = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
+-- Toggle is_mentor and set capacity/areas/bio — upsert so a missing
+-- user_profiles row is created rather than erroring (audit GAP-01).
+-- When is_mentor flips to true, mentor_since is set to now() if not
+-- already recorded. mentor_since is deliberately NOT cleared when
+-- is_mentor turns off — it records when the user first mentored and is
+-- restored intact on re-enable.
+INSERT INTO user_profiles (user_id, is_mentor, mentor_capacity, mentor_areas, mentor_bio,
+ mentor_title, mentor_response_time, mentor_availability, mentor_session_type,
+ mentor_languages, mentor_session_formats, mentor_countries, mentor_credentials,
+ mentor_years_experience, mentor_success_label, mentor_since)
+VALUES (@user_id, @is_mentor, @mentor_capacity, @mentor_areas, @mentor_bio,
+ sqlc.narg(mentor_title), sqlc.narg(mentor_response_time), sqlc.narg(mentor_availability), sqlc.narg(mentor_session_type),
+ sqlc.narg(mentor_languages), sqlc.narg(mentor_session_formats), sqlc.narg(mentor_countries), sqlc.narg(mentor_credentials),
+ sqlc.narg(mentor_years_experience), sqlc.narg(mentor_success_label),
+ CASE WHEN @is_mentor = true THEN now() ELSE NULL END)
+ON CONFLICT (user_id) DO UPDATE
+SET is_mentor = EXCLUDED.is_mentor,
+ mentor_capacity = EXCLUDED.mentor_capacity,
+ mentor_areas = EXCLUDED.mentor_areas,
+ mentor_bio = EXCLUDED.mentor_bio,
+ -- 000829 mentor card fields — COALESCE(EXCLUDED) so nil preserves the
+ -- stored value; the service layer maps absent → nil, empty → empty value.
+ mentor_title = COALESCE(EXCLUDED.mentor_title, user_profiles.mentor_title),
+ mentor_response_time = COALESCE(EXCLUDED.mentor_response_time, user_profiles.mentor_response_time),
+ mentor_availability = COALESCE(EXCLUDED.mentor_availability, user_profiles.mentor_availability),
+ mentor_session_type = COALESCE(EXCLUDED.mentor_session_type, user_profiles.mentor_session_type),
+ mentor_languages = COALESCE(EXCLUDED.mentor_languages, user_profiles.mentor_languages),
+ mentor_session_formats = COALESCE(EXCLUDED.mentor_session_formats, user_profiles.mentor_session_formats),
+ mentor_countries = COALESCE(EXCLUDED.mentor_countries, user_profiles.mentor_countries),
+ mentor_credentials = COALESCE(EXCLUDED.mentor_credentials, user_profiles.mentor_credentials),
+ mentor_years_experience = COALESCE(EXCLUDED.mentor_years_experience, user_profiles.mentor_years_experience),
+ mentor_success_label = COALESCE(EXCLUDED.mentor_success_label, user_profiles.mentor_success_label),
+ mentor_since = CASE WHEN EXCLUDED.is_mentor = true AND user_profiles.mentor_since IS NULL THEN now() ELSE user_profiles.mentor_since END,
  updated_at = now()
-WHERE user_id = @user_id
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
  mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
  profession, website_url,
