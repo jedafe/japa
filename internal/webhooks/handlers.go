@@ -325,6 +325,10 @@ var defaultWebhookEventCatalog = []map[string]string{
 	// Payments (§17)
 	{"key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds"},
 	{"key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails"},
+	// Subscriptions (§17 lifecycle — emitted by webhook handlers + expiry sweep)
+	{"key": "subscription.created", "label": "Subscription Created", "description": "When a subscription is activated by a provider webhook"},
+	{"key": "subscription.canceled", "label": "Subscription Canceled", "description": "When the provider ends a subscription"},
+	{"key": "subscription.expired", "label": "Subscription Expired", "description": "When the expiry sweep ends a subscription past its entitlement window"},
 	// Forum (§08) — non-PII
 	{"key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created"},
 	{"key": "forum.thread.updated", "label": "Forum Thread Updated", "description": "When a forum thread is updated"},

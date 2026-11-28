@@ -124,9 +124,12 @@ WHERE id = @id
 RETURNING *;
 
 -- name: MarkSubscriptionPastDue :one
+-- Guard on live statuses — a stale/out-of-order invoice.payment_failed
+-- must not resurrect a canceled or expired row.
 UPDATE subscriptions
 SET status = 'past_due', updated_at = now()
 WHERE id = @id
+ AND status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text])
 RETURNING *;
 
 -- name: SetSubscriptionCancelAtPeriodEnd :one
@@ -144,11 +147,13 @@ WHERE id = @id
 RETURNING *;
 
 -- name: ListSubscriptionsDueForExpiry :many
--- Expiry sweep (§17): active rows whose cancel_at_period_end has reached
--- period end, plus past_due rows past period end + the grace window the
--- caller subtracts into @grace_cutoff before querying.
+-- Expiry sweep (§17): live rows whose cancel_at_period_end has reached
+-- period end (trialing included — a pending-cancel trial would otherwise
+-- never expire if the provider status event is missed), plus past_due rows
+-- past period end + the grace window the caller subtracts into
+-- @grace_cutoff before querying.
 SELECT * FROM subscriptions
-WHERE (status = 'active' AND cancel_at_period_end = true AND current_period_end <= now())
+WHERE (status = ANY (ARRAY['active'::text, 'trialing'::text]) AND cancel_at_period_end = true AND current_period_end <= now())
    OR (status = 'past_due' AND current_period_end <= @grace_cutoff)
 ORDER BY current_period_end
 LIMIT @page_limit;
@@ -165,9 +170,14 @@ WHERE id = @id
 RETURNING *;
 
 -- name: GetActiveSubscriptionByUser :one
+-- "Active" for callers means a live subscription: trialing and past_due
+-- rows still carry entitlement and a running provider subscription.
+-- Without them, POST /subscriptions allowed a second checkout on top of a
+-- trialing/past_due sub, /me/subscription 404'd a paying user, and
+-- CancelMySubscription could not find the row.
 SELECT * FROM subscriptions
 WHERE user_id = @user_id
- AND status = 'active'
+ AND status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text])
  AND current_period_end > now()
 ORDER BY created_at DESC
 LIMIT 1;

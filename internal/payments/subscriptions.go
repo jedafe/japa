@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -219,6 +220,12 @@ func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, in
 	var currency string
 
 	if planRow, err := s.store.getSubscriptionPlanBySlug(ctx, slug); err == nil {
+		// An admin-deactivated plan must not stay purchasable via the API —
+		// the public list hides it, but a direct POST could still check out.
+		if planRow.Status != "active" {
+			return SubscriptionCheckoutResult{}, fmt.Errorf("%w: plan %s is not active", ErrPlanNotConfigured, slug)
+		}
+
 		if cycle == "yearly" {
 			amount = planRow.YearlyAmount
 		} else {
@@ -393,6 +400,12 @@ func (s *Service) stripeActivate(ctx context.Context, obj map[string]interface{}
 		return err
 	}
 
+	// Stale replay on an ended row — upsert returned it untouched; do not
+	// re-grant entitlement for a subscription the provider already ended.
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil
+	}
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -408,6 +421,9 @@ func (s *Service) stripeInvoicePaid(ctx context.Context, obj map[string]interfac
 	if err != nil {
 		slog.Warn("subscription webhook: invoice.paid for unknown sub", "sub", subID)
 		return nil
+	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // stale replay on an ended row — must not resurrect bounds/tier
 	}
 	// Renewal period bounds: invoice line item period → fallback to plan cycle.
 	now := time.Now()
@@ -452,12 +468,25 @@ func (s *Service) stripeSyncSubscription(ctx context.Context, obj map[string]int
 	if err != nil {
 		return nil // unknown sub — nothing to sync
 	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // ended row — stale replay must not shift bounds or re-notify
+	}
 
 	start, end := unixTs(obj, "current_period_start"), unixTs(obj, "current_period_end")
 	cancelAtEnd := boolFrom(obj, "cancel_at_period_end")
 
 	if err := s.store.updateSubscriptionPeriodBounds(ctx, sub.ID, start, end, cancelAtEnd); err != nil {
 		return err
+	}
+
+	// Provider-truth status drift: subscription.updated also carries status
+	// (e.g. trialing→active when a trial converts, or provider-side pause).
+	// Sync only within the live set — a stale 'active' on a canceled/expired
+	// row must never resurrect it.
+	if st := str(obj, "status"); isLiveSubscriptionStatus(st) && isLiveSubscriptionStatus(sub.Status) && st != sub.Status {
+		if _, err := s.store.updateSubscriptionStatus(ctx, sub.ID, st); err != nil {
+			return err
+		}
 	}
 
 	// ADR-055: provider confirms a pending-cancel → subscription_expiring.
@@ -486,6 +515,9 @@ func (s *Service) stripeCancelNow(ctx context.Context, obj map[string]interface{
 	if err != nil {
 		return nil
 	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // already ended — replay must not re-email/re-emit/re-revoke
+	}
 
 	if _, err := s.store.updateSubscriptionStatus(ctx, sub.ID, SubscriptionStatusCanceled); err != nil {
 		return err
@@ -500,6 +532,12 @@ func (s *Service) stripeCancelNow(ctx context.Context, obj map[string]interface{
 		cancelledData["access_until"] = sub.CurrentPeriodEnd.Time.Format("2006-01-02")
 	}
 	s.notifyPaymentEmail(ctx, sub.UserID, "subscription_cancelled", cancelledData)
+
+	s.emitWebhook(ctx, "subscription.canceled", map[string]any{
+		"subscription_id": sub.ID.String(),
+		"user_id":         sub.UserID.String(),
+		"plan":            sub.Plan,
+	})
 
 	return s.revokePlanTier(ctx, sub.UserID, sub.Plan)
 }
@@ -587,6 +625,10 @@ func (s *Service) paystackActivate(ctx context.Context, data map[string]interfac
 		return err
 	}
 
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // stale replay on an ended row — see stripeActivate
+	}
+
 	return s.grantPlanTier(ctx, sub.UserID, sub.Plan)
 }
 
@@ -599,6 +641,9 @@ func (s *Service) paystackRenewal(ctx context.Context, subCode string, data map[
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subCode)
 	if err != nil {
 		return nil // may be the first charge before subscription.create landed
+	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // stale replay on an ended row — see stripeInvoicePaid
 	}
 
 	now := time.Now()
@@ -652,6 +697,12 @@ func (s *Service) planFromPaystackCode(ctx context.Context, planCode string) str
 // created it (events can arrive out of order).
 func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUID, plan, provider, subID, status string, start, end time.Time, cancelAtEnd bool) (gen.Subscription, error) {
 	if existing, err := s.store.getSubscriptionByProviderSubID(ctx, subID); err == nil {
+		// Out-of-order/stale replay guard: a resurrected activation event on
+		// a canceled or expired row must not flip it back to a live status
+		// and re-grant entitlement — the provider sub is already dead.
+		if !isLiveSubscriptionStatus(existing.Status) {
+			return existing, nil
+		}
 		_ = s.store.updateSubscriptionPeriodBounds(ctx, existing.ID, start, end, cancelAtEnd)
 		return s.store.updateSubscriptionStatus(ctx, existing.ID, status)
 	}
@@ -677,6 +728,13 @@ func (s *Service) upsertSubscriptionByRef(ctx context.Context, userID pgtype.UUI
 		"site_url":          s.siteURL,
 	})
 
+	s.emitWebhook(ctx, "subscription.created", map[string]any{
+		"subscription_id": sub.ID.String(),
+		"user_id":         userID.String(),
+		"plan":            plan,
+		"provider":        provider,
+	})
+
 	return sub, nil
 }
 
@@ -691,6 +749,12 @@ func (s *Service) recordRenewalPayment(ctx context.Context, sub gen.Subscription
 		currency = "NGN"
 	}
 
+	// Deterministic idempotency key — the same charge re-delivered under a
+	// different event id (manual resend, cross-region replay) must not
+	// insert a second revenue row. The payments.idempotency_key UNIQUE
+	// constraint rejects the duplicate; the warn log below records it.
+	idemKey := "sub-renewal:" + providerRef
+
 	subID := sub.ID
 	if _, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
 		UserID:         sub.UserID,
@@ -703,6 +767,7 @@ func (s *Service) recordRenewalPayment(ctx context.Context, sub gen.Subscription
 		Status:         PaymentStatusSucceeded,
 		Metadata:       []byte(`{"source":"subscription_renewal"}`),
 		SubscriptionID: subID,
+		IdempotencyKey: &idemKey,
 	}); err != nil {
 		slog.Warn("subscription webhook: renewal payment row failed", "sub", providerRef, "error", err)
 	}
@@ -755,8 +820,14 @@ func (s *Service) markSubPastDueByRef(ctx context.Context, subID string) error {
 	if err != nil {
 		return nil
 	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // ended row — stale payment_failed must not error (retry loop) or re-email
+	}
 
 	_, err = s.store.markSubscriptionPastDue(ctx, sub.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // transitioned to ended between the check and the write
+	}
 	if err != nil {
 		return err
 	}
@@ -778,6 +849,9 @@ func (s *Service) setSubCancelFlagByRef(ctx context.Context, subID string, flag 
 	sub, err := s.store.getSubscriptionByProviderSubID(ctx, subID)
 	if err != nil {
 		return nil
+	}
+	if !isLiveSubscriptionStatus(sub.Status) {
+		return nil // ended row — stale disable/not_renew must not re-notify
 	}
 
 	if err := s.store.setSubscriptionCancelAtPeriodEnd(ctx, sub.ID, flag); err != nil {
@@ -838,23 +912,55 @@ func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.S
 	return updated, nil
 }
 
+// isReactivatableSub mirrors the ReactivateSubscription query predicate —
+// canceled rows, or live-status rows carrying the pending-cancel flag.
+func isReactivatableSub(s gen.Subscription) bool {
+	if s.Status == SubscriptionStatusCanceled {
+		return true
+	}
+	switch s.Status {
+	case SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue:
+		return s.CancelAtPeriodEnd
+	}
+	return false
+}
+
+// isLiveSubscriptionStatus reports whether a status carries a running
+// provider subscription / entitlement (never resurrect ended rows).
+func isLiveSubscriptionStatus(status string) bool {
+	switch status {
+	case SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue:
+		return true
+	}
+	return false
+}
+
 // ReactivateSubscription undoes a pending cancel at the provider, then
 // reactivates the caller's local row.
 func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
 	// Resolve the row that reactivateSubscription will target — the most
-	// recently updated canceled / pending-cancel row for this user.
-	subs, err := s.store.listSubscriptionsByUser(ctx, userID, 10, 0)
+	// recently updated canceled / pending-cancel row for this user. Wide
+	// window so the provider-call target and the SQL's updated_at pick
+	// agree even with many historical rows.
+	subs, err := s.store.listSubscriptionsByUser(ctx, userID, 100, 0)
 	if err != nil {
 		return gen.Subscription{}, err
 	}
 
+	// Mirror the SQL predicate + ordering exactly: 'canceled', or a
+	// live-status row (active/trialing/past_due) with the pending-cancel
+	// flag — most recently updated wins. A mismatch would reactivate the
+	// provider-side sub on one row while the local UPDATE lands on another.
 	var target *gen.Subscription
 
 	for i := range subs {
 		s := subs[i]
-		if s.Status == SubscriptionStatusCanceled || (s.Status == SubscriptionStatusActive && s.CancelAtPeriodEnd) {
-			target = &s
-			break
+		if !isReactivatableSub(s) {
+			continue
+		}
+		if target == nil || s.UpdatedAt.Time.After(target.UpdatedAt.Time) {
+			candidate := s
+			target = &candidate
 		}
 	}
 

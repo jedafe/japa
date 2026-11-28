@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ---------------------------------------------------------------------------
@@ -230,5 +231,45 @@ func TestPayloadHelpers(t *testing.T) {
 
 	if str(nil, "x") != "" || boolFrom(nil, "x") || !unixTs(nil, "x").IsZero() {
 		t.Error("nil-map helpers must be safe")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle-status predicates (replay-guard + reactivate mirror)
+// ---------------------------------------------------------------------------
+
+func TestIsLiveSubscriptionStatus(t *testing.T) {
+	for _, st := range []string{SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue} {
+		if !isLiveSubscriptionStatus(st) {
+			t.Errorf("expected %q live", st)
+		}
+	}
+	for _, st := range []string{SubscriptionStatusCanceled, SubscriptionStatusExpired, "", "unknown"} {
+		if isLiveSubscriptionStatus(st) {
+			t.Errorf("expected %q not live", st)
+		}
+	}
+}
+
+func TestIsReactivatableSub(t *testing.T) {
+	mk := func(status string, cancelFlag bool) gen.Subscription {
+		return gen.Subscription{Status: status, CancelAtPeriodEnd: cancelFlag}
+	}
+
+	if !isReactivatableSub(mk(SubscriptionStatusCanceled, false)) {
+		t.Error("canceled row must be reactivatable")
+	}
+	for _, st := range []string{SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue} {
+		if !isReactivatableSub(mk(st, true)) {
+			t.Errorf("live %q + pending-cancel must be reactivatable", st)
+		}
+		if isReactivatableSub(mk(st, false)) {
+			t.Errorf("live %q without pending-cancel must not reactivate", st)
+		}
+	}
+	for _, st := range []string{SubscriptionStatusExpired, "unknown", ""} {
+		if isReactivatableSub(mk(st, true)) {
+			t.Errorf("ended %q must never reactivate", st)
+		}
 	}
 }
