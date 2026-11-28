@@ -9,7 +9,8 @@
 // partial-grant states are reachable.
 //
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
-//      (Amendment — Member Mentor Applications + Discovery CTA)
+//
+//	(Amendment — Member Mentor Applications + Discovery CTA)
 package mentorship
 
 import (

@@ -42,11 +42,11 @@ type Service struct {
 	bookings BookingBackend
 	activity ActivityEmitter // nil = gamification activity emissions skipped
 	// §102 2026-11-28 — member mentor applications.
-	permChecker  PermChecker        // nil = eligibility probes fail closed
+	permChecker  PermChecker          // nil = eligibility probes fail closed
 	permCache    PermCacheInvalidator // nil = post-commit cache eviction skipped
-	appNotifier  ApplicationNotifier // nil = decision dispatch logs only
-	groupMu      sync.Mutex         // guards mentorsGroup memoization
-	mentorsGroup pgtype.UUID        // cached `mentors` system group id
+	appNotifier  ApplicationNotifier  // nil = decision dispatch logs only
+	groupMu      sync.Mutex           // guards mentorsGroup memoization
+	mentorsGroup pgtype.UUID          // cached `mentors` system group id
 }
 
 // ActivityEmitter records wallet activity events for gamification v2 —
