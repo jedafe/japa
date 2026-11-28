@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -358,6 +359,16 @@ func (s *Service) ListApplications(ctx context.Context, status, q string, limit,
 	return out, total, nil
 }
 
+// applicationTxResult carries out of the approve/decline transaction
+// what the post-commit side effects need.
+type applicationTxResult struct {
+	row     gen.MentorApplication // the row as written/verified in-tx
+	userID  pgtype.UUID           // applicant — cache eviction + event meta
+	prior   string                // status when the lock was taken
+	granted bool                  // approve: the membership was added this call
+	revoked bool                  // decline: a membership was removed this call
+}
+
 // ApproveApplication transitions pending → approved and grants the
 // mentors group membership (the capability) in ONE transaction: the
 // FOR UPDATE row lock serializes every transition on this application,
@@ -367,76 +378,77 @@ func (s *Service) ListApplications(ctx context.Context, status, q string, limit,
 // out-of-band membership removal re-heals the grant.
 // POST /admin/mentorship/applications/{id}/approve.
 func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgtype.UUID) (*MentorApplication, error) {
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("mentorship: begin approve tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit
-	qtx := s.write.WithTx(tx)
-
-	prior, err := qtx.GetMentorApplicationByIDForUpdate(ctx, appID)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return nil, ErrApplicationNotFound
-	case err != nil:
-		return nil, fmt.Errorf("mentorship: load application: %w", err)
-	case prior.Status != "pending" && prior.Status != "approved":
-		return nil, ErrApplicationNotActionable
-	}
-
-	// The grant — the membership row lands in the same commit as the
-	// transition. AddUserToGroup is idempotent (ON CONFLICT DO NOTHING);
-	// on an approved row this arm is the ensure-grant retry.
 	groupID, err := s.mentorsGroupID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	in, err := qtx.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
-		UserID:  prior.UserID,
-		GroupID: groupID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("mentorship: probe mentors membership: %w", err)
-	}
-	granted := false
-	if !in {
-		if err := qtx.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+
+	res, err := db.WithTxResult(ctx, s.db.Writer, func(qtx *gen.Queries) (applicationTxResult, error) {
+		prior, err := qtx.GetMentorApplicationByIDForUpdate(ctx, appID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return applicationTxResult{}, ErrApplicationNotFound
+		case err != nil:
+			return applicationTxResult{}, fmt.Errorf("mentorship: load application: %w", err)
+		case prior.Status != "pending" && prior.Status != "approved":
+			return applicationTxResult{}, ErrApplicationNotActionable
+		}
+
+		out := applicationTxResult{row: prior, userID: prior.UserID, prior: prior.Status}
+
+		// The grant — the membership row lands in the same commit as
+		// the transition. AddUserToGroup is idempotent (ON CONFLICT DO
+		// NOTHING); on an approved row this arm is the ensure-grant
+		// retry.
+		in, err := qtx.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
 			UserID:  prior.UserID,
 			GroupID: groupID,
-		}); err != nil {
-			return nil, fmt.Errorf("mentorship: grant mentors group: %w", err)
-		}
-		granted = true
-	}
-
-	row := prior
-	if prior.Status == "pending" {
-		row, err = qtx.ApproveMentorApplication(ctx, gen.ApproveMentorApplicationParams{
-			ID:             appID,
-			ReviewerUserID: reviewerID,
 		})
-		// Status was verified under the row lock — ErrNoRows is
-		// unreachable; any surfaced error is a real failure and rolls
-		// the grant back with it.
 		if err != nil {
-			return nil, fmt.Errorf("mentorship: approve application: %w", err)
+			return out, fmt.Errorf("mentorship: probe mentors membership: %w", err)
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("mentorship: commit approve: %w", err)
+		if !in {
+			if err := qtx.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+				UserID:  prior.UserID,
+				GroupID: groupID,
+			}); err != nil {
+				return out, fmt.Errorf("mentorship: grant mentors group: %w", err)
+			}
+			out.granted = true
+		}
+
+		if prior.Status == "pending" {
+			out.row, err = qtx.ApproveMentorApplication(ctx, gen.ApproveMentorApplicationParams{
+				ID:             appID,
+				ReviewerUserID: reviewerID,
+			})
+			// Status was verified under the row lock — ErrNoRows is
+			// unreachable; any surfaced error is a real failure and
+			// rolls the grant back with it.
+			if err != nil {
+				return out, fmt.Errorf("mentorship: approve application: %w", err)
+			}
+		}
+		return out, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Rule 6 — the in-tx membership write bypassed rbac.Store, so evict
 	// the cached permission resolution post-commit ourselves.
-	if granted && s.permCache != nil {
-		s.permCache.InvalidateUserPermCache(ctx, prior.UserID)
+	switch {
+	case res.granted && s.permCache != nil:
+		s.permCache.InvalidateUserPermCache(ctx, res.userID)
+	case res.granted:
+		slog.Warn("mentorship: grant committed without perm-cache seam — resolution may be stale", "application_id", appID)
 	}
-	if prior.Status == "pending" {
-		s.enqueueApplicationDecision(ctx, row.ID)
-		s.trackEvent(ctx, reviewerID, "mentorship_application_approved", "mentor_application", row.ID,
-			map[string]any{"applicant_id": row.UserID.String()})
+	if res.prior == "pending" {
+		s.enqueueApplicationDecision(ctx, res.row.ID)
+		s.trackEvent(ctx, reviewerID, "mentorship_application_approved", "mentor_application", res.row.ID,
+			map[string]any{"applicant_id": res.row.UserID.String()})
 	}
-	return applicationDTO(row), nil
+	return applicationDTO(res.row), nil
 }
 
 // DeclineApplication transitions pending → declined (reject) or
@@ -447,87 +459,89 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 // left holding a mentors grant, and a failed write restores the whole
 // pre-call state. POST /admin/mentorship/applications/{id}/decline.
 func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgtype.UUID, reason string) (*MentorApplication, error) {
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("mentorship: begin decline tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	qtx := s.write.WithTx(tx)
-
-	prior, err := qtx.GetMentorApplicationByIDForUpdate(ctx, appID)
+	// A missing mentors group (never seeded) means no memberships can
+	// exist — resolve before the tx and let the removal arm self-skip.
+	groupID, err := s.mentorsGroupID(ctx)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return nil, ErrApplicationNotFound
 	case err != nil:
-		return nil, fmt.Errorf("mentorship: load application: %w", err)
-	case prior.Status != "pending" && prior.Status != "approved":
-		return nil, ErrApplicationNotActionable
+		return nil, err
 	}
 
-	// A declined row must hold no mentors membership — remove it inside
-	// the same commit on BOTH arms: revoke on approved; strips any
-	// out-of-band grant on a pending row too. A missing mentors group
-	// (never seeded) means no memberships can exist — skip gracefully.
-	revoked := false
-	groupID, gerr := s.mentorsGroupID(ctx)
-	switch {
-	case errors.Is(gerr, pgx.ErrNoRows):
-	case gerr != nil:
-		return nil, gerr
-	case groupID.Valid:
-		in, err := qtx.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
-			UserID:  prior.UserID,
-			GroupID: groupID,
+	res, err := db.WithTxResult(ctx, s.db.Writer, func(qtx *gen.Queries) (applicationTxResult, error) {
+		prior, err := qtx.GetMentorApplicationByIDForUpdate(ctx, appID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return applicationTxResult{}, ErrApplicationNotFound
+		case err != nil:
+			return applicationTxResult{}, fmt.Errorf("mentorship: load application: %w", err)
+		case prior.Status != "pending" && prior.Status != "approved":
+			return applicationTxResult{}, ErrApplicationNotActionable
+		}
+
+		out := applicationTxResult{userID: prior.UserID, prior: prior.Status}
+
+		// A declined row must hold no mentors membership — remove it
+		// inside the same commit on BOTH arms: revoke on approved;
+		// strips any out-of-band grant on a pending row too. The
+		// public-role clear and retire sweep mirror the side effects
+		// rbac.Store.RemoveUserFromGroup runs, committed atomically.
+		if groupID.Valid {
+			in, err := qtx.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
+				UserID:  prior.UserID,
+				GroupID: groupID,
+			})
+			if err != nil {
+				return out, fmt.Errorf("mentorship: probe mentors membership: %w", err)
+			}
+			if in {
+				if err := qtx.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{
+					UserID:  prior.UserID,
+					GroupID: groupID,
+				}); err != nil {
+					return out, fmt.Errorf("mentorship: revoke mentors group: %w", err)
+				}
+				if err := qtx.ClearPublicGroupRole(ctx, gen.ClearPublicGroupRoleParams{
+					UserID:  prior.UserID,
+					GroupID: groupID,
+				}); err != nil {
+					return out, fmt.Errorf("mentorship: clear public role: %w", err)
+				}
+				if err := qtx.RetireMentorWithoutBecomeMentorPerm(ctx, prior.UserID); err != nil {
+					return out, fmt.Errorf("mentorship: retire mentor shadow: %w", err)
+				}
+				out.revoked = true
+			}
+		}
+
+		reason = strings.TrimSpace(reason)
+		out.row, err = qtx.DeclineMentorApplication(ctx, gen.DeclineMentorApplicationParams{
+			ID:             appID,
+			ReviewerUserID: reviewerID,
+			DeclineReason:  strNilIfEmpty(reason),
+			ExpectedStatus: prior.Status,
 		})
+		// Verified under the row lock — any surfaced error is real and
+		// rolls the whole revoke back with it.
 		if err != nil {
-			return nil, fmt.Errorf("mentorship: probe mentors membership: %w", err)
+			return out, fmt.Errorf("mentorship: decline application: %w", err)
 		}
-		if in {
-			if err := qtx.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{
-				UserID:  prior.UserID,
-				GroupID: groupID,
-			}); err != nil {
-				return nil, fmt.Errorf("mentorship: revoke mentors group: %w", err)
-			}
-			// §03 alias amendment + §102 retire sweep — the same side
-			// effects rbac.Store.RemoveUserFromGroup runs, committed
-			// atomically here.
-			if err := qtx.ClearPublicGroupRole(ctx, gen.ClearPublicGroupRoleParams{
-				UserID:  prior.UserID,
-				GroupID: groupID,
-			}); err != nil {
-				return nil, fmt.Errorf("mentorship: clear public role: %w", err)
-			}
-			if err := qtx.RetireMentorWithoutBecomeMentorPerm(ctx, prior.UserID); err != nil {
-				return nil, fmt.Errorf("mentorship: retire mentor shadow: %w", err)
-			}
-			revoked = true
-		}
-	}
-
-	reason = strings.TrimSpace(reason)
-	row, err := qtx.DeclineMentorApplication(ctx, gen.DeclineMentorApplicationParams{
-		ID:             appID,
-		ReviewerUserID: reviewerID,
-		DeclineReason:  strNilIfEmpty(reason),
-		ExpectedStatus: prior.Status,
+		return out, nil
 	})
-	// Verified under the row lock — any surfaced error is real and
-	// rolls the whole revoke back with it.
 	if err != nil {
-		return nil, fmt.Errorf("mentorship: decline application: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("mentorship: commit decline: %w", err)
+		return nil, err
 	}
 
-	if revoked && s.permCache != nil {
-		s.permCache.InvalidateUserPermCache(ctx, prior.UserID)
+	switch {
+	case res.revoked && s.permCache != nil:
+		s.permCache.InvalidateUserPermCache(ctx, res.userID)
+	case res.revoked:
+		slog.Warn("mentorship: revoke committed without perm-cache seam — resolution may be stale", "application_id", appID)
 	}
-	s.enqueueApplicationDecision(ctx, row.ID)
-	s.trackEvent(ctx, reviewerID, "mentorship_application_declined", "mentor_application", row.ID,
-		map[string]any{"applicant_id": row.UserID.String(), "revoked": revoked})
-	return applicationDTO(row), nil
+	s.enqueueApplicationDecision(ctx, res.row.ID)
+	s.trackEvent(ctx, reviewerID, "mentorship_application_declined", "mentor_application", res.row.ID,
+		map[string]any{"applicant_id": res.row.UserID.String(), "revoked": res.revoked})
+	return applicationDTO(res.row), nil
 }
 
 func strNilIfEmpty(v string) *string {
