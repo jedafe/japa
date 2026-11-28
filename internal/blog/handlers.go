@@ -882,6 +882,48 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 // Review Handlers
 // ---------------------------------------------------------------------------
 
+// findPendingReview returns the content's live pending content_reviews row,
+// or nil when none exists — a second pending row would list twice in the
+// review queue and leave the duplicate stale after the first decision.
+func (h *Handlers) findPendingReview(ctx context.Context, contentID pgtype.UUID) (*gen.ContentReview, error) {
+	reviews, err := h.Service.ListReviewsByContent(ctx, contentID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range reviews {
+		if reviews[i].Status == ReviewStatusPending && !reviews[i].DeletedAt.Valid {
+			return &reviews[i], nil
+		}
+	}
+
+	return nil, nil
+}
+
+// ensurePendingReview inserts a pending content_reviews row when the post is
+// in_review without one — posts enter that state through more paths than
+// submit-for-review (a create or PATCH body carrying status=in_review), and
+// an in_review post with no pending row is invisible to the review queue and
+// unresubmittable. No-op when a pending row already exists. Fire-and-forget.
+func (h *Handlers) ensurePendingReview(ctx context.Context, contentID pgtype.UUID) {
+	pending, err := h.findPendingReview(ctx, contentID)
+	if err != nil {
+		slog.Warn("blog: pending-review lookup failed", "content_id", contentID.String(), "error", err)
+		return
+	}
+
+	if pending != nil {
+		return
+	}
+
+	if _, err := h.Service.CreateReview(ctx, pgtype.UUID{}, CreateReviewInput{
+		ContentID: contentID,
+		Status:    ReviewStatusPending,
+	}); err != nil {
+		slog.Warn("blog: failed to ensure pending review", "content_id", contentID.String(), "error", err)
+	}
+}
+
 // CreateReview handles POST /api/v1/blog/reviews — the author-level "request
 // a review" endpoint (body carries content_id instead of a path param).
 // BUG-BL-007: the handler previously stored whatever status the caller sent
@@ -937,6 +979,20 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if existing.Status != content.StatusDraft && existing.Status != statusInReview {
 		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
 			fmt.Sprintf("Only draft or in-review posts can receive a review request (current status: %s)", existing.Status))
+		return
+	}
+
+	// Don't mint a second pending row — an in_review post with a live pending
+	// review would list twice in the queue and leave the duplicate stale.
+	pending, err := h.findPendingReview(r.Context(), contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if pending != nil {
+		errpkg.WriteError(w, http.StatusConflict, "review_already_pending",
+			"This post already has a pending review")
 		return
 	}
 
@@ -1151,14 +1207,14 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID); vErr != nil {
-		if errors.Is(vErr, errWrongContentType) {
-			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
-			return
-		}
+	post, err := h.content.GetContent(r.Context(), existingReview.ContentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
 
-		handleServiceError(w, vErr)
-
+	if post.ContentType != contentTypeBlogPost {
+		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 		return
 	}
 
@@ -1167,13 +1223,27 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	// missing primary space) was swallowed with a logged warning, leaving the
 	// review out of the queue while the post stayed in_review forever
 	// (BUG-BL-003). Failing the request keeps the review pending so the
-	// reviewer can fix the post and retry.
-	updated, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusPublished)
-	if err != nil {
-		slog.Error("failed to publish content on approve", "error", err, "content_id", existingReview.ContentID)
-		handleContentError(w, err)
+	// reviewer can fix the post and retry. Already-published posts skip the
+	// transition so a repeat approve doesn't re-fire the publish pipeline
+	// (webhook, fan-out, RSS) — the review row is still marked approved.
+	if post.Status != content.StatusPublished {
+		updated, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusPublished)
+		if err != nil {
+			slog.Error("failed to publish content on approve", "error", err, "content_id", existingReview.ContentID)
+			handleContentError(w, err)
 
-		return
+			return
+		}
+
+		// §32/§55: the approved post enters feeds the same way a direct
+		// publish does — fan-out to followers and assigned spaces plus the
+		// affiliate scan. UpdateContentStatus already covers content_scores,
+		// RAG, search sync, and the content.published webhook.
+		h.enqueueAffiliateLinkScan(existingReview.ContentID)
+		h.enqueueFeedFanOut(r.Context(), existingReview.ContentID, updated.AuthorID, updated.SpaceID)
+
+		// C6: enqueue rss:regenerate so the feed reflects the newly published post.
+		h.enqueueRSSRegenerate()
 	}
 
 	review, err := h.Service.UpdateReviewStatus(r.Context(), id, user.UserID, ReviewStatusApproved, input.Feedback)
@@ -1181,16 +1251,6 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-
-	// §32/§55: the approved post enters feeds the same way a direct publish
-	// does — fan-out to followers and assigned spaces plus the affiliate
-	// scan. UpdateContentStatus already covers content_scores, RAG, search
-	// sync, and the content.published webhook.
-	h.enqueueAffiliateLinkScan(existingReview.ContentID)
-	h.enqueueFeedFanOut(r.Context(), existingReview.ContentID, updated.AuthorID, updated.SpaceID)
-
-	// C6: enqueue rss:regenerate so the feed reflects the newly published post.
-	h.enqueueRSSRegenerate()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
@@ -1229,14 +1289,14 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID); vErr != nil {
-		if errors.Is(vErr, errWrongContentType) {
-			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
-			return
-		}
+	post, err := h.content.GetContent(r.Context(), existingReview.ContentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
 
-		handleServiceError(w, vErr)
-
+	if post.ContentType != contentTypeBlogPost {
+		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 		return
 	}
 
@@ -1244,11 +1304,15 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	// revert were to fail after the review was already rejected, the post
 	// would stay in_review with no pending review — the author could not
 	// resubmit it (draft-only guard) and it would be stuck (BUG-BL-004).
-	if _, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, "draft"); err != nil {
-		slog.Error("failed to revert content to draft on reject", "error", err, "content_id", existingReview.ContentID)
-		handleContentError(w, err)
+	// Already-draft posts skip the transition so a repeat reject doesn't
+	// re-fire the internal index/federation side effects.
+	if post.Status != content.StatusDraft {
+		if _, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusDraft); err != nil {
+			slog.Error("failed to revert content to draft on reject", "error", err, "content_id", existingReview.ContentID)
+			handleContentError(w, err)
 
-		return
+			return
+		}
 	}
 
 	review, err := h.Service.UpdateReviewStatus(r.Context(), id, user.UserID, ReviewStatusRejected, feedback)
@@ -2131,11 +2195,12 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
-	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, input.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, post.Body)
 
 	// Lifecycle parity with the generic content create handler — blog posts
-	// are contents rows, so the same enqueues must fire: search index sync,
-	// moderation scan, and link preview fetches.
+	// are contents rows, so the same enqueues must fire: RAG embedding (§69),
+	// search index sync, moderation scan, and link preview fetches.
+	h.enqueueContentEmbedding(post.ID)
 	h.contentWriteEffects(post.BodyHtml, post.ID)
 
 	// BUG-009: a blog post created directly as published bypasses the
@@ -2144,6 +2209,12 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// affiliate scan, feed fan-out, and rss:regenerate (§24 C6).
 	if post.Status == content.StatusPublished {
 		h.publishEffects(r.Context(), post.ID, post.AuthorID, post.SpaceID)
+	}
+
+	// §24 invariant: a post born as in_review needs a pending review row or
+	// it's invisible to the queue (status=in_review accepted at create).
+	if post.Status == statusInReview {
+		h.ensurePendingReview(r.Context(), post.ID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
@@ -2191,17 +2262,14 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// C1: create a pending content_reviews row so the admin review-queue
-	// (ListPendingReviewSummaries) can list this submission. BUG-003: the
-	// reviewer is unassigned (zero UUID → NULL) — the actual reviewer is
-	// recorded when approve/reject is called.
-	if _, err := h.Service.CreateReview(r.Context(), pgtype.UUID{}, CreateReviewInput{
-		ContentID: contentID,
-		Status:    ReviewStatusPending,
-	}); err != nil {
-		slog.Error("failed to create content review on submit", "error", err, "content_id", contentID)
-		// Don't fail the request — the status flip already succeeded.
-	}
+	// C1: a pending content_reviews row puts this submission in the admin
+	// review-queue (ListPendingReviewSummaries). ensurePendingReview is a
+	// no-op when a live pending row already exists (a draft reverted outside
+	// the review flow can carry one) — the existing row covers the queue
+	// entry and the status flip still re-anchors the post to in_review.
+	// BUG-003: the reviewer is unassigned (zero UUID → NULL) — the actual
+	// reviewer is recorded when approve/reject is called.
+	h.ensurePendingReview(r.Context(), contentID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
@@ -2503,8 +2571,10 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	h.contentWriteEffects(updated.BodyHtml, id)
 
 	// Dispatch @mention notifications for newly added mentions (deduped by
-	// the notification batch window).
-	h.dispatchMentionNotifications(r.Context(), user.UserID, id, updated.SpaceID, body)
+	// the notification batch window). The stored body is the source of truth
+	// — a metadata-only PATCH re-extracts the same mentions, which the batch
+	// dedup absorbs.
+	h.dispatchMentionNotifications(r.Context(), user.UserID, id, updated.SpaceID, updated.Body)
 
 	// §32: a draft→published transition fans the post out to followers' and
 	// space members' feeds — the dedicated /publish flow does this in the
@@ -2522,6 +2592,13 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	if existing.Status != updated.Status &&
 		(existing.Status == content.StatusPublished || updated.Status == content.StatusPublished) {
 		h.enqueueRSSRegenerate()
+	}
+
+	// §24 invariant: a PATCH carrying status=in_review lands the post in the
+	// editorial state without a pending review row — invisible to the queue.
+	// heal it here the same way submit-for-review does.
+	if updated.Status == statusInReview {
+		h.ensurePendingReview(r.Context(), id)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})

@@ -79,10 +79,11 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// BUG-006: dispatch @mention notifications — fire-and-forget (BL-002,
 	// Section 15). The public CreatePost does this; the admin path must
 	// too, otherwise @mentions in admin-created posts are silently dropped.
-	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, input.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, post.Body)
 
-	// Lifecycle parity with the public create path — search index, moderation
-	// scan, link previews.
+	// Lifecycle parity with the public create path — RAG embedding (§69),
+	// search index, moderation scan, link previews.
+	h.enqueueContentEmbedding(post.ID)
 	h.contentWriteEffects(post.BodyHtml, post.ID)
 
 	// BUG-009: run the full publish pipeline when an admin creates a post
@@ -90,6 +91,12 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// fan-out, and rss:regenerate (§24/§32).
 	if post.Status == content.StatusPublished {
 		h.publishEffects(r.Context(), post.ID, post.AuthorID, post.SpaceID)
+	}
+
+	// §24 invariant: a post born as in_review needs a pending review row or
+	// it's invisible to the review queue.
+	if post.Status == statusInReview {
+		h.ensurePendingReview(r.Context(), post.ID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
@@ -117,6 +124,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		BodyHtml   *string `json:"body_html"` //nolint:revive // matches sqlc-generated field name
 		Status     *string `json:"status"`
 		Visibility *string `json:"visibility"`
+		SpaceID    *string `json:"space_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -147,6 +155,16 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	if input.Visibility != nil {
 		updateInput.Visibility = *input.Visibility
+	}
+
+	// Accept space_id so a reviewer can assign the primary space a
+	// missing_primary_space (422) approve needs — the §14 publish gate
+	// reads content_spaces, which the service syncs from this column.
+	if input.SpaceID != nil && *input.SpaceID != "" {
+		if err := updateInput.SpaceID.Scan(*input.SpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
 	}
 
 	// Scope check: /admin/blog/{id} must only act on blog posts — the shared
@@ -182,6 +200,10 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	h.contentWriteEffects(post.BodyHtml, id)
 
+	// Dispatch @mention notifications for newly added mentions — the batch
+	// system dedupes against mentions already notified (BL-002 parity).
+	h.dispatchMentionNotifications(r.Context(), user.UserID, id, post.SpaceID, post.Body)
+
 	// §32: a draft→published transition fans the post out to feeds.
 	if prevStatus != content.StatusPublished && post.Status == content.StatusPublished {
 		h.enqueueAffiliateLinkScan(id)
@@ -194,6 +216,12 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	if prevStatus != post.Status &&
 		(prevStatus == content.StatusPublished || post.Status == content.StatusPublished) {
 		h.enqueueRSSRegenerate()
+	}
+
+	// §24 invariant: a PATCH carrying status=in_review lands the post in the
+	// editorial state without a pending review row — invisible to the queue.
+	if post.Status == statusInReview {
+		h.ensurePendingReview(r.Context(), id)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
