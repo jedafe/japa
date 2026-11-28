@@ -266,6 +266,62 @@ func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentRevi
 	return i, err
 }
 
+const decideContentReview = `-- name: DecideContentReview :one
+UPDATE content_reviews
+SET status = $1, feedback = $2,
+ reviewer_user_id = COALESCE($3, reviewer_user_id),
+ updated_at = now()
+WHERE id = $4 AND status = 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
+`
+
+type DecideContentReviewParams struct {
+	Status         string      `json:"status"`
+	Feedback       *string     `json:"feedback"`
+	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+type DecideContentReviewRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Atomic single-decider claim: only a pending editorial review can be
+// decided, so concurrent approve/reject requests serialize on the row —
+// exactly one caller receives the row and proceeds to transition the post.
+// A lost claim means another decider already ran (or the row is
+// non-editorial); callers compensate via ReopenContentReview when the post
+// transition fails after a won claim.
+func (q *Queries) DecideContentReview(ctx context.Context, arg DecideContentReviewParams) (DecideContentReviewRow, error) {
+	row := q.db.QueryRow(ctx, decideContentReview,
+		arg.Status,
+		arg.Feedback,
+		arg.ReviewerUserID,
+		arg.ID,
+	)
+	var i DecideContentReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.ReviewerUserID,
+		&i.Status,
+		&i.Feedback,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const deleteBlogSeries = `-- name: DeleteBlogSeries :exec
 UPDATE blog_series
 SET deleted_at = now(), status = 'archived', updated_at = now()
@@ -1254,6 +1310,59 @@ func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPending
 	return items, nil
 }
 
+const listPendingEditorialReviewsByContent = `-- name: ListPendingEditorialReviewsByContent :many
+SELECT id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
+FROM content_reviews
+WHERE content_id = $1 AND status = 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+ORDER BY created_at DESC
+`
+
+type ListPendingEditorialReviewsByContentRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Pending *editorial* reviews only — content_reviews is shared with
+// persona_action rows (source CHECK allows 'editorial'|'persona_action'),
+// and persona actions may legitimately stack multiple pending rows per
+// content. Used by the advisory-locked dedup insert.
+func (q *Queries) ListPendingEditorialReviewsByContent(ctx context.Context, contentID pgtype.UUID) ([]ListPendingEditorialReviewsByContentRow, error) {
+	rows, err := q.db.Query(ctx, listPendingEditorialReviewsByContent, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingEditorialReviewsByContentRow
+	for rows.Next() {
+		var i ListPendingEditorialReviewsByContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.ReviewerUserID,
+			&i.Status,
+			&i.Feedback,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingReviewSummaries = `-- name: ListPendingReviewSummaries :many
 SELECT cr.id, cr.content_id, cr.status, cr.created_at AS submitted_at,
  cr.feedback,
@@ -1645,6 +1754,44 @@ type RemovePostFromSeriesParams struct {
 func (q *Queries) RemovePostFromSeries(ctx context.Context, arg RemovePostFromSeriesParams) error {
 	_, err := q.db.Exec(ctx, removePostFromSeries, arg.SeriesID, arg.ContentID)
 	return err
+}
+
+const reopenContentReview = `-- name: ReopenContentReview :one
+UPDATE content_reviews
+SET status = 'pending', updated_at = now()
+WHERE id = $1 AND status != 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
+`
+
+type ReopenContentReviewRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Returns a decided editorial review to pending — compensates a failed post
+// transition after DecideContentReview, and serves PATCH→pending reopens.
+func (q *Queries) ReopenContentReview(ctx context.Context, id pgtype.UUID) (ReopenContentReviewRow, error) {
+	row := q.db.QueryRow(ctx, reopenContentReview, id)
+	var i ReopenContentReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.ReviewerUserID,
+		&i.Status,
+		&i.Feedback,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const reorderSeriesPosts = `-- name: ReorderSeriesPosts :exec

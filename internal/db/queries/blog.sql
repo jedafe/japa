@@ -229,6 +229,44 @@ WHERE cr.status = 'pending'
 ORDER BY cr.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListPendingEditorialReviewsByContent :many
+-- Pending *editorial* reviews only — content_reviews is shared with
+-- persona_action rows (source CHECK allows 'editorial'|'persona_action'),
+-- and persona actions may legitimately stack multiple pending rows per
+-- content. Used by the advisory-locked dedup insert.
+SELECT id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
+FROM content_reviews
+WHERE content_id = @content_id AND status = 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+ORDER BY created_at DESC;
+
+-- name: DecideContentReview :one
+-- Atomic single-decider claim: only a pending editorial review can be
+-- decided, so concurrent approve/reject requests serialize on the row —
+-- exactly one caller receives the row and proceeds to transition the post.
+-- A lost claim means another decider already ran (or the row is
+-- non-editorial); callers compensate via ReopenContentReview when the post
+-- transition fails after a won claim.
+UPDATE content_reviews
+SET status = @status, feedback = sqlc.narg(feedback),
+ reviewer_user_id = COALESCE(sqlc.narg(reviewer_user_id), reviewer_user_id),
+ updated_at = now()
+WHERE id = @id AND status = 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at;
+
+-- name: ReopenContentReview :one
+-- Returns a decided editorial review to pending — compensates a failed post
+-- transition after DecideContentReview, and serves PATCH→pending reopens.
+UPDATE content_reviews
+SET status = 'pending', updated_at = now()
+WHERE id = @id AND status != 'pending'
+ AND source = 'editorial' AND deleted_at IS NULL
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at;
+
 -- name: UpdateContentReviewStatus :one
 -- BUG-003: also set reviewer_user_id (nullable) so the actual reviewer is
 -- recorded on approve/reject, not the submitting author placeholder.

@@ -264,6 +264,53 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	})
 }
 
+// EnsurePendingReview atomically inserts a pending editorial review for the
+// content unless one already exists — the advisory-locked transaction in the
+// store serializes concurrent callers on the same content_id, closing the
+// check-then-insert race. Returns (review, true) on insert or (existing,
+// false) when a live pending editorial review already exists.
+func (s *Service) EnsurePendingReview(ctx context.Context, contentID pgtype.UUID, feedback string) (gen.ContentReview, bool, error) {
+	var fb *string
+	if feedback != "" {
+		fb = &feedback
+	}
+
+	return s.store.createPendingEditorialReviewIfAbsent(ctx, gen.CreateContentReviewParams{
+		ContentID: contentID,
+		Status:    ReviewStatusPending,
+		Feedback:  fb,
+	})
+}
+
+// DecideReview atomically claims a pending editorial review into the given
+// decided status, recording the reviewer. Returns pgx.ErrNoRows when the
+// review is not pending — already decided or non-editorial — so exactly one
+// concurrent decider proceeds to the post transition.
+func (s *Service) DecideReview(ctx context.Context, id, reviewerUserID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
+	if status == "" {
+		return gen.ContentReview{}, errors.New("status is required")
+	}
+
+	var fb *string
+	if feedback != "" {
+		fb = &feedback
+	}
+
+	return s.store.decideContentReview(ctx, gen.DecideContentReviewParams{
+		ID:             id,
+		ReviewerUserID: reviewerUserID,
+		Status:         status,
+		Feedback:       fb,
+	})
+}
+
+// ReopenReview returns a decided editorial review to pending — used to
+// compensate a failed post transition after DecideReview, and for
+// PATCH→pending reopens. Returns pgx.ErrNoRows when already pending.
+func (s *Service) ReopenReview(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
+	return s.store.reopenContentReview(ctx, id)
+}
+
 // GetReview retrieves a content review by ID.
 func (s *Service) GetReview(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
 	return s.store.getContentReviewByID(ctx, id)

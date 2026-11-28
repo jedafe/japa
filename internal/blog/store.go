@@ -267,6 +267,12 @@ func contentReviewFromRow(r any) gen.ContentReview {
 		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.ListPendingContentReviewsRow:
 		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.ListPendingEditorialReviewsByContentRow:
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.DecideContentReviewRow:
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.ReopenContentReviewRow:
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.UpdateContentReviewStatusRow:
 		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	}
@@ -342,6 +348,66 @@ func (s *Store) deleteContentReview(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteContentReview(ctx,
 		id,
 	)
+}
+
+// createPendingEditorialReviewIfAbsent atomically dedupes and inserts a
+// pending editorial review. Two concurrent requests can both pass a plain
+// check-then-insert and mint duplicate pending rows (queue lists twice, the
+// loser goes stale after the first decision), so the check and insert run
+// inside one transaction serialized by an advisory lock on the content_id.
+// Returns (review, true) when a row was inserted, or (existing, false) when
+// a live pending editorial review already exists.
+func (s *Store) createPendingEditorialReviewIfAbsent(ctx context.Context, p gen.CreateContentReviewParams) (gen.ContentReview, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return gen.ContentReview{}, false, fmt.Errorf("beginning review-create transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := s.write.WithTx(tx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 2407))`, p.ContentID); err != nil {
+		return gen.ContentReview{}, false, fmt.Errorf("locking content for review create: %w", err)
+	}
+
+	existing, err := q.ListPendingEditorialReviewsByContent(ctx, p.ContentID)
+	if err != nil {
+		return gen.ContentReview{}, false, fmt.Errorf("checking pending reviews: %w", err)
+	}
+
+	if len(existing) > 0 {
+		return contentReviewFromRow(existing[0]), false, tx.Commit(ctx)
+	}
+
+	row, err := q.CreateContentReview(ctx, p)
+	if err != nil {
+		return gen.ContentReview{}, false, fmt.Errorf("creating pending review: %w", err)
+	}
+
+	return contentReviewFromRow(row), true, tx.Commit(ctx)
+}
+
+// decideContentReview runs the atomic single-decider claim — returns
+// pgx.ErrNoRows when the review is not a live pending editorial review.
+func (s *Store) decideContentReview(ctx context.Context, p gen.DecideContentReviewParams) (gen.ContentReview, error) {
+	row, err := s.write.DecideContentReview(ctx, p)
+	if err != nil {
+		return gen.ContentReview{}, err
+	}
+
+	return contentReviewFromRow(row), nil
+}
+
+// reopenContentReview returns a decided editorial review to pending —
+// pgx.ErrNoRows when already pending or non-editorial.
+func (s *Store) reopenContentReview(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
+	row, err := s.write.ReopenContentReview(ctx, id)
+	if err != nil {
+		return gen.ContentReview{}, err
+	}
+
+	return contentReviewFromRow(row), nil
 }
 
 // ---------------------------------------------------------------------------

@@ -76,6 +76,13 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the creation event for the spam rate-limit layer (§41) — parity
+	// with the public CreatePost; admin accounts are exempt from the limit
+	// itself but the event still feeds the rate counters.
+	if h.spamRecorder != nil {
+		h.spamRecorder.RecordContentCreation(r.Context(), user.UserID)
+	}
+
 	// BUG-006: dispatch @mention notifications — fire-and-forget (BL-002,
 	// Section 15). The public CreatePost does this; the admin path must
 	// too, otherwise @mentions in admin-created posts are silently dropped.
