@@ -18,18 +18,18 @@ import (
 const (
 	// ---- Critical tier (immediate processing, highest concurrency) ----.
 
-	TypeNotificationDispatchBatch  = "notification:dispatch_batch"
-	TypeWebhookDelivery            = "webhook:deliver"
-	TypePaymentWebhookProcess      = "payment:process_webhook"
-	TypePaymentSyncSettlement      = "payment:sync_settlement"      // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
-	TypePaymentReconcileCredit     = "payments:reconcile_credit"    // §17 — recover credit payments stuck pending between debit and status update
+	TypeNotificationDispatchBatch      = "notification:dispatch_batch"
+	TypeWebhookDelivery                = "webhook:deliver"
+	TypePaymentWebhookProcess          = "payment:process_webhook"
+	TypePaymentSyncSettlement          = "payment:sync_settlement"           // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
+	TypePaymentReconcileCredit         = "payments:reconcile_credit"         // §17 — recover credit payments stuck pending between debit and status update
 	TypePaymentsExpirePendingCheckouts = "payments:expire_pending_checkouts" // §17 — expire abandoned hosted-checkout pendings + reclaim discount uses
-	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
-	TypePaymentRefundProcess       = "payment:process_refund"       // §17 provider refund retry (kept pending until provider confirms)
-	TypeTicketSendConfirmation     = "ticket:send_confirmation"
-	TypePushDelivery               = "push:deliver"
-	TypeDMNotifyRequest            = "dm:notify_request"
-	TypeDMNotifyMessage            = "dm:notify_message"
+	TypeSubscriptionWebhookProcess     = "subscription:webhook_process"      // §17 recurring billing lifecycle
+	TypePaymentRefundProcess           = "payment:process_refund"            // §17 provider refund retry (kept pending until provider confirms)
+	TypeTicketSendConfirmation         = "ticket:send_confirmation"
+	TypePushDelivery                   = "push:deliver"
+	TypeDMNotifyRequest                = "dm:notify_request"
+	TypeDMNotifyMessage                = "dm:notify_message"
 
 	// ---- Default tier (standard background processing) ----.
 
@@ -178,20 +178,20 @@ const (
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
-	TypeScheduledPublishSweep   = "content:publish_sweep"
-	TypeBroadcastDispatch       = "broadcast:dispatch_scheduled" // §35 scheduled admin broadcasts
+	TypeScheduledPublishSweep = "content:publish_sweep"
+	TypeBroadcastDispatch     = "broadcast:dispatch_scheduled" // §35 scheduled admin broadcasts
 	// TypeBlogReconcileDecidedReviews reopens decided blog reviews whose
 	// post is still in_review — the decide saga's crash-window safety net
 	// (§24): a kill between the won claim and the post transition leaves
 	// the review decided on an untransitioned post.
 	TypeBlogReconcileDecidedReviews = "blog:reconcile_decided_reviews"
-	TypeHonchoRetentionSweep    = "honcho:retention_sweep"       // daily Honcho memory retention
-	TypeGeoPopulateScope        = "geo:populate_scope"           // Control → Seeds fan-out
-	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
-	TypeJceRefreshStale         = "jce:refresh_stale"
-	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
-	TypeOnboardingReminderSweep = "onboarding:reminder_sweep" // §09: nudge users who haven't finished onboarding
-	TypeNextActionsSweep        = "nextactions:sweep"         // §122: materialize suggestions + §35 dispatch
+	TypeHonchoRetentionSweep        = "honcho:retention_sweep" // daily Honcho memory retention
+	TypeGeoPopulateScope            = "geo:populate_scope"     // Control → Seeds fan-out
+	TypeGdprRetentionSweep          = "gdpr:retention_sweep"
+	TypeJceRefreshStale             = "jce:refresh_stale"
+	TypeSubscriptionExpirySweep     = "subscription:expiry_sweep" // §17 webhook-miss safety net
+	TypeOnboardingReminderSweep     = "onboarding:reminder_sweep" // §09: nudge users who haven't finished onboarding
+	TypeNextActionsSweep            = "nextactions:sweep"         // §122: materialize suggestions + §35 dispatch
 
 	// ---- Intelligence System (Section INTEL) ----.
 
