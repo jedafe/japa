@@ -16,7 +16,7 @@
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
-	import { GraduationCap, Loader2, Check, CircleCheck, Clock3, TriangleAlert } from 'lucide-svelte';
+	import { ArrowLeft, GraduationCap, Loader2, Check, CircleCheck, Clock3, TriangleAlert, AlertCircle } from 'lucide-svelte';
 	import type { MentorApplication, MentorProfile, MyMentorApplicationStatus } from '#lib/types/index.js';
 
 	let { data }: { data: { status: MyMentorApplicationStatus | null; profile: MentorProfile | null } } =
@@ -28,11 +28,11 @@
 	let profile = $derived(data.profile);
 
 	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] outline-none transition focus:border-[var(--color-primary)]';
+		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 	const primaryBtn =
-		'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50';
+		'inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50';
 	const ghostBtn =
-		'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]';
+		'inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]';
 
 	// Derived branch — order matters: an active mentor never sees forms.
 	// Successful PATCH/POST mutate `status` below, so the branch swaps on
@@ -136,22 +136,29 @@
 	description={t('become_mentor.page_description', 'Share your relocation experience as a mentor.')}
 />
 
-<div class="mx-auto w-full max-w-2xl">
-	<div class="mb-5 flex items-center gap-3">
-		<span
-			class="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
+<div class="mx-auto w-full max-w-full">
+	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+		<a
+			href="/services?kind=mentorship"
+			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+			aria-label={t('become_mentor.back', 'Back to mentors')}
 		>
-			<GraduationCap size={20} />
-		</span>
-		<div>
-			<h1 class="text-xl font-semibold text-[var(--color-text)]">
-				{t('become_mentor.title', 'Become a mentor')}
-			</h1>
-			<p class="text-sm text-[var(--color-text-subtle)]">
-				{t('become_mentor.subtitle', 'Guide fellow diaspora members through the journey you already made.')}
-			</p>
+			<ArrowLeft class="rtl:-scale-x-100" size={18} />
+		</a>
+		<div class="flex min-w-0 items-center gap-2">
+			<GraduationCap size={20} class="shrink-0 text-[var(--color-primary-text)]" />
+			<div class="min-w-0">
+				<h1 class="text-lg font-semibold text-[var(--color-text)]">
+					{t('become_mentor.title', 'Become a mentor')}
+				</h1>
+				<p class="truncate text-sm text-[var(--color-text-subtle)]">
+					{t('become_mentor.subtitle', 'Guide fellow diaspora members through the journey you already made.')}
+				</p>
+			</div>
 		</div>
 	</div>
+
+	<div class="mx-auto max-w-2xl p-4">
 
 	{#if branch === 'done'}
 		<div class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
@@ -274,7 +281,7 @@
 				{t('become_mentor.setup_body', 'Tell members what you can help with — you can refine the public card and page content later in mentor settings.')}
 			</p>
 
-			<div class="flex flex-col gap-1">
+			<div class="flex flex-col gap-1.5">
 				<label for="bm-areas" class="text-sm font-medium text-[var(--color-text)]">
 					{t('become_mentor.areas_label', 'Areas of expertise')}
 				</label>
@@ -290,7 +297,7 @@
 				</p>
 			</div>
 
-			<div class="flex flex-col gap-1">
+			<div class="flex flex-col gap-1.5">
 				<label for="bm-bio" class="text-sm font-medium text-[var(--color-text)]">
 					{t('become_mentor.bio_label', 'Mentor bio')}
 				</label>
@@ -305,7 +312,7 @@
 				<p class="text-xs text-[var(--color-text-subtle)]">{bio.length}/1000</p>
 			</div>
 
-			<div class="flex flex-col gap-1">
+			<div class="flex flex-col gap-1.5">
 				<label for="bm-capacity" class="text-sm font-medium text-[var(--color-text)]">
 					{t('become_mentor.capacity_label', 'Mentee capacity')}
 				</label>
@@ -315,7 +322,7 @@
 					min="1"
 					max={capacityMax}
 					bind:value={capacity}
-					class="w-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="w-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
 				<p class="text-xs text-[var(--color-text-subtle)]">
 					{t('become_mentor.capacity_help', 'Maximum number of active mentees. Platform cap: {max}.', {
@@ -325,13 +332,17 @@
 			</div>
 
 			{#if error}
-				<p class="text-sm text-[var(--color-danger)]">{error}</p>
+				<div class="flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+					<AlertCircle size={16} class="shrink-0" /> {error}
+				</div>
 			{/if}
 
-			<button type="submit" class={primaryBtn} disabled={saving || Number(capacity) < 1}>
-				{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
-				{t('become_mentor.enable_cta', 'Start mentoring')}
-			</button>
+			<div class="flex justify-end">
+				<button type="submit" class={primaryBtn} disabled={saving || Number(capacity) < 1}>
+					{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
+					{t('become_mentor.enable_cta', 'Start mentoring')}
+				</button>
+			</div>
 		</form>
 	{:else}
 		<!-- Member path — application for admin review (apply + declined-
@@ -384,9 +395,10 @@
 				</p>
 			</div>
 
-			<div class="flex flex-col gap-1">
+			<div class="flex flex-col gap-1.5">
 				<label for="bm-motivation" class="text-sm font-medium text-[var(--color-text)]">
 					{t('become_mentor.motivation_label', 'Why do you want to mentor?')}
+					<span class="text-red-500" aria-hidden="true">*</span>
 				</label>
 				<textarea
 					id="bm-motivation"
@@ -403,7 +415,7 @@
 				<p class="text-xs text-[var(--color-text-subtle)]">{motivation.length}/2000</p>
 			</div>
 
-			<div class="flex flex-col gap-1">
+			<div class="flex flex-col gap-1.5">
 				<label for="bm-apply-areas" class="text-sm font-medium text-[var(--color-text)]">
 					{t('become_mentor.apply_areas_label', 'Areas you can mentor in')}
 				</label>
@@ -420,15 +432,20 @@
 			</div>
 
 			{#if error}
-				<p class="text-sm text-[var(--color-danger)]">{error}</p>
+				<div class="flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+					<AlertCircle size={16} class="shrink-0" /> {error}
+				</div>
 			{/if}
 
-			<button type="submit" class={primaryBtn} disabled={saving || !motivation.trim()}>
-				{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
-				{branch === 'declined' || branch === 'approved'
-					? t('become_mentor.resubmit_cta', 'Resubmit application')
-					: t('become_mentor.apply_cta', 'Submit application')}
-			</button>
+			<div class="flex justify-end">
+				<button type="submit" class={primaryBtn} disabled={saving || !motivation.trim()}>
+					{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
+					{branch === 'declined' || branch === 'approved'
+						? t('become_mentor.resubmit_cta', 'Resubmit application')
+						: t('become_mentor.apply_cta', 'Submit application')}
+				</button>
+			</div>
 		</form>
 	{/if}
+	</div>
 </div>
