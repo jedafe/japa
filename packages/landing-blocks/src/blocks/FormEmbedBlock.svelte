@@ -35,6 +35,7 @@
   let success = $state(false);
   let error = $state(false);
   let liveFields = $state<EmbedField[] | null>(null);
+  let liveFormId = $state<string | null>(null);
   let countries = $state<string[]>([]);
 
   // §06: when form_slug names a platform form, pull the live field schema
@@ -52,6 +53,12 @@
       .then((p) => {
         const fields = p?.data?.fields;
         if (!cancelled && Array.isArray(fields) && fields.length) liveFields = fields;
+        // The live form id is also the submission target — the baked
+        // submit_endpoint carries a literal UUID that goes stale when the
+        // seeded form lives under a different id (e.g. a contact form that
+        // predated the seed kept its own id on slug conflict).
+        const id = p?.data?.id;
+        if (!cancelled && typeof id === 'string' && id) liveFormId = id;
       })
       .catch(() => {});
     return () => {
@@ -104,10 +111,16 @@
   // §06 POST /forms/{id}/submissions expects the values under field_values;
   // other preset endpoints (newsletter/waitlist) take the bare map.
   const SUBMISSIONS_ENDPOINT = /\/forms\/[0-9a-f-]{36}\/submissions\/?$/i;
+  // Prefer the live embed's form id — it is authoritative on every
+  // environment; props.submit_endpoint is the fallback when the embed
+  // fetch fails or no form_slug was configured.
+  const endpoint = $derived(
+    liveFormId && apiBase
+      ? `${apiBase}/forms/${liveFormId}/submissions`
+      : props.submit_endpoint
+  );
   const body = $derived(
-    SUBMISSIONS_ENDPOINT.test(props.submit_endpoint)
-      ? { field_values: formData }
-      : formData
+    SUBMISSIONS_ENDPOINT.test(endpoint) ? { field_values: formData } : formData
   );
 
   async function handleSubmit(e: SubmitEvent) {
@@ -115,7 +128,7 @@
     submitting = true;
     error = false;
     try {
-      const res = await fetch(props.submit_endpoint, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
