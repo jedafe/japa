@@ -908,9 +908,11 @@ SET is_verified = false,
     verified_by = null,
     verified_at = null,
     updated_at = now()
-WHERE content_id = $1
+WHERE content_id = $1 AND is_verified
 `
 
+// Atomic-idempotent: unverifying a badge-less listing matches 0 rows and
+// the service returns a no-op instead of clearing fields it never set.
 func (q *Queries) ClearServiceListingVerified(ctx context.Context, contentID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, clearServiceListingVerified, contentID)
 	if err != nil {
@@ -5633,6 +5635,7 @@ SET is_verified = true,
     verified_at = now(),
     updated_at = now()
 WHERE content_id = $3
+  AND (is_verified = false OR $1 IS DISTINCT FROM verification_type)
 `
 
 type SetServiceListingVerifiedParams struct {
@@ -5644,6 +5647,9 @@ type SetServiceListingVerifiedParams struct {
 // ---------------------------------------------------------------------
 // Verification + claim workflow (§98)
 // ---------------------------------------------------------------------
+// Atomic-idempotent: a repeat grant with no effective change (already
+// verified, same type) matches 0 rows — the service skips a re-stamp of
+// verified_by/verified_at so the audit trail keeps the original grant.
 func (q *Queries) SetServiceListingVerified(ctx context.Context, arg SetServiceListingVerifiedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setServiceListingVerified, arg.VerificationType, arg.VerifiedBy, arg.ContentID)
 	if err != nil {

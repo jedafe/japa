@@ -663,22 +663,28 @@ WHERE c.content_type = 'service_listing'
 -- ---------------------------------------------------------------------
 
 -- name: SetServiceListingVerified :execrows
+-- Atomic-idempotent: a repeat grant with no effective change (already
+-- verified, same type) matches 0 rows — the service skips a re-stamp of
+-- verified_by/verified_at so the audit trail keeps the original grant.
 UPDATE service_listing_meta
 SET is_verified = true,
     verification_type = @verification_type,
     verified_by = @verified_by,
     verified_at = now(),
     updated_at = now()
-WHERE content_id = @content_id;
+WHERE content_id = @content_id
+  AND (is_verified = false OR @verification_type IS DISTINCT FROM verification_type);
 
 -- name: ClearServiceListingVerified :execrows
+-- Atomic-idempotent: unverifying a badge-less listing matches 0 rows and
+-- the service returns a no-op instead of clearing fields it never set.
 UPDATE service_listing_meta
 SET is_verified = false,
     verification_type = null,
     verified_by = null,
     verified_at = null,
     updated_at = now()
-WHERE content_id = @content_id;
+WHERE content_id = @content_id AND is_verified;
 
 -- name: UpdateServiceListingClaimStatus :execrows
 UPDATE service_listing_meta

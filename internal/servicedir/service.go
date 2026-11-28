@@ -3151,9 +3151,22 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, verifiedBy pgtype.
 		return ErrInvalidVerificationType
 	}
 
-	if err := s.store.VerifyService(ctx, contentID, verifiedBy, verificationType); err != nil {
+	// Existence check on the meta row the UPDATE targets — the
+	// atomic-idempotent UPDATE also returns 0 rows for a no-op, which is
+	// indistinguishable from a missing meta row without it.
+	if _, err := s.store.GetMeta(ctx, contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin verify: get meta: %w", err)
+	}
+
+	if err := s.store.VerifyService(ctx, contentID, verifiedBy, verificationType); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Already verified with the same type — a no-op the atomic
+			// predicate, not the possibly-stale read above, decided.
+			return nil
 		}
 
 		return fmt.Errorf("servicedir: admin verify: %w", err)
@@ -3237,9 +3250,22 @@ func (s *Service) AdminUnpublish(ctx context.Context, contentID, adminID pgtype.
 // AdminUnverify marks a service listing as unverified by an admin
 // (service.verify permission). Clears the verified flag and audit trail.
 func (s *Service) AdminUnverify(ctx context.Context, contentID pgtype.UUID) error {
-	if err := s.store.UnverifyService(ctx, contentID); err != nil {
+	// Existence check on the meta row the UPDATE targets — the
+	// atomic-idempotent UPDATE also returns 0 rows for a no-op, which is
+	// indistinguishable from a missing meta row without it.
+	if _, err := s.store.GetMeta(ctx, contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin unverify: get meta: %w", err)
+	}
+
+	if err := s.store.UnverifyService(ctx, contentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Already unverified — the UPDATE's AND is_verified predicate
+			// is the atomic authority.
+			return nil
 		}
 
 		return fmt.Errorf("servicedir: admin unverify: %w", err)
