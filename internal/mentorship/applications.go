@@ -346,8 +346,10 @@ func (s *Service) loadActionableApplication(ctx context.Context, appID pgtype.UU
 // status write and the call is idempotent on approved rows: a retry
 // after a partial failure (approved row whose grant never landed, or a
 // membership removed out-of-band) re-heals the grant instead of
-// dead-ending on a 409. POST
-// /admin/mentorship/applications/{id}/approve.
+// dead-ending on a 409. If the status write fails after the grant, the
+// membership is rolled back — but only when the pre-call probe proved
+// this call created it — so the row returns to exactly pending+no-grant.
+// POST /admin/mentorship/applications/{id}/approve.
 func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgtype.UUID) (*MentorApplication, error) {
 	prior, err := s.loadActionableApplication(ctx, appID, "pending", "approved")
 	if err != nil {
@@ -359,10 +361,21 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 	// failed grant leaves the row pending; AddUserToGroup is idempotent
 	// (ON CONFLICT DO NOTHING) so re-approval re-heals cleanly.
 	// rbac.Store invalidates the permission cache itself (Rule 6).
+	var groupID pgtype.UUID
+	wasMember := true // probe failure fails safe: never strip a grant
 	if s.groups != nil {
-		groupID, gerr := s.mentorsGroupID(ctx)
+		var gerr error
+		groupID, gerr = s.mentorsGroupID(ctx)
 		if gerr != nil {
 			return nil, gerr
+		}
+		if in, perr := s.read.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
+			UserID:  prior.UserID,
+			GroupID: groupID,
+		}); perr == nil {
+			wasMember = in
+		} else {
+			slog.Warn("mentorship: membership probe failed — grant treated as pre-existing", "application_id", appID, "error", perr)
 		}
 		if err := s.groups.AddUserToGroup(ctx, prior.UserID, groupID); err != nil {
 			return nil, fmt.Errorf("mentorship: grant mentors group: %w", err)
@@ -380,10 +393,23 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 		ID:             appID,
 		ReviewerUserID: reviewerID,
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrApplicationNotActionable
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// Raced transition — find where the row landed. A concurrent
+		// approve converges (the grant is wanted anyway); a concurrent
+		// decline or delete means this call's grant now lingers on a
+		// row it shouldn't, so strip it.
+		cur, rerr := s.read.GetMentorApplicationByID(ctx, appID)
+		if rerr == nil && cur.Status == "approved" {
+			return applicationDTO(cur), nil
 		}
+		s.compensateGrant(ctx, prior.UserID, groupID, wasMember)
+		if errors.Is(rerr, pgx.ErrNoRows) {
+			return nil, ErrApplicationNotFound
+		}
+		return nil, ErrApplicationNotActionable
+	case err != nil:
+		s.compensateGrant(ctx, prior.UserID, groupID, wasMember)
 		return nil, fmt.Errorf("mentorship: approve application: %w", err)
 	}
 
@@ -395,9 +421,11 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 
 // DeclineApplication transitions pending → declined (reject) or
 // approved → declined (revoke). On revoke the mentors membership is
-// removed — RemoveUserFromGroup fires RetireMentorWithoutBecomeMentorPerm,
-// retiring is_mentor + the shadow listing in the same call. POST
-// /admin/mentorship/applications/{id}/decline.
+// removed BEFORE the status write; if the write then fails, a
+// membership this call removed is re-added so the still-approved row
+// isn't left grantless. RemoveUserFromGroup fires
+// RetireMentorWithoutBecomeMentorPerm, retiring is_mentor + the shadow
+// listing in the same call. POST /admin/mentorship/applications/{id}/decline.
 func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgtype.UUID, reason string) (*MentorApplication, error) {
 	prior, err := s.loadActionableApplication(ctx, appID, "pending", "approved")
 	if err != nil {
@@ -408,12 +436,23 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 	// Removal runs BEFORE the status write — a failed decline then leaves
 	// an approved row whose grant is already gone (safely retryable,
 	// the DELETE is a no-op on rerun) rather than a declined row whose
-	// grant lingers. RemoveUserFromGroup fires the mentor-retire sweep
-	// itself, retiring is_mentor + the shadow listing.
+	// grant lingers. The pre-call probe lets compensation restore only a
+	// membership this call actually removed.
+	var groupID pgtype.UUID
+	wasMember := false // probe failure fails safe: don't fabricate a grant
 	if prior.Status == "approved" && s.groups != nil {
-		groupID, gerr := s.mentorsGroupID(ctx)
+		var gerr error
+		groupID, gerr = s.mentorsGroupID(ctx)
 		if gerr != nil {
 			return nil, gerr
+		}
+		if in, perr := s.read.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
+			UserID:  prior.UserID,
+			GroupID: groupID,
+		}); perr == nil {
+			wasMember = in
+		} else {
+			slog.Warn("mentorship: membership probe failed — revoke proceeds without compensation baseline", "application_id", appID, "error", perr)
 		}
 		if err := s.groups.RemoveUserFromGroup(ctx, prior.UserID, groupID); err != nil {
 			return nil, fmt.Errorf("mentorship: revoke mentors group: %w", err)
@@ -426,10 +465,16 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		ReviewerUserID: reviewerID,
 		DeclineReason:  strNilIfEmpty(reason),
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrApplicationNotActionable
-		}
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// Raced transition — every reachable post-state is already
+		// consistent without compensation: a concurrent decline removed
+		// the membership too; a member resubmit (approved → pending)
+		// correctly leaves the row grantless pending re-review; a
+		// delete voids the whole question.
+		return nil, ErrApplicationNotActionable
+	case err != nil:
+		s.restoreMembership(ctx, prior.UserID, groupID, wasMember)
 		return nil, fmt.Errorf("mentorship: decline application: %w", err)
 	}
 
@@ -444,6 +489,36 @@ func strNilIfEmpty(v string) *string {
 		return nil
 	}
 	return &v
+}
+
+// compensateGrant rolls back the mentors membership after a failed
+// status write — the saga-compensation arm of ApproveApplication. It
+// only removes a grant this call provably created (wasMember=false);
+// a pre-existing or unprobed membership is left alone so the rollback
+// never strips capability the applicant held before the call.
+func (s *Service) compensateGrant(ctx context.Context, userID, groupID pgtype.UUID, wasMember bool) {
+	if s.groups == nil || !groupID.Valid || wasMember {
+		return
+	}
+	if err := s.groups.RemoveUserFromGroup(ctx, userID, groupID); err != nil {
+		slog.Warn("mentorship: approve compensation failed — pending row may hold a stale grant",
+			"user_id", userID, "error", err)
+	}
+}
+
+// restoreMembership re-adds a mentors membership that a failed revoke
+// arm removed — the saga-compensation arm of DeclineApplication. It
+// only re-adds a membership the probe proved existed (wasMember=true),
+// so an approved row isn't left grantless and no grant is fabricated
+// where none was.
+func (s *Service) restoreMembership(ctx context.Context, userID, groupID pgtype.UUID, wasMember bool) {
+	if s.groups == nil || !groupID.Valid || !wasMember {
+		return
+	}
+	if err := s.groups.AddUserToGroup(ctx, userID, groupID); err != nil {
+		slog.Warn("mentorship: decline compensation failed — approved row left grantless (ensure-grant retry heals)",
+			"user_id", userID, "error", err)
+	}
 }
 
 // enqueueApplicationDecision fires the notify task — fire-and-forget
