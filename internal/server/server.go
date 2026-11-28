@@ -2484,7 +2484,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// mentors-group grant seam (rbac.Store handles perm-cache invalidation
 	// + the mentor-retire sweep on revoke), and decision notifications.
 	mentorshipService.SetPermChecker(rbacResolver)
-	mentorshipService.SetGroupMembership(rbacStore)
+	mentorshipService.SetPermCacheInvalidator(rbacStore)
 	mentorshipService.SetApplicationNotifier(notificationService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses

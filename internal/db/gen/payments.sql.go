@@ -367,12 +367,17 @@ func (q *Queries) ExpireSubscription(ctx context.Context, id pgtype.UUID) (Subsc
 const getActiveSubscriptionByUser = `-- name: GetActiveSubscriptionByUser :one
 SELECT id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
 WHERE user_id = $1
- AND status = 'active'
+ AND status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text])
  AND current_period_end > now()
 ORDER BY created_at DESC
 LIMIT 1
 `
 
+// "Active" for callers means a live subscription: trialing and past_due
+// rows still carry entitlement and a running provider subscription.
+// Without them, POST /subscriptions allowed a second checkout on top of a
+// trialing/past_due sub, /me/subscription 404'd a paying user, and
+// CancelMySubscription could not find the row.
 func (q *Queries) GetActiveSubscriptionByUser(ctx context.Context, userID pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, getActiveSubscriptionByUser, userID)
 	var i Subscription
@@ -1088,7 +1093,7 @@ func (q *Queries) ListSubscriptionsByUser(ctx context.Context, arg ListSubscript
 
 const listSubscriptionsDueForExpiry = `-- name: ListSubscriptionsDueForExpiry :many
 SELECT id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
-WHERE (status = 'active' AND cancel_at_period_end = true AND current_period_end <= now())
+WHERE (status = ANY (ARRAY['active'::text, 'trialing'::text]) AND cancel_at_period_end = true AND current_period_end <= now())
    OR (status = 'past_due' AND current_period_end <= $1)
 ORDER BY current_period_end
 LIMIT $2
@@ -1099,9 +1104,11 @@ type ListSubscriptionsDueForExpiryParams struct {
 	PageLimit   int32              `json:"page_limit"`
 }
 
-// Expiry sweep (§17): active rows whose cancel_at_period_end has reached
-// period end, plus past_due rows past period end + the grace window the
-// caller subtracts into @grace_cutoff before querying.
+// Expiry sweep (§17): live rows whose cancel_at_period_end has reached
+// period end (trialing included — a pending-cancel trial would otherwise
+// never expire if the provider status event is missed), plus past_due rows
+// past period end + the grace window the caller subtracts into
+// @grace_cutoff before querying.
 func (q *Queries) ListSubscriptionsDueForExpiry(ctx context.Context, arg ListSubscriptionsDueForExpiryParams) ([]Subscription, error) {
 	rows, err := q.db.Query(ctx, listSubscriptionsDueForExpiry, arg.GraceCutoff, arg.PageLimit)
 	if err != nil {
@@ -1141,9 +1148,12 @@ const markSubscriptionPastDue = `-- name: MarkSubscriptionPastDue :one
 UPDATE subscriptions
 SET status = 'past_due', updated_at = now()
 WHERE id = $1
+ AND status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text])
 RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
+// Guard on live statuses — a stale/out-of-order invoice.payment_failed
+// must not resurrect a canceled or expired row.
 func (q *Queries) MarkSubscriptionPastDue(ctx context.Context, id pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, markSubscriptionPastDue, id)
 	var i Subscription

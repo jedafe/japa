@@ -502,6 +502,14 @@ WHERE user_id = @user_id;
 SELECT * FROM mentor_applications
 WHERE id = @id;
 
+-- name: GetMentorApplicationByIDForUpdate :one
+-- Row lock taken inside the approve/decline transaction — serializes
+-- concurrent transitions on the same application so grant + status
+-- write commit atomically against state verified under the lock.
+SELECT * FROM mentor_applications
+WHERE id = @id
+FOR UPDATE;
+
 -- name: ListMentorApplications :many
 -- Admin review queue (§102 2026-11-28). Pending-first ordering keeps the
 -- actionable rows on top; ?status= narrows to one bucket, ?q= searches

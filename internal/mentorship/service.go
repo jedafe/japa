@@ -43,7 +43,7 @@ type Service struct {
 	activity ActivityEmitter // nil = gamification activity emissions skipped
 	// §102 2026-11-28 — member mentor applications.
 	permChecker  PermChecker        // nil = eligibility probes fail closed
-	groups       GroupMembership    // nil = approve/decline skip the group grant
+	permCache    PermCacheInvalidator // nil = post-commit cache eviction skipped
 	appNotifier  ApplicationNotifier // nil = decision dispatch logs only
 	groupMu      sync.Mutex         // guards mentorsGroup memoization
 	mentorsGroup pgtype.UUID        // cached `mentors` system group id

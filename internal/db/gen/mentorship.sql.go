@@ -223,6 +223,33 @@ func (q *Queries) GetMentorApplicationByID(ctx context.Context, id pgtype.UUID) 
 	return i, err
 }
 
+const getMentorApplicationByIDForUpdate = `-- name: GetMentorApplicationByIDForUpdate :one
+SELECT id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at FROM mentor_applications
+WHERE id = $1
+FOR UPDATE
+`
+
+// Row lock taken inside the approve/decline transaction — serializes
+// concurrent transitions on the same application so grant + status
+// write commit atomically against state verified under the lock.
+func (q *Queries) GetMentorApplicationByIDForUpdate(ctx context.Context, id pgtype.UUID) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, getMentorApplicationByIDForUpdate, id)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMentorApplicationByUser = `-- name: GetMentorApplicationByUser :one
 SELECT id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at FROM mentor_applications
 WHERE user_id = $1

@@ -48,6 +48,13 @@ func (s *Store) invalidateUserCache(ctx context.Context, userID pgtype.UUID) {
 	s.rbac.InvalidateUserCache(ctx, userID)
 }
 
+// InvalidateUserPermCache is the public Rule-6 seam for callers that
+// mutate user_group_memberships outside this Store's methods (e.g.
+// inside a domain transaction) — same nil-safe L1+L2 eviction.
+func (s *Store) InvalidateUserPermCache(ctx context.Context, userID pgtype.UUID) {
+	s.invalidateUserCache(ctx, userID)
+}
+
 // invalidateGroupCache evicts cache for every member of a group.
 // Called when a role is assigned/revoked from a group (affects all members).
 func (s *Store) invalidateGroupCache(ctx context.Context, groupID pgtype.UUID) {

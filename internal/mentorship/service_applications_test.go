@@ -74,22 +74,6 @@ func (f fakePermChecker) HasPermission(_ context.Context, userID pgtype.UUID, pe
 	return permKey == "mentorship.become_mentor" && f[userID]
 }
 
-// inMemoryGroups records group mutations — enough to assert approve adds
-// and decline(revoke) removes without a live rbac.Store.
-type inMemoryGroups struct {
-	members map[pgtype.UUID]bool
-}
-
-func (g *inMemoryGroups) AddUserToGroup(_ context.Context, userID, _ pgtype.UUID) error {
-	g.members[userID] = true
-	return nil
-}
-
-func (g *inMemoryGroups) RemoveUserFromGroup(_ context.Context, userID, _ pgtype.UUID) error {
-	delete(g.members, userID)
-	return nil
-}
-
 func TestApplicationFlow_LiveDB(t *testing.T) {
 	database := liveDB(t)
 	ctx := t.Context()
@@ -97,14 +81,13 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 	svc := NewService(database)
 	// mentorsGroupID resolves the seeded 'mentors' group — skip cleanly on
 	// a DB whose migrations predate 001239.
-	if _, err := svc.mentorsGroupID(ctx); err != nil {
+	groupID, err := svc.mentorsGroupID(ctx)
+	if err != nil {
 		t.Skipf("mentors group not seeded (migration 001239?): %v", err)
 	}
 
 	eligible := fakePermChecker{}
-	groups := &inMemoryGroups{members: map[pgtype.UUID]bool{}}
 	svc.SetPermChecker(eligible)
-	svc.SetGroupMembership(groups)
 
 	var userID pgtype.UUID
 	if err := database.Writer.QueryRow(ctx,
@@ -120,6 +103,18 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 		_, _ = database.Writer.Exec(context.Background(),
 			`DELETE FROM users WHERE id = $1`, userID)
 	})
+
+	// The grant lands inside the approve/decline transaction as a real
+	// user_group_memberships row — assert against the DB directly.
+	isMember := func() bool {
+		var in bool
+		if err := database.Writer.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM user_group_memberships WHERE user_id = $1 AND group_id = $2)`,
+			userID, groupID).Scan(&in); err != nil {
+			t.Fatalf("membership probe: %v", err)
+		}
+		return in
+	}
 
 	// Submit → pending row visible on the self probe.
 	app, err := svc.ApplyForMentor(ctx, userID, "I mentor diaspora newcomers on UK visas", []string{"uk visa"})
@@ -144,7 +139,7 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 		t.Fatalf("expected at least the seeded pending application, got total=%d", total)
 	}
 
-	// Approve → approved row + mentors membership recorded by the seam.
+	// Approve → approved row + mentors membership committed in the tx.
 	var appID pgtype.UUID
 	if err := appID.Scan(app.ID); err != nil {
 		t.Fatalf("scan app id: %v", err)
@@ -156,13 +151,17 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 	if approved.Status != "approved" {
 		t.Fatalf("expected approved, got %q", approved.Status)
 	}
-	if !groups.members[userID] {
+	if !isMember() {
 		t.Fatal("approve did not grant the mentors group")
 	}
 
 	// Approve on an approved row is the idempotent ensure-grant arm — a
 	// second call re-heals the membership without erroring.
-	delete(groups.members, userID)
+	if _, err := database.Writer.Exec(ctx,
+		`DELETE FROM user_group_memberships WHERE user_id = $1 AND group_id = $2`,
+		userID, groupID); err != nil {
+		t.Fatalf("out-of-band membership removal: %v", err)
+	}
 	reApprove, err := svc.ApproveApplication(ctx, appID, userID)
 	if err != nil {
 		t.Fatalf("ensure-grant approve: %v", err)
@@ -170,7 +169,7 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 	if reApprove.Status != "approved" {
 		t.Fatalf("expected approved on ensure-grant, got %q", reApprove.Status)
 	}
-	if !groups.members[userID] {
+	if !isMember() {
 		t.Fatal("ensure-grant approve did not re-add the mentors membership")
 	}
 
@@ -189,7 +188,7 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 	if declined.Status != "declined" || declined.DeclineReason != "insufficient experience" {
 		t.Fatalf("expected declined+reason, got %+v", declined)
 	}
-	if groups.members[userID] {
+	if isMember() {
 		t.Fatal("revoke did not remove the mentors membership")
 	}
 
