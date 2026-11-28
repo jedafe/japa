@@ -917,6 +917,10 @@ func (h *Handlers) ApplyForMentorship(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "already_eligible", "You can already opt in as a mentor — use mentor settings instead")
 		case errors.Is(err, ErrApplicationPending):
 			errpkg.WriteError(w, http.StatusConflict, "application_pending", "Your application is already awaiting review")
+		case errors.Is(err, ErrApplicationNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "application_not_found", "Application not found")
+		case errors.Is(err, ErrApplicationNotActionable):
+			errpkg.WriteError(w, http.StatusConflict, "application_not_actionable", "The application changed under review — refresh and retry")
 		case errors.Is(err, ErrInvalidMotivation):
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_motivation", "Motivation is required and must be under 2000 characters")
 		case errors.Is(err, ErrInvalidAreas):

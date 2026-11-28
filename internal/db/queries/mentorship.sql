@@ -478,7 +478,10 @@ RETURNING *;
 -- name: ResubmitMentorApplication :one
 -- Re-apply after a decline (or an approved-but-orphaned row whose group
 -- grant was removed out-of-band): back to pending, reviewer fields and
--- decline_reason cleared, fresh motivation/areas.
+-- decline_reason cleared, fresh motivation/areas. The expected-status
+-- guard binds to the status the caller read — a raced admin transition
+-- no longer matches (a resubmit must not silently overwrite a fresh
+-- decline decision).
 UPDATE mentor_applications
 SET motivation = @motivation,
     mentor_areas = @mentor_areas,
@@ -488,7 +491,7 @@ SET motivation = @motivation,
     decline_reason = NULL,
     updated_at = now()
 WHERE user_id = @user_id
-  AND status IN ('declined','approved')
+  AND status = @expected_status
 RETURNING *;
 
 -- name: GetMentorApplicationByUser :one
@@ -542,7 +545,11 @@ RETURNING *;
 
 -- name: DeclineMentorApplication :one
 -- pending → declined (reject) or approved → declined (revoke — the
--- caller removes the mentors membership, firing the mentor-retire sweep).
+-- caller removes the mentors membership, firing the mentor-retire
+-- sweep). The expected-status guard binds to the status the caller
+-- loaded: a raced approve on a pending row (or resubmit on an approved
+-- one) no longer matches, forcing a re-decision against fresh state —
+-- otherwise the declined row could keep a grant the approve just added.
 UPDATE mentor_applications
 SET status = 'declined',
     reviewer_user_id = @reviewer_user_id,
@@ -550,5 +557,5 @@ SET status = 'declined',
     decline_reason = @decline_reason,
     updated_at = now()
 WHERE id = @id
-  AND status IN ('pending','approved')
+  AND status = @expected_status
 RETURNING *;

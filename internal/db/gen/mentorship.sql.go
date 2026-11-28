@@ -117,7 +117,7 @@ SET status = 'declined',
     decline_reason = $2,
     updated_at = now()
 WHERE id = $3
-  AND status IN ('pending','approved')
+  AND status = $4
 RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
 `
 
@@ -125,12 +125,22 @@ type DeclineMentorApplicationParams struct {
 	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
 	DeclineReason  *string     `json:"decline_reason"`
 	ID             pgtype.UUID `json:"id"`
+	ExpectedStatus string      `json:"expected_status"`
 }
 
 // pending → declined (reject) or approved → declined (revoke — the
-// caller removes the mentors membership, firing the mentor-retire sweep).
+// caller removes the mentors membership, firing the mentor-retire
+// sweep). The expected-status guard binds to the status the caller
+// loaded: a raced approve on a pending row (or resubmit on an approved
+// one) no longer matches, forcing a re-decision against fresh state —
+// otherwise the declined row could keep a grant the approve just added.
 func (q *Queries) DeclineMentorApplication(ctx context.Context, arg DeclineMentorApplicationParams) (MentorApplication, error) {
-	row := q.db.QueryRow(ctx, declineMentorApplication, arg.ReviewerUserID, arg.DeclineReason, arg.ID)
+	row := q.db.QueryRow(ctx, declineMentorApplication,
+		arg.ReviewerUserID,
+		arg.DeclineReason,
+		arg.ID,
+		arg.ExpectedStatus,
+	)
 	var i MentorApplication
 	err := row.Scan(
 		&i.ID,
@@ -1122,21 +1132,30 @@ SET motivation = $1,
     decline_reason = NULL,
     updated_at = now()
 WHERE user_id = $3
-  AND status IN ('declined','approved')
+  AND status = $4
 RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
 `
 
 type ResubmitMentorApplicationParams struct {
-	Motivation  string      `json:"motivation"`
-	MentorAreas []string    `json:"mentor_areas"`
-	UserID      pgtype.UUID `json:"user_id"`
+	Motivation     string      `json:"motivation"`
+	MentorAreas    []string    `json:"mentor_areas"`
+	UserID         pgtype.UUID `json:"user_id"`
+	ExpectedStatus string      `json:"expected_status"`
 }
 
 // Re-apply after a decline (or an approved-but-orphaned row whose group
 // grant was removed out-of-band): back to pending, reviewer fields and
-// decline_reason cleared, fresh motivation/areas.
+// decline_reason cleared, fresh motivation/areas. The expected-status
+// guard binds to the status the caller read — a raced admin transition
+// no longer matches (a resubmit must not silently overwrite a fresh
+// decline decision).
 func (q *Queries) ResubmitMentorApplication(ctx context.Context, arg ResubmitMentorApplicationParams) (MentorApplication, error) {
-	row := q.db.QueryRow(ctx, resubmitMentorApplication, arg.Motivation, arg.MentorAreas, arg.UserID)
+	row := q.db.QueryRow(ctx, resubmitMentorApplication,
+		arg.Motivation,
+		arg.MentorAreas,
+		arg.UserID,
+		arg.ExpectedStatus,
+	)
 	var i MentorApplication
 	err := row.Scan(
 		&i.ID,

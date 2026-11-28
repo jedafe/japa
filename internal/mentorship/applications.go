@@ -256,17 +256,12 @@ func (s *Service) ApplyForMentor(ctx context.Context, userID pgtype.UUID, motiva
 	default:
 		// declined → resubmit; approved-but-no-permission (grant removed
 		// out-of-band) → re-review rather than silently trusting a stale
-		// decision.
-		row, err = s.write.ResubmitMentorApplication(ctx, gen.ResubmitMentorApplicationParams{
-			UserID:      userID,
-			Motivation:  motivation,
-			MentorAreas: areas,
-		})
-		// A racing submit flipped the row to pending first — same
-		// outcome the member asked for; report the pending conflict.
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrApplicationPending
-		}
+		// decision. The expected-status guard binds to the row we read;
+		// a raced transition (decline landing mid-submit, or a second
+		// submit winning first) fails the UPDATE — re-read once and
+		// retry against the fresh status rather than silently
+		// overwriting a new admin decision.
+		row, err = s.resubmitApplication(ctx, userID, existing.Status, motivation, areas)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mentorship: submit application: %w", err)
@@ -274,6 +269,43 @@ func (s *Service) ApplyForMentor(ctx context.Context, userID pgtype.UUID, motiva
 
 	s.trackEvent(ctx, userID, "mentorship_application_submitted", "mentor_application", row.ID, map[string]any{})
 	return applicationDTO(row), nil
+}
+
+// resubmitApplication runs the resubmit UPDATE guarded on the status
+// the caller read, retrying once against the fresh status when a raced
+// transition invalidates the guard. A row that lands on pending
+// mid-call is reported as the pending conflict (a racing submit won —
+// same outcome); a row that keeps losing the race is not actionable.
+func (s *Service) resubmitApplication(ctx context.Context, userID pgtype.UUID, expected, motivation string, areas []string) (gen.MentorApplication, error) {
+	var row gen.MentorApplication
+	for attempt := 0; attempt < 2; attempt++ {
+		var err error
+		row, err = s.write.ResubmitMentorApplication(ctx, gen.ResubmitMentorApplicationParams{
+			UserID:         userID,
+			Motivation:     motivation,
+			MentorAreas:    areas,
+			ExpectedStatus: expected,
+		})
+		switch {
+		case err == nil:
+			return row, nil
+		case !errors.Is(err, pgx.ErrNoRows):
+			return row, fmt.Errorf("mentorship: resubmit application: %w", err)
+		}
+		// The guard lost the race — see where the row landed.
+		cur, rerr := s.read.GetMentorApplicationByUser(ctx, userID)
+		switch {
+		case errors.Is(rerr, pgx.ErrNoRows):
+			return row, ErrApplicationNotFound
+		case rerr != nil:
+			return row, fmt.Errorf("mentorship: load application: %w", rerr)
+		case cur.Status == "pending":
+			return row, ErrApplicationPending
+		default:
+			expected = cur.Status
+		}
+	}
+	return row, ErrApplicationNotActionable
 }
 
 // ListApplications is the admin review queue — pending-first ordering
@@ -385,8 +417,22 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 	}
 
 	if prior.Status == "approved" {
-		// Ensure-grant retry — nothing to transition.
-		return applicationDTO(prior), nil
+		// Ensure-grant retry — the add is status-neutral, so a raced
+		// decline or resubmit can't be caught by an UPDATE guard. Re-read
+		// the row: anything but approved must not keep a grant this call
+		// created.
+		cur, rerr := s.read.GetMentorApplicationByID(ctx, appID)
+		switch {
+		case errors.Is(rerr, pgx.ErrNoRows):
+			s.compensateGrant(ctx, prior.UserID, groupID, wasMember)
+			return nil, ErrApplicationNotFound
+		case rerr != nil:
+			return nil, fmt.Errorf("mentorship: re-check application: %w", rerr)
+		case cur.Status != "approved":
+			s.compensateGrant(ctx, prior.UserID, groupID, wasMember)
+			return nil, ErrApplicationNotActionable
+		}
+		return applicationDTO(cur), nil
 	}
 
 	row, err := s.write.ApproveMentorApplication(ctx, gen.ApproveMentorApplicationParams{
@@ -432,20 +478,32 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		return nil, err
 	}
 
+	// Resolve the mentors group upfront when the seam is wired — the
+	// revoke arm needs it to remove, and both arms need it for the
+	// post-write sweep. On the pending arm a resolution failure only
+	// degrades the sweep (warn); on the approved arm the revoke can't
+	// run without it, so the call fails.
+	var groupID pgtype.UUID
+	wasMember := false // probe failure fails safe: don't fabricate a grant
+	if s.groups != nil {
+		var gerr error
+		groupID, gerr = s.mentorsGroupID(ctx)
+		switch {
+		case gerr == nil:
+		case prior.Status == "approved":
+			return nil, gerr
+		default:
+			slog.Warn("mentorship: mentors group unresolved — post-decline sweep skipped", "application_id", appID, "error", gerr)
+		}
+	}
+
 	// Revoke arm: an approved application carried a mentors membership.
 	// Removal runs BEFORE the status write — a failed decline then leaves
 	// an approved row whose grant is already gone (safely retryable,
 	// the DELETE is a no-op on rerun) rather than a declined row whose
 	// grant lingers. The pre-call probe lets compensation restore only a
 	// membership this call actually removed.
-	var groupID pgtype.UUID
-	wasMember := false // probe failure fails safe: don't fabricate a grant
-	if prior.Status == "approved" && s.groups != nil {
-		var gerr error
-		groupID, gerr = s.mentorsGroupID(ctx)
-		if gerr != nil {
-			return nil, gerr
-		}
+	if prior.Status == "approved" && groupID.Valid {
 		if in, perr := s.read.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{
 			UserID:  prior.UserID,
 			GroupID: groupID,
@@ -464,6 +522,7 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		ID:             appID,
 		ReviewerUserID: reviewerID,
 		DeclineReason:  strNilIfEmpty(reason),
+		ExpectedStatus: prior.Status,
 	})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -477,6 +536,13 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		s.restoreMembership(ctx, prior.UserID, groupID, wasMember)
 		return nil, fmt.Errorf("mentorship: decline application: %w", err)
 	}
+
+	// Post-decline sweep: an ensure-grant (approve on an approved row)
+	// re-adds membership without changing status, which no UPDATE guard
+	// can see — and a pending-row application can hold an out-of-band
+	// grant the pre-write arm never touched. A declined row must hold
+	// no mentors membership; remove whatever survived the write.
+	s.sweepMembership(ctx, prior.UserID, groupID)
 
 	s.enqueueApplicationDecision(ctx, row.ID)
 	s.trackEvent(ctx, reviewerID, "mentorship_application_declined", "mentor_application", row.ID,
@@ -517,6 +583,30 @@ func (s *Service) restoreMembership(ctx context.Context, userID, groupID pgtype.
 	}
 	if err := s.groups.AddUserToGroup(ctx, userID, groupID); err != nil {
 		slog.Warn("mentorship: decline compensation failed — approved row left grantless (ensure-grant retry heals)",
+			"user_id", userID, "error", err)
+	}
+}
+
+// sweepMembership enforces the post-decline invariant — a declined
+// application holds no mentors grant. It re-probes after the status
+// write and removes anything present: a raced ensure-grant add (which
+// is status-neutral and escapes the UPDATE guard) or an out-of-band
+// grant on a pending-row application. RemoveUserFromGroup is idempotent
+// and its retire sweep self-skips while another group grants the node.
+func (s *Service) sweepMembership(ctx context.Context, userID, groupID pgtype.UUID) {
+	if s.groups == nil || !groupID.Valid {
+		return
+	}
+	in, err := s.read.IsUserInGroupID(ctx, gen.IsUserInGroupIDParams{UserID: userID, GroupID: groupID})
+	switch {
+	case err != nil:
+		slog.Warn("mentorship: post-decline membership probe failed", "user_id", userID, "error", err)
+		return
+	case !in:
+		return
+	}
+	if err := s.groups.RemoveUserFromGroup(ctx, userID, groupID); err != nil {
+		slog.Warn("mentorship: post-decline sweep failed — declined row left with a grant",
 			"user_id", userID, "error", err)
 	}
 }
