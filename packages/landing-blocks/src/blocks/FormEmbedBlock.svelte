@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { FormEmbedProps } from '../types';
+  import type { FetchContext } from '../data/types';
+  import { buildApiUrl } from '@japaconnect/api-url';
 
   interface Props {
     props: FormEmbedProps;
     id?: string;
+    fetchCtx?: FetchContext;
   }
-  let { props, id }: Props = $props();
+  let { props, id, fetchCtx }: Props = $props();
 
   // Field schema as emitted by GET /forms/{slug}/embed (§06).
   interface EmbedField {
@@ -41,14 +44,20 @@
   // §06: when form_slug names a platform form, pull the live field schema
   // from the public embed endpoint so the block never drifts from admin
   // edits (the embed is already guest-scoped). props.fields is the fallback.
+  //
+  // The API base comes from the injected fetch context when present — the
+  // baked submit_endpoint is a *relative* URL on split-origin deploys
+  // (japa.to does not proxy /api), so deriving the base from it resolves
+  // every fetch against the frontend origin and 404s.
+  const SUBMISSIONS_ENDPOINT = /\/forms\/([0-9a-f-]{36})\/submissions\/?$/i;
   const apiBase = $derived(
-    props.submit_endpoint.replace(/\/forms\/[0-9a-f-]{36}\/submissions\/?$/i, '')
+    fetchCtx?.apiBase ?? props.submit_endpoint.replace(SUBMISSIONS_ENDPOINT, '')
   );
 
   $effect(() => {
     if (!props.form_slug || !apiBase) return;
     let cancelled = false;
-    fetch(`${apiBase}/forms/${props.form_slug}/embed`)
+    fetch(buildApiUrl(`/forms/${props.form_slug}/embed`, apiBase))
       .then((r) => r.json())
       .then((p) => {
         const fields = p?.data?.fields;
@@ -71,7 +80,7 @@
   $effect(() => {
     if (!apiBase || !liveFields?.some((f) => f.options_source === 'geo_countries')) return;
     let cancelled = false;
-    fetch(`${apiBase}/geo/countries`)
+    fetch(buildApiUrl('/geo/countries', apiBase))
       .then((r) => r.json())
       .then((p) => {
         if (!cancelled && Array.isArray(p?.data)) {
@@ -110,15 +119,16 @@
 
   // §06 POST /forms/{id}/submissions expects the values under field_values;
   // other preset endpoints (newsletter/waitlist) take the bare map.
-  const SUBMISSIONS_ENDPOINT = /\/forms\/[0-9a-f-]{36}\/submissions\/?$/i;
-  // Prefer the live embed's form id — it is authoritative on every
-  // environment; props.submit_endpoint is the fallback when the embed
-  // fetch fails or no form_slug was configured.
-  const endpoint = $derived(
-    liveFormId && apiBase
-      ? `${apiBase}/forms/${liveFormId}/submissions`
-      : props.submit_endpoint
-  );
+  // Submissions endpoint rebuilds on apiBase with the best-known form id:
+  // the live embed's id is authoritative on every environment; the UUID
+  // baked into submit_endpoint is the fallback (kept when the embed fetch
+  // fails or no form_slug was configured). Non-forms submit endpoints
+  // (newsletter/waitlist presets) pass through untouched.
+  const endpoint = $derived.by(() => {
+    const m = props.submit_endpoint.match(SUBMISSIONS_ENDPOINT);
+    if (!m || !apiBase) return props.submit_endpoint;
+    return buildApiUrl(`/forms/${liveFormId ?? m[1]}/submissions`, apiBase);
+  });
   const body = $derived(
     SUBMISSIONS_ENDPOINT.test(endpoint) ? { field_values: formData } : formData
   );
