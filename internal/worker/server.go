@@ -130,6 +130,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Scheduled content publishing sweep — every minute.
 	schedule("* * * * *", TypeScheduledPublishSweep, 1*time.Minute)
 
+	// §24 decide-saga crash-window sweep — reopens decided blog reviews
+	// whose post is still in_review (a kill between the won claim and the
+	// post transition leaves the review decided on an untransitioned post).
+	schedule("*/5 * * * *", TypeBlogReconcileDecidedReviews, 5*time.Minute)
+
 	// §35 scheduled admin broadcasts — every minute.
 	schedule("* * * * *", TypeBroadcastDispatch, 1*time.Minute)
 

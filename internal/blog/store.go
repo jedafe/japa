@@ -3,6 +3,7 @@ package blog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -408,6 +409,34 @@ func (s *Store) reopenContentReview(ctx context.Context, id pgtype.UUID) (gen.Co
 	}
 
 	return contentReviewFromRow(row), nil
+}
+
+// withReviewLock runs fn while holding a session-level advisory lock keyed
+// on the review id. This serializes the WHOLE decide/reopen critical
+// section per review — a PATCH→pending reopen can't revive a row while a
+// decide is still mid-transition on it, and two deciders serialize on
+// both the claim and the post transition. The lock is session-scoped
+// (pg_advisory_lock, not the xact variant) because the section spans
+// statements on other pooled connections (the post transition runs
+// through the content service), so it needs a dedicated connection.
+func (s *Store) withReviewLock(ctx context.Context, id pgtype.UUID, fn func() error) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring connection for review lock: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1::text, 2408))`, id); err != nil {
+		return fmt.Errorf("locking review: %w", err)
+	}
+
+	defer func() {
+		if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock(hashtextextended($1::text, 2408))`, id); err != nil {
+			slog.Warn("blog: review advisory unlock failed", "review_id", id.String(), "error", err)
+		}
+	}()
+
+	return fn()
 }
 
 // ---------------------------------------------------------------------------

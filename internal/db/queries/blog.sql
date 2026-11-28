@@ -267,6 +267,25 @@ WHERE id = @id AND status != 'pending'
 RETURNING id, content_id, reviewer_user_id, status, feedback,
  created_at, updated_at, deleted_at;
 
+-- name: ReopenStaleDecidedBlogReviews :many
+-- Crash-window sweeper for the decide saga: a review claim commits before
+-- the post transition runs, so a process kill in the gap can leave the
+-- review decided while the post is still in_review. The in_review check
+-- is precise — a legit post-moved-on-after-decision (author republishes a
+-- rejected draft, unpublishes an approved post) never lands back at
+-- in_review, which only submit-for-review flows produce. The age margin
+-- skips reviews whose decide is still in flight.
+UPDATE content_reviews cr
+SET status = 'pending', updated_at = now()
+FROM contents c
+WHERE cr.content_id = c.id
+ AND c.content_type = 'blog_post' AND c.deleted_at IS NULL
+ AND c.status = 'in_review'
+ AND cr.status IN ('approved', 'rejected', 'changes_requested')
+ AND cr.source = 'editorial' AND cr.deleted_at IS NULL
+ AND cr.updated_at < now() - interval '2 minutes'
+RETURNING cr.id;
+
 -- name: UpdateContentReviewStatus :one
 -- BUG-003: also set reviewer_user_id (nullable) so the actual reviewer is
 -- recorded on approve/reject, not the submitting author placeholder.

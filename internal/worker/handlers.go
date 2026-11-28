@@ -6128,6 +6128,32 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
+// HandleBlogReconcileDecidedReviews reopens decided blog reviews whose post
+// is still in_review — the decide saga's crash-window safety net (§24). A
+// kill between the won pending→decided claim and the post transition leaves
+// the review decided on an untransitioned post; the sweep returns it to
+// pending so the queue (and a human) can re-decide. The reopen is
+// idempotent — decided posts that legitimately moved on never sit at
+// in_review, so the UPDATE only catches crashed or failed decides.
+func HandleBlogReconcileDecidedReviews(ctx context.Context, _ *asynq.Task) error {
+	if dbPool == nil {
+		slog.Warn("task:blog:reconcile_decided_reviews: no database, skipping")
+		return nil
+	}
+
+	ids, err := gen.New(dbPool.Writer).ReopenStaleDecidedBlogReviews(ctx)
+	if err != nil {
+		slog.Error("task:blog:reconcile_decided_reviews: sweep failed", "error", err)
+		return err
+	}
+
+	if len(ids) > 0 {
+		slog.Info("task:blog:reconcile_decided_reviews: reopened stale decided reviews", "count", len(ids), "review_ids", ids)
+	}
+
+	return nil
+}
+
 // HandleOnboardingReminderSweep nudges newly registered users who have not
 // finished the onboarding wizard (§09). Runs daily via the Asynq scheduler.
 // Sends are bounded by onboarding.reminder_max_count (default 5) and only

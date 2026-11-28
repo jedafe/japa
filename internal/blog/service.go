@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -282,11 +283,22 @@ func (s *Service) EnsurePendingReview(ctx context.Context, contentID pgtype.UUID
 	})
 }
 
-// DecideReview atomically claims a pending editorial review into the given
-// decided status, recording the reviewer. Returns pgx.ErrNoRows when the
-// review is not pending — already decided or non-editorial — so exactly one
-// concurrent decider proceeds to the post transition.
-func (s *Service) DecideReview(ctx context.Context, id, reviewerUserID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
+// TransitionError wraps a post-transition failure after a won review
+// claim — the claim was already compensated back to pending inside the
+// decision lock, so callers surface Err to the client.
+type TransitionError struct{ Err error }
+
+func (e *TransitionError) Error() string { return e.Err.Error() }
+func (e *TransitionError) Unwrap() error { return e.Err }
+
+// DecideReviewAndTransition atomically claims a pending editorial review
+// into the given decided status and then runs transition — the claim, the
+// transition, and (on failure) the compensate all run under a per-review
+// session advisory lock, so a concurrent reopen or a second decider
+// cannot interleave into the critical section. Returns pgx.ErrNoRows
+// when the review is not pending — already decided or non-editorial —
+// and *TransitionError when the claim was won but the transition failed.
+func (s *Service) DecideReviewAndTransition(ctx context.Context, id, reviewerUserID pgtype.UUID, status, feedback string, transition func(context.Context) error) (gen.ContentReview, error) {
 	if status == "" {
 		return gen.ContentReview{}, errors.New("status is required")
 	}
@@ -296,19 +308,58 @@ func (s *Service) DecideReview(ctx context.Context, id, reviewerUserID pgtype.UU
 		fb = &feedback
 	}
 
-	return s.store.decideContentReview(ctx, gen.DecideContentReviewParams{
-		ID:             id,
-		ReviewerUserID: reviewerUserID,
-		Status:         status,
-		Feedback:       fb,
+	var review gen.ContentReview
+	err := s.store.withReviewLock(ctx, id, func() error {
+		r, err := s.store.decideContentReview(ctx, gen.DecideContentReviewParams{
+			ID:             id,
+			ReviewerUserID: reviewerUserID,
+			Status:         status,
+			Feedback:       fb,
+		})
+		if err != nil {
+			return err
+		}
+		review = r
+
+		if transition == nil {
+			return nil
+		}
+
+		if err := transition(ctx); err != nil {
+			// Compensate the claim back to pending so the review is never
+			// left decided on an untransitioned post (the BUG-BL-003/004
+			// invariant, preserved through the saga).
+			if _, rerr := s.store.reopenContentReview(ctx, id); rerr != nil {
+				slog.Error("blog: failed to reopen review after post-transition failure — review left decided on untransitioned post",
+					"review_id", id.String(), "error", rerr)
+			}
+
+			return &TransitionError{Err: err}
+		}
+
+		return nil
 	})
+
+	return review, err
 }
 
-// ReopenReview returns a decided editorial review to pending — used to
-// compensate a failed post transition after DecideReview, and for
-// PATCH→pending reopens. Returns pgx.ErrNoRows when already pending.
+// ReopenReview returns a decided editorial review to pending — for
+// PATCH→pending reopens and the decide saga's compensate path. Runs under
+// the same per-review advisory lock as DecideReviewAndTransition so a
+// reopen cannot revive a row while a decide is mid-transition on it.
+// Returns pgx.ErrNoRows when already pending or non-editorial.
 func (s *Service) ReopenReview(ctx context.Context, id pgtype.UUID) (gen.ContentReview, error) {
-	return s.store.reopenContentReview(ctx, id)
+	var review gen.ContentReview
+	err := s.store.withReviewLock(ctx, id, func() error {
+		r, err := s.store.reopenContentReview(ctx, id)
+		if err != nil {
+			return err
+		}
+		review = r
+		return nil
+	})
+
+	return review, err
 }
 
 // GetReview retrieves a content review by ID.

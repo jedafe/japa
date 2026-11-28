@@ -1794,6 +1794,46 @@ func (q *Queries) ReopenContentReview(ctx context.Context, id pgtype.UUID) (Reop
 	return i, err
 }
 
+const reopenStaleDecidedBlogReviews = `-- name: ReopenStaleDecidedBlogReviews :many
+UPDATE content_reviews cr
+SET status = 'pending', updated_at = now()
+FROM contents c
+WHERE cr.content_id = c.id
+ AND c.content_type = 'blog_post' AND c.deleted_at IS NULL
+ AND c.status = 'in_review'
+ AND cr.status IN ('approved', 'rejected', 'changes_requested')
+ AND cr.source = 'editorial' AND cr.deleted_at IS NULL
+ AND cr.updated_at < now() - interval '2 minutes'
+RETURNING cr.id
+`
+
+// Crash-window sweeper for the decide saga: a review claim commits before
+// the post transition runs, so a process kill in the gap can leave the
+// review decided while the post is still in_review. The in_review check
+// is precise — a legit post-moved-on-after-decision (author republishes a
+// rejected draft, unpublishes an approved post) never lands back at
+// in_review, which only submit-for-review flows produce. The age margin
+// skips reviews whose decide is still in flight.
+func (q *Queries) ReopenStaleDecidedBlogReviews(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, reopenStaleDecidedBlogReviews)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reorderSeriesPosts = `-- name: ReorderSeriesPosts :exec
 UPDATE blog_series_posts
 SET position = $1

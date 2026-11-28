@@ -179,6 +179,11 @@ const (
 
 	TypeScheduledPublishSweep   = "content:publish_sweep"
 	TypeBroadcastDispatch       = "broadcast:dispatch_scheduled" // §35 scheduled admin broadcasts
+	// TypeBlogReconcileDecidedReviews reopens decided blog reviews whose
+	// post is still in_review — the decide saga's crash-window safety net
+	// (§24): a kill between the won claim and the post transition leaves
+	// the review decided on an untransitioned post.
+	TypeBlogReconcileDecidedReviews = "blog:reconcile_decided_reviews"
 	TypeHonchoRetentionSweep    = "honcho:retention_sweep"       // daily Honcho memory retention
 	TypeGeoPopulateScope        = "geo:populate_scope"           // Control → Seeds fan-out
 	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
@@ -369,6 +374,7 @@ var handlerRegistry = []struct {
 	{TypeWikiPopulateFacts, HandleWikiPopulateFacts},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
+	{TypeBlogReconcileDecidedReviews, HandleBlogReconcileDecidedReviews},
 	{TypeBroadcastDispatch, HandleBroadcastDispatchScheduled},
 	{TypeHonchoRetentionSweep, HandleHonchoRetentionSweep},
 	{TypeGeoPopulateScope, HandleGeoPopulateScope},
@@ -406,6 +412,7 @@ var handlerRegistry = []struct {
 	// §102 Mentorship Matching handlers (ADR-110).
 	{TypeMentorGenerateEmbedding, HandleMentorGenerateEmbedding},
 	{TypeMentorUpdateMeilisearch, HandleMentorUpdateMeilisearch},
+	{TypeMentorshipNotifyApplicationDecision, HandleMentorshipNotifyApplicationDecision},
 	// §91 Embassy Appointment Alerter handlers (ADR-099).
 	{TypeEmbassyPoll, HandleEmbassyPoll},
 	{TypeEmbassyDispatchAlerts, HandleEmbassyDispatchAlerts},

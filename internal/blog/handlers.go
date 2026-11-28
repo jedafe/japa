@@ -894,48 +894,111 @@ func (h *Handlers) ensurePendingReview(ctx context.Context, contentID pgtype.UUI
 	}
 }
 
-// decideReviewClaim runs the atomic pending→decision claim shared by
-// ApproveReview, RejectReview, and UpdateReview. On a lost claim (the review
-// is not pending — another decider won concurrently, or it was decided
-// earlier) it writes the idempotent response itself: a repeat of the same
-// decision returns the current row with 200, a conflicting decided state
-// 409s — and returns ok=false so the caller must not transition the post.
-func (h *Handlers) decideReviewClaim(w http.ResponseWriter, r *http.Request, id, reviewerID pgtype.UUID, status, feedback string) (gen.ContentReview, bool) {
-	review, err := h.Service.DecideReview(r.Context(), id, reviewerID, status, feedback)
-	if err == nil {
-		return review, true
-	}
-
-	if !errors.Is(err, pgx.ErrNoRows) {
+// fetchBlogReviewPost loads a review and its content row for the decision
+// handlers — content_reviews is shared by ads, persona actions, and studio,
+// so the blog review-queue must verify the target is a blog_post before
+// acting (BUG-002). Writes the error response on failure.
+func (h *Handlers) fetchBlogReviewPost(w http.ResponseWriter, r *http.Request, id pgtype.UUID) (gen.ContentReview, gen.GetContentByIDRow, bool) {
+	review, err := h.Service.GetReview(r.Context(), id)
+	if err != nil {
 		handleServiceError(w, err)
-		return gen.ContentReview{}, false
+		return gen.ContentReview{}, gen.GetContentByIDRow{}, false
 	}
 
-	current, ferr := h.Service.GetReview(r.Context(), id)
-	if ferr != nil {
-		handleServiceError(w, ferr)
-		return gen.ContentReview{}, false
+	post, err := h.content.GetContent(r.Context(), review.ContentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return gen.ContentReview{}, gen.GetContentByIDRow{}, false
 	}
 
-	if current.Status == status {
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": current})
-		return gen.ContentReview{}, false
+	if post.ContentType != contentTypeBlogPost {
+		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		return gen.ContentReview{}, gen.GetContentByIDRow{}, false
 	}
 
-	errpkg.WriteError(w, http.StatusConflict, "review_already_decided",
-		fmt.Sprintf("Review is already %s — reopen it to pending before deciding again", current.Status))
-	return gen.ContentReview{}, false
+	return review, post, true
 }
 
-// reopenReviewAfterFailedTransition compensates a won claim when the post
-// transition fails — the review must not be left decided on an
-// untransitioned post (the BUG-BL-003/004 orphan class), so it reverts to
-// pending before the caller returns the transition error.
-func (h *Handlers) reopenReviewAfterFailedTransition(ctx context.Context, id pgtype.UUID) {
-	if _, err := h.Service.ReopenReview(ctx, id); err != nil {
-		slog.Error("blog: failed to reopen review after post-transition failure — review left decided on untransitioned post",
-			"review_id", id.String(), "error", err)
+// runReviewDecision executes a full review decision shared by
+// ApproveReview, RejectReview, and UpdateReview: the atomic
+// pending→decideStatus claim, the post transition to the matching target
+// state (publish for approved, draft revert for rejected/changes_requested),
+// and — on a transition failure — the compensate back to pending, all under
+// a per-review advisory lock so a concurrent reopen or second decider
+// cannot interleave (the BUG-BL-003/004 invariant holds through the saga).
+// On a lost claim it writes the idempotent response: a repeat of the same
+// decision returns the decided row with 200; a conflicting decided state
+// 409s. Always writes the response — callers return after calling it.
+func (h *Handlers) runReviewDecision(w http.ResponseWriter, r *http.Request, id, reviewerID pgtype.UUID, decideStatus, feedback string, post gen.GetContentByIDRow) {
+	var postTarget string
+	publish := false
+	switch decideStatus {
+	case ReviewStatusApproved:
+		postTarget, publish = content.StatusPublished, true
+	case ReviewStatusRejected, ReviewStatusChangesRequested:
+		// changes_requested also returns the post to the author for
+		// revision, so it reverts to draft like a rejection.
+		postTarget = content.StatusDraft
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
+			"Status must be one of pending, approved, rejected, changes_requested")
+		return
 	}
+
+	var fanout *gen.UpdateContentStatusRow
+	transition := func(ctx context.Context) error {
+		if post.Status == postTarget {
+			return nil
+		}
+
+		updated, err := h.content.UpdateContentStatus(ctx, post.ID, postTarget)
+		if err != nil {
+			return err
+		}
+		fanout = &updated
+
+		return nil
+	}
+
+	review, err := h.Service.DecideReviewAndTransition(r.Context(), id, reviewerID, decideStatus, feedback, transition)
+	if err != nil {
+		var terr *TransitionError
+		switch {
+		case errors.As(err, &terr):
+			slog.Error("failed post transition on review decision", "error", terr.Err, "content_id", post.ID)
+			handleContentError(w, terr.Err)
+		case errors.Is(err, pgx.ErrNoRows):
+			// Lost claim — idempotent repeat of the same decision returns
+			// the decided row; a conflicting decided state 409s.
+			current, ferr := h.Service.GetReview(r.Context(), id)
+			if ferr != nil {
+				handleServiceError(w, ferr)
+				return
+			}
+
+			if current.Status == decideStatus {
+				errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": current})
+				return
+			}
+
+			errpkg.WriteError(w, http.StatusConflict, "review_already_decided",
+				fmt.Sprintf("Review is already %s — reopen it to pending before deciding again", current.Status))
+		default:
+			handleServiceError(w, err)
+		}
+		return
+	}
+
+	// §32/§55/C6: the newly published post enters feeds the same way a
+	// direct publish does — affiliate scan, follower/space fan-out, RSS.
+	// Fire-and-forget outside the decision lock.
+	if publish && fanout != nil {
+		h.enqueueAffiliateLinkScan(post.ID)
+		h.enqueueFeedFanOut(r.Context(), post.ID, fanout.AuthorID, fanout.SpaceID)
+		h.enqueueRSSRegenerate()
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
 // CreateReview handles POST /api/v1/blog/reviews — the author-level "request
@@ -1106,20 +1169,8 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingReview, err := h.Service.GetReview(r.Context(), id)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	post, err := h.content.GetContent(r.Context(), existingReview.ContentID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if post.ContentType != contentTypeBlogPost {
-		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+	existingReview, post, ok := h.fetchBlogReviewPost(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -1142,45 +1193,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Atomic single-decider claim (pending→decided): concurrent decisions
-	// serialize on the row — only the winner transitions the post. The
-	// post transition runs under the claim; a failed transition
-	// compensates the review back to pending so it is never left decided
-	// on an untransitioned post (BUG-BL-003/004 invariant).
-	review, claimed := h.decideReviewClaim(w, r, id, user.UserID, input.Status, input.Feedback)
-	if !claimed {
-		return
-	}
-
-	switch input.Status {
-	case ReviewStatusApproved:
-		if post.Status != content.StatusPublished {
-			updated, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusPublished)
-			if err != nil {
-				h.reopenReviewAfterFailedTransition(r.Context(), id)
-				slog.Error("failed to publish content on review approve", "error", err, "content_id", existingReview.ContentID)
-				handleContentError(w, err)
-				return
-			}
-
-			h.enqueueAffiliateLinkScan(existingReview.ContentID)
-			h.enqueueFeedFanOut(r.Context(), existingReview.ContentID, updated.AuthorID, updated.SpaceID)
-			h.enqueueRSSRegenerate()
-		}
-	case ReviewStatusRejected, ReviewStatusChangesRequested:
-		// changes_requested also returns the post to the author for revision,
-		// so it reverts to draft like a rejection.
-		if post.Status != content.StatusDraft {
-			if _, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusDraft); err != nil {
-				h.reopenReviewAfterFailedTransition(r.Context(), id)
-				slog.Error("failed to revert content on review decision", "error", err, "content_id", existingReview.ContentID)
-				handleContentError(w, err)
-				return
-			}
-		}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
+	h.runReviewDecision(w, r, id, user.UserID, input.Status, input.Feedback, post)
 }
 
 // DeleteReview handles DELETE /api/v1/blog/reviews/{id}.
@@ -1226,60 +1239,12 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	// Body is optional — approve can be called with empty body.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
-	// BUG-002: verify the review belongs to a blog_post before acting.
-	// content_reviews is shared by ads, persona actions, and studio; the
-	// blog review-queue must not publish non-blog content.
-	existingReview, err := h.Service.GetReview(r.Context(), id)
-	if err != nil {
-		handleServiceError(w, err)
+	_, post, ok := h.fetchBlogReviewPost(w, r, id)
+	if !ok {
 		return
 	}
 
-	post, err := h.content.GetContent(r.Context(), existingReview.ContentID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if post.ContentType != contentTypeBlogPost {
-		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
-		return
-	}
-
-	// Atomic single-decider claim (pending→approved) BEFORE touching the
-	// post: two concurrent approves (or an approve racing a reject)
-	// serialize on the review row — only the winner transitions the post,
-	// so a repeat approve can no longer re-fire the publish pipeline
-	// (webhook, fan-out, RSS). A publish failure after the claim
-	// compensates the review back to pending — the BUG-BL-003 invariant
-	// (never decided-but-unpublished) is preserved through the saga.
-	review, claimed := h.decideReviewClaim(w, r, id, user.UserID, ReviewStatusApproved, input.Feedback)
-	if !claimed {
-		return
-	}
-
-	if post.Status != content.StatusPublished {
-		updated, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusPublished)
-		if err != nil {
-			h.reopenReviewAfterFailedTransition(r.Context(), id)
-			slog.Error("failed to publish content on approve", "error", err, "content_id", existingReview.ContentID)
-			handleContentError(w, err)
-
-			return
-		}
-
-		// §32/§55: the approved post enters feeds the same way a direct
-		// publish does — fan-out to followers and assigned spaces plus the
-		// affiliate scan. UpdateContentStatus already covers content_scores,
-		// RAG, search sync, and the content.published webhook.
-		h.enqueueAffiliateLinkScan(existingReview.ContentID)
-		h.enqueueFeedFanOut(r.Context(), existingReview.ContentID, updated.AuthorID, updated.SpaceID)
-
-		// C6: enqueue rss:regenerate so the feed reflects the newly published post.
-		h.enqueueRSSRegenerate()
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
+	h.runReviewDecision(w, r, id, user.UserID, ReviewStatusApproved, input.Feedback, post)
 }
 
 // RejectReview handles POST /api/v1/admin/blog/review-queue/{id}/reject (C2).
@@ -1309,44 +1274,12 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 		feedback = input.Reason
 	}
 
-	// BUG-002: verify the review belongs to a blog_post before acting.
-	existingReview, err := h.Service.GetReview(r.Context(), id)
-	if err != nil {
-		handleServiceError(w, err)
+	_, post, ok := h.fetchBlogReviewPost(w, r, id)
+	if !ok {
 		return
 	}
 
-	post, err := h.content.GetContent(r.Context(), existingReview.ContentID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if post.ContentType != contentTypeBlogPost {
-		errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
-		return
-	}
-
-	// Atomic single-decider claim (pending→rejected) BEFORE touching the
-	// post — same serialization as approve. A revert failure after the
-	// claim compensates the review back to pending so the post is never
-	// left decided-but-in_review (BUG-BL-004 invariant via the saga).
-	review, claimed := h.decideReviewClaim(w, r, id, user.UserID, ReviewStatusRejected, feedback)
-	if !claimed {
-		return
-	}
-
-	if post.Status != content.StatusDraft {
-		if _, err := h.content.UpdateContentStatus(r.Context(), existingReview.ContentID, content.StatusDraft); err != nil {
-			h.reopenReviewAfterFailedTransition(r.Context(), id)
-			slog.Error("failed to revert content to draft on reject", "error", err, "content_id", existingReview.ContentID)
-			handleContentError(w, err)
-
-			return
-		}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
+	h.runReviewDecision(w, r, id, user.UserID, ReviewStatusRejected, feedback, post)
 }
 
 // ---------------------------------------------------------------------------

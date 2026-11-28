@@ -369,6 +369,7 @@ var taskTier = func() map[string]string {
 		TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep, TypeJceRefreshStale,
+		TypeBlogReconcileDecidedReviews,
 		TypeAcademyCalculatePeriodPayouts, TypeUniversityFetchLogo,
 		TypeContentScanAffiliateLinks,
 		TypePlatformDataExport, TypePlatformDataImport,
@@ -385,6 +386,7 @@ var taskTier = func() map[string]string {
 		// §102 Mentorship Matching (ADR-110) — low queue per spec.
 		TypeMentorGenerateEmbedding,
 		TypeMentorUpdateMeilisearch,
+		TypeMentorshipNotifyApplicationDecision,
 		// §91 Embassy Appointment Alerter (ADR-099) — nightly sweep, low tier.
 		TypeEmbassyExpireChecks,
 		// §91 Embassy Appointment Alerter (ADR-099) — recurring poll
@@ -626,6 +628,7 @@ var taskTypeCatalog = []struct {
 	{TypeContentScanAffiliateLinks, "low", "Scan content for unregistered affiliate links and record results for moderation"},
 	{TypeRedirectRecordHit, "low", "Record URL redirect hit"},
 	{TypeScheduledPublishSweep, "low", "Sweep and publish due scheduled content"},
+	{TypeBlogReconcileDecidedReviews, "low", "Reopen decided blog reviews stuck on in_review posts (crash-window sweep)"},
 	{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
 	{TypeJceRefreshStale, "low", "Enqueue refresh tasks for stale JCE comparisons"},
 	{TypeAcademyCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
@@ -635,6 +638,7 @@ var taskTypeCatalog = []struct {
 	// §102 Mentorship Matching (ADR-110) — low queue per spec.
 	{TypeMentorGenerateEmbedding, "low", "Generate pgvector embedding for a mentor's bio"},
 	{TypeMentorUpdateMeilisearch, "low", "Sync a mentor's profile to the Meilisearch mentors index"},
+	{TypeMentorshipNotifyApplicationDecision, "low", "Notify applicant on mentor-application approve/decline"},
 	// §91 Embassy Appointment Alerter (ADR-099)
 	{TypeEmbassyPoll, "default", "Poll a monitored embassy booking page for open appointment slots"},
 	{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
