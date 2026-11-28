@@ -1,24 +1,41 @@
 <script lang="ts">
   import type { ComingSoonProps } from '../types';
+  import type { FetchContext } from '../data/types';
   import LazyIcon from '../lib/LazyIcon.svelte';
 
   interface Props {
     props: ComingSoonProps;
+    fetchCtx?: FetchContext;
   }
-  let { props }: Props = $props();
+  let { props, fetchCtx }: Props = $props();
 
   let email = $state('');
   let submitted = $state(false);
   let error = $state(false);
 
+  // Relative stored endpoints resolve against the page origin — on
+  // split-origin deploys the frontend host does not proxy /api, so a
+  // content-stored "/api/v1/..." (or bare "/newsletter/...") 404s there.
+  // Rebase relative endpoints onto the injected API base when present.
+  const endpoint = $derived.by(() => {
+    const ep = props.waitlist_form?.endpoint;
+    if (!ep) return '';
+    if (ep.startsWith('/') && fetchCtx?.apiBase) return `${fetchCtx.apiBase}${ep}`;
+    return ep;
+  });
+
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (!props.waitlist_form?.enabled || !props.waitlist_form.endpoint) return;
+    if (!props.waitlist_form?.enabled || !endpoint) return;
     try {
-      const res = await fetch(props.waitlist_form.endpoint, {
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      if (fetchCtx?.csrfToken) headers['x-csrf-token'] = fetchCtx.csrfToken;
+      if (fetchCtx?.surface) headers['x-jc-surface'] = fetchCtx.surface;
+      const res = await (fetchCtx?.fetch ?? fetch)(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify({ email: email }),
+        credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed');
       submitted = true;

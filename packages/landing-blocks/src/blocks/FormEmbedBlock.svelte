@@ -53,11 +53,19 @@
   const apiBase = $derived(
     fetchCtx?.apiBase ?? props.submit_endpoint.replace(SUBMISSIONS_ENDPOINT, '')
   );
+  const doFetch = $derived(fetchCtx?.fetch ?? fetch);
+  // X-JC-Surface lets the backend resolve feature flags/geo rules for the
+  // right surface (same convention as GuestHomeLegacyBlock/WidgetBlock).
+  const reqHeaders = $derived.by((): Record<string, string> => {
+    const h: Record<string, string> = {};
+    if (fetchCtx?.surface) h['x-jc-surface'] = fetchCtx.surface;
+    return h;
+  });
 
   $effect(() => {
     if (!props.form_slug || !apiBase) return;
     let cancelled = false;
-    fetch(buildApiUrl(`/forms/${props.form_slug}/embed`, apiBase))
+    doFetch(buildApiUrl(`/forms/${props.form_slug}/embed`, apiBase), { headers: reqHeaders })
       .then((r) => r.json())
       .then((p) => {
         const fields = p?.data?.fields;
@@ -80,7 +88,7 @@
   $effect(() => {
     if (!apiBase || !liveFields?.some((f) => f.options_source === 'geo_countries')) return;
     let cancelled = false;
-    fetch(buildApiUrl('/geo/countries', apiBase))
+    doFetch(buildApiUrl('/geo/countries', apiBase), { headers: reqHeaders })
       .then((r) => r.json())
       .then((p) => {
         if (!cancelled && Array.isArray(p?.data)) {
@@ -138,10 +146,16 @@
     submitting = true;
     error = false;
     try {
-      const res = await fetch(endpoint, {
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+        ...reqHeaders,
+      };
+      if (fetchCtx?.csrfToken) headers['x-csrf-token'] = fetchCtx.csrfToken;
+      const res = await doFetch(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
+        credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed');
       success = true;
