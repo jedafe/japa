@@ -144,7 +144,9 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	['/services', 'service_directory.enabled'],
 	// Mentorship — /mentors 308-redirects into /services?kind=mentorship;
 	// keep the nav item hidden unless mentorship itself is enabled.
+	// /become-mentor is the §102 member-application wizard (2026-11-28).
 	['/mentors', 'mentorship.enabled'],
+	['/become-mentor', 'mentorship.enabled'],
 	// Blog series detail pages share the blog gate.
 	['/series', 'feature.blog'],
 	// Academy — '/learn' is the legacy alias still present in older seeded

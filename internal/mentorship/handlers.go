@@ -870,3 +870,161 @@ func mentorShadowContentError(err error) (string, bool) {
 
 	return "", false
 }
+
+// ---------------------------------------------------------------------------
+// §102 2026-11-28 amendment — member mentor applications
+// ---------------------------------------------------------------------------
+
+// GetMyMentorApplication returns the caller's eligibility probe +
+// application row. GET /api/v1/me/mentor-application.
+func (h *Handlers) GetMyMentorApplication(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	status, err := h.Service.GetMyApplication(r.Context(), userID)
+	if err != nil {
+		slog.Error("getting mentor application", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor application")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": status})
+}
+
+// ApplyForMentorship submits (or resubmits after a decline) a mentor
+// application. POST /api/v1/me/mentor-application.
+func (h *Handlers) ApplyForMentorship(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Motivation  string   `json:"motivation"`
+		MentorAreas []string `json:"mentor_areas,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	app, err := h.Service.ApplyForMentor(r.Context(), userID, input.Motivation, input.MentorAreas)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrAlreadyEligible):
+			errpkg.WriteError(w, http.StatusConflict, "already_eligible", "You can already opt in as a mentor — use mentor settings instead")
+		case errors.Is(err, ErrApplicationPending):
+			errpkg.WriteError(w, http.StatusConflict, "application_pending", "Your application is already awaiting review")
+		case errors.Is(err, ErrInvalidMotivation):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_motivation", "Motivation is required and must be under 2000 characters")
+		case errors.Is(err, ErrInvalidAreas):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_areas", "Mentor areas must be 10 or fewer short labels")
+		default:
+			slog.Error("submitting mentor application", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to submit application")
+		}
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": app})
+}
+
+// ListMentorApplications is the admin review queue.
+// GET /api/v1/admin/mentorship/applications?status=&q=&page=&page_size=.
+func (h *Handlers) ListMentorApplications(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parsePage(r)
+	status := r.URL.Query().Get("status")
+	q := r.URL.Query().Get("q")
+
+	apps, total, err := h.Service.ListApplications(r.Context(), status, q, limit, offset)
+	if err != nil {
+		if errors.Is(err, ErrApplicationNotActionable) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid application status filter")
+			return
+		}
+		slog.Error("listing mentor applications", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list applications")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": apps,
+		"meta": map[string]any{"page": offset/limit + 1, "page_size": limit, "total": total},
+	})
+}
+
+// ApproveMentorApplication approves a pending application and grants the
+// mentors group. POST /api/v1/admin/mentorship/applications/{id}/approve.
+func (h *Handlers) ApproveMentorApplication(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var appID pgtype.UUID
+	if err := appID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid application ID")
+		return
+	}
+
+	app, err := h.Service.ApproveApplication(r.Context(), appID, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrApplicationNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "application_not_found", "Application not found")
+		case errors.Is(err, ErrApplicationNotActionable):
+			errpkg.WriteError(w, http.StatusConflict, "application_not_pending", "Only pending applications can be approved")
+		default:
+			slog.Error("approving mentor application", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to approve application")
+		}
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": app})
+}
+
+// DeclineMentorApplication declines a pending application or revokes an
+// approved one (removes the mentors grant). POST
+// /api/v1/admin/mentorship/applications/{id}/decline.
+func (h *Handlers) DeclineMentorApplication(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.requireAuthUser(w, r)
+	if !ok {
+		return
+	}
+
+	var appID pgtype.UUID
+	if err := appID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid application ID")
+		return
+	}
+
+	var input struct {
+		Reason string `json:"reason,omitempty"`
+	}
+	// Empty body is legal — the reason is optional.
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+			return
+		}
+	}
+
+	app, err := h.Service.DeclineApplication(r.Context(), appID, userID, input.Reason)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrApplicationNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "application_not_found", "Application not found")
+		case errors.Is(err, ErrApplicationNotActionable):
+			errpkg.WriteError(w, http.StatusConflict, "application_not_actionable", "Only pending or approved applications can be declined")
+		default:
+			slog.Error("declining mentor application", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline application")
+		}
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": app})
+}

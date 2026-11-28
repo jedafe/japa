@@ -688,6 +688,15 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		); err != nil {
 			slog.Warn("failed to anonymize user journeys during deletion", "user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub PII from mentor_applications (§102 2026-11-28) — motivation,
+		// proposed areas, decline reason. Status + linkage survive for the
+		// audit trail; rows cascade with the user at hard-delete.
+		// Best-effort like the sibling scrubs.
+		if err := s.store.write.AnonymizeMentorApplications(ctx,
+			request.UserID,
+		); err != nil {
+			slog.Warn("failed to anonymize mentor applications during deletion", "user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII (ip_hash, user_agent_hash) from affiliate_link_events
 		// owned by the user's affiliate links (Section 56, ADR-014). The
 		// events are retained for commission audit; only tracking hashes are

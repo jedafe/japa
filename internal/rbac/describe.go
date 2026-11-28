@@ -163,6 +163,7 @@ var nodePhrases = map[string]string{
 	"campaign.retry":                            "retry campaigns",
 	"general.site_name":                         "change the site name",
 	"mentorship.become_mentor":                  "become a mentor",
+	"mentorship.apply":                          "apply to become a mentor",
 	"tips.buymeacoffee":                         "link a Buy Me a Coffee account",
 	"tips.kofi":                                 "link a Ko-fi account",
 	"tips.opencollective":                       "link an Open Collective account",

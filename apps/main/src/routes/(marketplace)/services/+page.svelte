@@ -17,7 +17,8 @@
 		ShieldCheck,
 		Lock,
 		Headset,
-		Filter
+		Filter,
+		GraduationCap
 	} from 'lucide-svelte';
 	import {
 		EmptyState,
@@ -412,6 +413,73 @@
 			/>
 		</div>
 	</div>
+
+	<!-- §102 2026-11-28 become-a-mentor banner — mentorship kind only.
+	     Branch on the /me/mentor-application probe: active mentors get a
+	     settings link, pending applicants a status note, everyone else the
+	     eligible/apply CTA; anonymous viewers get the sign-in path. -->
+	{#if activeKind === 'mentorship' && (!data.authed || data.mentorStatus !== null)}
+		{@const ms = data.mentorStatus}
+		<div
+			class="mb-4 flex flex-col items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+		>
+			<div class="flex items-start gap-3">
+				<span
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
+				>
+					<GraduationCap size={18} />
+				</span>
+				<div>
+					<p class="text-sm font-semibold text-[var(--color-text)]">
+						{#if ms?.is_mentor}
+							{t('services.mentor_banner_active_title', 'You are listed as a mentor')}
+						{:else if ms?.application?.status === 'pending'}
+							{t('services.mentor_banner_pending_title', 'Your mentor application is under review')}
+						{:else if ms?.eligible}
+							{t('services.mentor_banner_eligible_title', 'Share your journey — become a mentor')}
+						{:else}
+							{t('services.mentor_banner_apply_title', 'Know this journey? Mentor someone through it')}
+						{/if}
+					</p>
+					<p class="mt-0.5 text-xs text-[var(--color-text-subtle)] sm:text-sm">
+						{#if ms?.is_mentor}
+							{t('services.mentor_banner_active_body', 'Update your availability, areas, and public mentor card.')}
+						{:else if ms?.application?.status === 'pending'}
+							{t('services.mentor_banner_pending_body', 'An administrator is reviewing your application — we will notify you on a decision.')}
+						{:else if ms?.eligible}
+							{t('services.mentor_banner_eligible_body', 'Your role lets you opt in right away — set up your mentor profile in a minute.')}
+						{:else}
+							{t('services.mentor_banner_apply_body', 'Apply for mentor status and guide diaspora members behind you.')}
+						{/if}
+					</p>
+				</div>
+			</div>
+			{#if ms?.is_mentor}
+				<a
+					href="/settings/mentorship"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('services.mentor_banner_settings', 'Mentor settings')}
+				</a>
+			{:else if ms?.application?.status === 'pending'}
+				<a
+					href="/become-mentor"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('services.mentor_banner_review_cta', 'View application')}
+				</a>
+			{:else}
+				<a
+					href="/become-mentor"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					{ms?.eligible
+						? t('services.mentor_banner_enable_cta', 'Become a mentor')
+						: t('services.mentor_banner_apply_cta', 'Apply to mentor')}
+				</a>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Filters modal — all controls write the same URL params the
 	     directory page used. -->

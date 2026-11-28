@@ -5043,6 +5043,32 @@ export interface MentorShadowContent {
 	tiers?: PackageTier[];
 }
 
+/** §102 2026-11-28 — one mentor_applications row. */
+export interface MentorApplication {
+	id: string;
+	user_id: string;
+	status: 'pending' | 'approved' | 'declined' | string;
+	motivation: string;
+	mentor_areas: string[];
+	reviewer_user_id?: string;
+	reviewed_at?: string | null;
+	decline_reason?: string;
+	created_at: string;
+	updated_at: string;
+	username?: string;
+	display_name?: string;
+}
+
+/** GET /me/mentor-application — eligibility probe + application row; the
+ *  single call every become-mentor surface branches on. */
+export interface MyMentorApplicationStatus {
+	/** Caller already holds mentorship.become_mentor — opt in directly. */
+	eligible: boolean;
+	/** Caller already has is_mentor on. */
+	is_mentor: boolean;
+	application: MentorApplication | null;
+}
+
 /** Mentorship connection (outgoing/incoming/admin list item). */
 export interface MentorshipConnection {
 	id: string;

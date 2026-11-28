@@ -229,6 +229,25 @@ func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, u
 	return result.RowsAffected(), nil
 }
 
+const anonymizeMentorApplications = `-- name: AnonymizeMentorApplications :exec
+UPDATE mentor_applications
+SET motivation = '',
+    mentor_areas = '{}',
+    decline_reason = NULL,
+    updated_at = now()
+WHERE user_id = $1
+`
+
+// §102 2026-11-28: scrub the member-supplied application PII — motivation
+// text, proposed areas, and the decline reason — during the retention
+// window. status + linkage survive for the audit trail; the row itself
+// hard-deletes with the user (ON DELETE CASCADE) like user_journeys.
+// Best-effort: a failure logs a warning but does not abort the erasure.
+func (q *Queries) AnonymizeMentorApplications(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeMentorApplications, userID)
+	return err
+}
+
 const anonymizeMentorshipShadowListings = `-- name: AnonymizeMentorshipShadowListings :exec
 UPDATE contents c
 SET deleted_at = COALESCE(c.deleted_at, now()),

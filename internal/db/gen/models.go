@@ -2961,6 +2961,19 @@ type Medium struct {
 	MissingAt     pgtype.Timestamptz `json:"missing_at"`
 }
 
+type MentorApplication struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Status         string             `json:"status"`
+	Motivation     string             `json:"motivation"`
+	MentorAreas    []string           `json:"mentor_areas"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	ReviewedAt     pgtype.Timestamptz `json:"reviewed_at"`
+	DeclineReason  *string            `json:"decline_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MentorReview struct {
 	ID         pgtype.UUID        `json:"id"`
 	SessionID  pgtype.UUID        `json:"session_id"`

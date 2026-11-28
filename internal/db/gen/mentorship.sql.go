@@ -12,6 +12,141 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const approveMentorApplication = `-- name: ApproveMentorApplication :one
+UPDATE mentor_applications
+SET status = 'approved',
+    reviewer_user_id = $1,
+    reviewed_at = now(),
+    decline_reason = NULL,
+    updated_at = now()
+WHERE id = $2
+  AND status = 'pending'
+RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
+`
+
+type ApproveMentorApplicationParams struct {
+	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// pending → approved; records the reviewer + timestamp. The callers adds
+// the applicant to the mentors group in the same service call.
+func (q *Queries) ApproveMentorApplication(ctx context.Context, arg ApproveMentorApplicationParams) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, approveMentorApplication, arg.ReviewerUserID, arg.ID)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const countMentorApplications = `-- name: CountMentorApplications :one
+SELECT COUNT(*)
+FROM mentor_applications a
+JOIN users u ON u.id = a.user_id
+LEFT JOIN user_profiles up ON up.user_id = a.user_id
+WHERE ($1::text = '' OR a.status = $1)
+  AND ($2::text = ''
+       OR u.username ILIKE '%' || $2 || '%'
+       OR u.public_username ILIKE '%' || $2 || '%'
+       OR up.display_name ILIKE '%' || $2 || '%')
+`
+
+type CountMentorApplicationsParams struct {
+	Status string `json:"status"`
+	Q      string `json:"q"`
+}
+
+func (q *Queries) CountMentorApplications(ctx context.Context, arg CountMentorApplicationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMentorApplications, arg.Status, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createMentorApplication = `-- name: CreateMentorApplication :one
+
+INSERT INTO mentor_applications (user_id, motivation, mentor_areas)
+VALUES ($1, $2, $3)
+RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
+`
+
+type CreateMentorApplicationParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	Motivation  string      `json:"motivation"`
+	MentorAreas []string    `json:"mentor_areas"`
+}
+
+// =====================================================================
+// §102 2026-11-28 amendment — member mentor applications
+// =====================================================================
+// First submission — one live application row per member (UNIQUE user_id).
+// Resubmission after a decline goes through ResubmitMentorApplication.
+func (q *Queries) CreateMentorApplication(ctx context.Context, arg CreateMentorApplicationParams) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, createMentorApplication, arg.UserID, arg.Motivation, arg.MentorAreas)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const declineMentorApplication = `-- name: DeclineMentorApplication :one
+UPDATE mentor_applications
+SET status = 'declined',
+    reviewer_user_id = $1,
+    reviewed_at = now(),
+    decline_reason = $2,
+    updated_at = now()
+WHERE id = $3
+  AND status IN ('pending','approved')
+RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
+`
+
+type DeclineMentorApplicationParams struct {
+	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
+	DeclineReason  *string     `json:"decline_reason"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// pending → declined (reject) or approved → declined (revoke — the
+// caller removes the mentors membership, firing the mentor-retire sweep).
+func (q *Queries) DeclineMentorApplication(ctx context.Context, arg DeclineMentorApplicationParams) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, declineMentorApplication, arg.ReviewerUserID, arg.DeclineReason, arg.ID)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLatestMenteeGoals = `-- name: GetLatestMenteeGoals :one
 SELECT COALESCE(sb.meta->>'goals', sb.note, '') AS goals
 FROM service_bookings sb
@@ -52,6 +187,52 @@ func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, userID pgtype
 	row := q.db.QueryRow(ctx, getMenteeDestinationSpaceID, userID)
 	var i GetMenteeDestinationSpaceIDRow
 	err := row.Scan(&i.UserID, &i.DestinationSpaceID)
+	return i, err
+}
+
+const getMentorApplicationByID = `-- name: GetMentorApplicationByID :one
+SELECT id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at FROM mentor_applications
+WHERE id = $1
+`
+
+func (q *Queries) GetMentorApplicationByID(ctx context.Context, id pgtype.UUID) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, getMentorApplicationByID, id)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getMentorApplicationByUser = `-- name: GetMentorApplicationByUser :one
+SELECT id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at FROM mentor_applications
+WHERE user_id = $1
+`
+
+func (q *Queries) GetMentorApplicationByUser(ctx context.Context, userID pgtype.UUID) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, getMentorApplicationByUser, userID)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
@@ -472,6 +653,84 @@ func (q *Queries) GetUserEmbedding(ctx context.Context, userID pgtype.UUID) (Get
 	return i, err
 }
 
+const listMentorApplications = `-- name: ListMentorApplications :many
+SELECT a.id, a.user_id, a.status, a.motivation, a.mentor_areas, a.reviewer_user_id, a.reviewed_at, a.decline_reason, a.created_at, a.updated_at, COALESCE(u.public_username, u.username, '') AS username,
+ COALESCE(up.display_name, '') AS display_name
+FROM mentor_applications a
+JOIN users u ON u.id = a.user_id
+LEFT JOIN user_profiles up ON up.user_id = a.user_id
+WHERE ($1::text = '' OR a.status = $1)
+  AND ($2::text = ''
+       OR u.username ILIKE '%' || $2 || '%'
+       OR u.public_username ILIKE '%' || $2 || '%'
+       OR up.display_name ILIKE '%' || $2 || '%')
+ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListMentorApplicationsParams struct {
+	Status     string `json:"status"`
+	Q          string `json:"q"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+type ListMentorApplicationsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Status         string             `json:"status"`
+	Motivation     string             `json:"motivation"`
+	MentorAreas    []string           `json:"mentor_areas"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	ReviewedAt     pgtype.Timestamptz `json:"reviewed_at"`
+	DeclineReason  *string            `json:"decline_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Username       string             `json:"username"`
+	DisplayName    string             `json:"display_name"`
+}
+
+// Admin review queue (§102 2026-11-28). Pending-first ordering keeps the
+// actionable rows on top; ?status= narrows to one bucket, ?q= searches
+// username/public username/display name.
+func (q *Queries) ListMentorApplications(ctx context.Context, arg ListMentorApplicationsParams) ([]ListMentorApplicationsRow, error) {
+	rows, err := q.db.Query(ctx, listMentorApplications,
+		arg.Status,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMentorApplicationsRow
+	for rows.Next() {
+		var i ListMentorApplicationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Status,
+			&i.Motivation,
+			&i.MentorAreas,
+			&i.ReviewerUserID,
+			&i.ReviewedAt,
+			&i.DeclineReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Username,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMentors = `-- name: ListMentors :many
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
@@ -851,6 +1110,47 @@ func (q *Queries) ListMentorsWithEmbeddings(ctx context.Context) ([]ListMentorsW
 		return nil, err
 	}
 	return items, nil
+}
+
+const resubmitMentorApplication = `-- name: ResubmitMentorApplication :one
+UPDATE mentor_applications
+SET motivation = $1,
+    mentor_areas = $2,
+    status = 'pending',
+    reviewer_user_id = NULL,
+    reviewed_at = NULL,
+    decline_reason = NULL,
+    updated_at = now()
+WHERE user_id = $3
+  AND status IN ('declined','approved')
+RETURNING id, user_id, status, motivation, mentor_areas, reviewer_user_id, reviewed_at, decline_reason, created_at, updated_at
+`
+
+type ResubmitMentorApplicationParams struct {
+	Motivation  string      `json:"motivation"`
+	MentorAreas []string    `json:"mentor_areas"`
+	UserID      pgtype.UUID `json:"user_id"`
+}
+
+// Re-apply after a decline (or an approved-but-orphaned row whose group
+// grant was removed out-of-band): back to pending, reviewer fields and
+// decline_reason cleared, fresh motivation/areas.
+func (q *Queries) ResubmitMentorApplication(ctx context.Context, arg ResubmitMentorApplicationParams) (MentorApplication, error) {
+	row := q.db.QueryRow(ctx, resubmitMentorApplication, arg.Motivation, arg.MentorAreas, arg.UserID)
+	var i MentorApplication
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Motivation,
+		&i.MentorAreas,
+		&i.ReviewerUserID,
+		&i.ReviewedAt,
+		&i.DeclineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const searchMentors = `-- name: SearchMentors :many

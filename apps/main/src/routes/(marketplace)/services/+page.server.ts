@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '#lib/server/api.js';
-import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '#lib/types/index.js';
+import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space, MyMentorApplicationStatus } from '#lib/types/index.js';
 
 /**
  * Service Directory list at /services — geo-indexed directory of
@@ -161,17 +161,26 @@ export const load: PageServerLoad = async (event) => {
 	// published rows (§111 review gate).
 	const submitted = event.url.searchParams.get('submitted') === '1';
 
-	const [countriesRes, categoriesRes] = await Promise.allSettled([
+	const [countriesRes, categoriesRes, mentorStatusRes] = await Promise.allSettled([
 		apiList<GeoCountry>(ctx, '/geo/countries'),
 		// §114: the endpoint returns the full taxonomy Option row
 		// (icon/accent_color/description/applies_to) — keep the whole object
 		// so the marketplace UI can render accent chips + icons.
-		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
+		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories'),
+		// §102 2026-11-28: the become-a-mentor banner on kind=mentorship —
+		// the eligibility probe decides between the quick-enable CTA, the
+		// apply CTA, a pending-review note, or nothing (active mentors see
+		// a settings link). Unauthed + unauthorized viewers get null.
+		kindIsMentorship && authed
+			? apiGet<MyMentorApplicationStatus>(ctx, '/me/mentor-application')
+			: Promise.resolve(null)
 	]);
 
 	const countries = countriesRes.status === 'fulfilled' ? countriesRes.value.items : [];
 	const serviceCategories: ServiceCategoryInfo[] =
 		categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : [];
+	const mentorStatus: MyMentorApplicationStatus | null =
+		mentorStatusRes.status === 'fulfilled' ? mentorStatusRes.value : null;
 
 	try {
 		const { items, meta } = await apiList<ServiceListing>(ctx, `/services?${params.toString()}`);
@@ -180,6 +189,7 @@ export const load: PageServerLoad = async (event) => {
 			meta,
 			authed,
 			mentorshipEnabled,
+			mentorStatus,
 			filters,
 			countries,
 			serviceCategories,
@@ -192,6 +202,7 @@ export const load: PageServerLoad = async (event) => {
 			meta: undefined,
 			authed,
 			mentorshipEnabled,
+			mentorStatus,
 			filters,
 			countries,
 			serviceCategories,

@@ -1717,6 +1717,19 @@ export const mentorshipAdminApiExtended = {
 		),
 	updateConnection: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/connections/${id}`, { method: 'PATCH', body }),
+	// §102 2026-11-28 member mentor applications — admin review queue.
+	// apiRaw: the list endpoint returns meta.total for server-side paging.
+	listApplications: (params?: string) =>
+		apiRaw<{ data: unknown[]; meta: { page: number; page_size: number; total: number } }>(
+			`/admin/mentorship/applications${params ? `?${params}` : ''}`
+		),
+	approveApplication: (id: string) =>
+		api<unknown>(`/admin/mentorship/applications/${id}/approve`, { method: 'POST', body: {} }),
+	declineApplication: (id: string, reason?: string) =>
+		api<unknown>(`/admin/mentorship/applications/${id}/decline`, {
+			method: 'POST',
+			body: { reason: reason ?? null }
+		}),
 };
 
 export const pageBuilderAdminApiExtended = {

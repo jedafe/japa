@@ -1727,3 +1727,16 @@ WHERE created_by_user_id = @user_id;
 -- Delegated-authorship spec: same operator-linkage erasure for forum replies.
 UPDATE forum_replies SET created_by_user_id = NULL
 WHERE created_by_user_id = @user_id;
+
+-- name: AnonymizeMentorApplications :exec
+-- §102 2026-11-28: scrub the member-supplied application PII — motivation
+-- text, proposed areas, and the decline reason — during the retention
+-- window. status + linkage survive for the audit trail; the row itself
+-- hard-deletes with the user (ON DELETE CASCADE) like user_journeys.
+-- Best-effort: a failure logs a warning but does not abort the erasure.
+UPDATE mentor_applications
+SET motivation = '',
+    mentor_areas = '{}',
+    decline_reason = NULL,
+    updated_at = now()
+WHERE user_id = @user_id;

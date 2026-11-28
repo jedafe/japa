@@ -463,3 +463,92 @@ WHERE up.is_mentor = true
        AND c.status = 'published'
        AND c.deleted_at IS NULL
  );
+
+-- =====================================================================
+-- §102 2026-11-28 amendment — member mentor applications
+-- =====================================================================
+
+-- name: CreateMentorApplication :one
+-- First submission — one live application row per member (UNIQUE user_id).
+-- Resubmission after a decline goes through ResubmitMentorApplication.
+INSERT INTO mentor_applications (user_id, motivation, mentor_areas)
+VALUES (@user_id, @motivation, @mentor_areas)
+RETURNING *;
+
+-- name: ResubmitMentorApplication :one
+-- Re-apply after a decline (or an approved-but-orphaned row whose group
+-- grant was removed out-of-band): back to pending, reviewer fields and
+-- decline_reason cleared, fresh motivation/areas.
+UPDATE mentor_applications
+SET motivation = @motivation,
+    mentor_areas = @mentor_areas,
+    status = 'pending',
+    reviewer_user_id = NULL,
+    reviewed_at = NULL,
+    decline_reason = NULL,
+    updated_at = now()
+WHERE user_id = @user_id
+  AND status IN ('declined','approved')
+RETURNING *;
+
+-- name: GetMentorApplicationByUser :one
+SELECT * FROM mentor_applications
+WHERE user_id = @user_id;
+
+-- name: GetMentorApplicationByID :one
+SELECT * FROM mentor_applications
+WHERE id = @id;
+
+-- name: ListMentorApplications :many
+-- Admin review queue (§102 2026-11-28). Pending-first ordering keeps the
+-- actionable rows on top; ?status= narrows to one bucket, ?q= searches
+-- username/public username/display name.
+SELECT a.*, COALESCE(u.public_username, u.username, '') AS username,
+ COALESCE(up.display_name, '') AS display_name
+FROM mentor_applications a
+JOIN users u ON u.id = a.user_id
+LEFT JOIN user_profiles up ON up.user_id = a.user_id
+WHERE (@status::text = '' OR a.status = @status)
+  AND (@q::text = ''
+       OR u.username ILIKE '%' || @q || '%'
+       OR u.public_username ILIKE '%' || @q || '%'
+       OR up.display_name ILIKE '%' || @q || '%')
+ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountMentorApplications :one
+SELECT COUNT(*)
+FROM mentor_applications a
+JOIN users u ON u.id = a.user_id
+LEFT JOIN user_profiles up ON up.user_id = a.user_id
+WHERE (@status::text = '' OR a.status = @status)
+  AND (@q::text = ''
+       OR u.username ILIKE '%' || @q || '%'
+       OR u.public_username ILIKE '%' || @q || '%'
+       OR up.display_name ILIKE '%' || @q || '%');
+
+-- name: ApproveMentorApplication :one
+-- pending → approved; records the reviewer + timestamp. The callers adds
+-- the applicant to the mentors group in the same service call.
+UPDATE mentor_applications
+SET status = 'approved',
+    reviewer_user_id = @reviewer_user_id,
+    reviewed_at = now(),
+    decline_reason = NULL,
+    updated_at = now()
+WHERE id = @id
+  AND status = 'pending'
+RETURNING *;
+
+-- name: DeclineMentorApplication :one
+-- pending → declined (reject) or approved → declined (revoke — the
+-- caller removes the mentors membership, firing the mentor-retire sweep).
+UPDATE mentor_applications
+SET status = 'declined',
+    reviewer_user_id = @reviewer_user_id,
+    reviewed_at = now(),
+    decline_reason = @decline_reason,
+    updated_at = now()
+WHERE id = @id
+  AND status IN ('pending','approved')
+RETURNING *;

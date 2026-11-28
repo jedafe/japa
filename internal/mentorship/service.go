@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -40,6 +41,12 @@ type Service struct {
 	// discovery paths working while connection calls fail fast.
 	bookings BookingBackend
 	activity ActivityEmitter // nil = gamification activity emissions skipped
+	// §102 2026-11-28 — member mentor applications.
+	permChecker  PermChecker        // nil = eligibility probes fail closed
+	groups       GroupMembership    // nil = approve/decline skip the group grant
+	appNotifier  ApplicationNotifier // nil = decision dispatch logs only
+	groupMu      sync.Mutex         // guards mentorsGroup memoization
+	mentorsGroup pgtype.UUID        // cached `mentors` system group id
 }
 
 // ActivityEmitter records wallet activity events for gamification v2 —

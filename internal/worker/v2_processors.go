@@ -170,6 +170,9 @@ type AgentDraftPayload struct {
 type MentorProcessor interface {
 	GenerateEmbedding(ctx context.Context, userID pgtype.UUID) error
 	UpdateMeilisearch(ctx context.Context, userID pgtype.UUID) error
+	// NotifyApplicationDecisionDispatch sends the in-app notification for
+	// a decided mentor application (§102 2026-11-28 member applications).
+	NotifyApplicationDecisionDispatch(ctx context.Context, applicationID pgtype.UUID) error
 }
 
 // EmbassyAlerterProcessor handles Embassy Appointment Alerter background
@@ -434,6 +437,9 @@ const (
 	// TypeMentorGenerateEmbedding — §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
 	TypeMentorUpdateMeilisearch = "mentor:update_meilisearch"
+	// TypeMentorshipNotifyApplicationDecision — §102 2026-11-28 member
+	// mentor applications: in-app notification on admin approve/decline.
+	TypeMentorshipNotifyApplicationDecision = "mentorship:notify_application_decision"
 
 	// TypeEmbassyPoll — §91 Embassy Appointment Alerter (ADR-099).
 	// The asynq-tasks catalog lists `embassy:poll_{slug}` as the logical
@@ -954,6 +960,15 @@ func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
 			return mentorProcessor.UpdateMeilisearch(ctx, ids[0])
+		})
+}
+
+// HandleMentorshipNotifyApplicationDecision sends the applicant an in-app
+// notification after an admin approve/decline (§102 2026-11-28).
+func HandleMentorshipNotifyApplicationDecision(ctx context.Context, t *asynq.Task) error {
+	return procTask(ctx, t, "mentorship:notify_application_decision", mentorProcessor != nil, []string{"application_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return mentorProcessor.NotifyApplicationDecisionDispatch(ctx, ids[0])
 		})
 }
 

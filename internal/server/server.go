@@ -2480,6 +2480,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService.SetBookingBackend(serviceDirService)
 	// Gamification v2 — role-aware mentorship activity emissions.
 	mentorshipService.SetActivityEmitter(walletService)
+	// §102 2026-11-28 — member mentor applications: eligibility probe,
+	// mentors-group grant seam (rbac.Store handles perm-cache invalidation
+	// + the mentor-retire sweep on revoke), and decision notifications.
+	mentorshipService.SetPermChecker(rbacResolver)
+	mentorshipService.SetGroupMembership(rbacStore)
+	mentorshipService.SetApplicationNotifier(notificationService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses
 
@@ -7794,6 +7800,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/mentorship/connections", mentorshipHandlers.ListAllConnections)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
 					Patch("/admin/mentorship/connections/{id}", mentorshipHandlers.AdminUpdateConnection)
+
+				// §102 2026-11-28 — member mentor applications. The /me
+				// routes accept either node: members carry mentorship.apply,
+				// elevated roles carry mentorship.become_mentor — the GET is
+				// the eligibility probe every become-mentor surface calls.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "mentorship.apply", "mentorship.become_mentor")).
+					Get("/me/mentor-application", mentorshipHandlers.GetMyMentorApplication)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "mentorship.apply", "mentorship.become_mentor"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Post("/me/mentor-application", mentorshipHandlers.ApplyForMentorship)
+
+				// Admin: mentor-application review queue (approve grants the
+				// mentors group; decline on an approved row revokes it).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
+					Get("/admin/mentorship/applications", mentorshipHandlers.ListMentorApplications)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
+					Post("/admin/mentorship/applications/{id}/approve", mentorshipHandlers.ApproveMentorApplication)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.manage")).
+					Post("/admin/mentorship/applications/{id}/decline", mentorshipHandlers.DeclineMentorApplication)
 			})
 
 			// Documentation System routes (Section 44)

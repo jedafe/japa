@@ -25,7 +25,7 @@
 		FileCheck, Globe2, Calculator, MapPin,
 		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer,
 		ScanSearch, Video, Inbox, Rss, Tags,
-		TrendingUp, Map as MapIcon
+		TrendingUp, Map as MapIcon, UserCheck
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "#lib/stores/sidebar.svelte.js";
@@ -173,6 +173,7 @@
 			{ path: "/academy/payouts", label: t("nav.academy_payouts", "Academy Payouts"), icon: DollarSign, permission: "academy.payout.process" },
 		{ path: "/academy/revenue-splits", label: t("nav.academy_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "academy.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
+		{ path: "/mentorship/applications", label: t("nav.mentorship_applications", "Mentor Applications"), icon: UserCheck, permission: "mentorship.manage" },
 		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
 		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: ["gamification.manage_badges", "gamification.manage_challenges", "gamification.award_badge"] },
 		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.manage" }
