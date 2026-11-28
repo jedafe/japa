@@ -73,6 +73,12 @@ func TestPriceSettingsKey(t *testing.T) {
 	if got := priceSettingsKey(ProviderPaystack, "business_yearly"); got != "payments.paystack.plan.business_yearly" {
 		t.Errorf("unexpected paystack key %q", got)
 	}
+
+	// _annual is an accepted plan alias for the yearly cycle but has no
+	// catalog key of its own — it must resolve to the _yearly key.
+	if got := priceSettingsKey(ProviderStripe, "pro_annual"); got != "payments.stripe.price.pro_yearly" {
+		t.Errorf("pro_annual must canonicalize to the pro_yearly key, got %q", got)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -178,9 +178,25 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// §17: subscription expiry sweep — expires rows whose entitlement window
 	// ended (cancel_at_period_end reached, or past_due past grace) and
-	// downgrades the granted tier. Webhook-miss safety net; default 30 min,
-	// overridable via JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP.
-	schedule("*/30 * * * *", TypeSubscriptionExpirySweep, 30*time.Minute)
+	// downgrades the granted tier. Webhook-miss safety net; the cadence comes
+	// from system_settings 'subscription.expiry_sweep_interval_minutes'
+	// (default 30), overridable via JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP.
+	// The */N minute-field form only covers 1–59; values ≥60 are emitted as
+	// "0 */H" (rounded down to whole hours, capped at daily).
+	sweepSpec := "*/30 * * * *"
+	if appSettings != nil {
+		if mins := appSettings.GetIntOr(context.Background(), "subscription.expiry_sweep_interval_minutes", 30); mins > 0 {
+			switch {
+			case mins < 60:
+				sweepSpec = fmt.Sprintf("*/%d * * * *", mins)
+			case mins < 1440:
+				sweepSpec = fmt.Sprintf("0 */%d * * *", mins/60)
+			default:
+				sweepSpec = "0 0 * * *"
+			}
+		}
+	}
+	schedule(sweepSpec, TypeSubscriptionExpirySweep, 30*time.Minute)
 
 	// §62 self-hosted MTA transport: poll the IMAP bounce mailbox every
 	// 15 min — DSN/ARF notices mark subscribers bounced/complained so

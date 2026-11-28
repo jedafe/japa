@@ -41,6 +41,10 @@
 		monthly: PlanPricing;
 		yearly: PlanPricing;
 		highlighted: boolean;
+		// §17: POST /subscriptions accepts only plan codes derived from
+		// subscribable slugs — display-only plans (custom admin plans, the
+		// free tier) carry subscribable=false and must not be selectable.
+		subscribable?: boolean;
 	}
 
 	interface Currency {
@@ -108,9 +112,13 @@
 			: '—'
 	);
 
-	// Only paid plans are subscribable (Free is the default tier).
-	const subscribablePlans = $derived(plans.filter((p) => p.monthly.amount > 0));
-	const enabledProviders = $derived(providers.filter((p) => p.enabled));
+	// §17: the backend marks which slugs map to a real subscription plan code
+	// (pro_*/business_*); a paid display plan without the flag would always
+	// fail checkout with `invalid`.
+	const subscribablePlans = $derived(plans.filter((p) => p.subscribable === true));
+	// Recurring checkout runs on stripe/paystack only — one-time providers
+	// (credit, crypto) are enabled for other purposes but must not appear here.
+	const enabledProviders = $derived(providers.filter((p) => p.enabled && p.recurring === true));
 
 	// §17 hosted checkout: the provider returns the user here with
 	// ?subscribed=1 — activation lands via webhook a beat later, so a
@@ -143,7 +151,11 @@
 		loading = true;
 		// Map plan slug + billing cycle to the backend plan constant
 		// (pro_monthly, pro_yearly, business_monthly, business_yearly).
-		const planCode = `${selectedPlan}_${billingCycle}`;
+		// Fall back to monthly when the plan has no yearly price — the
+		// displayed price and the billed cycle must agree.
+		const sel = subscribablePlans.find((p) => p.id === selectedPlan);
+		const cycle = billingCycle === 'yearly' && sel && sel.yearly.amount > 0 ? 'yearly' : 'monthly';
+		const planCode = `${selectedPlan}_${cycle}`;
 		const scope = `subscribe|${planCode}|${selectedProvider}`;
 		try {
 			const res = await createSubscription(planCode, selectedProvider, idem.for(scope));
@@ -316,9 +328,14 @@
 						</div>
 						<p class="mt-1 text-xs text-[var(--color-muted)]">{plan.description}</p>
 						<p class="mt-2 text-lg font-bold text-[var(--color-text)]">
-							{formatPrice(billingCycle === 'monthly' ? plan.monthly.amount : plan.yearly.amount, plan.monthly.currency)}
+							{formatPrice(
+								billingCycle === 'yearly' && plan.yearly.amount > 0 ? plan.yearly.amount : plan.monthly.amount,
+								plan.monthly.currency
+							)}
 							<span class="text-xs font-normal text-[var(--color-muted)]">
-								{billingCycle === 'monthly' ? t('settings.subscription.per_month') : t('settings.subscription.per_year')}
+								{billingCycle === 'yearly' && plan.yearly.amount > 0
+									? t('settings.subscription.per_year')
+									: t('settings.subscription.per_month')}
 							</span>
 						</p>
 					</button>

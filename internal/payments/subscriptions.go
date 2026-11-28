@@ -116,10 +116,17 @@ func planBillingCycle(plan string) (slug, cycle string, ok bool) {
 
 // priceSettingsKey returns the system_settings key holding the provider-side
 // price/plan code for a (provider, plan) pair (settings catalog, Payment).
+// The catalog documents *_yearly keys only; pro_annual/business_annual are
+// accepted plan codes (same cycle per planBillingCycle) and must resolve to
+// the same key or checkout fails plan_not_configured on a configured plan.
 func priceSettingsKey(provider, plan string) string {
 	kind := "plan"
 	if provider == ProviderStripe {
 		kind = "price"
+	}
+
+	if strings.HasSuffix(plan, "_annual") {
+		plan = strings.TrimSuffix(plan, "_annual") + "_yearly"
 	}
 
 	return fmt.Sprintf("payments.%s.%s.%s", provider, kind, plan)
@@ -621,7 +628,9 @@ func (s *Service) paystackDisabled(ctx context.Context, data map[string]interfac
 // planFromPaystackCode reverse-maps a Paystack plan_code to a local plan by
 // scanning the configured payments.paystack.plan.* settings keys.
 func (s *Service) planFromPaystackCode(ctx context.Context, planCode string) string {
-	if s.settings == nil {
+	if s.settings == nil || planCode == "" {
+		// An empty planCode must never match — unconfigured keys also
+		// resolve to "" and would false-match the first scanned plan.
 		return ""
 	}
 

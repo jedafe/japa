@@ -211,6 +211,8 @@ export interface PaymentProvider {
 	name: string;
 	description: string;
 	enabled: boolean;
+	/** §17/ADR-012: provider can run subscription (recurring) checkout — stripe/paystack only. */
+	recurring?: boolean;
 }
 
 export const listPaymentProviders = () => api.get<PaymentProvider[]>('/payment-providers');

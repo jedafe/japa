@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,6 +82,12 @@ type PricingPlan struct {
 	Yearly      PlanPricing   `json:"yearly"`
 	Highlighted bool          `json:"highlighted"`
 	Tier        string        `json:"tier"`
+	// Subscribable reports whether POST /subscriptions accepts a plan code
+	// derived from this slug ({slug}_monthly|{slug}_yearly). §17 wires
+	// recurring billing to the pro/business codes only — admin can create
+	// arbitrary display plans, but without the flag the subscribe flow
+	// offers plans that always fail with `invalid`.
+	Subscribable bool `json:"subscribable"`
 }
 
 // ptrString dereferences a *string safely, returning "" for nil.
@@ -110,6 +117,11 @@ type PaymentProviderInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Enabled     bool   `json:"enabled"`
+	// Recurring reports whether the provider can run subscription
+	// (recurring) checkout — §17/ADR-012: Stripe and Paystack only. One-time
+	// providers (credit, crypto, manual) must not be offered for
+	// POST /subscriptions — checkout fails validation for them.
+	Recurring bool `json:"recurring"`
 }
 
 // ListPricingPlans handles GET /api/v1/pricing/plans.
@@ -127,14 +139,15 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			var features []PlanFeature
 			_ = json.Unmarshal(p.Features, &features)
 			plans = append(plans, PricingPlan{
-				ID:          p.Slug,
-				Name:        p.Name,
-				Description: p.Description,
-				Highlighted: p.Highlighted,
-				Features:    features,
-				Monthly:     PlanPricing{Amount: p.MonthlyAmount, Currency: p.Currency},
-				Yearly:      PlanPricing{Amount: p.YearlyAmount, Currency: p.Currency},
-				Tier:        ptrString(p.Tier),
+				ID:           p.Slug,
+				Name:         p.Name,
+				Description:  p.Description,
+				Highlighted:  p.Highlighted,
+				Features:     features,
+				Monthly:      PlanPricing{Amount: p.MonthlyAmount, Currency: p.Currency},
+				Yearly:       PlanPricing{Amount: p.YearlyAmount, Currency: p.Currency},
+				Tier:         ptrString(p.Tier),
+				Subscribable: isValidSubscriptionPlan(p.Slug + "_monthly"),
 			})
 		}
 
@@ -174,9 +187,10 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Advanced analytics", Included: false},
 				{Text: "Custom branding", Included: false},
 			},
-			Monthly: PlanPricing{Amount: 0, Currency: currency},
-			Yearly:  PlanPricing{Amount: 0, Currency: currency},
-			Tier:    "regular",
+			Monthly:      PlanPricing{Amount: 0, Currency: currency},
+			Yearly:       PlanPricing{Amount: 0, Currency: currency},
+			Tier:         "regular",
+			Subscribable: false,
 		},
 		{
 			ID:          "pro",
@@ -192,9 +206,10 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Document verification", Included: true},
 				{Text: "Custom branding", Included: false},
 			},
-			Monthly: PlanPricing{Amount: proMonthly, Currency: currency},
-			Yearly:  PlanPricing{Amount: proYearly, Currency: currency},
-			Tier:    "pro",
+			Monthly:      PlanPricing{Amount: proMonthly, Currency: currency},
+			Yearly:       PlanPricing{Amount: proYearly, Currency: currency},
+			Tier:         "pro",
+			Subscribable: true,
 		},
 		{
 			ID:          "business",
@@ -211,9 +226,10 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				{Text: "Advanced analytics", Included: true},
 				{Text: "Custom branding", Included: true},
 			},
-			Monthly: PlanPricing{Amount: bizMonthly, Currency: currency},
-			Yearly:  PlanPricing{Amount: bizYearly, Currency: currency},
-			Tier:    "business",
+			Monthly:      PlanPricing{Amount: bizMonthly, Currency: currency},
+			Yearly:       PlanPricing{Amount: bizYearly, Currency: currency},
+			Tier:         "business",
+			Subscribable: true,
 		},
 	}
 
@@ -237,12 +253,14 @@ func (h *Handlers) ListPaymentProviders(w http.ResponseWriter, r *http.Request) 
 			Name:        "Paystack",
 			Description: "Card, bank transfer, USSD",
 			Enabled:     registered[ProviderPaystack],
+			Recurring:   true, // §17/ADR-012: subscription-capable
 		},
 		{
 			ID:          ProviderStripe,
 			Name:        "Stripe",
 			Description: "International cards",
 			Enabled:     registered[ProviderStripe],
+			Recurring:   true, // §17/ADR-012: subscription-capable
 		},
 		{
 			ID:          ProviderNOWPayments,
@@ -318,6 +336,14 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		// plan_not_configured, so 503 rather than a misleading 500.
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured",
 			"This payment provider is not configured on this deployment")
+		return
+	}
+	if errors.Is(err, ErrProviderFailure) {
+		// §17: provider-first calls must surface upstream failure as 502,
+		// not a generic 500 — a 500 invites retry where the provider call
+		// may already have succeeded (divergence).
+		errpkg.WriteError(w, http.StatusBadGateway, "provider_error",
+			"The payment provider could not complete the request")
 		return
 	}
 	errpkg.HandleServiceError(w, err)
@@ -1662,8 +1688,18 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 
 // DeleteSubscription handles DELETE /subscriptions/:id.
 // Verifies the subscription belongs to the authenticated user before
-// soft-deleting — without this check any user in the platform could delete
+// mutating — without this check any user in the platform could delete
 // another user's subscription by ID enumeration (BUG-P003).
+//
+// §17: cancel calls the provider first, then mutates local state — a
+// local-only cancel diverges (provider keeps billing) and a row marked
+// 'canceled' outright escapes the expiry sweep, so the granted tier is
+// never revoked. Rows with a live provider subscription (active, trialing,
+// past_due) therefore go through Service.CancelSubscription (provider
+// cancel-at-period-end + local pending-cancel flag; the sweep expires the
+// row and revokes the tier at current_period_end). Rows that already ended
+// (canceled/expired) have no provider subscription to stop and get the
+// local mark only.
 func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1685,6 +1721,18 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 
 	if sub.UserID != user.UserID {
 		errpkg.WriteError(w, http.StatusForbidden, "subscription_not_owned", "You do not have access to this subscription")
+		return
+	}
+
+	// Active, trialing, and past_due rows all have a live provider
+	// subscription to stop — canceled/expired rows do not.
+	if sub.Status == SubscriptionStatusActive || sub.Status == SubscriptionStatusTrialing || sub.Status == SubscriptionStatusPastDue {
+		if _, err := h.Service.CancelSubscription(r.Context(), id); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusNoContent, nil)
 		return
 	}
 
@@ -1740,6 +1788,57 @@ type AdminPlanInput struct {
 	SortOrder     int32              `json:"sort_order"`
 	Status        string             `json:"status"`
 	Tier          *string            `json:"tier"`
+}
+
+// adminPlanSlugPattern constrains plan slugs — they are interpolated into
+// subscription plan codes ({slug}_{monthly|yearly}) and provider settings
+// keys, so anything outside [a-z0-9_-] produces unreachable config.
+var adminPlanSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+var adminPlanCurrencyPattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
+
+// validateAdminPlanInput returns a machine-readable error code when the
+// create/update payload is malformed. Without this, bad values surfaced as
+// CHECK-constraint 500s (tier) or silently invisible plans (unknown status,
+// negative amounts).
+func validateAdminPlanInput(input *AdminPlanInput, requireIdentity bool) string {
+	if requireIdentity {
+		if input.Name == "" || input.Slug == "" {
+			return "missing_fields"
+		}
+	}
+
+	if input.Slug != "" && !adminPlanSlugPattern.MatchString(input.Slug) {
+		return "invalid_slug"
+	}
+
+	if input.Status != "" && input.Status != "active" && input.Status != "inactive" {
+		return "invalid_status"
+	}
+
+	if input.Tier != nil && *input.Tier != "" {
+		switch *input.Tier {
+		case "regular", "pro", "business":
+		default:
+			return "invalid_tier"
+		}
+	}
+
+	if input.MonthlyAmount < 0 || input.YearlyAmount < 0 {
+		return "invalid_amount"
+	}
+
+	if input.Currency != "" && !adminPlanCurrencyPattern.MatchString(input.Currency) {
+		return "invalid_currency"
+	}
+
+	for _, f := range input.Features {
+		if strings.TrimSpace(f.Text) == "" {
+			return "invalid_features"
+		}
+	}
+
+	return ""
 }
 
 // AdminPlanResponse is the JSON-serializable plan shape returned by admin endpoints.
@@ -1824,8 +1923,8 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Name == "" || input.Slug == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
+	if code := validateAdminPlanInput(&input, true); code != "" {
+		errpkg.WriteError(w, http.StatusBadRequest, code, "Invalid plan payload")
 		return
 	}
 
@@ -1835,9 +1934,14 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 	if input.Currency == "" {
 		input.Currency = "NGN"
+	} else {
+		input.Currency = strings.ToUpper(input.Currency)
 	}
 
 	featuresJSON, _ := json.Marshal(input.Features)
+	if input.Features == nil {
+		featuresJSON = []byte("[]")
+	}
 
 	plan, err := gen.New(h.Service.db.Writer).CreateSubscriptionPlan(r.Context(), gen.CreateSubscriptionPlanParams{
 		Slug:          input.Slug,
@@ -1880,7 +1984,21 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	featuresJSON, _ := json.Marshal(input.Features)
+	if code := validateAdminPlanInput(&input, false); code != "" {
+		errpkg.WriteError(w, http.StatusBadRequest, code, "Invalid plan payload")
+		return
+	}
+
+	if input.Currency != "" {
+		input.Currency = strings.ToUpper(input.Currency)
+	}
+
+	// features is the only field that may be legitimately absent in a PATCH —
+	// nil must keep the stored JSONB (query COALESCEs), not write literal 'null'.
+	var featuresJSON []byte
+	if input.Features != nil {
+		featuresJSON, _ = json.Marshal(input.Features)
+	}
 
 	plan, err := gen.New(h.Service.db.Writer).UpdateSubscriptionPlan(r.Context(), gen.UpdateSubscriptionPlanParams{
 		ID: id,

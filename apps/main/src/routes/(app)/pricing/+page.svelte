@@ -6,6 +6,8 @@
 
 	let { data }: { data: PageData } = $props();
 
+	let billingCycle = $state<'monthly' | 'yearly'>('monthly');
+
 	// Currency symbols from the API (Rule 16 — no hardcoded data).
 	const currencySymbolMap = $derived(
 		new Map((data.currencies ?? []).map((c: { code: string; symbol: string }) => [c.code, c.symbol]))
@@ -15,6 +17,12 @@
 		if (amount === 0) return t('pricing.free', 'Free');
 		const symbol = currencySymbolMap.get(currency) ?? currency;
 		return `${symbol}${(amount / 100).toLocaleString(i18n.locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+	}
+
+	// Show the selected cycle's price, falling back to monthly when a plan
+	// has no yearly amount configured.
+	function planPrice(plan: { monthly: { amount: number; currency: string }; yearly: { amount: number; currency: string } }) {
+		return billingCycle === 'yearly' && plan.yearly.amount > 0 ? plan.yearly : plan.monthly;
 	}
 </script>
 
@@ -33,6 +41,26 @@
 	{#if data.plans.length === 0}
 		<p class="text-center text-sm text-[var(--color-muted)]">{t('pricing.unavailable', 'Plans are temporarily unavailable. Please try again later.')}</p>
 	{:else}
+		<div class="mb-6 flex items-center justify-center gap-2">
+			<button
+				type="button"
+				class="rounded-[var(--radius)] px-3 py-1 text-xs font-medium {billingCycle === 'monthly'
+					? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+					: 'border border-[var(--color-border)] text-[var(--color-text)]'}"
+				onclick={() => (billingCycle = 'monthly')}
+			>
+				{t('settings.subscription.monthly', 'Monthly')}
+			</button>
+			<button
+				type="button"
+				class="rounded-[var(--radius)] px-3 py-1 text-xs font-medium {billingCycle === 'yearly'
+					? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+					: 'border border-[var(--color-border)] text-[var(--color-text)]'}"
+				onclick={() => (billingCycle = 'yearly')}
+			>
+				{t('settings.subscription.yearly', 'Yearly')}
+			</button>
+		</div>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			{#each data.plans as plan (plan.id)}
 				<div
@@ -55,8 +83,8 @@
 					<p class="mt-1 text-sm text-[var(--color-muted)]">{plan.description}</p>
 
 					<div class="mt-4">
-						<span class="text-2xl font-bold text-[var(--color-text)]">{formatPrice(plan.monthly.amount, plan.monthly.currency)}</span>
-						<span class="text-sm text-[var(--color-muted)]">/{t('pricing.month', 'mo')}</span>
+						<span class="text-2xl font-bold text-[var(--color-text)]">{formatPrice(planPrice(plan).amount, planPrice(plan).currency)}</span>
+						<span class="text-sm text-[var(--color-muted)]">/{billingCycle === 'yearly' && plan.yearly.amount > 0 ? t('pricing.year', 'yr') : t('pricing.month', 'mo')}</span>
 					</div>
 
 					<ul class="mt-6 flex-1 space-y-2.5">
@@ -73,16 +101,22 @@
 						{/each}
 					</ul>
 
-					<a
-						href="/settings/subscription"
-						class="mt-6 block rounded-[var(--radius)] px-4 py-2 text-center text-sm font-medium {plan.highlighted
-							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-							: 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						{plan.monthly.amount === 0
-							? t('pricing.current_plan', 'Current plan')
-							: t('pricing.choose', 'Choose {plan}').replace('{plan}', plan.name)}
-					</a>
+					{#if plan.subscribable}
+						<a
+							href="/settings/subscription"
+							class="mt-6 block rounded-[var(--radius)] px-4 py-2 text-center text-sm font-medium {plan.highlighted
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{t('pricing.choose', 'Choose {plan}').replace('{plan}', plan.name)}
+						</a>
+					{:else}
+						<span class="mt-6 block rounded-[var(--radius)] px-4 py-2 text-center text-sm text-[var(--color-muted)]">
+							{plan.monthly.amount === 0 && plan.yearly.amount === 0
+								? t('pricing.included', 'Included')
+								: t('pricing.not_subscribable', 'Not available for checkout')}
+						</span>
+					{/if}
 				</div>
 			{/each}
 		</div>

@@ -224,7 +224,7 @@ func (p *PaystackProvider) CreateSubscriptionCheckout(ctx context.Context, req S
 		Email:       req.Email,
 		Currency:    req.Currency,
 		Plan:        req.PriceCode,
-		CallbackURL: req.ReturnURL,
+		CallbackURL: subscribedReturnURL(req.ReturnURL),
 		Metadata:    req.Metadata,
 	}
 	if payload.Currency == "" {
@@ -269,6 +269,22 @@ func (p *PaystackProvider) CreateSubscriptionCheckout(ctx context.Context, req S
 		CheckoutURL: apiResp.Data.AuthorizationURL,
 		Reference:   apiResp.Data.Reference,
 	}, nil
+}
+
+// subscribedReturnURL appends subscribed=1 to a post-checkout return URL.
+// The settings UI keys off this flag to show the "activation pending" notice
+// while the provider's first-charge webhook lands (§17 hosted checkout).
+func subscribedReturnURL(returnURL string) string {
+	if returnURL == "" {
+		return ""
+	}
+
+	sep := "?"
+	if strings.Contains(returnURL, "?") {
+		sep = "&"
+	}
+
+	return returnURL + sep + "subscribed=1"
 }
 
 // paystackSubscriptionResponse is the subset of GET /subscription/{code}
@@ -595,7 +611,7 @@ func (p *StripeProvider) CreateSubscriptionCheckout(ctx context.Context, req Sub
 	}
 
 	if req.ReturnURL != "" {
-		form += "&success_url=" + url.QueryEscape(req.ReturnURL+"?subscribed=1")
+		form += "&success_url=" + url.QueryEscape(subscribedReturnURL(req.ReturnURL))
 		form += "&cancel_url=" + url.QueryEscape(req.ReturnURL)
 	}
 

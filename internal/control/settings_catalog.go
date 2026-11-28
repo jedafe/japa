@@ -330,6 +330,20 @@ var settingsCatalog = map[string]settingMeta{
 	// pricing.currency, which controls plan-display currency in the Control
 	// Panel. Ref: .jeos/conventions/system-settings-catalog.md §Payment.
 	"payment.currency": {Type: "string", DefaultValue: "NGN", Description: "Default payment currency for payment and credit operations.", Panel: "admin", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`},
+	// Provider-side recurring plan codes (JEOS §17 / system-settings-catalog
+	// §Payment). POST /subscriptions resolves payments.{provider}.{price|plan}.
+	// {slug}_{cycle} via payments.providerPriceCode — a missing key fails the
+	// checkout with 503 plan_not_configured, so these must be UI-manageable.
+	"payments.stripe.price.pro_monthly":        {Type: "string", DefaultValue: "", Description: "Stripe Price ID for the Pro monthly recurring plan (subscription_plans slug 'pro', monthly cycle).", Panel: "control"},
+	"payments.stripe.price.pro_yearly":         {Type: "string", DefaultValue: "", Description: "Stripe Price ID for the Pro yearly recurring plan.", Panel: "control"},
+	"payments.stripe.price.business_monthly":   {Type: "string", DefaultValue: "", Description: "Stripe Price ID for the Business monthly recurring plan.", Panel: "control"},
+	"payments.stripe.price.business_yearly":    {Type: "string", DefaultValue: "", Description: "Stripe Price ID for the Business yearly recurring plan.", Panel: "control"},
+	"payments.paystack.plan.pro_monthly":       {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Pro monthly recurring plan.", Panel: "control"},
+	"payments.paystack.plan.pro_yearly":        {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Pro yearly recurring plan.", Panel: "control"},
+	"payments.paystack.plan.business_monthly":  {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Business monthly recurring plan.", Panel: "control"},
+	"payments.paystack.plan.business_yearly":   {Type: "string", DefaultValue: "", Description: "Paystack plan_code for the Business yearly recurring plan.", Panel: "control"},
+	"subscription.past_due_grace_hours":        {Type: "int", DefaultValue: "72", Description: "Hours a past_due subscription keeps its tier before the expiry sweep downgrades it (§17).", Panel: "control"},
+	"subscription.expiry_sweep_interval_minutes": {Type: "int", DefaultValue: "30", Description: "Cadence of the subscription:expiry_sweep periodic task, in minutes. Read at scheduler boot; JC_SCHEDULER_CRON_SUBSCRIPTION_EXPIRY_SWEEP takes precedence.", Panel: "control"},
 	// Affiliate
 	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program.", Panel: "admin"},
 	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days.", Panel: "admin"},

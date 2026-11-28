@@ -50,11 +50,21 @@
 
 	// The backend serializes JSONB features as a raw JSON string ([]byte), so
 	// parse it into an array here for the UI (mirrors the legacy load()).
+	// Malformed JSONB must degrade to an empty list — an unguarded JSON.parse
+	// throws inside .map() and blanks the entire table.
 	function mapPlan(raw: any): Plan {
-		return {
-			...raw,
-			features: typeof raw.features === 'string' ? JSON.parse(raw.features as unknown as string) : (raw.features ?? [])
-		};
+		let features: Plan['features'] = [];
+		if (typeof raw.features === 'string') {
+			try {
+				const parsed = JSON.parse(raw.features);
+				if (Array.isArray(parsed)) features = parsed;
+			} catch {
+				// keep []
+			}
+		} else if (Array.isArray(raw.features)) {
+			features = raw.features;
+		}
+		return { ...raw, features };
 	}
 
 	// ── Manage Tracks sub-flow (page-local Modal) ───────────────────────────

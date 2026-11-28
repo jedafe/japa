@@ -21,6 +21,8 @@ export interface PricingPlan {
 	highlighted: boolean;
 	/** Unified user tier this plan maps to (regular / pro / business). */
 	tier: 'regular' | 'pro' | 'business';
+	/** §17: whether POST /subscriptions accepts a plan code for this slug. */
+	subscribable: boolean;
 }
 
 export interface Currency {

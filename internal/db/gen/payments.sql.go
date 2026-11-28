@@ -15,15 +15,18 @@ const cancelSubscription = `-- name: CancelSubscription :one
 UPDATE subscriptions
 SET cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = $1
- AND status = 'active'
+ AND status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text])
 RETURNING id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 // JEOS §17: POST /me/subscription/cancel cancels at period end — the user
 // keeps access until current_period_end, then the subscription ends. We set
 // cancel_at_period_end = true and cancelled_at = now() but leave status
-// 'active' so entitlements remain until the period ends. A scheduled job
+// unchanged so entitlements remain until the period ends. A scheduled job
 // transitions to 'canceled' at current_period_end (BUG-002).
+// Applies to every status with a live provider subscription: trialing and
+// past_due rows must also schedule the provider-side cancel, not just
+// 'active' (DELETE /subscriptions/{id} routes them through this path).
 func (q *Queries) CancelSubscription(ctx context.Context, id pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, cancelSubscription, id)
 	var i Subscription
@@ -1186,7 +1189,7 @@ SET status = 'active', cancel_at = NULL, cancel_at_period_end = false, cancelled
 WHERE id = (
  SELECT s.id FROM subscriptions s
  WHERE s.user_id = $1
- AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
+ AND (s.status = 'canceled' OR (s.status = ANY (ARRAY['active'::text, 'trialing'::text, 'past_due'::text]) AND s.cancel_at_period_end = true))
  ORDER BY s.updated_at DESC
  LIMIT 1
 )
@@ -1194,9 +1197,9 @@ RETURNING id, user_id, plan, provider, provider_ref, status, current_period_star
 `
 
 // Reactivates the caller's most recently canceled or scheduled-for-cancellation
-// subscription. Matches both 'canceled' rows and 'active' rows with
-// cancel_at_period_end = true so a user can undo a period-end cancel before
-// the period ends (BUG-002).
+// subscription. Matches both 'canceled' rows and live-status rows
+// (active/trialing/past_due) with cancel_at_period_end = true so a user can
+// undo a period-end cancel before the period ends (BUG-002).
 func (q *Queries) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (Subscription, error) {
 	row := q.db.QueryRow(ctx, reactivateSubscription, userID)
 	var i Subscription
@@ -1326,10 +1329,13 @@ func (q *Queries) SetSubscriptionCancelAtPeriodEnd(ctx context.Context, arg SetS
 
 const softDeleteSubscription = `-- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
-SET status = 'canceled', cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
+SET status = CASE WHEN status = 'expired' THEN 'expired' ELSE 'canceled' END,
+    cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = $1
 `
 
+// Preserve the 'expired' marker — rewriting it to 'canceled' loses how the
+// subscription actually ended (sweep expiry vs user cancel).
 func (q *Queries) SoftDeleteSubscription(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteSubscription, id)
 	return err

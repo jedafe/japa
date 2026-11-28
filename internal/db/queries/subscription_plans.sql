@@ -26,7 +26,7 @@ SET
  slug = COALESCE(NULLIF(@slug, ''), slug),
  name = COALESCE(NULLIF(@name, ''), name),
  description = @description,
- features = @features,
+ features = COALESCE(@features, features),
  monthly_amount = @monthly_amount,
  yearly_amount = @yearly_amount,
  currency = COALESCE(NULLIF(@currency, ''), currency),

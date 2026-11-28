@@ -315,7 +315,7 @@ SET
  slug = COALESCE(NULLIF($1, ''), slug),
  name = COALESCE(NULLIF($2, ''), name),
  description = $3,
- features = $4,
+ features = COALESCE($4, features),
  monthly_amount = $5,
  yearly_amount = $6,
  currency = COALESCE(NULLIF($7, ''), currency),
