@@ -19,8 +19,10 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -196,7 +198,9 @@ func (s *Service) GetMyApplication(ctx context.Context, userID pgtype.UUID) (MyA
 // every caller.
 func validateApplicationInput(motivation string, areas []string) (string, []string, error) {
 	motivation = strings.TrimSpace(motivation)
-	if motivation == "" || len(motivation) > applicationMotivationMax {
+	// RuneCount — the client's maxlength counts characters; counting
+	// bytes here would reject multibyte text well under the limit.
+	if motivation == "" || utf8.RuneCountInString(motivation) > applicationMotivationMax {
 		return "", nil, ErrInvalidMotivation
 	}
 	clean := make([]string, 0, len(areas))
@@ -206,7 +210,7 @@ func validateApplicationInput(motivation string, areas []string) (string, []stri
 		if a == "" || seen[strings.ToLower(a)] {
 			continue
 		}
-		if len(a) > applicationAreaMaxLen {
+		if utf8.RuneCountInString(a) > applicationAreaMaxLen {
 			return "", nil, ErrInvalidAreas
 		}
 		seen[strings.ToLower(a)] = true
@@ -239,6 +243,12 @@ func (s *Service) ApplyForMentor(ctx context.Context, userID pgtype.UUID, motiva
 			Motivation:  motivation,
 			MentorAreas: areas,
 		})
+		// Two tabs racing a first submit: the UNIQUE(user_id) loser maps
+		// to the pending conflict instead of a 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrApplicationPending
+		}
 	case err != nil:
 		return nil, fmt.Errorf("mentorship: load application: %w", err)
 	case existing.Status == "pending":
@@ -252,6 +262,11 @@ func (s *Service) ApplyForMentor(ctx context.Context, userID pgtype.UUID, motiva
 			Motivation:  motivation,
 			MentorAreas: areas,
 		})
+		// A racing submit flipped the row to pending first — same
+		// outcome the member asked for; report the pending conflict.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrApplicationPending
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mentorship: submit application: %w", err)
@@ -327,11 +342,38 @@ func (s *Service) loadActionableApplication(ctx context.Context, appID pgtype.UU
 }
 
 // ApproveApplication transitions pending → approved and grants the
-// mentors group membership (the capability). POST
+// mentors group membership (the capability). The grant runs BEFORE the
+// status write and the call is idempotent on approved rows: a retry
+// after a partial failure (approved row whose grant never landed, or a
+// membership removed out-of-band) re-heals the grant instead of
+// dead-ending on a 409. POST
 // /admin/mentorship/applications/{id}/approve.
 func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgtype.UUID) (*MentorApplication, error) {
-	if _, err := s.loadActionableApplication(ctx, appID, "pending"); err != nil {
+	prior, err := s.loadActionableApplication(ctx, appID, "pending", "approved")
+	if err != nil {
 		return nil, err
+	}
+
+	// The grant: mentors membership carries become_mentor + respond.
+	// Running it before the transition keeps failures retryable — a
+	// failed grant leaves the row pending; AddUserToGroup is idempotent
+	// (ON CONFLICT DO NOTHING) so re-approval re-heals cleanly.
+	// rbac.Store invalidates the permission cache itself (Rule 6).
+	if s.groups != nil {
+		groupID, gerr := s.mentorsGroupID(ctx)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if err := s.groups.AddUserToGroup(ctx, prior.UserID, groupID); err != nil {
+			return nil, fmt.Errorf("mentorship: grant mentors group: %w", err)
+		}
+	} else {
+		slog.Warn("mentorship: approve without group seam — grant skipped", "application_id", appID)
+	}
+
+	if prior.Status == "approved" {
+		// Ensure-grant retry — nothing to transition.
+		return applicationDTO(prior), nil
 	}
 
 	row, err := s.write.ApproveMentorApplication(ctx, gen.ApproveMentorApplicationParams{
@@ -339,21 +381,10 @@ func (s *Service) ApproveApplication(ctx context.Context, appID, reviewerID pgty
 		ReviewerUserID: reviewerID,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrApplicationNotActionable
+		}
 		return nil, fmt.Errorf("mentorship: approve application: %w", err)
-	}
-
-	// The grant: mentors membership carries become_mentor + respond.
-	// rbac.Store invalidates the permission cache itself (Rule 6).
-	if s.groups != nil {
-		groupID, gerr := s.mentorsGroupID(ctx)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if err := s.groups.AddUserToGroup(ctx, row.UserID, groupID); err != nil {
-			return nil, fmt.Errorf("mentorship: grant mentors group: %w", err)
-		}
-	} else {
-		slog.Warn("mentorship: approve without group seam — grant skipped", "application_id", appID)
 	}
 
 	s.enqueueApplicationDecision(ctx, row.ID)
@@ -373,6 +404,22 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		return nil, err
 	}
 
+	// Revoke arm: an approved application carried a mentors membership.
+	// Removal runs BEFORE the status write — a failed decline then leaves
+	// an approved row whose grant is already gone (safely retryable,
+	// the DELETE is a no-op on rerun) rather than a declined row whose
+	// grant lingers. RemoveUserFromGroup fires the mentor-retire sweep
+	// itself, retiring is_mentor + the shadow listing.
+	if prior.Status == "approved" && s.groups != nil {
+		groupID, gerr := s.mentorsGroupID(ctx)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if err := s.groups.RemoveUserFromGroup(ctx, prior.UserID, groupID); err != nil {
+			return nil, fmt.Errorf("mentorship: revoke mentors group: %w", err)
+		}
+	}
+
 	reason = strings.TrimSpace(reason)
 	row, err := s.write.DeclineMentorApplication(ctx, gen.DeclineMentorApplicationParams{
 		ID:             appID,
@@ -380,19 +427,10 @@ func (s *Service) DeclineApplication(ctx context.Context, appID, reviewerID pgty
 		DeclineReason:  strNilIfEmpty(reason),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrApplicationNotActionable
+		}
 		return nil, fmt.Errorf("mentorship: decline application: %w", err)
-	}
-
-	// Revoke arm: an approved application carried a mentors membership —
-	// remove it so the capability (and the live mentor profile) retires.
-	if prior.Status == "approved" && s.groups != nil {
-		groupID, gerr := s.mentorsGroupID(ctx)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if err := s.groups.RemoveUserFromGroup(ctx, row.UserID, groupID); err != nil {
-			return nil, fmt.Errorf("mentorship: revoke mentors group: %w", err)
-		}
 	}
 
 	s.enqueueApplicationDecision(ctx, row.ID)

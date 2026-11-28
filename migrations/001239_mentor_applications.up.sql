@@ -33,7 +33,7 @@ CREATE TABLE mentor_applications (
 );
 CREATE INDEX idx_mentor_applications_status
     ON mentor_applications (status, created_at DESC);
-CREATE INDEX idx_mentor_applications_user ON mentor_applications (user_id);
+-- user_id needs no extra index — UNIQUE above already covers lookups.
 
 -- 2) mentors system group + backing role (001049 convention: the backing
 --    role exists so the group renders correctly in the RBAC admin UI).

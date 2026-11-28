@@ -123,6 +123,11 @@
 		refreshing = false;
 		if (res.data) status = res.data;
 	}
+
+	// Approved row whose grant is gone (out-of-band removal or a failed
+	// grant) — the member drops into the resubmit form instead of being
+	// stuck on the approved card. The POST accepts approved rows.
+	let resubmitting = $state(false);
 </script>
 
 <SeoHead
@@ -224,7 +229,7 @@
 				{t('become_mentor.browse_mentors', 'Browse mentors meanwhile')}
 			</a>
 		</div>
-	{:else if branch === 'approved'}
+	{:else if branch === 'approved' && !resubmitting}
 		<div class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
 			<div class="flex items-start gap-3">
 				<CircleCheck size={22} class="mt-0.5 shrink-0 text-[var(--color-success)]" />
@@ -237,10 +242,20 @@
 					</p>
 				</div>
 			</div>
-			<button type="button" class={primaryBtn} onclick={refreshStatus} disabled={refreshing}>
-				{#if refreshing}<Loader2 size={16} class="animate-spin" />{/if}
-				{t('become_mentor.approved_continue', 'Continue to setup')}
-			</button>
+			<div class="flex flex-wrap gap-2">
+				<button type="button" class={primaryBtn} onclick={refreshStatus} disabled={refreshing}>
+					{#if refreshing}<Loader2 size={16} class="animate-spin" />{/if}
+					{t('become_mentor.approved_continue', 'Continue to setup')}
+				</button>
+				<!-- Approved-but-not-eligible: grant missing (out-of-band
+				     removal or a failed grant). The resubmit form is the
+				     supported recovery path. -->
+				{#if !status?.eligible}
+					<button type="button" class={ghostBtn} onclick={() => (resubmitting = true)}>
+						{t('become_mentor.approved_resubmit', 'Resubmit for review')}
+					</button>
+				{/if}
+			</div>
 		</div>
 	{:else if branch === 'setup'}
 		<!-- Eligible fast path — holds mentorship.become_mentor already -->
@@ -313,13 +328,14 @@
 				<p class="text-sm text-[var(--color-danger)]">{error}</p>
 			{/if}
 
-			<button type="submit" class={primaryBtn} disabled={saving}>
+			<button type="submit" class={primaryBtn} disabled={saving || Number(capacity) < 1}>
 				{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
 				{t('become_mentor.enable_cta', 'Start mentoring')}
 			</button>
 		</form>
 	{:else}
-		<!-- Member path — application for admin review (apply + declined-resubmit) -->
+		<!-- Member path — application for admin review (apply + declined-
+		     resubmit + approved-but-grantless resubmit) -->
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
@@ -328,7 +344,19 @@
 			class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6"
 			novalidate
 		>
-			{#if branch === 'declined' && application}
+			{#if branch === 'approved'}
+				<div class="rounded-[var(--radius)] border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 p-4">
+					<p class="text-sm font-medium text-[var(--color-text)]">
+						{t('become_mentor.resubmit_hint_title', 'Your mentor access is no longer active')}
+					</p>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+						{t(
+							'become_mentor.resubmit_hint_body',
+							'Your grant was removed — update your application and resubmit it for a fresh review.'
+						)}
+					</p>
+				</div>
+			{:else if branch === 'declined' && application}
 				<div class="rounded-[var(--radius)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 p-4">
 					<p class="text-sm font-medium text-[var(--color-danger)]">
 						{t('become_mentor.declined_title', 'Your previous application was declined')}
@@ -397,7 +425,7 @@
 
 			<button type="submit" class={primaryBtn} disabled={saving || !motivation.trim()}>
 				{#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Check size={16} />{/if}
-				{branch === 'declined'
+				{branch === 'declined' || branch === 'approved'
 					? t('become_mentor.resubmit_cta', 'Resubmit application')
 					: t('become_mentor.apply_cta', 'Submit application')}
 			</button>

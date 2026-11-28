@@ -1048,6 +1048,7 @@
   "app.mentorship.actions.saving": "Saving...",
   "app.mentorship.applications.actions.approve": "Approve",
   "app.mentorship.applications.actions.decline": "Decline",
+  "app.mentorship.applications.actions.ensure_grant": "Ensure mentor grant",
   "app.mentorship.applications.actions.revoke": "Revoke grant",
   "app.mentorship.applications.columns.applicant": "Applicant",
   "app.mentorship.applications.columns.areas": "Areas",

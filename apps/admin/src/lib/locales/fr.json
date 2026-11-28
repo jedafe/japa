@@ -1048,6 +1048,7 @@
   "app.mentorship.actions.saving": "Enregistrement...",
   "app.mentorship.applications.actions.approve": "Approuver",
   "app.mentorship.applications.actions.decline": "Refuser",
+  "app.mentorship.applications.actions.ensure_grant": "Rétablir le statut de mentor",
   "app.mentorship.applications.actions.revoke": "Révoquer le statut",
   "app.mentorship.applications.columns.applicant": "Candidat",
   "app.mentorship.applications.columns.areas": "Domaines",

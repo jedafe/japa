@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /mentorship/applications — §102 member mentor applications review queue.
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md (2026-11-28 amendment)
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
 	import { mentorshipAdminApiExtended as mentorshipApi } from '#lib/api.js';
 	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -75,15 +75,6 @@
 		}
 	}
 
-	const fields = $derived<FieldDef[]>([
-		{
-			key: 'status',
-			label: t('app.mentorship.columns.status', 'Status'),
-			type: 'select',
-			options: APPLICATION_STATUSES.map((s) => ({ value: s, label: s }))
-		}
-	]);
-
 	const config = $derived<EntityPageConfig>({
 		title: t('app.mentorship.applications.title', 'Mentor Applications'),
 		description: t(
@@ -93,7 +84,6 @@
 		// Applications are submitted by members via POST /me/mentor-application —
 		// admins only review; no admin create/edit/delete routes exist.
 		hideCreate: true,
-		bulkDelete: false,
 		createPermission: 'mentorship.manage',
 		readonly: !canManage,
 		pageSize: 15,
@@ -131,12 +121,20 @@
 				options: APPLICATION_STATUSES.map((s) => ({ value: s, label: s }))
 			}
 		],
-		fields,
+		fields: [],
 		actions: [
 			{ label: t('common.view', 'View'), onclick: (row, ctx) => ctx?.openView(row) },
 			{
 				label: t('app.mentorship.applications.actions.approve', 'Approve'),
 				show: (row: Application) => canManage && row.status === 'pending',
+				onclick: (row: Application) => approve(row)
+			},
+			{
+				// Idempotent ensure-grant (§102 2026-11-28): re-adds the
+				// mentors membership when it was removed out-of-band or a
+				// previous approve failed before granting.
+				label: t('app.mentorship.applications.actions.ensure_grant', 'Ensure mentor grant'),
+				show: (row: Application) => canManage && row.status === 'approved',
 				onclick: (row: Application) => approve(row)
 			},
 			{

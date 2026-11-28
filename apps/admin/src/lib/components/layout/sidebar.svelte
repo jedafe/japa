@@ -172,7 +172,7 @@
 		{ path: "/academy/categories", label: t("nav.academy_categories", "Track Categories"), icon: Tag, permission: "academy.category.manage" },
 			{ path: "/academy/payouts", label: t("nav.academy_payouts", "Academy Payouts"), icon: DollarSign, permission: "academy.payout.process" },
 		{ path: "/academy/revenue-splits", label: t("nav.academy_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "academy.revenue.list" },
-		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
+		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.manage" },
 		{ path: "/mentorship/applications", label: t("nav.mentorship_applications", "Mentor Applications"), icon: UserCheck, permission: "mentorship.manage" },
 		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
 		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: ["gamification.manage_badges", "gamification.manage_challenges", "gamification.award_badge"] },

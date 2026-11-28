@@ -5047,7 +5047,7 @@ export interface MentorShadowContent {
 export interface MentorApplication {
 	id: string;
 	user_id: string;
-	status: 'pending' | 'approved' | 'declined' | string;
+	status: 'pending' | 'approved' | 'declined';
 	motivation: string;
 	mentor_areas: string[];
 	reviewer_user_id?: string;

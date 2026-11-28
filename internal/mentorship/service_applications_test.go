@@ -160,6 +160,20 @@ func TestApplicationFlow_LiveDB(t *testing.T) {
 		t.Fatal("approve did not grant the mentors group")
 	}
 
+	// Approve on an approved row is the idempotent ensure-grant arm — a
+	// second call re-heals the membership without erroring.
+	delete(groups.members, userID)
+	reApprove, err := svc.ApproveApplication(ctx, appID, userID)
+	if err != nil {
+		t.Fatalf("ensure-grant approve: %v", err)
+	}
+	if reApprove.Status != "approved" {
+		t.Fatalf("expected approved on ensure-grant, got %q", reApprove.Status)
+	}
+	if !groups.members[userID] {
+		t.Fatal("ensure-grant approve did not re-add the mentors membership")
+	}
+
 	// Approved + group present ⇒ eligible ⇒ self-apply is the 409 arm.
 	eligible[userID] = true
 	if _, err := svc.ApplyForMentor(ctx, userID, "again", nil); !errors.Is(err, ErrAlreadyEligible) {
